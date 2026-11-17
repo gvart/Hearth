@@ -1,0 +1,24 @@
+internal/store/snapshot_test.go
+  s_815aef767535ea::t_c30ab0798b55d0 1-6,8-16,27-114
+  s_815aef767535ea::t_b2867d8c2e5a47 17-26
+  s_815aef767535ea::t_19141ca09bdd99 7
+internal/store/snapshot.go
+  s_815aef767535ea::t_19d609727d2edd 30,92
+  s_815aef767535ea::t_ef9850b15455ef 1-29,31-91,93-128
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "97c7e95a1373741d4e395b4febd16d460c2e47a7",
+  "prompts": {},
+  "sessions": {
+    "s_815aef767535ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1866255a-7d59-4f07-869c-b29b78c7a98d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": null
+    }
+  }
+}
