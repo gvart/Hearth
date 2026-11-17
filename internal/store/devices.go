@@ -24,6 +24,8 @@ type Device struct {
 	FirstSeen time.Time
 	LastSeen  time.Time
 	Status    string
+	// BootTime is when the device's host last booted; zero if unknown.
+	BootTime time.Time
 }
 
 // Devices is the repository for the devices table.
@@ -47,14 +49,14 @@ func (r Devices) Upsert(ctx context.Context, d Device) error {
 		return fmt.Errorf("upsert device %s: %w", d.ID, err)
 	}
 	_, err = r.db.ExecContext(ctx, `
-		INSERT INTO devices (id, name, hostname, os, arch, facts, labels, first_seen, last_seen, status)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO devices (id, name, hostname, os, arch, facts, labels, first_seen, last_seen, status, boot_time)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (id) DO UPDATE SET
 			name = excluded.name, hostname = excluded.hostname, os = excluded.os,
 			arch = excluded.arch, facts = excluded.facts, labels = excluded.labels,
-			last_seen = excluded.last_seen, status = excluded.status`,
+			last_seen = excluded.last_seen, status = excluded.status, boot_time = excluded.boot_time`,
 		d.ID, d.Name, d.Hostname, d.OS, d.Arch, string(facts), labels,
-		toMillis(d.FirstSeen), toMillis(d.LastSeen), d.Status)
+		toMillis(d.FirstSeen), toMillis(d.LastSeen), d.Status, nullMillis(d.BootTime))
 	if err != nil {
 		return fmt.Errorf("upsert device %s: %w", d.ID, err)
 	}
@@ -95,16 +97,17 @@ func (r Devices) List(ctx context.Context) ([]Device, error) {
 	return out, nil
 }
 
-const deviceColumns = `id, name, hostname, os, arch, facts, labels, first_seen, last_seen, status`
+const deviceColumns = `id, name, hostname, os, arch, facts, labels, first_seen, last_seen, status, boot_time`
 
 func scanDevice(row interface{ Scan(...any) error }) (Device, error) {
 	var (
 		d                   Device
 		facts, labels       string
 		firstSeen, lastSeen int64
+		bootTime            sql.NullInt64
 	)
 	if err := row.Scan(&d.ID, &d.Name, &d.Hostname, &d.OS, &d.Arch, &facts, &labels,
-		&firstSeen, &lastSeen, &d.Status); err != nil {
+		&firstSeen, &lastSeen, &d.Status, &bootTime); err != nil {
 		return Device{}, err
 	}
 	d.Facts = json.RawMessage(facts)
@@ -113,7 +116,18 @@ func scanDevice(row interface{ Scan(...any) error }) (Device, error) {
 	}
 	d.FirstSeen = fromMillis(firstSeen)
 	d.LastSeen = fromMillis(lastSeen)
+	if bootTime.Valid {
+		d.BootTime = fromMillis(bootTime.Int64)
+	}
 	return d, nil
+}
+
+// nullMillis is t in unix milliseconds, or NULL if t is zero.
+func nullMillis(t time.Time) sql.NullInt64 {
+	if t.IsZero() {
+		return sql.NullInt64{}
+	}
+	return sql.NullInt64{Int64: toMillis(t), Valid: true}
 }
 
 func marshalLabels(l map[string]string) (string, error) {

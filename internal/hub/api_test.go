@@ -220,6 +220,38 @@ func TestAPILogin(t *testing.T) {
 	}
 }
 
+func TestDeviceJSONBootTime(t *testing.T) {
+	boot := time.Date(2026, 11, 17, 8, 30, 0, 0, time.UTC)
+	tests := []struct {
+		name string
+		boot time.Time
+		want string // raw JSON of boot_time
+	}{
+		{"unknown is null", time.Time{}, `null`},
+		{"known is RFC 3339", boot, `"2026-11-17T08:30:00Z"`},
+		{"milliseconds are kept", boot.Add(250 * time.Millisecond), `"2026-11-17T08:30:00.25Z"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b, err := json.Marshal(deviceJSON(store.Device{ID: "pi", BootTime: tt.boot}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var fields map[string]json.RawMessage
+			if err := json.Unmarshal(b, &fields); err != nil {
+				t.Fatal(err)
+			}
+			got, ok := fields["boot_time"]
+			if !ok {
+				t.Fatalf("boot_time missing from %s", b)
+			}
+			if string(got) != tt.want {
+				t.Errorf("boot_time = %s, want %s", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestAPISessionLifecycle(t *testing.T) {
 	f := newAPIFixture(t, true)
 	enrollDevice(t, f.st, "pi")
