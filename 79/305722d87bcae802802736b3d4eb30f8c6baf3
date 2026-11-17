@@ -1,0 +1,21 @@
+internal/hub/registry.go
+  s_815aef767535ea::t_2b7ed7fdc4784f 208
+  s_815aef767535ea::t_f35c70e0053733 234-237
+  s_815aef767535ea::t_4b5cd89c5506a5 145
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "79305722d87bcae802802736b3d4eb30f8c6baf3",
+  "prompts": {},
+  "sessions": {
+    "s_815aef767535ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1866255a-7d59-4f07-869c-b29b78c7a98d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
