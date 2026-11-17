@@ -23,14 +23,16 @@ var ErrNotEnrolled = errors.New("agent is not enrolled: run `hearth agent join` 
 
 // identity is what `hearth agent join` left in the data dir.
 type identity struct {
-	hubURL   *url.URL
+	hubURL   *url.URL // the URL given to join
+	hubs     []string // every known hub, in the order to try them; hubURL included
 	deviceID string
 	tls      *tls.Config
 }
 
-// loadIdentity reads the agent key, certificate, hub CA and hub URL from dataDir
-// and builds the mTLS client config: the hub is verified against the stored CA
-// under the host name from its URL, and the agent certificate is presented.
+// loadIdentity reads the agent key, certificate, hub CA, hub URL and hub list
+// from dataDir and builds the mTLS client config: each hub is verified against
+// the stored CA under the host name from its URL (the transport fills in
+// ServerName per connection), and the agent certificate is presented.
 func loadIdentity(dataDir string) (*identity, error) {
 	for _, f := range []string{CertFile, KeyFile, CAFile, HubURLFile} {
 		if _, err := os.Stat(filepath.Join(dataDir, f)); errors.Is(err, os.ErrNotExist) {
@@ -65,16 +67,20 @@ func loadIdentity(dataDir string) (*identity, error) {
 	if err != nil {
 		return nil, err
 	}
+	known, err := readHubs(dataDir)
+	if err != nil {
+		return nil, err
+	}
 
 	roots := x509.NewCertPool()
 	roots.AddCert(ca)
 	return &identity{
 		hubURL:   u,
+		hubs:     mergeHubs(known, []string{u.String()}),
 		deviceID: deviceID,
 		tls: &tls.Config{
 			MinVersion:   tls.VersionTLS13,
 			RootCAs:      roots,
-			ServerName:   u.Hostname(),
 			Certificates: []tls.Certificate{pair},
 		},
 	}, nil

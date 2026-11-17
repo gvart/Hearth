@@ -29,6 +29,7 @@ type AgentStream struct {
 	log               *slog.Logger
 	heartbeatInterval time.Duration
 	registry          *Registry
+	leadership        Leadership
 	now               func() time.Time
 }
 
@@ -36,17 +37,23 @@ var _ agentv1connect.AgentServiceHandler = (*AgentStream)(nil)
 
 // NewAgentStream returns an AgentService handler that reports to reg.
 func NewAgentStream(log *slog.Logger, heartbeatInterval time.Duration, reg *Registry) *AgentStream {
-	return &AgentStream{log: log, heartbeatInterval: heartbeatInterval, registry: reg, now: time.Now}
+	return &AgentStream{log: log, heartbeatInterval: heartbeatInterval, registry: reg, leadership: soloLeadership{}, now: time.Now}
 }
 
 // Connect serves one agent stream: it requires a Hello first, checks the protocol
 // version, replies Welcome, then consumes messages until the agent hangs up.
+// A hub that is not the cluster leader refuses the stream before reading it,
+// with a NotLeader detail naming the leader.
 // The device is identified by its client certificate; the device_id in Hello is
 // never trusted.
 func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[agentv1.AgentMessage, agentv1.HubMessage]) error {
 	deviceID, ok := deviceIDFrom(ctx)
 	if !ok {
 		return connect.NewError(connect.CodeUnauthenticated, errors.New("no device identity"))
+	}
+	if !s.leadership.IsLeader() {
+		s.log.DebugContext(ctx, "agent refused: not the leader", "device_id", deviceID)
+		return notLeaderError(s.leadership)
 	}
 	first, err := stream.Receive()
 	if err != nil {
@@ -74,6 +81,7 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 	welcome := &agentv1.HubMessage{Payload: &agentv1.HubMessage_Welcome{Welcome: &agentv1.Welcome{
 		ServerTime:        timestamppb.New(s.now()),
 		HeartbeatInterval: durationpb.New(s.heartbeatInterval),
+		Hubs:              s.leadership.AgentURLs(),
 	}}}
 	if err := stream.Send(welcome); err != nil {
 		return fmt.Errorf("send welcome to %s: %w", deviceID, err)

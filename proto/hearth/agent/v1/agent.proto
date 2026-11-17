@@ -100,6 +100,20 @@ message ExecResult {}
 message Welcome {
   google.protobuf.Timestamp server_time = 1;
   google.protobuf.Duration heartbeat_interval = 2;
+  // hubs are the agent-facing URLs (https://host:port) of every hub in the
+  // cluster, the leader included. Agents keep them to fail over between hubs.
+  // A single hub lists only itself, or nothing when it does not know its URL.
+  repeated string hubs = 3;
+}
+
+// NotLeader is the error detail a hub that is not the cluster leader attaches
+// when it refuses AgentService.Connect or EnrollService.Enroll, with code
+// FAILED_PRECONDITION. Only the leader serves agents and enrollment.
+message NotLeader {
+  // leader_url is the leader's agent-facing URL, or empty while no leader is known.
+  string leader_url = 1;
+  // hubs are the agent-facing URLs of every hub in the cluster, as in Welcome.
+  repeated string hubs = 2;
 }
 
 // ExecRequest asks the agent to run an action. Stub: fields arrive with exec support.

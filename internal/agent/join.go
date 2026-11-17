@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 
@@ -32,7 +33,9 @@ var ErrAlreadyEnrolled = errors.New("agent is already enrolled")
 // Join enrolls this device with the hub at hubURL using a token string, and
 // writes the resulting key (0600), certificate, hub CA and hub URL into dataDir. The hub
 // is pinned by the CA fingerprint in the token before the secret is sent.
-// It returns the device ID assigned by the hub.
+// If the hub is a follower that names the cluster leader, Join enrolls with
+// the leader instead (once) and also stores the hubs it learned in HubsFile;
+// hub_url stays hubURL. It returns the device ID assigned by the hub.
 func Join(ctx context.Context, hubURL, token, dataDir, hostname string) (string, error) {
 	tok, err := pki.ParseToken(token)
 	if err != nil {
@@ -56,21 +59,24 @@ func Join(ctx context.Context, hubURL, token, dataDir, hostname string) (string,
 		return "", err
 	}
 
-	transport := &http.Transport{TLSClientConfig: pki.PinnedTLSConfig(tok.CAFingerprint, u.Hostname())}
-	defer transport.CloseIdleConnections()
-	client := agentv1connect.NewEnrollServiceClient(&http.Client{Transport: transport}, u.String())
-	resp, err := client.Enroll(ctx, connect.NewRequest(&agentv1.EnrollRequest{
-		TokenSecret: tok.Secret,
-		Csr:         csr,
-		Hostname:    hostname,
-	}))
+	req := &agentv1.EnrollRequest{TokenSecret: tok.Secret, Csr: csr, Hostname: hostname}
+	enrolledWith := u
+	resp, err := enroll(ctx, u, tok.CAFingerprint, req)
+	var hubs []string
+	if nl := notLeader(err); nl != nil {
+		if leader, perr := parseHubURL(nl.GetLeaderUrl()); perr == nil && leader.String() != u.String() {
+			enrolledWith = leader
+			hubs = mergeHubs([]string{leader.String()}, nl.GetHubs(), []string{u.String()})
+			resp, err = enroll(ctx, leader, tok.CAFingerprint, req)
+		}
+	}
 	if err != nil {
-		return "", fmt.Errorf("enroll with %s: %w", u.Host, err)
+		return "", err
 	}
 
 	ca, cert, err := checkResponse(resp.Msg, tok.CAFingerprint, key.Public())
 	if err != nil {
-		return "", fmt.Errorf("enroll with %s: %w", u.Host, err)
+		return "", fmt.Errorf("enroll with %s: %w", enrolledWith.Host, err)
 	}
 
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {
@@ -78,7 +84,7 @@ func Join(ctx context.Context, hubURL, token, dataDir, hostname string) (string,
 	}
 	// The certificate is written last: its presence marks the agent as enrolled,
 	// so leftovers from an interrupted join are safe to replace.
-	for _, f := range []string{KeyFile, CAFile, HubURLFile} {
+	for _, f := range []string{KeyFile, CAFile, HubURLFile, HubsFile} {
 		if err := os.Remove(filepath.Join(dataDir, f)); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return "", fmt.Errorf("remove stale %s: %w", f, err)
 		}
@@ -92,10 +98,28 @@ func Join(ctx context.Context, hubURL, token, dataDir, hostname string) (string,
 	if err := writeHubURL(dataDir, u); err != nil {
 		return "", err
 	}
+	if len(hubs) > 0 {
+		if err := writeHubs(dataDir, hubs); err != nil {
+			return "", err
+		}
+	}
 	if err := pki.WriteCertFile(certPath, cert); err != nil {
 		return "", err
 	}
 	return resp.Msg.GetDeviceId(), nil
+}
+
+// enroll sends req to the hub at u, verifying the hub against the pinned CA
+// fingerprint before the token secret is sent.
+func enroll(ctx context.Context, u *url.URL, fp [32]byte, req *agentv1.EnrollRequest) (*connect.Response[agentv1.EnrollResponse], error) {
+	transport := &http.Transport{TLSClientConfig: pki.PinnedTLSConfig(fp, u.Hostname())}
+	defer transport.CloseIdleConnections()
+	client := agentv1connect.NewEnrollServiceClient(&http.Client{Transport: transport}, u.String())
+	resp, err := client.Enroll(ctx, connect.NewRequest(req))
+	if err != nil {
+		return nil, fmt.Errorf("enroll with %s: %w", u.Host, err)
+	}
+	return resp, nil
 }
 
 // checkResponse makes sure the hub returned the pinned CA and a client

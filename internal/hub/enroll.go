@@ -29,18 +29,24 @@ type Enroller struct {
 	ca     *pki.CA
 	policy *policy.Engine
 	log    *slog.Logger
-	now    func() time.Time
+	// leadership: only the cluster leader enrolls devices.
+	leadership Leadership
+	now        func() time.Time
 }
 
 var _ agentv1connect.EnrollServiceHandler = (*Enroller)(nil)
 
 // NewEnroller returns an EnrollService handler.
 func NewEnroller(st *store.Store, ca *pki.CA, pol *policy.Engine, log *slog.Logger) *Enroller {
-	return &Enroller{store: st, ca: ca, policy: pol, log: log, now: time.Now}
+	return &Enroller{store: st, ca: ca, policy: pol, log: log, leadership: soloLeadership{}, now: time.Now}
 }
 
 // Enroll consumes a token and issues a client certificate for a new device.
+// A hub that is not the cluster leader refuses with a NotLeader detail.
 func (e *Enroller) Enroll(ctx context.Context, req *connect.Request[agentv1.EnrollRequest]) (*connect.Response[agentv1.EnrollResponse], error) {
+	if !e.leadership.IsLeader() {
+		return nil, notLeaderError(e.leadership)
+	}
 	msg := req.Msg
 	if msg.GetTokenSecret() == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("token is required"))
