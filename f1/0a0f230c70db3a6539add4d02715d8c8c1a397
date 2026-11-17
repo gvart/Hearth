@@ -1,0 +1,47 @@
+cmd/hearth/hub.go
+  s_815aef767535ea::t_fc10384aa08f3f 226-227
+internal/cluster/events_test.go
+  s_815aef767535ea::t_3e6e26f6117ed2 117-121
+  s_815aef767535ea::t_53db3ba71315c2 384
+  s_815aef767535ea::t_40108aaa65b906 1-116,122-129,131-383,385-387
+  s_815aef767535ea::t_f638e0593c634b 130
+internal/cluster/hub_test.go
+  s_815aef767535ea::t_5aa3df98a274b6 280,283-284,286
+  s_815aef767535ea::t_7f2ec8715090b4 116
+  s_815aef767535ea::t_20f36e3c4dac92 261-262
+internal/cluster/fsm.go
+  s_815aef767535ea::t_e86743ee2feafa 13,30-45,52-55,63-83,102-104,164-166
+internal/cluster/node.go
+  s_815aef767535ea::t_e86743ee2feafa 14,121-123,206,237,383-392
+  s_815aef767535ea::t_a8a006081dcb15 393-394
+internal/hub/applied.go
+  s_815aef767535ea::t_d085fee000018f 1-68
+internal/cluster/fsm_test.go
+  s_815aef767535ea::t_6b6b704ecddca6 32,68
+internal/hub/registry.go
+  s_815aef767535ea::t_86678199327a98 555-571
+internal/cluster/leader_test.go
+  s_815aef767535ea::t_89573d274eba7d 449-450
+  s_815aef767535ea::t_ae8171e6095f4d 58-67,69-71,79-80,82-83,85-89,91-92,455-458
+  s_815aef767535ea::t_5bfad9db835ed8 416-420
+  s_815aef767535ea::t_4326299288fbe1 459-460
+internal/hub/applied_test.go
+  s_815aef767535ea::t_d4dcc75de2422e 42,46-50
+  s_815aef767535ea::t_4e7914ab94efc2 1-41,43-45,51-95
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f10a0f230c70db3a6539add4d02715d8c8c1a397",
+  "prompts": {},
+  "sessions": {
+    "s_815aef767535ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1866255a-7d59-4f07-869c-b29b78c7a98d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
