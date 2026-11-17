@@ -67,7 +67,7 @@ test/e2e/              end-to-end tests (compose: hub + agents)
 task build        # build web + binary
 task test         # go test ./... -race
 task lint         # golangci-lint + eslint + tsc
-task proto        # buf generate
+task proto        # buf lint + buf generate (into internal/proto)
 task e2e          # compose-based end-to-end tests
 task dev          # hub with hot-reloading web UI
 ```

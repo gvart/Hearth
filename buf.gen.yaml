@@ -1,0 +1,16 @@
+# https://buf.build/docs/configuration/v2/buf-gen-yaml
+# Plugins are pinned in go.mod `tool` directives and run via `go tool`.
+version: v2
+managed:
+  enabled: true
+  override:
+    - file_option: go_package_prefix
+      value: github.com/gvart/hearth/internal/proto
+clean: true
+plugins:
+  - local: ["go", "tool", "protoc-gen-go"]
+    out: internal/proto
+    opt: paths=source_relative
+  - local: ["go", "tool", "protoc-gen-connect-go"]
+    out: internal/proto
+    opt: paths=source_relative

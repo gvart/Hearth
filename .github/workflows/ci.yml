@@ -45,6 +45,34 @@ jobs:
         run: |
           go mod tidy -diff
 
+  proto:
+    name: Proto
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # `buf breaking` compares against main
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - uses: bufbuild/buf-action@v1
+        with:
+          setup_only: true
+      - run: buf lint
+      - name: buf breaking (against main)
+        run: |
+          # Nothing to compare against until main has .proto sources.
+          if git ls-tree -r --name-only origin/main -- proto | grep -q '\.proto$'; then
+            buf breaking --against "https://github.com/${GITHUB_REPOSITORY}.git#branch=main"
+          else
+            echo "main has no .proto files yet; skipping"
+          fi
+      - name: Generated code is up to date
+        run: |
+          buf generate
+          git diff --exit-code -- internal/proto
+          test -z "$(git status --porcelain -- internal/proto)"
+
   test:
     name: Test
     runs-on: ubuntu-latest

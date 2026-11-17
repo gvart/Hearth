@@ -1,0 +1,107 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+syntax = "proto3";
+
+package hearth.agent.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+// AgentService is the channel between an agent and the hub. Agents always dial out;
+// the hub never connects to a device.
+service AgentService {
+  // Connect opens the agent's long-lived stream. The first AgentMessage must be a Hello.
+  rpc Connect(stream AgentMessage) returns (stream HubMessage);
+}
+
+// AgentMessage is anything an agent sends to the hub.
+message AgentMessage {
+  oneof payload {
+    Hello hello = 1;
+    Heartbeat heartbeat = 2;
+    MetricsBatch metrics_batch = 3;
+    ExecResult exec_result = 4;
+  }
+}
+
+// HubMessage is anything the hub sends to an agent.
+message HubMessage {
+  oneof payload {
+    Welcome welcome = 1;
+    ExecRequest exec_request = 2;
+    Ping ping = 3;
+  }
+}
+
+// ProtocolVersion is the agent<->hub protocol version. A major bump is incompatible;
+// the hub rejects majors it does not know.
+message ProtocolVersion {
+  uint32 major = 1;
+  uint32 minor = 2;
+}
+
+// Hello is the first message on every stream: who the device is and what it can do.
+message Hello {
+  ProtocolVersion protocol_version = 1;
+  string device_id = 2;
+  string hostname = 3;
+  string os = 4;
+  string arch = 5;
+  string kernel = 6;
+  string cpu_model = 7;
+  uint32 cpu_cores = 8;
+  uint64 mem_total_bytes = 9;
+  repeated Disk disks = 10;
+  repeated NetworkInterface interfaces = 11;
+  string agent_version = 12;
+  repeated string capabilities = 13;
+}
+
+// Disk is a mounted filesystem.
+message Disk {
+  string device = 1;
+  string mountpoint = 2;
+  string fstype = 3;
+  uint64 total_bytes = 4;
+}
+
+// NetworkInterface is a network interface and its addresses.
+message NetworkInterface {
+  string name = 1;
+  string mac = 2;
+  repeated string ips = 3;
+}
+
+// Heartbeat tells the hub the agent is alive.
+message Heartbeat {
+  google.protobuf.Timestamp ts = 1;
+  google.protobuf.Duration uptime = 2;
+}
+
+// MetricsBatch carries metric samples collected since the last batch.
+message MetricsBatch {
+  repeated MetricSample samples = 1;
+}
+
+// MetricSample is a single metric observation.
+message MetricSample {
+  string name = 1;
+  map<string, string> labels = 2;
+  double value = 3;
+  google.protobuf.Timestamp ts = 4;
+}
+
+// ExecResult is the outcome of an ExecRequest. Stub: fields arrive with exec support.
+message ExecResult {}
+
+// Welcome acknowledges a Hello.
+message Welcome {
+  google.protobuf.Timestamp server_time = 1;
+  google.protobuf.Duration heartbeat_interval = 2;
+}
+
+// ExecRequest asks the agent to run an action. Stub: fields arrive with exec support.
+message ExecRequest {}
+
+// Ping checks the stream is alive.
+message Ping {}

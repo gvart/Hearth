@@ -41,10 +41,10 @@ tasks:
       - npm --prefix web run typecheck
 
   proto:
-    desc: Generate protobuf/Connect code with buf (placeholder until T2)
+    desc: Lint .proto sources and generate protobuf/Connect code into internal/proto with buf
     cmds:
-      - echo "No .proto sources yet; buf generate arrives with T2."
-    silent: true
+      - buf lint
+      - buf generate
 
   e2e:
     desc: Run compose-based end-to-end tests (placeholder until T10)
