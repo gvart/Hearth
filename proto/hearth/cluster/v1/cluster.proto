@@ -16,6 +16,11 @@ service ClusterService {
   // Promote makes a joined hub a voter. The caller authenticates with the hub
   // node certificate it received from Join.
   rpc Promote(PromoteRequest) returns (PromoteResponse);
+  // Forward proposes a store write on behalf of a follower hub, which cannot
+  // propose to the Raft log itself. The caller authenticates with its hub
+  // node certificate. The write's policy decision and audit entry were made
+  // on the hub that received the user's request; this is only replication.
+  rpc Forward(ForwardRequest) returns (ForwardResponse);
 }
 
 // JoinRequest describes the hub that wants to join.
@@ -56,3 +61,21 @@ message PromoteRequest {
 
 // PromoteResponse is empty: success means the hub is a voter.
 message PromoteResponse {}
+
+// ForwardRequest carries one store command.
+message ForwardRequest {
+  // command is the command as encoded by the store (a versioned JSON
+  // envelope), exactly the bytes that go into the Raft log.
+  bytes command = 1;
+}
+
+// ForwardResponse is the outcome of applying the command on the leader.
+message ForwardResponse {
+  // result is the store result as JSON; empty when error_message is set.
+  bytes result = 1;
+  // error_kind names a known store error (not_found, token_used,
+  // token_expired); empty for any other error.
+  string error_kind = 2;
+  // error_message is set when applying the command failed.
+  string error_message = 3;
+}

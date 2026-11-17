@@ -165,12 +165,11 @@ func (s *JoinServer) Promote(ctx context.Context, req *connect.Request[clusterv1
 		return nil, s.notLeaderError()
 	}
 	id := req.Msg.GetNodeId()
-	cs, _ := ctx.Value(tlsStateKey{}).(*tls.ConnectionState)
-	if cs == nil || len(cs.VerifiedChains) == 0 {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("hub node certificate required"))
+	certID, err := peerHubID(ctx)
+	if err != nil {
+		return nil, err
 	}
-	certID, err := pki.HubNodeID(cs.VerifiedChains[0][0])
-	if err != nil || certID != id {
+	if certID != id {
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("certificate does not belong to this node"))
 	}
 	err = s.policy.Do(ctx, policy.Request{

@@ -7,7 +7,9 @@
 // log entry with store.DecodeCommand and applies it with Store.ApplyLocal, and
 // raft snapshots are Store.Snapshot / Store.Restore. A Node is the store's
 // Applier: on the leader it proposes the encoded command and returns what the
-// state machine returned; on a follower it fails with *ErrNotLeader.
+// state machine returned; on a follower Apply fails with *ErrNotLeader, and
+// ApplyOrForward (what a hub binds with BindForwarding) sends the command to
+// the leader's ClusterService.Forward instead.
 //
 // Hubs talk Raft over TCP with mutual TLS. Every node presents a hub node
 // certificate issued by the hub CA (URI SAN urn:hearth:hub:<node-id>) and

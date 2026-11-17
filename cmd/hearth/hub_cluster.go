@@ -74,8 +74,10 @@ func (o clusterOptions) advertiseAddr() (string, error) {
 // node. First, if asked to join and not joined yet, it runs the join: the
 // node certificate and the cluster's CA, key included, land in the data dir.
 // A member never migrates its database on its own: once it holds Raft state,
-// the store must already be at this binary's schema version.
-func startClusterNode(ctx context.Context, opts hubOptions, log *slog.Logger, onFatal func(error)) (
+// the store must already be at this binary's schema version. The store's
+// writes go through the node: proposed on the leader, forwarded to it on a
+// follower. agentURL is this hub's agent-facing URL and agentPort its port.
+func startClusterNode(ctx context.Context, opts hubOptions, log *slog.Logger, onFatal func(error), agentURL, agentPort string) (
 	*store.Store, *pki.CA, *cluster.Node, error,
 ) {
 	o := opts.cluster
@@ -118,12 +120,12 @@ func startClusterNode(ctx context.Context, opts hubOptions, log *slog.Logger, on
 	}
 	node, err := cluster.New(cluster.Config{
 		DataDir: opts.dataDir, NodeID: nodeID, Listen: o.raftListen, Advertise: advertise,
-		CA: ca, Bootstrap: o.form, Log: log, OnFatal: onFatal,
+		CA: ca, Bootstrap: o.form, Log: log, OnFatal: onFatal, AgentURL: agentURL, AgentPort: agentPort,
 	})
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	storeOpts := []store.Option{store.WithApplier(node.Bind)}
+	storeOpts := []store.Option{store.WithApplier(node.BindForwarding)}
 	if !firstStart {
 		storeOpts = append(storeOpts, store.WithoutUpgrade())
 	}
@@ -138,11 +140,6 @@ func startClusterNode(ctx context.Context, opts hubOptions, log *slog.Logger, on
 	if err := node.Start(ctx); err != nil {
 		_ = st.Close()
 		return nil, nil, nil, err
-	}
-	waitCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	if err := node.WaitReady(waitCtx); err != nil {
-		log.WarnContext(ctx, "no cluster leader yet; serving reads from local state", "err", err)
 	}
 	return st, ca, node, nil
 }

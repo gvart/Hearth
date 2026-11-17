@@ -39,6 +39,8 @@ const (
 	ClusterServiceJoinProcedure = "/hearth.cluster.v1.ClusterService/Join"
 	// ClusterServicePromoteProcedure is the fully-qualified name of the ClusterService's Promote RPC.
 	ClusterServicePromoteProcedure = "/hearth.cluster.v1.ClusterService/Promote"
+	// ClusterServiceForwardProcedure is the fully-qualified name of the ClusterService's Forward RPC.
+	ClusterServiceForwardProcedure = "/hearth.cluster.v1.ClusterService/Forward"
 )
 
 // ClusterServiceClient is a client for the hearth.cluster.v1.ClusterService service.
@@ -51,6 +53,11 @@ type ClusterServiceClient interface {
 	// Promote makes a joined hub a voter. The caller authenticates with the hub
 	// node certificate it received from Join.
 	Promote(context.Context, *connect.Request[v1.PromoteRequest]) (*connect.Response[v1.PromoteResponse], error)
+	// Forward proposes a store write on behalf of a follower hub, which cannot
+	// propose to the Raft log itself. The caller authenticates with its hub
+	// node certificate. The write's policy decision and audit entry were made
+	// on the hub that received the user's request; this is only replication.
+	Forward(context.Context, *connect.Request[v1.ForwardRequest]) (*connect.Response[v1.ForwardResponse], error)
 }
 
 // NewClusterServiceClient constructs a client for the hearth.cluster.v1.ClusterService service. By
@@ -76,6 +83,12 @@ func NewClusterServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(clusterServiceMethods.ByName("Promote")),
 			connect.WithClientOptions(opts...),
 		),
+		forward: connect.NewClient[v1.ForwardRequest, v1.ForwardResponse](
+			httpClient,
+			baseURL+ClusterServiceForwardProcedure,
+			connect.WithSchema(clusterServiceMethods.ByName("Forward")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -83,6 +96,7 @@ func NewClusterServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 type clusterServiceClient struct {
 	join    *connect.Client[v1.JoinRequest, v1.JoinResponse]
 	promote *connect.Client[v1.PromoteRequest, v1.PromoteResponse]
+	forward *connect.Client[v1.ForwardRequest, v1.ForwardResponse]
 }
 
 // Join calls hearth.cluster.v1.ClusterService.Join.
@@ -95,6 +109,11 @@ func (c *clusterServiceClient) Promote(ctx context.Context, req *connect.Request
 	return c.promote.CallUnary(ctx, req)
 }
 
+// Forward calls hearth.cluster.v1.ClusterService.Forward.
+func (c *clusterServiceClient) Forward(ctx context.Context, req *connect.Request[v1.ForwardRequest]) (*connect.Response[v1.ForwardResponse], error) {
+	return c.forward.CallUnary(ctx, req)
+}
+
 // ClusterServiceHandler is an implementation of the hearth.cluster.v1.ClusterService service.
 type ClusterServiceHandler interface {
 	// Join consumes a join token, signs the new hub's CSR and hands it the CA,
@@ -105,6 +124,11 @@ type ClusterServiceHandler interface {
 	// Promote makes a joined hub a voter. The caller authenticates with the hub
 	// node certificate it received from Join.
 	Promote(context.Context, *connect.Request[v1.PromoteRequest]) (*connect.Response[v1.PromoteResponse], error)
+	// Forward proposes a store write on behalf of a follower hub, which cannot
+	// propose to the Raft log itself. The caller authenticates with its hub
+	// node certificate. The write's policy decision and audit entry were made
+	// on the hub that received the user's request; this is only replication.
+	Forward(context.Context, *connect.Request[v1.ForwardRequest]) (*connect.Response[v1.ForwardResponse], error)
 }
 
 // NewClusterServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -126,12 +150,20 @@ func NewClusterServiceHandler(svc ClusterServiceHandler, opts ...connect.Handler
 		connect.WithSchema(clusterServiceMethods.ByName("Promote")),
 		connect.WithHandlerOptions(opts...),
 	)
+	clusterServiceForwardHandler := connect.NewUnaryHandler(
+		ClusterServiceForwardProcedure,
+		svc.Forward,
+		connect.WithSchema(clusterServiceMethods.ByName("Forward")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/hearth.cluster.v1.ClusterService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ClusterServiceJoinProcedure:
 			clusterServiceJoinHandler.ServeHTTP(w, r)
 		case ClusterServicePromoteProcedure:
 			clusterServicePromoteHandler.ServeHTTP(w, r)
+		case ClusterServiceForwardProcedure:
+			clusterServiceForwardHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -147,4 +179,8 @@ func (UnimplementedClusterServiceHandler) Join(context.Context, *connect.Request
 
 func (UnimplementedClusterServiceHandler) Promote(context.Context, *connect.Request[v1.PromoteRequest]) (*connect.Response[v1.PromoteResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hearth.cluster.v1.ClusterService.Promote is not implemented"))
+}
+
+func (UnimplementedClusterServiceHandler) Forward(context.Context, *connect.Request[v1.ForwardRequest]) (*connect.Response[v1.ForwardResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hearth.cluster.v1.ClusterService.Forward is not implemented"))
 }

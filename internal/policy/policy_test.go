@@ -183,7 +183,8 @@ func TestEngineDoAuditFailure(t *testing.T) {
 			"create token: forward: " + store.ErrUnavailable.Error() + " (the audit entry was not written either)",
 		},
 		{
-			"different causes both kept", store.ErrTokenUsed, disk, []error{store.ErrTokenUsed, disk},
+			"different causes both kept", store.ErrTokenUsed, disk,
+			[]error{store.ErrTokenUsed, disk},
 			store.ErrTokenUsed.Error() + "\naudit token.create: disk full",
 		},
 	}

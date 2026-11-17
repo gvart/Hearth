@@ -81,6 +81,14 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if err := os.MkdirAll(opts.dataDir, 0o700); err != nil {
 		return fmt.Errorf("create data dir: %w", err)
 	}
+	hosts := opts.hosts
+	if len(hosts) == 0 {
+		hosts = []string{hostnameOr("localhost"), "localhost", "127.0.0.1", "::1"}
+	}
+	var agentPort string
+	if _, port, err := net.SplitHostPort(opts.listen); err == nil && port != "0" {
+		agentPort = port
+	}
 	// A Raft node that fails to apply a committed write stops the hub.
 	fatal := make(chan error, 1)
 	var (
@@ -90,7 +98,12 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		err  error
 	)
 	if opts.cluster.clustered(opts.dataDir) {
-		st, ca, node, err = startClusterNode(ctx, opts, log, func(err error) { fatal <- err })
+		// Agents and other hubs reach this hub by its first --host name.
+		var agentURL string
+		if agentPort != "" {
+			agentURL = "https://" + net.JoinHostPort(hosts[0], agentPort)
+		}
+		st, ca, node, err = startClusterNode(ctx, opts, log, func(err error) { fatal <- err }, agentURL, agentPort)
 		if err != nil {
 			return err
 		}
@@ -107,20 +120,18 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		}
 	}
 	now := time.Now()
-	hosts := opts.hosts
-	if len(hosts) == 0 {
-		hosts = []string{hostnameOr("localhost"), "localhost", "127.0.0.1", "::1"}
-	}
 	serverCert, err := ca.IssueServerCert(hosts, now)
 	if err != nil {
 		return err
 	}
 
 	pol := policy.New(st.Audit())
-	if err := ensureAdminPassword(ctx, st, pol, opts, log); err != nil {
-		return err
+	if node == nil {
+		if err := ensureAdminPassword(ctx, st, pol, opts, log); err != nil {
+			return err
+		}
 	}
-	reg := hub.NewRegistry(hub.RegistryConfig{Store: st, Log: log})
+	reg := hub.NewRegistry(hub.RegistryConfig{Store: st, Log: log, Replicated: node != nil})
 	// stopping ends agent streams and /events subscriptions as soon as either
 	// server begins shutting down, so Shutdown waits only on ordinary requests
 	// and agents see a clean end of stream and reconnect at once.
@@ -134,10 +145,14 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		HeartbeatInterval: hub.DefaultHeartbeatInterval,
 		Registry:          reg,
 		AgentHosts:        hosts,
+		AgentPort:         agentPort,
 		Stopping:          stopping,
 	}
-	if _, port, err := net.SplitHostPort(opts.listen); err == nil && port != "0" {
-		cfg.AgentPort = port
+	// ready is closed once a clustered hub has caught up with the cluster.
+	ready := make(chan struct{})
+	if node != nil {
+		cfg.Leadership = node
+		cfg.Ready = ready
 	}
 	if _, port, err := net.SplitHostPort(opts.httpListen); err == nil && port != "0" {
 		cfg.HTTPPort = port
@@ -202,10 +217,35 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	log.InfoContext(ctx, "hub listening", logAttrs...)
 
 	g, gctx := errgroup.WithContext(ctx)
-	g.Go(func() error { return reg.Run(gctx) })
+	if node == nil {
+		g.Go(func() error { return reg.Run(gctx) })
+	}
 	g.Go(func() error { return serve(gctx, agentSrv, func() error { return agentSrv.ServeTLS(agentLn, "", "") }) })
 	g.Go(func() error { return serve(gctx, webSrv, func() error { return webSrv.Serve(webLn) }) })
 	if node != nil {
+		// Presence runs on the leader only and follows leadership.
+		changed := make(chan struct{}, 1)
+		node.OnLeaderChange(func(cluster.LeaderInfo) {
+			select {
+			case changed <- struct{}{}:
+			default:
+			}
+		})
+		g.Go(func() error { return reg.RunReplicated(gctx, node, changed) })
+		g.Go(func() error {
+			if node.WaitReady(gctx) != nil {
+				return nil
+			}
+			close(ready)
+			log.InfoContext(gctx, "caught up with the cluster")
+			// After catching up, so a new member sees the cluster's password
+			// and does not replace it.
+			if err := ensureAdminPassword(gctx, st, pol, opts, log); err != nil {
+				log.ErrorContext(gctx, "HEARTH_ADMIN_PASSWORD not applied", "err", err)
+			}
+			node.Announce(gctx)
+			return nil
+		})
 		g.Go(func() error {
 			return cluster.ServeControl(gctx, opts.dataDir, node, log)
 		})
@@ -264,11 +304,6 @@ func ensureAdminPassword(ctx context.Context, st *store.Store, pol *policy.Engin
 		return nil
 	}
 	if err := hub.SetAdminPassword(ctx, st, pol, "env:HEARTH_ADMIN_PASSWORD", opts.adminPassword); err != nil {
-		var nl *cluster.ErrNotLeader
-		if errors.As(err, &nl) {
-			log.WarnContext(ctx, "HEARTH_ADMIN_PASSWORD not applied: only the cluster leader can set it", "leader_id", nl.LeaderID)
-			return nil
-		}
 		return fmt.Errorf("set admin password from HEARTH_ADMIN_PASSWORD: %w", err)
 	}
 	log.InfoContext(ctx, "admin password set from HEARTH_ADMIN_PASSWORD")

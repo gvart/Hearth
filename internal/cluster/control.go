@@ -74,7 +74,7 @@ func privateSocketDir(dir string) error {
 const maxCommandSize = 1 << 20
 
 // ControlHandler serves the control API: GET /v1/status and POST /v1/apply
-// (an encoded store command, proposed through node).
+// (an encoded store command, proposed through node or forwarded to the leader).
 func ControlHandler(node *Node, log *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/status", func(w http.ResponseWriter, _ *http.Request) {
@@ -96,7 +96,7 @@ func ControlHandler(node *Node, log *slog.Logger) http.Handler {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		res, err := node.Apply(r.Context(), cmd)
+		res, err := node.ApplyOrForward(r.Context(), cmd)
 		out := applyReply{Result: res}
 		if err != nil {
 			out.Error = toWireError(err)
@@ -165,7 +165,18 @@ var wireKinds = map[string]error{
 	"not_found":     store.ErrNotFound,
 	"token_used":    store.ErrTokenUsed,
 	"token_expired": store.ErrTokenExpired,
+	"unavailable":   store.ErrUnavailable,
 }
+
+// kindError is a known store error received over the wire: it keeps the
+// original message and matches its kind with errors.Is.
+type kindError struct {
+	msg    string
+	target error
+}
+
+func (e *kindError) Error() string { return e.msg }
+func (e *kindError) Unwrap() error { return e.target }
 
 func toWireError(err error) *wireError {
 	var nl *ErrNotLeader
@@ -185,7 +196,7 @@ func (e *wireError) toError() error {
 		return &ErrNotLeader{LeaderID: e.LeaderID, LeaderAddr: e.LeaderAddr}
 	}
 	if target, ok := wireKinds[e.Kind]; ok {
-		return target
+		return &kindError{msg: e.Message, target: target}
 	}
 	return errors.New(e.Message)
 }

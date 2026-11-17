@@ -51,7 +51,7 @@ func serveControl(t *testing.T, n *testNode) *ControlClient {
 }
 
 func TestControlSocket(t *testing.T) {
-	nodes := threeNodes(t, newTestCA(t))
+	nodes := threeNodes(t, newTestCA(t), func(c *Config) { c.ForwardWait = 300 * time.Millisecond })
 	leader := leaderOf(t, nodes...)
 	var follower *testNode
 	for _, n := range nodes {
@@ -87,12 +87,13 @@ func TestControlSocket(t *testing.T) {
 		t.Fatalf("Status = %+v, %v", st, err)
 	}
 
-	// On a follower the socket reports who leads.
+	// On a follower the socket forwards to the leader. These nodes serve no
+	// ClusterService (see TestFollowerWritesAreForwarded), so the leader is
+	// unreachable and the write fails as unavailable, in bounded time.
 	fc := serveControl(t, follower)
 	_, err = fc.Apply(ctx, store.MarkOffline{Cutoff: 1})
-	var nl *ErrNotLeader
-	if !errors.As(err, &nl) || nl.LeaderID != leader.ID() {
-		t.Fatalf("follower apply: err = %v, want ErrNotLeader naming %s", err, leader.ID())
+	if !errors.Is(err, store.ErrUnavailable) {
+		t.Fatalf("follower apply without a reachable leader: err = %v, want ErrUnavailable", err)
 	}
 }
 
