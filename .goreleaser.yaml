@@ -1,0 +1,115 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+# Release pipeline (T9). Run by .github/workflows/release.yml on `v*` tags;
+# try it locally with `task release:snapshot`.
+#
+# The archive names below are a contract: deploy/install.sh downloads
+# hearth_<version>_<os>_<arch>.tar.gz and verifies it against checksums.txt.
+version: 2
+
+project_name: hearth
+
+before:
+  hooks:
+    # Same steps as `task build` (web:deps, web:build, web:embed): the web UI
+    # is embedded into the binary, so it has to exist before `go build`.
+    - npm --prefix web ci --no-audit --no-fund
+    - npm --prefix web run build
+    - rm -rf internal/hub/webui/dist
+    - mkdir -p internal/hub/webui/dist
+    - cp -R web/dist/. internal/hub/webui/dist/
+    - touch internal/hub/webui/dist/.gitkeep
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot"
+
+builds:
+  - id: hearth
+    main: ./cmd/hearth
+    binary: hearth
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X main.version=v{{ .Version }}
+      - -X main.commit={{ slice .FullCommit 0 12 }}
+      - -X main.date={{ .Date }}
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64, arm]
+    goarm: ["7"]
+    ignore:
+      - goos: darwin
+        goarch: arm
+      - goos: windows
+        goarch: arm
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - id: hearth
+    ids: [hearth]
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    # hearth_0.1.0_linux_amd64.tar.gz, hearth_0.1.0_linux_armv7.tar.gz, ...
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}
+    files:
+      - LICENSE*
+      - README*
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+dockers_v2:
+  - id: hearth
+    ids: [hearth]
+    dockerfile: Dockerfile
+    images:
+      - ghcr.io/gvart/hearth
+    tags:
+      - "{{ .Tag }}"
+      - "{{ if not .Prerelease }}latest{{ end }}"
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    labels:
+      org.opencontainers.image.title: "{{ .ProjectName }}"
+      org.opencontainers.image.description: Hearth hub, the control plane for homelabs
+      org.opencontainers.image.source: https://github.com/gvart/hearth
+      org.opencontainers.image.licenses: AGPL-3.0-only
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.created: "{{ .Date }}"
+
+changelog:
+  use: git
+  sort: asc
+  filters:
+    exclude:
+      - "^Merge "
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\(.+\))??!?:.+$'
+      order: 0
+    - title: Bug fixes
+      regexp: '^.*?fix(\(.+\))??!?:.+$'
+      order: 1
+    - title: Performance
+      regexp: '^.*?perf(\(.+\))??!?:.+$'
+      order: 2
+    - title: Documentation
+      regexp: '^.*?docs(\(.+\))??!?:.+$'
+      order: 3
+    - title: Other changes
+      order: 999
+
+release:
+  github:
+    owner: gvart
+    name: Hearth
+  # vX.Y.Z-rc.N (any semver pre-release suffix) is published as a pre-release.
+  prerelease: auto

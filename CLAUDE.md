@@ -70,6 +70,7 @@ task lint         # golangci-lint + eslint + tsc
 task proto        # buf lint + buf generate (into internal/proto)
 task e2e          # compose-based end-to-end tests
 task dev          # hub with hot-reloading web UI
+task release:snapshot  # goreleaser snapshot: all archives + image into dist/, no publish
 ```
 
 Keep this list in sync with `Taskfile.yml`. If you add a task, document it here.

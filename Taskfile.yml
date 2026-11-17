@@ -11,6 +11,7 @@ vars:
     sh: date -u +%Y-%m-%dT%H:%M:%SZ
   LDFLAGS: -s -w -X main.version={{.VERSION}} -X main.commit={{.COMMIT}} -X main.date={{.DATE}}
   WEBUI_DIST: internal/hub/webui/dist
+  GORELEASER_VERSION: v2.20.2
 
 tasks:
   default:
@@ -58,6 +59,11 @@ tasks:
     dir: web
     cmds:
       - npm run dev
+
+  release:snapshot:
+    desc: Build all release archives and the image locally with goreleaser, without publishing (pass `-- --skip=docker` without Docker buildx)
+    cmds:
+      - go run github.com/goreleaser/goreleaser/v2@{{.GORELEASER_VERSION}} release --snapshot --clean --skip=publish {{.CLI_ARGS}}
 
   go:build:
     internal: true

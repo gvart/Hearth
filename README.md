@@ -31,6 +31,24 @@ network mappers discover. Nothing **acts**. Hearth adds the missing layer:
 - [ ] Automations (YAML in git) + guardrails + audit log
 - [ ] MCP server, built-in Tailscale (tsnet), installable PWA
 
+## Releases
+
+Tagged releases (`vX.Y.Z`, with `-rc.N` tags marked as pre-releases) publish to
+[GitHub Releases](https://github.com/gvart/hearth/releases):
+
+- `hearth_<version>_<os>_<arch>.tar.gz` for linux (amd64, arm64, armv7) and darwin (amd64, arm64),
+  `hearth_<version>_windows_amd64.zip` for Windows, each with the `hearth` binary at its root;
+- `checksums.txt` with the SHA-256 of every archive.
+
+The hub also ships as a multi-arch (amd64, arm64) container image, distroless and non-root:
+
+```sh
+docker run -d --name hearth -p 7443:7443 -p 7080:7080 -v hearth:/var/lib/hearth ghcr.io/gvart/hearth:<tag>
+```
+
+Port 7443 is for agents (mTLS), 7080 serves the web UI and API; hub state lives in `/var/lib/hearth`.
+`task release:snapshot` builds the same artifacts locally into `dist/` without publishing.
+
 ## Contributing
 
 Early days — issues and ideas welcome. Work is tracked as task specs in [`docs/tasks/`](docs/tasks/).
