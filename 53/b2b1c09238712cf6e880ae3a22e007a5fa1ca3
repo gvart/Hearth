@@ -1,0 +1,36 @@
+test/e2e/e2e_test.go
+  s_815aef767535ea::t_4c7971ce580629 58,116-119,122,124,141-146,148-150,208
+  s_815aef767535ea::t_e7a7c99d78cb2b 180-188,194,222-223,227
+  s_815aef767535ea::t_e9e5ca836a4c68 246-250,259,267
+  s_815aef767535ea::t_df9b918ec15c23 245
+Taskfile.yml
+  s_815aef767535ea::t_0538a397bc1030 53-58
+.github/workflows/ci.yml
+  s_815aef767535ea::t_91c9938dda1d91 170,181-200
+  s_815aef767535ea::t_d1a557f2b90f02 201-202
+CLAUDE.md
+  s_815aef767535ea::t_0538a397bc1030 72-73
+test/e2e/cluster_test.go
+  s_815aef767535ea::t_e7a7c99d78cb2b 353
+  s_815aef767535ea::t_917ecb9f1762f7 38-43,147,183-185,187
+  s_815aef767535ea::t_393a8ad0d530a8 1-37,44-146,148-182,186,188-352,354-365
+test/e2e/cluster.compose.yaml
+  s_815aef767535ea::t_e7a7c99d78cb2b 34-36,43,50
+  s_815aef767535ea::t_70f1f3e339c6bd 1-33,37-42,44-49,51-66
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "53b2b1c09238712cf6e880ae3a22e007a5fa1ca3",
+  "prompts": {},
+  "sessions": {
+    "s_815aef767535ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1866255a-7d59-4f07-869c-b29b78c7a98d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
