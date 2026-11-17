@@ -1,0 +1,22 @@
+docs/cluster.md
+  s_815aef767535ea::t_a4e3918135bb29 104-106
+docs/design/ha-hub.md
+  s_815aef767535ea::t_a4e3918135bb29 329-330,375-413,416-424
+  s_815aef767535ea::t_5b5418c21b4402 414-415
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9a1188de068cd3607116bbd630042be57e2dc7f7",
+  "prompts": {},
+  "sessions": {
+    "s_815aef767535ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1866255a-7d59-4f07-869c-b29b78c7a98d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
