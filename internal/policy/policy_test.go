@@ -53,6 +53,27 @@ func TestEngineDo(t *testing.T) {
 			wantResult:   "actor kind not allowed",
 		},
 		{
+			name:         "web login allowed",
+			req:          Request{ActorKind: ActorWeb, ActorID: "192.0.2.1", Action: AdminLogin},
+			wantRan:      true,
+			wantDecision: Allow,
+			wantResult:   "ok",
+		},
+		{
+			name:         "web client cannot set the admin password",
+			req:          Request{ActorKind: ActorWeb, ActorID: "192.0.2.1", Action: AdminSetPassword},
+			wantErr:      ErrDenied,
+			wantDecision: Deny,
+			wantResult:   "actor kind not allowed",
+		},
+		{
+			name:         "agent token cannot log in",
+			req:          Request{ActorKind: ActorToken, ActorID: "abc", Action: AdminLogin},
+			wantErr:      ErrDenied,
+			wantDecision: Deny,
+			wantResult:   "actor kind not allowed",
+		},
+		{
 			name:         "anonymous actor denied",
 			req:          Request{ActorKind: ActorAdmin, Action: TokenCreate},
 			wantErr:      ErrDenied,

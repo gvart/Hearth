@@ -1,0 +1,108 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package store
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"time"
+)
+
+// ErrSessionExpired is returned for a session that exists but has expired.
+var ErrSessionExpired = errors.New("session expired")
+
+// Admin is the repository for the single admin credential and its web
+// sessions. Callers pass session secrets; only their SHA-256 hashes are stored.
+type Admin struct{ db *sql.DB }
+
+// Admin returns the admin repository.
+func (s *Store) Admin() Admin { return Admin{db: s.db} }
+
+// PasswordHash returns the stored admin password hash, or ErrNotFound if no
+// password has been set.
+func (r Admin) PasswordHash(ctx context.Context) (string, error) {
+	var h string
+	err := r.db.QueryRowContext(ctx, `SELECT password_hash FROM admin WHERE id = 1`).Scan(&h)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", fmt.Errorf("get admin password: %w", ErrNotFound)
+	}
+	if err != nil {
+		return "", fmt.Errorf("get admin password: %w", err)
+	}
+	return h, nil
+}
+
+// SetPasswordHash sets or replaces the admin password hash and ends every
+// session, so a reset locks out whoever held the old password.
+func (r Admin) SetPasswordHash(ctx context.Context, hash string) (err error) {
+	if hash == "" {
+		return errors.New("set admin password: empty hash")
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("set admin password: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+	if _, err = tx.ExecContext(ctx, `
+		INSERT INTO admin (id, password_hash) VALUES (1, ?)
+		ON CONFLICT (id) DO UPDATE SET password_hash = excluded.password_hash`, hash); err != nil {
+		return fmt.Errorf("set admin password: %w", err)
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM sessions`); err != nil {
+		return fmt.Errorf("set admin password: end sessions: %w", err)
+	}
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("set admin password: %w", err)
+	}
+	return nil
+}
+
+// CreateSession stores a session valid until expiresAt and prunes expired ones.
+func (r Admin) CreateSession(ctx context.Context, secret string, now, expiresAt time.Time) error {
+	if secret == "" {
+		return errors.New("create session: empty secret")
+	}
+	if _, err := r.db.ExecContext(ctx, `DELETE FROM sessions WHERE expires_at <= ?`, toMillis(now)); err != nil {
+		return fmt.Errorf("create session: prune: %w", err)
+	}
+	h := hashSecret(secret)
+	if _, err := r.db.ExecContext(ctx,
+		`INSERT INTO sessions (hash, created_at, expires_at) VALUES (?, ?, ?)`,
+		h[:], toMillis(now), toMillis(expiresAt)); err != nil {
+		return fmt.Errorf("create session: %w", err)
+	}
+	return nil
+}
+
+// CheckSession returns the session's expiry if it is valid at now, and
+// ErrNotFound or ErrSessionExpired otherwise.
+func (r Admin) CheckSession(ctx context.Context, secret string, now time.Time) (time.Time, error) {
+	h := hashSecret(secret)
+	var expiresAt int64
+	err := r.db.QueryRowContext(ctx, `SELECT expires_at FROM sessions WHERE hash = ?`, h[:]).Scan(&expiresAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return time.Time{}, fmt.Errorf("check session: %w", ErrNotFound)
+	}
+	if err != nil {
+		return time.Time{}, fmt.Errorf("check session: %w", err)
+	}
+	if expiresAt <= toMillis(now) {
+		return time.Time{}, fmt.Errorf("check session: %w", ErrSessionExpired)
+	}
+	return fromMillis(expiresAt), nil
+}
+
+// DeleteSession ends a session. Deleting an unknown session is not an error.
+func (r Admin) DeleteSession(ctx context.Context, secret string) error {
+	h := hashSecret(secret)
+	if _, err := r.db.ExecContext(ctx, `DELETE FROM sessions WHERE hash = ?`, h[:]); err != nil {
+		return fmt.Errorf("delete session: %w", err)
+	}
+	return nil
+}

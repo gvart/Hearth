@@ -51,7 +51,7 @@ func tableNames(ctx context.Context, t *testing.T, db *sql.DB) []string {
 func TestMigrationsUpDownUp(t *testing.T) {
 	ctx := t.Context()
 	s := openTest(t) // Open runs all migrations up.
-	want := []string{"audit_log", "certs", "devices", "tokens"}
+	want := []string{"admin", "audit_log", "certs", "devices", "sessions", "tokens"}
 	if got := tableNames(ctx, t, s.db); !reflect.DeepEqual(got, want) {
 		t.Fatalf("after up: tables = %v, want %v", got, want)
 	}
