@@ -13,7 +13,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime/pprof"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -166,7 +168,9 @@ func (a *runningAgent) stop(t *testing.T) {
 			t.Errorf("Run returned %v after cancel, want nil", err)
 		}
 	case <-time.After(5 * time.Second):
-		t.Error("Run did not return within 5s of cancel")
+		var dump strings.Builder
+		_ = pprof.Lookup("goroutine").WriteTo(&dump, 1)
+		t.Errorf("Run did not return within 5s of cancel; goroutines:\n%s", dump.String())
 	}
 	a.done = nil
 }
@@ -252,6 +256,28 @@ func TestRunRevokedCertBacksOff(t *testing.T) {
 	if strings.Contains(h.logs.String(), `msg="agent connected"`) {
 		t.Error("revoked agent was let in")
 	}
+}
+
+// TestRunCancelWhileHubStalls covers a hub that opens the stream but never
+// answers Hello: cancellation must still stop the agent.
+func TestRunCancelWhileHubStalls(t *testing.T) {
+	h := startRestartableHub(t, time.Second)
+	_, dataDir := h.join(t)
+	var stalled atomic.Bool
+	h.handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/connect+proto")
+		w.WriteHeader(http.StatusOK)
+		_ = http.NewResponseController(w).Flush()
+		stalled.Store(true)
+		<-r.Context().Done()
+	})
+	h.stop()
+	h.start()
+
+	a := startAgent(t, dataDir)
+	waitFor(t, 5*time.Second, "the agent to reach the stalling hub", stalled.Load)
+	time.Sleep(100 * time.Millisecond) // let it block in Receive
+	a.stop(t)
 }
 
 func TestRunMissingIdentity(t *testing.T) {

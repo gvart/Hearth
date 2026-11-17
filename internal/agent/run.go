@@ -118,7 +118,13 @@ func (r *runner) session(ctx context.Context) (welcomed bool, err error) {
 	if err := stream.Send(&agentv1.AgentMessage{Payload: &agentv1.AgentMessage_Hello{Hello: hello}}); err != nil && !errors.Is(err, io.EOF) {
 		return false, fmt.Errorf("send hello: %w", err)
 	}
+	// A Receive blocked on the hub does not notice cancellation, but the
+	// transport does once the request side is closed. Nothing else sends yet.
+	unwatch := context.AfterFunc(ctx, func() { _ = stream.CloseRequest() })
 	first, err := stream.Receive()
+	if !unwatch() {
+		return false, ctx.Err()
+	}
 	if err != nil {
 		return false, fmt.Errorf("connect: %w", err)
 	}
@@ -179,6 +185,8 @@ func (r *runner) sendLoop(ctx context.Context, stream *connect.BidiStreamForClie
 		var msg *agentv1.AgentMessage
 		select {
 		case <-ctx.Done():
+			// Unblocks receive: see the note in session.
+			_ = stream.CloseRequest()
 			return ctx.Err()
 		case now := <-hb.C:
 			msg = &agentv1.AgentMessage{Payload: &agentv1.AgentMessage_Heartbeat{Heartbeat: r.heartbeat(now)}}
