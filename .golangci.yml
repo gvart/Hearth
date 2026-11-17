@@ -3,6 +3,7 @@ version: "2"
 
 run:
   timeout: 5m
+  build-tags: [e2e] # also lint test/e2e
 
 linters:
   default: standard # errcheck, govet, ineffassign, staticcheck, unused
