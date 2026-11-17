@@ -68,8 +68,32 @@ func NewHandler(cfg Config) http.Handler {
 	stream := NewAgentStream(cfg.Log, cfg.HeartbeatInterval, reg)
 	stream.leadership = lead
 	path, h := agentv1connect.NewAgentServiceHandler(stream)
-	mux.Handle(path, requireClientCert(cfg.Store.Certs(), cfg.Log, EndOnStop(cfg.Stopping, reg.endOnStepDown(h))))
+	mux.Handle(path, requireClientCert(cfg.Store.Certs(), cfg.Log, reg.certAuthority(lead),
+		EndOnStop(cfg.Stopping, reg.endOnStepDown(h))))
 	return mux
+}
+
+// certAuthority returns what a hub that cannot vouch for its own store
+// answers instead of rejecting a client certificate, or nil when it can. A
+// standalone hub always can. A clustered hub can only within a leadership
+// term, which starts after the barrier, so its store holds every committed
+// certificate and revocation. A follower, a hub catching up after a start or a
+// leader taking over may lag the cluster: a certificate it does not know yet,
+// or a revocation it has not seen undone, says nothing about the device. It
+// answers NotLeader (naming the leader) or Unavailable, never Unauthenticated.
+func (r *Registry) certAuthority(lead Leadership) func() error {
+	if !r.replicated {
+		return func() error { return nil }
+	}
+	return func() error {
+		if !lead.IsLeader() {
+			return notLeaderError(lead)
+		}
+		if term := r.currentTerm(); term == nil || term.Err() != nil {
+			return connect.NewError(connect.CodeUnavailable, errors.New("this hub is taking over as the cluster leader; retry shortly"))
+		}
+		return nil
+	}
 }
 
 // errSteppedDown is the cause of an agent stream ended because this hub
@@ -161,8 +185,11 @@ type certChecker interface {
 // requireClientCert admits only requests with a verified client certificate
 // that the hub issued and has not revoked, and puts the device ID it carries
 // into the request context. The store is consulted on every request so
-// revocations by another process (the CLI) take effect immediately.
-func requireClientCert(certs certChecker, log *slog.Logger, next http.Handler) http.Handler {
+// revocations by another process (the CLI) take effect immediately. A
+// certificate the store does not know or has revoked is rejected only when
+// authority returns nil; otherwise its error is the answer (see
+// Registry.certAuthority).
+func requireClientCert(certs certChecker, log *slog.Logger, authority func() error, next http.Handler) http.Handler {
 	errWriter := connect.NewErrorWriter()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -181,7 +208,16 @@ func requireClientCert(certs certChecker, log *slog.Logger, next http.Handler) h
 			return
 		}
 		serial := pki.SerialString(leaf)
-		switch err := certs.Check(ctx, serial, deviceID); {
+		err = certs.Check(ctx, serial, deviceID)
+		if errors.Is(err, store.ErrCertRevoked) || errors.Is(err, store.ErrNotFound) {
+			if aerr := authority(); aerr != nil {
+				log.DebugContext(ctx, "agent certificate not judged: this hub's store may lag the cluster",
+					"device_id", deviceID, "err", aerr)
+				_ = errWriter.Write(w, r, aerr)
+				return
+			}
+		}
+		switch {
 		case errors.Is(err, store.ErrCertRevoked):
 			deny("certificate revoked", "device_id", deviceID, "serial", serial)
 			return

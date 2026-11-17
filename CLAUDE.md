@@ -69,7 +69,8 @@ task build        # build web + binary
 task test         # go test ./... -race
 task lint         # SPDX header check + golangci-lint + eslint + tsc
 task proto        # buf lint + buf generate (into internal/proto)
-task e2e          # compose-based end-to-end tests
+task e2e          # compose-based end-to-end test of the headline demo
+task e2e:cluster  # compose-based end-to-end test of 3-hub cluster failover
 task e2e:install  # install.sh end to end in a Debian 12 container (Docker)
 task dev          # web UI dev server with hot reload (Vite)
 task release:snapshot  # goreleaser snapshot: all archives + image into dist/, no publish

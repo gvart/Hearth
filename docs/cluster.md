@@ -89,6 +89,11 @@ start.
   request and then answers 503 `catching_up`; the UI shows the error and works again once the hub is
   ready, usually within a second or two.
 
+CI holds the cluster to these: an end-to-end test (`task e2e:cluster`, in
+[`test/e2e/cluster_test.go`](../test/e2e/cluster_test.go)) runs three hubs and an agent in Docker
+Compose, kills the leader, takes the majority away and back, and fails if any step takes longer
+than its stated bound.
+
 ## The UI on any hub
 
 Open `https://<any hub>:7443` (or `http://<any hub>:7080`). Logins, token creation and everything else
@@ -124,9 +129,9 @@ the replicated log in order with the action.
 
 ## Limits
 
-- **No member removal yet.** A hub that is gone for good still counts towards the majority; a
-  3-hub cluster with one dead member tolerates no further failure. Rebuilding a hub means a fresh
-  data dir and a new join (with a new node ID).
+- **No member removal yet** ([#29](https://github.com/gvart/hearth/issues/29)). A hub that is gone
+  for good still counts towards the majority; a 3-hub cluster with one dead member tolerates no
+  further failure. Rebuilding a hub means a fresh data dir and a new join (with a new node ID).
 - **No rolling schema upgrades yet** ([#25](https://github.com/gvart/hearth/issues/25)): upgrade all
   hubs to the same version together.
 - All hubs share one CA, and every voter holds its key. Protect each hub's data dir accordingly.

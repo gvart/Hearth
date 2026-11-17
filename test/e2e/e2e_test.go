@@ -55,7 +55,7 @@ var agents = []string{"agent-1", "agent-2"}
 
 func TestHeadlineDemo(t *testing.T) {
 	ctx := t.Context()
-	s := newStack(t)
+	s := newStack(t, "hearth-e2e", "compose.yaml", append([]string{"hub"}, agents...))
 
 	// 1. Start the stack; --wait returns once the hub healthcheck passes.
 	s.compose(ctx, "up", "--detach", "--build", "--wait", "--wait-timeout", "120")
@@ -113,13 +113,15 @@ func TestHeadlineDemo(t *testing.T) {
 
 // stack is one compose project, torn down (with its volumes) when the test ends.
 type stack struct {
-	t       *testing.T
-	project string
+	t        *testing.T
+	project  string
+	file     string   // compose file, relative to this directory
+	services []string // whose logs are dumped on failure
 }
 
-func newStack(t *testing.T) *stack {
+func newStack(t *testing.T, name, file string, services []string) *stack {
 	t.Helper()
-	s := &stack{t: t, project: "hearth-e2e-" + strconv.Itoa(os.Getpid())}
+	s := &stack{t: t, project: name + "-" + strconv.Itoa(os.Getpid()), file: file, services: services}
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
@@ -136,8 +138,16 @@ func newStack(t *testing.T) *stack {
 // run runs `docker compose` on this project and returns its stdout, with
 // stderr folded into the error.
 func (s *stack) run(ctx context.Context, args ...string) (string, error) {
-	args = append([]string{"compose", "--project-name", s.project, "--file", "compose.yaml"}, args...)
+	return s.runEnv(ctx, nil, args...)
+}
+
+// runEnv is run with extra environment variables for compose's interpolation.
+func (s *stack) runEnv(ctx context.Context, env []string, args ...string) (string, error) {
+	args = append([]string{"compose", "--project-name", s.project, "--file", s.file}, args...)
 	cmd := exec.CommandContext(ctx, "docker", args...)
+	if env != nil {
+		cmd.Env = append(os.Environ(), env...)
+	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
@@ -167,14 +177,21 @@ func (s *stack) startAgent(ctx context.Context, name string) {
 // host's clock (the clock the hub stamps last_seen with).
 func (s *stack) startedAt(ctx context.Context, service string) time.Time {
 	s.t.Helper()
-	id := strings.TrimSpace(s.compose(ctx, "ps", "--quiet", service))
-	out, err := exec.CommandContext(ctx, "docker", "inspect", "--format", "{{.State.StartedAt}}", id).Output()
+	return s.containerTime(ctx, service, "{{.State.StartedAt}}")
+}
+
+// containerTime is a time from `docker inspect` (format) of the service's
+// container, stopped or running.
+func (s *stack) containerTime(ctx context.Context, service, format string) time.Time {
+	s.t.Helper()
+	id := strings.TrimSpace(s.compose(ctx, "ps", "--all", "--quiet", service))
+	out, err := exec.CommandContext(ctx, "docker", "inspect", "--format", format, id).Output()
 	if err != nil {
 		s.t.Fatalf("inspect %s: %v", service, err)
 	}
 	ts, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(string(out)))
 	if err != nil {
-		s.t.Fatalf("parse start time of %s: %v", service, err)
+		s.t.Fatalf("parse %s of %s: %v", format, service, err)
 	}
 	return ts
 }
@@ -188,7 +205,7 @@ func (s *stack) dumpLogs(ctx context.Context) {
 		s.t.Logf("create log dir: %v", err)
 		return
 	}
-	for _, svc := range append([]string{"hub"}, agents...) {
+	for _, svc := range s.services {
 		out, err := s.run(ctx, "logs", "--no-color", "--timestamps", svc)
 		if err != nil {
 			out += "\n" + err.Error()
@@ -202,11 +219,12 @@ func (s *stack) dumpLogs(ctx context.Context) {
 	}
 }
 
-// redact hides the enrollment token in command lines that end up in errors.
+// redact hides the enrollment token, which follows the hub URL in
+// `hearth agent join`, in command lines that end up in errors.
 func redact(args []string) []string {
 	out := make([]string, len(args))
 	for i, a := range args {
-		if i > 0 && args[i-1] == hubAgentURL {
+		if i > 0 && strings.HasPrefix(args[i-1], "https://") {
 			a = "<token>"
 		}
 		out[i] = a
@@ -225,6 +243,12 @@ type apiClient struct {
 // hub answers (it may still be starting).
 func (s *stack) login(ctx context.Context) *apiClient {
 	s.t.Helper()
+	return s.loginTo(ctx, "hub")
+}
+
+// loginTo is login on the given hub service.
+func (s *stack) loginTo(ctx context.Context, service string) *apiClient {
+	s.t.Helper()
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		s.t.Fatal(err)
@@ -232,7 +256,7 @@ func (s *stack) login(ctx context.Context) *apiClient {
 	c := &apiClient{t: s.t, http: &http.Client{Jar: jar, Timeout: 5 * time.Second}}
 	deadline := time.Now().Add(30 * time.Second)
 	for {
-		addr, err := s.run(ctx, "port", "hub", "7080")
+		addr, err := s.run(ctx, "port", service, "7080")
 		if err == nil {
 			c.base = "http://" + strings.TrimSpace(addr)
 			if err = c.post(ctx, "/api/v1/login", map[string]string{"password": adminPassword}, nil); err == nil {
@@ -240,7 +264,7 @@ func (s *stack) login(ctx context.Context) *apiClient {
 			}
 		}
 		if time.Now().After(deadline) {
-			s.t.Fatalf("log in to hub: %v", err)
+			s.t.Fatalf("log in to %s: %v", service, err)
 		}
 		if err := sleep(ctx, 200*time.Millisecond); err != nil {
 			s.t.Fatal(err)

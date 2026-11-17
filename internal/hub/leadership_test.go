@@ -189,3 +189,29 @@ func TestEnrollFollowerRefuses(t *testing.T) {
 		t.Fatalf("Enroll on the leader: %v", err)
 	}
 }
+
+// A clustered hub vouches for its store's view of agent certificates only
+// while it leads within a term; otherwise it answers NotLeader or Unavailable
+// (taking over), never a rejection. A standalone hub always vouches.
+func TestCertAuthority(t *testing.T) {
+	t.Parallel()
+	st := newTestStore(t)
+	log := slog.New(slog.DiscardHandler)
+	standalone := NewRegistry(RegistryConfig{Store: st, Log: log})
+	if err := standalone.certAuthority(nil)(); err != nil {
+		t.Errorf("standalone: %v, want nil", err)
+	}
+
+	clustered := NewRegistry(RegistryConfig{Store: st, Log: log, Replicated: true})
+	lead := follower()
+	assertNotLeader(t, clustered.certAuthority(lead)(), lead)
+
+	lead.leader.Store(true) // leading, but no term yet: still taking over
+	if got := connect.CodeOf(clustered.certAuthority(lead)()); got != connect.CodeUnavailable {
+		t.Errorf("leader without a term: %v, want Unavailable", got)
+	}
+	clustered.startTerm()
+	if err := clustered.certAuthority(lead)(); err != nil {
+		t.Errorf("leader within a term: %v, want nil", err)
+	}
+}

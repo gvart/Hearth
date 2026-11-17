@@ -329,3 +329,47 @@ Operator view: [../cluster.md](../cluster.md).
 - **Not in HA-3.** Live SSE events on followers (they come from the leader's registry; a UI on a
   follower sees the replicated state when it reloads; #27), member removal, and rolling schema upgrades
   (#25).
+
+### HA-5: cluster failover end to end
+
+`test/e2e/cluster_test.go` (`TestClusterFailover`, `task e2e:cluster`, CI job "E2E cluster") guards
+hub failover the way `TestHeadlineDemo` guards the headline demo. It runs three hubs and one agent
+from `test/e2e/cluster.compose.yaml` and finds the leader with `hearth cluster status --json` on each
+hub (`docker compose exec`), never by assuming hub-a. Every bound is a named constant, and none may
+be raised to make CI pass:
+
+| Scenario | Bound |
+| -------- | ----- |
+| hub-a forms the cluster (`--cluster`); hub-b and hub-c join with `HEARTH_JOIN_TOKEN`; all report one leader and 3 voters | `FormationWithin` 60 s |
+| An agent joins through a follower (sent on to the leader) and is online | `DeviceVisibleWithin` 10 s, the headline constant |
+| The leader is killed (SIGKILL); a survivor is elected and the agent is connected to it (its `last_seen` on the new leader is after the kill) | `FailoverWithin` 10 s |
+| The device stays `online` on the new leader, polled every 200 ms, until `OfflineWithin` (40 s) after the election, past one full offline timeout of the new term; no hub logs `device.offline` | `OfflineWithin` |
+| On the remaining follower: an API login and token creation, and `hearth token create` on its host | (fails the test on error) |
+| That follower is stopped: the leader, alone, answers an API write with 503 `cluster_unavailable` | `UnavailableWithin` 15 s |
+| It starts again: API writes succeed again | `WritesResumeWithin` 15 s |
+| The killed hub starts again: it is a follower, has applied the leader's commit index, and its API (after any `catching_up` answers) lists the device, online, with its original ID | `RejoinWithin` 20 s |
+| Since the quorum came back, the agent is connected to the leader again. While no hub took it, it backed off exponentially (capped at 1 min), so this bound is the cap plus `FailoverWithin` | `AgentBackWithin` 70 s |
+
+Local runs (Colima, arm64) took: formation 6.2–11.4 s, enroll to online 0.3–1.0 s, kill to election
+2.0–3.8 s, kill to agent on the new leader 2.4–6.1 s, no-quorum write to 503 5.6–11.0 s (the action
+and its audit append may each wait 5 s for a leader), writes resuming 0.9–1.8 s, the killed hub
+serving the device 1.4–2.8 s, and the agent back after the quorum loss 3.4–6.9 s. A run takes about
+60–85 s plus the image build, most of it the 40 s offline watch.
+
+- **Fix found by the test: certificate checks on a lagging hub.** An agent reconnecting after the
+  quorum came back was answered `Unauthenticated: certificate unknown` by a follower that had just
+  restarted and was still replaying its log (its store did not know the device's certificate yet).
+  Agent certificates are checked against the hub's local store, which only a leader within a term
+  (after the barrier) can vouch for. Now a certificate that is unknown or revoked locally is rejected
+  with Unauthenticated only there; a follower answers NotLeader (naming the leader) and a leader still
+  taking over answers Unavailable (`Registry.certAuthority`, tests `TestCertAuthority` and
+  `TestOnlyTheLeaderRejectsAgentCerts`). The agent was never at risk of bricking itself: it treats
+  every failed attempt alike and keeps retrying, so the impact was a lost redirect and a longer
+  backoff, not a lost device.
+- **Agent backoff after a quorum loss.** While no hub takes it, the agent fails whole rounds of hubs
+  and backs off exponentially up to its 1 min cap. After a long outage it can therefore take up to
+  that cap to come back once the quorum returns, hence `AgentBackWithin`. The device does not go
+  offline meanwhile unless the wait exceeds the offline timeout of the new term.
+
+Not covered: live SSE on followers (#27), rolling schema upgrades (#25), member removal and
+revoking a removed hub's certificate (#29).

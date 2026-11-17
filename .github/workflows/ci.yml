@@ -167,7 +167,7 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
       - name: Headline demo (test/e2e)
-        run: go test -tags e2e -count=1 -v ./test/e2e/...
+        run: go test -tags e2e -count=1 -v -run '^TestHeadlineDemo$' ./test/e2e/...
         env:
           HEARTH_E2E_LOG_DIR: ${{ runner.temp }}/e2e-logs
       - name: Upload hub and agent logs
@@ -176,5 +176,27 @@ jobs:
         with:
           name: e2e-logs
           path: ${{ runner.temp }}/e2e-logs
+          if-no-files-found: ignore
+          retention-days: 7
+
+  e2e-cluster:
+    name: E2E cluster
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: 3-hub cluster failover (test/e2e)
+        run: go test -tags e2e -count=1 -v -run '^TestClusterFailover$' ./test/e2e/...
+        env:
+          HEARTH_E2E_LOG_DIR: ${{ runner.temp }}/e2e-cluster-logs
+      - name: Upload hub and agent logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-cluster-logs
+          path: ${{ runner.temp }}/e2e-cluster-logs
           if-no-files-found: ignore
           retention-days: 7
