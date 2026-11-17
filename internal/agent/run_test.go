@@ -82,12 +82,15 @@ func startRestartableHub(t *testing.T, heartbeat time.Duration) *restartableHub 
 }
 
 func (h *restartableHub) serve(ln net.Listener) {
+	// As in `hearth hub`, streams end as soon as a graceful shutdown starts.
+	stopping, stop := context.WithCancel(context.Background())
 	h.srv = &http.Server{
-		Handler:           h.handler,
+		Handler:           hub.EndOnStop(stopping, h.handler),
 		TLSConfig:         h.tls.Clone(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ErrorLog:          stdlog.New(io.Discard, "", 0),
 	}
+	h.srv.RegisterOnShutdown(stop)
 	h.done = make(chan struct{})
 	go func(srv *http.Server, done chan struct{}) {
 		defer close(done)
@@ -101,6 +104,18 @@ func (h *restartableHub) stop() {
 		return
 	}
 	_ = h.srv.Close()
+	<-h.done
+	h.srv = nil
+}
+
+// shutdown stops the hub gracefully, like `hearth hub` on SIGTERM.
+func (h *restartableHub) shutdown() {
+	h.t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := h.srv.Shutdown(ctx); err != nil {
+		h.t.Errorf("hub shutdown: %v", err)
+	}
 	<-h.done
 	h.srv = nil
 }
@@ -207,33 +222,77 @@ func waitFor(t *testing.T, timeout time.Duration, what string, cond func() bool)
 }
 
 func TestRunReconnectsAfterHubRestart(t *testing.T) {
-	h := startRestartableHub(t, time.Second)
-	id, dataDir := h.join(t)
-	a := startAgent(t, dataDir)
-
-	connected := func(n int) func() bool {
-		return func() bool { return strings.Count(h.logs.String(), `msg="agent connected" device_id=`+id) >= n }
+	tests := []struct {
+		name string
+		stop func(*restartableHub)
+	}{
+		{"graceful shutdown", (*restartableHub).shutdown},
+		{"hub killed", (*restartableHub).stop},
 	}
-	waitFor(t, 10*time.Second, "first connection", connected(1))
-	// The hub asked for 1 s heartbeats (the default is 10 s).
-	waitFor(t, 5*time.Second, "a heartbeat", func() bool { return strings.Contains(h.logs.String(), `msg=heartbeat device_id=`+id) })
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := startRestartableHub(t, time.Second)
+			id, dataDir := h.join(t)
+			a := startAgent(t, dataDir)
 
+			connected := func(n int) func() bool {
+				return func() bool { return strings.Count(h.logs.String(), `msg="agent connected" device_id=`+id) >= n }
+			}
+			waitFor(t, 10*time.Second, "first connection", connected(1))
+			// The hub asked for 1 s heartbeats (the default is 10 s), and a
+			// session must last that long to earn a quick reconnect.
+			waitFor(t, 5*time.Second, "a heartbeat", func() bool { return strings.Contains(h.logs.String(), `msg=heartbeat device_id=`+id) })
+
+			restarted := time.Now()
+			tt.stop(h)
+			h.start()
+			waitFor(t, 5*time.Second, "reconnection after hub restart", connected(2))
+			took := time.Since(restarted)
+			t.Logf("reconnected %v after the hub restart began", took.Round(time.Millisecond))
+			if took > time.Second {
+				t.Errorf("reconnect took %v after a hub restart, want under 1s", took)
+			}
+			a.assertRunning(t)
+			waitFor(t, 5*time.Second, "the agent to get Welcome", func() bool {
+				return strings.Count(a.logs.String(), `msg="connected to hub"`) >= 2
+			})
+			a.stop(t)
+			// Shutdown half-closes the stream, so the hub sees a clean end.
+			waitFor(t, time.Second, "the hub to see a clean disconnect", func() bool {
+				return strings.Contains(h.logs.String(), `msg="agent disconnected" device_id=`+id)
+			})
+			if !strings.Contains(a.logs.String(), "reconnecting") {
+				t.Errorf("agent did not log the lost connection:\n%s", a.logs.String())
+			}
+		})
+	}
+}
+
+// TestRunNoQuickRetryForBriefSession covers a hub that welcomes the agent and
+// drops it at once: the agent must back off normally, not loop quickly.
+func TestRunNoQuickRetryForBriefSession(t *testing.T) {
+	h := startRestartableHub(t, time.Second)
+	_, dataDir := h.join(t)
+	inner := h.handler
+	h.handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Cut every stream shortly after Welcome.
+		ctx, cancel := context.WithTimeout(r.Context(), 50*time.Millisecond)
+		defer cancel()
+		stop := context.AfterFunc(ctx, func() { _ = r.Body.Close() })
+		defer stop()
+		inner.ServeHTTP(w, r.WithContext(ctx))
+	})
 	h.stop()
 	h.start()
-	restarted := time.Now()
-	waitFor(t, 5*time.Second, "reconnection after hub restart", connected(2))
-	t.Logf("reconnected %v after the hub came back", time.Since(restarted).Round(time.Millisecond))
+
+	a := startAgent(t, dataDir)
+	time.Sleep(3 * time.Second)
 	a.assertRunning(t)
-	waitFor(t, 5*time.Second, "the agent to get Welcome", func() bool {
-		return strings.Count(a.logs.String(), `msg="connected to hub"`) >= 2
-	})
 	a.stop(t)
-	// Shutdown half-closes the stream, so the hub sees a clean end.
-	waitFor(t, time.Second, "the hub to see a clean disconnect", func() bool {
-		return strings.Contains(h.logs.String(), `msg="agent disconnected" device_id=`+id)
-	})
-	if !strings.Contains(a.logs.String(), "reconnecting") {
-		t.Errorf("agent did not log the lost connection:\n%s", a.logs.String())
+	// Delays of 0.5–1 s after each session: 3 to 7 sessions in 3 s. Quick
+	// retries would make over 10.
+	if n := strings.Count(h.logs.String(), `msg="agent connected"`); n < 2 || n > 7 {
+		t.Errorf("hub saw %d sessions in 3s, want 2-7:\n%s", n, a.logs.String())
 	}
 }
 

@@ -94,6 +94,11 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		return err
 	}
 	reg := hub.NewRegistry(hub.RegistryConfig{Store: st, Log: log})
+	// stopping ends agent streams and /events subscriptions as soon as either
+	// server begins shutting down, so Shutdown waits only on ordinary requests
+	// and agents see a clean end of stream and reconnect at once.
+	stopping, stop := context.WithCancel(context.WithoutCancel(ctx))
+	defer stop()
 	cfg := hub.Config{
 		Store:             st,
 		CA:                ca,
@@ -102,6 +107,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		HeartbeatInterval: hub.DefaultHeartbeatInterval,
 		Registry:          reg,
 		AgentHosts:        hosts,
+		Stopping:          stopping,
 	}
 	if _, port, err := net.SplitHostPort(opts.listen); err == nil && port != "0" {
 		cfg.AgentPort = port
@@ -115,8 +121,11 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		ErrorLog:          errLog,
 		BaseContext:       baseCtx,
 	}
+	agentSrv.RegisterOnShutdown(stop)
 	webMux := http.NewServeMux()
-	webMux.Handle("/", hub.NewHTTPHandler(cfg))
+	webH := hub.NewHTTPHandler(cfg)
+	webMux.Handle("/", webH)
+	webMux.Handle("GET /api/v1/events", hub.EndOnStop(stopping, webH))
 	hub.RegisterInstallRoutes(webMux, opts.assetsDir)
 	// No WriteTimeout: /api/v1/events is a long-lived stream.
 	webSrv := &http.Server{
@@ -125,6 +134,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		ErrorLog:          errLog,
 		BaseContext:       baseCtx,
 	}
+	webSrv.RegisterOnShutdown(stop)
 	lc := &net.ListenConfig{}
 	agentLn, err := lc.Listen(ctx, "tcp", opts.listen)
 	if err != nil {
