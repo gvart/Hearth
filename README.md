@@ -22,6 +22,14 @@ network mappers discover. Nothing **acts**. Hearth adds the missing layer:
 - **Agent-native** — a built-in MCP server lets Claude Code and other agents operate your lab, safely.
 - **Deny by default** — every action from the UI, automations, AI or MCP passes one policy engine with an audit log.
 
+## Demo
+
+Join a new device and it shows up online in the hub in **under 10 seconds**. CI holds the project to
+that: on every pull request an end-to-end test starts a hub and two agents in Docker Compose, enrolls
+both through the API and fails if either is not online within `DeviceVisibleWithin` of running
+`hearth agent join` (defined in [`test/e2e/e2e_test.go`](test/e2e/e2e_test.go)). Run it locally with
+`task e2e`.
+
 ## v0 roadmap
 
 - [ ] Single binary hub + agent, mTLS enrollment, one-line installer
