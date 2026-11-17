@@ -189,7 +189,24 @@ func threeNodes(t *testing.T, ca *pki.CA, tune ...func(*Config)) []*testNode {
 	n3 := startNode(t, ca, "n3", "", "", false, tune...)
 	addVoter(t, n1, n2)
 	addVoter(t, n1, n3)
+	waitReady(t, n2, n3)
 	return []*testNode{n1, n2, n3}
+}
+
+// waitReady waits until each node has caught up with the cluster. A node
+// added as a voter installs the leader's snapshot after AddVoter returns;
+// a test that touches its store or subscribes to its events before then
+// races that restore.
+func waitReady(t *testing.T, nodes ...*testNode) {
+	t.Helper()
+	for _, n := range nodes {
+		ctx, cancel := context.WithTimeout(t.Context(), waitFor)
+		err := n.WaitReady(ctx)
+		cancel()
+		if err != nil {
+			t.Fatalf("%s: %v", n.ID(), err)
+		}
+	}
 }
 
 func hasDevice(n *testNode, id string) bool {

@@ -54,6 +54,15 @@ type fsm struct {
 	// raft is set once raft.NewRaft returns; nil before.
 	raft atomic.Pointer[raft.Raft]
 
+	// applied is the index of the last command entry the store reflects:
+	// the last one Apply applied, or the index of the snapshot Restore
+	// installed. Raft's own AppliedIndex moves when entries are handed to the
+	// FSM, before the store has them (see Node.appliedThrough).
+	applied atomic.Uint64
+	// snaps is the node's snapshot store, read by Restore for the index of
+	// the snapshot it installs; nil in unit tests.
+	snaps raft.SnapshotStore
+
 	mu     sync.Mutex
 	halted error
 }
@@ -99,6 +108,7 @@ func (f *fsm) Apply(l *raft.Log) any {
 	if err != nil && !store.IsDomainError(err) {
 		return applyResponse{err: f.halt(fmt.Errorf("log entry %d (%s): %w", l.Index, cmd.Op(), err))}
 	}
+	f.applied.Store(l.Index)
 	if o := f.observer(); err == nil && o != nil {
 		o.Applied(cmd, res, f.ledTerm(l.Term))
 	}
@@ -160,6 +170,13 @@ func (f *fsm) Restore(rc io.ReadCloser) error {
 	if err := f.st.Restore(context.Background(), rc); err != nil {
 		f.log.Error("cluster snapshot restore failed", "err", err)
 		return err
+	}
+	// Raft restores the newest snapshot: at start, and when the leader sent
+	// one, which raft stored before it asked for the restore.
+	if f.snaps != nil {
+		if metas, err := f.snaps.List(); err == nil && len(metas) > 0 {
+			f.applied.Store(metas[0].Index)
+		}
 	}
 	if o := f.observer(); o != nil {
 		o.Restored()

@@ -86,6 +86,11 @@ message ForwardResponse {
   string error_kind = 2;
   // error_message is set when applying the command failed.
   string error_message = 3;
+  // index is the Raft log index of the applied entry, also when the command
+  // failed with a known error. The follower waits until it has applied this
+  // index itself before it answers its caller (read-your-writes). Zero from
+  // a leader that predates the field.
+  uint64 index = 4;
 }
 
 // RemoveMemberRequest names the hub to remove.

@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"path/filepath"
 	"reflect"
@@ -187,6 +188,10 @@ func TestFollowerWritesAreForwarded(t *testing.T) {
 			secret = c.Value
 		}
 	}
+	// The follower applied it before it answered (#87); the others soon.
+	if _, err := f.st.Admin().CheckSession(ctx, secret, time.Now()); err != nil {
+		t.Fatalf("session on %s right after login: %v", f.ID(), err)
+	}
 	for _, h := range hubs {
 		eventually(t, "the session on "+h.ID(), func() bool {
 			_, err := h.st.Admin().CheckSession(ctx, secret, time.Now())
@@ -246,6 +251,74 @@ func TestFollowerWritesAreForwarded(t *testing.T) {
 	// A domain error travels back through the forward unchanged.
 	if _, err := f.st.Tokens().Consume(ctx, parsed.Secret, time.Now()); !errors.Is(err, store.ErrTokenUsed) {
 		t.Errorf("reused token through the follower: err = %v, want ErrTokenUsed", err)
+	}
+}
+
+// TestFollowerReadYourWrites (#87): a forwarded write is applied on the
+// follower before it answers, so the caller's very next request there sees
+// it: an API call right after a login, a read right after a CLI write.
+func TestFollowerReadYourWrites(t *testing.T) {
+	hubs := startHubs(t, hubOpts{offlineAfter: 5 * time.Second, flushEvery: time.Minute})
+	leader := leaderHub(t, hubs)
+	setPassword(t, hubs, leader)
+	ctx := t.Context()
+	for _, f := range followers(hubs, leader) {
+		cc := serveControl(t, f.testNode)
+		cli, err := store.Open(ctx, filepath.Join(t.TempDir(), "cli.db"), store.WithApplier(func(*store.Store) store.Applier { return cc }))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = cli.Close() })
+		for i := range 10 {
+			api := &apiClient{t: t, base: f.url, c: tlsClient(f.ca)}
+			if code, body := api.do(http.MethodPost, "/api/v1/login", map[string]string{"password": "correct horse"}); code != http.StatusOK {
+				t.Fatalf("login on %s: %d %s", f.ID(), code, body)
+			}
+			if code, body := api.do(http.MethodGet, "/api/v1/devices", nil); code != http.StatusOK {
+				t.Fatalf("%s, attempt %d: devices right after login: %d %s", f.ID(), i, code, body)
+			}
+			secret := fmt.Sprintf("ryw-%s-%d", f.ID(), i)
+			if err := cli.Tokens().Create(ctx, secret, nil, time.Now().Add(time.Hour)); err != nil {
+				t.Fatalf("token through %s's control socket: %v", f.ID(), err)
+			}
+			if _, err := f.st.Tokens().Consume(ctx, secret, time.Now()); err != nil {
+				t.Fatalf("%s, attempt %d: consume a token right after its CLI write: %v", f.ID(), i, err)
+			}
+		}
+	}
+}
+
+func TestWaitAppliedIsBounded(t *testing.T) {
+	n := startNode(t, newTestCA(t), "n1", "", "", true)
+	leaderOf(t, n)
+	upsert(t, n, "pi")
+	cmdIndex := n.raft.LastIndex()
+	// A barrier is an entry the store never sees: applied once raft is past it.
+	if err := n.raft.Barrier(waitFor).Error(); err != nil {
+		t.Fatal(err)
+	}
+	last := n.raft.LastIndex()
+	if last <= cmdIndex || n.fsm.applied.Load() != cmdIndex {
+		t.Fatalf("command at %d, barrier at %d, store at %d", cmdIndex, last, n.fsm.applied.Load())
+	}
+	start := time.Now()
+	for _, i := range []uint64{0, cmdIndex, last} {
+		n.waitApplied(t.Context(), store.SetHubURL{}, i)
+	}
+	if took := time.Since(start); took > 100*time.Millisecond {
+		t.Errorf("nothing to wait for, took %v", took)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	start = time.Now()
+	n.waitApplied(ctx, store.SetHubURL{}, last+100)
+	if took := time.Since(start); took > appliedWait/2 {
+		t.Errorf("a done context did not end the wait: took %v", took)
+	}
+	start = time.Now()
+	n.waitApplied(t.Context(), store.SetHubURL{}, last+100) // never applied
+	if took := time.Since(start); took < appliedWait || took > appliedWait+time.Second {
+		t.Errorf("an entry never applied: waited %v, want about %v", took, appliedWait)
 	}
 }
 

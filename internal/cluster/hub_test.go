@@ -90,6 +90,10 @@ func startHubs(t *testing.T, o hubOpts) []*testHub {
 	n3 := startNodeBound(t, ca, "n3", "", "", false, bind, tune)
 	addVoter(t, n1, n2)
 	addVoter(t, n1, n3)
+	// A restore ends every event subscription (Registry.Restored). The hub's
+	// API waits for WaitReady, so no subscriber exists then; startHub
+	// subscribes its event recorder at once, so it must wait too.
+	waitReady(t, n2, n3)
 	hubs := []*testHub{startHub(t, n1, ca, o), startHub(t, n2, ca, o), startHub(t, n3, ca, o)}
 	for _, h := range hubs {
 		if err := n1.st.Hubs().SetAgentURL(t.Context(), h.ID(), h.url); err != nil {
