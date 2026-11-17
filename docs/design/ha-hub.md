@@ -327,5 +327,5 @@ Operator view: [../cluster.md](../cluster.md).
   `HEARTH_ADMIN_PASSWORD` is applied only after catching up, so a new member never replaces the
   cluster's password because its own copy is still empty.
 - **Not in HA-3.** Live SSE events on followers (they come from the leader's registry; a UI on a
-  follower sees the replicated state when it reloads), member removal, and rolling schema upgrades
+  follower sees the replicated state when it reloads; #27), member removal, and rolling schema upgrades
   (#25).

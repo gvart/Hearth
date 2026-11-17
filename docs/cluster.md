@@ -98,7 +98,8 @@ Give all hubs one shared DNS name (several A records) if you want one login to s
 
 Live updates (the device list changing as devices come and go) are pushed by the leader. A UI open on
 a follower shows the replicated state when it loads or refreshes, and the last-seen time it shows can
-trail the leader's by up to 30 seconds, because the leader writes last-seen times in batches.
+trail the leader's by up to 30 seconds, because the leader writes last-seen times in batches
+([#27](https://github.com/gvart/hearth/issues/27) tracks live updates on followers).
 
 ## Agents
 
