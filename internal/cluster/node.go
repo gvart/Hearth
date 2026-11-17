@@ -398,7 +398,17 @@ func (n *Node) WaitReady(ctx context.Context) error {
 	t := time.NewTicker(50 * time.Millisecond)
 	defer t.Stop()
 	for {
-		if n.raft != nil && n.Leader().ID != "" {
+		if n.IsLeader() {
+			// A new leader learns the final commit index of its predecessor's
+			// term only by committing an entry of its own: the barrier.
+			timeout := applyTimeout
+			if dl, ok := ctx.Deadline(); ok {
+				timeout = min(timeout, time.Until(dl))
+			}
+			if err := n.raft.Barrier(timeout).Error(); err == nil {
+				return nil
+			}
+		} else if n.raft != nil && n.Leader().ID != "" {
 			commit := n.raft.CommitIndex()
 			if commit > 0 && n.raft.AppliedIndex() >= commit {
 				return nil
