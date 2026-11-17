@@ -94,9 +94,16 @@ jobs:
       matrix:
         goos: [linux, darwin]
         goarch: [amd64, arm64]
+        include:
+          - goos: linux # Raspberry Pi Zero 2 / older Pis
+            goarch: arm
+            goarm: '7'
+          - goos: windows
+            goarch: amd64
     env:
       GOOS: ${{ matrix.goos }}
       GOARCH: ${{ matrix.goarch }}
+      GOARM: ${{ matrix.goarm }}
       CGO_ENABLED: '0'
     steps:
       - uses: actions/checkout@v7
@@ -121,6 +128,7 @@ jobs:
           grep -qx $'\tbuild\tGOOS=${{ matrix.goos }}' <<<"$meta"
           grep -qx $'\tbuild\tGOARCH=${{ matrix.goarch }}' <<<"$meta"
           grep -qx $'\tbuild\tCGO_ENABLED=0' <<<"$meta"
+          if [ -n "$GOARM" ]; then grep -qx $'\tbuild\tGOARM=${{ matrix.goarm }}' <<<"$meta"; fi
       - name: Smoke test
         if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
         run: |
