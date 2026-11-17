@@ -1,0 +1,33 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+syntax = "proto3";
+
+package hearth.agent.v1;
+
+// EnrollService turns a one-time enrollment token into a client certificate.
+// It is served over server-authenticated TLS; the agent pins the hub CA using the
+// fingerprint embedded in the token before it sends the token secret.
+service EnrollService {
+  // Enroll consumes the token and signs the agent's CSR.
+  rpc Enroll(EnrollRequest) returns (EnrollResponse);
+}
+
+// EnrollRequest carries the token secret and a certificate request.
+message EnrollRequest {
+  // token_secret is the secret part of the token, not the full token string.
+  string token_secret = 1;
+  // csr is a DER-encoded PKCS#10 certificate request. Its subject is ignored.
+  bytes csr = 2;
+  // hostname is informational: it seeds the device's name and hostname.
+  string hostname = 3;
+}
+
+// EnrollResponse is the agent's new identity.
+message EnrollResponse {
+  // device_id is assigned by the hub and bound into the certificate.
+  string device_id = 1;
+  // certificate is the DER-encoded client certificate.
+  bytes certificate = 2;
+  // ca_certificate is the DER-encoded hub CA certificate.
+  bytes ca_certificate = 3;
+}

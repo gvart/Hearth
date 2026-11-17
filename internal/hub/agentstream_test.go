@@ -21,11 +21,18 @@ import (
 )
 
 // newTestClient serves AgentStream over unencrypted HTTP/2 (bidi streaming needs h2)
-// and returns a client for it.
-func newTestClient(t *testing.T) agentv1connect.AgentServiceClient {
+// and returns a client for it. Every request is authenticated as deviceID, standing
+// in for requireClientCert; an empty deviceID leaves requests unauthenticated.
+func newTestClient(t *testing.T, deviceID string) agentv1connect.AgentServiceClient {
 	t.Helper()
+	path, h := agentv1connect.NewAgentServiceHandler(NewAgentStream(slog.New(slog.DiscardHandler), 5*time.Second))
 	mux := http.NewServeMux()
-	mux.Handle(agentv1connect.NewAgentServiceHandler(NewAgentStream(slog.New(slog.DiscardHandler), 5*time.Second)))
+	mux.Handle(path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if deviceID != "" {
+			r = r.WithContext(withDeviceID(r.Context(), deviceID))
+		}
+		h.ServeHTTP(w, r)
+	}))
 
 	srv := httptest.NewUnstartedServer(mux)
 	srv.Config.Protocols = new(http.Protocols)
@@ -64,7 +71,7 @@ func TestConnectRoundTrip(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
-	stream := newTestClient(t).Connect(ctx)
+	stream := newTestClient(t, "dev-1").Connect(ctx)
 	if err := stream.Send(hello(ProtocolMajor)); err != nil {
 		t.Fatalf("send hello: %v", err)
 	}
@@ -115,7 +122,7 @@ func TestConnectRejected(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 			defer cancel()
 
-			stream := newTestClient(t).Connect(ctx)
+			stream := newTestClient(t, "dev-1").Connect(ctx)
 			if err := stream.Send(tt.first); err != nil {
 				t.Fatalf("send: %v", err)
 			}
@@ -132,7 +139,7 @@ func TestConnectDuplicateHello(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
-	stream := newTestClient(t).Connect(ctx)
+	stream := newTestClient(t, "dev-1").Connect(ctx)
 	for range 2 {
 		if err := stream.Send(hello(ProtocolMajor)); err != nil {
 			t.Fatalf("send hello: %v", err)
@@ -143,5 +150,17 @@ func TestConnectDuplicateHello(t *testing.T) {
 	}
 	if _, err := stream.Receive(); connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("got %v, want InvalidArgument", err)
+	}
+}
+
+func TestConnectRequiresIdentity(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	stream := newTestClient(t, "").Connect(ctx)
+	_ = stream.Send(hello(ProtocolMajor))
+	if _, err := stream.Receive(); connect.CodeOf(err) != connect.CodeUnauthenticated {
+		t.Fatalf("got %v, want Unauthenticated", err)
 	}
 }

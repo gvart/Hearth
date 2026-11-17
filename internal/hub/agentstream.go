@@ -40,7 +40,13 @@ func NewAgentStream(log *slog.Logger, heartbeatInterval time.Duration) *AgentStr
 
 // Connect serves one agent stream: it requires a Hello first, checks the protocol
 // version, replies Welcome, then consumes messages until the agent hangs up.
+// The device is identified by its client certificate; the device_id in Hello is
+// never trusted.
 func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[agentv1.AgentMessage, agentv1.HubMessage]) error {
+	deviceID, ok := deviceIDFrom(ctx)
+	if !ok {
+		return connect.NewError(connect.CodeUnauthenticated, errors.New("no device identity"))
+	}
 	first, err := stream.Receive()
 	if err != nil {
 		return fmt.Errorf("receive hello: %w", err)
@@ -54,7 +60,10 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 			fmt.Errorf("unsupported protocol major version %d: hub speaks %d", got, ProtocolMajor))
 	}
 
-	log := s.log.With("device_id", hello.GetDeviceId())
+	log := s.log.With("device_id", deviceID)
+	if claimed := hello.GetDeviceId(); claimed != "" && claimed != deviceID {
+		log.WarnContext(ctx, "ignoring device_id claimed in Hello", "claimed_device_id", claimed)
+	}
 	log.InfoContext(ctx, "agent connected", "hostname", hello.GetHostname(), "agent_version", hello.GetAgentVersion())
 
 	welcome := &agentv1.HubMessage{Payload: &agentv1.HubMessage_Welcome{Welcome: &agentv1.Welcome{
@@ -62,7 +71,7 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 		HeartbeatInterval: durationpb.New(s.heartbeatInterval),
 	}}}
 	if err := stream.Send(welcome); err != nil {
-		return fmt.Errorf("send welcome to %s: %w", hello.GetDeviceId(), err)
+		return fmt.Errorf("send welcome to %s: %w", deviceID, err)
 	}
 
 	for {
@@ -72,7 +81,7 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 			return nil
 		}
 		if err != nil {
-			return fmt.Errorf("receive from %s: %w", hello.GetDeviceId(), err)
+			return fmt.Errorf("receive from %s: %w", deviceID, err)
 		}
 		switch msg.GetPayload().(type) {
 		case *agentv1.AgentMessage_Heartbeat:
