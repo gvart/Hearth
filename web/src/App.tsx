@@ -1,8 +1,18 @@
 import { useSession } from './api/hooks.ts';
 import { DevicesPage } from './components/DevicesPage.tsx';
 import { Login } from './components/Login.tsx';
+import { SecureBanner } from './components/SecureBanner.tsx';
 
 export function App() {
+  return (
+    <>
+      <SecureBanner />
+      <Main />
+    </>
+  );
+}
+
+function Main() {
   const session = useSession();
 
   if (session.isPending) {

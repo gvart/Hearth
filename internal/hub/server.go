@@ -34,6 +34,9 @@ type Config struct {
 	// port agents connect to. The web API builds join commands from them.
 	AgentHosts []string
 	AgentPort  string
+	// HTTPPort is the plain-HTTP listener's port, which serves install.sh.
+	// Install commands made over HTTPS point there. Default DefaultHTTPPort.
+	HTTPPort string
 	// Stopping is cancelled when the hub begins shutting down. Agent streams
 	// then end at once, so a graceful shutdown need not wait them out. If nil,
 	// they end only when the agent hangs up or the server closes.
@@ -51,6 +54,19 @@ func NewHandler(cfg Config) http.Handler {
 	}
 	path, h := agentv1connect.NewAgentServiceHandler(NewAgentStream(cfg.Log, cfg.HeartbeatInterval, reg))
 	mux.Handle(path, requireClientCert(cfg.Store.Certs(), cfg.Log, EndOnStop(cfg.Stopping, h)))
+	return mux
+}
+
+// NewTLSHandler serves the agent services exactly as NewHandler does and every
+// other path from web, the UI and JSON API, so browsers can use the hub over
+// HTTPS on the agent port. web authenticates by session cookie only: a client
+// certificate grants nothing outside AgentService.
+func NewTLSHandler(cfg Config, web http.Handler) http.Handler {
+	agents := NewHandler(cfg)
+	mux := http.NewServeMux()
+	mux.Handle("/"+agentv1connect.EnrollServiceName+"/", agents)
+	mux.Handle("/"+agentv1connect.AgentServiceName+"/", agents)
+	mux.Handle("/", web)
 	return mux
 }
 
@@ -78,8 +94,8 @@ func EndOnStop(stopping context.Context, next http.Handler) http.Handler {
 }
 
 // TLSConfig is the hub's listener config. Client certificates are optional at
-// the TLS layer (enrollment has none yet) but, when given, must chain to the CA;
-// AgentService then insists on one.
+// the TLS layer (enrollment and browsers have none) but, when given, must chain
+// to the CA; AgentService then insists on one.
 func TLSConfig(ca *pki.CA, serverCert tls.Certificate) *tls.Config {
 	pool := x509.NewCertPool()
 	pool.AddCert(ca.Cert())

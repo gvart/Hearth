@@ -5,6 +5,7 @@ import { api, ApiError, subscribeEvents, type Device, type DeviceEvent } from '.
 export const keys = {
   session: ['session'] as const,
   devices: ['devices'] as const,
+  tls: ['tls'] as const,
 };
 
 const reconnectDelayMs = 2000;
@@ -37,6 +38,11 @@ export function useLogout() {
 /** The device list, kept current by the event stream rather than polling. */
 export function useDevices() {
   return useQuery({ queryKey: keys.devices, queryFn: api.devices, staleTime: Infinity });
+}
+
+/** The hub's HTTPS address details, fetched only when enabled. */
+export function useTlsInfo(enabled: boolean) {
+  return useQuery({ queryKey: keys.tls, queryFn: api.tlsInfo, staleTime: Infinity, enabled });
 }
 
 export function useCreateToken() {

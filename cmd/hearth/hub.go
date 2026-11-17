@@ -40,8 +40,10 @@ func newHubCmd() *cobra.Command {
 		Use:   "hub",
 		Short: "Run the Hearth hub",
 		Long: "Run the Hearth hub. On first start it creates its certificate authority and database\n" +
-			"in the data dir. Agents enroll and connect over TLS on the listen address; the web UI\n" +
-			"and JSON API are served over plain HTTP on the http-listen address.\n\n" +
+			"in the data dir. Agents enroll and connect over TLS on the listen address, which also\n" +
+			"serves the web UI and JSON API over HTTPS with a certificate from the hub CA for the\n" +
+			"--host names. The http-listen address serves the UI and API over plain HTTP, plus\n" +
+			"/install.sh, /download/ and the CA certificate at /ca.crt (see docs/https.md).\n\n" +
 			"If HEARTH_ADMIN_PASSWORD is set and no admin password is stored yet, it becomes the\n" +
 			"admin password. Otherwise use `hearth admin set-password`.",
 		Args: cobra.NoArgs,
@@ -51,10 +53,12 @@ func newHubCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&opts.dataDir, "data-dir", defaultDataDir("hub"), "hub data directory (env HEARTH_DATA_DIR)")
-	cmd.Flags().StringVar(&opts.listen, "listen", ":"+defaultPort, "address to serve agents on (TLS)")
-	cmd.Flags().StringVar(&opts.httpListen, "http-listen", ":"+defaultHTTPPort, "address to serve the web UI and API on (plain HTTP)")
+	cmd.Flags().StringVar(&opts.listen, "listen", ":"+defaultPort, "address to serve agents and the HTTPS web UI on (TLS)")
+	cmd.Flags().StringVar(&opts.httpListen, "http-listen", ":"+defaultHTTPPort,
+		"address to serve the web UI, API, installer and CA certificate on (plain HTTP)")
 	cmd.Flags().StringSliceVar(&opts.hosts, "host", nil,
-		"DNS name or IP agents use to reach the hub; repeatable (default: this hostname, localhost, 127.0.0.1, ::1)")
+		"DNS name or IP agents and browsers use to reach the hub (its TLS certificate names); repeatable "+
+			"(default: this hostname, localhost, 127.0.0.1, ::1)")
 	cmd.Flags().StringVar(&opts.assetsDir, "assets-dir", "",
 		"directory of release archives and checksums.txt to serve at /download/ for `install.sh --from-hub`")
 	return cmd
@@ -112,21 +116,31 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if _, port, err := net.SplitHostPort(opts.listen); err == nil && port != "0" {
 		cfg.AgentPort = port
 	}
+	if _, port, err := net.SplitHostPort(opts.httpListen); err == nil && port != "0" {
+		cfg.HTTPPort = port
+	}
 	errLog := slog.NewLogLogger(log.Handler(), slog.LevelWarn)
 	baseCtx := func(net.Listener) context.Context { return ctx }
+	// The UI and API, served on both listeners. Over TLS they share the agent
+	// port, so browsers get HTTPS with the hub CA (see docs/https.md).
+	webH := hub.NewHTTPHandler(cfg)
+	uiMux := http.NewServeMux()
+	uiMux.Handle("/", webH)
+	uiMux.Handle("GET /api/v1/events", hub.EndOnStop(stopping, webH))
 	agentSrv := &http.Server{
-		Handler:           hub.NewHandler(cfg),
+		Handler:           hub.NewTLSHandler(cfg, uiMux),
 		TLSConfig:         hub.TLSConfig(ca, serverCert),
 		ReadHeaderTimeout: 10 * time.Second,
 		ErrorLog:          errLog,
 		BaseContext:       baseCtx,
 	}
 	agentSrv.RegisterOnShutdown(stop)
+	// install.sh, downloads and the CA stay on plain HTTP only: a new device
+	// does not trust the hub CA yet.
 	webMux := http.NewServeMux()
-	webH := hub.NewHTTPHandler(cfg)
-	webMux.Handle("/", webH)
-	webMux.Handle("GET /api/v1/events", hub.EndOnStop(stopping, webH))
+	webMux.Handle("/", uiMux)
 	hub.RegisterInstallRoutes(webMux, opts.assetsDir)
+	hub.RegisterCARoute(webMux, ca.Cert())
 	// No WriteTimeout: /api/v1/events is a long-lived stream.
 	webSrv := &http.Server{
 		Handler:           webMux,

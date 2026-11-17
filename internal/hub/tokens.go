@@ -28,6 +28,10 @@ const (
 	maxLabelLen      = 128
 )
 
+// DefaultHTTPPort is the hub's default plain-HTTP port for the UI and the
+// install script.
+const DefaultHTTPPort = "7080"
+
 // TokenJSON is the body of a successful POST /tokens. Token is the secret;
 // it is returned once and never logged.
 type TokenJSON struct {
@@ -68,7 +72,7 @@ func (a *api) createToken(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", msg)
 		return
 	}
-	httpHost, agentHost, ok := a.commandHosts(r.Host)
+	httpHost, agentHost, ok := a.commandHosts(r.Host, r.TLS != nil)
 	if !ok {
 		writeError(w, http.StatusBadRequest, "bad_request", "request Host header is not a valid host name")
 		return
@@ -118,10 +122,12 @@ func (a *api) createToken(w http.ResponseWriter, r *http.Request) {
 }
 
 // commandHosts derives the hosts for the install and join commands from the
-// Host the browser used. The install script comes from that same HTTP address.
+// Host the browser used. Over plain HTTP the install script comes from that
+// same address. Over HTTPS it comes from the HTTP listener on the same host
+// instead: curl on a fresh device does not trust the hub CA yet.
 // Agents verify the hub certificate by name, so the agent URL uses that host
 // only if the certificate covers it, and the first certificate name otherwise.
-func (a *api) commandHosts(reqHost string) (httpHost, agentHost string, ok bool) {
+func (a *api) commandHosts(reqHost string, overTLS bool) (httpHost, agentHost string, ok bool) {
 	host, port := reqHost, ""
 	if h, p, err := net.SplitHostPort(reqHost); err == nil {
 		host, port = h, p
@@ -132,6 +138,9 @@ func (a *api) commandHosts(reqHost string) (httpHost, agentHost string, ok bool)
 	httpHost = host
 	if strings.Contains(host, ":") {
 		httpHost = "[" + host + "]"
+	}
+	if overTLS {
+		port = a.httpPort
 	}
 	if port != "" {
 		httpHost = net.JoinHostPort(host, port)

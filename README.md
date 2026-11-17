@@ -56,7 +56,11 @@ The hub also ships as a multi-arch (amd64, arm64) container image, distroless an
 docker run -d --name hearth -p 7443:7443 -p 7080:7080 -v hearth:/var/lib/hearth ghcr.io/gvart/hearth:<tag>
 ```
 
-Port 7443 is for agents (mTLS), 7080 serves the web UI and API; hub state lives in `/var/lib/hearth`.
+Port 7443 is for agents (mTLS) and serves the web UI over HTTPS; 7080 serves the web UI over plain
+HTTP, the agent installer and the hub CA certificate. Hub state lives in `/var/lib/hearth`. To install
+the UI as an app and use its copy buttons from another machine, open it over HTTPS: pass
+`--host <name>` for each name you browse with and trust the hub CA once per device, as described in
+[docs/https.md](docs/https.md).
 `task release:snapshot` builds the same artifacts locally into `dist/` without publishing.
 
 ### Verifying releases
