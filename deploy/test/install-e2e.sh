@@ -52,7 +52,9 @@ printf '%064d  %s\n' 0 "$bad" >"$work/srv/releases/v0.0.0-bad/checksums.txt"
 echo "install-e2e: running in $image"
 # Copy files in rather than bind-mounting: works with remote Docker daemons
 # and VMs (colima, Docker Desktop) that only share some host dirs.
-cid=$(docker create -e "E2E_ASSETS=/srv/releases/v$version" "$image" bash /deploy/test/install-e2e-inner.sh)
+# SYS_PTRACE lets the test's root read /proc/<pid>/environ of alice's
+# processes, to check that the token does not leak into the installer's children.
+cid=$(docker create --cap-add SYS_PTRACE -e "E2E_ASSETS=/srv/releases/v$version" "$image" bash /deploy/test/install-e2e-inner.sh)
 trap 'docker rm -f "$cid" >/dev/null; rm -rf "$work"' EXIT
 docker cp -q "$work/build/." "$cid:/build"
 docker cp -q "$work/srv/." "$cid:/srv"

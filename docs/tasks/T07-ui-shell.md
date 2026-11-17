@@ -11,7 +11,7 @@ The first screen of the demo: a live device list and an "Add device" flow.
 - Devices page: table (name, status dot, OS/arch, IP, last seen, uptime), live via SSE — no polling, no reload.
 - Device detail drawer: all facts.
 - "Add device" dialog: calls a new `POST /api/v1/tokens`, shows the one-liner
-  (`curl -fsSL <hub>/install.sh | sh -s -- --token …`) with a copy button and a QR code; highlights the
+  (`curl -fsSL <hub>/install.sh | HEARTH_TOKEN=… sh -s -- --hub …`) with a copy button and a QR code; highlights the
   new device row when it appears.
 - Installable PWA manifest + icons; dark/light theme from system.
 - Embedded into the binary via `embed.FS` (from T1).
