@@ -19,7 +19,7 @@ task build        # build web UI + binary into ./bin (honours GOOS/GOARCH)
 task test         # go test ./... -race
 task lint         # golangci-lint + eslint + tsc, zero findings required
 task proto        # buf generate (placeholder until protobuf lands)
-task e2e          # compose-based end-to-end tests (placeholder)
+task e2e          # compose-based end-to-end tests (needs Docker)
 task dev          # web UI dev server with hot reload
 ```
 

@@ -1,0 +1,6 @@
+.git
+.claude
+bin
+dist
+web/node_modules
+test/e2e/logs

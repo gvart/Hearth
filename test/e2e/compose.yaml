@@ -1,0 +1,50 @@
+# One hub and two idle agents, all built from the current checkout. Driven by
+# e2e_test.go (`task e2e`), which runs `hearth agent join` and
+# `hearth agent run` inside the agent containers itself.
+
+x-hearth: &hearth
+  image: hearth-e2e:local
+  init: true # forwards SIGTERM, so `compose stop` is quick
+
+services:
+  hub:
+    <<: *hearth
+    build: # one build; the agents reuse the image
+      context: ../..
+      dockerfile: test/e2e/Dockerfile
+    hostname: hub
+    # --host hub: agents reach the hub by its service name, which must be in
+    # the hub certificate's SANs.
+    command: [hearth, hub, --data-dir, /var/lib/hearth/hub, --host, hub]
+    environment:
+      HEARTH_ADMIN_PASSWORD: e2e-admin-password
+    ports:
+      - "127.0.0.1::7080" # API on a random host port: `compose port hub 7080`
+    volumes:
+      - hub-data:/var/lib/hearth/hub
+    healthcheck:
+      test: [CMD, nc, -z, 127.0.0.1, "7080"]
+      interval: 1s
+      timeout: 1s
+      retries: 30
+
+  agent-1:
+    <<: *hearth
+    pull_policy: never
+    hostname: agent-1
+    command: [sleep, infinity]
+    volumes:
+      - agent-1-data:/var/lib/hearth/agent
+
+  agent-2:
+    <<: *hearth
+    pull_policy: never
+    hostname: agent-2
+    command: [sleep, infinity]
+    volumes:
+      - agent-2-data:/var/lib/hearth/agent
+
+volumes:
+  hub-data:
+  agent-1-data:
+  agent-2-data:

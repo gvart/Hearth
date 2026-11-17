@@ -14,6 +14,9 @@ coverage.*
 /web/dist/
 *.tsbuildinfo
 
+# Logs dumped by a failed `task e2e`
+/test/e2e/logs/
+
 # Task runner checksums
 /.task/
 

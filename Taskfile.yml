@@ -48,10 +48,9 @@ tasks:
       - buf generate
 
   e2e:
-    desc: Run compose-based end-to-end tests (placeholder until T10)
+    desc: Run the compose-based end-to-end test of the headline demo (needs Docker with compose)
     cmds:
-      - echo "No end-to-end tests yet; they arrive with T10."
-    silent: true
+      - go test -tags e2e -count=1 -v ./test/e2e/...
 
   e2e:install:
     desc: Test deploy/install.sh end to end in a Debian 12 container (needs Docker)
