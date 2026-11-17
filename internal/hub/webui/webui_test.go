@@ -15,8 +15,9 @@ func TestHandler(t *testing.T) {
 	t.Parallel()
 
 	built := fstest.MapFS{
-		"index.html":    {Data: []byte("<html>app</html>")},
-		"assets/app.js": {Data: []byte("console.log('hi')")},
+		"index.html":           {Data: []byte("<html>app</html>")},
+		"assets/app.js":        {Data: []byte("console.log('hi')")},
+		"manifest.webmanifest": {Data: []byte(`{"name":"Hearth"}`)},
 	}
 	empty := fstest.MapFS{".gitkeep": {Data: nil}}
 
@@ -26,7 +27,9 @@ func TestHandler(t *testing.T) {
 		path       string
 		wantStatus int
 		wantBody   string
+		wantType   string
 	}{
+		{name: "manifest has its media type", fsys: built, path: "/manifest.webmanifest", wantStatus: http.StatusOK, wantBody: "Hearth", wantType: "application/manifest+json"},
 		{name: "root serves index", fsys: built, path: "/", wantStatus: http.StatusOK, wantBody: "app"},
 		{name: "asset served", fsys: built, path: "/assets/app.js", wantStatus: http.StatusOK, wantBody: "console.log"},
 		{name: "client route falls back to index", fsys: built, path: "/devices/42", wantStatus: http.StatusOK, wantBody: "app"},
@@ -54,6 +57,9 @@ func TestHandler(t *testing.T) {
 			}
 			if res.StatusCode != tt.wantStatus {
 				t.Errorf("status = %d, want %d", res.StatusCode, tt.wantStatus)
+			}
+			if ct := res.Header.Get("Content-Type"); tt.wantType != "" && ct != tt.wantType {
+				t.Errorf("Content-Type = %q, want %q", ct, tt.wantType)
 			}
 			if !strings.Contains(string(body), tt.wantBody) {
 				t.Errorf("body %q does not contain %q", body, tt.wantBody)
