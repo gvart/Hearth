@@ -1,5 +1,7 @@
 # Hearth
 
+[![CI](https://github.com/gvart/hearth/actions/workflows/ci.yml/badge.svg)](https://github.com/gvart/hearth/actions/workflows/ci.yml)
+
 **The Home Assistant model, applied to your homelab.**
 
 Every device in your lab — Talos/k8s nodes, Raspberry Pis, old phones, a NAS, the router, an ESP32 —
@@ -32,7 +34,8 @@ network mappers discover. Nothing **acts**. Hearth adds the missing layer:
 ## Contributing
 
 Early days — issues and ideas welcome. Work is tracked as task specs in [`docs/tasks/`](docs/tasks/).
-Commits need a DCO sign-off (`git commit -s`).
+Commits follow Conventional Commits and need a DCO sign-off (`git commit -s`), checked on every pull
+request by the `DCO` workflow. See [CONTRIBUTING.md](CONTRIBUTING.md) for tooling and `task` commands.
 
 ## License
 
