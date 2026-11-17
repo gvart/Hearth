@@ -42,8 +42,8 @@ func newClusterTokenCreateCmd() *cobra.Command {
 		Use:   "create",
 		Short: "Create a single-use token that lets another hub join this cluster",
 		Long: "Create a single-use cluster join token and print the command that joins a new hub.\n" +
-			"Run it on a member's host while its hub runs, preferably the leader's. A joined hub receives\n" +
-			"the hub CA, private key included: treat the token like the CA key itself.",
+			"Run it on any member's host while its hub runs (a follower forwards it to the leader). A joined\n" +
+			"hub receives the hub CA, private key included: treat the token like the CA key itself.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runClusterTokenCreate(cmd.Context(), opts, cmd.OutOrStdout())
@@ -86,10 +86,6 @@ func runClusterTokenCreate(ctx context.Context, opts clusterTokenOptions, out io
 	}, func(ctx context.Context) error {
 		return st.JoinTokens().Create(ctx, tok.Secret, expires)
 	})
-	var nl *cluster.ErrNotLeader
-	if errors.As(err, &nl) {
-		return fmt.Errorf("%w: run this on the leader's host", err)
-	}
 	if err != nil {
 		return err
 	}

@@ -46,6 +46,11 @@ type Config struct {
 	// single node: always the leader, and Welcome lists no hubs, so agents
 	// keep only the URL they joined with.
 	Leadership Leadership
+	// Ready is closed once a clustered hub has caught up with the cluster
+	// after it started. Until then the JSON API waits briefly and answers 503
+	// catching_up rather than serve state older than what the hub already
+	// acknowledged. Nil, as on a standalone hub, means always ready.
+	Ready <-chan struct{}
 }
 
 // NewHandler serves EnrollService to anyone (the token is the credential) and
@@ -63,8 +68,32 @@ func NewHandler(cfg Config) http.Handler {
 	stream := NewAgentStream(cfg.Log, cfg.HeartbeatInterval, reg)
 	stream.leadership = lead
 	path, h := agentv1connect.NewAgentServiceHandler(stream)
-	mux.Handle(path, requireClientCert(cfg.Store.Certs(), cfg.Log, EndOnStop(cfg.Stopping, h)))
+	mux.Handle(path, requireClientCert(cfg.Store.Certs(), cfg.Log, EndOnStop(cfg.Stopping, reg.endOnStepDown(h))))
 	return mux
+}
+
+// errSteppedDown is the cause of an agent stream ended because this hub
+// stopped leading the cluster.
+var errSteppedDown = errors.New("no longer the cluster leader")
+
+type termKey struct{}
+
+// endOnStepDown ties each agent stream on a clustered hub to the leadership
+// term it started in: the stream ends, with cause errSteppedDown, when the
+// term ends. A request outside any term carries none and is refused by
+// AgentStream.Connect. On a standalone hub it returns next unchanged.
+func (r *Registry) endOnStepDown(next http.Handler) http.Handler {
+	if !r.replicated {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		term := r.currentTerm()
+		if term == nil {
+			next.ServeHTTP(w, req)
+			return
+		}
+		endOn(term, errSteppedDown, next).ServeHTTP(w, req.WithContext(context.WithValue(req.Context(), termKey{}, term)))
+	})
 }
 
 // NewTLSHandler serves the agent services exactly as NewHandler does and every
@@ -91,11 +120,17 @@ func EndOnStop(stopping context.Context, next http.Handler) http.Handler {
 	if stopping == nil {
 		return next
 	}
+	return endOn(stopping, errStopping, next)
+}
+
+// endOn ends each request when done is cancelled: its context is cancelled
+// with cause and its body closed.
+func endOn(done context.Context, cause error, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithCancelCause(r.Context())
 		defer cancel(nil)
-		stop := context.AfterFunc(stopping, func() {
-			cancel(errStopping)
+		stop := context.AfterFunc(done, func() {
+			cancel(cause)
 			_ = r.Body.Close()
 		})
 		defer stop()

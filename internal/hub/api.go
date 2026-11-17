@@ -13,6 +13,7 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -61,7 +62,7 @@ func newAPI(cfg Config) *api {
 	}
 	return &api{
 		store: cfg.Store, policy: cfg.Policy, registry: reg, log: cfg.Log, now: time.Now, keepalive: sseKeepalive,
-		ca: cfg.CA, agentHosts: cfg.AgentHosts, agentPort: agentPort, httpPort: httpPort,
+		ca: cfg.CA, agentHosts: cfg.AgentHosts, agentPort: agentPort, httpPort: httpPort, ready: cfg.Ready, readyWait: readyWait,
 	}
 }
 
@@ -79,7 +80,36 @@ func (a *api) routes() http.Handler {
 	mux.Handle("/api/v1/", a.auth(func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "no such endpoint")
 	}))
-	return mux
+	if a.ready == nil {
+		return mux
+	}
+	return a.whenReady(mux)
+}
+
+// readyWait is how long an API request on a clustered hub that is still
+// catching up waits before it is answered 503 catching_up.
+const readyWait = 5 * time.Second
+
+// whenReady holds JSON API requests until the hub has caught up with the
+// cluster (a.ready is closed), for at most a.readyWait. The UI's static files
+// are served at once.
+func (a *api) whenReady(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			t := time.NewTimer(a.readyWait)
+			defer t.Stop()
+			select {
+			case <-a.ready:
+			case <-r.Context().Done():
+				return
+			case <-t.C:
+				writeError(w, http.StatusServiceUnavailable, "catching_up",
+					"this hub is catching up with the cluster; try again shortly")
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 type api struct {
@@ -93,6 +123,9 @@ type api struct {
 	log        *slog.Logger
 	now        func() time.Time
 	keepalive  time.Duration
+	// ready is Config.Ready; requests wait for it up to readyWait.
+	ready     <-chan struct{}
+	readyWait time.Duration
 	// verifyMu runs one argon2 verification at a time, so a flood of login
 	// attempts cannot exhaust a small hub's memory.
 	verifyMu sync.Mutex
@@ -209,6 +242,9 @@ func (a *api) login(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, policy.ErrDenied):
 		writeError(w, http.StatusForbidden, "forbidden", "login denied by policy")
 		return
+	case errors.Is(err, store.ErrUnavailable):
+		writeUnavailable(w)
+		return
 	case err != nil:
 		a.log.ErrorContext(ctx, "admin login", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal", "login failed")
@@ -232,7 +268,10 @@ func (a *api) login(w http.ResponseWriter, r *http.Request) {
 
 func (a *api) logout(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(sessionCookieName(r)); err == nil {
-		if err := a.store.Admin().DeleteSession(r.Context(), c.Value); err != nil {
+		if err := a.store.Admin().DeleteSession(r.Context(), c.Value); errors.Is(err, store.ErrUnavailable) {
+			writeUnavailable(w)
+			return
+		} else if err != nil {
 			a.log.ErrorContext(r.Context(), "logout", "err", err)
 			writeError(w, http.StatusInternalServerError, "internal", "logout failed")
 			return
@@ -261,7 +300,7 @@ func (a *api) listDevices(w http.ResponseWriter, r *http.Request) {
 		Devices []DeviceJSON `json:"devices"`
 	}{Devices: make([]DeviceJSON, 0, len(devs))}
 	for _, d := range devs {
-		out.Devices = append(out.Devices, deviceJSON(d))
+		out.Devices = append(out.Devices, deviceJSON(a.registry.Live(d)))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -277,7 +316,7 @@ func (a *api) getDevice(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "cannot get device")
 		return
 	}
-	writeJSON(w, http.StatusOK, deviceJSON(d))
+	writeJSON(w, http.StatusOK, deviceJSON(a.registry.Live(d)))
 }
 
 // EventJSON is the data of one server-sent event; the SSE event name is Type.
@@ -396,4 +435,11 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func writeError(w http.ResponseWriter, status int, code, msg string) {
 	writeJSON(w, status, ErrorJSON{Error: msg, Code: code})
+}
+
+// writeUnavailable answers a write that a clustered hub could not get to the
+// leader (store.ErrUnavailable): nothing was written.
+func writeUnavailable(w http.ResponseWriter) {
+	writeError(w, http.StatusServiceUnavailable, "cluster_unavailable",
+		"no cluster leader is reachable, so nothing was written; try again shortly")
 }

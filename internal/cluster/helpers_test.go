@@ -66,6 +66,15 @@ func freeAddr(t *testing.T) string {
 // startNode starts a node with its own data dir. dir may be empty for a new one.
 func startNode(t *testing.T, ca *pki.CA, id, dir, addr string, bootstrap bool, tune ...func(*Config)) *testNode {
 	t.Helper()
+	return startNodeBound(t, ca, id, dir, addr, bootstrap, (*Node).Bind, tune...)
+}
+
+// startNodeBound is startNode with the store bound by bind, e.g.
+// (*Node).BindForwarding for a hub whose follower writes are forwarded.
+func startNodeBound(t *testing.T, ca *pki.CA, id, dir, addr string, bootstrap bool,
+	bind func(*Node, *store.Store) store.Applier, tune ...func(*Config),
+) *testNode {
+	t.Helper()
 	if dir == "" {
 		dir = t.TempDir()
 	}
@@ -85,7 +94,8 @@ func startNode(t *testing.T, ca *pki.CA, id, dir, addr string, bootstrap bool, t
 	if err != nil {
 		t.Fatal(err)
 	}
-	st, err := store.Open(t.Context(), filepath.Join(dir, "hearth.db"), store.WithoutUpgrade(), store.WithApplier(n.Bind))
+	st, err := store.Open(t.Context(), filepath.Join(dir, "hearth.db"), store.WithoutUpgrade(),
+		store.WithApplier(func(s *store.Store) store.Applier { return bind(n, s) }))
 	if err != nil {
 		t.Fatal(err)
 	}

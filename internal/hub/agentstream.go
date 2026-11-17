@@ -55,6 +55,13 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 		s.log.DebugContext(ctx, "agent refused: not the leader", "device_id", deviceID)
 		return notLeaderError(s.leadership)
 	}
+	if s.registry.replicated {
+		// A clustered leader serves agents only within a leadership term,
+		// which starts once it has caught up with the cluster.
+		if term, _ := ctx.Value(termKey{}).(context.Context); term == nil || term.Err() != nil {
+			return connect.NewError(connect.CodeUnavailable, errors.New("this hub is taking over as the cluster leader; retry shortly"))
+		}
+	}
 	first, err := stream.Receive()
 	if err != nil {
 		return fmt.Errorf("receive hello: %w", err)
@@ -97,6 +104,9 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 			if cause := context.Cause(ctx); errors.Is(cause, errStopping) {
 				log.InfoContext(ctx, "agent stream ended: hub shutting down")
 				return connect.NewError(connect.CodeUnavailable, cause)
+			} else if errors.Is(cause, errSteppedDown) {
+				log.InfoContext(ctx, "agent stream ended: no longer the cluster leader")
+				return notLeaderError(s.leadership)
 			}
 			return fmt.Errorf("receive from %s: %w", deviceID, err)
 		}

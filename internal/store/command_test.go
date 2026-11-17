@@ -26,6 +26,9 @@ func allCommands() []Command {
 		MarkSeen{ID: "pi", Now: 4},
 		SetBootTime{ID: "pi", BootTime: &boot},
 		MarkOffline{Cutoff: 5},
+		MarkSeenBatch{Seen: []Seen{{ID: "nas", LastSeen: 14}, {ID: "pi", LastSeen: 15}}},
+		MarkDevicesOffline{IDs: []string{"nas", "pi"}},
+		SetHubURL{NodeID: "hub-a", AgentURL: "https://hub-a:7443"},
 		CreateToken{Hash: []byte{1, 2, 3}, Labels: `{}`, ExpiresAt: 6},
 		ConsumeToken{Hash: []byte{1, 2, 3}, Now: 7},
 		CreateJoinToken{Hash: []byte{7, 8}, ExpiresAt: 12},
@@ -209,8 +212,28 @@ func runScenario(t *testing.T, s *Store) {
 		t.Fatalf("MarkOffline = %v, want nas", off)
 	}
 
+	// A clustered leader batches last_seen (never backwards, unknown devices
+	// skipped) and names the devices it marks offline.
+	n, err := s.Devices().MarkSeenBatch(ctx, map[string]time.Time{
+		"pi": at(6 * time.Minute), "nas": at(time.Second), "ghost": at(5 * time.Minute),
+	})
+	must(err)
+	if n != 1 {
+		t.Fatalf("MarkSeenBatch updated %d devices, want 1 (pi)", n)
+	}
+	off, err = s.Devices().MarkDevicesOffline(ctx, []string{"pi", "nas", "ghost"})
+	must(err)
+	if len(off) != 1 || off[0].ID != "pi" || !off[0].LastSeen.Equal(at(6*time.Minute)) {
+		t.Fatalf("MarkDevicesOffline = %v, want pi (nas already offline)", off)
+	}
+
+	// Cluster hubs announce their agent URLs, and may change them.
+	must(s.Hubs().SetAgentURL(ctx, "hub-a", "https://hub-a:7443"))
+	must(s.Hubs().SetAgentURL(ctx, "hub-b", "https://hub-b:7443"))
+	must(s.Hubs().SetAgentURL(ctx, "hub-a", "https://hub-a.lan:7443"))
+
 	// Revocation, repeated and unknown.
-	n, err := s.Certs().RevokeDevice(ctx, "pi", at(6*time.Minute))
+	n, err = s.Certs().RevokeDevice(ctx, "pi", at(6*time.Minute))
 	must(err)
 	if n != 1 {
 		t.Fatalf("revoked %d, want 1", n)
@@ -320,7 +343,7 @@ func TestReplayIsDeterministic(t *testing.T) {
 		}
 	}
 	want, got := dumpTables(t, src.db), dumpTables(t, dst.db)
-	for _, table := range []string{"admin", "audit_log", "certs", "devices", "join_tokens", "sessions", "sqlite_sequence", "tokens"} {
+	for _, table := range []string{"admin", "audit_log", "certs", "cluster_hubs", "devices", "join_tokens", "sessions", "sqlite_sequence", "tokens"} {
 		if len(want[table]) == 0 {
 			t.Errorf("scenario left %s empty; the comparison would prove nothing", table)
 		}

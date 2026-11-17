@@ -51,12 +51,12 @@ func TestAdvertiseAddr(t *testing.T) {
 
 func TestJoinNeedsAToken(t *testing.T) {
 	opts := hubOptions{dataDir: t.TempDir(), cluster: clusterOptions{join: "https://127.0.0.1:1", raftListen: "127.0.0.1:0"}}
-	_, _, _, err := startClusterNode(t.Context(), opts, slog.New(slog.DiscardHandler), func(error) {})
+	_, _, _, err := startClusterNode(t.Context(), opts, slog.New(slog.DiscardHandler), func(error) {}, "", "")
 	if err == nil || !strings.Contains(err.Error(), "HEARTH_JOIN_TOKEN") {
 		t.Fatalf("err = %v, want a pointer to HEARTH_JOIN_TOKEN", err)
 	}
 	opts.cluster.form = true
-	if _, _, _, err := startClusterNode(t.Context(), opts, slog.New(slog.DiscardHandler), func(error) {}); err == nil {
+	if _, _, _, err := startClusterNode(t.Context(), opts, slog.New(slog.DiscardHandler), func(error) {}, "", ""); err == nil {
 		t.Fatal("accepted --cluster with --join")
 	}
 }

@@ -16,6 +16,7 @@ import (
 
 	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/policy"
+	"github.com/gvart/hearth/internal/store"
 )
 
 const (
@@ -96,6 +97,9 @@ func (a *api) createToken(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case errors.Is(err, policy.ErrDenied):
 		writeError(w, http.StatusForbidden, "forbidden", "token creation denied by policy")
+		return
+	case errors.Is(err, store.ErrUnavailable):
+		writeUnavailable(w)
 		return
 	case err != nil:
 		a.log.ErrorContext(ctx, "create token", "err", err)

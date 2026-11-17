@@ -249,7 +249,7 @@ on a joined hub, `join-url`.
   the temp dir when that path is too long for a unix socket): `GET /v1/status` for
   `hearth cluster status`, and `POST /v1/apply` so CLI writes (`token create`, `device revoke`,
   `admin set-password`, `cluster token create`) go through Raft instead of the local file. On a follower
-  they fail with the leader's name until HA-3 adds forwarding.
+  HA-3 forwards them to the leader.
 
 ### HA-4: agent failover and leader redirect
 
@@ -270,3 +270,62 @@ on a joined hub, `join-url`.
   hub after a session of at least 1 s). A NotLeader refusal jumps to the named leader at once, but
   still counts as an attempt of the round, so followers naming each other cannot cause a hot loop.
 - `hearth agent join` through a follower retries once at the leader it names and saves the hubs.
+
+### HA-3: leader-only services, write forwarding and presence batching
+
+Operator view: [../cluster.md](../cluster.md).
+
+- **Agent URLs.** Raft knows only hub-to-hub addresses, so each hub records its own agent-facing URL
+  (`https://<first --host>:<TLS port>`) as a replicated `SetHubURL` command (table `cluster_hubs`,
+  migration 00005) once it has caught up after a start, and again whenever it changes.
+  `*cluster.Node` is the hub's `Leadership`: `LeaderAgentURL` and `AgentURLs` read the Raft
+  configuration plus that table. A member that has not recorded a URL yet falls back to
+  `https://<its raft host>:<this hub's TLS port>` (the HA-2 join redirect rule). Recording the URL was
+  chosen over deriving it from `--advertise`: Raft may run on another name or network than the one
+  agents use, hubs on one host need different ports, and the URL must match the hub's TLS
+  certificate, which the first `--host` does.
+- **Write forwarding.** A hub binds its store with `Node.BindForwarding`: on the leader a write is
+  proposed as before; on a follower `ApplyOrForward` sends the encoded command to the leader's
+  `ClusterService.Forward` on its TLS listener. The caller authenticates with its hub node certificate
+  (`urn:hearth:hub:<id>`) and must be in the Raft configuration; device certificates, missing
+  certificates and non-members are refused, and only the leader serves it (a follower answers
+  FAILED_PRECONDITION, like Join). The follower retries only when the command was certainly not
+  applied: the target was not the leader, or could not be dialed. While no leader is known or
+  reachable it retries for 5 s, then fails with `store.ErrUnavailable` (API: 503
+  `cluster_unavailable`). Timeouts and lost leadership after proposing are returned, never retried,
+  since the entry may still commit. The control socket's `/v1/apply` uses the same path, so CLI writes
+  work on followers.
+- **Policy and audit with forwarding.** The decision is made and audited where the user's request
+  arrived, as on a single hub: `policy.Do` runs on that hub, and both the action's writes and its
+  `AppendAudit` go through `ApplyOrForward`. `Forward` itself makes no decision and writes no audit
+  entry: it is replication, authenticated as a hub, not as a user. When an action and its audit
+  append fail for the same root cause (no leader), `policy.Do` now reports the cause once.
+- **Leader-only presence.** `Registry.RunReplicated` follows `OnLeaderChange`. When the node leads
+  and `WaitReady` (the barrier) has returned, a **term** starts: agent streams are accepted only within
+  a term (a leader still catching up answers Unavailable), and the sweeper and the last_seen flusher
+  run. When leadership ends, the term is cancelled: every open agent stream ends with
+  FailedPrecondition and the `NotLeader` detail (HA-4 moves the agent), then the pending last_seen
+  batch is written, through the new leader if there is one. Followers never sweep, so they never log
+  ErrNotLeader.
+- **Presence on a new leader.** The old leader's in-memory last_seen (up to one flush) dies with it,
+  so stored last_seen can be older than `OfflineAfter`. A new leader therefore treats every online
+  device as seen at the moment its term started: a device goes offline only after a full
+  `OfflineAfter` without a heartbeat under the new leader. Agents that reconnect in time keep their
+  status; their Hello stores fresh facts and last_seen and publishes `device.updated`, not
+  `device.online`. No device flaps offline and back.
+- **HA-D5 batching (clustered only).** Facts, online transitions (`MarkSeen` for a device that is not
+  online) and boot_time changes go through Raft at once. A heartbeat from an online device only
+  updates the leader's memory; `MarkSeenBatch` writes all pending ones every 30 s, in ID order, moving
+  last_seen only forward and never touching a status, so replay is deterministic. The leader's sweep
+  compares the newest of stored last_seen, memory and the term start against `OfflineAfter`, and
+  marks the silent devices offline by name (`MarkDevicesOffline`) after flushing their pending
+  last_seen. The API overlays the leader's in-memory last_seen on device reads, and events carry it.
+  Standalone hubs keep writing every heartbeat (`MarkSeen`, and `MarkOffline` with a cutoff): a single
+  node gains nothing from batching, and its behaviour stays exactly as before.
+- **Reads after a restart.** The blocking `WaitReady` at start is gone. Until it returns, the JSON API
+  (not the static UI) holds each request for up to 5 s and then answers 503 `catching_up`.
+  `HEARTH_ADMIN_PASSWORD` is applied only after catching up, so a new member never replaces the
+  cluster's password because its own copy is still empty.
+- **Not in HA-3.** Live SSE events on followers (they come from the leader's registry; a UI on a
+  follower sees the replicated state when it reloads; #27), member removal, and rolling schema upgrades
+  (#25).

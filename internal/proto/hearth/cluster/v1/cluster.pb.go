@@ -272,6 +272,118 @@ func (*PromoteResponse) Descriptor() ([]byte, []int) {
 	return file_hearth_cluster_v1_cluster_proto_rawDescGZIP(), []int{3}
 }
 
+// ForwardRequest carries one store command.
+type ForwardRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// command is the command as encoded by the store (a versioned JSON
+	// envelope), exactly the bytes that go into the Raft log.
+	Command       []byte `protobuf:"bytes,1,opt,name=command,proto3" json:"command,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ForwardRequest) Reset() {
+	*x = ForwardRequest{}
+	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ForwardRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ForwardRequest) ProtoMessage() {}
+
+func (x *ForwardRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ForwardRequest.ProtoReflect.Descriptor instead.
+func (*ForwardRequest) Descriptor() ([]byte, []int) {
+	return file_hearth_cluster_v1_cluster_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *ForwardRequest) GetCommand() []byte {
+	if x != nil {
+		return x.Command
+	}
+	return nil
+}
+
+// ForwardResponse is the outcome of applying the command on the leader.
+type ForwardResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// result is the store result as JSON; empty when error_message is set.
+	Result []byte `protobuf:"bytes,1,opt,name=result,proto3" json:"result,omitempty"`
+	// error_kind names a known store error (not_found, token_used,
+	// token_expired); empty for any other error.
+	ErrorKind string `protobuf:"bytes,2,opt,name=error_kind,json=errorKind,proto3" json:"error_kind,omitempty"`
+	// error_message is set when applying the command failed.
+	ErrorMessage  string `protobuf:"bytes,3,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ForwardResponse) Reset() {
+	*x = ForwardResponse{}
+	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ForwardResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ForwardResponse) ProtoMessage() {}
+
+func (x *ForwardResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ForwardResponse.ProtoReflect.Descriptor instead.
+func (*ForwardResponse) Descriptor() ([]byte, []int) {
+	return file_hearth_cluster_v1_cluster_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ForwardResponse) GetResult() []byte {
+	if x != nil {
+		return x.Result
+	}
+	return nil
+}
+
+func (x *ForwardResponse) GetErrorKind() string {
+	if x != nil {
+		return x.ErrorKind
+	}
+	return ""
+}
+
+func (x *ForwardResponse) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
 var File_hearth_cluster_v1_cluster_proto protoreflect.FileDescriptor
 
 const file_hearth_cluster_v1_cluster_proto_rawDesc = "" +
@@ -292,10 +404,18 @@ const file_hearth_cluster_v1_cluster_proto_rawDesc = "" +
 	"last_index\x18\x05 \x01(\x04R\tlastIndex\")\n" +
 	"\x0ePromoteRequest\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"\x11\n" +
-	"\x0fPromoteResponse2\xab\x01\n" +
+	"\x0fPromoteResponse\"*\n" +
+	"\x0eForwardRequest\x12\x18\n" +
+	"\acommand\x18\x01 \x01(\fR\acommand\"m\n" +
+	"\x0fForwardResponse\x12\x16\n" +
+	"\x06result\x18\x01 \x01(\fR\x06result\x12\x1d\n" +
+	"\n" +
+	"error_kind\x18\x02 \x01(\tR\terrorKind\x12#\n" +
+	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage2\xfd\x01\n" +
 	"\x0eClusterService\x12G\n" +
 	"\x04Join\x12\x1e.hearth.cluster.v1.JoinRequest\x1a\x1f.hearth.cluster.v1.JoinResponse\x12P\n" +
-	"\aPromote\x12!.hearth.cluster.v1.PromoteRequest\x1a\".hearth.cluster.v1.PromoteResponseB\xcf\x01\n" +
+	"\aPromote\x12!.hearth.cluster.v1.PromoteRequest\x1a\".hearth.cluster.v1.PromoteResponse\x12P\n" +
+	"\aForward\x12!.hearth.cluster.v1.ForwardRequest\x1a\".hearth.cluster.v1.ForwardResponseB\xcf\x01\n" +
 	"\x15com.hearth.cluster.v1B\fClusterProtoP\x01ZBgithub.com/gvart/hearth/internal/proto/hearth/cluster/v1;clusterv1\xa2\x02\x03HCX\xaa\x02\x11Hearth.Cluster.V1\xca\x02\x11Hearth\\Cluster\\V1\xe2\x02\x1dHearth\\Cluster\\V1\\GPBMetadata\xea\x02\x13Hearth::Cluster::V1b\x06proto3"
 
 var (
@@ -310,20 +430,24 @@ func file_hearth_cluster_v1_cluster_proto_rawDescGZIP() []byte {
 	return file_hearth_cluster_v1_cluster_proto_rawDescData
 }
 
-var file_hearth_cluster_v1_cluster_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_hearth_cluster_v1_cluster_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_hearth_cluster_v1_cluster_proto_goTypes = []any{
 	(*JoinRequest)(nil),     // 0: hearth.cluster.v1.JoinRequest
 	(*JoinResponse)(nil),    // 1: hearth.cluster.v1.JoinResponse
 	(*PromoteRequest)(nil),  // 2: hearth.cluster.v1.PromoteRequest
 	(*PromoteResponse)(nil), // 3: hearth.cluster.v1.PromoteResponse
+	(*ForwardRequest)(nil),  // 4: hearth.cluster.v1.ForwardRequest
+	(*ForwardResponse)(nil), // 5: hearth.cluster.v1.ForwardResponse
 }
 var file_hearth_cluster_v1_cluster_proto_depIdxs = []int32{
 	0, // 0: hearth.cluster.v1.ClusterService.Join:input_type -> hearth.cluster.v1.JoinRequest
 	2, // 1: hearth.cluster.v1.ClusterService.Promote:input_type -> hearth.cluster.v1.PromoteRequest
-	1, // 2: hearth.cluster.v1.ClusterService.Join:output_type -> hearth.cluster.v1.JoinResponse
-	3, // 3: hearth.cluster.v1.ClusterService.Promote:output_type -> hearth.cluster.v1.PromoteResponse
-	2, // [2:4] is the sub-list for method output_type
-	0, // [0:2] is the sub-list for method input_type
+	4, // 2: hearth.cluster.v1.ClusterService.Forward:input_type -> hearth.cluster.v1.ForwardRequest
+	1, // 3: hearth.cluster.v1.ClusterService.Join:output_type -> hearth.cluster.v1.JoinResponse
+	3, // 4: hearth.cluster.v1.ClusterService.Promote:output_type -> hearth.cluster.v1.PromoteResponse
+	5, // 5: hearth.cluster.v1.ClusterService.Forward:output_type -> hearth.cluster.v1.ForwardResponse
+	3, // [3:6] is the sub-list for method output_type
+	0, // [0:3] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
@@ -340,7 +464,7 @@ func file_hearth_cluster_v1_cluster_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_hearth_cluster_v1_cluster_proto_rawDesc), len(file_hearth_cluster_v1_cluster_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
@@ -75,6 +76,16 @@ type Config struct {
 	// caller must shut the hub down. After a restart the node restores its
 	// latest snapshot and replays the log, so nothing is lost or skipped.
 	OnFatal func(error)
+	// AgentURL is this hub's agent-facing URL (https://host:port), which
+	// Announce records in the replicated store. Agents are sent it to fail
+	// over to, and followers forward writes to the leader's.
+	AgentURL string
+	// AgentPort is the fallback for a hub whose agent URL is not recorded
+	// yet: https://<its raft host>:AgentPort. Empty means no fallback.
+	AgentPort string
+	// ForwardWait bounds how long ApplyOrForward waits for a reachable
+	// leader; zero means 5 s.
+	ForwardWait time.Duration
 
 	// Tuning; zero values use raft's defaults. Tests shorten them.
 	HeartbeatTimeout   time.Duration
@@ -96,6 +107,8 @@ type Node struct {
 	trans *raft.NetworkTransport
 	bolt  *raftboltdb.BoltStore
 	fsm   *fsm
+	// fwdHTTP forwards writes to the leader with this hub's node certificate.
+	fwdHTTP *http.Client
 
 	obsCh   chan raft.Observation
 	obs     *raft.Observer
@@ -126,6 +139,9 @@ func New(cfg Config) (*Node, error) {
 	}
 	if cfg.OnFatal == nil {
 		cfg.OnFatal = func(error) {}
+	}
+	if cfg.ForwardWait <= 0 {
+		cfg.ForwardWait = defaultForwardWait
 	}
 	return &Node{cfg: cfg, dir: filepath.Join(cfg.DataDir, RaftDir), log: cfg.Log.With("node_id", cfg.NodeID)}, nil
 }
@@ -171,6 +187,7 @@ func (n *Node) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("cluster: %w", err)
 	}
+	n.fwdHTTP = newForwardClient(n.cfg.CA, cert)
 	n.trans = raft.NewNetworkTransportWithLogger(stream, maxPool, dialTimeout, logger)
 	n.bolt, err = raftboltdb.NewBoltStore(filepath.Join(n.dir, boltFile))
 	if err != nil {
@@ -264,6 +281,7 @@ func (n *Node) Shutdown() error {
 	close(n.stopObs)
 	<-n.obsDone
 	n.closeStores()
+	n.fwdHTTP.CloseIdleConnections()
 	if err != nil {
 		return fmt.Errorf("cluster: shutdown: %w", err)
 	}
