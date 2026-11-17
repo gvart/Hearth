@@ -59,6 +59,21 @@ func (r Devices) MarkSeen(ctx context.Context, id string, now time.Time) (Device
 	return d, prev, nil
 }
 
+// SetBootTime sets the boot time of device id; the zero time clears it. It
+// returns the updated device, or ErrNotFound.
+func (r Devices) SetBootTime(ctx context.Context, id string, bootTime time.Time) (Device, error) {
+	row := r.db.QueryRowContext(ctx, `UPDATE devices SET boot_time = ? WHERE id = ? RETURNING `+deviceColumns,
+		nullMillis(bootTime), id)
+	d, err := scanDevice(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Device{}, fmt.Errorf("set boot time of device %s: %w", id, ErrNotFound)
+	}
+	if err != nil {
+		return Device{}, fmt.Errorf("set boot time of device %s: %w", id, err)
+	}
+	return d, nil
+}
+
 // updateOne applies set to device id in one transaction and returns the
 // updated row and the status it had before.
 func (r Devices) updateOne(ctx context.Context, id, set string, args ...any) (d Device, prev string, err error) {

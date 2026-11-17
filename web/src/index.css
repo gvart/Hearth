@@ -342,6 +342,10 @@ table {
   border-bottom: 1px solid var(--border);
 }
 
+.devices .uptime {
+  font-variant-numeric: tabular-nums; /* a ticking value keeps its width */
+}
+
 .devices tbody tr {
   cursor: pointer;
   transition: background 0.12s;

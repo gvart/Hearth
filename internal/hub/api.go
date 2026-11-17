@@ -99,6 +99,9 @@ type DeviceJSON struct {
 	Facts     json.RawMessage   `json:"facts"`
 	FirstSeen time.Time         `json:"first_seen"`
 	LastSeen  time.Time         `json:"last_seen"`
+	// BootTime is when the host last booted, derived from heartbeat uptime;
+	// null until the first heartbeat that reports uptime.
+	BootTime *time.Time `json:"boot_time"`
 }
 
 func deviceJSON(d store.Device) DeviceJSON {
@@ -110,9 +113,13 @@ func deviceJSON(d store.Device) DeviceJSON {
 	if len(facts) == 0 {
 		facts = json.RawMessage(`{}`)
 	}
+	var boot *time.Time
+	if !d.BootTime.IsZero() {
+		boot = &d.BootTime
+	}
 	return DeviceJSON{
 		ID: d.ID, Name: d.Name, Hostname: d.Hostname, OS: d.OS, Arch: d.Arch, Status: d.Status,
-		Labels: labels, Facts: facts, FirstSeen: d.FirstSeen, LastSeen: d.LastSeen,
+		Labels: labels, Facts: facts, FirstSeen: d.FirstSeen, LastSeen: d.LastSeen, BootTime: boot,
 	}
 }
 

@@ -92,7 +92,7 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 		switch p := msg.GetPayload().(type) {
 		case *agentv1.AgentMessage_Heartbeat:
 			log.DebugContext(ctx, "heartbeat")
-			if err := s.registry.Heartbeat(ctx, deviceID); err != nil {
+			if err := s.registry.Heartbeat(ctx, deviceID, p.Heartbeat.GetUptime().AsDuration()); err != nil {
 				log.WarnContext(ctx, "record heartbeat", "err", err)
 			}
 		case *agentv1.AgentMessage_Facts:

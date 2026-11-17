@@ -103,19 +103,45 @@ func (r *Registry) ReportFacts(ctx context.Context, deviceID string, h *agentv1.
 	return nil
 }
 
-// Heartbeat records that the device is alive. It publishes device.online only
-// if the device was not online.
-func (r *Registry) Heartbeat(ctx context.Context, deviceID string) error {
+// bootTimeJitter is how far a derived boot time may drift from the stored one
+// before it is replaced. Heartbeat transit time and uptime rounding move the
+// derived value by a little on every heartbeat; a reboot moves it by far more.
+const bootTimeJitter = 2 * time.Second
+
+// Heartbeat records that the device is alive and, if uptime is positive,
+// derives its boot time as receive time minus uptime. It publishes
+// device.online if the device was not online, and device.updated if it was
+// and its boot time changed (first report or reboot). Otherwise it is silent.
+func (r *Registry) Heartbeat(ctx context.Context, deviceID string, uptime time.Duration) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	d, prev, err := r.devices.MarkSeen(ctx, deviceID, r.now())
+	now := r.now()
+	d, prev, err := r.devices.MarkSeen(ctx, deviceID, now)
 	if err != nil {
 		return err
 	}
-	if prev != store.StatusOnline {
-		r.publish(ctx, Event{Type: EventDeviceOnline, Device: d})
+	changed := false
+	if boot := now.Add(-uptime); uptime > 0 && (d.BootTime.IsZero() || absDuration(boot.Sub(d.BootTime)) > bootTimeJitter) {
+		// On failure the presence change is still published below.
+		var updated store.Device
+		if updated, err = r.devices.SetBootTime(ctx, deviceID, boot); err == nil {
+			d, changed = updated, true
+		}
 	}
-	return nil
+	switch {
+	case prev != store.StatusOnline:
+		r.publish(ctx, Event{Type: EventDeviceOnline, Device: d})
+	case changed:
+		r.publish(ctx, Event{Type: EventDeviceUpdated, Device: d})
+	}
+	return err
+}
+
+func absDuration(d time.Duration) time.Duration {
+	if d < 0 {
+		return -d
+	}
+	return d
 }
 
 // Sweep marks every online device not seen for OfflineAfter as offline and

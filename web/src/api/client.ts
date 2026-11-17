@@ -43,6 +43,8 @@ export interface Device {
   facts: Facts;
   first_seen: string;
   last_seen: string;
+  /** When the host last booted (RFC 3339); null until a heartbeat reports uptime. */
+  boot_time: string | null;
 }
 
 export interface Session {

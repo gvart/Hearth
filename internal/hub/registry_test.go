@@ -90,7 +90,7 @@ func TestRegistryTransitions(t *testing.T) {
 				case "hello", "facts":
 					err = reg.ReportFacts(ctx, "pi", testHello())
 				case "heartbeat":
-					err = reg.Heartbeat(ctx, "pi")
+					err = reg.Heartbeat(ctx, "pi", 0)
 				case "sweep":
 					err = reg.Sweep(ctx)
 				default:
@@ -109,6 +109,93 @@ func TestRegistryTransitions(t *testing.T) {
 			}
 			if d.Status != tt.wantStatus {
 				t.Errorf("status = %q, want %q", d.Status, tt.wantStatus)
+			}
+		})
+	}
+}
+
+// TestRegistryBootTime checks boot time derivation from heartbeat uptime with
+// a fake clock. Each heartbeat advances the clock by its own amount, so a
+// steady device reports uptime == elapsed; wantBoot is relative to the start.
+func TestRegistryBootTime(t *testing.T) {
+	type hb struct {
+		advance, uptime time.Duration
+	}
+	const (
+		on  = EventDeviceOnline
+		off = EventDeviceOffline
+		upd = EventDeviceUpdated
+		h   = time.Hour
+	)
+	tests := []struct {
+		name       string
+		hello      bool // a Hello brings the device online first
+		sweepAfter int  // index of the beat after which 31s pass and a sweep runs; -1 for never
+		beats      []hb
+		wantEvents []string
+		wantBoot   time.Duration // boot time minus start; 0 means unknown
+	}{
+		{"first uptime on online device is an update", true, -1, []hb{{0, h}}, []string{on, upd}, -h},
+		{"first uptime on unknown device rides on online", false, -1, []hb{{0, h}}, []string{on}, -h},
+		{"steady uptime is silent", true, -1, []hb{{0, h}, {10 * time.Second, h + 10*time.Second}}, []string{on, upd}, -h},
+		{"jitter under threshold is ignored", true, -1, []hb{{0, h}, {10 * time.Second, h + 8500*time.Millisecond}}, []string{on, upd}, -h},
+		{"jitter of exactly threshold is ignored", true, -1, []hb{{0, h}, {10 * time.Second, h + 12*time.Second}}, []string{on, upd}, -h},
+		{"drift over threshold is stored", true, -1, []hb{{0, h}, {10 * time.Second, h + 7*time.Second}}, []string{on, upd, upd}, -h + 3*time.Second},
+		{"reboot is an update", true, -1, []hb{{0, h}, {time.Minute, 5 * time.Second}}, []string{on, upd, upd}, time.Minute - 5*time.Second},
+		{"missing uptime keeps boot time", true, -1, []hb{{0, h}, {10 * time.Second, 0}}, []string{on, upd}, -h},
+		{"missing uptime leaves it unknown", true, -1, []hb{{0, 0}}, []string{on}, 0},
+		{"reboot while offline rides on online", true, 0, []hb{{0, h}, {time.Minute, time.Second}}, []string{on, upd, off, on}, 31*time.Second + time.Minute - time.Second},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := t.Context()
+			st := newTestStore(t)
+			enrollDevice(t, st, "pi")
+			clk := newFakeClock()
+			start := clk.Now()
+			reg := NewRegistry(RegistryConfig{Store: st, OfflineAfter: 30 * time.Second, Now: clk.Now})
+			events, unsubscribe := reg.Subscribe()
+			defer unsubscribe()
+
+			if tt.hello {
+				if err := reg.ReportFacts(ctx, "pi", testHello()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var last Event
+			for i, b := range tt.beats {
+				clk.Advance(b.advance)
+				if err := reg.Heartbeat(ctx, "pi", b.uptime); err != nil {
+					t.Fatalf("heartbeat %d: %v", i, err)
+				}
+				if i == tt.sweepAfter {
+					clk.Advance(31 * time.Second)
+					if err := reg.Sweep(ctx); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			var got []string
+			for len(events) > 0 {
+				last = <-events
+				got = append(got, last.Type)
+			}
+			if !reflect.DeepEqual(got, tt.wantEvents) {
+				t.Errorf("events = %v, want %v", got, tt.wantEvents)
+			}
+			var want time.Time
+			if tt.wantBoot != 0 {
+				want = start.Add(tt.wantBoot)
+			}
+			d, err := st.Devices().Get(ctx, "pi")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !d.BootTime.Equal(want) {
+				t.Errorf("stored boot time = %v, want %v", d.BootTime, want)
+			}
+			if last.Type != off && !last.Device.BootTime.Equal(want) {
+				t.Errorf("last event (%s) boot time = %v, want %v", last.Type, last.Device.BootTime, want)
 			}
 		})
 	}
@@ -143,7 +230,7 @@ func TestRegistryReportFacts(t *testing.T) {
 	}
 
 	clk.Advance(time.Second)
-	if err := reg.Heartbeat(ctx, "pi"); err != nil {
+	if err := reg.Heartbeat(ctx, "pi", 0); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := st.Devices().Get(ctx, "pi"); !got.LastSeen.Equal(clk.Now()) {
@@ -153,7 +240,7 @@ func TestRegistryReportFacts(t *testing.T) {
 
 func TestRegistryUnknownDevice(t *testing.T) {
 	reg := NewRegistry(RegistryConfig{Store: newTestStore(t)})
-	if err := reg.Heartbeat(t.Context(), "ghost"); !errors.Is(err, store.ErrNotFound) {
+	if err := reg.Heartbeat(t.Context(), "ghost", 0); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("Heartbeat(ghost) = %v, want ErrNotFound", err)
 	}
 	if err := reg.ReportFacts(t.Context(), "ghost", testHello()); !errors.Is(err, store.ErrNotFound) {
@@ -171,7 +258,7 @@ func TestRegistryRunStopsOnCancel(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- reg.Run(ctx) }()
 
-	if err := reg.Heartbeat(t.Context(), "pi"); err != nil {
+	if err := reg.Heartbeat(t.Context(), "pi", 0); err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{EventDeviceOnline, EventDeviceOffline} {
