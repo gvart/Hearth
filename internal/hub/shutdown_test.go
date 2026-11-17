@@ -49,13 +49,13 @@ func TestShutdownEndsStreams(t *testing.T) {
 	}
 
 	errLog := stdlog.New(io.Discard, "", 0)
-	agentSrv := &http.Server{Handler: NewHandler(cfg), TLSConfig: TLSConfig(ca, serverCert), ErrorLog: errLog}
+	agentSrv := &http.Server{Handler: NewHandler(cfg), TLSConfig: TLSConfig(ca, serverCert), ErrorLog: errLog, ReadHeaderTimeout: 5 * time.Second}
 	agentSrv.RegisterOnShutdown(stop)
 	webMux := http.NewServeMux()
 	webH := NewHTTPHandler(cfg)
 	webMux.Handle("/", webH)
 	webMux.Handle("GET /api/v1/events", EndOnStop(stopping, webH))
-	webSrv := &http.Server{Handler: webMux, ErrorLog: errLog}
+	webSrv := &http.Server{Handler: webMux, ErrorLog: errLog, ReadHeaderTimeout: 5 * time.Second}
 	webSrv.RegisterOnShutdown(stop)
 	agentURL := serveOn(t, func(ln net.Listener) error { return agentSrv.ServeTLS(ln, "", "") }, "https://")
 	webURL := serveOn(t, webSrv.Serve, "http://")
