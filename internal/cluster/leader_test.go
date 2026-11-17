@@ -55,10 +55,20 @@ func TestSweeperRunsOnlyOnTheLeaderAndMovesOnFailover(t *testing.T) {
 		}
 		return true
 	})
+	// Only the leader sweeps (and logs the transition); every hub publishes
+	// the event once, the followers from the entry they applied.
+	eventually(t, "every hub to publish quiet-1 offline", func() bool {
+		for _, h := range hubs {
+			if len(h.eventsOf(hub.EventDeviceOffline)) == 0 {
+				return false
+			}
+		}
+		return true
+	})
 	for _, h := range hubs {
-		got := len(h.eventsOf(hub.EventDeviceOffline))
-		if want := map[bool]int{true: 1, false: 0}[h == leader]; got != want {
-			t.Errorf("%s published %d offline events, want %d (only the leader sweeps)", h.ID(), got, want)
+		got, swept := len(h.eventsOf(hub.EventDeviceOffline)), sweptOffline(h)
+		if got != 1 || swept != map[bool]int{true: 1, false: 0}[h == leader] {
+			t.Errorf("%s: %d offline events (want 1), swept %d (only the leader sweeps)", h.ID(), got, swept)
 		}
 	}
 
@@ -66,14 +76,20 @@ func TestSweeperRunsOnlyOnTheLeaderAndMovesOnFailover(t *testing.T) {
 	next := leaderHub(t, hubs)
 	silentDevice(t, next, "quiet-2")
 	eventually(t, "the new leader to sweep quiet-2", func() bool { return statusOn(next, "quiet-2") == store.StatusOffline })
-	if len(next.eventsOf(hub.EventDeviceOffline)) != 1 {
-		t.Errorf("new leader %s: offline events for %v", next.ID(), eventIDs(next.eventsOf(hub.EventDeviceOffline)))
+	if sweptOffline(next) != 1 {
+		t.Errorf("new leader %s: swept %d devices, want 1", next.ID(), sweptOffline(next))
 	}
-	// Give the remaining follower several sweep periods: it stays quiet.
+	// Give the remaining follower several sweep periods: it does not sweep,
+	// and every hub publishes each offline event once.
 	time.Sleep(300 * time.Millisecond)
+	for _, h := range append(followers(hubs, next), next) {
+		if ids := eventIDs(h.eventsOf(hub.EventDeviceOffline)); !reflect.DeepEqual(ids, []string{"quiet-1", "quiet-2"}) {
+			t.Errorf("%s published offline events for %v, want quiet-1 and quiet-2 once", h.ID(), ids)
+		}
+	}
 	for _, h := range followers(hubs, next) {
-		if n := len(h.eventsOf(hub.EventDeviceOffline)); n != 0 {
-			t.Errorf("follower %s published %d offline events", h.ID(), n)
+		if n := sweptOffline(h); n != 0 {
+			t.Errorf("follower %s swept %d devices", h.ID(), n)
 		}
 	}
 	for _, h := range hubs {
@@ -397,6 +413,11 @@ func TestNoFlapOnLeaderChange(t *testing.T) {
 		return true
 	})
 	time.Sleep(2 * offlineAfter)
+	// Followers published each device's first online from the log already.
+	onlineBefore := map[*testHub]int{}
+	for _, h := range hubs {
+		onlineBefore[h] = len(h.eventsOf(hub.EventDeviceOnline))
+	}
 
 	leader.kill()
 	next := leaderHub(t, hubs)
@@ -425,10 +446,16 @@ func TestNoFlapOnLeaderChange(t *testing.T) {
 		if off := h.eventsOf(hub.EventDeviceOffline); len(off) != 0 {
 			t.Errorf("%s published offline events for %v", h.ID(), eventIDs(off))
 		}
-		if on := h.eventsOf(hub.EventDeviceOnline); h == next && len(on) != 0 {
-			t.Errorf("new leader published online events (a flap) for %v", eventIDs(on))
+		if on := h.eventsOf(hub.EventDeviceOnline)[onlineBefore[h]:]; len(on) != 0 {
+			t.Errorf("%s published online events (a flap) for %v", h.ID(), eventIDs(on))
 		}
 	}
+}
+
+// sweptOffline counts the offline transitions h logged: the registry logs
+// those it made itself, not those it applied from another hub's entries.
+func sweptOffline(h *testHub) int {
+	return strings.Count(h.logs.String(), "msg="+hub.EventDeviceOffline)
 }
 
 func eventIDs(es []hub.Event) []string {

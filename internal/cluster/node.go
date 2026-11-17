@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/hashicorp/go-hclog"
@@ -117,6 +118,9 @@ type Node struct {
 
 	mu        sync.Mutex
 	listeners []func(LeaderInfo)
+
+	// applyObs is the ApplyObserver; see ObserveApplies.
+	applyObs atomic.Pointer[ApplyObserver]
 }
 
 var _ store.Applier = (*Node)(nil)
@@ -199,7 +203,7 @@ func (n *Node) Start(ctx context.Context) error {
 		n.closeStores()
 		return fmt.Errorf("cluster: open snapshots: %w", err)
 	}
-	n.fsm = newFSM(n.store, n.dir, n.log, n.cfg.OnFatal)
+	n.fsm = newFSM(n.store, n.dir, n.log, n.cfg.OnFatal, &n.applyObs)
 
 	conf := raft.DefaultConfig()
 	conf.LocalID = raft.ServerID(n.cfg.NodeID)
@@ -230,6 +234,7 @@ func (n *Node) Start(ctx context.Context) error {
 		return fmt.Errorf("cluster: start raft: %w", err)
 	}
 	n.raft = r
+	n.fsm.raft.Store(r)
 	n.watchLeader()
 	return nil
 }
@@ -373,6 +378,18 @@ func (n *Node) OnLeaderChange(fn func(LeaderInfo)) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	n.listeners = append(n.listeners, fn)
+}
+
+// ObserveApplies makes o the observer of every command this node applies
+// from now on, replacing any earlier one; nil removes it. It may be called
+// before or after Start. The hub's registry uses it to publish device events
+// on followers.
+func (n *Node) ObserveApplies(o ApplyObserver) {
+	if o == nil {
+		n.applyObs.Store(nil)
+		return
+	}
+	n.applyObs.Store(&o)
 }
 
 func (n *Node) watchLeader() {

@@ -29,7 +29,7 @@ func TestFSMDomainErrorsGoToTheProposer(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = st.Close() })
 	var fatal []error
-	f := newFSM(st, t.TempDir(), testLogger(t), func(err error) { fatal = append(fatal, err) })
+	f := newFSM(st, t.TempDir(), testLogger(t), func(err error) { fatal = append(fatal, err) }, nil)
 
 	resp := f.Apply(entry(t, 1, store.MarkSeen{ID: "ghost", Now: 1})).(applyResponse)
 	if !errors.Is(resp.err, store.ErrNotFound) {
@@ -65,7 +65,7 @@ func TestFSMHaltsOnNodeFailure(t *testing.T) {
 			}
 			t.Cleanup(func() { _ = st.Close() })
 			var fatal []error
-			f := newFSM(st, t.TempDir(), testLogger(t), func(err error) { fatal = append(fatal, err) })
+			f := newFSM(st, t.TempDir(), testLogger(t), func(err error) { fatal = append(fatal, err) }, nil)
 
 			resp := f.Apply(setup(t, st)).(applyResponse)
 			if !errors.Is(resp.err, ErrHalted) {

@@ -101,10 +101,9 @@ work on every hub; on a follower, the write is forwarded to the leader. Sessions
 cookies belong to a host name: switching from `hub-a.lan` to `hub-b.lan` means logging in again.
 Give all hubs one shared DNS name (several A records) if you want one login to survive a failover.
 
-Live updates (the device list changing as devices come and go) are pushed by the leader. A UI open on
-a follower shows the replicated state when it loads or refreshes, and the last-seen time it shows can
-trail the leader's by up to 30 seconds, because the leader writes last-seen times in batches
-([#27](https://github.com/gvart/hearth/issues/27) tracks live updates on followers).
+Live updates (the device list changing as devices come and go) reach a UI on any hub. On a follower
+the last-seen time can trail the leader's by up to 30 seconds, because the leader writes last-seen
+times in batches; online and offline changes arrive as quickly as on the leader.
 
 ## Agents
 

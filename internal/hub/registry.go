@@ -552,6 +552,23 @@ func (b *bus) publish(e Event) {
 	}
 }
 
+// active reports whether anyone is subscribed.
+func (b *bus) active() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return len(b.subs) > 0
+}
+
+// dropAll ends every subscription.
+func (b *bus) dropAll() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for ch := range b.subs {
+		delete(b.subs, ch)
+		close(ch)
+	}
+}
+
 func (b *bus) drop(ch chan Event) {
 	b.mu.Lock()
 	defer b.mu.Unlock()

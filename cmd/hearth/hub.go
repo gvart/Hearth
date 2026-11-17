@@ -223,6 +223,8 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	g.Go(func() error { return serve(gctx, agentSrv, func() error { return agentSrv.ServeTLS(agentLn, "", "") }) })
 	g.Go(func() error { return serve(gctx, webSrv, func() error { return webSrv.Serve(webLn) }) })
 	if node != nil {
+		// Followers publish device events from the entries they apply.
+		node.ObserveApplies(reg)
 		// Presence runs on the leader only and follows leadership.
 		changed := make(chan struct{}, 1)
 		node.OnLeaderChange(func(cluster.LeaderInfo) {
