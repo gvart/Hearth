@@ -21,6 +21,8 @@ message AgentMessage {
     Heartbeat heartbeat = 2;
     MetricsBatch metrics_batch = 3;
     ExecResult exec_result = 4;
+    // Facts re-sent periodically by the agent; protocol_version and device_id are ignored.
+    Hello facts = 5;
   }
 }
 
