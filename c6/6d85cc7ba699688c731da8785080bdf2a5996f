@@ -1,0 +1,39 @@
+internal/store/devicestatus.go
+  s_815aef767535ea::t_6209b9ede16ade 62-76
+internal/hub/registry.go
+  s_815aef767535ea::t_f8569adae76ece 106-115,118-119,123-124,129-132,134-135,138-144
+  s_815aef767535ea::t_2629cee213ccdf 125-128,137
+internal/hub/api.go
+  s_815aef767535ea::t_ec37d455779d9a 102-104,116-119,122
+internal/store/devices.go
+  s_815aef767535ea::t_6209b9ede16ade 27-28,52-53,57,59,100,107,110,119-121,125-130
+  s_815aef767535ea::t_ae695a2b56a1e6 131-132
+internal/hub/agentstream.go
+  s_815aef767535ea::t_f12448fabbecc3 95
+internal/store/boottime_test.go
+  s_815aef767535ea::t_2ffd9e7b71482a 1-60
+internal/hub/api_test.go
+  s_815aef767535ea::t_e05b5412c32cb5 223-254
+internal/hub/registry_test.go
+  s_815aef767535ea::t_f12448fabbecc3 93,233,243,261
+  s_815aef767535ea::t_c694bd5acd29e4 117-132,134-146,148-203
+  s_815aef767535ea::t_a2a5ed571efa3a 133,147
+internal/store/migrations/00003_device_boot_time.sql
+  s_815aef767535ea::t_6209b9ede16ade 1-9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c66d85cc7ba699688c731da8785080bdf2a5996f",
+  "prompts": {},
+  "sessions": {
+    "s_815aef767535ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1866255a-7d59-4f07-869c-b29b78c7a98d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
