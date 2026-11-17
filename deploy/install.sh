@@ -19,6 +19,8 @@
 #                            (default: the GitHub releases API)
 #   HEARTH_SKIP_SERVICE=1    write the service file but do not call systemctl/launchctl
 set -eu
+# Never trace, even under `sh -x`: the arguments hold the enrollment token.
+set +x
 
 REPO=gvart/hearth
 HUB_HTTP_PORT=7080
@@ -154,6 +156,9 @@ setup_root() {
 	if command -v sudo >/dev/null 2>&1; then
 		say "not running as root; using sudo for the install steps"
 		SUDO=sudo
+		# Ask for the password now, on the terminal: later sudo calls read the
+		# token from a pipe and must not prompt.
+		sudo -v || die "sudo failed; re-run this installer as root"
 		return
 	fi
 	die "this installer needs root: re-run it as root (sudo is not installed)"
@@ -441,7 +446,9 @@ main() {
 
 	if [ "$JOIN" = 1 ]; then
 		say "enrolling with $HUB"
-		as_root "$BIN_PATH" agent join --data-dir "$DATA_DIR" "$HUB" "$TOKEN" ||
+		# The token goes in on stdin (printf is a shell builtin), never in argv,
+		# so neither ps nor sudo's log ever sees it.
+		printf '%s\n' "$TOKEN" | as_root "$BIN_PATH" agent join --data-dir "$DATA_DIR" "$HUB" - ||
 			die "enrollment failed (is the token valid and unused, and the hub reachable at $HUB?)"
 	fi
 

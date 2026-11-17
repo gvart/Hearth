@@ -60,7 +60,11 @@ stop_agent() {
 t_start=$(ms)
 log "setup: tools, release server, hub"
 apt-get update -qq >/dev/null
-DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends curl ca-certificates busybox >/dev/null
+DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends curl ca-certificates busybox sudo >/dev/null
+# A non-root user with sudo, which logs every command line it runs.
+useradd -m alice
+printf 'Defaults logfile=/var/log/sudo.log\nalice ALL=(ALL) NOPASSWD: ALL\n' >/etc/sudoers.d/e2e
+chmod 0440 /etc/sudoers.d/e2e
 busybox httpd -p 127.0.0.1:8000 -h /srv
 HEARTH_ADMIN_PASSWORD=$PASSWORD /build/hearth hub --data-dir /tmp/hub --assets-dir "$E2E_ASSETS" \
   --listen 127.0.0.1:7443 --http-listen 127.0.0.1:7080 >/tmp/hub.log 2>&1 &
@@ -92,11 +96,39 @@ expect_fail "plain-http hub" "must be an https:// URL" \
 expect_fail "missing release" "does release v9.9.9 exist" \
   env HEARTH_INSTALL_PREFIX=/tmp/neg sh /deploy/install.sh --hub "$HUB" --token "$TOKEN" --version v9.9.9
 
-log "install: curl $WEB/install.sh | sh -s -- --hub $HUB --token <token>"
+log "install as a sudo user: curl $WEB/install.sh | sh -s -- --hub $HUB --token <token>"
+# Record the argv of every process holding the token while the installer runs.
+# grep reads the token from a file so its own argv stays clean.
+printf '%s\n' "$TOKEN" >/tmp/token.pat
+: >/tmp/argv-hits.log
+(
+  set +e # processes come and go between grep and tr
+  while [ ! -e /tmp/scan.stop ]; do
+    grep -a -l -F -f /tmp/token.pat /proc/[0-9]*/cmdline 2>/dev/null | while read -r f; do
+      tr '\0' ' ' <"$f" 2>/dev/null && echo
+    done
+  done >>/tmp/argv-hits.log
+  exit 0
+) &
+scan_pid=$!
 t0=$(ms)
-curl -fsSL "$WEB/install.sh" | sh -s -- --hub "$HUB" --token "$TOKEN" | tee /tmp/install1.log
+# The token reaches alice's shell through the environment, as the UI's
+# one-liner puts it on the installer's own `sh` command line.
+# shellcheck disable=SC2016 # expanded by alice's shell
+HEARTH_E2E_TOKEN=$TOKEN runuser -u alice -- sh -c \
+  'curl -fsSL "$0/install.sh" | sh -s -- --hub "$1" --token "$HEARTH_E2E_TOKEN"' "$WEB" "$HUB" | tee /tmp/install1.log
 t_installed=$(ms)
+touch /tmp/scan.stop
+wait "$scan_pid"
 ! grep -qF -- "$TOKEN" /tmp/install1.log || fail "installer echoed the token"
+grep -q "using sudo" /tmp/install1.log || fail "installer did not use sudo"
+grep -q "agent join" /var/log/sudo.log || fail "join did not run through sudo"
+! grep -qF -- "$TOKEN" /var/log/sudo.log || fail "token in sudo's log: $(cat /var/log/sudo.log)"
+if grep -v '^sh -s -- ' /tmp/argv-hits.log | grep -q .; then
+  fail "token in the argv of another process: $(sort -u /tmp/argv-hits.log)"
+fi
+[ -s /tmp/argv-hits.log ] || fail "argv scan saw nothing; it should at least see the installer's own sh"
+pass "token never in sudo's log; in argv only of the installer's own sh ($(grep -c . /tmp/argv-hits.log) samples)"
 grep -q "installed hearth v0.0.0-e2e" /tmp/install1.log || fail "latest release not resolved"
 [ -x /usr/local/bin/hearth ] || fail "binary not installed"
 [ -f "$DATA/agent.crt" ] || fail "join did not write agent.crt"
