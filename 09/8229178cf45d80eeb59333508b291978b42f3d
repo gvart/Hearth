@@ -1,0 +1,49 @@
+internal/store/audit.go
+  s_815aef767535ea::t_3fa64f33ce3a8d 29,32
+  s_815aef767535ea::t_8b8ff59dfc91de 64
+  s_815aef767535ea::t_a7ed734d5e9a62 49-52,56
+internal/store/applier.go
+  s_815aef767535ea::t_187605173c4658 1-57
+internal/store/devices.go
+  s_815aef767535ea::t_b1db038eb36908 78
+  s_815aef767535ea::t_24008ab6b8a537 51-56
+  s_815aef767535ea::t_103e9206dec253 32,35
+  s_815aef767535ea::t_7680e964b0260d 122-123,125,127-128
+  s_815aef767535ea::t_6362ad87d9049b 65
+internal/store/devicestatus.go
+  s_815aef767535ea::t_940fbd9f9a22c7 39-41,45,51,55,61,65,71,75
+internal/store/store.go
+  s_815aef767535ea::t_10bf515b3bf14d 25,27-29,34-35
+  s_815aef767535ea::t_a50f816d14ccee 61-71
+internal/store/command.go
+  s_815aef767535ea::t_843929fdfaf1a5 1-494
+internal/store/tokens.go
+  s_815aef767535ea::t_b4cc5a9eef24dc 21,24,36,47,51
+internal/store/certs.go
+  s_815aef767535ea::t_b2b721582f401e 17,20,27,37,41,49
+internal/store/bench_test.go
+  s_815aef767535ea::t_d92edc301e5b2b 1-36,52-63
+  s_815aef767535ea::t_b7e214a6b7f5bb 37-51
+internal/store/command_test.go
+  s_815aef767535ea::t_9e9cc183a9d4f8 21-24,33-36,68-72,74-75,140-143,163-164,166-167,170-173,178-181,211-214
+  s_815aef767535ea::t_960536009173ef 375-376
+  s_815aef767535ea::t_0b9147cae9e213 1-20,25-32,37-67,73,76-139,144-162,165,168-169,174-177,182-210,215-374,377-383
+internal/store/admin.go
+  s_815aef767535ea::t_324cdb7666014e 18,21,27,39,43,55,66,82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "098229178cf45d80eeb59333508b291978b42f3d",
+  "prompts": {},
+  "sessions": {
+    "s_815aef767535ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1866255a-7d59-4f07-869c-b29b78c7a98d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": null
+    }
+  }
+}
