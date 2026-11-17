@@ -46,7 +46,7 @@ internal/policy/       action classes, decisions, audit log
 pkg/sdk/               public agent/plugin SDK — Apache-2.0 licensed
 proto/                 .proto sources
 web/                   Vite + React + TypeScript UI, embedded via embed.FS
-deploy/                install.sh, systemd/launchd units, compose for e2e
+deploy/                install.sh, systemd/launchd units
 docs/                  design notes, task specs (docs/tasks/)
 test/e2e/              end-to-end tests (compose: hub + agents)
 ```
@@ -66,11 +66,11 @@ test/e2e/              end-to-end tests (compose: hub + agents)
 ```
 task build        # build web + binary
 task test         # go test ./... -race
-task lint         # golangci-lint + eslint + tsc
+task lint         # SPDX header check + golangci-lint + eslint + tsc
 task proto        # buf lint + buf generate (into internal/proto)
 task e2e          # compose-based end-to-end tests
 task e2e:install  # install.sh end to end in a Debian 12 container (Docker)
-task dev          # hub with hot-reloading web UI
+task dev          # web UI dev server with hot reload (Vite)
 task release:snapshot  # goreleaser snapshot: all archives + image into dist/, no publish
 ```
 
