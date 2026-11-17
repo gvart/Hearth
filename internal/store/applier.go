@@ -4,7 +4,11 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
+
+	"modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 )
 
 // Applier executes store writes. Every repository write builds a Command and
@@ -24,13 +28,42 @@ type ApplierFunc func(ctx context.Context, cmd Command) (Result, error)
 func (f ApplierFunc) Apply(ctx context.Context, cmd Command) (Result, error) { return f(ctx, cmd) }
 
 // Option configures Open.
-type Option func(*Store)
+type Option func(*openConfig)
+
+type openConfig struct {
+	newApplier func(s *Store) Applier
+	noUpgrade  bool
+}
 
 // WithApplier makes the store route every write through the Applier returned
 // by newApplier. newApplier is called once, after migrations, with the opened
 // store, so the Applier it builds can call s.ApplyLocal, Snapshot and Restore.
 func WithApplier(newApplier func(s *Store) Applier) Option {
-	return func(s *Store) { s.applier = newApplier(s) }
+	return func(c *openConfig) { c.newApplier = newApplier }
+}
+
+// WithoutUpgrade stops Open from migrating an existing database: it fails
+// with ErrSchemaMismatch unless the database is already at SchemaVersion. A
+// new, empty database is still initialized. A Raft cluster member opens its
+// store this way, because the schema is part of the replicated state and one
+// node must never migrate on its own.
+func WithoutUpgrade() Option {
+	return func(c *openConfig) { c.noUpgrade = true }
+}
+
+// IsDomainError reports whether err, returned by ApplyLocal, is an outcome of
+// the command itself rather than a failure of this node: an unknown row, a
+// used or expired token, or a constraint violation. Such errors are
+// deterministic, so every node applying the same command to the same state
+// gets the same one and the transaction rolls back everywhere. Any other error
+// (I/O, a full disk, a closed database) means this node failed to apply a
+// write the others applied.
+func IsDomainError(err error) bool {
+	if errors.Is(err, ErrNotFound) || errors.Is(err, ErrTokenUsed) || errors.Is(err, ErrTokenExpired) {
+		return true
+	}
+	var se *sqlite.Error
+	return errors.As(err, &se) && se.Code()&0xff == sqlite3.SQLITE_CONSTRAINT
 }
 
 // ApplyLocal applies cmd to the local database in one transaction. It is the

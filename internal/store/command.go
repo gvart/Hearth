@@ -260,6 +260,63 @@ func whyUnusable(ctx context.Context, tx *sql.Tx, hash []byte, nowMs int64) erro
 	}
 }
 
+// CreateJoinToken stores a single-use cluster join token by its SHA-256 hash.
+type CreateJoinToken struct {
+	Hash      []byte `json:"hash"`
+	ExpiresAt int64  `json:"expires_at"`
+}
+
+// Op implements Command.
+func (CreateJoinToken) Op() string { return "create_join_token" }
+
+func (c CreateJoinToken) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
+	_, err := tx.ExecContext(ctx, `INSERT INTO join_tokens (hash, expires_at) VALUES (?, ?)`, c.Hash, c.ExpiresAt)
+	return Result{}, err
+}
+
+// ConsumeJoinToken marks a join token used at Now if it is unused and
+// unexpired, deciding inside apply like ConsumeToken. It fails with
+// ErrNotFound, ErrTokenUsed or ErrTokenExpired.
+type ConsumeJoinToken struct {
+	Hash []byte `json:"hash"`
+	Now  int64  `json:"now"`
+}
+
+// Op implements Command.
+func (ConsumeJoinToken) Op() string { return "consume_join_token" }
+
+func (c ConsumeJoinToken) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
+	res, err := tx.ExecContext(ctx, `
+		UPDATE join_tokens SET used_at = ?
+		WHERE hash = ? AND used_at IS NULL AND expires_at > ?`, c.Now, c.Hash, c.Now)
+	if err != nil {
+		return Result{}, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return Result{}, err
+	}
+	if n == 1 {
+		return Result{}, nil
+	}
+	var (
+		expiresAt int64
+		usedAt    sql.NullInt64
+	)
+	err = tx.QueryRowContext(ctx, `SELECT expires_at, used_at FROM join_tokens WHERE hash = ?`, c.Hash).
+		Scan(&expiresAt, &usedAt)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return Result{}, ErrNotFound
+	case err != nil:
+		return Result{}, err
+	case usedAt.Valid:
+		return Result{}, ErrTokenUsed
+	default:
+		return Result{}, ErrTokenExpired
+	}
+}
+
 // CreateCert records a certificate issued to a device.
 type CreateCert struct {
 	Serial   string `json:"serial"`
@@ -452,6 +509,10 @@ func DecodeCommand(b []byte) (Command, error) {
 		cmd, err = decodeAs[CreateToken](env.Cmd)
 	case ConsumeToken{}.Op():
 		cmd, err = decodeAs[ConsumeToken](env.Cmd)
+	case CreateJoinToken{}.Op():
+		cmd, err = decodeAs[CreateJoinToken](env.Cmd)
+	case ConsumeJoinToken{}.Op():
+		cmd, err = decodeAs[ConsumeJoinToken](env.Cmd)
 	case CreateCert{}.Op():
 		cmd, err = decodeAs[CreateCert](env.Cmd)
 	case RevokeDevice{}.Op():

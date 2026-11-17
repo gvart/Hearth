@@ -28,6 +28,8 @@ func allCommands() []Command {
 		MarkOffline{Cutoff: 5},
 		CreateToken{Hash: []byte{1, 2, 3}, Labels: `{}`, ExpiresAt: 6},
 		ConsumeToken{Hash: []byte{1, 2, 3}, Now: 7},
+		CreateJoinToken{Hash: []byte{7, 8}, ExpiresAt: 12},
+		ConsumeJoinToken{Hash: []byte{7, 8}, Now: 13},
 		CreateCert{Serial: "0a", DeviceID: "pi"},
 		RevokeDevice{DeviceID: "pi", Now: 8},
 		AppendAudit{
@@ -157,6 +159,15 @@ func runScenario(t *testing.T, s *Store) {
 	wantErr(err, ErrTokenExpired)
 	_, err = s.Tokens().Consume(ctx, "tok-unknown", at(5*time.Minute))
 	wantErr(err, ErrNotFound)
+
+	// Cluster join tokens: one used, one left to expire. An enrollment token
+	// is not a join token.
+	must(s.JoinTokens().Create(ctx, "join-1", at(10*time.Minute)))
+	must(s.JoinTokens().Create(ctx, "join-2", at(time.Minute)))
+	must(s.JoinTokens().Consume(ctx, "join-1", at(time.Minute)))
+	wantErr(s.JoinTokens().Consume(ctx, "join-1", at(2*time.Minute)), ErrTokenUsed)
+	wantErr(s.JoinTokens().Consume(ctx, "join-2", at(5*time.Minute)), ErrTokenExpired)
+	wantErr(s.JoinTokens().Consume(ctx, "tok-1", at(time.Minute)), ErrNotFound)
 
 	// Enrollment of two devices.
 	for _, id := range []string{"pi", "nas"} {
@@ -309,7 +320,7 @@ func TestReplayIsDeterministic(t *testing.T) {
 		}
 	}
 	want, got := dumpTables(t, src.db), dumpTables(t, dst.db)
-	for _, table := range []string{"admin", "audit_log", "certs", "devices", "sessions", "sqlite_sequence", "tokens"} {
+	for _, table := range []string{"admin", "audit_log", "certs", "devices", "join_tokens", "sessions", "sqlite_sequence", "tokens"} {
 		if len(want[table]) == 0 {
 			t.Errorf("scenario left %s empty; the comparison would prove nothing", table)
 		}
@@ -358,6 +369,8 @@ func TestApplierSeesEveryWrite(t *testing.T) {
 		"Pw":     s.Admin().SetPasswordHash(ctx, "h"),
 		"Sess":   s.Admin().CreateSession(ctx, "s", now, now),
 		"Del":    s.Admin().DeleteSession(ctx, "s"),
+		"Join":   s.JoinTokens().Create(ctx, "j", now),
+		"UseJn":  s.JoinTokens().Consume(ctx, "j", now),
 	}
 	_, writes["Consume"] = s.Tokens().Consume(ctx, "tok", now)
 	_, writes["Revoke"] = s.Certs().RevokeDevice(ctx, "pi", now)

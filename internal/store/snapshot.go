@@ -101,8 +101,8 @@ func writeFile(path string, r io.Reader) error {
 }
 
 // checkSnapshot opens the staged snapshot read-only and verifies it is an
-// intact SQLite database carrying a goose version, before it touches the
-// live database.
+// intact SQLite database at this binary's schema version, before it touches
+// the live database.
 func checkSnapshot(ctx context.Context, path string) error {
 	db, err := sql.Open("sqlite", "file:"+path+"?mode=ro")
 	if err != nil {
@@ -123,6 +123,9 @@ func checkSnapshot(ctx context.Context, path string) error {
 	}
 	if version == 0 {
 		return errors.New("check snapshot: no schema version")
+	}
+	if version != SchemaVersion() {
+		return fmt.Errorf("check snapshot: %w: snapshot has %d, binary has %d", ErrSchemaMismatch, version, SchemaVersion())
 	}
 	return nil
 }
