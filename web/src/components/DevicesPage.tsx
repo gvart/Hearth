@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Device } from '../api/client.ts';
 import { useDeviceEvents, useDevices, useLogout } from '../api/hooks.ts';
-import { displayName, osArch, primaryIP, relativeTime, statusLabel } from '../format.ts';
+import { displayName, formatUptime, osArch, primaryIP, relativeTime, statusLabel } from '../format.ts';
 import { AddDeviceDialog } from './AddDeviceDialog.tsx';
 import { DeviceDrawer } from './DeviceDrawer.tsx';
 import { Logo } from './Logo.tsx';
@@ -31,7 +31,7 @@ export function DevicesPage() {
   useDeviceEvents();
   const devices = useDevices();
   const logout = useLogout();
-  const now = useNow(10_000);
+  const now = useNow(1_000); // uptime ticks in seconds
   const [selectedId, setSelectedId] = useState<string>();
   const [adding, setAdding] = useState(false);
   // Device IDs present when "Add device" was last opened; rows not in it are new.
@@ -106,7 +106,7 @@ export function DevicesPage() {
                   <th>OS / arch</th>
                   <th>IP</th>
                   <th>Last seen</th>
-                  <th title="Not reported by agents yet">Uptime</th>
+                  <th>Uptime</th>
                 </tr>
               </thead>
               <tbody>
@@ -138,7 +138,7 @@ export function DevicesPage() {
                     <td className="muted">
                       {d.status === 'online' ? 'now' : d.status === 'unknown' ? '—' : relativeTime(d.last_seen, now)}
                     </td>
-                    <td className="muted">—</td>
+                    <td className="muted uptime">{formatUptime(d, now)}</td>
                   </tr>
                 ))}
               </tbody>

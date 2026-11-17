@@ -58,6 +58,29 @@ export function relativeTime(iso: string, now: number): string {
   return rtf.format(secs, 'second');
 }
 
+/**
+ * How long an online device has been up, from its boot time: "45s", "12m 5s",
+ * "4h 12m", "3d 4h". Offline and never-connected devices have no live uptime.
+ */
+export function formatUptime(d: Pick<Device, 'status' | 'boot_time'>, now: number): string {
+  const boot = d.boot_time ? Date.parse(d.boot_time) : NaN;
+  if (d.status !== 'online' || Number.isNaN(boot)) {
+    return '—';
+  }
+  const secs = Math.max(0, Math.floor((now - boot) / 1000));
+  const [days, hours, mins] = [Math.floor(secs / 86_400), Math.floor(secs / 3_600) % 24, Math.floor(secs / 60) % 60];
+  if (days > 0) {
+    return `${String(days)}d ${String(hours)}h`;
+  }
+  if (hours > 0) {
+    return `${String(hours)}h ${String(mins)}m`;
+  }
+  if (mins > 0) {
+    return `${String(mins)}m ${String(secs % 60)}s`;
+  }
+  return `${String(secs)}s`;
+}
+
 export function formatBytes(n: number | undefined): string {
   if (!n) {
     return '—';
@@ -72,7 +95,7 @@ export function formatBytes(n: number | undefined): string {
   return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)} ${steps[i] ?? ''}`;
 }
 
-export function formatDateTime(iso: string): string {
-  const t = Date.parse(iso);
+export function formatDateTime(iso: string | null): string {
+  const t = iso ? Date.parse(iso) : NaN;
   return Number.isNaN(t) || t <= 0 ? '—' : new Date(t).toLocaleString();
 }

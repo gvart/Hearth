@@ -34,6 +34,7 @@ export function DeviceDrawer({ device, onClose }: { device: Device; onClose: () 
         <Row k="Agent" v={f.agent_version} />
         <Row k="First seen" v={formatDateTime(device.first_seen)} />
         <Row k="Last seen" v={formatDateTime(device.last_seen)} />
+        <Row k="Booted" v={formatDateTime(device.boot_time)} />
         <Row
           k="Labels"
           v={
