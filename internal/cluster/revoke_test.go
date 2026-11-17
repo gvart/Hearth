@@ -3,8 +3,10 @@
 package cluster
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -31,6 +33,14 @@ func revokedDetail(err error) bool {
 	return false
 }
 
+// subscribeEvents subscribes to h's registry until the test ends.
+func subscribeEvents(t *testing.T, h *testHub) <-chan hub.Event {
+	t.Helper()
+	events, unsubscribe := h.reg.Subscribe()
+	t.Cleanup(unsubscribe)
+	return events
+}
+
 // A `hearth device revoke` on a cluster goes through a hub's control socket
 // and Raft. The leader ends the device's live stream at its next heartbeat
 // and marks it offline; another device on the same leader keeps streaming.
@@ -46,6 +56,30 @@ func TestRevokeThroughControlSocketEndsLiveStream(t *testing.T) {
 	}
 	eventually(t, "both online", func() bool { return statusOn(leader, "pi") == "online" && statusOn(leader, "nas") == "online" })
 	nasWelcomes := nas.welcomes.Load()
+	// Count device.offline on every hub from subscriptions of this test's
+	// own, opened once each hub has caught up: restoring the bootstrap
+	// snapshot ends earlier subscriptions (Registry.Restored).
+	offline := map[*testHub]*atomic.Int32{}
+	for _, h := range hubs {
+		ctx, cancel := context.WithTimeout(t.Context(), waitFor)
+		err := h.WaitReady(ctx)
+		cancel()
+		if err != nil {
+			t.Fatalf("%s catching up: %v", h.ID(), err)
+		}
+		n, events := &atomic.Int32{}, subscribeEvents(t, h)
+		offline[h] = n
+		go func() {
+			for e := range events {
+				if e.Type == hub.EventDeviceOffline {
+					if e.Device.ID != "pi" {
+						t.Errorf("%s: device.offline for %s", h.ID(), e.Device.ID)
+					}
+					n.Add(1)
+				}
+			}
+		}()
+	}
 
 	cc := serveControl(t, follower.testNode)
 	cli, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "cli.db"), store.WithApplier(func(*store.Store) store.Applier { return cc }))
@@ -66,8 +100,16 @@ func TestRevokeThroughControlSocketEndsLiveStream(t *testing.T) {
 	for _, h := range hubs {
 		eventually(t, "pi offline on "+h.ID(), func() bool { return statusOn(h, "pi") == "offline" })
 	}
-	if n := len(leader.eventsOf(hub.EventDeviceOffline)); n != 1 {
-		t.Errorf("leader published %d device.offline events, want 1 (pi)", n)
+	// The leader publishes from its own call, followers from the applied
+	// MarkDevicesOffline: exactly one device.offline, for pi, on every hub.
+	for _, h := range hubs {
+		eventually(t, "device.offline on "+h.ID(), func() bool { return offline[h].Load() > 0 })
+	}
+	time.Sleep(3 * every) // room for a duplicate to show up
+	for _, h := range hubs {
+		if n := offline[h].Load(); n != 1 {
+			t.Errorf("%s published device.offline %d times, want once", h.ID(), n)
+		}
 	}
 
 	// The other device is untouched: same stream, still heartbeating.
