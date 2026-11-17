@@ -1,0 +1,22 @@
+internal/hub/tokens.go
+  s_815aef767535ea::t_a78976fc4233b9 109-112
+internal/hub/tokens_test.go
+  s_815aef767535ea::t_88c2814506a9b0 35,39-43
+  s_815aef767535ea::t_15aa07260d58b4 44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e361ea7b3b805cc6ae4df39432eeb3f7c77b30e6",
+  "prompts": {},
+  "sessions": {
+    "s_815aef767535ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1866255a-7d59-4f07-869c-b29b78c7a98d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
