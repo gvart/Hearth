@@ -107,6 +107,7 @@ Keep this list in sync with `Taskfile.yml`. If you add a task, document it here.
 - Keep PRs small and focused. Unrelated refactors go in a separate PR.
 - Commits follow Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`, `test:`) and are signed off (`git commit -s`, DCO).
 - If a decision isn't covered here or in the task spec, pick the simplest option, note it in the PR description under "Decisions", and move on.
+- PR descriptions follow `.github/pull_request_template.md` (What / Done when / Decisions / Checklist). `gh pr create --body` skips the template, so fill it in yourself. No AI attribution footers or co-author trailers.
 - Do not add features outside the task's scope. Open an issue instead.
 
 ## Licensing
