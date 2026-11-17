@@ -1,0 +1,111 @@
+proto/hearth/cluster/v1/cluster.proto
+  s_815aef767535ea::t_9be700f0238438 19-23
+  s_815aef767535ea::t_34ec1c9c0a56c7 64-81
+internal/cluster/control.go
+  s_815aef767535ea::t_2a598da1848a0a 168,171-179
+  s_815aef767535ea::t_6a02a118d02241 199
+  s_815aef767535ea::t_a376b83205bead 77
+  s_815aef767535ea::t_a0d8842994d4a2 99
+  s_815aef767535ea::t_12c7237515f12e 180
+internal/cluster/hubs.go
+  s_815aef767535ea::t_5640da427f8f5b 1-107
+internal/hub/server.go
+  s_815aef767535ea::t_fd0c4eb28d12bb 71,75-96
+  s_815aef767535ea::t_829ca5cc9e5ee6 97,123-128,132-133
+  s_815aef767535ea::t_2e3716ee6b5e13 49-53
+  s_815aef767535ea::t_b54472278276f6 98
+internal/proto/hearth/cluster/v1/clusterv1connect/cluster.connect.go
+  s_815aef767535ea::t_b8dc4c73967988 157-158,186
+  s_815aef767535ea::t_7836f236e1f20f 42-43,56-60,86-91,99,112-116,127-131,153-156,165-166,183-185
+cmd/hearth/hub.go
+  s_815aef767535ea::t_fcaa5f989498ee 220-222,226-248
+  s_815aef767535ea::t_573a5fa2f2cdf9 148,151-155
+  s_815aef767535ea::t_a2d1ad27b5c829 84-91,101-106
+  s_815aef767535ea::t_36211bbe613688 129-132,134
+cmd/hearth/cluster_test.go
+  s_815aef767535ea::t_1b44549eea08a1 54,59
+internal/cluster/forward.go
+  s_815aef767535ea::t_663115ee6b8b1f 1-180
+internal/policy/policy_test.go
+  s_815aef767535ea::t_d086b85f2b9a69 186-187
+cmd/hearth/cluster.go
+  s_815aef767535ea::t_ae71aeddbe5ca7 45-46
+internal/cluster/doc.go
+  s_815aef767535ea::t_a376b83205bead 10-12
+internal/hub/agentstream.go
+  s_815aef767535ea::t_1e0132859714ed 58-64
+  s_815aef767535ea::t_8e752fbb0b759f 107-109
+cmd/hearth/hub_cluster.go
+  s_815aef767535ea::t_94cd5d7dec780f 77-80
+  s_815aef767535ea::t_846be23ad22bff 123,128
+internal/cluster/node.go
+  s_815aef767535ea::t_e2e2284ede89f0 284
+  s_815aef767535ea::t_a7136038092f8c 10
+  s_815aef767535ea::t_cfa5f3cdbe7c76 190
+  s_815aef767535ea::t_f6b3403ff73313 143-145
+  s_815aef767535ea::t_7d7b58b7008d20 110-111
+  s_815aef767535ea::t_9357df4de0cbd0 79-88
+internal/cluster/helpers_test.go
+  s_815aef767535ea::t_6e873f7027bc15 69-76,97-98
+  s_815aef767535ea::t_398554fc8e8c68 68
+internal/cluster/hub_test.go
+  s_815aef767535ea::t_bacd5c8458a73b 1-81,85-107,109-252,255-272,274-301,303-369
+  s_815aef767535ea::t_c2ac24696de7d4 82-84,253-254,273,302
+  s_815aef767535ea::t_d086b85f2b9a69 108
+internal/cluster/join.go
+  s_815aef767535ea::t_bc31f9cf6a94f9 168-170,172
+internal/cluster/leader_test.go
+  s_815aef767535ea::t_ef810b0cb7dee3 441-460
+  s_815aef767535ea::t_7461a5c996baff 215
+  s_815aef767535ea::t_1f51e3682cd448 282-288,308-309
+  s_815aef767535ea::t_7251eaec978eb7 70,426,429,432-439
+  s_815aef767535ea::t_c2ac24696de7d4 90,319,387-389
+  s_815aef767535ea::t_c57a64d948de5b 202
+  s_815aef767535ea::t_d086b85f2b9a69 120,147,165-166,182-184,310,326-327
+  s_815aef767535ea::t_d6263903d6bab9 1-69,71-89,91-119,121-146,148-164,167-181,185-201,203-214,216-281,289-307,311-318,320-325,328-386,390-425,427-428,430-431,440
+internal/hub/registry.go
+  s_815aef767535ea::t_5193032ccc3819 246-247,455-457,462,482,505-506
+  s_815aef767535ea::t_8761c6ed8d32fe 42-48,51-53,57-62,68-69,75-93
+  s_815aef767535ea::t_a317ed9406cfca 149,296-454,458-461,463-481,483-504
+  s_815aef767535ea::t_abb7d54239f6e8 260-268
+  s_815aef767535ea::t_4109535db5dd57 136-137,141-148
+  s_815aef767535ea::t_b2911764a5753e 171-172
+  s_815aef767535ea::t_f572ba011a3c8a 192-245
+  s_815aef767535ea::t_ae9fbef99bbe76 103-107
+internal/hub/ready_test.go
+  s_815aef767535ea::t_09ca56b2b21627 10,38
+  s_815aef767535ea::t_7a12832a47379d 1-9,11-37,39-57
+internal/hub/tokens.go
+  s_815aef767535ea::t_17a90fc2277d51 101-102
+  s_815aef767535ea::t_945b7e375bd460 19
+  s_815aef767535ea::t_c2649ea9650dbe 103
+internal/hub/api.go
+  s_815aef767535ea::t_1c464b49d9e6a5 16
+  s_815aef767535ea::t_b5349bd8cdaa15 245-247
+  s_815aef767535ea::t_b1cf52a0e65d2f 271-274
+  s_815aef767535ea::t_2ca3126c2098c2 439-444
+  s_815aef767535ea::t_56dd8a0a6395fb 319
+  s_815aef767535ea::t_cdbad6c34f39b6 65,94,99,126-128
+  s_815aef767535ea::t_f31536b169fb1f 83-93,95-98,100-112,445
+  s_815aef767535ea::t_7b282b58942ae3 303
+internal/cluster/control_test.go
+  s_815aef767535ea::t_345e3dc8acf26c 54,90-92,95-96
+internal/proto/hearth/cluster/v1/cluster.pb.go
+  s_815aef767535ea::t_7b792cd143f65d 275-386,407-414,417-418,433,439-440,445-450,467
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9d7990d347fbab1669fdf8545fa1f4361b49c1b2",
+  "prompts": {},
+  "sessions": {
+    "s_815aef767535ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1866255a-7d59-4f07-869c-b29b78c7a98d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
