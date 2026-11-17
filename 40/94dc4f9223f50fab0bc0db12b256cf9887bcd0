@@ -1,0 +1,35 @@
+docs/design/ha-hub.md
+  s_815aef767535ea::t_ad5fb8b4699569 379-380
+  s_815aef767535ea::t_e7cde96837f87c 352-354
+  s_815aef767535ea::t_5537ba50ced764 360-362
+docs/cluster.md
+  s_815aef767535ea::t_204e30b9ef236d 94-135
+  s_815aef767535ea::t_c88099618331d9 157-158
+  s_815aef767535ea::t_a3c4cb1af0ce20 172-175
+test/e2e/cluster.compose.yaml
+  s_815aef767535ea::t_10cf0e006ab8fa 57-59,61-63
+  s_815aef767535ea::t_11fc48e340433f 76
+  s_815aef767535ea::t_bcf136c1ac3228 1-2
+  s_815aef767535ea::t_5773d014f67e47 55-56,60
+test/e2e/cluster_test.go
+  s_815aef767535ea::t_78a8dfbc1c7d62 65-67,70-71,74
+  s_815aef767535ea::t_73cd52455ca4b2 201-226,228,233-238
+  s_815aef767535ea::t_b238c1cbec8470 47-55
+  s_815aef767535ea::t_e3fa42e7df2cca 227,229-232
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4094dc4f9223f50fab0bc0db12b256cf9887bcd0",
+  "prompts": {},
+  "sessions": {
+    "s_815aef767535ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1866255a-7d59-4f07-869c-b29b78c7a98d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
