@@ -39,6 +39,12 @@ COPYFILE_DISABLE=1 tar "${tar_flags[@]}" -czf "$work/srv/releases/v$version/$ass
 printf '%s  %s\n' "$(sha256 "$work/srv/releases/v$version/$asset")" "$asset" >"$work/srv/releases/v$version/checksums.txt"
 printf '{"tag_name": "v%s", "prerelease": false}\n' "$version" >"$work/srv/latest.json"
 
+# A prerelease tag, as goreleaser names it: never "latest", only via --version.
+rc=0.0.1-rc.1
+mkdir -p "$work/srv/releases/v$rc"
+cp "$work/srv/releases/v$version/$asset" "$work/srv/releases/v$rc/hearth_${rc}_linux_${goarch}.tar.gz"
+sed "s/$asset/hearth_${rc}_linux_${goarch}.tar.gz/" "$work/srv/releases/v$version/checksums.txt" >"$work/srv/releases/v$rc/checksums.txt"
+
 bad=hearth_0.0.0-bad_linux_${goarch}.tar.gz
 cp "$work/srv/releases/v$version/$asset" "$work/srv/releases/v0.0.0-bad/$bad"
 printf '%064d  %s\n' 0 "$bad" >"$work/srv/releases/v0.0.0-bad/checksums.txt"

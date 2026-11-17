@@ -125,6 +125,15 @@ wait_for 10 device_online || fail "device not online after upgrade"
 [ "$(devices | grep -o '"id":' | wc -l)" = 1 ] || fail "re-run created another device: $(devices)"
 pass "identity kept, one device, online again"
 
+log "upgrade to a prerelease with --version v0.0.1-rc.1"
+stop_agent
+sh /deploy/install.sh --version v0.0.1-rc.1 | tee /tmp/install3.log
+grep -q "downloading hearth_0.0.1-rc.1_linux_" /tmp/install3.log || fail "prerelease asset not used"
+[ "$cert_sum" = "$(sha256sum "$DATA/agent.crt")" ] || fail "identity changed on prerelease upgrade"
+start_agent
+wait_for 10 device_online || fail "device not online after prerelease upgrade"
+pass "prerelease installed by tag, identity kept"
+
 log "--uninstall keeps data"
 stop_agent
 sh /deploy/install.sh --uninstall
