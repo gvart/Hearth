@@ -1,0 +1,46 @@
+Taskfile.yml
+  s_a04f18ebfd06d2::t_c0890cab2f31f9 44,46-47
+internal/proto/hearth/agent/v1/agentv1connect/agent.connect.go
+  s_a04f18ebfd06d2::t_09d7fdc6d8a6d6 45,59,70,74,81,110
+  s_a04f18ebfd06d2::t_53524a44176a89 1-44,46-58,60-69,71-73,75-80,82-109,111-112
+buf.gen.yaml
+  s_a04f18ebfd06d2::t_53524a44176a89 1-16
+go.mod
+  s_a04f18ebfd06d2::t_2f49cb0171fb8a 15-18
+  s_a04f18ebfd06d2::t_32fea845035d88 5-9,19
+CLAUDE.md
+  s_a04f18ebfd06d2::t_1ad518a07e1915 70
+buf.yaml
+  s_a04f18ebfd06d2::t_09d7fdc6d8a6d6 8-13
+  s_a04f18ebfd06d2::t_53524a44176a89 1-7,14-16
+proto/hearth/agent/v1/agent.proto
+  s_a04f18ebfd06d2::t_09d7fdc6d8a6d6 14
+  s_a04f18ebfd06d2::t_53524a44176a89 1-13,15-107
+.github/workflows/ci.yml
+  s_a04f18ebfd06d2::t_1ad518a07e1915 66
+  s_a04f18ebfd06d2::t_c0890cab2f31f9 48-65,67-75
+go.sum
+  s_a04f18ebfd06d2::t_c3eaffc42e13fe 1-2,4-5,14-15
+internal/hub/agentstream.go
+  s_a04f18ebfd06d2::t_a41508005f6f3b 1-86
+internal/hub/agentstream_test.go
+  s_a04f18ebfd06d2::t_bdded91450bea2 1-147
+internal/proto/hearth/agent/v1/agent.pb.go
+  s_a04f18ebfd06d2::t_d5544cefb209ec 1-1065
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "be323f1b1fc48a92541294f7ed9654fc12116488",
+  "prompts": {},
+  "sessions": {
+    "s_a04f18ebfd06d2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dbf8d1d8-b540-4b03-8dde-b6456ffb7f00",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
