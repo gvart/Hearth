@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"sync"
+	"sync/atomic"
 
 	"github.com/hashicorp/raft"
 
@@ -26,12 +27,32 @@ type applyResponse struct {
 	err error
 }
 
+// ApplyObserver is told about every command this node's state machine
+// applies. Both methods run on raft's apply goroutine, in log order, so they
+// must return quickly and never block (no waiting on Raft writes, no
+// unbounded I/O): a slow observer stalls replication on this node.
+type ApplyObserver interface {
+	// Applied is called after cmd was applied successfully (a domain error
+	// is not reported). local is true when this node proposed the entry: it
+	// was the leader of the entry's Raft term when it applied it. A leader
+	// that already reacted to its own writes uses it to skip them.
+	Applied(cmd store.Command, res store.Result, local bool)
+	// Restored is called after a snapshot replaced the whole store. No
+	// Applied calls are made for what the snapshot contains, so anything
+	// derived from earlier entries must be rebuilt from the store.
+	Restored()
+}
+
 // fsm applies committed log entries to the store.
 type fsm struct {
 	st      *store.Store
 	dir     string
 	log     *slog.Logger
 	onFatal func(error)
+	// obs is the node's ApplyObserver, if any (see Node.ObserveApplies).
+	obs *atomic.Pointer[ApplyObserver]
+	// raft is set once raft.NewRaft returns; nil before.
+	raft atomic.Pointer[raft.Raft]
 
 	mu     sync.Mutex
 	halted error
@@ -39,8 +60,27 @@ type fsm struct {
 
 var _ raft.FSM = (*fsm)(nil)
 
-func newFSM(st *store.Store, dir string, log *slog.Logger, onFatal func(error)) *fsm {
-	return &fsm{st: st, dir: dir, log: log, onFatal: onFatal}
+func newFSM(st *store.Store, dir string, log *slog.Logger, onFatal func(error), obs *atomic.Pointer[ApplyObserver]) *fsm {
+	return &fsm{st: st, dir: dir, log: log, onFatal: onFatal, obs: obs}
+}
+
+// ledTerm reports whether this node is the leader of term now. Only the
+// leader of a term appends entries of that term, so an entry of that term
+// applied while this holds was proposed here. A leader that stepped down
+// before applying its entry answers false; its proposer got an error.
+func (f *fsm) ledTerm(term uint64) bool {
+	r := f.raft.Load()
+	return r != nil && r.State() == raft.Leader && r.CurrentTerm() == term
+}
+
+func (f *fsm) observer() ApplyObserver {
+	if f.obs == nil {
+		return nil
+	}
+	if o := f.obs.Load(); o != nil {
+		return *o
+	}
+	return nil
 }
 
 // Apply decodes the entry and applies it with ApplyLocal. A domain error (the
@@ -58,6 +98,9 @@ func (f *fsm) Apply(l *raft.Log) any {
 	res, err := f.st.ApplyLocal(context.Background(), cmd)
 	if err != nil && !store.IsDomainError(err) {
 		return applyResponse{err: f.halt(fmt.Errorf("log entry %d (%s): %w", l.Index, cmd.Op(), err))}
+	}
+	if o := f.observer(); err == nil && o != nil {
+		o.Applied(cmd, res, f.ledTerm(l.Term))
 	}
 	return applyResponse{res: res, err: err}
 }
@@ -117,6 +160,9 @@ func (f *fsm) Restore(rc io.ReadCloser) error {
 	if err := f.st.Restore(context.Background(), rc); err != nil {
 		f.log.Error("cluster snapshot restore failed", "err", err)
 		return err
+	}
+	if o := f.observer(); o != nil {
+		o.Restored()
 	}
 	return nil
 }

@@ -113,6 +113,7 @@ func startHub(t *testing.T, n *testNode, ca *pki.CA, o hubOpts) *testHub {
 		Store: n.st, Log: log, OfflineAfter: o.offlineAfter, SeenFlushInterval: o.flushEvery, Replicated: true,
 	})
 	h.pol = policy.New(n.st.Audit())
+	n.ObserveApplies(h.reg)
 	events, unsubscribe := h.reg.Subscribe()
 	go func() {
 		for e := range events {
@@ -257,6 +258,8 @@ type testAgent struct {
 	welcomes    atomic.Int32
 	mu          sync.Mutex
 	lastErr     error
+	// stop ends the agent, as if its process stopped.
+	stop func()
 }
 
 func (a *testAgent) url() string {
@@ -274,12 +277,13 @@ func runTestAgent(t *testing.T, hubs []*testHub, id string, cert tls.Certificate
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
-	t.Cleanup(func() {
+	stop := func() {
 		cancel()
 		<-done
-	})
+	}
+	t.Cleanup(stop)
 	client := tlsClient(hubs[0].ca, cert)
-	a := &testAgent{}
+	a := &testAgent{stop: stop}
 	a.connectedTo.Store("")
 	go func() {
 		defer close(done)
