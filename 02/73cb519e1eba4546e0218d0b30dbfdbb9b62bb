@@ -1,0 +1,35 @@
+internal/store/store.go
+  s_5680d8c32650dd::t_4c138883f4813c 1-79
+internal/store/devices.go
+  s_5680d8c32650dd::t_572adbf57c55ff 1-128
+internal/store/store_test.go
+  s_5680d8c32650dd::t_3a8b65e76a4135 1-412
+go.mod
+  s_5680d8c32650dd::t_cd8e863295b1b2 7,10
+  s_5680d8c32650dd::t_3f31b6118f38f0 14-15,17-21,23-28
+internal/store/audit.go
+  s_5680d8c32650dd::t_c041d18bd88dcc 1-95
+internal/store/tokens.go
+  s_5680d8c32650dd::t_e8e682eda36950 1-95
+internal/store/migrations/00001_init.sql
+  s_5680d8c32650dd::t_20fcba0de3c2b7 1-47,49-52,54,56-59,61-66
+  s_5680d8c32650dd::t_95e219539b5875 48,53,55,60
+go.sum
+  s_5680d8c32650dd::t_0840358b96b05e 4-5,8-13,16-25,27-28,33-36,38-47,51-78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0273cb519e1eba4546e0218d0b30dbfdbb9b62bb",
+  "prompts": {},
+  "sessions": {
+    "s_5680d8c32650dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "58ad4d7a-cd3b-4ef2-8450-db5e9ac662c5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
