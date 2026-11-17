@@ -42,8 +42,13 @@ func TestAPICreateToken(t *testing.T) {
 	if !ok || strings.Contains(args, got.Token) || strings.Contains(args, "--token") {
 		t.Errorf("install_command %q passes the token in the argv of sh", got.InstallCommand)
 	}
-	if want := "hearth agent join https://127.0.0.1:7443 " + got.Token; got.JoinCommand != want {
+	if want := "HEARTH_TOKEN=" + got.Token + " hearth agent join https://127.0.0.1:7443"; got.JoinCommand != want {
 		t.Errorf("join_command = %q, want %q", got.JoinCommand, want)
+	}
+	// Likewise the argv of hearth: the token is only in its environment.
+	_, args, ok = strings.Cut(got.JoinCommand, " hearth ")
+	if !ok || strings.Contains(args, got.Token) {
+		t.Errorf("join_command %q passes the token in the argv of hearth", got.JoinCommand)
 	}
 
 	// The token is stored, single use, and carries the labels.

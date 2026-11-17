@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -43,19 +44,19 @@ func newAgentRunCmd() *cobra.Command {
 func newAgentJoinCmd() *cobra.Command {
 	var dataDir string
 	cmd := &cobra.Command{
-		Use:   "join <hub-url> <token>",
+		Use:   "join <hub-url> [<token> | -]",
 		Short: "Enroll this device with a hub",
 		Long: "Enroll this device with a hub using a token from `hearth token create`.\n" +
 			"The hub is verified against the CA fingerprint in the token before the token is sent.\n" +
-			"Pass - as the token to read it from the first line of stdin, keeping it out of argv.",
-		Args: cobra.ExactArgs(2),
+			"The token comes from the " + tokenEnv + " environment variable, or from the first line of\n" +
+			"stdin when the token argument is -. Both keep it out of argv, which any local user can read\n" +
+			"with ps; a token argument still works but warns for that reason.",
+		Example: "  " + tokenEnv + "=<token> hearth agent join https://hub.lan:7443",
+		Args:    cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			token := args[1]
-			if token == "-" {
-				var err error
-				if token, err = readToken(cmd.InOrStdin()); err != nil {
-					return err
-				}
+			token, err := joinToken(cmd, args[1:])
+			if err != nil {
+				return err
 			}
 			id, err := agent.Join(cmd.Context(), args[0], token, dataDir, hostnameOr(""))
 			if err != nil {
@@ -69,6 +70,34 @@ func newAgentJoinCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir("agent"), "agent data directory (env HEARTH_DATA_DIR)")
 	return cmd
+}
+
+// tokenEnv names the environment variable `hearth agent join` reads the
+// enrollment token from.
+const tokenEnv = "HEARTH_TOKEN"
+
+// joinToken returns the enrollment token from the optional token argument
+// (- reads stdin) or else from $HEARTH_TOKEN. It always unsets HEARTH_TOKEN,
+// so no process started later inherits the token.
+func joinToken(cmd *cobra.Command, args []string) (string, error) {
+	env := strings.TrimSpace(os.Getenv(tokenEnv))
+	if err := os.Unsetenv(tokenEnv); err != nil {
+		return "", fmt.Errorf("unset %s: %w", tokenEnv, err)
+	}
+	switch {
+	case len(args) == 0:
+		if env == "" {
+			return "", errors.New("no enrollment token: set " + tokenEnv + "=<token>, or pass - and the token on stdin")
+		}
+		return env, nil
+	case args[0] == "-":
+		return readToken(cmd.InOrStdin())
+	default:
+		// Best effort: a warning that cannot be written must not fail the join.
+		_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "warning: a token argument is visible to other local users (ps); pass it as "+
+			tokenEnv+"=<token> instead")
+		return args[0], nil
+	}
 }
 
 // maxTokenLine bounds the stdin read; real tokens are about 100 bytes.

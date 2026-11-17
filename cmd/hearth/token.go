@@ -83,8 +83,8 @@ func runTokenCreate(ctx context.Context, opts tokenCreateOptions, out io.Writer)
 		return err
 	}
 
-	_, err = fmt.Fprintf(out, "Enrollment token (single use, expires %s):\n  %s\n\nJoin a device:\n  hearth agent join %s %s\n",
-		expires.Format(time.RFC3339), tok.Encode(), opts.hubURL, tok.Encode())
+	_, err = fmt.Fprintf(out, "Enrollment token (single use, expires %s):\n  %s\n\nJoin a device:\n  HEARTH_TOKEN=%s hearth agent join %s\n",
+		expires.Format(time.RFC3339), tok.Encode(), tok.Encode(), opts.hubURL)
 	if err != nil {
 		return fmt.Errorf("write token: %w", err)
 	}

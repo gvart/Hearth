@@ -76,7 +76,7 @@ func TestTokenCreate(t *testing.T) {
 	if tok.CAFingerprint != ca.Fingerprint() {
 		t.Error("token is not pinned to the hub CA")
 	}
-	if want := "hearth agent join https://hub.lan:7443 " + raw; !strings.Contains(out, want) {
+	if want := "HEARTH_TOKEN=" + raw + " hearth agent join https://hub.lan:7443\n"; !strings.Contains(out, want) {
 		t.Errorf("output lacks join one-liner %q:\n%s", want, out)
 	}
 
