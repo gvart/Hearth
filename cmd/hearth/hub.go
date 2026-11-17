@@ -28,6 +28,7 @@ type hubOptions struct {
 	listen     string
 	httpListen string
 	hosts      []string
+	assetsDir  string
 	// adminPassword is HEARTH_ADMIN_PASSWORD: it sets the admin password on a
 	// hub that has none yet.
 	adminPassword string
@@ -54,10 +55,17 @@ func newHubCmd() *cobra.Command {
 	cmd.Flags().StringVar(&opts.httpListen, "http-listen", ":"+defaultHTTPPort, "address to serve the web UI and API on (plain HTTP)")
 	cmd.Flags().StringSliceVar(&opts.hosts, "host", nil,
 		"DNS name or IP agents use to reach the hub; repeatable (default: this hostname, localhost, 127.0.0.1, ::1)")
+	cmd.Flags().StringVar(&opts.assetsDir, "assets-dir", "",
+		"directory of release archives and checksums.txt to serve at /download/ for `install.sh --from-hub`")
 	return cmd
 }
 
 func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
+	if opts.assetsDir != "" {
+		if info, err := os.Stat(opts.assetsDir); err != nil || !info.IsDir() {
+			return fmt.Errorf("--assets-dir %s is not a directory", opts.assetsDir)
+		}
+	}
 	if err := os.MkdirAll(opts.dataDir, 0o700); err != nil {
 		return fmt.Errorf("create data dir: %w", err)
 	}
@@ -107,9 +115,12 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		ErrorLog:          errLog,
 		BaseContext:       baseCtx,
 	}
+	webMux := http.NewServeMux()
+	webMux.Handle("/", hub.NewHTTPHandler(cfg))
+	hub.RegisterInstallRoutes(webMux, opts.assetsDir)
 	// No WriteTimeout: /api/v1/events is a long-lived stream.
 	webSrv := &http.Server{
-		Handler:           hub.NewHTTPHandler(cfg),
+		Handler:           webMux,
 		ReadHeaderTimeout: 10 * time.Second,
 		ErrorLog:          errLog,
 		BaseContext:       baseCtx,
