@@ -106,8 +106,10 @@ func (a *api) createToken(w http.ResponseWriter, r *http.Request) {
 		Token:     enc,
 		ExpiresAt: expires,
 		// Every part is checked above (host characters) or base64url, so the
-		// command is safe to paste into a shell.
-		InstallCommand: "curl -fsSL http://" + httpHost + "/install.sh | sh -s -- --hub " + agentURL + " --token " + enc,
+		// command is safe to paste into a shell. The token goes in the
+		// environment of sh, not its argv: any local user can read argv with
+		// ps, but not another user's environment.
+		InstallCommand: "curl -fsSL http://" + httpHost + "/install.sh | HEARTH_TOKEN=" + enc + " sh -s -- --hub " + agentURL,
 		JoinCommand:    "hearth agent join " + agentURL + " " + enc,
 	})
 }

@@ -5,7 +5,11 @@
 # installs it to /usr/local/bin, enrolls this device with a hub and runs the
 # agent as a service (systemd on Linux, launchd on macOS).
 #
-#   curl -fsSL http://<hub>:7080/install.sh | sh -s -- --hub https://<hub>:7443 --token <token>
+#   curl -fsSL http://<hub>:7080/install.sh | HEARTH_TOKEN=<token> sh -s -- --hub https://<hub>:7443
+#
+# The enrollment token comes in through the environment, which only the owner
+# and root can read, not the argv, which any local user can see with ps.
+# --token still works but warns for that reason.
 #
 # Re-running upgrades the binary and keeps the device identity (no token
 # needed). --uninstall removes the service and binary; --purge also deletes the
@@ -19,7 +23,7 @@
 #                            (default: the GitHub releases API)
 #   HEARTH_SKIP_SERVICE=1    write the service file but do not call systemctl/launchctl
 set -eu
-# Never trace, even under `sh -x`: the arguments hold the enrollment token.
+# Never trace, even under `sh -x`: variables and arguments hold the enrollment token.
 set +x
 
 REPO=gvart/hearth
@@ -48,13 +52,17 @@ usage() {
 Install the Hearth agent and enroll this device with a hub.
 
 Usage:
-  install.sh --hub https://<hub>:7443 --token <token>   install and enroll
-  install.sh [--version vX.Y.Z]                         upgrade an enrolled agent
-  install.sh --uninstall [--purge]                      remove the agent
+  HEARTH_TOKEN=<token> install.sh --hub https://<hub>:7443   install and enroll
+  install.sh [--version vX.Y.Z]                              upgrade an enrolled agent
+  install.sh --uninstall [--purge]                           remove the agent
+
+Environment:
+  HEARTH_TOKEN       enrollment token from the hub (first install only)
 
 Options:
   --hub URL          hub URL for enrollment (https://<hub>:7443)
-  --token TOKEN      enrollment token from the hub (first install only)
+  --token TOKEN      the enrollment token as an argument; avoid it: other local
+                     users can read it with ps. Overrides HEARTH_TOKEN.
   --from-hub         download the binary from the hub (http://<hub>:7080/download/)
                      instead of GitHub releases
   --version vX.Y.Z   release to install (default: the latest release)
@@ -127,6 +135,17 @@ while [ $# -gt 0 ]; do
 		;;
 	esac
 done
+
+# Take the token from the environment unless --token gave one, then drop
+# HEARTH_TOKEN so no child process (curl, tar, sudo, ...) inherits it. TOKEN
+# itself is never exported; join reads it on stdin.
+if [ -n "$TOKEN" ]; then
+	warn "--token exposes the token to other local users (ps); pass it as HEARTH_TOKEN=<token> instead"
+	[ -z "${HEARTH_TOKEN:-}" ] || warn "both --token and HEARTH_TOKEN are set; using --token"
+else
+	TOKEN=${HEARTH_TOKEN:-}
+fi
+unset HEARTH_TOKEN
 
 detect_platform() {
 	case $(uname -s) in
@@ -422,11 +441,11 @@ main() {
 
 	if enrolled; then
 		say "this device is already enrolled ($DATA_DIR/agent.crt); upgrading and keeping its identity"
-		[ -z "$TOKEN" ] || say "ignoring --token: a token is not needed for an upgrade"
+		[ -z "$TOKEN" ] || say "ignoring the enrollment token: a token is not needed for an upgrade"
 		JOIN=0
 	else
 		[ -n "$HUB" ] || die "--hub is required for a first install (e.g. --hub https://<hub>:7443)"
-		[ -n "$TOKEN" ] || die "--token is required for a first install (create one in the hub UI or with 'hearth token create')"
+		[ -n "$TOKEN" ] || die "an enrollment token is required for a first install: pass HEARTH_TOKEN=<token> (create one in the hub UI or with 'hearth token create')"
 		case $HUB in
 		https://*) ;;
 		*) die "--hub must be an https:// URL (the hub's agent port, usually 7443)" ;;

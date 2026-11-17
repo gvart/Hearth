@@ -32,9 +32,10 @@ wait_for() { # seconds, command...
   done
 }
 
-# expect_fail NAME PATTERN command... runs command, which must fail and print PATTERN.
+# expect_fail NAME PATTERN command... runs command, which must fail and print
+# PATTERN. Leaves the command's output in $out.
 expect_fail() {
-  local name=$1 pattern=$2 out
+  local name=$1 pattern=$2
   shift 2
   if out=$("$@" 2>&1); then fail "$name: succeeded, want failure"; fi
   grep -q -- "$pattern" <<<"$out" || fail "$name: output lacks '$pattern': $out"
@@ -85,50 +86,70 @@ mkdir -p /tmp/fakebin
 printf '#!/bin/sh\ncase "$1" in -m) echo mips ;; *) exec /bin/uname "$@" ;; esac\n' >/tmp/fakebin/uname
 chmod +x /tmp/fakebin/uname
 expect_fail "unsupported arch" "unsupported architecture: mips" \
-  env PATH="/tmp/fakebin:$PATH" HEARTH_INSTALL_PREFIX=/tmp/neg sh /deploy/install.sh --hub "$HUB" --token "$TOKEN"
+  env PATH="/tmp/fakebin:$PATH" HEARTH_INSTALL_PREFIX=/tmp/neg HEARTH_TOKEN="$TOKEN" sh /deploy/install.sh --hub "$HUB"
 expect_fail "checksum mismatch" "checksum mismatch" \
-  env HEARTH_INSTALL_PREFIX=/tmp/neg sh /deploy/install.sh --hub "$HUB" --token "$TOKEN" --version v0.0.0-bad
+  env HEARTH_INSTALL_PREFIX=/tmp/neg HEARTH_TOKEN="$TOKEN" sh /deploy/install.sh --hub "$HUB" --version v0.0.0-bad
 [ ! -e /tmp/neg/usr/local/bin/hearth ] || fail "binary installed despite checksum mismatch"
-expect_fail "missing token" "--token is required" \
+expect_fail "missing token" "pass HEARTH_TOKEN=<token>" \
   env HEARTH_INSTALL_PREFIX=/tmp/neg sh /deploy/install.sh --hub "$HUB"
 expect_fail "plain-http hub" "must be an https:// URL" \
-  env HEARTH_INSTALL_PREFIX=/tmp/neg sh /deploy/install.sh --hub "$WEB" --token "$TOKEN"
+  env HEARTH_INSTALL_PREFIX=/tmp/neg HEARTH_TOKEN="$TOKEN" sh /deploy/install.sh --hub "$WEB"
 expect_fail "missing release" "does release v9.9.9 exist" \
-  env HEARTH_INSTALL_PREFIX=/tmp/neg sh /deploy/install.sh --hub "$HUB" --token "$TOKEN" --version v9.9.9
+  env HEARTH_INSTALL_PREFIX=/tmp/neg HEARTH_TOKEN="$TOKEN" sh /deploy/install.sh --hub "$HUB" --version v9.9.9
+# --token wins over HEARTH_TOKEN: a bogus --token must fail to enroll even
+# though HEARTH_TOKEN holds a valid (and so unspent) token.
+TOKEN2=$(/build/hearth token create --data-dir /tmp/hub --hub-url "$HUB" | sed -n '2p' | tr -d ' ')
+[ -n "$TOKEN2" ] || fail "no second token"
+expect_fail "--token over HEARTH_TOKEN" "both --token and HEARTH_TOKEN are set; using --token" \
+  env HEARTH_INSTALL_PREFIX=/tmp/both HEARTH_TOKEN="$TOKEN2" sh /deploy/install.sh --hub "$HUB" --token not-a-token
+grep -q "enrollment failed" <<<"$out" || fail "--token over HEARTH_TOKEN: enrolled with HEARTH_TOKEN: $out"
+! grep -qF -- "$TOKEN2" <<<"$out" || fail "--token over HEARTH_TOKEN: token echoed"
+[ ! -e /tmp/both/var/lib/hearth/agent/agent.crt ] || fail "--token over HEARTH_TOKEN: enrolled"
 
-log "install as a sudo user: curl $WEB/install.sh | sh -s -- --hub $HUB --token <token>"
-# Record the argv of every process holding the token while the installer runs.
-# grep reads the token from a file so its own argv stays clean.
+log "install as a sudo user: curl $WEB/install.sh | HEARTH_TOKEN=<token> sh -s -- --hub $HUB"
+# Record every process holding the token in its argv or its environment while
+# the installer runs. grep reads the token from a file so its own argv stays clean.
 printf '%s\n' "$TOKEN" >/tmp/token.pat
 : >/tmp/argv-hits.log
+: >/tmp/env-hits.log
 (
   set +e # processes come and go between grep and tr
   while [ ! -e /tmp/scan.stop ]; do
     grep -a -l -F -f /tmp/token.pat /proc/[0-9]*/cmdline 2>/dev/null | while read -r f; do
       tr '\0' ' ' <"$f" 2>/dev/null && echo
-    done
-  done >>/tmp/argv-hits.log
+    done >>/tmp/argv-hits.log
+    grep -a -l -F -f /tmp/token.pat /proc/[0-9]*/environ 2>/dev/null | while read -r f; do
+      tr '\0' ' ' <"${f%/environ}/cmdline" 2>/dev/null && echo
+    done >>/tmp/env-hits.log
+  done
   exit 0
 ) &
 scan_pid=$!
 t0=$(ms)
-# The token reaches alice's shell through the environment, as the UI's
-# one-liner puts it on the installer's own `sh` command line.
+# The token reaches alice's shell through its environment; the shell moves it
+# into a plain variable so that curl does not inherit it, and then runs the
+# UI's one-liner, which puts it in the environment of the installer's own sh.
 # shellcheck disable=SC2016 # expanded by alice's shell
 HEARTH_E2E_TOKEN=$TOKEN runuser -u alice -- sh -c \
-  'curl -fsSL "$0/install.sh" | sh -s -- --hub "$1" --token "$HEARTH_E2E_TOKEN"' "$WEB" "$HUB" | tee /tmp/install1.log
+  't=$HEARTH_E2E_TOKEN; unset HEARTH_E2E_TOKEN; curl -fsSL "$0/install.sh" | HEARTH_TOKEN=$t sh -s -- --hub "$1"' \
+  "$WEB" "$HUB" 2>&1 | tee /tmp/install1.log
 t_installed=$(ms)
 touch /tmp/scan.stop
 wait "$scan_pid"
 ! grep -qF -- "$TOKEN" /tmp/install1.log || fail "installer echoed the token"
+! grep -q -- "--token" /tmp/install1.log || fail "installer warned about --token without one"
 grep -q "using sudo" /tmp/install1.log || fail "installer did not use sudo"
 grep -q "agent join" /var/log/sudo.log || fail "join did not run through sudo"
 ! grep -qF -- "$TOKEN" /var/log/sudo.log || fail "token in sudo's log: $(cat /var/log/sudo.log)"
-if grep -v '^sh -s -- ' /tmp/argv-hits.log | grep -q .; then
-  fail "token in the argv of another process: $(sort -u /tmp/argv-hits.log)"
+[ ! -s /tmp/argv-hits.log ] || fail "token in the argv of a process: $(sort -u /tmp/argv-hits.log)"
+# Only the launching processes hold it in their environment (a forked subshell
+# of the installer shows the installer's argv): the installer unsets
+# HEARTH_TOKEN before it runs anything, so curl, tar, sudo and hearth never get it.
+if grep -v -e '^runuser ' -e '^sh -c ' -e '^sh -s -- ' /tmp/env-hits.log | grep -q .; then
+  fail "token in the environment of a child process: $(sort -u /tmp/env-hits.log)"
 fi
-[ -s /tmp/argv-hits.log ] || fail "argv scan saw nothing; it should at least see the installer's own sh"
-pass "token never in sudo's log; in argv only of the installer's own sh ($(grep -c . /tmp/argv-hits.log) samples)"
+grep -q '^sh -s -- ' /tmp/env-hits.log || fail "environment scan never saw the installer's sh; is the scan working? $(sort -u /tmp/env-hits.log)"
+pass "token in no process's argv, in no child's environment, not in sudo's log ($(grep -c . /tmp/env-hits.log) env samples)"
 grep -q "installed hearth v0.0.0-e2e" /tmp/install1.log || fail "latest release not resolved"
 [ -x /usr/local/bin/hearth ] || fail "binary not installed"
 [ -f "$DATA/agent.crt" ] || fail "join did not write agent.crt"
@@ -145,11 +166,12 @@ log "re-run (upgrade) with wget only, --from-hub, a spent token"
 stop_agent
 mv /usr/bin/curl /usr/bin/curl.off
 ln -s /bin/busybox /usr/local/bin/wget
-sh /deploy/install.sh --from-hub --hub "$HUB" --token "$TOKEN" | tee /tmp/install2.log
+sh /deploy/install.sh --from-hub --hub "$HUB" --token "$TOKEN" 2>&1 | tee /tmp/install2.log
 rm /usr/local/bin/wget
 mv /usr/bin/curl.off /usr/bin/curl
 grep -q "already enrolled" /tmp/install2.log || fail "re-run did not detect the identity"
 grep -q "a token is not needed for an upgrade" /tmp/install2.log || fail "re-run did not explain the token"
+grep -q "warning: --token exposes the token to other local users" /tmp/install2.log || fail "--token did not warn"
 ! grep -qF -- "$TOKEN" /tmp/install2.log || fail "installer echoed the token"
 [ "$cert_sum" = "$(sha256sum "$DATA/agent.crt")" ] || fail "identity changed on re-run"
 start_agent
