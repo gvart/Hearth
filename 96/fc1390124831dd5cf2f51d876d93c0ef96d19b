@@ -1,0 +1,20 @@
+test/e2e/e2e_test.go
+  s_815aef767535ea::t_f2521e84ba8429 46-50,117-137,202-219
+  s_815aef767535ea::t_11ee1cc1a26c4c 220-221
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "96fc1390124831dd5cf2f51d876d93c0ef96d19b",
+  "prompts": {},
+  "sessions": {
+    "s_815aef767535ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1866255a-7d59-4f07-869c-b29b78c7a98d",
+        "model": "unknown"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
