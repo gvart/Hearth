@@ -1,8 +1,21 @@
+import { useSession } from './api/hooks.ts';
+import { DevicesPage } from './components/DevicesPage.tsx';
+import { Login } from './components/Login.tsx';
+
 export function App() {
-  return (
-    <main className="placeholder">
-      <h1>Hearth</h1>
-      <p>Your homelab control plane. The device list lands here soon.</p>
-    </main>
-  );
+  const session = useSession();
+
+  if (session.isPending) {
+    return null;
+  }
+  if (session.isError) {
+    return (
+      <main className="login">
+        <div className="error-box" role="alert">
+          Cannot reach the hub: {session.error.message}
+        </div>
+      </main>
+    );
+  }
+  return session.data ? <DevicesPage /> : <Login />;
 }

@@ -93,6 +93,10 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		Log:               log,
 		HeartbeatInterval: hub.DefaultHeartbeatInterval,
 		Registry:          reg,
+		AgentHosts:        hosts,
+	}
+	if _, port, err := net.SplitHostPort(opts.listen); err == nil && port != "0" {
+		cfg.AgentPort = port
 	}
 	errLog := slog.NewLogLogger(log.Handler(), slog.LevelWarn)
 	baseCtx := func(net.Listener) context.Context { return ctx }

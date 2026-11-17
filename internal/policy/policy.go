@@ -42,8 +42,9 @@ const (
 	ActorAdmin = "admin"
 	// ActorToken is an agent authenticating with an enrollment token.
 	ActorToken = "token"
-	// ActorWeb is a not yet authenticated client of the hub's web API,
-	// identified by its remote address.
+	// ActorWeb is a client of the hub's web API, identified by its remote
+	// address. The API checks the admin session before any action other than
+	// admin.login reaches policy.
 	ActorWeb = "web"
 )
 
@@ -60,7 +61,8 @@ type rule struct {
 
 // rules is the action table. Anything not listed here is denied.
 var rules = map[Action]rule{
-	TokenCreate:  {class: Safe, actors: []string{ActorAdmin}},
+	// The web UI's "Add device" creates tokens behind an admin session.
+	TokenCreate:  {class: Safe, actors: []string{ActorAdmin, ActorWeb}},
 	DeviceEnroll: {class: Safe, actors: []string{ActorToken}},
 	DeviceRevoke: {class: Dangerous, actors: []string{ActorAdmin}},
 	// Changing the credential that guards everything else is dangerous.

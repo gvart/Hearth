@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/gvart/hearth/internal/hub/webui"
+	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/policy"
 	"github.com/gvart/hearth/internal/store"
 )
@@ -45,7 +46,14 @@ func newAPI(cfg Config) *api {
 	if reg == nil {
 		reg = NewRegistry(RegistryConfig{Store: cfg.Store, Log: cfg.Log})
 	}
-	return &api{store: cfg.Store, policy: cfg.Policy, registry: reg, log: cfg.Log, now: time.Now, keepalive: sseKeepalive}
+	agentPort := cfg.AgentPort
+	if agentPort == "" {
+		agentPort = DefaultAgentPort
+	}
+	return &api{
+		store: cfg.Store, policy: cfg.Policy, registry: reg, log: cfg.Log, now: time.Now, keepalive: sseKeepalive,
+		ca: cfg.CA, agentHosts: cfg.AgentHosts, agentPort: agentPort,
+	}
 }
 
 func (a *api) routes() http.Handler {
@@ -57,6 +65,7 @@ func (a *api) routes() http.Handler {
 	mux.Handle("GET /api/v1/devices", a.auth(a.listDevices))
 	mux.Handle("GET /api/v1/devices/{id}", a.auth(a.getDevice))
 	mux.Handle("GET /api/v1/events", a.auth(a.events))
+	mux.Handle("POST /api/v1/tokens", a.auth(a.createToken))
 	mux.Handle("/api/v1/", a.auth(func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "no such endpoint")
 	}))
@@ -64,12 +73,15 @@ func (a *api) routes() http.Handler {
 }
 
 type api struct {
-	store     *store.Store
-	policy    *policy.Engine
-	registry  *Registry
-	log       *slog.Logger
-	now       func() time.Time
-	keepalive time.Duration
+	store      *store.Store
+	ca         *pki.CA
+	agentHosts []string
+	agentPort  string
+	policy     *policy.Engine
+	registry   *Registry
+	log        *slog.Logger
+	now        func() time.Time
+	keepalive  time.Duration
 	// verifyMu runs one argon2 verification at a time, so a flood of login
 	// attempts cannot exhaust a small hub's memory.
 	verifyMu sync.Mutex

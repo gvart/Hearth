@@ -67,6 +67,20 @@ func TestEngineDo(t *testing.T) {
 			wantResult:   "actor kind not allowed",
 		},
 		{
+			name:         "web session can create a token",
+			req:          Request{ActorKind: ActorWeb, ActorID: "192.0.2.1", Action: TokenCreate},
+			wantRan:      true,
+			wantDecision: Allow,
+			wantResult:   "ok",
+		},
+		{
+			name:         "agent token cannot create a token",
+			req:          Request{ActorKind: ActorToken, ActorID: "abc", Action: TokenCreate},
+			wantErr:      ErrDenied,
+			wantDecision: Deny,
+			wantResult:   "actor kind not allowed",
+		},
+		{
 			name:         "agent token cannot log in",
 			req:          Request{ActorKind: ActorToken, ActorID: "abc", Action: AdminLogin},
 			wantErr:      ErrDenied,

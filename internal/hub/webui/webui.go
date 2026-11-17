@@ -68,6 +68,10 @@ func newHandler(dist fs.FS) http.Handler {
 		info, err := fs.Stat(dist, name)
 		switch {
 		case err == nil && !info.IsDir():
+			if strings.HasSuffix(name, ".webmanifest") {
+				// Not in Go's built-in MIME table.
+				w.Header().Set("Content-Type", "application/manifest+json")
+			}
 			files.ServeHTTP(w, r)
 		case name == assetsDir || strings.HasPrefix(name, assetsDir+"/"):
 			// Missing bundle files and directory listings are plain 404s.
