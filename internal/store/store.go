@@ -22,13 +22,17 @@ var migrations embed.FS
 var ErrNotFound = errors.New("not found")
 
 // Store is the hub's SQLite-backed state. It is safe for concurrent use.
+// Reads query the local database; writes go through the store's Applier.
 type Store struct {
-	db *sql.DB
+	db      *sql.DB
+	path    string
+	applier Applier
 }
 
 // Open opens (creating if needed) the SQLite database at path with WAL,
 // a busy timeout and foreign keys enabled, and applies all pending migrations.
-func Open(ctx context.Context, path string) (*Store, error) {
+// Without options, writes apply directly to the local database.
+func Open(ctx context.Context, path string, opts ...Option) (*Store, error) {
 	// Pragmas go in the DSN so every pooled connection gets them.
 	// _txlock=immediate takes the write lock at BEGIN, so concurrent writers
 	// wait on busy_timeout instead of failing on a read-to-write lock upgrade.
@@ -54,7 +58,17 @@ func Open(ctx context.Context, path string) (*Store, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate %s: %w", path, err)
 	}
-	return &Store{db: db}, nil
+	s := &Store{db: db, path: path}
+	s.applier = ApplierFunc(s.ApplyLocal)
+	for _, o := range opts {
+		o(s)
+	}
+	return s, nil
+}
+
+// apply routes a write through the store's Applier.
+func (s *Store) apply(ctx context.Context, cmd Command) (Result, error) {
+	return s.applier.Apply(ctx, cmd)
 }
 
 // Close closes the database.

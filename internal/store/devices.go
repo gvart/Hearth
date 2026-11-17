@@ -29,10 +29,10 @@ type Device struct {
 }
 
 // Devices is the repository for the devices table.
-type Devices struct{ db *sql.DB }
+type Devices struct{ s *Store }
 
 // Devices returns the device repository.
-func (s *Store) Devices() Devices { return Devices{db: s.db} }
+func (s *Store) Devices() Devices { return Devices{s: s} }
 
 // Upsert inserts d, or updates every field of an existing device with the same
 // ID except FirstSeen, which keeps its original value.
@@ -48,15 +48,12 @@ func (r Devices) Upsert(ctx context.Context, d Device) error {
 	if err != nil {
 		return fmt.Errorf("upsert device %s: %w", d.ID, err)
 	}
-	_, err = r.db.ExecContext(ctx, `
-		INSERT INTO devices (id, name, hostname, os, arch, facts, labels, first_seen, last_seen, status, boot_time)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT (id) DO UPDATE SET
-			name = excluded.name, hostname = excluded.hostname, os = excluded.os,
-			arch = excluded.arch, facts = excluded.facts, labels = excluded.labels,
-			last_seen = excluded.last_seen, status = excluded.status, boot_time = excluded.boot_time`,
-		d.ID, d.Name, d.Hostname, d.OS, d.Arch, string(facts), labels,
-		toMillis(d.FirstSeen), toMillis(d.LastSeen), d.Status, nullMillis(d.BootTime))
+	_, err = r.s.apply(ctx, UpsertDevice{
+		ID: d.ID, Name: d.Name, Hostname: d.Hostname, OS: d.OS, Arch: d.Arch,
+		Facts: string(facts), Labels: labels,
+		FirstSeen: toMillis(d.FirstSeen), LastSeen: toMillis(d.LastSeen),
+		Status: d.Status, BootTime: optMillis(d.BootTime),
+	})
 	if err != nil {
 		return fmt.Errorf("upsert device %s: %w", d.ID, err)
 	}
@@ -65,7 +62,7 @@ func (r Devices) Upsert(ctx context.Context, d Device) error {
 
 // Get returns the device with the given ID, or ErrNotFound.
 func (r Devices) Get(ctx context.Context, id string) (Device, error) {
-	row := r.db.QueryRowContext(ctx, `SELECT `+deviceColumns+` FROM devices WHERE id = ?`, id)
+	row := r.s.db.QueryRowContext(ctx, `SELECT `+deviceColumns+` FROM devices WHERE id = ?`, id)
 	d, err := scanDevice(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Device{}, fmt.Errorf("get device %s: %w", id, ErrNotFound)
@@ -78,7 +75,7 @@ func (r Devices) Get(ctx context.Context, id string) (Device, error) {
 
 // List returns all devices ordered by ID.
 func (r Devices) List(ctx context.Context) ([]Device, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT `+deviceColumns+` FROM devices ORDER BY id`)
+	rows, err := r.s.db.QueryContext(ctx, `SELECT `+deviceColumns+` FROM devices ORDER BY id`)
 	if err != nil {
 		return nil, fmt.Errorf("list devices: %w", err)
 	}
@@ -122,12 +119,13 @@ func scanDevice(row interface{ Scan(...any) error }) (Device, error) {
 	return d, nil
 }
 
-// nullMillis is t in unix milliseconds, or NULL if t is zero.
-func nullMillis(t time.Time) sql.NullInt64 {
+// optMillis is t in unix milliseconds, or nil if t is zero.
+func optMillis(t time.Time) *int64 {
 	if t.IsZero() {
-		return sql.NullInt64{}
+		return nil
 	}
-	return sql.NullInt64{Int64: toMillis(t), Valid: true}
+	ms := toMillis(t)
+	return &ms
 }
 
 func marshalLabels(l map[string]string) (string, error) {
