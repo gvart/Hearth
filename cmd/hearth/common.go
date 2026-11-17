@@ -11,8 +11,9 @@ import (
 )
 
 const (
-	defaultPort = "7443"
-	dbFile      = "hearth.db"
+	defaultPort     = "7443"
+	defaultHTTPPort = "7080"
+	dbFile          = "hearth.db"
 )
 
 // defaultDataDir is HEARTH_DATA_DIR if set, /var/lib/hearth/<role> for root,

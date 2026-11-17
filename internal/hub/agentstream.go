@@ -28,14 +28,15 @@ const DefaultHeartbeatInterval = 10 * time.Second
 type AgentStream struct {
 	log               *slog.Logger
 	heartbeatInterval time.Duration
+	registry          *Registry
 	now               func() time.Time
 }
 
 var _ agentv1connect.AgentServiceHandler = (*AgentStream)(nil)
 
-// NewAgentStream returns an AgentService handler.
-func NewAgentStream(log *slog.Logger, heartbeatInterval time.Duration) *AgentStream {
-	return &AgentStream{log: log, heartbeatInterval: heartbeatInterval, now: time.Now}
+// NewAgentStream returns an AgentService handler that reports to reg.
+func NewAgentStream(log *slog.Logger, heartbeatInterval time.Duration, reg *Registry) *AgentStream {
+	return &AgentStream{log: log, heartbeatInterval: heartbeatInterval, registry: reg, now: time.Now}
 }
 
 // Connect serves one agent stream: it requires a Hello first, checks the protocol
@@ -65,6 +66,10 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 		log.WarnContext(ctx, "ignoring device_id claimed in Hello", "claimed_device_id", claimed)
 	}
 	log.InfoContext(ctx, "agent connected", "hostname", hello.GetHostname(), "agent_version", hello.GetAgentVersion())
+	if err := s.registry.ReportFacts(ctx, deviceID, hello); err != nil {
+		log.ErrorContext(ctx, "record hello", "err", err)
+		return connect.NewError(connect.CodeUnavailable, errors.New("cannot record device facts"))
+	}
 
 	welcome := &agentv1.HubMessage{Payload: &agentv1.HubMessage_Welcome{Welcome: &agentv1.Welcome{
 		ServerTime:        timestamppb.New(s.now()),
@@ -83,9 +88,18 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 		if err != nil {
 			return fmt.Errorf("receive from %s: %w", deviceID, err)
 		}
-		switch msg.GetPayload().(type) {
+		// A failed registry update is logged, not fatal: the next heartbeat retries.
+		switch p := msg.GetPayload().(type) {
 		case *agentv1.AgentMessage_Heartbeat:
 			log.DebugContext(ctx, "heartbeat")
+			if err := s.registry.Heartbeat(ctx, deviceID); err != nil {
+				log.WarnContext(ctx, "record heartbeat", "err", err)
+			}
+		case *agentv1.AgentMessage_Facts:
+			log.DebugContext(ctx, "facts")
+			if err := s.registry.ReportFacts(ctx, deviceID, p.Facts); err != nil {
+				log.WarnContext(ctx, "record facts", "err", err)
+			}
 		case *agentv1.AgentMessage_Hello:
 			return connect.NewError(connect.CodeInvalidArgument, errors.New("duplicate Hello"))
 		default:

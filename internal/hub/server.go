@@ -26,6 +26,10 @@ type Config struct {
 	Policy            *policy.Engine
 	Log               *slog.Logger
 	HeartbeatInterval time.Duration
+	// Registry tracks device presence and publishes events. Share one between
+	// NewHandler and NewHTTPHandler and Run it. If nil, NewHandler creates one
+	// that records facts and heartbeats but never sweeps devices offline.
+	Registry *Registry
 }
 
 // NewHandler serves EnrollService to anyone (the token is the credential) and
@@ -33,7 +37,11 @@ type Config struct {
 func NewHandler(cfg Config) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle(agentv1connect.NewEnrollServiceHandler(NewEnroller(cfg.Store, cfg.CA, cfg.Policy, cfg.Log)))
-	path, h := agentv1connect.NewAgentServiceHandler(NewAgentStream(cfg.Log, cfg.HeartbeatInterval))
+	reg := cfg.Registry
+	if reg == nil {
+		reg = NewRegistry(RegistryConfig{Store: cfg.Store, Log: cfg.Log})
+	}
+	path, h := agentv1connect.NewAgentServiceHandler(NewAgentStream(cfg.Log, cfg.HeartbeatInterval, reg))
 	mux.Handle(path, requireClientCert(cfg.Store.Certs(), cfg.Log, h))
 	return mux
 }

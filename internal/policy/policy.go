@@ -30,6 +30,10 @@ const (
 	TokenCreate  Action = "token.create"
 	DeviceEnroll Action = "device.enroll"
 	DeviceRevoke Action = "device.revoke"
+	// AdminSetPassword sets or resets the admin password.
+	AdminSetPassword Action = "admin.set_password"
+	// AdminLogin is a login attempt on the hub's web API.
+	AdminLogin Action = "admin.login"
 )
 
 // Actor kinds.
@@ -38,6 +42,9 @@ const (
 	ActorAdmin = "admin"
 	// ActorToken is an agent authenticating with an enrollment token.
 	ActorToken = "token"
+	// ActorWeb is a not yet authenticated client of the hub's web API,
+	// identified by its remote address.
+	ActorWeb = "web"
 )
 
 // Decisions recorded in the audit log.
@@ -56,6 +63,10 @@ var rules = map[Action]rule{
 	TokenCreate:  {class: Safe, actors: []string{ActorAdmin}},
 	DeviceEnroll: {class: Safe, actors: []string{ActorToken}},
 	DeviceRevoke: {class: Dangerous, actors: []string{ActorAdmin}},
+	// Changing the credential that guards everything else is dangerous.
+	AdminSetPassword: {class: Dangerous, actors: []string{ActorAdmin}},
+	// Anyone on the network may try to log in; the password decides.
+	AdminLogin: {class: Safe, actors: []string{ActorWeb}},
 }
 
 // ClassOf returns the class of a known action.

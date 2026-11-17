@@ -34,6 +34,7 @@ type AgentMessage struct {
 	//	*AgentMessage_Heartbeat
 	//	*AgentMessage_MetricsBatch
 	//	*AgentMessage_ExecResult
+	//	*AgentMessage_Facts
 	Payload       isAgentMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -112,6 +113,15 @@ func (x *AgentMessage) GetExecResult() *ExecResult {
 	return nil
 }
 
+func (x *AgentMessage) GetFacts() *Hello {
+	if x != nil {
+		if x, ok := x.Payload.(*AgentMessage_Facts); ok {
+			return x.Facts
+		}
+	}
+	return nil
+}
+
 type isAgentMessage_Payload interface {
 	isAgentMessage_Payload()
 }
@@ -132,6 +142,11 @@ type AgentMessage_ExecResult struct {
 	ExecResult *ExecResult `protobuf:"bytes,4,opt,name=exec_result,json=execResult,proto3,oneof"`
 }
 
+type AgentMessage_Facts struct {
+	// Facts re-sent periodically by the agent; protocol_version and device_id are ignored.
+	Facts *Hello `protobuf:"bytes,5,opt,name=facts,proto3,oneof"`
+}
+
 func (*AgentMessage_Hello) isAgentMessage_Payload() {}
 
 func (*AgentMessage_Heartbeat) isAgentMessage_Payload() {}
@@ -139,6 +154,8 @@ func (*AgentMessage_Heartbeat) isAgentMessage_Payload() {}
 func (*AgentMessage_MetricsBatch) isAgentMessage_Payload() {}
 
 func (*AgentMessage_ExecResult) isAgentMessage_Payload() {}
+
+func (*AgentMessage_Facts) isAgentMessage_Payload() {}
 
 // HubMessage is anything the hub sends to an agent.
 type HubMessage struct {
@@ -899,13 +916,14 @@ var File_hearth_agent_v1_agent_proto protoreflect.FileDescriptor
 
 const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"\n" +
-	"\x1bhearth/agent/v1/agent.proto\x12\x0fhearth.agent.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x8b\x02\n" +
+	"\x1bhearth/agent/v1/agent.proto\x12\x0fhearth.agent.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xbb\x02\n" +
 	"\fAgentMessage\x12.\n" +
 	"\x05hello\x18\x01 \x01(\v2\x16.hearth.agent.v1.HelloH\x00R\x05hello\x12:\n" +
 	"\theartbeat\x18\x02 \x01(\v2\x1a.hearth.agent.v1.HeartbeatH\x00R\theartbeat\x12D\n" +
 	"\rmetrics_batch\x18\x03 \x01(\v2\x1d.hearth.agent.v1.MetricsBatchH\x00R\fmetricsBatch\x12>\n" +
 	"\vexec_result\x18\x04 \x01(\v2\x1b.hearth.agent.v1.ExecResultH\x00R\n" +
-	"execResultB\t\n" +
+	"execResult\x12.\n" +
+	"\x05facts\x18\x05 \x01(\v2\x16.hearth.agent.v1.HelloH\x00R\x05factsB\t\n" +
 	"\apayload\"\xbd\x01\n" +
 	"\n" +
 	"HubMessage\x124\n" +
@@ -1007,26 +1025,27 @@ var file_hearth_agent_v1_agent_proto_depIdxs = []int32{
 	6,  // 1: hearth.agent.v1.AgentMessage.heartbeat:type_name -> hearth.agent.v1.Heartbeat
 	7,  // 2: hearth.agent.v1.AgentMessage.metrics_batch:type_name -> hearth.agent.v1.MetricsBatch
 	9,  // 3: hearth.agent.v1.AgentMessage.exec_result:type_name -> hearth.agent.v1.ExecResult
-	10, // 4: hearth.agent.v1.HubMessage.welcome:type_name -> hearth.agent.v1.Welcome
-	11, // 5: hearth.agent.v1.HubMessage.exec_request:type_name -> hearth.agent.v1.ExecRequest
-	12, // 6: hearth.agent.v1.HubMessage.ping:type_name -> hearth.agent.v1.Ping
-	2,  // 7: hearth.agent.v1.Hello.protocol_version:type_name -> hearth.agent.v1.ProtocolVersion
-	4,  // 8: hearth.agent.v1.Hello.disks:type_name -> hearth.agent.v1.Disk
-	5,  // 9: hearth.agent.v1.Hello.interfaces:type_name -> hearth.agent.v1.NetworkInterface
-	14, // 10: hearth.agent.v1.Heartbeat.ts:type_name -> google.protobuf.Timestamp
-	15, // 11: hearth.agent.v1.Heartbeat.uptime:type_name -> google.protobuf.Duration
-	8,  // 12: hearth.agent.v1.MetricsBatch.samples:type_name -> hearth.agent.v1.MetricSample
-	13, // 13: hearth.agent.v1.MetricSample.labels:type_name -> hearth.agent.v1.MetricSample.LabelsEntry
-	14, // 14: hearth.agent.v1.MetricSample.ts:type_name -> google.protobuf.Timestamp
-	14, // 15: hearth.agent.v1.Welcome.server_time:type_name -> google.protobuf.Timestamp
-	15, // 16: hearth.agent.v1.Welcome.heartbeat_interval:type_name -> google.protobuf.Duration
-	0,  // 17: hearth.agent.v1.AgentService.Connect:input_type -> hearth.agent.v1.AgentMessage
-	1,  // 18: hearth.agent.v1.AgentService.Connect:output_type -> hearth.agent.v1.HubMessage
-	18, // [18:19] is the sub-list for method output_type
-	17, // [17:18] is the sub-list for method input_type
-	17, // [17:17] is the sub-list for extension type_name
-	17, // [17:17] is the sub-list for extension extendee
-	0,  // [0:17] is the sub-list for field type_name
+	3,  // 4: hearth.agent.v1.AgentMessage.facts:type_name -> hearth.agent.v1.Hello
+	10, // 5: hearth.agent.v1.HubMessage.welcome:type_name -> hearth.agent.v1.Welcome
+	11, // 6: hearth.agent.v1.HubMessage.exec_request:type_name -> hearth.agent.v1.ExecRequest
+	12, // 7: hearth.agent.v1.HubMessage.ping:type_name -> hearth.agent.v1.Ping
+	2,  // 8: hearth.agent.v1.Hello.protocol_version:type_name -> hearth.agent.v1.ProtocolVersion
+	4,  // 9: hearth.agent.v1.Hello.disks:type_name -> hearth.agent.v1.Disk
+	5,  // 10: hearth.agent.v1.Hello.interfaces:type_name -> hearth.agent.v1.NetworkInterface
+	14, // 11: hearth.agent.v1.Heartbeat.ts:type_name -> google.protobuf.Timestamp
+	15, // 12: hearth.agent.v1.Heartbeat.uptime:type_name -> google.protobuf.Duration
+	8,  // 13: hearth.agent.v1.MetricsBatch.samples:type_name -> hearth.agent.v1.MetricSample
+	13, // 14: hearth.agent.v1.MetricSample.labels:type_name -> hearth.agent.v1.MetricSample.LabelsEntry
+	14, // 15: hearth.agent.v1.MetricSample.ts:type_name -> google.protobuf.Timestamp
+	14, // 16: hearth.agent.v1.Welcome.server_time:type_name -> google.protobuf.Timestamp
+	15, // 17: hearth.agent.v1.Welcome.heartbeat_interval:type_name -> google.protobuf.Duration
+	0,  // 18: hearth.agent.v1.AgentService.Connect:input_type -> hearth.agent.v1.AgentMessage
+	1,  // 19: hearth.agent.v1.AgentService.Connect:output_type -> hearth.agent.v1.HubMessage
+	19, // [19:20] is the sub-list for method output_type
+	18, // [18:19] is the sub-list for method input_type
+	18, // [18:18] is the sub-list for extension type_name
+	18, // [18:18] is the sub-list for extension extendee
+	0,  // [0:18] is the sub-list for field type_name
 }
 
 func init() { file_hearth_agent_v1_agent_proto_init() }
@@ -1039,6 +1058,7 @@ func file_hearth_agent_v1_agent_proto_init() {
 		(*AgentMessage_Heartbeat)(nil),
 		(*AgentMessage_MetricsBatch)(nil),
 		(*AgentMessage_ExecResult)(nil),
+		(*AgentMessage_Facts)(nil),
 	}
 	file_hearth_agent_v1_agent_proto_msgTypes[1].OneofWrappers = []any{
 		(*HubMessage_Welcome)(nil),
