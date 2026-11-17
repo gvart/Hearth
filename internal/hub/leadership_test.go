@@ -94,7 +94,7 @@ func TestConnectWelcomeListsHubs(t *testing.T) {
 		lead Leadership
 		want []string
 	}{
-		{"single hub without a known URL", nil, nil},
+		{"single hub", nil, nil},
 		{"cluster leader", leader, clusterURLs},
 	}
 	for _, tt := range tests {
@@ -132,10 +132,8 @@ func TestLeadershipOf(t *testing.T) {
 		wantURLs   []string
 		wantLeader bool
 	}{
-		{"no hosts", Config{}, nil, true},
-		{"default port", Config{AgentHosts: []string{"hub.lan", "localhost"}}, []string{"https://hub.lan:7443"}, true},
-		{"custom port", Config{AgentHosts: []string{"10.0.0.5"}, AgentPort: "8443"}, []string{"https://10.0.0.5:8443"}, true},
-		{"ipv6 host", Config{AgentHosts: []string{"::1"}}, []string{"https://[::1]:7443"}, true},
+		{"single hub", Config{}, nil, true},
+		{"single hub ignores agent hosts", Config{AgentHosts: []string{"hub.lan", "localhost"}, AgentPort: "8443"}, nil, true},
 		{"cluster", Config{AgentHosts: []string{"hub.lan"}, Leadership: follower()}, clusterURLs, false},
 	}
 	for _, tt := range tests {

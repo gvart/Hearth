@@ -3,6 +3,7 @@
 package agent_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -186,6 +187,25 @@ func TestRunAllHubsDownBacksOff(t *testing.T) {
 		if !strings.Contains(logs, "hub="+strings.TrimPrefix(h.url, "https://")) {
 			t.Errorf("agent never tried %s:\n%s", h.url, logs)
 		}
+	}
+}
+
+// TestRunSingleHubKeepsJoinURLOnly: a single hub lists no hubs in Welcome,
+// so the agent writes no hubs file and keeps only its join URL.
+func TestRunSingleHubKeepsJoinURLOnly(t *testing.T) {
+	h := startRestartableHub(t, time.Second)
+	id, dataDir := h.join(t)
+	a := startAgent(t, dataDir)
+	waitFor(t, 10*time.Second, "connection", connectedTo(h, id, 1))
+	waitFor(t, 5*time.Second, "the agent to get Welcome", func() bool {
+		return strings.Contains(a.logs.String(), `msg="connected to hub"`)
+	})
+	a.stop(t)
+	if _, err := os.Stat(filepath.Join(dataDir, agent.HubsFile)); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("%s after a single-hub session: err %v, want it absent", agent.HubsFile, err)
+	}
+	if strings.Contains(a.logs.String(), "hub list updated") {
+		t.Errorf("single hub changed the hub list:\n%s", a.logs.String())
 	}
 }
 

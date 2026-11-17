@@ -43,8 +43,8 @@ type Config struct {
 	Stopping context.Context
 	// Leadership says whether this hub is the cluster leader. Followers refuse
 	// agent streams and enrollment and name the leader. If nil, the hub is a
-	// single node: always the leader, and the only hub agents are told about
-	// is https://AgentHosts[0]:AgentPort (none without AgentHosts).
+	// single node: always the leader, and Welcome lists no hubs, so agents
+	// keep only the URL they joined with.
 	Leadership Leadership
 }
 

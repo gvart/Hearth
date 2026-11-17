@@ -204,7 +204,8 @@ Raft layer wrap it without touching callers. Reads stay direct SQL.
 ### HA-4: agent failover and leader redirect
 
 - `hub.Config.Leadership` (`IsLeader`, `LeaderAgentURL`, `AgentURLs`) is the hub's view of the
-  cluster. Nil means a single hub: always the leader, listing only `https://AgentHosts[0]:AgentPort`.
+  cluster. Nil means a single hub: always the leader, and Welcome lists no hubs, so agents keep only their
+  join URL, exactly as before.
   HA-3 implements it over the Raft node.
 - A follower refuses `AgentService.Connect` (before any registry write) and `EnrollService.Enroll`
   with `FAILED_PRECONDITION` plus a `hearth.agent.v1.NotLeader { leader_url, hubs }` detail.

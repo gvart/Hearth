@@ -4,7 +4,6 @@ package hub
 
 import (
 	"errors"
-	"net"
 
 	"connectrpc.com/connect"
 
@@ -26,35 +25,20 @@ type Leadership interface {
 	AgentURLs() []string
 }
 
-// soloLeadership is a single hub: always the leader, and the only hub.
-type soloLeadership struct{ urls []string }
+// soloLeadership is a single hub: always the leader, and it lists no hubs,
+// so agents keep only the URL they joined with.
+type soloLeadership struct{}
 
-func (soloLeadership) IsLeader() bool { return true }
+func (soloLeadership) IsLeader() bool         { return true }
+func (soloLeadership) LeaderAgentURL() string { return "" }
+func (soloLeadership) AgentURLs() []string    { return nil }
 
-func (s soloLeadership) LeaderAgentURL() string {
-	if len(s.urls) == 0 {
-		return ""
-	}
-	return s.urls[0]
-}
-
-func (s soloLeadership) AgentURLs() []string { return s.urls }
-
-// leadershipOf returns cfg.Leadership, or for a single hub one that is always
-// the leader and lists this hub's own agent URL, built from the first agent
-// host and the agent port (nothing if no host is configured).
+// leadershipOf returns cfg.Leadership, or soloLeadership for a single hub.
 func leadershipOf(cfg Config) Leadership {
 	if cfg.Leadership != nil {
 		return cfg.Leadership
 	}
-	if len(cfg.AgentHosts) == 0 {
-		return soloLeadership{}
-	}
-	port := cfg.AgentPort
-	if port == "" {
-		port = DefaultAgentPort
-	}
-	return soloLeadership{urls: []string{"https://" + net.JoinHostPort(cfg.AgentHosts[0], port)}}
+	return soloLeadership{}
 }
 
 // notLeaderError is the error a follower returns to agents: FailedPrecondition
