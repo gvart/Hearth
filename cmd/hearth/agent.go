@@ -12,7 +12,27 @@ import (
 
 func newAgentCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "agent", Short: "Run or manage the Hearth agent on this device"}
-	cmd.AddCommand(newAgentJoinCmd())
+	cmd.AddCommand(newAgentJoinCmd(), newAgentRunCmd())
+	return cmd
+}
+
+func newAgentRunCmd() *cobra.Command {
+	var dataDir string
+	cmd := &cobra.Command{
+		Use:   "run",
+		Short: "Connect to the hub and keep reporting this device",
+		Long: "Connect to the hub this device joined and keep the connection up: report host facts,\n" +
+			"send heartbeats and reconnect with backoff when the hub is unreachable. Stops on SIGINT/SIGTERM.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return agent.Run(cmd.Context(), agent.Config{
+				DataDir: dataDir,
+				Version: cmd.Root().Version,
+				Log:     newLogger(cmd.ErrOrStderr()),
+			})
+		},
+	}
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir("agent"), "agent data directory (env HEARTH_DATA_DIR)")
 	return cmd
 }
 

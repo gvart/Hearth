@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 
@@ -31,7 +30,7 @@ const (
 var ErrAlreadyEnrolled = errors.New("agent is already enrolled")
 
 // Join enrolls this device with the hub at hubURL using a token string, and
-// writes the resulting key (0600), certificate and hub CA into dataDir. The hub
+// writes the resulting key (0600), certificate, hub CA and hub URL into dataDir. The hub
 // is pinned by the CA fingerprint in the token before the secret is sent.
 // It returns the device ID assigned by the hub.
 func Join(ctx context.Context, hubURL, token, dataDir, hostname string) (string, error) {
@@ -39,9 +38,9 @@ func Join(ctx context.Context, hubURL, token, dataDir, hostname string) (string,
 	if err != nil {
 		return "", err
 	}
-	u, err := url.Parse(hubURL)
-	if err != nil || u.Scheme != "https" || u.Host == "" {
-		return "", fmt.Errorf("hub URL must be https://host[:port], got %q", hubURL)
+	u, err := parseHubURL(hubURL)
+	if err != nil {
+		return "", err
 	}
 	certPath := filepath.Join(dataDir, CertFile)
 	if _, err := os.Stat(certPath); err == nil {
@@ -79,7 +78,7 @@ func Join(ctx context.Context, hubURL, token, dataDir, hostname string) (string,
 	}
 	// The certificate is written last: its presence marks the agent as enrolled,
 	// so leftovers from an interrupted join are safe to replace.
-	for _, f := range []string{KeyFile, CAFile} {
+	for _, f := range []string{KeyFile, CAFile, HubURLFile} {
 		if err := os.Remove(filepath.Join(dataDir, f)); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return "", fmt.Errorf("remove stale %s: %w", f, err)
 		}
@@ -88,6 +87,9 @@ func Join(ctx context.Context, hubURL, token, dataDir, hostname string) (string,
 		return "", err
 	}
 	if err := pki.WriteCertFile(filepath.Join(dataDir, CAFile), ca); err != nil {
+		return "", err
+	}
+	if err := writeHubURL(dataDir, u); err != nil {
 		return "", err
 	}
 	if err := pki.WriteCertFile(certPath, cert); err != nil {
