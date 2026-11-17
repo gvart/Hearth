@@ -123,11 +123,25 @@ func (w *memberWatch) isFailing(id raft.ServerID) bool {
 }
 
 // checkPeerCert refuses a revoked hub node certificate. It reads the local
-// replica of the revocation table; a read error refuses too.
+// replica of the revocation table and returns any read error.
 func (n *Node) checkPeerCert(cert *x509.Certificate) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	return n.store.Hubs().CheckCert(ctx, pki.SerialString(cert))
+}
+
+// refuseRevoked is the Raft transport's peer check. It refuses a revoked
+// certificate only: when the revocation table cannot be read, it accepts the
+// CA-issued hub certificate and logs the failure, so a store problem on this
+// node halts it through the FSM, as before, rather than cutting it off from
+// its peers.
+func (n *Node) refuseRevoked(cert *x509.Certificate) error {
+	err := n.checkPeerCert(cert)
+	if err != nil && !errors.Is(err, store.ErrCertRevoked) {
+		n.log.Warn("cannot check a peer's hub certificate for revocation; accepting it", "err", err)
+		return nil
+	}
+	return err
 }
 
 // closeRevokedConns closes the open Raft connections of revoked peers.

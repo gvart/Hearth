@@ -195,7 +195,7 @@ func (n *Node) Start(ctx context.Context) error {
 		&hclog.LoggerOptions{Name: "raft", Level: hclog.Info})
 
 	n.cert = cert.Leaf
-	stream, err := listenTLS(ctx, n.cfg.Listen, n.cfg.Advertise, cert, n.cfg.CA, n.checkPeerCert)
+	stream, err := listenTLS(ctx, n.cfg.Listen, n.cfg.Advertise, cert, n.cfg.CA, n.refuseRevoked)
 	if err != nil {
 		return fmt.Errorf("cluster: %w", err)
 	}
