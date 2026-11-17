@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Installed by deploy/install.sh, which embeds a copy; keep the two identical.
+[Unit]
+Description=Hearth agent
+Documentation=https://github.com/gvart/hearth
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/hearth agent run --data-dir /var/lib/hearth/agent
+Restart=always
+RestartSec=5
+UMask=0077
+# Hardening that keeps host fact collection (/proc, /sys, mounts) working.
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=read-only
+PrivateTmp=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

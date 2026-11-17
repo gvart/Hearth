@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- Installed by deploy/install.sh, which embeds a copy; keep the two identical. -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>dev.hearth.agent</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/usr/local/bin/hearth</string>
+		<string>agent</string>
+		<string>run</string>
+		<string>--data-dir</string>
+		<string>/var/lib/hearth/agent</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>ThrottleInterval</key>
+	<integer>5</integer>
+	<key>Umask</key>
+	<integer>63</integer>
+	<key>StandardOutPath</key>
+	<string>/var/log/hearth-agent.log</string>
+	<key>StandardErrorPath</key>
+	<string>/var/log/hearth-agent.log</string>
+</dict>
+</plist>
