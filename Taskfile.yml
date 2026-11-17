@@ -53,6 +53,11 @@ tasks:
       - echo "No end-to-end tests yet; they arrive with T10."
     silent: true
 
+  e2e:install:
+    desc: Test deploy/install.sh end to end in a Debian 12 container (needs Docker)
+    cmds:
+      - deploy/test/install-e2e.sh
+
   dev:
     desc: Run the web UI dev server with hot reload (the hub joins once it exists)
     deps: [web:deps]
