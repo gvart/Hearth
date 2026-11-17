@@ -1,0 +1,32 @@
+.github/workflows/release-check.yml
+  s_815aef767535ea::t_6879ed535d2af2 1-54
+Taskfile.yml
+  s_815aef767535ea::t_189776537487dd 14,63-66
+  s_815aef767535ea::t_f4638814102459 67
+.github/workflows/release.yml
+  s_815aef767535ea::t_bac7e85450b04e 1-50
+Dockerfile
+  s_815aef767535ea::t_5c9c7a71b26bb1 1-22
+README.md
+  s_815aef767535ea::t_16410ff3d8768b 34-51
+.goreleaser.yaml
+  s_815aef767535ea::t_4796847be304d2 1-115
+CLAUDE.md
+  s_815aef767535ea::t_189776537487dd 73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1726f713eea626d0c93e80c2648bdd9f20047457",
+  "prompts": {},
+  "sessions": {
+    "s_815aef767535ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1866255a-7d59-4f07-869c-b29b78c7a98d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
