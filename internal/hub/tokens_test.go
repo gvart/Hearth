@@ -156,32 +156,45 @@ func TestAPICreateTokenRejects(t *testing.T) {
 }
 
 func TestCommandHosts(t *testing.T) {
-	a := &api{agentHosts: []string{"hub.lan", "localhost", "127.0.0.1", "::1"}}
+	a := &api{agentHosts: []string{"hub.lan", "localhost", "127.0.0.1", "::1"}, httpPort: "7080"}
 	tests := []struct {
-		reqHost, wantHTTP, wantAgent string
-		ok                           bool
+		reqHost             string
+		overTLS             bool
+		wantHTTP, wantAgent string
+		ok                  bool
 	}{
-		{"hub.lan:7080", "hub.lan:7080", "hub.lan", true},
-		{"HUB.lan:7080", "HUB.lan:7080", "HUB.lan", true},
-		{"localhost", "localhost", "localhost", true},
-		{"[::1]:7080", "[::1]:7080", "::1", true},
+		{"hub.lan:7080", false, "hub.lan:7080", "hub.lan", true},
+		{"HUB.lan:7080", false, "HUB.lan:7080", "HUB.lan", true},
+		{"localhost", false, "localhost", "localhost", true},
+		{"[::1]:7080", false, "[::1]:7080", "::1", true},
 		// Not in the certificate: agents would fail to verify it.
-		{"192.168.1.20:7080", "192.168.1.20:7080", "hub.lan", true},
-		{"nas.example.com", "nas.example.com", "hub.lan", true},
-		{"", "", "", false},
-		{"evil;rm -rf /:7080", "", "", false},
-		{"$(id).lan:7080", "", "", false},
-		{"hub.lan:70x0", "", "", false},
-		{"hub.lan:0", "", "", false},
-		{"hub.lan:99999", "", "", false},
-		{"hub.lan:07080", "", "", false},
+		{"192.168.1.20:7080", false, "192.168.1.20:7080", "hub.lan", true},
+		{"nas.example.com", false, "nas.example.com", "hub.lan", true},
+		// Over HTTPS the install script still comes from the HTTP listener:
+		// curl on a new device does not trust the hub CA yet.
+		{"hub.lan:7443", true, "hub.lan:7080", "hub.lan", true},
+		{"hub.lan", true, "hub.lan:7080", "hub.lan", true},
+		{"[::1]:7443", true, "[::1]:7080", "::1", true},
+		{"192.168.1.20:7443", true, "192.168.1.20:7080", "hub.lan", true},
+		{"", false, "", "", false},
+		{"evil;rm -rf /:7080", false, "", "", false},
+		{"$(id).lan:7080", false, "", "", false},
+		{"$(id).lan:7443", true, "", "", false},
+		{"hub.lan:70x0", false, "", "", false},
+		{"hub.lan:0", false, "", "", false},
+		{"hub.lan:99999", false, "", "", false},
+		{"hub.lan:07080", false, "", "", false},
 	}
 	for _, tt := range tests {
-		t.Run(tt.reqHost, func(t *testing.T) {
-			httpHost, agentHost, ok := a.commandHosts(tt.reqHost)
+		name := tt.reqHost
+		if tt.overTLS {
+			name = "https " + name
+		}
+		t.Run(name, func(t *testing.T) {
+			httpHost, agentHost, ok := a.commandHosts(tt.reqHost, tt.overTLS)
 			if ok != tt.ok || httpHost != tt.wantHTTP || agentHost != tt.wantAgent {
-				t.Errorf("commandHosts(%q) = %q, %q, %v; want %q, %q, %v",
-					tt.reqHost, httpHost, agentHost, ok, tt.wantHTTP, tt.wantAgent, tt.ok)
+				t.Errorf("commandHosts(%q, %v) = %q, %q, %v; want %q, %q, %v",
+					tt.reqHost, tt.overTLS, httpHost, agentHost, ok, tt.wantHTTP, tt.wantAgent, tt.ok)
 			}
 		})
 	}

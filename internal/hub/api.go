@@ -23,8 +23,13 @@ import (
 )
 
 const (
-	// SessionCookie is the name of the admin session cookie.
+	// SessionCookie is the name of the admin session cookie over plain HTTP.
 	SessionCookie = "hearth_session"
+	// SecureSessionCookie is its name over HTTPS. Cookies ignore ports and,
+	// unless Secure, schemes, so one name for both would let the HTTP login
+	// collide with the Secure HTTPS one (browsers refuse to overwrite a Secure
+	// cookie from HTTP). Each scheme therefore keeps its own session.
+	SecureSessionCookie = "__Host-hearth_session"
 	// SessionTTL is how long an admin session lasts.
 	SessionTTL = 7 * 24 * time.Hour
 	// sseKeepalive is how often an idle event stream gets a comment line,
@@ -34,8 +39,8 @@ const (
 	maxLoginBody = 4 << 10
 )
 
-// NewHTTPHandler serves the web UI at / and the JSON API at /api/v1 for the
-// plain-HTTP listener. cfg.Registry must be the registry the agent handler
+// NewHTTPHandler serves the web UI at / and the JSON API at /api/v1, over plain
+// HTTP or, behind NewTLSHandler, HTTPS. cfg.Registry must be the registry the agent handler
 // reports to; if nil, a private one is created and /events stays silent.
 func NewHTTPHandler(cfg Config) http.Handler {
 	return newAPI(cfg).routes()
@@ -50,9 +55,13 @@ func newAPI(cfg Config) *api {
 	if agentPort == "" {
 		agentPort = DefaultAgentPort
 	}
+	httpPort := cfg.HTTPPort
+	if httpPort == "" {
+		httpPort = DefaultHTTPPort
+	}
 	return &api{
 		store: cfg.Store, policy: cfg.Policy, registry: reg, log: cfg.Log, now: time.Now, keepalive: sseKeepalive,
-		ca: cfg.CA, agentHosts: cfg.AgentHosts, agentPort: agentPort,
+		ca: cfg.CA, agentHosts: cfg.AgentHosts, agentPort: agentPort, httpPort: httpPort,
 	}
 }
 
@@ -60,6 +69,7 @@ func (a *api) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/", webui.Handler())
 	mux.HandleFunc("POST /api/v1/login", a.login)
+	mux.HandleFunc("GET /api/v1/tls", a.tlsInfo)
 	mux.Handle("POST /api/v1/logout", a.auth(a.logout))
 	mux.Handle("GET /api/v1/session", a.auth(a.session))
 	mux.Handle("GET /api/v1/devices", a.auth(a.listDevices))
@@ -77,6 +87,7 @@ type api struct {
 	ca         *pki.CA
 	agentHosts []string
 	agentPort  string
+	httpPort   string
 	policy     *policy.Engine
 	registry   *Registry
 	log        *slog.Logger
@@ -205,12 +216,14 @@ func (a *api) login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a.log.InfoContext(ctx, "admin logged in", "remote", remoteHost(r))
-	// Not Secure: the API is served over plain HTTP on the LAN (see D1).
-	http.SetCookie(w, &http.Cookie{ //nolint:gosec // HttpOnly and SameSite=Strict are set; Secure cannot be over plain HTTP
-		Name:     SessionCookie,
+	// Secure whenever the request came over TLS; over plain HTTP on the LAN
+	// it cannot be (see D1).
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // HttpOnly and SameSite=Strict are set; Secure is set over TLS
+		Name:     sessionCookieName(r),
 		Value:    secret,
 		Path:     "/",
 		Expires:  expires,
+		Secure:   r.TLS != nil,
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
 	})
@@ -218,7 +231,7 @@ func (a *api) login(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *api) logout(w http.ResponseWriter, r *http.Request) {
-	if c, err := r.Cookie(SessionCookie); err == nil {
+	if c, err := r.Cookie(sessionCookieName(r)); err == nil {
 		if err := a.store.Admin().DeleteSession(r.Context(), c.Value); err != nil {
 			a.log.ErrorContext(r.Context(), "logout", "err", err)
 			writeError(w, http.StatusInternalServerError, "internal", "logout failed")
@@ -226,8 +239,8 @@ func (a *api) logout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	http.SetCookie(w, &http.Cookie{ //nolint:gosec // clears the cookie; see login
-		Name: SessionCookie, Value: "", Path: "/", MaxAge: -1,
-		HttpOnly: true, SameSite: http.SameSiteStrictMode,
+		Name: sessionCookieName(r), Value: "", Path: "/", MaxAge: -1,
+		Secure: r.TLS != nil, HttpOnly: true, SameSite: http.SameSiteStrictMode,
 	})
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -340,7 +353,7 @@ func (a *api) auth(next http.HandlerFunc) http.Handler {
 }
 
 func (a *api) checkSession(r *http.Request) (time.Time, error) {
-	c, err := r.Cookie(SessionCookie)
+	c, err := r.Cookie(sessionCookieName(r))
 	if err != nil {
 		return time.Time{}, err
 	}
@@ -348,6 +361,14 @@ func (a *api) checkSession(r *http.Request) (time.Time, error) {
 		return time.Time{}, store.ErrNotFound
 	}
 	return a.store.Admin().CheckSession(r.Context(), c.Value, a.now())
+}
+
+// sessionCookieName is the session cookie for the request's scheme.
+func sessionCookieName(r *http.Request) string {
+	if r.TLS != nil {
+		return SecureSessionCookie
+	}
+	return SessionCookie
 }
 
 func newSessionSecret() (string, error) {

@@ -191,8 +191,8 @@ func TestAPILogin(t *testing.T) {
 				}
 			} else {
 				c := sessionCookie(t, resp)
-				if !c.HttpOnly || c.SameSite != http.SameSiteStrictMode || c.Path != "/" {
-					t.Errorf("cookie = %+v, want HttpOnly, SameSite=Strict, Path=/", c)
+				if !c.HttpOnly || c.SameSite != http.SameSiteStrictMode || c.Path != "/" || c.Secure {
+					t.Errorf("cookie = %+v, want HttpOnly, SameSite=Strict, Path=/, not Secure over HTTP", c)
 				}
 				s := decode[SessionJSON](t, resp)
 				if s.User != "admin" || time.Until(s.ExpiresAt) < SessionTTL-time.Minute {
