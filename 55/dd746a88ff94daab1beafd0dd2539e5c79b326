@@ -1,0 +1,27 @@
+internal/agent/run_test.go
+  s_815aef767535ea::t_9ac3989d27dd3d 85-86,88,93,111-122,225-236,238-267,269,271-284,287-289,292-295
+internal/agent/backoff_test.go
+  s_815aef767535ea::t_9ac3989d27dd3d 16,35,37,40-51,58-59
+  s_815aef767535ea::t_28c68698fc72a0 15
+internal/agent/backoff.go
+  s_815aef767535ea::t_17c8234e304ccd 14-17,23,28,37-40,51-56
+internal/agent/run.go
+  s_815aef767535ea::t_90c3384449f697 67-70
+  s_815aef767535ea::t_17c8234e304ccd 40-43,100,108
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "55dd746a88ff94daab1beafd0dd2539e5c79b326",
+  "prompts": {},
+  "sessions": {
+    "s_815aef767535ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1866255a-7d59-4f07-869c-b29b78c7a98d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
