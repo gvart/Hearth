@@ -57,6 +57,13 @@ body {
   background: var(--bg);
 }
 
+/* The secure-address banner, when shown, sits above the page. */
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
 h1,
 h2,
 h3 {
@@ -171,7 +178,7 @@ pre,
 
 /* Login */
 .login {
-  min-height: 100vh;
+  flex: 1;
   display: grid;
   place-items: center;
   padding: 1.5rem;
@@ -265,6 +272,37 @@ pre,
   color: var(--danger);
   background: var(--danger-soft);
   border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+}
+
+/* Secure-address banner (plain HTTP away from localhost) */
+.secure-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.75rem max(1rem, calc((100% - 70rem) / 2));
+  background: var(--accent-soft);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  font-size: 0.9rem;
+}
+
+.secure-banner-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.secure-banner a {
+  color: var(--accent);
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+
+.secure-banner-fp {
+  font-size: 0.78rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
 }
 
 /* Shell */

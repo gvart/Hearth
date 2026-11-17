@@ -59,6 +59,16 @@ export interface CreatedToken {
   join_command: string;
 }
 
+/** How to reach the hub over HTTPS; see GET /api/v1/tls. */
+export interface TlsInfo {
+  /** The HTTPS port. */
+  port: string;
+  /** Names the hub certificate is valid for. */
+  hosts: string[];
+  /** SHA-256 of the hub CA certificate, as colon-separated hex pairs. */
+  ca_fingerprint: string;
+}
+
 export type DeviceEventType = 'device.online' | 'device.offline' | 'device.updated';
 
 export interface DeviceEvent {
@@ -115,6 +125,7 @@ export const api = {
     }
   },
   devices: async () => (await request<{ devices: Device[] }>('GET', '/devices')).devices,
+  tlsInfo: () => request<TlsInfo>('GET', '/tls'),
   createToken: (opts: { ttl?: string; labels?: Record<string, string> } = {}) =>
     request<CreatedToken>('POST', '/tokens', opts),
 };
