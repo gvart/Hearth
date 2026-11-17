@@ -1,0 +1,27 @@
+# Build output
+/bin/
+/dist/
+*.test
+*.out
+coverage.*
+
+# Embedded web UI (built by `task build`; .gitkeep keeps `go build` working without Node)
+/internal/hub/webui/dist/*
+!/internal/hub/webui/dist/.gitkeep
+
+# Web
+/web/node_modules/
+/web/dist/
+*.tsbuildinfo
+
+# Task runner checksums
+/.task/
+
+# Local data / editors / OS
+/data/
+.env
+.env.*
+.idea/
+.vscode/
+*.swp
+.DS_Store

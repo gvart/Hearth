@@ -1,0 +1,98 @@
+# https://taskfile.dev
+version: '3'
+
+vars:
+  BIN: bin/hearth{{exeExt}}
+  VERSION:
+    sh: git describe --tags --dirty 2>/dev/null || echo v0.0.0-dev
+  COMMIT:
+    sh: git rev-parse --short=12 HEAD 2>/dev/null || echo unknown
+  DATE:
+    sh: date -u +%Y-%m-%dT%H:%M:%SZ
+  LDFLAGS: -s -w -X main.version={{.VERSION}} -X main.commit={{.COMMIT}} -X main.date={{.DATE}}
+  WEBUI_DIST: internal/hub/webui/dist
+
+tasks:
+  default:
+    cmds:
+      - task --list
+    silent: true
+
+  build:
+    desc: Build the web UI and the hearth binary into ./bin (honours GOOS/GOARCH)
+    cmds:
+      - task: web:embed
+      - task: go:build
+
+  test:
+    desc: Run Go tests with the race detector
+    env:
+      CGO_ENABLED: '1' # the race detector needs cgo; release builds stay CGO_ENABLED=0
+    cmds:
+      - go test -race ./...
+
+  lint:
+    desc: Run golangci-lint, eslint and tsc
+    deps: [web:deps]
+    cmds:
+      - golangci-lint run ./...
+      - npm --prefix web run lint
+      - npm --prefix web run typecheck
+
+  proto:
+    desc: Generate protobuf/Connect code with buf (placeholder until T2)
+    cmds:
+      - echo "No .proto sources yet; buf generate arrives with T2."
+    silent: true
+
+  e2e:
+    desc: Run compose-based end-to-end tests (placeholder until T10)
+    cmds:
+      - echo "No end-to-end tests yet; they arrive with T10."
+    silent: true
+
+  dev:
+    desc: Run the web UI dev server with hot reload (the hub joins once it exists)
+    deps: [web:deps]
+    dir: web
+    cmds:
+      - npm run dev
+
+  go:build:
+    internal: true
+    env:
+      CGO_ENABLED: '0'
+    cmds:
+      - go build -trimpath -ldflags "{{.LDFLAGS}}" -o {{.BIN}} ./cmd/hearth
+
+  web:deps:
+    internal: true
+    dir: web
+    sources: [package.json, package-lock.json]
+    generates: [node_modules/.package-lock.json]
+    cmds:
+      - npm ci --no-audit --no-fund
+
+  web:build:
+    internal: true
+    deps: [web:deps]
+    dir: web
+    sources:
+      - index.html
+      - package-lock.json
+      - public/**/*
+      - src/**/*
+      - tsconfig.json
+      - vite.config.ts
+    generates: [dist/index.html]
+    cmds:
+      - npm run build
+
+  web:embed:
+    internal: true
+    deps: [web:build]
+    cmds:
+      - rm -rf {{.WEBUI_DIST}}
+      - mkdir -p {{.WEBUI_DIST}}
+      - cp -R web/dist/. {{.WEBUI_DIST}}/
+      - touch {{.WEBUI_DIST}}/.gitkeep

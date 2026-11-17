@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: '1.26.x'
+  NODE_VERSION: '24'
+  TASK_VERSION: '3.x'
+  GOLANGCI_LINT_VERSION: 'v2.15.0'
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: go-task/setup-task@v2
+        with:
+          version: ${{ env.TASK_VERSION }}
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+          install-only: true
+      - run: task lint
+      - name: go.mod is tidy
+        run: |
+          go mod tidy -diff
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - uses: go-task/setup-task@v2
+        with:
+          version: ${{ env.TASK_VERSION }}
+      - run: task test
+
+  build:
+    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        goos: [linux, darwin]
+        goarch: [amd64, arm64]
+    env:
+      GOOS: ${{ matrix.goos }}
+      GOARCH: ${{ matrix.goarch }}
+      CGO_ENABLED: '0'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # tags for `git describe` in the version string
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: go-task/setup-task@v2
+        with:
+          version: ${{ env.TASK_VERSION }}
+      - run: task build
+      - name: Verify target and static build
+        run: |
+          meta="$(go version -m bin/hearth)"
+          echo "$meta"
+          grep -qx $'\tbuild\tGOOS=${{ matrix.goos }}' <<<"$meta"
+          grep -qx $'\tbuild\tGOARCH=${{ matrix.goarch }}' <<<"$meta"
+          grep -qx $'\tbuild\tCGO_ENABLED=0' <<<"$meta"
+      - name: Smoke test
+        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
+        run: |
+          ./bin/hearth version
+          ./bin/hearth version | grep -q '^hearth '
+      - uses: actions/upload-artifact@v7
+        with:
+          name: hearth-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: bin/hearth
+          retention-days: 7
