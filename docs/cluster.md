@@ -91,8 +91,48 @@ start.
 
 CI holds the cluster to these: an end-to-end test (`task e2e:cluster`, in
 [`test/e2e/cluster_test.go`](../test/e2e/cluster_test.go)) runs three hubs and an agent in Docker
-Compose, kills the leader, takes the majority away and back, and fails if any step takes longer
-than its stated bound.
+Compose, kills the leader, takes the majority away and back, replaces a dead hub, and fails if any
+step takes longer than its stated bound.
+
+## Replacing a dead hub
+
+A hub that is gone for good still counts towards the majority: a 3-hub cluster with one dead member
+tolerates no further failure. Remove it, then join a new hub:
+
+```sh
+# on any surviving member's host
+hearth cluster remove hub-c
+hearth cluster token create --hub-url https://hub-a.lan:7443
+# on the new hub, with an empty data dir (the old node ID may be reused)
+HEARTH_JOIN_TOKEN=... hearth hub --join https://hub-a.lan:7443 --node-id hub-c --advertise hub-c.lan:7444
+```
+
+`hearth cluster remove` takes the hub out of the Raft configuration (right after it, two voters
+remain and both are needed; once the new hub is a voter, the cluster tolerates one failure again)
+and revokes every hub node certificate issued to it. A revoked certificate is refused on the Raft
+port and by every hub-to-hub call (forwarded writes, promotion); Raft connections that were already
+open are closed within 2 seconds. The node ID is free again: a new hub may join under it with a
+fresh data dir and a new join token, and gets a new certificate.
+
+It refuses to:
+
+- **remove the leader.** Run `hearth cluster transfer-leadership [<node-id>]` first (without an ID,
+  the most up-to-date voter takes over), then remove the old leader.
+- **remove the last voter.**
+- **break the majority.** A voter is only removed if the voters that still answer the leader are a
+  majority of the voters that remain. With one hub dead, remove the dead one, not a live one.
+- **remove an unknown ID.** Running a removal again after it was interrupted (the hub left the
+  configuration but its certificates were not revoked yet) finishes it.
+
+Both commands are policy actions run by the local admin: `cluster.remove` (dangerous) and
+`cluster.transfer_leadership` (safe), audited like any other.
+
+Each hub records its node certificate in the cluster: the leader records the one it issues at join,
+and every hub records its own once it has caught up after a start, which covers a certificate it
+renewed itself (30 days before expiry) and certificates from before this was recorded. A hub that
+died before it ever ran a version that records them has no recorded certificate to revoke; removing
+it from the configuration still stops it from counting, and its old certificate is refused by
+forwarded writes since it is no longer a member, but not on the Raft port.
 
 ## The UI on any hub
 
@@ -113,8 +153,8 @@ When its hub goes away it tries the others in turn.
 
 ## CLI on a member's host
 
-`hearth token create`, `hearth device revoke`, `hearth admin set-password` and
-`hearth cluster token create` work on any member while its hub runs: they go through the hub's local
+`hearth token create`, `hearth device revoke`, `hearth admin set-password`,
+`hearth cluster token create`, `hearth cluster remove` and `hearth cluster transfer-leadership` work on any member while its hub runs: they go through the hub's local
 control socket and, on a follower, on to the leader. With the hub stopped they refuse, since writing
 the local database directly would diverge from the cluster.
 
@@ -128,9 +168,10 @@ the replicated log in order with the action.
 
 ## Limits
 
-- **No member removal yet** ([#29](https://github.com/gvart/hearth/issues/29)). A hub that is gone
-  for good still counts towards the majority; a 3-hub cluster with one dead member tolerates no
-  further failure. Rebuilding a hub means a fresh data dir and a new join (with a new node ID).
+- **A removed member's data dir still holds the CA key.** Every member receives the hub CA's private
+  key when it joins, and removal cannot take it back: whoever has that data dir can still mint
+  certificates the cluster trusts. Wipe the data dir of every removed hub. Rotating the CA is out of
+  scope for now ([#84](https://github.com/gvart/hearth/issues/84)).
 - **No rolling schema upgrades yet** ([#25](https://github.com/gvart/hearth/issues/25)): upgrade all
   hubs to the same version together.
 - All hubs share one CA, and every voter holds its key. Protect each hub's data dir accordingly.

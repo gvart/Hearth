@@ -348,12 +348,17 @@ be raised to make CI pass:
 | It starts again: API writes succeed again | `WritesResumeWithin` 15 s |
 | The killed hub starts again: it is a follower, has applied the leader's commit index, and its API (after any `catching_up` answers) lists the device, online, with its original ID | `RejoinWithin` 20 s |
 | Since the quorum came back, the agent is connected to the leader again. While no hub took it, it backed off exponentially (capped at 1 min), so this bound is the cap plus `FailoverWithin` | `AgentBackWithin` 70 s |
+| The leader is killed for good and a survivor is elected; `hearth cluster remove` on the remaining follower (forwarded to the leader) leaves both survivors reporting 2 voters (#29) | `FailoverWithin`, then `RemoveWithin` 10 s |
+| hub-d joins in its place with a new join token: one leader and 3 voters again | `ReplaceWithin` 30 s |
+| The leader is killed once more: the other two elect a leader, an API login and token creation work on it, and the agent is connected to it | `FailoverWithin` 10 s |
 
 Local runs (Colima, arm64) took: formation 6.2–11.4 s, enroll to online 0.3–1.0 s, kill to election
 2.0–3.8 s, kill to agent on the new leader 2.4–6.1 s, no-quorum write to 503 5.6–11.0 s (the action
 and its audit append may each wait 5 s for a leader), writes resuming 0.9–1.8 s, the killed hub
 serving the device 1.4–2.8 s, and the agent back after the quorum loss 3.4–6.9 s. A run takes about
-60–85 s plus the image build, most of it the 40 s offline watch.
+60–85 s plus the image build, most of it the 40 s offline watch. The replacement steps (#29) took:
+removal to 2 voters 0.24–0.26 s, hub-d joined to 3 voters 2.6 s, and after the next leader kill an
+election in 2.4 s and login, token and agent on the new leader in 3.3 s.
 
 - **Fix found by the test: certificate checks on a lagging hub.** An agent reconnecting after the
   quorum came back was answered `Unauthenticated: certificate unknown` by a follower that had just
@@ -370,8 +375,8 @@ serving the device 1.4–2.8 s, and the agent back after the quorum loss 3.4–6
   that cap to come back once the quorum returns, hence `AgentBackWithin`. The device does not go
   offline meanwhile unless the wait exceeds the offline timeout of the new term.
 
-Not covered: live SSE on followers (#27), rolling schema upgrades (#25), member removal and
-revoking a removed hub's certificate (#29).
+Not covered: live SSE on followers (#27), rolling schema upgrades (#25). Revocation of a removed
+hub's certificate is covered by unit tests in `internal/cluster/members_test.go`, not end to end.
 
 ### SSE on followers (#27)
 

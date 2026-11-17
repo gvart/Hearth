@@ -1,4 +1,5 @@
-# Three clustered hubs and one idle agent, all built from the current checkout.
+# Three clustered hubs, a fourth that replaces a removed one, and one idle
+# agent, all built from the current checkout.
 # Driven by cluster_test.go (`task e2e:cluster`): hub-a forms the cluster on
 # `up`; the test starts hub-b and hub-c itself, each with a fresh join token in
 # HEARTH_JOIN_TOKEN, and runs `hearth agent join` / `hearth agent run` inside
@@ -51,6 +52,15 @@ services:
     volumes:
       - hub-c-data:/var/lib/hearth/hub
 
+  # The replacement for a hub the test kills and removes for good; it joins
+  # through a surviving hub, HEARTH_JOIN_URL.
+  hub-d:
+    <<: *hub
+    hostname: hub-d
+    command: [hearth, hub, --data-dir, /var/lib/hearth/hub, --node-id, hub-d, --host, hub-d, --advertise, "hub-d:7444", --join, "${HEARTH_JOIN_URL:-https://hub-a:7443}"]
+    volumes:
+      - hub-d-data:/var/lib/hearth/hub
+
   agent:
     <<: *hearth
     pull_policy: never
@@ -63,4 +73,5 @@ volumes:
   hub-a-data:
   hub-b-data:
   hub-c-data:
+  hub-d-data:
   agent-data:
