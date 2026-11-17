@@ -1,0 +1,40 @@
+internal/policy/policy_test.go
+  s_815aef767535ea::t_a293574461b0ea 163-204
+  s_815aef767535ea::t_2f132852e39db0 8
+internal/store/command_test.go
+  s_815aef767535ea::t_ade7ba8092fdda 29-31
+  s_815aef767535ea::t_06155de5d70c45 218,226,236,346
+  s_815aef767535ea::t_8b79b23b125897 215-217,219-225,227-234
+internal/store/devicestatus.go
+  s_815aef767535ea::t_eddcc910b267f4 9-10
+  s_815aef767535ea::t_418b1fa81f8e33 70-98
+internal/store/migrations/00005_cluster_hubs.sql
+  s_815aef767535ea::t_1fa5c19cb7e506 1-12
+internal/store/hubs.go
+  s_815aef767535ea::t_e7c384481a9399 1-49
+internal/store/store_test.go
+  s_815aef767535ea::t_2afe724cf16835 54
+internal/policy/policy.go
+  s_815aef767535ea::t_2283c54c0ebe9d 156
+  s_815aef767535ea::t_0d533d3ad6e71d 165-190
+internal/store/command.go
+  s_815aef767535ea::t_45261930be4041 40-41,47-48
+  s_815aef767535ea::t_0831f9ad1e6447 195-279
+  s_815aef767535ea::t_ed7d32722d7d6c 595-600
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "09e95928a9f15a716af232471052d537df9897d7",
+  "prompts": {},
+  "sessions": {
+    "s_815aef767535ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1866255a-7d59-4f07-869c-b29b78c7a98d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
