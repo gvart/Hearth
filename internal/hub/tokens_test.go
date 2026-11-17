@@ -32,9 +32,15 @@ func TestAPICreateToken(t *testing.T) {
 	}
 	// The fixture serves on 127.0.0.1, which the hub certificate covers.
 	port := strings.TrimPrefix(f.srv.URL, "http://127.0.0.1:")
-	wantInstall := "curl -fsSL http://127.0.0.1:" + port + "/install.sh | sh -s -- --hub https://127.0.0.1:7443 --token " + got.Token
+	wantInstall := "curl -fsSL http://127.0.0.1:" + port + "/install.sh | HEARTH_TOKEN=" + got.Token + " sh -s -- --hub https://127.0.0.1:7443"
 	if got.InstallCommand != wantInstall {
 		t.Errorf("install_command = %q, want %q", got.InstallCommand, wantInstall)
+	}
+	// Everything after `sh -s --` lands in the argv of the user's sh, which
+	// any local user can read with ps: the token must not be there.
+	_, args, ok := strings.Cut(got.InstallCommand, " sh -s --")
+	if !ok || strings.Contains(args, got.Token) || strings.Contains(args, "--token") {
+		t.Errorf("install_command %q passes the token in the argv of sh", got.InstallCommand)
 	}
 	if want := "hearth agent join https://127.0.0.1:7443 " + got.Token; got.JoinCommand != want {
 		t.Errorf("join_command = %q, want %q", got.JoinCommand, want)
