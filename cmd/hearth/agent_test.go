@@ -50,20 +50,33 @@ func startTestHub(t *testing.T) (url, token string) {
 }
 
 func TestAgentJoin(t *testing.T) {
+	const warning = "token argument is visible to other local users"
 	tests := []struct {
-		name  string
-		stdin func(token string) string
-		arg   func(token string) string
+		name     string
+		env      bool // put the token in HEARTH_TOKEN
+		stdin    func(token string) string
+		args     func(token string) []string
+		wantWarn bool
 	}{
-		{"token from stdin", func(tok string) string { return tok + "\n" }, func(string) string { return "-" }},
-		{"stdin without newline", func(tok string) string { return "  " + tok }, func(string) string { return "-" }},
-		{"positional token", func(string) string { return "" }, func(tok string) string { return tok }},
+		{"token from HEARTH_TOKEN", true, nil, func(string) []string { return nil }, false},
+		{"token from stdin", false, func(tok string) string { return tok + "\n" }, func(string) []string { return []string{"-"} }, false},
+		{"stdin without newline", false, func(tok string) string { return "  " + tok }, func(string) []string { return []string{"-"} }, false},
+		{"positional token", false, nil, func(tok string) []string { return []string{tok} }, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			url, tok := startTestHub(t)
+			t.Setenv(tokenEnv, "")
+			if tt.env {
+				t.Setenv(tokenEnv, tok)
+			}
+			stdin := ""
+			if tt.stdin != nil {
+				stdin = tt.stdin(tok)
+			}
 			dataDir := filepath.Join(t.TempDir(), "agent")
-			out, err := executeWithStdin(t, tt.stdin(tok), "agent", "join", "--data-dir", dataDir, url, tt.arg(tok))
+			args := append([]string{"agent", "join", "--data-dir", dataDir, url}, tt.args(tok)...)
+			out, err := executeWithStdin(t, stdin, args...)
 			if err != nil {
 				t.Fatalf("join: %v\n%s", err, out)
 			}
@@ -73,10 +86,34 @@ func TestAgentJoin(t *testing.T) {
 			if strings.Contains(out, tok) {
 				t.Error("join echoed the token")
 			}
+			if got := strings.Contains(out, warning); got != tt.wantWarn {
+				t.Errorf("argv warning printed = %v, want %v; output %q", got, tt.wantWarn, out)
+			}
+			if v, ok := os.LookupEnv(tokenEnv); ok {
+				t.Errorf("%s still set after join (%d bytes): child processes would inherit it", tokenEnv, len(v))
+			}
 			if _, err := os.Stat(filepath.Join(dataDir, agent.CertFile)); err != nil {
 				t.Errorf("no identity: %v", err)
 			}
 		})
+	}
+}
+
+func TestAgentJoinRejectsMissingToken(t *testing.T) {
+	for _, env := range []string{"", "  "} {
+		t.Setenv(tokenEnv, env)
+		_, err := executeWithStdin(t, "", "agent", "join", "--data-dir", t.TempDir(), "https://127.0.0.1:7443")
+		if err == nil || !strings.Contains(err.Error(), "no enrollment token: set HEARTH_TOKEN") {
+			t.Errorf("HEARTH_TOKEN=%q: err = %v, want no enrollment token", env, err)
+		}
+	}
+	// The last join unset HEARTH_TOKEN.
+	if _, ok := os.LookupEnv(tokenEnv); ok {
+		t.Fatalf("%s still set after join", tokenEnv)
+	}
+	if _, err := executeWithStdin(t, "", "agent", "join", "--data-dir", t.TempDir(), "https://127.0.0.1:7443"); err == nil ||
+		!strings.Contains(err.Error(), "no enrollment token") {
+		t.Errorf("HEARTH_TOKEN unset: err = %v, want no enrollment token", err)
 	}
 }
 

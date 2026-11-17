@@ -107,10 +107,13 @@ func (a *api) createToken(w http.ResponseWriter, r *http.Request) {
 		ExpiresAt: expires,
 		// Every part is checked above (host characters) or base64url, so the
 		// command is safe to paste into a shell. The token goes in the
-		// environment of sh, not its argv: any local user can read argv with
-		// ps, but not another user's environment.
+		// environment of sh and hearth, not their argv: any local user can
+		// read argv with ps, but not another user's environment. No sudo in
+		// the join command: sudo drops HEARTH_TOKEN, and putting it after
+		// sudo would put it in sudo's argv. Run as root, join uses the
+		// installed service's data dir.
 		InstallCommand: "curl -fsSL http://" + httpHost + "/install.sh | HEARTH_TOKEN=" + enc + " sh -s -- --hub " + agentURL,
-		JoinCommand:    "hearth agent join " + agentURL + " " + enc,
+		JoinCommand:    "HEARTH_TOKEN=" + enc + " hearth agent join " + agentURL,
 	})
 }
 
