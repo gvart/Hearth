@@ -8,24 +8,21 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/gvart/hearth/internal/store"
 )
 
-// serveControl serves n's control socket in a short temp dir (unix socket
-// paths are limited to about 100 bytes) and returns a client for it.
+// serveControl serves n's control socket for its data dir and returns a
+// client for it.
 func serveControl(t *testing.T, n *testNode) *ControlClient {
 	t.Helper()
-	dir, err := os.MkdirTemp("", "hc")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	dir := n.dir
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
-	go func() { done <- ServeControl(ctx, filepath.Join(dir, ControlSocket), n.Node, testLogger(t)) }()
+	go func() { done <- ServeControl(ctx, dir, n.Node, testLogger(t)) }()
 	t.Cleanup(func() {
 		cancel()
 		if err := <-done; err != nil {
@@ -33,11 +30,11 @@ func serveControl(t *testing.T, n *testNode) *ControlClient {
 		}
 	})
 	eventually(t, "control socket", func() bool {
-		_, err := os.Stat(filepath.Join(dir, ControlSocket))
+		_, err := os.Stat(ControlSocketPath(dir))
 		return err == nil
 	})
 	if runtime.GOOS != "windows" {
-		info, err := os.Stat(filepath.Join(dir, ControlSocket))
+		info, err := os.Stat(ControlSocketPath(dir))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -96,6 +93,21 @@ func TestControlSocket(t *testing.T) {
 	var nl *ErrNotLeader
 	if !errors.As(err, &nl) || nl.LeaderID != leader.ID() {
 		t.Fatalf("follower apply: err = %v, want ErrNotLeader naming %s", err, leader.ID())
+	}
+}
+
+func TestControlSocketPath(t *testing.T) {
+	short := "/var/lib/hearth/hub"
+	if got := ControlSocketPath(short); got != filepath.Join(short, ControlSocket) {
+		t.Errorf("short data dir: %s", got)
+	}
+	long := "/" + strings.Repeat("d", 120)
+	got := ControlSocketPath(long)
+	if !strings.HasPrefix(got, os.TempDir()) || got != ControlSocketPath(long) {
+		t.Errorf("long data dir: %s", got)
+	}
+	if ControlSocketPath(long+"x") == got {
+		t.Error("two data dirs share a socket")
 	}
 }
 

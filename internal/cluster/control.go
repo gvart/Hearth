@@ -5,6 +5,8 @@ package cluster
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,16 +16,60 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/gvart/hearth/internal/store"
 )
 
-// ControlSocket is the file name, in the data dir, of a clustered hub's
-// local control socket. CLI commands on the hub host use it to read the
-// node's status and to send writes through Raft instead of writing the local
-// database behind the cluster's back. Access is the data dir's: 0700.
+// ControlSocket is the file name of a clustered hub's local control socket.
+// CLI commands on the hub host use it to read the node's status and to send
+// writes through Raft instead of writing the local database behind the
+// cluster's back. See ControlSocketPath for where it lives.
 const ControlSocket = "hearth.sock"
+
+// maxSocketPath stays under the smallest unix socket path limit (104 bytes
+// on macOS and the BSDs, 108 on Linux).
+const maxSocketPath = 100
+
+// ControlSocketPath is where the hub using dataDir serves its control socket:
+// inside the data dir (0700), or, when that path is too long for a unix
+// socket, in a private (0700) directory under the user's temp dir named after
+// a hash of the data dir.
+func ControlSocketPath(dataDir string) string {
+	p, _ := controlSocketPath(dataDir)
+	return p
+}
+
+// controlSocketPath also reports whether the socket lives outside the data
+// dir, in a directory of its own.
+func controlSocketPath(dataDir string) (path string, ownDir bool) {
+	if abs, err := filepath.Abs(dataDir); err == nil {
+		dataDir = abs
+	}
+	p := filepath.Join(dataDir, ControlSocket)
+	if len(p) <= maxSocketPath {
+		return p, false
+	}
+	sum := sha256.Sum256([]byte(dataDir))
+	return filepath.Join(os.TempDir(), "hearth-"+hex.EncodeToString(sum[:8]), ControlSocket), true
+}
+
+// privateSocketDir makes sure dir exists as a real directory with mode 0700,
+// so only its owner can reach the socket inside it.
+func privateSocketDir(dir string) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	info, err := os.Lstat(dir)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() || (runtime.GOOS != "windows" && info.Mode().Perm() != 0o700) {
+		return fmt.Errorf("%s must be a directory with mode 0700", dir)
+	}
+	return nil
+}
 
 const maxCommandSize = 1 << 20
 
@@ -63,9 +109,16 @@ func ControlHandler(node *Node, log *slog.Logger) http.Handler {
 	return mux
 }
 
-// ServeControl serves ControlHandler on the unix socket at path until ctx is
-// done. A stale socket file from an earlier run is replaced.
-func ServeControl(ctx context.Context, path string, node *Node, log *slog.Logger) error {
+// ServeControl serves ControlHandler on the control socket of dataDir (see
+// ControlSocketPath) until ctx is done. A stale socket file from an earlier
+// run is replaced.
+func ServeControl(ctx context.Context, dataDir string, node *Node, log *slog.Logger) error {
+	path, ownDir := controlSocketPath(dataDir)
+	if ownDir {
+		if err := privateSocketDir(filepath.Dir(path)); err != nil {
+			return fmt.Errorf("control socket: %w", err)
+		}
+	}
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("control socket: %w", err)
 	}
@@ -155,7 +208,7 @@ var _ store.Applier = (*ControlClient)(nil)
 // DialControl returns a client for the hub using dataDir. It fails if the hub
 // is not running.
 func DialControl(dataDir string) (*ControlClient, error) {
-	path := filepath.Join(dataDir, ControlSocket)
+	path := ControlSocketPath(dataDir)
 	if _, err := os.Stat(path); err != nil {
 		return nil, fmt.Errorf("this data dir belongs to a cluster member, but its hub is not running "+
 			"(no control socket at %s): cluster writes go through the running hub", path)

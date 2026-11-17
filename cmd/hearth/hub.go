@@ -207,7 +207,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	g.Go(func() error { return serve(gctx, webSrv, func() error { return webSrv.Serve(webLn) }) })
 	if node != nil {
 		g.Go(func() error {
-			return cluster.ServeControl(gctx, filepath.Join(opts.dataDir, cluster.ControlSocket), node, log)
+			return cluster.ServeControl(gctx, opts.dataDir, node, log)
 		})
 		g.Go(func() error { return promoteUntilVoter(gctx, node, opts.dataDir, log) })
 		g.Go(func() error {
