@@ -153,13 +153,39 @@ func (e *Engine) Do(ctx context.Context, req Request, fn func(context.Context) e
 		Result:    result,
 		Detail:    detail,
 	}); err != nil {
-		return errors.Join(runErr, fmt.Errorf("audit %s: %w", req.Action, err))
+		return withAuditErr(runErr, fmt.Errorf("audit %s: %w", req.Action, err))
 	}
 
 	if decision == Deny {
 		return fmt.Errorf("%s by %s/%s: %s: %w", req.Action, req.ActorKind, req.ActorID, reason, ErrDenied)
 	}
 	return runErr
+}
+
+// withAuditErr combines a failed action with its failed audit append. When
+// both failed for the same root cause (typically the store or the cluster
+// being unavailable, which fails every write the same way), the cause is
+// reported once instead of twice. The result still matches both errors with
+// errors.Is when they differ.
+func withAuditErr(runErr, auditErr error) error {
+	if runErr == nil {
+		return auditErr
+	}
+	if rootCause(runErr).Error() == rootCause(auditErr).Error() {
+		return fmt.Errorf("%w (the audit entry was not written either)", runErr)
+	}
+	return errors.Join(runErr, auditErr)
+}
+
+// rootCause follows a chain of single wrapped errors to its end.
+func rootCause(err error) error {
+	for {
+		next := errors.Unwrap(err)
+		if next == nil {
+			return err
+		}
+		err = next
+	}
 }
 
 // orUnknown keeps denied anonymous requests auditable.

@@ -37,13 +37,15 @@ type Result struct {
 	Device Device
 	// PrevStatus is the device's status before ReportFacts or MarkSeen.
 	PrevStatus string
-	// Devices are the rows changed by MarkOffline, ordered by ID.
+	// Devices are the rows changed by MarkOffline or MarkDevicesOffline,
+	// ordered by ID.
 	Devices []Device
 	// Labels are the labels of the token consumed by ConsumeToken.
 	Labels map[string]string
 	// ID is the audit_log ID assigned by AppendAudit.
 	ID int64
-	// Count is the number of certificates revoked by RevokeDevice.
+	// Count is the number of certificates revoked by RevokeDevice, or of
+	// devices updated by MarkSeenBatch.
 	Count int
 }
 
@@ -188,6 +190,91 @@ func (c MarkOffline) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
 	}
 	slices.SortFunc(out, func(a, b Device) int { return strings.Compare(a.ID, b.ID) })
 	return Result{Devices: out}, nil
+}
+
+// Seen is one device's last heartbeat in a MarkSeenBatch.
+type Seen struct {
+	ID       string `json:"id"`
+	LastSeen int64  `json:"last_seen"`
+}
+
+// MarkSeenBatch records the last heartbeat of many devices at once. A
+// clustered hub coalesces heartbeats in memory and flushes them with this
+// command, so last_seen does not cost a Raft round per heartbeat. It only
+// moves last_seen forward and never changes a status: presence transitions
+// go through MarkSeen and MarkDevicesOffline. Unknown devices are skipped.
+// Result: Count, the number of rows changed.
+type MarkSeenBatch struct {
+	Seen []Seen `json:"seen"`
+}
+
+// Op implements Command.
+func (MarkSeenBatch) Op() string { return "mark_seen_batch" }
+
+func (c MarkSeenBatch) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
+	n := 0
+	for _, s := range c.Seen {
+		res, err := tx.ExecContext(ctx,
+			`UPDATE devices SET last_seen = ? WHERE id = ? AND last_seen < ?`, s.LastSeen, s.ID, s.LastSeen)
+		if err != nil {
+			return Result{}, err
+		}
+		k, err := res.RowsAffected()
+		if err != nil {
+			return Result{}, err
+		}
+		n += int(k)
+	}
+	return Result{Count: n}, nil
+}
+
+// MarkDevicesOffline marks the listed devices offline if they are online. A
+// clustered leader decides who is silent from its in-memory view of
+// heartbeats (see MarkSeenBatch) and names them, rather than comparing the
+// stored last_seen with a cutoff as MarkOffline does. Result: Devices, the
+// rows changed, ordered by ID.
+type MarkDevicesOffline struct {
+	IDs []string `json:"ids"`
+}
+
+// Op implements Command.
+func (MarkDevicesOffline) Op() string { return "mark_devices_offline" }
+
+func (c MarkDevicesOffline) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
+	var out []Device
+	for _, id := range c.IDs {
+		row := tx.QueryRowContext(ctx, `
+			UPDATE devices SET status = '`+StatusOffline+`'
+			WHERE id = ? AND status = '`+StatusOnline+`'
+			RETURNING `+deviceColumns, id)
+		d, err := scanDevice(row)
+		if errors.Is(err, sql.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return Result{}, err
+		}
+		out = append(out, d)
+	}
+	slices.SortFunc(out, func(a, b Device) int { return strings.Compare(a.ID, b.ID) })
+	return Result{Devices: out}, nil
+}
+
+// SetHubURL records the agent-facing URL of a cluster hub. Each hub writes
+// its own row when it starts; agents are sent these URLs to fail over to.
+type SetHubURL struct {
+	NodeID   string `json:"node_id"`
+	AgentURL string `json:"agent_url"`
+}
+
+// Op implements Command.
+func (SetHubURL) Op() string { return "set_hub_url" }
+
+func (c SetHubURL) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO cluster_hubs (node_id, agent_url) VALUES (?, ?)
+		ON CONFLICT (node_id) DO UPDATE SET agent_url = excluded.agent_url`, c.NodeID, c.AgentURL)
+	return Result{}, err
 }
 
 // CreateToken stores a single-use enrollment token by its SHA-256 hash.
@@ -505,6 +592,12 @@ func DecodeCommand(b []byte) (Command, error) {
 		cmd, err = decodeAs[SetBootTime](env.Cmd)
 	case MarkOffline{}.Op():
 		cmd, err = decodeAs[MarkOffline](env.Cmd)
+	case MarkSeenBatch{}.Op():
+		cmd, err = decodeAs[MarkSeenBatch](env.Cmd)
+	case MarkDevicesOffline{}.Op():
+		cmd, err = decodeAs[MarkDevicesOffline](env.Cmd)
+	case SetHubURL{}.Op():
+		cmd, err = decodeAs[SetHubURL](env.Cmd)
 	case CreateToken{}.Op():
 		cmd, err = decodeAs[CreateToken](env.Cmd)
 	case ConsumeToken{}.Op():

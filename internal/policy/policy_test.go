@@ -5,6 +5,7 @@ package policy
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -154,6 +155,48 @@ func TestEngineDo(t *testing.T) {
 			e := entries[0]
 			if e.Decision != tt.wantDecision || e.Result != tt.wantResult || e.Action != string(tt.req.Action) {
 				t.Errorf("audit = %+v, want decision %q result %q", e, tt.wantDecision, tt.wantResult)
+			}
+		})
+	}
+}
+
+// failingAudit is an Auditor whose appends fail with err.
+type failingAudit struct{ err error }
+
+func (f failingAudit) Append(context.Context, store.AuditEntry) (int64, error) { return 0, f.err }
+
+func TestEngineDoAuditFailure(t *testing.T) {
+	req := Request{ActorKind: ActorAdmin, ActorID: "root", Action: TokenCreate}
+	unavailable := fmt.Errorf("forward: %w", store.ErrUnavailable)
+	disk := errors.New("disk full")
+	tests := []struct {
+		name     string
+		runErr   error
+		auditErr error
+		wantIs   []error
+		wantMsg  string
+	}{
+		{"action ok, audit fails", nil, disk, []error{disk}, "audit token.create: disk full"},
+		{
+			"same cause reported once", fmt.Errorf("create token: %w", unavailable), unavailable,
+			[]error{store.ErrUnavailable},
+			"create token: forward: " + store.ErrUnavailable.Error() + " (the audit entry was not written either)",
+		},
+		{
+			"different causes both kept", store.ErrTokenUsed, disk, []error{store.ErrTokenUsed, disk},
+			store.ErrTokenUsed.Error() + "\naudit token.create: disk full",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := New(failingAudit{tt.auditErr}).Do(t.Context(), req, func(context.Context) error { return tt.runErr })
+			for _, target := range tt.wantIs {
+				if !errors.Is(err, target) {
+					t.Errorf("err = %v, want it to match %v", err, target)
+				}
+			}
+			if err == nil || err.Error() != tt.wantMsg {
+				t.Errorf("message = %q, want %q", err, tt.wantMsg)
 			}
 		})
 	}
