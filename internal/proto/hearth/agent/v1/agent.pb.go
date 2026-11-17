@@ -790,8 +790,12 @@ type Welcome struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	ServerTime        *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=server_time,json=serverTime,proto3" json:"server_time,omitempty"`
 	HeartbeatInterval *durationpb.Duration   `protobuf:"bytes,2,opt,name=heartbeat_interval,json=heartbeatInterval,proto3" json:"heartbeat_interval,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// hubs are the agent-facing URLs (https://host:port) of every hub in the
+	// cluster, the leader included. Agents keep them to fail over between hubs.
+	// A single hub lists only itself, or nothing when it does not know its URL.
+	Hubs          []string `protobuf:"bytes,3,rep,name=hubs,proto3" json:"hubs,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Welcome) Reset() {
@@ -838,6 +842,70 @@ func (x *Welcome) GetHeartbeatInterval() *durationpb.Duration {
 	return nil
 }
 
+func (x *Welcome) GetHubs() []string {
+	if x != nil {
+		return x.Hubs
+	}
+	return nil
+}
+
+// NotLeader is the error detail a hub that is not the cluster leader attaches
+// when it refuses AgentService.Connect or EnrollService.Enroll, with code
+// FAILED_PRECONDITION. Only the leader serves agents and enrollment.
+type NotLeader struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// leader_url is the leader's agent-facing URL, or empty while no leader is known.
+	LeaderUrl string `protobuf:"bytes,1,opt,name=leader_url,json=leaderUrl,proto3" json:"leader_url,omitempty"`
+	// hubs are the agent-facing URLs of every hub in the cluster, as in Welcome.
+	Hubs          []string `protobuf:"bytes,2,rep,name=hubs,proto3" json:"hubs,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NotLeader) Reset() {
+	*x = NotLeader{}
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NotLeader) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NotLeader) ProtoMessage() {}
+
+func (x *NotLeader) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NotLeader.ProtoReflect.Descriptor instead.
+func (*NotLeader) Descriptor() ([]byte, []int) {
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *NotLeader) GetLeaderUrl() string {
+	if x != nil {
+		return x.LeaderUrl
+	}
+	return ""
+}
+
+func (x *NotLeader) GetHubs() []string {
+	if x != nil {
+		return x.Hubs
+	}
+	return nil
+}
+
 // ExecRequest asks the agent to run an action. Stub: fields arrive with exec support.
 type ExecRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -847,7 +915,7 @@ type ExecRequest struct {
 
 func (x *ExecRequest) Reset() {
 	*x = ExecRequest{}
-	mi := &file_hearth_agent_v1_agent_proto_msgTypes[11]
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -859,7 +927,7 @@ func (x *ExecRequest) String() string {
 func (*ExecRequest) ProtoMessage() {}
 
 func (x *ExecRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hearth_agent_v1_agent_proto_msgTypes[11]
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -872,7 +940,7 @@ func (x *ExecRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecRequest.ProtoReflect.Descriptor instead.
 func (*ExecRequest) Descriptor() ([]byte, []int) {
-	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{11}
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{12}
 }
 
 // Ping checks the stream is alive.
@@ -884,7 +952,7 @@ type Ping struct {
 
 func (x *Ping) Reset() {
 	*x = Ping{}
-	mi := &file_hearth_agent_v1_agent_proto_msgTypes[12]
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -896,7 +964,7 @@ func (x *Ping) String() string {
 func (*Ping) ProtoMessage() {}
 
 func (x *Ping) ProtoReflect() protoreflect.Message {
-	mi := &file_hearth_agent_v1_agent_proto_msgTypes[12]
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -909,7 +977,7 @@ func (x *Ping) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Ping.ProtoReflect.Descriptor instead.
 func (*Ping) Descriptor() ([]byte, []int) {
-	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{12}
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{13}
 }
 
 var File_hearth_agent_v1_agent_proto protoreflect.FileDescriptor
@@ -977,11 +1045,16 @@ const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\f\n" +
 	"\n" +
-	"ExecResult\"\x90\x01\n" +
+	"ExecResult\"\xa4\x01\n" +
 	"\aWelcome\x12;\n" +
 	"\vserver_time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"serverTime\x12H\n" +
-	"\x12heartbeat_interval\x18\x02 \x01(\v2\x19.google.protobuf.DurationR\x11heartbeatInterval\"\r\n" +
+	"\x12heartbeat_interval\x18\x02 \x01(\v2\x19.google.protobuf.DurationR\x11heartbeatInterval\x12\x12\n" +
+	"\x04hubs\x18\x03 \x03(\tR\x04hubs\">\n" +
+	"\tNotLeader\x12\x1d\n" +
+	"\n" +
+	"leader_url\x18\x01 \x01(\tR\tleaderUrl\x12\x12\n" +
+	"\x04hubs\x18\x02 \x03(\tR\x04hubs\"\r\n" +
 	"\vExecRequest\"\x06\n" +
 	"\x04Ping2Y\n" +
 	"\fAgentService\x12I\n" +
@@ -1001,7 +1074,7 @@ func file_hearth_agent_v1_agent_proto_rawDescGZIP() []byte {
 	return file_hearth_agent_v1_agent_proto_rawDescData
 }
 
-var file_hearth_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_hearth_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_hearth_agent_v1_agent_proto_goTypes = []any{
 	(*AgentMessage)(nil),          // 0: hearth.agent.v1.AgentMessage
 	(*HubMessage)(nil),            // 1: hearth.agent.v1.HubMessage
@@ -1014,11 +1087,12 @@ var file_hearth_agent_v1_agent_proto_goTypes = []any{
 	(*MetricSample)(nil),          // 8: hearth.agent.v1.MetricSample
 	(*ExecResult)(nil),            // 9: hearth.agent.v1.ExecResult
 	(*Welcome)(nil),               // 10: hearth.agent.v1.Welcome
-	(*ExecRequest)(nil),           // 11: hearth.agent.v1.ExecRequest
-	(*Ping)(nil),                  // 12: hearth.agent.v1.Ping
-	nil,                           // 13: hearth.agent.v1.MetricSample.LabelsEntry
-	(*timestamppb.Timestamp)(nil), // 14: google.protobuf.Timestamp
-	(*durationpb.Duration)(nil),   // 15: google.protobuf.Duration
+	(*NotLeader)(nil),             // 11: hearth.agent.v1.NotLeader
+	(*ExecRequest)(nil),           // 12: hearth.agent.v1.ExecRequest
+	(*Ping)(nil),                  // 13: hearth.agent.v1.Ping
+	nil,                           // 14: hearth.agent.v1.MetricSample.LabelsEntry
+	(*timestamppb.Timestamp)(nil), // 15: google.protobuf.Timestamp
+	(*durationpb.Duration)(nil),   // 16: google.protobuf.Duration
 }
 var file_hearth_agent_v1_agent_proto_depIdxs = []int32{
 	3,  // 0: hearth.agent.v1.AgentMessage.hello:type_name -> hearth.agent.v1.Hello
@@ -1027,18 +1101,18 @@ var file_hearth_agent_v1_agent_proto_depIdxs = []int32{
 	9,  // 3: hearth.agent.v1.AgentMessage.exec_result:type_name -> hearth.agent.v1.ExecResult
 	3,  // 4: hearth.agent.v1.AgentMessage.facts:type_name -> hearth.agent.v1.Hello
 	10, // 5: hearth.agent.v1.HubMessage.welcome:type_name -> hearth.agent.v1.Welcome
-	11, // 6: hearth.agent.v1.HubMessage.exec_request:type_name -> hearth.agent.v1.ExecRequest
-	12, // 7: hearth.agent.v1.HubMessage.ping:type_name -> hearth.agent.v1.Ping
+	12, // 6: hearth.agent.v1.HubMessage.exec_request:type_name -> hearth.agent.v1.ExecRequest
+	13, // 7: hearth.agent.v1.HubMessage.ping:type_name -> hearth.agent.v1.Ping
 	2,  // 8: hearth.agent.v1.Hello.protocol_version:type_name -> hearth.agent.v1.ProtocolVersion
 	4,  // 9: hearth.agent.v1.Hello.disks:type_name -> hearth.agent.v1.Disk
 	5,  // 10: hearth.agent.v1.Hello.interfaces:type_name -> hearth.agent.v1.NetworkInterface
-	14, // 11: hearth.agent.v1.Heartbeat.ts:type_name -> google.protobuf.Timestamp
-	15, // 12: hearth.agent.v1.Heartbeat.uptime:type_name -> google.protobuf.Duration
+	15, // 11: hearth.agent.v1.Heartbeat.ts:type_name -> google.protobuf.Timestamp
+	16, // 12: hearth.agent.v1.Heartbeat.uptime:type_name -> google.protobuf.Duration
 	8,  // 13: hearth.agent.v1.MetricsBatch.samples:type_name -> hearth.agent.v1.MetricSample
-	13, // 14: hearth.agent.v1.MetricSample.labels:type_name -> hearth.agent.v1.MetricSample.LabelsEntry
-	14, // 15: hearth.agent.v1.MetricSample.ts:type_name -> google.protobuf.Timestamp
-	14, // 16: hearth.agent.v1.Welcome.server_time:type_name -> google.protobuf.Timestamp
-	15, // 17: hearth.agent.v1.Welcome.heartbeat_interval:type_name -> google.protobuf.Duration
+	14, // 14: hearth.agent.v1.MetricSample.labels:type_name -> hearth.agent.v1.MetricSample.LabelsEntry
+	15, // 15: hearth.agent.v1.MetricSample.ts:type_name -> google.protobuf.Timestamp
+	15, // 16: hearth.agent.v1.Welcome.server_time:type_name -> google.protobuf.Timestamp
+	16, // 17: hearth.agent.v1.Welcome.heartbeat_interval:type_name -> google.protobuf.Duration
 	0,  // 18: hearth.agent.v1.AgentService.Connect:input_type -> hearth.agent.v1.AgentMessage
 	1,  // 19: hearth.agent.v1.AgentService.Connect:output_type -> hearth.agent.v1.HubMessage
 	19, // [19:20] is the sub-list for method output_type
@@ -1071,7 +1145,7 @@ func file_hearth_agent_v1_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_hearth_agent_v1_agent_proto_rawDesc), len(file_hearth_agent_v1_agent_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   14,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

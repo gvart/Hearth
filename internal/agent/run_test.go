@@ -44,15 +44,30 @@ type restartableHub struct {
 
 func startRestartableHub(t *testing.T, heartbeat time.Duration) *restartableHub {
 	t.Helper()
-	dir := t.TempDir()
-	st, err := store.Open(t.Context(), filepath.Join(dir, "hearth.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = st.Close() })
-	ca, err := pki.LoadOrCreateCA(dir, time.Now())
-	if err != nil {
-		t.Fatal(err)
+	return startClusterHub(t, heartbeat, nil, nil)
+}
+
+// startClusterHub is startRestartableHub with a Leadership (nil for a single
+// hub). With a peer, the new hub shares the peer's store and CA, standing in
+// for a cluster member with replicated state.
+func startClusterHub(t *testing.T, heartbeat time.Duration, peer *restartableHub, lead hub.Leadership) *restartableHub {
+	t.Helper()
+	var st *store.Store
+	var ca *pki.CA
+	if peer != nil {
+		st, ca = peer.st, peer.ca
+	} else {
+		dir := t.TempDir()
+		var err error
+		st, err = store.Open(t.Context(), filepath.Join(dir, "hearth.db"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = st.Close() })
+		ca, err = pki.LoadOrCreateCA(dir, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	cert, err := ca.IssueServerCert([]string{"127.0.0.1"}, time.Now())
 	if err != nil {
@@ -64,6 +79,7 @@ func startRestartableHub(t *testing.T, heartbeat time.Duration) *restartableHub 
 		t: t,
 		handler: hub.NewHandler(hub.Config{
 			Store: st, CA: ca, Policy: policy.New(st.Audit()), Log: log, HeartbeatInterval: heartbeat,
+			Leadership: lead,
 		}),
 		tls:  hub.TLSConfig(ca, cert),
 		st:   st,

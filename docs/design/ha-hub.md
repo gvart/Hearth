@@ -200,3 +200,22 @@ Raft layer wrap it without touching callers. Reads stay direct SQL.
   writer; `Store.Restore` stages the incoming copy, checks it (`quick_check` plus a goose version)
   and copies it into the live database in one transaction with SQLite's backup API, so the open
   `*sql.DB` stays valid.
+
+### HA-4: agent failover and leader redirect
+
+- `hub.Config.Leadership` (`IsLeader`, `LeaderAgentURL`, `AgentURLs`) is the hub's view of the
+  cluster. Nil means a single hub: always the leader, listing only `https://AgentHosts[0]:AgentPort`.
+  HA-3 implements it over the Raft node.
+- A follower refuses `AgentService.Connect` (before any registry write) and `EnrollService.Enroll`
+  with `FAILED_PRECONDITION` plus a `hearth.agent.v1.NotLeader { leader_url, hubs }` detail.
+  FailedPrecondition rather than Unavailable: retrying the same hub cannot succeed until leadership
+  changes, so generic retry logic must not treat it as transient; the detail says where to go.
+  `leader_url` is empty while no leader is known.
+- `Welcome.hubs` lists every hub's agent URL. The agent keeps them in `hubs` in its data dir (one
+  URL per line, 0600, replaced atomically); `hub_url` stays the URL given to join and is always
+  kept in the list. The list is rewritten when a Welcome changes it, with the welcoming hub first.
+- Reconnects: a failed attempt moves straight on to the next hub; only after every hub failed in a
+  row does the agent back off (the existing exponential backoff, and the quick retry of the same
+  hub after a session of at least 1 s). A NotLeader refusal jumps to the named leader at once, but
+  still counts as an attempt of the round, so followers naming each other cannot cause a hot loop.
+- `hearth agent join` through a follower retries once at the leader it names and saves the hubs.

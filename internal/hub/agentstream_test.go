@@ -18,6 +18,7 @@ import (
 
 	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
 	"github.com/gvart/hearth/internal/proto/hearth/agent/v1/agentv1connect"
+	"github.com/gvart/hearth/internal/store"
 )
 
 // newTestClient serves AgentStream over unencrypted HTTP/2 (bidi streaming needs h2)
@@ -25,10 +26,23 @@ import (
 // in for requireClientCert; an empty deviceID leaves requests unauthenticated.
 func newTestClient(t *testing.T, deviceID string) agentv1connect.AgentServiceClient {
 	t.Helper()
+	c, _ := newStreamClient(t, deviceID, nil)
+	return c
+}
+
+// newStreamClient is newTestClient with the hub's Leadership set to lead
+// (nil keeps the single-hub default). It also returns the hub's store, in
+// which dev-1 is enrolled.
+func newStreamClient(t *testing.T, deviceID string, lead Leadership) (agentv1connect.AgentServiceClient, *store.Store) {
+	t.Helper()
 	st := newTestStore(t)
 	enrollDevice(t, st, "dev-1")
 	reg := NewRegistry(RegistryConfig{Store: st})
-	path, h := agentv1connect.NewAgentServiceHandler(NewAgentStream(slog.New(slog.DiscardHandler), 5*time.Second, reg))
+	as := NewAgentStream(slog.New(slog.DiscardHandler), 5*time.Second, reg)
+	if lead != nil {
+		as.leadership = lead
+	}
+	path, h := agentv1connect.NewAgentServiceHandler(as)
 	mux := http.NewServeMux()
 	mux.Handle(path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if deviceID != "" {
@@ -46,7 +60,7 @@ func newTestClient(t *testing.T, deviceID string) agentv1connect.AgentServiceCli
 	transport := &http.Transport{Protocols: new(http.Protocols)}
 	transport.Protocols.SetUnencryptedHTTP2(true)
 	t.Cleanup(transport.CloseIdleConnections)
-	return agentv1connect.NewAgentServiceClient(&http.Client{Transport: transport}, srv.URL)
+	return agentv1connect.NewAgentServiceClient(&http.Client{Transport: transport}, srv.URL), st
 }
 
 func hello(major uint32) *agentv1.AgentMessage {

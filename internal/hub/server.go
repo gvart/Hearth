@@ -41,18 +41,28 @@ type Config struct {
 	// then end at once, so a graceful shutdown need not wait them out. If nil,
 	// they end only when the agent hangs up or the server closes.
 	Stopping context.Context
+	// Leadership says whether this hub is the cluster leader. Followers refuse
+	// agent streams and enrollment and name the leader. If nil, the hub is a
+	// single node: always the leader, and the only hub agents are told about
+	// is https://AgentHosts[0]:AgentPort (none without AgentHosts).
+	Leadership Leadership
 }
 
 // NewHandler serves EnrollService to anyone (the token is the credential) and
 // AgentService only to clients with a valid, unrevoked certificate from the CA.
 func NewHandler(cfg Config) http.Handler {
+	lead := leadershipOf(cfg)
 	mux := http.NewServeMux()
-	mux.Handle(agentv1connect.NewEnrollServiceHandler(NewEnroller(cfg.Store, cfg.CA, cfg.Policy, cfg.Log)))
+	enroller := NewEnroller(cfg.Store, cfg.CA, cfg.Policy, cfg.Log)
+	enroller.leadership = lead
+	mux.Handle(agentv1connect.NewEnrollServiceHandler(enroller))
 	reg := cfg.Registry
 	if reg == nil {
 		reg = NewRegistry(RegistryConfig{Store: cfg.Store, Log: cfg.Log})
 	}
-	path, h := agentv1connect.NewAgentServiceHandler(NewAgentStream(cfg.Log, cfg.HeartbeatInterval, reg))
+	stream := NewAgentStream(cfg.Log, cfg.HeartbeatInterval, reg)
+	stream.leadership = lead
+	path, h := agentv1connect.NewAgentServiceHandler(stream)
 	mux.Handle(path, requireClientCert(cfg.Store.Certs(), cfg.Log, EndOnStop(cfg.Stopping, h)))
 	return mux
 }

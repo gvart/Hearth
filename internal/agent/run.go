@@ -11,6 +11,8 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
+	"slices"
 	"time"
 
 	"connectrpc.com/connect"
@@ -57,17 +59,25 @@ type runner struct {
 	factsInterval time.Duration
 	log           *slog.Logger
 	id            *identity
-	client        agentv1connect.AgentServiceClient
+	httpClient    *http.Client
 	boot          time.Time
+	// hubs are the hubs to try, in order, and cur the index of the next one.
+	// Only Run's goroutine touches them.
+	hubs []string
+	cur  int
 }
 
-// Run keeps the agent connected to its hub until ctx is canceled: it loads the
-// identity from cfg.DataDir, opens the mTLS stream, sends Hello with host facts,
-// then heartbeats at the interval the hub asks for. Lost or refused connections
-// are retried with exponential backoff; when an established session ends, the
-// first retry comes almost at once, as the hub is likely restarting. Run only
-// returns early when the data dir holds no usable identity. Cancellation
-// returns nil.
+// Run keeps the agent connected to the cluster leader until ctx is canceled:
+// it loads the identity from cfg.DataDir, opens the mTLS stream, sends Hello
+// with host facts, then heartbeats at the interval the hub asks for.
+//
+// The agent knows every hub: the join URL plus the list each Welcome carries,
+// kept in HubsFile. A failed attempt moves on to the next hub at once; only
+// when every hub failed in a row does the agent wait, with exponential
+// backoff. A follower's NotLeader refusal sends it straight to the leader it
+// names. When an established session ends, the first retry goes to the same
+// hub almost at once, as it is likely restarting. Run only returns early when
+// the data dir holds no usable identity. Cancellation returns nil.
 func Run(ctx context.Context, cfg Config) error {
 	id, err := loadIdentity(cfg.DataDir)
 	if err != nil {
@@ -84,31 +94,48 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 	defer tr.CloseIdleConnections()
 
-	log := cfg.Log.With("hub", id.hubURL.Host, "device_id", id.deviceID)
+	log := cfg.Log.With("device_id", id.deviceID)
 	r := &runner{
 		cfg:           cfg,
 		factsInterval: cmp.Or(cfg.FactsInterval, defaultFactsInterval),
 		log:           log,
 		id:            id,
-		client:        agentv1connect.NewAgentServiceClient(&http.Client{Transport: tr}, id.hubURL.String()),
+		httpClient:    &http.Client{Transport: tr},
 		boot:          bootTime(ctx, cfg.Log),
+		hubs:          id.hubs,
 	}
-	log.InfoContext(ctx, "agent starting", "version", cfg.Version)
+	log.InfoContext(ctx, "agent starting", "version", cfg.Version, "hubs", r.hubs)
 
 	b := newBackoff()
+	failed := 0 // attempts that failed in a row since the last wait or session
 	for {
+		hub := r.hubs[r.cur]
 		started := time.Now()
-		welcomed, err := r.session(ctx)
+		welcomed, err := r.session(ctx, hub)
 		tr.CloseIdleConnections()
 		if ctx.Err() != nil {
 			log.InfoContext(ctx, "agent stopped")
 			return nil
 		}
+		leader := r.redirect(ctx, hub, err)
 		if welcomed {
+			// Retry the same hub first: it most likely restarted.
 			b.reset(time.Since(started) >= stableSession)
+			failed = 0
+		} else {
+			failed++
+			r.cur = (r.cur + 1) % len(r.hubs)
 		}
+		if leader >= 0 {
+			r.cur = leader
+		}
+		if !welcomed && failed < len(r.hubs) {
+			log.WarnContext(ctx, "hub unavailable; trying the next hub", "hub", hostOf(hub), "err", err, "next", hostOf(r.hubs[r.cur]))
+			continue
+		}
+		failed = 0
 		d := b.next()
-		log.WarnContext(ctx, "hub connection lost; reconnecting", "err", err, "retry_in", d.Round(time.Millisecond))
+		log.WarnContext(ctx, "hub connection lost; reconnecting", "hub", hostOf(hub), "err", err, "retry_in", d.Round(time.Millisecond))
 		t := time.NewTimer(d)
 		select {
 		case <-ctx.Done():
@@ -120,17 +147,63 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 }
 
-// session runs one stream to the hub until it fails or ctx is canceled.
+// redirect handles a follower's NotLeader refusal from hub: it adds the
+// leader and the hubs it names to the list and returns the leader's index, or
+// -1 if err is no such refusal or names no other hub.
+func (r *runner) redirect(ctx context.Context, hub string, err error) int {
+	nl := notLeader(err)
+	if nl == nil {
+		return -1
+	}
+	r.hubs = mergeHubs(r.hubs, []string{nl.GetLeaderUrl()}, nl.GetHubs())
+	leader := mergeHubs([]string{nl.GetLeaderUrl()})
+	if len(leader) == 0 || leader[0] == hub {
+		r.log.WarnContext(ctx, "hub is not the leader and knows no leader", "hub", hostOf(hub))
+		return -1
+	}
+	r.log.InfoContext(ctx, "hub is not the leader; redirecting", "hub", hostOf(hub), "leader", hostOf(leader[0]))
+	return slices.Index(r.hubs, leader[0])
+}
+
+// learnHubs makes the hubs a Welcome from hub listed the new hub list: hub
+// first, so a reconnect tries it first, then the listed hubs, then the join
+// URL, which is always kept. An empty list (a hub that does not know its
+// URL) changes nothing. A changed list is saved to HubsFile.
+func (r *runner) learnHubs(ctx context.Context, hub string, listed []string) {
+	if len(listed) == 0 {
+		return
+	}
+	hubs := mergeHubs([]string{hub}, listed, []string{r.id.hubURL.String()})
+	if slices.Equal(hubs, r.hubs) {
+		return
+	}
+	r.hubs, r.cur = hubs, 0
+	r.log.InfoContext(ctx, "hub list updated", "hubs", hubs)
+	if err := writeHubs(r.cfg.DataDir, hubs); err != nil {
+		// Not fatal: the list in memory works, and the next Welcome retries.
+		r.log.WarnContext(ctx, "save hub list", "err", err)
+	}
+}
+
+// hostOf is the host:port of a hub URL, for logs.
+func hostOf(hub string) string {
+	if u, err := url.Parse(hub); err == nil {
+		return u.Host
+	}
+	return hub
+}
+
+// session runs one stream to hub until it fails or ctx is canceled.
 // welcomed reports whether the hub accepted the Hello.
 //
 // The stream does not use ctx directly: on shutdown the agent half-closes it
 // so the hub sees a clean end, and only aborts it if the hub does not finish
 // within closeGrace. Cancelling alone is not enough either way: a Receive
 // blocked on the hub only notices once the request side is closed.
-func (r *runner) session(ctx context.Context) (welcomed bool, err error) {
+func (r *runner) session(ctx context.Context, hub string) (welcomed bool, err error) {
 	streamCtx, abort := context.WithCancel(context.WithoutCancel(ctx))
 	defer abort()
-	stream := r.client.Connect(streamCtx)
+	stream := agentv1connect.NewAgentServiceClient(r.httpClient, hub).Connect(streamCtx)
 	defer func() { _ = stream.CloseResponse() }()
 
 	hello := &agentv1.AgentMessage{Payload: &agentv1.AgentMessage_Hello{Hello: r.hello(ctx)}}
@@ -156,7 +229,8 @@ func (r *runner) session(ctx context.Context) (welcomed bool, err error) {
 		return false, errors.New("connect: hub did not answer Hello with Welcome")
 	}
 	interval := heartbeatInterval(welcome.GetHeartbeatInterval())
-	r.log.InfoContext(ctx, "connected to hub", "heartbeat_interval", interval)
+	r.log.InfoContext(ctx, "connected to hub", "hub", hostOf(hub), "heartbeat_interval", interval)
+	r.learnHubs(ctx, hub, welcome.GetHubs())
 
 	g, gctx := errgroup.WithContext(ctx)
 	received := make(chan struct{})
