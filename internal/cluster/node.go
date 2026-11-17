@@ -436,6 +436,22 @@ func (n *Node) watchLeader() {
 	}()
 }
 
+// futureErr waits for f, or for ctx. Raft drops a future that was committed
+// but not yet applied when the node shuts down (runFSM returns without
+// answering what is queued for it), so f.Error() alone can block forever.
+// The goroutine waiting on f ends when raft answers; only such a dropped
+// future leaves it parked, once, after Shutdown.
+func futureErr(ctx context.Context, f raft.Future) error {
+	done := make(chan error, 1)
+	go func() { done <- f.Error() }()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 // WaitReady blocks until a leader is known and this node has applied
 // everything the cluster has committed, or ctx is done. After a restart the
 // store is first rolled back to the latest snapshot and the log after it is
@@ -451,7 +467,7 @@ func (n *Node) WaitReady(ctx context.Context) error {
 			if dl, ok := ctx.Deadline(); ok {
 				timeout = min(timeout, time.Until(dl))
 			}
-			if err := n.raft.Barrier(timeout).Error(); err == nil {
+			if err := futureErr(ctx, n.raft.Barrier(timeout)); err == nil {
 				return nil
 			}
 		} else if n.raft != nil && n.Leader().ID != "" {

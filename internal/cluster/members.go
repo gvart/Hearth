@@ -236,7 +236,7 @@ func (n *Node) removeLocal(ctx context.Context, id string) (int, error) {
 			return 0, err
 		}
 	}
-	if err := n.raft.RemoveServer(servers[i].ID, 0, membershipTimeout).Error(); err != nil {
+	if err := futureErr(ctx, n.raft.RemoveServer(servers[i].ID, 0, membershipTimeout)); err != nil {
 		return 0, fmt.Errorf("remove %s from the raft configuration: %w", id, err)
 	}
 	k, err := n.store.Hubs().RevokeCerts(ctx, id, time.Now())
@@ -284,16 +284,16 @@ func (n *Node) TransferLeadership(ctx context.Context, to string) error {
 		}
 	}
 	return n.onLeader(ctx, "transfer leadership", func() error {
-		return n.transferLocal(to)
+		return n.transferLocal(ctx, to)
 	}, func(ctx context.Context, c clusterv1connect.ClusterServiceClient) error {
 		_, err := c.TransferLeadership(ctx, connect.NewRequest(&clusterv1.TransferLeadershipRequest{NodeId: to}))
 		return err
 	})
 }
 
-func (n *Node) transferLocal(to string) error {
+func (n *Node) transferLocal(ctx context.Context, to string) error {
 	if to == "" {
-		if err := n.raft.LeadershipTransfer().Error(); err != nil {
+		if err := futureErr(ctx, n.raft.LeadershipTransfer()); err != nil {
 			return fmt.Errorf("transfer leadership: %w", err)
 		}
 		return nil
@@ -310,7 +310,7 @@ func (n *Node) transferLocal(to string) error {
 	case srv.Suffrage != raft.Voter:
 		return fmt.Errorf("hub %s is not a voter and cannot lead", to)
 	}
-	if err := n.raft.LeadershipTransferToServer(srv.ID, srv.Address).Error(); err != nil {
+	if err := futureErr(ctx, n.raft.LeadershipTransferToServer(srv.ID, srv.Address)); err != nil {
 		return fmt.Errorf("transfer leadership to %s: %w", to, err)
 	}
 	return nil
@@ -410,7 +410,7 @@ func (s *JoinServer) TransferLeadership(ctx context.Context, req *connect.Reques
 			return nil, connect.NewError(connect.CodeInvalidArgument, err)
 		}
 	}
-	if err := s.node.transferLocal(to); err != nil {
+	if err := s.node.transferLocal(ctx, to); err != nil {
 		return nil, s.memberError(err)
 	}
 	return connect.NewResponse(&clusterv1.TransferLeadershipResponse{}), nil

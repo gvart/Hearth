@@ -170,7 +170,7 @@ func (h *testHub) kill() {
 	h.srv.CloseClientConnections()
 	h.stop()
 	h.stopRS()
-	<-h.rsDone
+	within(h.t, "the registry of "+h.ID()+" to stop", func() { <-h.rsDone })
 	h.srv.Close()
 }
 

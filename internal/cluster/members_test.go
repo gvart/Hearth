@@ -166,8 +166,7 @@ func openConnsOf(n *testNode, serial string) int {
 	n.stream.mu.Unlock()
 	k := 0
 	for _, c := range conns {
-		cs := c.ConnectionState()
-		if cs.HandshakeComplete && len(cs.PeerCertificates) > 0 && pki.SerialString(cs.PeerCertificates[0]) == serial {
+		if p := c.peer.Load(); p != nil && pki.SerialString(p) == serial {
 			k++
 		}
 	}

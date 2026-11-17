@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/hashicorp/raft"
@@ -73,10 +74,14 @@ func (s *tlsStream) Accept() (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	return s.trackConn(c)
+	tc, err := s.trackConn(c)
+	if err != nil {
+		return nil, err
+	}
+	return tc, nil
 }
 
-func (s *tlsStream) trackConn(c net.Conn) (net.Conn, error) {
+func (s *tlsStream) trackConn(c net.Conn) (*trackedConn, error) {
 	tc, ok := c.(*tls.Conn)
 	if !ok {
 		_ = c.Close()
@@ -94,13 +99,23 @@ func (s *tlsStream) Dial(addr raft.ServerAddress, timeout time.Duration) (net.Co
 	if err != nil {
 		return nil, err
 	}
-	return s.trackConn(c)
+	tc, err := s.trackConn(c)
+	if err != nil {
+		return nil, err
+	}
+	tc.recordPeer() // DialContext completed the handshake
+	return tc, nil
 }
 
 // trackedConn is an open connection of the stream; closing it forgets it.
 type trackedConn struct {
 	*tls.Conn
 	s *tlsStream
+	// peer is the peer's certificate once the handshake is done. It is
+	// recorded by the connection's own reader (or the dialer), never read
+	// with ConnectionState from elsewhere: that waits for a handshake in
+	// progress, which a silent peer can stall indefinitely.
+	peer atomic.Pointer[x509.Certificate]
 }
 
 func (s *tlsStream) track(c *tls.Conn) *trackedConn {
@@ -109,6 +124,22 @@ func (s *tlsStream) track(c *tls.Conn) *trackedConn {
 	s.conns[tc] = struct{}{}
 	s.mu.Unlock()
 	return tc
+}
+
+// Read records the peer certificate after the handshake, which the first
+// read of an accepted connection performs.
+func (c *trackedConn) Read(b []byte) (int, error) {
+	n, err := c.Conn.Read(b)
+	if n > 0 && c.peer.Load() == nil {
+		c.recordPeer()
+	}
+	return n, err
+}
+
+func (c *trackedConn) recordPeer() {
+	if cs := c.ConnectionState(); len(cs.PeerCertificates) > 0 {
+		c.peer.Store(cs.PeerCertificates[0])
+	}
 }
 
 func (c *trackedConn) Close() error {
@@ -131,10 +162,9 @@ func (s *tlsStream) closeRevoked(revoked func(*x509.Certificate) bool) int {
 	s.mu.Unlock()
 	n := 0
 	for _, c := range conns {
-		// ConnectionState waits for a handshake in progress; one that has
-		// not started yet is checked by the handshake itself.
-		cs := c.ConnectionState()
-		if cs.HandshakeComplete && len(cs.PeerCertificates) > 0 && revoked(cs.PeerCertificates[0]) {
+		// A connection without a recorded peer has not finished its
+		// handshake, which checks the certificate itself.
+		if p := c.peer.Load(); p != nil && revoked(p) {
 			_ = c.Close()
 			n++
 		}
