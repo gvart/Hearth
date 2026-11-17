@@ -86,6 +86,10 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 			return nil
 		}
 		if err != nil {
+			if cause := context.Cause(ctx); errors.Is(cause, errStopping) {
+				log.InfoContext(ctx, "agent stream ended: hub shutting down")
+				return connect.NewError(connect.CodeUnavailable, cause)
+			}
 			return fmt.Errorf("receive from %s: %w", deviceID, err)
 		}
 		// A failed registry update is logged, not fatal: the next heartbeat retries.

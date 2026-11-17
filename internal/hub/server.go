@@ -34,6 +34,10 @@ type Config struct {
 	// port agents connect to. The web API builds join commands from them.
 	AgentHosts []string
 	AgentPort  string
+	// Stopping is cancelled when the hub begins shutting down. Agent streams
+	// then end at once, so a graceful shutdown need not wait them out. If nil,
+	// they end only when the agent hangs up or the server closes.
+	Stopping context.Context
 }
 
 // NewHandler serves EnrollService to anyone (the token is the credential) and
@@ -46,8 +50,31 @@ func NewHandler(cfg Config) http.Handler {
 		reg = NewRegistry(RegistryConfig{Store: cfg.Store, Log: cfg.Log})
 	}
 	path, h := agentv1connect.NewAgentServiceHandler(NewAgentStream(cfg.Log, cfg.HeartbeatInterval, reg))
-	mux.Handle(path, requireClientCert(cfg.Store.Certs(), cfg.Log, h))
+	mux.Handle(path, requireClientCert(cfg.Store.Certs(), cfg.Log, EndOnStop(cfg.Stopping, h)))
 	return mux
+}
+
+// errStopping is the cause of a request context cancelled by EndOnStop.
+var errStopping = errors.New("hub shutting down")
+
+// EndOnStop wraps a handler of long-lived streams so that each request ends
+// once stopping is cancelled: its context is cancelled with cause errStopping
+// and its body closed, which unblocks a handler waiting on either. The handler
+// then finishes its response normally. A nil stopping returns next unchanged.
+func EndOnStop(stopping context.Context, next http.Handler) http.Handler {
+	if stopping == nil {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithCancelCause(r.Context())
+		defer cancel(nil)
+		stop := context.AfterFunc(stopping, func() {
+			cancel(errStopping)
+			_ = r.Body.Close()
+		})
+		defer stop()
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
 }
 
 // TLSConfig is the hub's listener config. Client certificates are optional at
