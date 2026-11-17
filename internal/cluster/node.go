@@ -1,0 +1,493 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package cluster
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+
+	"github.com/hashicorp/go-hclog"
+	"github.com/hashicorp/raft"
+	raftboltdb "github.com/hashicorp/raft-boltdb/v2"
+
+	"github.com/gvart/hearth/internal/pki"
+	"github.com/gvart/hearth/internal/store"
+)
+
+// Files and directories inside a hub data dir.
+const (
+	// RaftDir holds every piece of cluster state. Its presence makes a data
+	// dir a cluster member.
+	RaftDir      = "raft"
+	boltFile     = "raft.db"
+	nodeIDFile   = "node-id"
+	joinURLFile  = "join-url"
+	nodeCertFile = "node.crt"
+	nodeKeyFile  = "node.key"
+)
+
+// Defaults.
+const (
+	// DefaultRaftPort is the default port of the Raft transport.
+	DefaultRaftPort = "7444"
+	applyTimeout    = 10 * time.Second
+	snapshotsRetain = 2
+	maxPool         = 3
+	dialTimeout     = 10 * time.Second
+)
+
+// IsMember reports whether dataDir belongs to a cluster member, that is,
+// whether it holds Raft state. A hub that never joined or formed a cluster
+// has none and runs exactly as a standalone hub.
+func IsMember(dataDir string) bool {
+	info, err := os.Stat(filepath.Join(dataDir, RaftDir))
+	return err == nil && info.IsDir()
+}
+
+// Config configures a Node.
+type Config struct {
+	// DataDir is the hub data dir; Raft state lives in DataDir/raft.
+	DataDir string
+	// NodeID is this hub's Raft server ID (see NodeID).
+	NodeID string
+	// Listen is the address the Raft transport listens on, e.g. ":7444".
+	Listen string
+	// Advertise is the host:port other hubs dial to reach this one; empty
+	// means the listener's own address (only useful on loopback, in tests).
+	Advertise string
+	// CA is the hub CA. Peers must present certificates it issued.
+	CA *pki.CA
+	// Bootstrap forms a new one-voter cluster from the current store when
+	// DataDir holds no Raft state yet. A joining hub leaves it false and
+	// waits for the leader to add it.
+	Bootstrap bool
+	// Log receives the node's logs, raft's included.
+	Log *slog.Logger
+	// OnFatal is called once, without blocking, when this node fails to
+	// apply a committed entry for a reason other than the command's own
+	// outcome (I/O, a full disk). The node stops applying entries; the
+	// caller must shut the hub down. After a restart the node restores its
+	// latest snapshot and replays the log, so nothing is lost or skipped.
+	OnFatal func(error)
+
+	// Tuning; zero values use raft's defaults. Tests shorten them.
+	HeartbeatTimeout   time.Duration
+	ElectionTimeout    time.Duration
+	LeaderLeaseTimeout time.Duration
+	SnapshotInterval   time.Duration
+	SnapshotThreshold  uint64
+	TrailingLogs       uint64
+}
+
+// Node is one hub's Raft replica. It is the store's Applier (see Bind).
+type Node struct {
+	cfg   Config
+	dir   string
+	log   *slog.Logger
+	store *store.Store
+
+	raft  *raft.Raft
+	trans *raft.NetworkTransport
+	bolt  *raftboltdb.BoltStore
+	fsm   *fsm
+
+	obsCh   chan raft.Observation
+	obs     *raft.Observer
+	stopObs chan struct{}
+	obsDone chan struct{}
+
+	mu        sync.Mutex
+	listeners []func(LeaderInfo)
+}
+
+var _ store.Applier = (*Node)(nil)
+
+// New returns a Node for cfg. Bind it to the store, then Start it.
+func New(cfg Config) (*Node, error) {
+	switch {
+	case cfg.DataDir == "":
+		return nil, errors.New("cluster: no data dir")
+	case cfg.CA == nil:
+		return nil, errors.New("cluster: no CA")
+	case cfg.Listen == "":
+		return nil, errors.New("cluster: no listen address")
+	}
+	if err := ValidNodeID(cfg.NodeID); err != nil {
+		return nil, err
+	}
+	if cfg.Log == nil {
+		cfg.Log = slog.New(slog.DiscardHandler)
+	}
+	if cfg.OnFatal == nil {
+		cfg.OnFatal = func(error) {}
+	}
+	return &Node{cfg: cfg, dir: filepath.Join(cfg.DataDir, RaftDir), log: cfg.Log.With("node_id", cfg.NodeID)}, nil
+}
+
+// Bind records the store this node replicates and returns the node as its
+// Applier. Pass it to store.Open with store.WithApplier(node.Bind).
+func (n *Node) Bind(s *store.Store) store.Applier {
+	n.store = s
+	return n
+}
+
+// Addr returns the advertised Raft address. It is empty before Start.
+func (n *Node) Addr() string {
+	if n.trans == nil {
+		return ""
+	}
+	return string(n.trans.LocalAddr())
+}
+
+// ID returns this node's ID.
+func (n *Node) ID() string { return n.cfg.NodeID }
+
+// Start opens the Raft state in DataDir/raft, starts the transport and joins
+// the replication: as the only voter of a new cluster when Bootstrap is set
+// and there is no state yet, otherwise as whatever the stored configuration
+// says. On start raft restores the latest snapshot into the store and replays
+// the log after it.
+func (n *Node) Start(ctx context.Context) error {
+	if n.store == nil {
+		return errors.New("cluster: start: node not bound to a store")
+	}
+	if err := os.MkdirAll(n.dir, 0o700); err != nil {
+		return fmt.Errorf("cluster: create raft dir: %w", err)
+	}
+	cert, err := loadOrIssueNodeCert(n.dir, n.cfg.CA, n.cfg.NodeID, time.Now())
+	if err != nil {
+		return fmt.Errorf("cluster: node certificate: %w", err)
+	}
+	logger := hclog.FromStandardLogger(slog.NewLogLogger(n.log.Handler(), slog.LevelInfo),
+		&hclog.LoggerOptions{Name: "raft", Level: hclog.Info})
+
+	stream, err := listenTLS(ctx, n.cfg.Listen, n.cfg.Advertise, cert, n.cfg.CA)
+	if err != nil {
+		return fmt.Errorf("cluster: %w", err)
+	}
+	n.trans = raft.NewNetworkTransportWithLogger(stream, maxPool, dialTimeout, logger)
+	n.bolt, err = raftboltdb.NewBoltStore(filepath.Join(n.dir, boltFile))
+	if err != nil {
+		_ = n.trans.Close()
+		return fmt.Errorf("cluster: open raft log: %w", err)
+	}
+	snaps, err := raft.NewFileSnapshotStoreWithLogger(n.dir, snapshotsRetain, logger)
+	if err != nil {
+		n.closeStores()
+		return fmt.Errorf("cluster: open snapshots: %w", err)
+	}
+	n.fsm = newFSM(n.store, n.dir, n.log, n.cfg.OnFatal)
+
+	conf := raft.DefaultConfig()
+	conf.LocalID = raft.ServerID(n.cfg.NodeID)
+	conf.Logger = logger
+	setIfNonZero(&conf.HeartbeatTimeout, n.cfg.HeartbeatTimeout)
+	setIfNonZero(&conf.ElectionTimeout, n.cfg.ElectionTimeout)
+	setIfNonZero(&conf.LeaderLeaseTimeout, n.cfg.LeaderLeaseTimeout)
+	setIfNonZero(&conf.SnapshotInterval, n.cfg.SnapshotInterval)
+	setIfNonZero(&conf.SnapshotThreshold, n.cfg.SnapshotThreshold)
+	setIfNonZero(&conf.TrailingLogs, n.cfg.TrailingLogs)
+
+	hasState, err := raft.HasExistingState(n.bolt, n.bolt, snaps)
+	if err != nil {
+		n.closeStores()
+		return fmt.Errorf("cluster: %w", err)
+	}
+	if !hasState && n.cfg.Bootstrap {
+		if err := n.bootstrap(ctx, snaps); err != nil {
+			n.closeStores()
+			return fmt.Errorf("cluster: bootstrap: %w", err)
+		}
+		n.log.InfoContext(ctx, "formed a new one-node cluster from the current database")
+	}
+
+	r, err := raft.NewRaft(conf, n.fsm, n.bolt, n.bolt, snaps, n.trans)
+	if err != nil {
+		n.closeStores()
+		return fmt.Errorf("cluster: start raft: %w", err)
+	}
+	n.raft = r
+	n.watchLeader()
+	return nil
+}
+
+// bootstrap writes a snapshot of the current database as raft index 1, with
+// a configuration of this node alone, so the cluster's state starts with
+// everything the hub had before it was clustered. Raft logs then begin at
+// index 2, which means every node that joins later is sent a snapshot first
+// and never misses that pre-cluster state.
+func (n *Node) bootstrap(ctx context.Context, snaps raft.SnapshotStore) error {
+	conf := raft.Configuration{Servers: []raft.Server{{
+		Suffrage: raft.Voter, ID: raft.ServerID(n.cfg.NodeID), Address: n.trans.LocalAddr(),
+	}}}
+	sink, err := snaps.Create(raft.SnapshotVersionMax, 1, 1, conf, 1, n.trans)
+	if err != nil {
+		return err
+	}
+	if err := n.store.Snapshot(ctx, sink); err != nil {
+		_ = sink.Cancel()
+		return err
+	}
+	return sink.Close()
+}
+
+func setIfNonZero[T comparable](dst *T, v T) {
+	var zero T
+	if v != zero {
+		*dst = v
+	}
+}
+
+func (n *Node) closeStores() {
+	if n.bolt != nil {
+		_ = n.bolt.Close()
+	}
+	if n.trans != nil {
+		_ = n.trans.Close()
+	}
+}
+
+// Shutdown stops Raft, the transport and the leader watcher. The store stays
+// open; close it afterwards.
+func (n *Node) Shutdown() error {
+	if n.raft == nil {
+		return nil
+	}
+	err := n.raft.Shutdown().Error()
+	n.raft.DeregisterObserver(n.obs)
+	close(n.stopObs)
+	<-n.obsDone
+	n.closeStores()
+	if err != nil {
+		return fmt.Errorf("cluster: shutdown: %w", err)
+	}
+	return nil
+}
+
+// ErrNotLeader is returned by Apply on a node that is not the leader. Leader
+// fields are empty while no leader is known.
+type ErrNotLeader struct {
+	LeaderID   string
+	LeaderAddr string
+}
+
+func (e *ErrNotLeader) Error() string {
+	if e.LeaderID == "" {
+		return "not the cluster leader; no leader is known"
+	}
+	return fmt.Sprintf("not the cluster leader; the leader is %s at %s", e.LeaderID, e.LeaderAddr)
+}
+
+// Apply implements store.Applier. On the leader it proposes the encoded
+// command to the Raft log and waits for it to be committed and applied, then
+// returns the leader's own state machine result for exactly those bytes. On
+// any other node it returns *ErrNotLeader without proposing anything.
+func (n *Node) Apply(ctx context.Context, cmd store.Command) (store.Result, error) {
+	if n.raft == nil {
+		return store.Result{}, errors.New("cluster: node not started")
+	}
+	if n.raft.State() != raft.Leader {
+		return store.Result{}, n.notLeader()
+	}
+	b, err := store.EncodeCommand(cmd)
+	if err != nil {
+		return store.Result{}, err
+	}
+	if err := ctx.Err(); err != nil {
+		return store.Result{}, err
+	}
+	timeout := applyTimeout
+	if dl, ok := ctx.Deadline(); ok {
+		timeout = time.Until(dl)
+	}
+	f := n.raft.Apply(b, timeout)
+	if err := f.Error(); err != nil {
+		if errors.Is(err, raft.ErrNotLeader) {
+			return store.Result{}, n.notLeader()
+		}
+		// ErrLeadershipLost and timeouts are not ErrNotLeader: the entry may
+		// still commit, so the caller must not assume it did not happen.
+		return store.Result{}, fmt.Errorf("cluster: apply %s: %w", cmd.Op(), err)
+	}
+	resp, ok := f.Response().(applyResponse)
+	if !ok {
+		return store.Result{}, fmt.Errorf("cluster: apply %s: unexpected response %T", cmd.Op(), f.Response())
+	}
+	return resp.res, resp.err
+}
+
+func (n *Node) notLeader() *ErrNotLeader {
+	l := n.Leader()
+	return &ErrNotLeader{LeaderID: l.ID, LeaderAddr: l.Addr}
+}
+
+// LeaderInfo identifies the current leader. ID is empty while none is known.
+type LeaderInfo struct {
+	ID   string
+	Addr string
+	// Self is true when this node is the leader.
+	Self bool
+}
+
+// Leader returns the leader as this node currently knows it.
+func (n *Node) Leader() LeaderInfo {
+	if n.raft == nil {
+		return LeaderInfo{}
+	}
+	addr, id := n.raft.LeaderWithID()
+	return LeaderInfo{ID: string(id), Addr: string(addr), Self: id != "" && string(id) == n.cfg.NodeID}
+}
+
+// IsLeader reports whether this node is the leader right now.
+func (n *Node) IsLeader() bool { return n.raft != nil && n.raft.State() == raft.Leader }
+
+// OnLeaderChange registers fn to be called with the new leader every time
+// this node learns of a leader change, including losing the leader (empty
+// ID) and becoming the leader itself (Self). Calls are serialized on one
+// goroutine owned by the node and stop at Shutdown; fn must not block for long.
+func (n *Node) OnLeaderChange(fn func(LeaderInfo)) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.listeners = append(n.listeners, fn)
+}
+
+func (n *Node) watchLeader() {
+	n.obsCh = make(chan raft.Observation, 16)
+	n.stopObs = make(chan struct{})
+	n.obsDone = make(chan struct{})
+	n.obs = raft.NewObserver(n.obsCh, false, func(o *raft.Observation) bool {
+		_, ok := o.Data.(raft.LeaderObservation)
+		return ok
+	})
+	n.raft.RegisterObserver(n.obs)
+	go func() {
+		defer close(n.obsDone)
+		for {
+			select {
+			case <-n.stopObs:
+				return
+			case o := <-n.obsCh:
+				lo, _ := o.Data.(raft.LeaderObservation)
+				info := LeaderInfo{
+					ID: string(lo.LeaderID), Addr: string(lo.LeaderAddr),
+					Self: lo.LeaderID != "" && string(lo.LeaderID) == n.cfg.NodeID,
+				}
+				n.log.Info("cluster leader changed", "leader_id", info.ID, "leader_addr", info.Addr, "self", info.Self)
+				n.mu.Lock()
+				fns := append([]func(LeaderInfo){}, n.listeners...)
+				n.mu.Unlock()
+				for _, fn := range fns {
+					fn(info)
+				}
+			}
+		}
+	}()
+}
+
+// WaitReady blocks until a leader is known and this node has applied
+// everything the cluster has committed, or ctx is done. After a restart the
+// store is first rolled back to the latest snapshot and the log after it is
+// replayed; reads before WaitReady returns may see that older state.
+func (n *Node) WaitReady(ctx context.Context) error {
+	t := time.NewTicker(50 * time.Millisecond)
+	defer t.Stop()
+	for {
+		if n.raft != nil && n.Leader().ID != "" {
+			commit := n.raft.CommitIndex()
+			if commit > 0 && n.raft.AppliedIndex() >= commit {
+				return nil
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("wait for the cluster: %w", ctx.Err())
+		case <-t.C:
+		}
+	}
+}
+
+// Peer is one server in the Raft configuration.
+type Peer struct {
+	ID       string `json:"id"`
+	Address  string `json:"address"`
+	Suffrage string `json:"suffrage"`
+}
+
+// Status is this node's view of the cluster.
+type Status struct {
+	NodeID       string `json:"node_id"`
+	State        string `json:"state"`
+	LeaderID     string `json:"leader_id"`
+	LeaderAddr   string `json:"leader_addr"`
+	Term         uint64 `json:"term"`
+	LastIndex    uint64 `json:"last_index"`
+	CommitIndex  uint64 `json:"commit_index"`
+	AppliedIndex uint64 `json:"applied_index"`
+	Peers        []Peer `json:"peers"`
+}
+
+// Status returns this node's view of the cluster.
+func (n *Node) Status() (Status, error) {
+	if n.raft == nil {
+		return Status{}, errors.New("cluster: node not started")
+	}
+	l := n.Leader()
+	st := Status{
+		NodeID:       n.cfg.NodeID,
+		State:        n.raft.State().String(),
+		LeaderID:     l.ID,
+		LeaderAddr:   l.Addr,
+		Term:         n.raft.CurrentTerm(),
+		LastIndex:    n.raft.LastIndex(),
+		CommitIndex:  n.raft.CommitIndex(),
+		AppliedIndex: n.raft.AppliedIndex(),
+	}
+	cf := n.raft.GetConfiguration()
+	if err := cf.Error(); err != nil {
+		return Status{}, fmt.Errorf("cluster: configuration: %w", err)
+	}
+	for _, s := range cf.Configuration().Servers {
+		st.Peers = append(st.Peers, Peer{ID: string(s.ID), Address: string(s.Address), Suffrage: s.Suffrage.String()})
+	}
+	return st, nil
+}
+
+// server returns the configuration entry for id, if any.
+func (n *Node) server(id string) (raft.Server, bool, error) {
+	cf := n.raft.GetConfiguration()
+	if err := cf.Error(); err != nil {
+		return raft.Server{}, false, err
+	}
+	for _, s := range cf.Configuration().Servers {
+		if string(s.ID) == id {
+			return s, true, nil
+		}
+	}
+	return raft.Server{}, false, nil
+}
+
+// addressInUse reports whether another server already uses addr.
+func (n *Node) addressInUse(addr string) (bool, error) {
+	cf := n.raft.GetConfiguration()
+	if err := cf.Error(); err != nil {
+		return false, err
+	}
+	for _, s := range cf.Configuration().Servers {
+		if string(s.Address) == addr {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// IsVoter reports whether this node is a voter in the latest configuration.
+func (n *Node) IsVoter() (bool, error) {
+	s, ok, err := n.server(n.cfg.NodeID)
+	return ok && s.Suffrage == raft.Voter, err
+}

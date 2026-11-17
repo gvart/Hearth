@@ -1,0 +1,58 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+syntax = "proto3";
+
+package hearth.cluster.v1;
+
+// ClusterService admits new hubs into a Raft cluster. It is served on the
+// hub's TLS listener by the leader; a follower answers FAILED_PRECONDITION with
+// the leader in the error metadata (hearth-leader-id, hearth-leader-addr).
+service ClusterService {
+  // Join consumes a join token, signs the new hub's CSR and hands it the CA,
+  // key included, then adds it to the cluster as a non-voter. The joining hub
+  // pins the CA with the fingerprint embedded in the token before it sends
+  // the secret.
+  rpc Join(JoinRequest) returns (JoinResponse);
+  // Promote makes a joined hub a voter. The caller authenticates with the hub
+  // node certificate it received from Join.
+  rpc Promote(PromoteRequest) returns (PromoteResponse);
+}
+
+// JoinRequest describes the hub that wants to join.
+message JoinRequest {
+  // token_secret is the secret part of the join token, not the full string.
+  string token_secret = 1;
+  // node_id is the new hub's Raft server ID; it is bound into its certificate.
+  string node_id = 2;
+  // raft_address is the host:port other hubs dial for Raft traffic.
+  string raft_address = 3;
+  // csr is a DER-encoded PKCS#10 certificate request. Its subject is ignored.
+  bytes csr = 4;
+  // schema_version is the store schema version of the joining binary. It
+  // must equal the cluster's.
+  int64 schema_version = 5;
+}
+
+// JoinResponse is the new hub's identity and the cluster's CA.
+message JoinResponse {
+  // certificate is the DER-encoded hub node certificate.
+  bytes certificate = 1;
+  // ca_certificate is the DER-encoded hub CA certificate.
+  bytes ca_certificate = 2;
+  // ca_key is the CA private key, PKCS#8 DER. Store it at 0600; never log it.
+  bytes ca_key = 3;
+  // leader_id is the Raft server ID of the hub that admitted this one.
+  string leader_id = 4;
+  // last_index is the leader's last Raft log index when it admitted the hub.
+  // The new hub is caught up once it has applied this index.
+  uint64 last_index = 5;
+}
+
+// PromoteRequest asks the leader to make the calling hub a voter.
+message PromoteRequest {
+  // node_id must match the node ID in the caller's certificate.
+  string node_id = 1;
+}
+
+// PromoteResponse is empty: success means the hub is a voter.
+message PromoteResponse {}
