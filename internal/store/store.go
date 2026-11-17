@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"strings"
 	"time"
 
 	"github.com/pressly/goose/v3"
@@ -49,21 +50,71 @@ func Open(ctx context.Context, path string, opts ...Option) (*Store, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("open sqlite %s: %w", path, err)
 	}
-	p, err := newMigrator(db)
-	if err != nil {
-		_ = db.Close()
-		return nil, err
+	var cfg openConfig
+	for _, o := range opts {
+		o(&cfg)
 	}
-	if _, err := p.Up(ctx); err != nil {
+	if err := migrate(ctx, db, cfg.noUpgrade); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate %s: %w", path, err)
 	}
 	s := &Store{db: db, path: path}
 	s.applier = ApplierFunc(s.ApplyLocal)
-	for _, o := range opts {
-		o(s)
+	if cfg.newApplier != nil {
+		s.applier = cfg.newApplier(s)
 	}
 	return s, nil
+}
+
+// ErrSchemaMismatch means a database is not at the schema version this binary
+// expects and may not be migrated by it.
+var ErrSchemaMismatch = errors.New("database schema version differs from this binary's")
+
+// migrate brings db to SchemaVersion. With noUpgrade, only a new database
+// (schema version 0) is migrated; any other version must already match.
+func migrate(ctx context.Context, db *sql.DB, noUpgrade bool) error {
+	p, err := newMigrator(db)
+	if err != nil {
+		return err
+	}
+	if noUpgrade {
+		v, err := p.GetDBVersion(ctx)
+		if err != nil {
+			return err
+		}
+		if v != 0 && v != SchemaVersion() {
+			return fmt.Errorf("%w: database has %d, binary has %d", ErrSchemaMismatch, v, SchemaVersion())
+		}
+	}
+	_, err = p.Up(ctx)
+	return err
+}
+
+// SchemaVersion is the schema version this binary migrates to: its newest
+// embedded migration.
+func SchemaVersion() int64 {
+	names, _ := fs.Glob(migrations, "migrations/*.sql") // the pattern is valid
+	var latest int64
+	for _, n := range names {
+		v, err := goose.NumericComponent(strings.TrimPrefix(n, "migrations/"))
+		if err == nil && v > latest {
+			latest = v
+		}
+	}
+	return latest
+}
+
+// SchemaVersion returns the database's current schema (goose) version.
+func (s *Store) SchemaVersion(ctx context.Context) (int64, error) {
+	p, err := newMigrator(s.db)
+	if err != nil {
+		return 0, err
+	}
+	v, err := p.GetDBVersion(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("schema version: %w", err)
+	}
+	return v, nil
 }
 
 // apply routes a write through the store's Applier.

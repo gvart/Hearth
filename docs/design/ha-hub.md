@@ -165,7 +165,7 @@ Resolved on 2026-11-17, except item 2: 1 → HA-D2, 3 → HA-D3, 4 → HA-D5, 5 
   exactly as today, as a cluster of one, with no new flags needed.
 - **HA-D2. The CA key is replicated to every voter**, each keeping it at 0600. CLAUDE.md's rule
   "the hub CA key never leaves the hub data dir" becomes "never leaves a hub voter's data dir"
-  (CLAUDE.md is updated by a later PR).
+  (CLAUDE.md updated in HA-2).
 - **HA-D3. Agents stream to the leader only**; followers refuse and name the leader.
 - **HA-D4. Raft log store is raft-boltdb** (bbolt, pure Go). The FSM applies typed commands to the
   local SQLite file.
@@ -200,6 +200,56 @@ Raft layer wrap it without touching callers. Reads stay direct SQL.
   writer; `Store.Restore` stages the incoming copy, checks it (`quick_check` plus a goose version)
   and copies it into the live database in one transaction with SQLite's backup API, so the open
   `*sql.DB` stays valid.
+
+### HA-2: Raft node, join flow and replicated CA
+
+`internal/cluster` wraps hashicorp/raft. Raft state lives in `<data-dir>/raft/`: `raft.db` (bbolt log
+and stable store), `snapshots/`, `node-id`, the hub node certificate `node.crt`/`node.key` (0600) and,
+on a joined hub, `join-url`.
+
+- **Standalone stays standalone.** A hub with no cluster flags and no `raft/` dir runs the old code
+  path untouched: no Raft, no extra port, no control socket. Raft starts only with `--cluster` (form a
+  cluster from this hub), `--join`, or once `raft/` exists. This is simpler and safer than running every
+  hub as a one-node cluster, which would add a listener, a second fsync per write and make CLI writes
+  depend on a running hub for users who never cluster.
+- **State machine.** Each committed entry is decoded with `store.DecodeCommand` and applied with
+  `Store.ApplyLocal`, the leader included, so every node applies the same bytes. Domain errors
+  (`store.IsDomainError`: not found, token used or expired, constraint violations) go back to the
+  proposer. Any other error halts the state machine (no further applies or snapshots) and calls
+  `Config.OnFatal`, which stops the hub; on restart raft restores the latest snapshot and replays the log.
+- **Snapshots.** `FSM.Snapshot` copies the database with `VACUUM INTO` while raft holds applies back, so
+  the copy matches its index; `Persist` streams it. Restore checks the schema version.
+- **Forming a cluster from existing data.** The first clustered start writes a raft snapshot of the
+  current database as index 1 with a one-voter configuration (as `raft.RecoverCluster` does) instead of
+  `BootstrapCluster`. Logs then start at index 2, so every joiner is sent a snapshot first and never
+  misses pre-cluster state.
+- **Transport.** TCP with mutual TLS 1.3. Both ends present a hub node certificate from the hub CA with
+  URI SAN `urn:hearth:hub:<node-id>` (server and client auth); device certificates are refused. Peers
+  are verified against the CA, not by host name. A voter renews its own node certificate with the CA key
+  30 days before expiry.
+- **Applier.** `*cluster.Node` is the store's `Applier`. On the leader it proposes and waits; on a
+  follower it returns `*cluster.ErrNotLeader{LeaderID, LeaderAddr}` without proposing. `OnLeaderChange`
+  and `WaitReady` are the hooks for HA-3 (leader-only sweeper, follower redirects, forwarding).
+- **Join.** `hearth cluster token create` (policy `cluster.token.create`, dangerous) stores a hashed,
+  single-use `hearthj1.<secret>.<ca-fingerprint>` token through Raft (`CreateJoinToken`, table
+  `join_tokens`, separate from enrollment tokens). `hearth hub --join https://<member>:7443` with
+  `HEARTH_JOIN_TOKEN` pins the CA by fingerprint and calls `ClusterService.Join`
+  (`proto/hearth/cluster/v1`) on the member's TLS listener. A follower answers `FAILED_PRECONDITION` with
+  the leader in the error metadata and the client retries on the leader's host with the same port. The
+  leader (policy `cluster.join`, dangerous, actor `join_token`) checks the schema version and the node
+  ID first, then signs the CSR, consumes the token and adds the hub as a **non-voter**, so a hub that
+  never comes up cannot stall quorum. The response carries the node certificate, the CA certificate and
+  the CA key; the new hub writes `ca.key` at 0600 and never logs it. Once running, the hub calls
+  `ClusterService.Promote` with its node certificate (policy `cluster.promote`, dangerous, actor `hub`)
+  and the leader makes it a voter.
+- **Schema guard.** A member opens its store with `store.WithoutUpgrade()`: a new database is
+  initialized, an existing one must already be at the binary's schema. Join refuses a binary whose schema
+  differs from the cluster's, and restore refuses a snapshot of another schema. Rolling migrations: #25.
+- **Local CLI.** A member serves a control socket (`<data-dir>/hearth.sock`, or a private 0700 dir under
+  the temp dir when that path is too long for a unix socket): `GET /v1/status` for
+  `hearth cluster status`, and `POST /v1/apply` so CLI writes (`token create`, `device revoke`,
+  `admin set-password`, `cluster token create`) go through Raft instead of the local file. On a follower
+  they fail with the leader's name until HA-3 adds forwarding.
 
 ### HA-4: agent failover and leader redirect
 

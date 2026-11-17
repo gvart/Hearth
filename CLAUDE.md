@@ -43,6 +43,7 @@ internal/proto/        generated protobuf/Connect code (do not edit by hand)
 internal/pki/          CA, CSR signing, enrollment tokens
 internal/store/        SQLite access + goose migrations
 internal/policy/       action classes, decisions, audit log
+internal/cluster/      Raft replication of the hub store (hashicorp/raft), hub join, mTLS transport
 pkg/sdk/               public agent/plugin SDK — Apache-2.0 licensed
 proto/                 .proto sources
 web/                   Vite + React + TypeScript UI, embedded via embed.FS
@@ -90,7 +91,8 @@ Keep this list in sync with `Taskfile.yml`. If you add a task, document it here.
 
 - Never log secrets, tokens, private keys or full certificates.
 - Enrollment tokens: single-use, short TTL, stored hashed.
-- mTLS everywhere between hub and agents; the hub CA key never leaves the hub data dir (0600).
+- mTLS everywhere between hub and agents, and between hubs; the hub CA key never leaves a hub voter's data
+  dir (0600); it is replicated only over the pinned mTLS join channel.
 - Agent-side config is the capability ceiling; the hub can never grant more than the device allows.
 - Any new action type must declare its class (`read` / `safe` / `dangerous`) in `internal/policy`.
 - Shell-outs: no string concatenation into shells; use `exec.Command` with args.

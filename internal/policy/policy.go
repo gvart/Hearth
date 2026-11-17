@@ -34,6 +34,14 @@ const (
 	AdminSetPassword Action = "admin.set_password"
 	// AdminLogin is a login attempt on the hub's web API.
 	AdminLogin Action = "admin.login"
+	// ClusterTokenCreate creates a token that lets a new hub join the cluster
+	// and receive the CA key.
+	ClusterTokenCreate Action = "cluster.token.create"
+	// ClusterJoin admits a new hub: it receives a node certificate and the CA
+	// key, and is added to the Raft configuration as a non-voter.
+	ClusterJoin Action = "cluster.join"
+	// ClusterPromote makes a joined, caught-up hub a Raft voter.
+	ClusterPromote Action = "cluster.promote"
 )
 
 // Actor kinds.
@@ -46,6 +54,11 @@ const (
 	// address. The API checks the admin session before any action other than
 	// admin.login reaches policy.
 	ActorWeb = "web"
+	// ActorJoinToken is a hub joining the cluster with a join token. It is not
+	// ActorToken, so an enrollment path can never be taken for a join.
+	ActorJoinToken = "join_token"
+	// ActorHub is a cluster member identified by its hub node certificate.
+	ActorHub = "hub"
 )
 
 // Decisions recorded in the audit log.
@@ -69,6 +82,10 @@ var rules = map[Action]rule{
 	AdminSetPassword: {class: Dangerous, actors: []string{ActorAdmin}},
 	// Anyone on the network may try to log in; the password decides.
 	AdminLogin: {class: Safe, actors: []string{ActorWeb}},
+	// Joining hands out the CA key: every step of it is dangerous.
+	ClusterTokenCreate: {class: Dangerous, actors: []string{ActorAdmin}},
+	ClusterJoin:        {class: Dangerous, actors: []string{ActorJoinToken}},
+	ClusterPromote:     {class: Dangerous, actors: []string{ActorHub}},
 }
 
 // ClassOf returns the class of a known action.

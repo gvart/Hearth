@@ -13,8 +13,12 @@ import (
 	"strings"
 )
 
-// tokenPrefix versions the token string format.
-const tokenPrefix = "hearth1"
+// Token string prefixes. They version the format and keep the two kinds apart:
+// an enrollment token cannot be passed off as a join token or vice versa.
+const (
+	tokenPrefix     = "hearth1"
+	joinTokenPrefix = "hearthj1"
+)
 
 const secretLen = 32
 
@@ -41,8 +45,15 @@ func NewToken(ca *x509.Certificate) (Token, error) {
 }
 
 // Encode returns the token string: hearth1.<secret>.<ca-fingerprint>, both base64url.
-func (t Token) Encode() string {
-	return tokenPrefix + "." + t.Secret + "." + b64.EncodeToString(t.CAFingerprint[:])
+func (t Token) Encode() string { return t.encode(tokenPrefix) }
+
+// EncodeJoin returns the token as a cluster join token:
+// hearthj1.<secret>.<ca-fingerprint>. A joining hub pins the CA by the
+// fingerprint before it sends the secret.
+func (t Token) EncodeJoin() string { return t.encode(joinTokenPrefix) }
+
+func (t Token) encode(prefix string) string {
+	return prefix + "." + t.Secret + "." + b64.EncodeToString(t.CAFingerprint[:])
 }
 
 // String redacts the token so it never leaks through %v or error wrapping.
@@ -52,10 +63,15 @@ func (t Token) String() string { return "[REDACTED]" }
 func (t Token) LogValue() slog.Value { return slog.StringValue("[REDACTED]") }
 
 // ParseToken parses a token string. Errors never echo the input.
-func ParseToken(s string) (Token, error) {
+func ParseToken(s string) (Token, error) { return parseToken(s, tokenPrefix) }
+
+// ParseJoinToken parses a cluster join token string. Errors never echo the input.
+func ParseJoinToken(s string) (Token, error) { return parseToken(s, joinTokenPrefix) }
+
+func parseToken(s, prefix string) (Token, error) {
 	parts := strings.Split(strings.TrimSpace(s), ".")
-	if len(parts) != 3 || parts[0] != tokenPrefix {
-		return Token{}, errors.New("parse token: want hearth1.<secret>.<fingerprint>")
+	if len(parts) != 3 || parts[0] != prefix {
+		return Token{}, errors.New("parse token: want " + prefix + ".<secret>.<fingerprint>")
 	}
 	secret, err := b64.DecodeString(parts[1])
 	if err != nil || len(secret) != secretLen {

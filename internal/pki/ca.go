@@ -43,7 +43,8 @@ const (
 // deviceURIPrefix prefixes the device ID in a client certificate's URI SAN.
 const deviceURIPrefix = "urn:hearth:device:"
 
-// CA is the hub certificate authority. Its key never leaves the hub data dir.
+// CA is the hub certificate authority. Its key never leaves a hub voter's data
+// dir; it is replicated only over the pinned join channel (see KeyDER).
 type CA struct {
 	cert *x509.Certificate
 	key  crypto.Signer
