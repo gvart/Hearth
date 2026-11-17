@@ -30,6 +30,10 @@ type Config struct {
 	// NewHandler and NewHTTPHandler and Run it. If nil, NewHandler creates one
 	// that records facts and heartbeats but never sweeps devices offline.
 	Registry *Registry
+	// AgentHosts are the names in the hub's TLS certificate and AgentPort the
+	// port agents connect to. The web API builds join commands from them.
+	AgentHosts []string
+	AgentPort  string
 }
 
 // NewHandler serves EnrollService to anyone (the token is the credential) and

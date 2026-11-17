@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/policy"
 	"github.com/gvart/hearth/internal/store"
 )
@@ -35,7 +36,14 @@ func newAPIFixture(t *testing.T, withPassword bool) *apiFixture {
 			t.Fatal(err)
 		}
 	}
-	a := newAPI(Config{Store: st, Policy: pol, Log: log, Registry: NewRegistry(RegistryConfig{Store: st, Log: log})})
+	ca, err := pki.LoadOrCreateCA(t.TempDir(), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := newAPI(Config{
+		Store: st, Policy: pol, Log: log, Registry: NewRegistry(RegistryConfig{Store: st, Log: log}),
+		CA: ca, AgentHosts: []string{"hub.lan", "localhost", "127.0.0.1"},
+	})
 	srv := httptest.NewServer(a.routes())
 	t.Cleanup(srv.Close)
 	return &apiFixture{srv: srv, st: st, logs: logs}
@@ -131,6 +139,7 @@ func TestAPIUnauthenticated(t *testing.T) {
 		{http.MethodGet, "/api/v1/devices/pi"},
 		{http.MethodGet, "/api/v1/events"},
 		{http.MethodGet, "/api/v1/no-such-endpoint"},
+		{http.MethodPost, "/api/v1/tokens"},
 	}
 	for name, c := range cookies {
 		for _, ep := range endpoints {
