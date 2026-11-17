@@ -1,0 +1,35 @@
+internal/hub/server.go
+  s_815aef767535ea::t_ea8d68b271c73e 18,69,72,74,190-192,226-227,237,241-262
+  s_815aef767535ea::t_93da0977119c26 263
+proto/hearth/agent/v1/agent.proto
+  s_815aef767535ea::t_c348fd957bc4fc 119-125
+internal/cluster/revoke_test.go
+  s_815aef767535ea::t_cf3bbcd2b29795 1-84
+internal/hub/agentstream.go
+  s_815aef767535ea::t_4547e2101509ad 168-172,174-219
+  s_815aef767535ea::t_ee02a9b003b3b3 173
+  s_815aef767535ea::t_d029042638a52b 35-40,47-50,128-129,145-167
+  s_815aef767535ea::t_ebb84933c52e49 19
+  s_815aef767535ea::t_f8cb3970bc113f 127
+internal/hub/revoke_test.go
+  s_815aef767535ea::t_b5d3289ae379d2 87-89,207-218
+  s_815aef767535ea::t_e2f675d4c05bf4 1-86,90-206,219-243
+internal/proto/hearth/agent/v1/agent.pb.go
+  s_815aef767535ea::t_1147e532b584d9 909-949,959,971,984,996,1008,1021,1098-1099,1119,1133-1138,1147-1148,1152-1153,1155-1158,1191
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f4f4f33307bd5b0af589a6cd6484194cdc4e023f",
+  "prompts": {},
+  "sessions": {
+    "s_815aef767535ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1866255a-7d59-4f07-869c-b29b78c7a98d",
+        "model": "unknown"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
