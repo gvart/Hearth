@@ -132,14 +132,9 @@ func (s *JoinServer) Forward(ctx context.Context, req *connect.Request[clusterv1
 	if !s.node.IsLeader() {
 		return nil, s.notLeaderError()
 	}
-	id, err := peerHubID(ctx)
+	id, err := s.memberPeer(ctx)
 	if err != nil {
 		return nil, err
-	}
-	if _, member, err := s.node.server(id); err != nil {
-		return nil, connect.NewError(connect.CodeUnavailable, errors.New("cannot read the cluster configuration"))
-	} else if !member {
-		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("not a member of this cluster"))
 	}
 	cmd, err := store.DecodeCommand(req.Msg.GetCommand())
 	if err != nil {
@@ -165,16 +160,39 @@ func (s *JoinServer) Forward(ctx context.Context, req *connect.Request[clusterv1
 	return connect.NewResponse(out), nil
 }
 
+// memberPeer is peerHubID for a caller that must also be in the Raft
+// configuration.
+func (s *JoinServer) memberPeer(ctx context.Context) (string, error) {
+	id, err := s.peerHubID(ctx)
+	if err != nil {
+		return "", err
+	}
+	if _, member, err := s.node.server(id); err != nil {
+		return "", connect.NewError(connect.CodeUnavailable, errors.New("cannot read the cluster configuration"))
+	} else if !member {
+		return "", connect.NewError(connect.CodePermissionDenied, errors.New("not a member of this cluster"))
+	}
+	return id, nil
+}
+
 // peerHubID returns the node ID in the caller's verified hub node
-// certificate. Device certificates and callers without one are refused.
-func peerHubID(ctx context.Context) (string, error) {
+// certificate. Device certificates, revoked hub certificates and callers
+// without a certificate are refused.
+func (s *JoinServer) peerHubID(ctx context.Context) (string, error) {
 	cs, _ := ctx.Value(tlsStateKey{}).(*tls.ConnectionState)
 	if cs == nil || len(cs.VerifiedChains) == 0 {
 		return "", connect.NewError(connect.CodeUnauthenticated, errors.New("hub node certificate required"))
 	}
-	id, err := pki.HubNodeID(cs.VerifiedChains[0][0])
+	cert := cs.VerifiedChains[0][0]
+	id, err := pki.HubNodeID(cert)
 	if err != nil {
 		return "", connect.NewError(connect.CodePermissionDenied, errors.New("not a hub node certificate"))
+	}
+	if err := s.node.checkPeerCert(cert); errors.Is(err, store.ErrCertRevoked) {
+		return "", connect.NewError(connect.CodePermissionDenied, errors.New("hub node certificate revoked"))
+	} else if err != nil {
+		s.log.WarnContext(ctx, "check hub node certificate", "from", id, "err", err)
+		return "", connect.NewError(connect.CodeUnavailable, errors.New("cannot check the hub node certificate"))
 	}
 	return id, nil
 }

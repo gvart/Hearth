@@ -44,8 +44,8 @@ type Result struct {
 	Labels map[string]string
 	// ID is the audit_log ID assigned by AppendAudit.
 	ID int64
-	// Count is the number of certificates revoked by RevokeDevice, or of
-	// devices updated by MarkSeenBatch.
+	// Count is the number of certificates revoked by RevokeDevice or
+	// RevokeHubCerts, or of devices updated by MarkSeenBatch.
 	Count int
 }
 
@@ -275,6 +275,45 @@ func (c SetHubURL) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
 		INSERT INTO cluster_hubs (node_id, agent_url) VALUES (?, ?)
 		ON CONFLICT (node_id) DO UPDATE SET agent_url = excluded.agent_url`, c.NodeID, c.AgentURL)
 	return Result{}, err
+}
+
+// RecordHubCert records a hub node certificate issued to a cluster node.
+// Recording a known serial again is a no-op: it never clears a revocation.
+type RecordHubCert struct {
+	Serial string `json:"serial"`
+	NodeID string `json:"node_id"`
+}
+
+// Op implements Command.
+func (RecordHubCert) Op() string { return "record_hub_cert" }
+
+func (c RecordHubCert) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
+	_, err := tx.ExecContext(ctx,
+		`INSERT INTO hub_certs (serial, node_id) VALUES (?, ?) ON CONFLICT (serial) DO NOTHING`, c.Serial, c.NodeID)
+	return Result{}, err
+}
+
+// RevokeHubCerts revokes every unrevoked hub certificate recorded for a node
+// at Now. Result: Count, which is zero when there was nothing to revoke.
+type RevokeHubCerts struct {
+	NodeID string `json:"node_id"`
+	Now    int64  `json:"now"`
+}
+
+// Op implements Command.
+func (RevokeHubCerts) Op() string { return "revoke_hub_certs" }
+
+func (c RevokeHubCerts) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
+	res, err := tx.ExecContext(ctx,
+		`UPDATE hub_certs SET revoked_at = ? WHERE node_id = ? AND revoked_at IS NULL`, c.Now, c.NodeID)
+	if err != nil {
+		return Result{}, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return Result{}, err
+	}
+	return Result{Count: int(n)}, nil
 }
 
 // CreateToken stores a single-use enrollment token by its SHA-256 hash.
@@ -598,6 +637,10 @@ func DecodeCommand(b []byte) (Command, error) {
 		cmd, err = decodeAs[MarkDevicesOffline](env.Cmd)
 	case SetHubURL{}.Op():
 		cmd, err = decodeAs[SetHubURL](env.Cmd)
+	case RecordHubCert{}.Op():
+		cmd, err = decodeAs[RecordHubCert](env.Cmd)
+	case RevokeHubCerts{}.Op():
+		cmd, err = decodeAs[RevokeHubCerts](env.Cmd)
 	case CreateToken{}.Op():
 		cmd, err = decodeAs[CreateToken](env.Cmd)
 	case ConsumeToken{}.Op():

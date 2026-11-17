@@ -8,6 +8,8 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime/pprof"
+	"strings"
 	"testing"
 	"time"
 
@@ -42,6 +44,7 @@ type testNode struct {
 	dir   string
 	fatal chan error
 	down  bool
+	t     *testing.T
 }
 
 // fastTimeouts keeps elections in tests well under a second or two.
@@ -81,7 +84,7 @@ func startNodeBound(t *testing.T, ca *pki.CA, id, dir, addr string, bootstrap bo
 	if addr == "" {
 		addr = "127.0.0.1:0"
 	}
-	tn := &testNode{dir: dir, fatal: make(chan error, 1)}
+	tn := &testNode{dir: dir, fatal: make(chan error, 1), t: t}
 	cfg := Config{
 		DataDir: dir, NodeID: id, Listen: addr, CA: ca, Bootstrap: bootstrap,
 		Log: testLogger(t), OnFatal: func(err error) { tn.fatal <- err },
@@ -114,8 +117,28 @@ func (tn *testNode) stop() {
 		return
 	}
 	tn.down = true
-	_ = tn.Shutdown()
+	within(tn.t, "shutdown of "+tn.ID(), func() { _ = tn.Shutdown() })
 	_ = tn.st.Close()
+}
+
+// within runs fn, and fails the test with every goroutine's stack if fn
+// has not returned after waitFor: a hang in teardown then fails fast with
+// the culprit instead of eating the package's whole test timeout. fn keeps
+// running in the background.
+func within(t *testing.T, what string, fn func()) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		fn()
+	}()
+	select {
+	case <-done:
+	case <-time.After(waitFor):
+		var stacks strings.Builder
+		_ = pprof.Lookup("goroutine").WriteTo(&stacks, 2)
+		t.Errorf("%s did not finish within %v; goroutines:\n%s", what, waitFor, stacks.String())
+	}
 }
 
 func eventually(t *testing.T, what string, cond func() bool) {

@@ -44,6 +44,15 @@ const (
 	// RejoinWithin bounds how long after the killed hub starts again it is a
 	// follower serving the cluster's current data through its API.
 	RejoinWithin = 20 * time.Second
+	// RemoveWithin bounds how long after `hearth cluster remove` starts on a
+	// follower every survivor reports one leader and 2 voters: the forward to
+	// the leader, the configuration change and its replication.
+	RemoveWithin = 10 * time.Second
+	// ReplaceWithin bounds joining a replacement hub: from creating its join
+	// token until every hub reports one leader and 3 voters again. It covers
+	// one container start, a join and a promotion (FormationWithin covers
+	// three starts and two of each).
+	ReplaceWithin = 30 * time.Second
 )
 
 const (
@@ -53,12 +62,16 @@ const (
 
 var clusterHubs = []string{"hub-a", "hub-b", "hub-c"}
 
+// replacementHub joins in place of a hub that was removed for good.
+const replacementHub = "hub-d"
+
 // TestClusterFailover guards hub high availability (docs/cluster.md): an
 // agent enrolled through a follower, the leader killed, writes on followers,
-// quorum lost and regained, and the killed hub rejoining.
+// quorum lost and regained, the killed hub rejoining, and a dead hub removed
+// and replaced.
 func TestClusterFailover(t *testing.T) {
 	ctx := t.Context()
-	s := newStack(t, "hearth-e2e-cluster", "cluster.compose.yaml", append(slices.Clone(clusterHubs), agentName))
+	s := newStack(t, "hearth-e2e-cluster", "cluster.compose.yaml", append(slices.Clone(clusterHubs), replacementHub, agentName))
 	s.compose(ctx, "build")
 
 	// 1. hub-a forms the cluster; hub-b and hub-c join it with a token each.
@@ -185,6 +198,44 @@ func TestClusterFailover(t *testing.T) {
 		return d.Status == "online" && d.LastSeen.After(quorumAt)
 	})
 	t.Logf("TIMING start %s → agent connected to %s again in %v", follower, leader, since(startAt))
+
+	// 7. A hub dies for good: kill the leader, remove it through a follower
+	// (forwarded to the new leader), join a replacement in its place, and
+	// survive another leader kill with 3 voters again.
+	dead := leader
+	deadAt := time.Now()
+	s.compose(ctx, "kill", "--signal", "SIGKILL", dead)
+	survivors = others(clusterHubs, dead)
+	leader = s.waitLeader(ctx, survivors, deadAt.Add(FailoverWithin), 3)
+	t.Logf("TIMING kill %s → %s elected in %v", dead, leader, since(deadAt))
+
+	via := others(survivors, leader)[0]
+	removeAt := time.Now()
+	out := s.compose(ctx, "exec", "-T", via, "hearth", "cluster", "remove", dead, "--data-dir", hubDataDir)
+	t.Logf("cluster remove %s on %s: %s", dead, via, strings.TrimSpace(out))
+	s.waitLeader(ctx, survivors, removeAt.Add(RemoveWithin), 2)
+	t.Logf("TIMING remove %s on follower %s → 2 voters in %v", dead, via, since(removeAt))
+
+	replaceAt := time.Now()
+	tok := s.clusterJoinToken(ctx, via, replaceAt.Add(ReplaceWithin))
+	s.composeEnv(ctx, []string{"HEARTH_JOIN_TOKEN=" + tok, "HEARTH_JOIN_URL=https://" + via + ":7443"},
+		"up", "--detach", "--no-deps", "--wait", "--wait-timeout", "60", replacementHub)
+	current := append(slices.Clone(survivors), replacementHub)
+	leader = s.waitLeader(ctx, current, replaceAt.Add(ReplaceWithin), 3)
+	t.Logf("TIMING join %s → 3 voters, leader %s, in %v", replacementHub, leader, since(replaceAt))
+
+	killed = leader
+	killAt = time.Now()
+	s.compose(ctx, "kill", "--signal", "SIGKILL", killed)
+	killedAt = s.finishedAt(ctx, killed)
+	leader = s.waitLeader(ctx, others(current, killed), killAt.Add(FailoverWithin), 3)
+	t.Logf("TIMING kill %s → %s elected in %v", killed, leader, since(killAt))
+	lapi := s.loginTo(ctx, leader) // a write: it needs the majority
+	lapi.createToken(ctx)
+	lapi.waitDevice(ctx, agentName, killAt.Add(FailoverWithin), "connected after the replacement", func(d device) bool {
+		return d.Status == "online" && d.LastSeen.After(killedAt)
+	})
+	t.Logf("TIMING kill → login, token and agent connected to %s in %v", leader, since(killAt))
 }
 
 // clusterStatusJSON is the part of `hearth cluster status --json` the test reads.

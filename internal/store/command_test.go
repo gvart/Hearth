@@ -29,6 +29,8 @@ func allCommands() []Command {
 		MarkSeenBatch{Seen: []Seen{{ID: "nas", LastSeen: 14}, {ID: "pi", LastSeen: 15}}},
 		MarkDevicesOffline{IDs: []string{"nas", "pi"}},
 		SetHubURL{NodeID: "hub-a", AgentURL: "https://hub-a:7443"},
+		RecordHubCert{Serial: "0b", NodeID: "hub-a"},
+		RevokeHubCerts{NodeID: "hub-a", Now: 16},
 		CreateToken{Hash: []byte{1, 2, 3}, Labels: `{}`, ExpiresAt: 6},
 		ConsumeToken{Hash: []byte{1, 2, 3}, Now: 7},
 		CreateJoinToken{Hash: []byte{7, 8}, ExpiresAt: 12},
@@ -231,6 +233,15 @@ func runScenario(t *testing.T, s *Store) {
 	must(s.Hubs().SetAgentURL(ctx, "hub-a", "https://hub-a:7443"))
 	must(s.Hubs().SetAgentURL(ctx, "hub-b", "https://hub-b:7443"))
 	must(s.Hubs().SetAgentURL(ctx, "hub-a", "https://hub-a.lan:7443"))
+
+	// Hub certificates are recorded and a removed hub's revoked.
+	must(s.Hubs().RecordCert(ctx, "0b", "hub-a"))
+	must(s.Hubs().RecordCert(ctx, "0c", "hub-b"))
+	n, err = s.Hubs().RevokeCerts(ctx, "hub-b", at(6*time.Minute))
+	must(err)
+	if n != 1 {
+		t.Fatalf("revoked %d hub certs, want 1", n)
+	}
 
 	// Revocation, repeated and unknown.
 	n, err = s.Certs().RevokeDevice(ctx, "pi", at(6*time.Minute))

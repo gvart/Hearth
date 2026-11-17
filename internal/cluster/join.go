@@ -33,6 +33,9 @@ import (
 const (
 	metaLeaderID   = "hearth-leader-id"
 	metaLeaderAddr = "hearth-leader-addr"
+	// metaNotLeader marks the refusal as "not the leader", which a caller
+	// may retry on the leader, apart from any other failed precondition.
+	metaNotLeader = "hearth-not-leader"
 )
 
 const membershipTimeout = 30 * time.Second
@@ -129,6 +132,11 @@ func (s *JoinServer) Join(ctx context.Context, req *connect.Request[clusterv1.Jo
 		if err := s.store.JoinTokens().Consume(ctx, msg.GetTokenSecret(), now); err != nil {
 			return err
 		}
+		// Recorded before the hub can use it, so removing the hub later
+		// revokes it.
+		if err := s.store.Hubs().RecordCert(ctx, pki.SerialString(c), msg.GetNodeId()); err != nil {
+			return err
+		}
 		// A non-voter does not count towards quorum, so a hub that never
 		// comes up after joining cannot stall the cluster.
 		f := s.node.raft.AddNonvoter(raft.ServerID(msg.GetNodeId()), raft.ServerAddress(msg.GetRaftAddress()), 0, membershipTimeout)
@@ -165,7 +173,7 @@ func (s *JoinServer) Promote(ctx context.Context, req *connect.Request[clusterv1
 		return nil, s.notLeaderError()
 	}
 	id := req.Msg.GetNodeId()
-	certID, err := peerHubID(ctx)
+	certID, err := s.peerHubID(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -204,6 +212,7 @@ func (s *JoinServer) notLeaderError() error {
 	e := connect.NewError(connect.CodeFailedPrecondition, (&ErrNotLeader{LeaderID: l.ID, LeaderAddr: l.Addr}))
 	e.Meta().Set(metaLeaderID, l.ID)
 	e.Meta().Set(metaLeaderAddr, l.Addr)
+	e.Meta().Set(metaNotLeader, "1")
 	return e
 }
 

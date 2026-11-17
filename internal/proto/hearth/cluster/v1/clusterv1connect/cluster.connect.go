@@ -41,6 +41,12 @@ const (
 	ClusterServicePromoteProcedure = "/hearth.cluster.v1.ClusterService/Promote"
 	// ClusterServiceForwardProcedure is the fully-qualified name of the ClusterService's Forward RPC.
 	ClusterServiceForwardProcedure = "/hearth.cluster.v1.ClusterService/Forward"
+	// ClusterServiceRemoveMemberProcedure is the fully-qualified name of the ClusterService's
+	// RemoveMember RPC.
+	ClusterServiceRemoveMemberProcedure = "/hearth.cluster.v1.ClusterService/RemoveMember"
+	// ClusterServiceTransferLeadershipProcedure is the fully-qualified name of the ClusterService's
+	// TransferLeadership RPC.
+	ClusterServiceTransferLeadershipProcedure = "/hearth.cluster.v1.ClusterService/TransferLeadership"
 )
 
 // ClusterServiceClient is a client for the hearth.cluster.v1.ClusterService service.
@@ -58,6 +64,14 @@ type ClusterServiceClient interface {
 	// node certificate. The write's policy decision and audit entry were made
 	// on the hub that received the user's request; this is only replication.
 	Forward(context.Context, *connect.Request[v1.ForwardRequest]) (*connect.Response[v1.ForwardResponse], error)
+	// RemoveMember removes a hub from the Raft configuration and revokes its
+	// hub node certificates, on behalf of a member hub whose operator asked for
+	// it. Like Forward, the caller authenticates with its hub node certificate
+	// and the policy decision and audit entry were made on that hub.
+	RemoveMember(context.Context, *connect.Request[v1.RemoveMemberRequest]) (*connect.Response[v1.RemoveMemberResponse], error)
+	// TransferLeadership hands leadership to another voter, on behalf of a
+	// member hub, authenticated and decided like RemoveMember.
+	TransferLeadership(context.Context, *connect.Request[v1.TransferLeadershipRequest]) (*connect.Response[v1.TransferLeadershipResponse], error)
 }
 
 // NewClusterServiceClient constructs a client for the hearth.cluster.v1.ClusterService service. By
@@ -89,14 +103,28 @@ func NewClusterServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(clusterServiceMethods.ByName("Forward")),
 			connect.WithClientOptions(opts...),
 		),
+		removeMember: connect.NewClient[v1.RemoveMemberRequest, v1.RemoveMemberResponse](
+			httpClient,
+			baseURL+ClusterServiceRemoveMemberProcedure,
+			connect.WithSchema(clusterServiceMethods.ByName("RemoveMember")),
+			connect.WithClientOptions(opts...),
+		),
+		transferLeadership: connect.NewClient[v1.TransferLeadershipRequest, v1.TransferLeadershipResponse](
+			httpClient,
+			baseURL+ClusterServiceTransferLeadershipProcedure,
+			connect.WithSchema(clusterServiceMethods.ByName("TransferLeadership")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // clusterServiceClient implements ClusterServiceClient.
 type clusterServiceClient struct {
-	join    *connect.Client[v1.JoinRequest, v1.JoinResponse]
-	promote *connect.Client[v1.PromoteRequest, v1.PromoteResponse]
-	forward *connect.Client[v1.ForwardRequest, v1.ForwardResponse]
+	join               *connect.Client[v1.JoinRequest, v1.JoinResponse]
+	promote            *connect.Client[v1.PromoteRequest, v1.PromoteResponse]
+	forward            *connect.Client[v1.ForwardRequest, v1.ForwardResponse]
+	removeMember       *connect.Client[v1.RemoveMemberRequest, v1.RemoveMemberResponse]
+	transferLeadership *connect.Client[v1.TransferLeadershipRequest, v1.TransferLeadershipResponse]
 }
 
 // Join calls hearth.cluster.v1.ClusterService.Join.
@@ -114,6 +142,16 @@ func (c *clusterServiceClient) Forward(ctx context.Context, req *connect.Request
 	return c.forward.CallUnary(ctx, req)
 }
 
+// RemoveMember calls hearth.cluster.v1.ClusterService.RemoveMember.
+func (c *clusterServiceClient) RemoveMember(ctx context.Context, req *connect.Request[v1.RemoveMemberRequest]) (*connect.Response[v1.RemoveMemberResponse], error) {
+	return c.removeMember.CallUnary(ctx, req)
+}
+
+// TransferLeadership calls hearth.cluster.v1.ClusterService.TransferLeadership.
+func (c *clusterServiceClient) TransferLeadership(ctx context.Context, req *connect.Request[v1.TransferLeadershipRequest]) (*connect.Response[v1.TransferLeadershipResponse], error) {
+	return c.transferLeadership.CallUnary(ctx, req)
+}
+
 // ClusterServiceHandler is an implementation of the hearth.cluster.v1.ClusterService service.
 type ClusterServiceHandler interface {
 	// Join consumes a join token, signs the new hub's CSR and hands it the CA,
@@ -129,6 +167,14 @@ type ClusterServiceHandler interface {
 	// node certificate. The write's policy decision and audit entry were made
 	// on the hub that received the user's request; this is only replication.
 	Forward(context.Context, *connect.Request[v1.ForwardRequest]) (*connect.Response[v1.ForwardResponse], error)
+	// RemoveMember removes a hub from the Raft configuration and revokes its
+	// hub node certificates, on behalf of a member hub whose operator asked for
+	// it. Like Forward, the caller authenticates with its hub node certificate
+	// and the policy decision and audit entry were made on that hub.
+	RemoveMember(context.Context, *connect.Request[v1.RemoveMemberRequest]) (*connect.Response[v1.RemoveMemberResponse], error)
+	// TransferLeadership hands leadership to another voter, on behalf of a
+	// member hub, authenticated and decided like RemoveMember.
+	TransferLeadership(context.Context, *connect.Request[v1.TransferLeadershipRequest]) (*connect.Response[v1.TransferLeadershipResponse], error)
 }
 
 // NewClusterServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -156,6 +202,18 @@ func NewClusterServiceHandler(svc ClusterServiceHandler, opts ...connect.Handler
 		connect.WithSchema(clusterServiceMethods.ByName("Forward")),
 		connect.WithHandlerOptions(opts...),
 	)
+	clusterServiceRemoveMemberHandler := connect.NewUnaryHandler(
+		ClusterServiceRemoveMemberProcedure,
+		svc.RemoveMember,
+		connect.WithSchema(clusterServiceMethods.ByName("RemoveMember")),
+		connect.WithHandlerOptions(opts...),
+	)
+	clusterServiceTransferLeadershipHandler := connect.NewUnaryHandler(
+		ClusterServiceTransferLeadershipProcedure,
+		svc.TransferLeadership,
+		connect.WithSchema(clusterServiceMethods.ByName("TransferLeadership")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/hearth.cluster.v1.ClusterService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ClusterServiceJoinProcedure:
@@ -164,6 +222,10 @@ func NewClusterServiceHandler(svc ClusterServiceHandler, opts ...connect.Handler
 			clusterServicePromoteHandler.ServeHTTP(w, r)
 		case ClusterServiceForwardProcedure:
 			clusterServiceForwardHandler.ServeHTTP(w, r)
+		case ClusterServiceRemoveMemberProcedure:
+			clusterServiceRemoveMemberHandler.ServeHTTP(w, r)
+		case ClusterServiceTransferLeadershipProcedure:
+			clusterServiceTransferLeadershipHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -183,4 +245,12 @@ func (UnimplementedClusterServiceHandler) Promote(context.Context, *connect.Requ
 
 func (UnimplementedClusterServiceHandler) Forward(context.Context, *connect.Request[v1.ForwardRequest]) (*connect.Response[v1.ForwardResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hearth.cluster.v1.ClusterService.Forward is not implemented"))
+}
+
+func (UnimplementedClusterServiceHandler) RemoveMember(context.Context, *connect.Request[v1.RemoveMemberRequest]) (*connect.Response[v1.RemoveMemberResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hearth.cluster.v1.ClusterService.RemoveMember is not implemented"))
+}
+
+func (UnimplementedClusterServiceHandler) TransferLeadership(context.Context, *connect.Request[v1.TransferLeadershipRequest]) (*connect.Response[v1.TransferLeadershipResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hearth.cluster.v1.ClusterService.TransferLeadership is not implemented"))
 }

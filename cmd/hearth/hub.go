@@ -246,6 +246,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 				log.ErrorContext(gctx, "HEARTH_ADMIN_PASSWORD not applied", "err", err)
 			}
 			node.Announce(gctx)
+			node.RecordNodeCert(gctx)
 			return nil
 		})
 		g.Go(func() error {
