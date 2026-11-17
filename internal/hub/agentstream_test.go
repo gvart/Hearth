@@ -25,7 +25,10 @@ import (
 // in for requireClientCert; an empty deviceID leaves requests unauthenticated.
 func newTestClient(t *testing.T, deviceID string) agentv1connect.AgentServiceClient {
 	t.Helper()
-	path, h := agentv1connect.NewAgentServiceHandler(NewAgentStream(slog.New(slog.DiscardHandler), 5*time.Second))
+	st := newTestStore(t)
+	enrollDevice(t, st, "dev-1")
+	reg := NewRegistry(RegistryConfig{Store: st})
+	path, h := agentv1connect.NewAgentServiceHandler(NewAgentStream(slog.New(slog.DiscardHandler), 5*time.Second, reg))
 	mux := http.NewServeMux()
 	mux.Handle(path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if deviceID != "" {
@@ -79,6 +82,11 @@ func TestConnectRoundTrip(t *testing.T) {
 		if err := stream.Send(heartbeat()); err != nil {
 			t.Fatalf("send heartbeat %d: %v", i, err)
 		}
+	}
+	// A periodic facts message is accepted, unlike a second Hello.
+	facts := &agentv1.AgentMessage{Payload: &agentv1.AgentMessage_Facts{Facts: hello(ProtocolMajor).GetHello()}}
+	if err := stream.Send(facts); err != nil {
+		t.Fatalf("send facts: %v", err)
 	}
 
 	msg, err := stream.Receive()
