@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"runtime/pprof"
 	"strings"
 	"sync/atomic"
@@ -147,10 +148,17 @@ type runningAgent struct {
 
 func startAgent(t *testing.T, dataDir string) *runningAgent {
 	t.Helper()
+	return startAgentWith(t, agent.Config{DataDir: dataDir})
+}
+
+// startAgentWith runs the agent with cfg, filling in a test logger and version.
+func startAgentWith(t *testing.T, cfg agent.Config) *runningAgent {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	a := &runningAgent{logs: &syncBuffer{}, cancel: cancel, done: make(chan error, 1)}
 	log := slog.New(slog.NewTextHandler(a.logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	go func() { a.done <- agent.Run(ctx, agent.Config{DataDir: dataDir, Version: "test", Log: log}) }()
+	cfg.Version, cfg.Log = "test", log
+	go func() { a.done <- agent.Run(ctx, cfg) }()
 	t.Cleanup(func() { a.stop(t) })
 	return a
 }
@@ -216,9 +224,34 @@ func TestRunReconnectsAfterHubRestart(t *testing.T) {
 	waitFor(t, 5*time.Second, "reconnection after hub restart", connected(2))
 	t.Logf("reconnected %v after the hub came back", time.Since(restarted).Round(time.Millisecond))
 	a.assertRunning(t)
+	waitFor(t, 5*time.Second, "the agent to get Welcome", func() bool {
+		return strings.Count(a.logs.String(), `msg="connected to hub"`) >= 2
+	})
 	a.stop(t)
+	// Shutdown half-closes the stream, so the hub sees a clean end.
+	waitFor(t, time.Second, "the hub to see a clean disconnect", func() bool {
+		return strings.Contains(h.logs.String(), `msg="agent disconnected" device_id=`+id)
+	})
 	if !strings.Contains(a.logs.String(), "reconnecting") {
 		t.Errorf("agent did not log the lost connection:\n%s", a.logs.String())
+	}
+}
+
+func TestRunRefreshesFacts(t *testing.T) {
+	h := startRestartableHub(t, time.Minute)
+	id, dataDir := h.join(t)
+	a := startAgentWith(t, agent.Config{DataDir: dataDir, FactsInterval: 200 * time.Millisecond})
+
+	waitFor(t, 10*time.Second, "two facts refreshes", func() bool {
+		return strings.Count(h.logs.String(), `msg=facts device_id=`+id) >= 2
+	})
+	a.stop(t)
+	dev, err := h.st.Devices().Get(t.Context(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dev.OS == "" || dev.Arch != runtime.GOARCH {
+		t.Errorf("hub stored os=%q arch=%q, want the agent's facts", dev.OS, dev.Arch)
 	}
 }
 
