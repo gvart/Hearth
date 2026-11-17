@@ -39,8 +39,10 @@ const (
 	// heartbeat, so the 30 s offline threshold plus a 5 s sweep fit.
 	OfflineWithin = 40 * time.Second
 	// HubReconnectWithin bounds how long after a hub restart every agent is
-	// connected to the new hub process (agents retry with backoff from 1 s).
-	HubReconnectWithin = 30 * time.Second
+	// connected to the new hub process. The old hub ends agent streams as
+	// soon as it shuts down and agents retry within 250 ms, so this is mostly
+	// the container restart (about 1.3 s locally); the rest is CI headroom.
+	HubReconnectWithin = 10 * time.Second
 )
 
 const (
