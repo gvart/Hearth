@@ -1,0 +1,147 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package hub
+
+import (
+	"context"
+	"errors"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	"connectrpc.com/connect"
+	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
+	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
+	"github.com/gvart/hearth/internal/proto/hearth/agent/v1/agentv1connect"
+)
+
+// newTestClient serves AgentStream over unencrypted HTTP/2 (bidi streaming needs h2)
+// and returns a client for it.
+func newTestClient(t *testing.T) agentv1connect.AgentServiceClient {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.Handle(agentv1connect.NewAgentServiceHandler(NewAgentStream(slog.New(slog.DiscardHandler), 5*time.Second)))
+
+	srv := httptest.NewUnstartedServer(mux)
+	srv.Config.Protocols = new(http.Protocols)
+	srv.Config.Protocols.SetUnencryptedHTTP2(true)
+	srv.Start()
+	t.Cleanup(srv.Close)
+
+	transport := &http.Transport{Protocols: new(http.Protocols)}
+	transport.Protocols.SetUnencryptedHTTP2(true)
+	t.Cleanup(transport.CloseIdleConnections)
+	return agentv1connect.NewAgentServiceClient(&http.Client{Transport: transport}, srv.URL)
+}
+
+func hello(major uint32) *agentv1.AgentMessage {
+	return &agentv1.AgentMessage{Payload: &agentv1.AgentMessage_Hello{Hello: &agentv1.Hello{
+		ProtocolVersion: &agentv1.ProtocolVersion{Major: major},
+		DeviceId:        "dev-1",
+		Hostname:        "pi",
+		Os:              "linux",
+		Arch:            "arm64",
+		CpuCores:        4,
+		Interfaces:      []*agentv1.NetworkInterface{{Name: "eth0", Mac: "aa:bb:cc:dd:ee:ff", Ips: []string{"10.0.0.2"}}},
+		AgentVersion:    "v0.0.0-test",
+	}}}
+}
+
+func heartbeat() *agentv1.AgentMessage {
+	return &agentv1.AgentMessage{Payload: &agentv1.AgentMessage_Heartbeat{Heartbeat: &agentv1.Heartbeat{
+		Ts:     timestamppb.Now(),
+		Uptime: durationpb.New(time.Minute),
+	}}}
+}
+
+func TestConnectRoundTrip(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	stream := newTestClient(t).Connect(ctx)
+	if err := stream.Send(hello(ProtocolMajor)); err != nil {
+		t.Fatalf("send hello: %v", err)
+	}
+	for i := range 3 {
+		if err := stream.Send(heartbeat()); err != nil {
+			t.Fatalf("send heartbeat %d: %v", i, err)
+		}
+	}
+
+	msg, err := stream.Receive()
+	if err != nil {
+		t.Fatalf("receive welcome: %v", err)
+	}
+	welcome := msg.GetWelcome()
+	if welcome == nil {
+		t.Fatalf("got %T, want Welcome", msg.GetPayload())
+	}
+	if got := welcome.GetHeartbeatInterval().AsDuration(); got != 5*time.Second {
+		t.Errorf("heartbeat_interval = %v, want 5s", got)
+	}
+	if welcome.GetServerTime() == nil {
+		t.Error("server_time not set")
+	}
+
+	if err := stream.CloseRequest(); err != nil {
+		t.Fatalf("close request: %v", err)
+	}
+	if _, err := stream.Receive(); !errors.Is(err, io.EOF) {
+		t.Fatalf("after close: got %v, want EOF (hub accepted all heartbeats)", err)
+	}
+}
+
+func TestConnectRejected(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		first *agentv1.AgentMessage
+		want  connect.Code
+	}{
+		{"unknown major version", hello(ProtocolMajor + 1), connect.CodeFailedPrecondition},
+		{"zero major version", hello(0), connect.CodeFailedPrecondition},
+		{"heartbeat before hello", heartbeat(), connect.CodeInvalidArgument},
+		{"empty message", &agentv1.AgentMessage{}, connect.CodeInvalidArgument},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			defer cancel()
+
+			stream := newTestClient(t).Connect(ctx)
+			if err := stream.Send(tt.first); err != nil {
+				t.Fatalf("send: %v", err)
+			}
+			_, err := stream.Receive()
+			if got := connect.CodeOf(err); got != tt.want {
+				t.Fatalf("code = %v (%v), want %v", got, err, tt.want)
+			}
+		})
+	}
+}
+
+func TestConnectDuplicateHello(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	stream := newTestClient(t).Connect(ctx)
+	for range 2 {
+		if err := stream.Send(hello(ProtocolMajor)); err != nil {
+			t.Fatalf("send hello: %v", err)
+		}
+	}
+	if msg, err := stream.Receive(); err != nil || msg.GetWelcome() == nil {
+		t.Fatalf("first receive: msg=%v err=%v, want Welcome", msg, err)
+	}
+	if _, err := stream.Receive(); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("got %v, want InvalidArgument", err)
+	}
+}
