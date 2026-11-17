@@ -28,8 +28,10 @@ func newDeviceRevokeCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "revoke <device-id>",
 		Short: "Revoke a device's certificates so it can no longer connect",
-		Long:  "Revoke every certificate issued to a device. Run it on the hub host; it takes effect on the device's next connect.",
-		Args:  cobra.ExactArgs(1),
+		Long: "Revoke every certificate issued to a device. Run it on the hub host. A connected agent is\n" +
+			"disconnected at its next heartbeat (within 10 s) and the device is marked offline; the agent\n" +
+			"then exits instead of reconnecting. To bring the device back, re-enroll it with `hearth agent join`.",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDeviceRevoke(cmd.Context(), dataDir, args[0], cmd.OutOrStdout())
 		},

@@ -20,10 +20,13 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
+
 	"github.com/gvart/hearth/internal/agent"
 	"github.com/gvart/hearth/internal/hub"
 	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/policy"
+	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
 	"github.com/gvart/hearth/internal/store"
 )
 
@@ -344,25 +347,126 @@ func TestRunUnreachableHub(t *testing.T) {
 	a.stop(t)
 }
 
-func TestRunRevokedCertBacksOff(t *testing.T) {
-	h := startRestartableHub(t, time.Second)
-	id, dataDir := h.join(t)
-	if _, err := h.st.Certs().RevokeDevice(t.Context(), id, time.Now()); err != nil {
+// wait waits up to timeout for Run to return on its own and returns its error.
+func (a *runningAgent) wait(t *testing.T, timeout time.Duration) error {
+	t.Helper()
+	select {
+	case err := <-a.done:
+		a.done = nil
+		return err
+	case <-time.After(timeout):
+		t.Fatalf("Run still running after %v", timeout)
+		return nil
+	}
+}
+
+// A revoked device stops for good, whether the hub refuses its connect or
+// ends its live stream at the next heartbeat: Run returns ErrRevoked, with a
+// clear error in the log, instead of retrying.
+func TestRunStopsOnRevokedCert(t *testing.T) {
+	const interval = time.Second
+	for _, tt := range []struct {
+		name       string
+		whileLive  bool // revoke after the agent connected
+		wantWithin time.Duration
+	}{
+		{name: "refused at connect", wantWithin: 2 * time.Second},
+		// One heartbeat interval, plus headroom for -race.
+		{name: "live stream ended", whileLive: true, wantWithin: interval + time.Second},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			h := startRestartableHub(t, interval)
+			id, dataDir := h.join(t)
+			revoke := func() {
+				if _, err := h.st.Certs().RevokeDevice(t.Context(), id, time.Now()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if !tt.whileLive {
+				revoke()
+			}
+			a := startAgent(t, dataDir)
+			if tt.whileLive {
+				waitFor(t, 5*time.Second, "the agent to connect", connectedTo(h, id, 1))
+				revoke()
+			}
+			start := time.Now()
+			err := a.wait(t, tt.wantWithin+2*time.Second)
+			if took := time.Since(start); took > tt.wantWithin {
+				t.Errorf("Run returned %v after the revoke, want within %v", took, tt.wantWithin)
+			}
+			if !errors.Is(err, agent.ErrRevoked) {
+				t.Fatalf("Run = %v, want ErrRevoked", err)
+			}
+			if !strings.Contains(a.logs.String(), `level=ERROR msg="this device's certificate was revoked; re-enroll with hearth agent join"`) {
+				t.Errorf("no revoked error in the agent log:\n%s", a.logs.String())
+			}
+			if n := strings.Count(a.logs.String(), "reconnecting"); n != 0 {
+				t.Errorf("agent retried %d times after the revoke", n)
+			}
+			if tt.whileLive {
+				d, err := h.st.Devices().Get(t.Context(), id)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if d.Status != store.StatusOffline {
+					t.Errorf("device status = %s, want offline", d.Status)
+				}
+			}
+		})
+	}
+}
+
+// Only the explicit revocation stops the agent. A hub that cannot vouch for
+// its store answers NotLeader or Unavailable, and a bare Unauthenticated
+// carries no verdict on the device: the agent keeps retrying with backoff.
+func TestRunRetriesWithoutRevokedDetail(t *testing.T) {
+	revokedDetail, err := connect.NewErrorDetail(&agentv1.CertificateRevoked{})
+	if err != nil {
 		t.Fatal(err)
 	}
-
-	a := startAgent(t, dataDir)
-	time.Sleep(4 * time.Second)
-	a.assertRunning(t)
-	a.stop(t)
-
-	// Attempts at 0, then after 0.5–1 s, 1–2 s, 2–4 s: 3 or 4 in 4 s. A spinning
-	// agent would make hundreds.
-	if n := strings.Count(h.logs.String(), "certificate revoked"); n < 2 || n > 5 {
-		t.Errorf("hub saw %d attempts with the revoked cert in 4s, want 2-5:\n%s", n, a.logs.String())
+	notLeader, err := connect.NewErrorDetail(&agentv1.NotLeader{})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if strings.Contains(h.logs.String(), `msg="agent connected"`) {
-		t.Error("revoked agent was let in")
+	withDetail := func(code connect.Code, msg string, d *connect.ErrorDetail) func() error {
+		return func() error {
+			e := connect.NewError(code, errors.New(msg))
+			if d != nil {
+				e.AddDetail(d)
+			}
+			return e
+		}
+	}
+	for _, tt := range []struct {
+		name string
+		err  func() error
+	}{
+		{"unavailable", withDetail(connect.CodeUnavailable, "this hub is taking over as the cluster leader; retry shortly", nil)},
+		{"not leader", withDetail(connect.CodeFailedPrecondition, "this hub is not the cluster leader", notLeader)},
+		{"unauthenticated without detail", withDetail(connect.CodeUnauthenticated, "certificate revoked", nil)},
+		{"revoked detail on another code", withDetail(connect.CodeUnavailable, "certificate revoked", revokedDetail)},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			h := startRestartableHub(t, time.Second)
+			_, dataDir := h.join(t)
+			var attempts atomic.Int32
+			ew := connect.NewErrorWriter()
+			h.handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				attempts.Add(1)
+				_ = ew.Write(w, r, tt.err())
+			})
+			h.stop()
+			h.start()
+
+			a := startAgent(t, dataDir)
+			waitFor(t, 5*time.Second, "two refused attempts", func() bool { return attempts.Load() >= 2 })
+			a.assertRunning(t)
+			a.stop(t)
+			if strings.Contains(a.logs.String(), "revoked; re-enroll") {
+				t.Errorf("agent took %q for a revocation", tt.name)
+			}
+		})
 	}
 }
 
