@@ -1,0 +1,20 @@
+internal/cluster/node.go
+  s_815aef767535ea::t_cda90d3064d179 404-408
+  s_815aef767535ea::t_9b37b6a5e1aa95 401-403,409-411
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "76ebfee8574f92d25735f9d18b1d930ba2c828c1",
+  "prompts": {},
+  "sessions": {
+    "s_815aef767535ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1866255a-7d59-4f07-869c-b29b78c7a98d",
+        "model": "unknown"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}

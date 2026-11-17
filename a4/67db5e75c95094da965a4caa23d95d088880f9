@@ -1,0 +1,46 @@
+internal/store/jointokens.go
+  s_815aef767535ea::t_2c987b8d191e40 1-40
+internal/store/store_test.go
+  s_815aef767535ea::t_0fc2839d3afc68 54
+internal/store/command.go
+  s_815aef767535ea::t_3c0ed5c4341ba0 512-515
+  s_815aef767535ea::t_13ab73fcfe839f 263-319
+internal/store/applier.go
+  s_815aef767535ea::t_740569727d6e15 7,9-11
+  s_815aef767535ea::t_fe5d98aa7c8601 31-36,42-52
+  s_815aef767535ea::t_299f13351bbbd6 54-66
+  s_815aef767535ea::t_02a29034da61af 53
+internal/store/command_test.go
+  s_815aef767535ea::t_30cbb38140d14f 31-32
+  s_815aef767535ea::t_0fc2839d3afc68 323
+  s_815aef767535ea::t_01324dcf435fcf 163-171
+  s_815aef767535ea::t_40fb96a7183fb8 372-373
+internal/store/store.go
+  s_815aef767535ea::t_1046aba27a3802 12,99
+  s_815aef767535ea::t_86a79ec7c9da68 53-55,57,63-64,69-95,103,105-118
+  s_815aef767535ea::t_b01e51a2114876 96-98,100-102,104
+  s_815aef767535ea::t_3c9dc1646b723e 119
+internal/store/migrations/00004_join_tokens.sql
+  s_815aef767535ea::t_3b69efe838289f 1-13
+internal/store/schema_test.go
+  s_815aef767535ea::t_95bce3e5592924 1-116
+internal/store/snapshot.go
+  s_815aef767535ea::t_323ca9238c0f06 127-129
+  s_815aef767535ea::t_8d39c8c0c72c5e 104-105
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a467db5e75c95094da965a4caa23d95d088880f9",
+  "prompts": {},
+  "sessions": {
+    "s_815aef767535ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1866255a-7d59-4f07-869c-b29b78c7a98d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
