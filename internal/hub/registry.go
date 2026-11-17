@@ -142,7 +142,7 @@ func (r *Registry) ReportFacts(ctx context.Context, deviceID string, h *agentv1.
 		// The facts write stored last_seen too.
 		r.liveMu.Lock()
 		if r.seen != nil {
-			r.seen[deviceID] = now
+			r.seen[deviceID] = asStored(now)
 			delete(r.dirty, deviceID)
 		}
 		r.liveMu.Unlock()
@@ -205,6 +205,7 @@ func (r *Registry) markSeen(ctx context.Context, deviceID string, now time.Time)
 	if !leading {
 		return store.Device{}, "", false, nil
 	}
+	now = asStored(now)
 	if d, err = r.devices.Get(ctx, deviceID); err != nil {
 		return store.Device{}, "", false, err
 	}
@@ -229,6 +230,10 @@ func (r *Registry) markSeen(ctx context.Context, deviceID string, now time.Time)
 	}
 	return d, prev, true, nil
 }
+
+// asStored is t as the store keeps it: UTC, in milliseconds. In-memory
+// last_seen values use it, so the API shows one format either way.
+func asStored(t time.Time) time.Time { return time.UnixMilli(t.UnixMilli()).UTC() }
 
 // Live returns d with the last_seen this hub holds in memory when that is
 // newer than the stored one: on a clustered leader last_seen is written in
