@@ -10,7 +10,6 @@ package webui
 
 import (
 	"embed"
-	"errors"
 	"io/fs"
 	"net/http"
 	"path"
@@ -20,7 +19,10 @@ import (
 //go:embed all:dist
 var embedded embed.FS
 
-const indexFile = "index.html"
+const (
+	indexFile = "index.html"
+	assetsDir = "assets" // Vite's build.assetsDir
+)
 
 // fallbackPage is served when the binary was built without the web UI.
 const fallbackPage = `<!doctype html>
@@ -63,12 +65,18 @@ func newHandler(dist fs.FS) http.Handler {
 			files.ServeHTTP(w, r)
 			return
 		}
-		if _, err := fs.Stat(dist, name); errors.Is(err, fs.ErrNotExist) && path.Ext(name) == "" {
-			// Client-side route (e.g. /devices/42): let the SPA handle it.
+		info, err := fs.Stat(dist, name)
+		switch {
+		case err == nil && !info.IsDir():
+			files.ServeHTTP(w, r)
+		case name == assetsDir || strings.HasPrefix(name, assetsDir+"/"):
+			// Missing bundle files and directory listings are plain 404s.
+			http.NotFound(w, r)
+		default:
+			// Client-side route, including ones with dots such as
+			// /devices/nas.lan or /devices/192.168.1.10: the SPA handles it.
 			http.ServeFileFS(w, r, dist, indexFile)
-			return
 		}
-		files.ServeHTTP(w, r)
 	})
 }
 

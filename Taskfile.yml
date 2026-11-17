@@ -26,15 +26,16 @@ tasks:
 
   test:
     desc: Run Go tests with the race detector
-    env:
-      CGO_ENABLED: '1' # the race detector needs cgo; release builds stay CGO_ENABLED=0
     cmds:
-      - go test -race ./...
+      # Inline (not `env:`) so it overrides any CGO_ENABLED in the caller's shell;
+      # the race detector needs cgo, release builds stay CGO_ENABLED=0.
+      - CGO_ENABLED=1 go test -race ./...
 
   lint:
     desc: Run golangci-lint, eslint and tsc
     deps: [web:deps]
     cmds:
+      - scripts/check-spdx.sh
       - golangci-lint run ./...
       - npm --prefix web run lint
       - npm --prefix web run typecheck
@@ -60,10 +61,9 @@ tasks:
 
   go:build:
     internal: true
-    env:
-      CGO_ENABLED: '0'
     cmds:
-      - go build -trimpath -ldflags "{{.LDFLAGS}}" -o {{.BIN}} ./cmd/hearth
+      # Inline so a CGO_ENABLED from the caller's shell can never produce a cgo binary.
+      - CGO_ENABLED=0 go build -trimpath -ldflags "{{.LDFLAGS}}" -o {{.BIN}} ./cmd/hearth
 
   web:deps:
     internal: true

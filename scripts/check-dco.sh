@@ -14,6 +14,14 @@ base=$1
 head=$2
 failed=0
 
+# Resolve the range first so an unknown or unfetched SHA aborts (set -e) instead of
+# silently checking zero commits.
+commits="$(git rev-list --no-merges "$base..$head")"
+if [[ -z "$commits" && "$(git rev-parse "$base")" != "$(git rev-parse "$head")" ]]; then
+  echo "no commits found in $base..$head; refusing to pass an empty range" >&2
+  exit 1
+fi
+
 while read -r sha; do
   [[ -z "$sha" ]] && continue
   author="$(git log -1 --format='%an <%ae>' "$sha")"
@@ -23,7 +31,7 @@ while read -r sha; do
     echo "MISSING $(git log -1 --format='%h %s' "$sha") — expected 'Signed-off-by: $author'"
     failed=1
   fi
-done < <(git rev-list --no-merges "$base..$head")
+done <<<"$commits"
 
 if [[ $failed -ne 0 ]]; then
   cat >&2 <<'MSG'

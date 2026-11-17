@@ -23,7 +23,8 @@ type buildInfo struct {
 }
 
 // resolveBuildInfo combines link-time values with what the Go toolchain embedded
-// in the binary, so `go install` builds still report a commit and date.
+// in the binary, so builds without ldflags (`go build` in a checkout, or
+// `go install ...@vX.Y.Z`) still report something useful.
 func resolveBuildInfo(version, commit, date string) buildInfo {
 	info := buildInfo{
 		Version:   version,
@@ -33,6 +34,7 @@ func resolveBuildInfo(version, commit, date string) buildInfo {
 		Platform:  runtime.GOOS + "/" + runtime.GOARCH,
 	}
 	if bi, ok := debug.ReadBuildInfo(); ok {
+		info = mergeModuleVersion(info, bi.Main.Version)
 		info = mergeVCS(info, bi.Settings)
 	}
 	if info.Version == "" {
@@ -43,6 +45,15 @@ func resolveBuildInfo(version, commit, date string) buildInfo {
 	}
 	if info.Date == "" {
 		info.Date = unknown
+	}
+	return info
+}
+
+// mergeModuleVersion uses the module version recorded by `go install ...@vX.Y.Z`
+// (module-cache builds carry no vcs.* settings) when no version was linked in.
+func mergeModuleVersion(info buildInfo, moduleVersion string) buildInfo {
+	if (info.Version == "" || info.Version == "dev") && moduleVersion != "" && moduleVersion != "(devel)" {
+		info.Version = moduleVersion
 	}
 	return info
 }

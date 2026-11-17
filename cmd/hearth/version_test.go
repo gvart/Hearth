@@ -104,6 +104,32 @@ func TestMergeVCS(t *testing.T) {
 	}
 }
 
+func TestMergeModuleVersion(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		version       string
+		moduleVersion string
+		want          string
+	}{
+		{name: "go install @tag", version: "dev", moduleVersion: "v1.2.3", want: "v1.2.3"},
+		{name: "empty version", version: "", moduleVersion: "v1.2.3", want: "v1.2.3"},
+		{name: "local build", version: "dev", moduleVersion: "(devel)", want: "dev"},
+		{name: "no module info", version: "dev", moduleVersion: "", want: "dev"},
+		{name: "ldflags win", version: "v2.0.0", moduleVersion: "v1.2.3", want: "v2.0.0"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := mergeModuleVersion(buildInfo{Version: tt.version}, tt.moduleVersion)
+			if got.Version != tt.want {
+				t.Errorf("Version = %q, want %q", got.Version, tt.want)
+			}
+		})
+	}
+}
+
 func TestResolveBuildInfoDefaults(t *testing.T) {
 	t.Parallel()
 

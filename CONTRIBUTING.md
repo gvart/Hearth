@@ -67,6 +67,6 @@ git rebase --signoff main
 ## Licensing
 
 - Everything is [AGPL-3.0-only](LICENSE) except `pkg/` ([Apache-2.0](pkg/LICENSE)) and `docs/spec/` (CC-BY-4.0).
-- Every Go file starts with an SPDX header; the linter enforces it:
+- Every Go file starts with an SPDX header; `task lint` enforces it (`scripts/check-spdx.sh`):
   - `pkg/`: `// SPDX-License-Identifier: Apache-2.0`
   - everything else: `// SPDX-License-Identifier: AGPL-3.0-only`
