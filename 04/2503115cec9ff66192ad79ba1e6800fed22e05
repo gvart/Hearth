@@ -1,0 +1,32 @@
+cmd/hearth/device.go
+  s_815aef767535ea::t_642e132b69d218 31-33
+  s_815aef767535ea::t_73007e11dea8fe 34
+cmd/hearth/main.go
+  s_815aef767535ea::t_7d5edca05f9b37 9,14-15,36-38
+deploy/systemd/hearth-agent.service
+  s_815aef767535ea::t_a1ee41060b1fad 14-15
+deploy/install.sh
+  s_815aef767535ea::t_a1ee41060b1fad 343-344
+internal/agent/run_test.go
+  s_815aef767535ea::t_904c5cb2f9dc56 23-24,29,350-359,361,363-418,420-439,441-469
+internal/agent/run.go
+  s_815aef767535ea::t_1c3b264fe647d1 134-137
+  s_815aef767535ea::t_646bf7a7df604e 71-80,91-93,133,138,187-203
+  s_815aef767535ea::t_5252d796408929 15,204-205
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "042503115cec9ff66192ad79ba1e6800fed22e05",
+  "prompts": {},
+  "sessions": {
+    "s_815aef767535ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1866255a-7d59-4f07-869c-b29b78c7a98d",
+        "model": "unknown"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
