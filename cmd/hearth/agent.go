@@ -3,7 +3,11 @@
 package main
 
 import (
+	"bufio"
+	"errors"
 	"fmt"
+	"io"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -42,10 +46,18 @@ func newAgentJoinCmd() *cobra.Command {
 		Use:   "join <hub-url> <token>",
 		Short: "Enroll this device with a hub",
 		Long: "Enroll this device with a hub using a token from `hearth token create`.\n" +
-			"The hub is verified against the CA fingerprint in the token before the token is sent.",
+			"The hub is verified against the CA fingerprint in the token before the token is sent.\n" +
+			"Pass - as the token to read it from the first line of stdin, keeping it out of argv.",
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			id, err := agent.Join(cmd.Context(), args[0], args[1], dataDir, hostnameOr(""))
+			token := args[1]
+			if token == "-" {
+				var err error
+				if token, err = readToken(cmd.InOrStdin()); err != nil {
+					return err
+				}
+			}
+			id, err := agent.Join(cmd.Context(), args[0], token, dataDir, hostnameOr(""))
 			if err != nil {
 				return err
 			}
@@ -57,4 +69,20 @@ func newAgentJoinCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir("agent"), "agent data directory (env HEARTH_DATA_DIR)")
 	return cmd
+}
+
+// maxTokenLine bounds the stdin read; real tokens are about 100 bytes.
+const maxTokenLine = 4 << 10
+
+// readToken reads an enrollment token from the first line of in.
+func readToken(in io.Reader) (string, error) {
+	line, err := bufio.NewReader(io.LimitReader(in, maxTokenLine)).ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", fmt.Errorf("read token from stdin: %w", err)
+	}
+	token := strings.TrimSpace(line)
+	if token == "" {
+		return "", errors.New("no token on stdin (token argument was -)")
+	}
+	return token, nil
 }
