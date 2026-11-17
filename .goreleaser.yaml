@@ -85,6 +85,34 @@ dockers_v2:
       org.opencontainers.image.revision: "{{ .FullCommit }}"
       org.opencontainers.image.created: "{{ .Date }}"
 
+# Keyless (Sigstore) signing with the GitHub Actions OIDC token: needs
+# `id-token: write` and cosign on PATH, so it only works in release.yml.
+# Verification commands are in the README ("Verifying releases").
+signs:
+  - id: checksums
+    cmd: cosign
+    artifacts: checksum
+    # One Sigstore bundle (signature + certificate + Rekor entry) per file:
+    # checksums.txt.sigstore.json, uploaded as a release asset.
+    signature: "${artifact}.sigstore.json"
+    args:
+      - sign-blob
+      - --bundle=${signature}
+      - ${artifact}
+      - --yes
+    output: true
+
+docker_signs:
+  # Default artifacts ('') = the dockers_v2 images: one per pushed tag, each
+  # signed by its manifest-list digest.
+  - id: ghcr
+    cmd: cosign
+    args:
+      - sign
+      - ${artifact}@${digest}
+      - --yes
+    output: true
+
 changelog:
   use: git
   sort: asc
