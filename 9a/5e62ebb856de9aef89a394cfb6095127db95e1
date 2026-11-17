@@ -1,0 +1,27 @@
+deploy/install.sh
+  s_815aef767535ea::t_673f6ca354b4a2 1-452
+deploy/embed.go
+  s_815aef767535ea::t_81e05070cf5b32 1-12
+deploy/embed_test.go
+  s_815aef767535ea::t_86e9324d9cf403 1-56
+deploy/launchd/dev.hearth.agent.plist
+  s_815aef767535ea::t_5ebfcc4e98cf4b 1-30
+deploy/systemd/hearth-agent.service
+  s_815aef767535ea::t_06deac85bb59d8 1-26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9a5e62ebb856de9aef89a394cfb6095127db95e1",
+  "prompts": {},
+  "sessions": {
+    "s_815aef767535ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1866255a-7d59-4f07-869c-b29b78c7a98d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
