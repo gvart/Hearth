@@ -106,7 +106,48 @@ func ControlHandler(node *Node, log *slog.Logger) http.Handler {
 		}
 		writeJSON(w, out)
 	})
+	mux.HandleFunc("POST /v1/remove", func(w http.ResponseWriter, r *http.Request) {
+		var req memberRequest
+		if !readJSON(w, r, &req) {
+			return
+		}
+		n, err := node.RemoveMember(r.Context(), req.NodeID)
+		writeJSON(w, memberReply{Revoked: n, Error: wireErr(err)})
+	})
+	mux.HandleFunc("POST /v1/transfer-leadership", func(w http.ResponseWriter, r *http.Request) {
+		var req memberRequest
+		if !readJSON(w, r, &req) {
+			return
+		}
+		err := node.TransferLeadership(r.Context(), req.NodeID)
+		writeJSON(w, memberReply{Error: wireErr(err)})
+	})
 	return mux
+}
+
+// memberRequest names a hub for /v1/remove and /v1/transfer-leadership.
+type memberRequest struct {
+	NodeID string `json:"node_id"`
+}
+
+type memberReply struct {
+	Revoked int        `json:"revoked,omitempty"`
+	Error   *wireError `json:"error,omitempty"`
+}
+
+func readJSON(w http.ResponseWriter, r *http.Request, v any) bool {
+	if err := json.NewDecoder(io.LimitReader(r.Body, maxCommandSize)).Decode(v); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return false
+	}
+	return true
+}
+
+func wireErr(err error) *wireError {
+	if err == nil {
+		return nil
+	}
+	return toWireError(err)
 }
 
 // ServeControl serves ControlHandler on the control socket of dataDir (see
@@ -253,6 +294,40 @@ func (c *ControlClient) Apply(ctx context.Context, cmd store.Command) (store.Res
 		return store.Result{}, reply.Error.toError()
 	}
 	return reply.Result, nil
+}
+
+// RemoveMember removes hub id from the cluster through the hub's node (see
+// Node.RemoveMember) and returns how many certificates were revoked.
+func (c *ControlClient) RemoveMember(ctx context.Context, id string) (int, error) {
+	var reply memberReply
+	if err := c.post(ctx, "/v1/remove", memberRequest{NodeID: id}, &reply); err != nil {
+		return 0, err
+	}
+	if reply.Error != nil {
+		return 0, reply.Error.toError()
+	}
+	return reply.Revoked, nil
+}
+
+// TransferLeadership hands leadership to voter id, or to any voter when id is
+// empty, through the hub's node (see Node.TransferLeadership).
+func (c *ControlClient) TransferLeadership(ctx context.Context, id string) error {
+	var reply memberReply
+	if err := c.post(ctx, "/v1/transfer-leadership", memberRequest{NodeID: id}, &reply); err != nil {
+		return err
+	}
+	if reply.Error != nil {
+		return reply.Error.toError()
+	}
+	return nil
+}
+
+func (c *ControlClient) post(ctx context.Context, path string, body, out any) error {
+	b, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	return c.do(ctx, http.MethodPost, path, b, out)
 }
 
 func (c *ControlClient) do(ctx context.Context, method, path string, body []byte, out any) error {

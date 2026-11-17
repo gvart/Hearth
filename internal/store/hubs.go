@@ -4,8 +4,10 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 )
 
 // ErrUnavailable is returned by a replicated Applier that cannot reach a
@@ -44,6 +46,75 @@ func (r Hubs) AgentURLs(ctx context.Context) (map[string]string, error) {
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("list hub URLs: %w", err)
+	}
+	return out, nil
+}
+
+// RecordCert records the hub node certificate serial issued to nodeID. A
+// serial already recorded, revoked or not, is left as it is.
+func (r Hubs) RecordCert(ctx context.Context, serial, nodeID string) error {
+	if serial == "" || nodeID == "" {
+		return errors.New("record hub cert: serial and node ID are required")
+	}
+	if _, err := r.s.apply(ctx, RecordHubCert{Serial: serial, NodeID: nodeID}); err != nil {
+		return fmt.Errorf("record hub cert %s of %s: %w", serial, nodeID, err)
+	}
+	return nil
+}
+
+// RevokeCerts revokes every recorded, unrevoked certificate of hub nodeID at
+// now and returns how many it revoked.
+func (r Hubs) RevokeCerts(ctx context.Context, nodeID string, now time.Time) (int, error) {
+	res, err := r.s.apply(ctx, RevokeHubCerts{NodeID: nodeID, Now: toMillis(now)})
+	if err != nil {
+		return 0, fmt.Errorf("revoke certs of hub %s: %w", nodeID, err)
+	}
+	return res.Count, nil
+}
+
+// CheckCert returns ErrCertRevoked if the hub certificate with serial was
+// revoked. A serial that was never recorded is not an error: hub
+// certificates are refused by revocation, not admitted by a list.
+func (r Hubs) CheckCert(ctx context.Context, serial string) error {
+	var revoked bool
+	err := r.s.db.QueryRowContext(ctx,
+		`SELECT revoked_at IS NOT NULL FROM hub_certs WHERE serial = ?`, serial).Scan(&revoked)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return nil
+	case err != nil:
+		return fmt.Errorf("check hub cert %s: %w", serial, err)
+	case revoked:
+		return fmt.Errorf("check hub cert %s: %w", serial, ErrCertRevoked)
+	}
+	return nil
+}
+
+// HubCert is a recorded hub node certificate.
+type HubCert struct {
+	Serial  string
+	NodeID  string
+	Revoked bool
+}
+
+// Certs returns the certificates recorded for hub nodeID, ordered by serial.
+func (r Hubs) Certs(ctx context.Context, nodeID string) ([]HubCert, error) {
+	rows, err := r.s.db.QueryContext(ctx,
+		`SELECT serial, node_id, revoked_at IS NOT NULL FROM hub_certs WHERE node_id = ? ORDER BY serial`, nodeID)
+	if err != nil {
+		return nil, fmt.Errorf("list certs of hub %s: %w", nodeID, err)
+	}
+	defer rows.Close()
+	var out []HubCert
+	for rows.Next() {
+		var c HubCert
+		if err := rows.Scan(&c.Serial, &c.NodeID, &c.Revoked); err != nil {
+			return nil, fmt.Errorf("list certs of hub %s: %w", nodeID, err)
+		}
+		out = append(out, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list certs of hub %s: %w", nodeID, err)
 	}
 	return out, nil
 }

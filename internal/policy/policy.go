@@ -42,6 +42,12 @@ const (
 	ClusterJoin Action = "cluster.join"
 	// ClusterPromote makes a joined, caught-up hub a Raft voter.
 	ClusterPromote Action = "cluster.promote"
+	// ClusterRemove removes a hub from the Raft configuration and revokes
+	// its hub node certificates.
+	ClusterRemove Action = "cluster.remove"
+	// ClusterTransferLeadership asks the leader to hand leadership to
+	// another voter.
+	ClusterTransferLeadership Action = "cluster.transfer_leadership"
 )
 
 // Actor kinds.
@@ -86,6 +92,11 @@ var rules = map[Action]rule{
 	ClusterTokenCreate: {class: Dangerous, actors: []string{ActorAdmin}},
 	ClusterJoin:        {class: Dangerous, actors: []string{ActorJoinToken}},
 	ClusterPromote:     {class: Dangerous, actors: []string{ActorHub}},
+	// Removal changes the quorum and locks a hub out for good.
+	ClusterRemove: {class: Dangerous, actors: []string{ActorAdmin}},
+	// A transfer changes no state: the cluster elects the chosen voter, with
+	// a write pause no longer than an ordinary election.
+	ClusterTransferLeadership: {class: Safe, actors: []string{ActorAdmin}},
 }
 
 // ClassOf returns the class of a known action.

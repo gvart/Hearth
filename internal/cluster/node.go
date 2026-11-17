@@ -4,6 +4,7 @@ package cluster
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -121,6 +122,12 @@ type Node struct {
 
 	// applyObs is the ApplyObserver; see ObserveApplies.
 	applyObs atomic.Pointer[ApplyObserver]
+
+	// stream is the Raft transport's connection layer, cert this node's
+	// hub node certificate and members the removal bookkeeping (members.go).
+	stream  *tlsStream
+	cert    *x509.Certificate
+	members memberWatch
 }
 
 var _ store.Applier = (*Node)(nil)
@@ -187,10 +194,12 @@ func (n *Node) Start(ctx context.Context) error {
 	logger := hclog.FromStandardLogger(slog.NewLogLogger(n.log.Handler(), slog.LevelInfo),
 		&hclog.LoggerOptions{Name: "raft", Level: hclog.Info})
 
-	stream, err := listenTLS(ctx, n.cfg.Listen, n.cfg.Advertise, cert, n.cfg.CA)
+	n.cert = cert.Leaf
+	stream, err := listenTLS(ctx, n.cfg.Listen, n.cfg.Advertise, cert, n.cfg.CA, n.checkPeerCert)
 	if err != nil {
 		return fmt.Errorf("cluster: %w", err)
 	}
+	n.stream = stream
 	n.fwdHTTP = newForwardClient(n.cfg.CA, cert)
 	n.trans = raft.NewNetworkTransportWithLogger(stream, maxPool, dialTimeout, logger)
 	n.bolt, err = raftboltdb.NewBoltStore(filepath.Join(n.dir, boltFile))
@@ -236,6 +245,7 @@ func (n *Node) Start(ctx context.Context) error {
 	n.raft = r
 	n.fsm.raft.Store(r)
 	n.watchLeader()
+	n.watchMembers()
 	return nil
 }
 
@@ -285,6 +295,7 @@ func (n *Node) Shutdown() error {
 	n.raft.DeregisterObserver(n.obs)
 	close(n.stopObs)
 	<-n.obsDone
+	n.stopMembers()
 	n.closeStores()
 	n.fwdHTTP.CloseIdleConnections()
 	if err != nil {

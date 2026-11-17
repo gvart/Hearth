@@ -384,6 +384,183 @@ func (x *ForwardResponse) GetErrorMessage() string {
 	return ""
 }
 
+// RemoveMemberRequest names the hub to remove.
+type RemoveMemberRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// node_id is the Raft server ID of the hub to remove.
+	NodeId        string `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveMemberRequest) Reset() {
+	*x = RemoveMemberRequest{}
+	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveMemberRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveMemberRequest) ProtoMessage() {}
+
+func (x *RemoveMemberRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveMemberRequest.ProtoReflect.Descriptor instead.
+func (*RemoveMemberRequest) Descriptor() ([]byte, []int) {
+	return file_hearth_cluster_v1_cluster_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *RemoveMemberRequest) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+// RemoveMemberResponse is the outcome of a removal.
+type RemoveMemberResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// revoked is the number of hub node certificates revoked.
+	Revoked       int32 `protobuf:"varint,1,opt,name=revoked,proto3" json:"revoked,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveMemberResponse) Reset() {
+	*x = RemoveMemberResponse{}
+	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveMemberResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveMemberResponse) ProtoMessage() {}
+
+func (x *RemoveMemberResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveMemberResponse.ProtoReflect.Descriptor instead.
+func (*RemoveMemberResponse) Descriptor() ([]byte, []int) {
+	return file_hearth_cluster_v1_cluster_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *RemoveMemberResponse) GetRevoked() int32 {
+	if x != nil {
+		return x.Revoked
+	}
+	return 0
+}
+
+// TransferLeadershipRequest names the voter to hand leadership to.
+type TransferLeadershipRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// node_id is the voter to hand leadership to; empty lets the leader pick
+	// the most up-to-date one.
+	NodeId        string `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TransferLeadershipRequest) Reset() {
+	*x = TransferLeadershipRequest{}
+	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TransferLeadershipRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TransferLeadershipRequest) ProtoMessage() {}
+
+func (x *TransferLeadershipRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TransferLeadershipRequest.ProtoReflect.Descriptor instead.
+func (*TransferLeadershipRequest) Descriptor() ([]byte, []int) {
+	return file_hearth_cluster_v1_cluster_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *TransferLeadershipRequest) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+// TransferLeadershipResponse is empty: success means the leader handed
+// leadership over.
+type TransferLeadershipResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TransferLeadershipResponse) Reset() {
+	*x = TransferLeadershipResponse{}
+	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TransferLeadershipResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TransferLeadershipResponse) ProtoMessage() {}
+
+func (x *TransferLeadershipResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TransferLeadershipResponse.ProtoReflect.Descriptor instead.
+func (*TransferLeadershipResponse) Descriptor() ([]byte, []int) {
+	return file_hearth_cluster_v1_cluster_proto_rawDescGZIP(), []int{9}
+}
+
 var File_hearth_cluster_v1_cluster_proto protoreflect.FileDescriptor
 
 const file_hearth_cluster_v1_cluster_proto_rawDesc = "" +
@@ -411,11 +588,20 @@ const file_hearth_cluster_v1_cluster_proto_rawDesc = "" +
 	"\x06result\x18\x01 \x01(\fR\x06result\x12\x1d\n" +
 	"\n" +
 	"error_kind\x18\x02 \x01(\tR\terrorKind\x12#\n" +
-	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage2\xfd\x01\n" +
+	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage\".\n" +
+	"\x13RemoveMemberRequest\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"0\n" +
+	"\x14RemoveMemberResponse\x12\x18\n" +
+	"\arevoked\x18\x01 \x01(\x05R\arevoked\"4\n" +
+	"\x19TransferLeadershipRequest\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"\x1c\n" +
+	"\x1aTransferLeadershipResponse2\xd1\x03\n" +
 	"\x0eClusterService\x12G\n" +
 	"\x04Join\x12\x1e.hearth.cluster.v1.JoinRequest\x1a\x1f.hearth.cluster.v1.JoinResponse\x12P\n" +
 	"\aPromote\x12!.hearth.cluster.v1.PromoteRequest\x1a\".hearth.cluster.v1.PromoteResponse\x12P\n" +
-	"\aForward\x12!.hearth.cluster.v1.ForwardRequest\x1a\".hearth.cluster.v1.ForwardResponseB\xcf\x01\n" +
+	"\aForward\x12!.hearth.cluster.v1.ForwardRequest\x1a\".hearth.cluster.v1.ForwardResponse\x12_\n" +
+	"\fRemoveMember\x12&.hearth.cluster.v1.RemoveMemberRequest\x1a'.hearth.cluster.v1.RemoveMemberResponse\x12q\n" +
+	"\x12TransferLeadership\x12,.hearth.cluster.v1.TransferLeadershipRequest\x1a-.hearth.cluster.v1.TransferLeadershipResponseB\xcf\x01\n" +
 	"\x15com.hearth.cluster.v1B\fClusterProtoP\x01ZBgithub.com/gvart/hearth/internal/proto/hearth/cluster/v1;clusterv1\xa2\x02\x03HCX\xaa\x02\x11Hearth.Cluster.V1\xca\x02\x11Hearth\\Cluster\\V1\xe2\x02\x1dHearth\\Cluster\\V1\\GPBMetadata\xea\x02\x13Hearth::Cluster::V1b\x06proto3"
 
 var (
@@ -430,24 +616,32 @@ func file_hearth_cluster_v1_cluster_proto_rawDescGZIP() []byte {
 	return file_hearth_cluster_v1_cluster_proto_rawDescData
 }
 
-var file_hearth_cluster_v1_cluster_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_hearth_cluster_v1_cluster_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_hearth_cluster_v1_cluster_proto_goTypes = []any{
-	(*JoinRequest)(nil),     // 0: hearth.cluster.v1.JoinRequest
-	(*JoinResponse)(nil),    // 1: hearth.cluster.v1.JoinResponse
-	(*PromoteRequest)(nil),  // 2: hearth.cluster.v1.PromoteRequest
-	(*PromoteResponse)(nil), // 3: hearth.cluster.v1.PromoteResponse
-	(*ForwardRequest)(nil),  // 4: hearth.cluster.v1.ForwardRequest
-	(*ForwardResponse)(nil), // 5: hearth.cluster.v1.ForwardResponse
+	(*JoinRequest)(nil),                // 0: hearth.cluster.v1.JoinRequest
+	(*JoinResponse)(nil),               // 1: hearth.cluster.v1.JoinResponse
+	(*PromoteRequest)(nil),             // 2: hearth.cluster.v1.PromoteRequest
+	(*PromoteResponse)(nil),            // 3: hearth.cluster.v1.PromoteResponse
+	(*ForwardRequest)(nil),             // 4: hearth.cluster.v1.ForwardRequest
+	(*ForwardResponse)(nil),            // 5: hearth.cluster.v1.ForwardResponse
+	(*RemoveMemberRequest)(nil),        // 6: hearth.cluster.v1.RemoveMemberRequest
+	(*RemoveMemberResponse)(nil),       // 7: hearth.cluster.v1.RemoveMemberResponse
+	(*TransferLeadershipRequest)(nil),  // 8: hearth.cluster.v1.TransferLeadershipRequest
+	(*TransferLeadershipResponse)(nil), // 9: hearth.cluster.v1.TransferLeadershipResponse
 }
 var file_hearth_cluster_v1_cluster_proto_depIdxs = []int32{
 	0, // 0: hearth.cluster.v1.ClusterService.Join:input_type -> hearth.cluster.v1.JoinRequest
 	2, // 1: hearth.cluster.v1.ClusterService.Promote:input_type -> hearth.cluster.v1.PromoteRequest
 	4, // 2: hearth.cluster.v1.ClusterService.Forward:input_type -> hearth.cluster.v1.ForwardRequest
-	1, // 3: hearth.cluster.v1.ClusterService.Join:output_type -> hearth.cluster.v1.JoinResponse
-	3, // 4: hearth.cluster.v1.ClusterService.Promote:output_type -> hearth.cluster.v1.PromoteResponse
-	5, // 5: hearth.cluster.v1.ClusterService.Forward:output_type -> hearth.cluster.v1.ForwardResponse
-	3, // [3:6] is the sub-list for method output_type
-	0, // [0:3] is the sub-list for method input_type
+	6, // 3: hearth.cluster.v1.ClusterService.RemoveMember:input_type -> hearth.cluster.v1.RemoveMemberRequest
+	8, // 4: hearth.cluster.v1.ClusterService.TransferLeadership:input_type -> hearth.cluster.v1.TransferLeadershipRequest
+	1, // 5: hearth.cluster.v1.ClusterService.Join:output_type -> hearth.cluster.v1.JoinResponse
+	3, // 6: hearth.cluster.v1.ClusterService.Promote:output_type -> hearth.cluster.v1.PromoteResponse
+	5, // 7: hearth.cluster.v1.ClusterService.Forward:output_type -> hearth.cluster.v1.ForwardResponse
+	7, // 8: hearth.cluster.v1.ClusterService.RemoveMember:output_type -> hearth.cluster.v1.RemoveMemberResponse
+	9, // 9: hearth.cluster.v1.ClusterService.TransferLeadership:output_type -> hearth.cluster.v1.TransferLeadershipResponse
+	5, // [5:10] is the sub-list for method output_type
+	0, // [0:5] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
@@ -464,7 +658,7 @@ func file_hearth_cluster_v1_cluster_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_hearth_cluster_v1_cluster_proto_rawDesc), len(file_hearth_cluster_v1_cluster_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   6,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

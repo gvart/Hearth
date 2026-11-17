@@ -16,12 +16,131 @@ import (
 	"github.com/gvart/hearth/internal/cluster"
 	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/policy"
+	"github.com/gvart/hearth/internal/store"
 )
 
 func newClusterCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "cluster", Short: "Manage the hub's Raft cluster"}
-	cmd.AddCommand(newClusterTokenCmd(), newClusterStatusCmd())
+	cmd.AddCommand(newClusterTokenCmd(), newClusterStatusCmd(), newClusterRemoveCmd(), newClusterTransferCmd())
 	return cmd
+}
+
+func newClusterRemoveCmd() *cobra.Command {
+	var dataDir string
+	cmd := &cobra.Command{
+		Use:   "remove <node-id>",
+		Short: "Remove a hub from the cluster and revoke its certificates",
+		Long: "Remove a hub from the Raft configuration, so it no longer counts towards the majority, and revoke\n" +
+			"its hub node certificates, so it can no longer talk to the cluster. Run it on any member's host while\n" +
+			"its hub runs (a follower forwards it to the leader). The leader cannot be removed: run\n" +
+			"`hearth cluster transfer-leadership` first. The node ID can join again later with a new join token.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runClusterRemove(cmd.Context(), dataDir, args[0], cmd.OutOrStdout())
+		},
+	}
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir("hub"), "hub data directory (env HEARTH_DATA_DIR)")
+	return cmd
+}
+
+func runClusterRemove(ctx context.Context, dataDir, nodeID string, out io.Writer) error {
+	if err := cluster.ValidNodeID(nodeID); err != nil {
+		return err
+	}
+	st, cc, err := openClusterControl(ctx, dataDir)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+	defer cc.Close()
+	var revoked int
+	err = policy.New(st.Audit()).Do(ctx, policy.Request{
+		ActorKind: policy.ActorAdmin,
+		ActorID:   adminActor(),
+		Action:    policy.ClusterRemove,
+		Target:    nodeID,
+	}, func(ctx context.Context) error {
+		revoked, err = cc.RemoveMember(ctx, nodeID)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "Removed hub %s from the cluster and revoked %d hub certificate(s).\n", nodeID, revoked); err != nil {
+		return fmt.Errorf("write result: %w", err)
+	}
+	return nil
+}
+
+func newClusterTransferCmd() *cobra.Command {
+	var dataDir string
+	cmd := &cobra.Command{
+		Use:   "transfer-leadership [<node-id>]",
+		Short: "Hand cluster leadership to another voter",
+		Long: "Ask the leader to hand leadership to the given voter, or to the most up-to-date voter when none is\n" +
+			"given, and wait until it has. Run it on any member's host while its hub runs.",
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			to := ""
+			if len(args) == 1 {
+				to = args[0]
+			}
+			return runClusterTransfer(cmd.Context(), dataDir, to, cmd.OutOrStdout())
+		},
+	}
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir("hub"), "hub data directory (env HEARTH_DATA_DIR)")
+	return cmd
+}
+
+func runClusterTransfer(ctx context.Context, dataDir, to string, out io.Writer) error {
+	if to != "" {
+		if err := cluster.ValidNodeID(to); err != nil {
+			return err
+		}
+	}
+	st, cc, err := openClusterControl(ctx, dataDir)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+	defer cc.Close()
+	err = policy.New(st.Audit()).Do(ctx, policy.Request{
+		ActorKind: policy.ActorAdmin,
+		ActorID:   adminActor(),
+		Action:    policy.ClusterTransferLeadership,
+		Target:    to,
+	}, func(ctx context.Context) error {
+		return cc.TransferLeadership(ctx, to)
+	})
+	if err != nil {
+		return err
+	}
+	msg := "Leadership transferred."
+	if s, err := cc.Status(ctx); err == nil && s.LeaderID != "" {
+		msg = "Leadership transferred; the leader is now " + s.LeaderID + "."
+	}
+	if _, err := fmt.Fprintln(out, msg); err != nil {
+		return fmt.Errorf("write result: %w", err)
+	}
+	return nil
+}
+
+// openClusterControl opens the store of a cluster member's hub (for the
+// audit log) and a client of its control socket.
+func openClusterControl(ctx context.Context, dataDir string) (*store.Store, *cluster.ControlClient, error) {
+	if !cluster.IsMember(dataDir) {
+		return nil, nil, fmt.Errorf("%s is not a cluster member: this hub runs standalone", dataDir)
+	}
+	st, err := openHubStore(ctx, dataDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	cc, err := cluster.DialControl(dataDir)
+	if err != nil {
+		_ = st.Close()
+		return nil, nil, err
+	}
+	return st, cc, nil
 }
 
 func newClusterTokenCmd() *cobra.Command {

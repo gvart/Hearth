@@ -19,6 +19,15 @@ func TestClusterCommandsNeedAMember(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "--cluster") {
 		t.Errorf("token create: err = %v", err)
 	}
+	if err := runClusterRemove(t.Context(), dir, "hub-b", io.Discard); err == nil || !strings.Contains(err.Error(), "not a cluster member") {
+		t.Errorf("remove: err = %v", err)
+	}
+	if err := runClusterTransfer(t.Context(), dir, "", io.Discard); err == nil || !strings.Contains(err.Error(), "not a cluster member") {
+		t.Errorf("transfer-leadership: err = %v", err)
+	}
+	if err := runClusterRemove(t.Context(), dir, "Bad ID", io.Discard); err == nil || !strings.Contains(err.Error(), "invalid node ID") {
+		t.Errorf("remove with an invalid ID: err = %v", err)
+	}
 }
 
 func TestStandaloneHubIsNotClustered(t *testing.T) {

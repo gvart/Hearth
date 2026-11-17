@@ -21,6 +21,14 @@ service ClusterService {
   // node certificate. The write's policy decision and audit entry were made
   // on the hub that received the user's request; this is only replication.
   rpc Forward(ForwardRequest) returns (ForwardResponse);
+  // RemoveMember removes a hub from the Raft configuration and revokes its
+  // hub node certificates, on behalf of a member hub whose operator asked for
+  // it. Like Forward, the caller authenticates with its hub node certificate
+  // and the policy decision and audit entry were made on that hub.
+  rpc RemoveMember(RemoveMemberRequest) returns (RemoveMemberResponse);
+  // TransferLeadership hands leadership to another voter, on behalf of a
+  // member hub, authenticated and decided like RemoveMember.
+  rpc TransferLeadership(TransferLeadershipRequest) returns (TransferLeadershipResponse);
 }
 
 // JoinRequest describes the hub that wants to join.
@@ -79,3 +87,26 @@ message ForwardResponse {
   // error_message is set when applying the command failed.
   string error_message = 3;
 }
+
+// RemoveMemberRequest names the hub to remove.
+message RemoveMemberRequest {
+  // node_id is the Raft server ID of the hub to remove.
+  string node_id = 1;
+}
+
+// RemoveMemberResponse is the outcome of a removal.
+message RemoveMemberResponse {
+  // revoked is the number of hub node certificates revoked.
+  int32 revoked = 1;
+}
+
+// TransferLeadershipRequest names the voter to hand leadership to.
+message TransferLeadershipRequest {
+  // node_id is the voter to hand leadership to; empty lets the leader pick
+  // the most up-to-date one.
+  string node_id = 1;
+}
+
+// TransferLeadershipResponse is empty: success means the leader handed
+// leadership over.
+message TransferLeadershipResponse {}
