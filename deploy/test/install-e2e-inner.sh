@@ -81,6 +81,35 @@ grep -qi '^content-type: text/x-shellscript' /tmp/headers || fail "wrong content
 pass "GET /install.sh matches, text/x-shellscript"
 
 log "negatives"
+# A stub cosign: logs its argv and whether it runs next to the files it
+# names (install.sh deletes them on exit), then exits with STUB_COSIGN_EXIT.
+mkdir -p /tmp/cosign-bin
+cat >/tmp/cosign-bin/cosign <<'EOF'
+#!/bin/sh
+{
+  if [ -f checksums.txt ] && [ -f checksums.txt.sigstore.json ]; then echo files-here; else echo files-missing; fi
+  printf '%s\n' "$@"
+} >/tmp/cosign.args
+exit "${STUB_COSIGN_EXIT:-0}"
+EOF
+chmod +x /tmp/cosign-bin/cosign
+# What install.sh must run, one argument per line.
+cat >/tmp/cosign.want <<'EOF'
+verify-blob
+--bundle
+checksums.txt.sigstore.json
+--certificate-identity-regexp
+^https://github\.com/gvart/Hearth/\.github/workflows/release\.yml@refs/tags/v
+--certificate-oidc-issuer
+https://token.actions.githubusercontent.com
+checksums.txt
+EOF
+check_cosign_args() { # name
+  [ -f /tmp/cosign.args ] || fail "$1: cosign was not run"
+  tail -n +2 /tmp/cosign.args | diff /tmp/cosign.want - || fail "$1: cosign args differ"
+  [ "$(head -n 1 /tmp/cosign.args)" = files-here ] || fail "$1: cosign did not run next to checksums.txt and its bundle"
+  rm -f /tmp/cosign.args
+}
 mkdir -p /tmp/fakebin
 # shellcheck disable=SC2016 # the fake uname's own "$1"/"$@"
 printf '#!/bin/sh\ncase "$1" in -m) echo mips ;; *) exec /bin/uname "$@" ;; esac\n' >/tmp/fakebin/uname
@@ -90,6 +119,17 @@ expect_fail "unsupported arch" "unsupported architecture: mips" \
 expect_fail "checksum mismatch" "checksum mismatch" \
   env HEARTH_INSTALL_PREFIX=/tmp/neg HEARTH_TOKEN="$TOKEN" sh /deploy/install.sh --hub "$HUB" --version v0.0.0-bad
 [ ! -e /tmp/neg/usr/local/bin/hearth ] || fail "binary installed despite checksum mismatch"
+expect_fail "bad signature" "signature of checksums.txt does not verify" \
+  env PATH="/tmp/cosign-bin:$PATH" STUB_COSIGN_EXIT=1 HEARTH_INSTALL_PREFIX=/tmp/neg HEARTH_TOKEN="$TOKEN" \
+  sh /deploy/install.sh --hub "$HUB" --version v0.0.1-rc.1
+check_cosign_args "bad signature"
+! grep -q "downloading hearth_" <<<"$out" || fail "bad signature: downloaded the archive anyway"
+[ ! -e /tmp/neg/usr/local/bin/hearth ] || fail "binary installed despite a bad signature"
+expect_fail "unsigned release with cosign" "could not download .*/checksums.txt.sigstore.json" \
+  env PATH="/tmp/cosign-bin:$PATH" HEARTH_INSTALL_PREFIX=/tmp/neg HEARTH_TOKEN="$TOKEN" \
+  sh /deploy/install.sh --hub "$HUB"
+[ ! -e /tmp/cosign.args ] || fail "unsigned release with cosign: cosign ran without a bundle"
+[ ! -e /tmp/neg/usr/local/bin/hearth ] || fail "binary installed from an unsigned release"
 expect_fail "missing token" "pass HEARTH_TOKEN=<token>" \
   env HEARTH_INSTALL_PREFIX=/tmp/neg sh /deploy/install.sh --hub "$HUB"
 expect_fail "plain-http hub" "must be an https:// URL" \
@@ -150,6 +190,8 @@ if grep -v -e '^runuser ' -e '^sh -c ' -e '^sh -s -- ' /tmp/env-hits.log | grep 
 fi
 grep -q '^sh -s -- ' /tmp/env-hits.log || fail "environment scan never saw the installer's sh; is the scan working? $(sort -u /tmp/env-hits.log)"
 pass "token in no process's argv, in no child's environment, not in sudo's log ($(grep -c . /tmp/env-hits.log) env samples)"
+grep -q "cosign is not installed: the release signature was not checked, only SHA-256 (install cosign" /tmp/install1.log ||
+  fail "installer did not say the signature was not checked"
 grep -q "installed hearth v0.0.0-e2e" /tmp/install1.log || fail "latest release not resolved"
 [ -x /usr/local/bin/hearth ] || fail "binary not installed"
 [ -f "$DATA/agent.crt" ] || fail "join did not write agent.crt"
@@ -162,31 +204,36 @@ pass "installed in $((t_installed - t0)) ms; device online $((t_online - t0)) ms
 [ $((t_online - t0)) -lt 10000 ] || fail "device took longer than 10 s"
 cert_sum=$(sha256sum "$DATA/agent.crt")
 
-log "re-run (upgrade) with wget only, --from-hub, a spent token"
+log "re-run (upgrade) with wget only, --from-hub (no signature bundle there), cosign, a spent token"
 stop_agent
 mv /usr/bin/curl /usr/bin/curl.off
 ln -s /bin/busybox /usr/local/bin/wget
-sh /deploy/install.sh --from-hub --hub "$HUB" --token "$TOKEN" 2>&1 | tee /tmp/install2.log
+PATH="/tmp/cosign-bin:$PATH" sh /deploy/install.sh --from-hub --hub "$HUB" --token "$TOKEN" 2>&1 | tee /tmp/install2.log
 rm /usr/local/bin/wget
 mv /usr/bin/curl.off /usr/bin/curl
 grep -q "already enrolled" /tmp/install2.log || fail "re-run did not detect the identity"
 grep -q "a token is not needed for an upgrade" /tmp/install2.log || fail "re-run did not explain the token"
 grep -q "warning: --token exposes the token to other local users" /tmp/install2.log || fail "--token did not warn"
 ! grep -qF -- "$TOKEN" /tmp/install2.log || fail "installer echoed the token"
+grep -q "the hub has no checksums.txt.sigstore.json in its --assets-dir: the release signature was not checked" /tmp/install2.log ||
+  fail "--from-hub without a bundle did not say the signature was not checked"
+[ ! -e /tmp/cosign.args ] || fail "--from-hub: cosign ran without a bundle"
 [ "$cert_sum" = "$(sha256sum "$DATA/agent.crt")" ] || fail "identity changed on re-run"
 start_agent
 wait_for 10 device_online || fail "device not online after upgrade"
 [ "$(devices | grep -o '"id":' | wc -l)" = 1 ] || fail "re-run created another device: $(devices)"
 pass "identity kept, one device, online again"
 
-log "upgrade to a prerelease with --version v0.0.1-rc.1"
+log "upgrade to a signed prerelease with --version v0.0.1-rc.1, cosign verifying"
 stop_agent
-sh /deploy/install.sh --version v0.0.1-rc.1 | tee /tmp/install3.log
+PATH="/tmp/cosign-bin:$PATH" sh /deploy/install.sh --version v0.0.1-rc.1 | tee /tmp/install3.log
 grep -q "downloading hearth_0.0.1-rc.1_linux_" /tmp/install3.log || fail "prerelease asset not used"
+grep -q "signature OK" /tmp/install3.log || fail "signature not reported as checked"
+check_cosign_args "good signature"
 [ "$cert_sum" = "$(sha256sum "$DATA/agent.crt")" ] || fail "identity changed on prerelease upgrade"
 start_agent
 wait_for 10 device_online || fail "device not online after prerelease upgrade"
-pass "prerelease installed by tag, identity kept"
+pass "prerelease installed by tag after cosign verify-blob with the expected args, identity kept"
 
 log "--uninstall keeps data"
 stop_agent

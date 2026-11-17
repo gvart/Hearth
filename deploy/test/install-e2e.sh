@@ -3,7 +3,8 @@
 #
 # End-to-end test of deploy/install.sh in a Debian 12 container: builds a
 # linux binary for the Docker host's arch, packs it as a release archive with
-# checksums.txt (plus a release with a bad checksum), and runs
+# checksums.txt (plus a prerelease with a signature bundle and a release with a
+# bad checksum), and runs
 # install-e2e-inner.sh in the container against a real hub. Needs Docker and Go.
 set -euo pipefail
 
@@ -44,6 +45,10 @@ rc=0.0.1-rc.1
 mkdir -p "$work/srv/releases/v$rc"
 cp "$work/srv/releases/v$version/$asset" "$work/srv/releases/v$rc/hearth_${rc}_linux_${goarch}.tar.gz"
 sed "s/$asset/hearth_${rc}_linux_${goarch}.tar.gz/" "$work/srv/releases/v$version/checksums.txt" >"$work/srv/releases/v$rc/checksums.txt"
+# Only this release has a signature bundle. Its content does not matter: the
+# test puts a stub cosign on PATH, as a real Sigstore signature needs the
+# release workflow's OIDC identity.
+echo '{"stub": "sigstore bundle"}' >"$work/srv/releases/v$rc/checksums.txt.sigstore.json"
 
 bad=hearth_0.0.0-bad_linux_${goarch}.tar.gz
 cp "$work/srv/releases/v$version/$asset" "$work/srv/releases/v0.0.0-bad/$bad"

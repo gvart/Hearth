@@ -75,6 +75,13 @@ cosign verify-blob \
 sha256sum --check --ignore-missing checksums.txt
 ```
 
+The agent installer (`install.sh`) does the same when `cosign` is on its `PATH`: it checks the
+signature of `checksums.txt` before trusting any checksum in it, and installs nothing if the
+signature does not verify or the release has no bundle. Without cosign it says that the signature
+was not checked and relies on SHA-256 alone. With `--from-hub` the hub serves whatever its
+`--assets-dir` holds; put `checksums.txt.sigstore.json` there next to `checksums.txt` to have it
+checked, or the installer notes that it was skipped.
+
 The container image is signed by digest for every tag:
 
 ```sh

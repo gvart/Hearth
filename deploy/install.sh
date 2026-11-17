@@ -1,9 +1,10 @@
 #!/bin/sh
 # SPDX-License-Identifier: AGPL-3.0-only
 #
-# Hearth agent installer: downloads the hearth binary, verifies its SHA-256,
-# installs it to /usr/local/bin, enrolls this device with a hub and runs the
-# agent as a service (systemd on Linux, launchd on macOS).
+# Hearth agent installer: downloads the hearth binary, verifies its SHA-256
+# (and, when cosign is installed, the release's Sigstore signature), installs
+# it to /usr/local/bin, enrolls this device with a hub and runs the agent as a
+# service (systemd on Linux, launchd on macOS).
 #
 #   curl -fsSL http://<hub>:7080/install.sh | HEARTH_TOKEN=<token> sh -s -- --hub https://<hub>:7443
 #
@@ -28,6 +29,10 @@ set +x
 
 REPO=gvart/hearth
 HUB_HTTP_PORT=7080
+# Only the release workflow of gvart/Hearth, run for a v* tag, signs releases.
+COSIGN_IDENTITY_REGEXP='^https://github\.com/gvart/Hearth/\.github/workflows/release\.yml@refs/tags/v'
+COSIGN_OIDC_ISSUER=https://token.actions.githubusercontent.com
+COSIGN_INSTALL_URL=https://docs.sigstore.dev/cosign/system_config/installation/
 LAUNCHD_LABEL=dev.hearth.agent
 
 PREFIX=${HEARTH_INSTALL_PREFIX:-}
@@ -244,6 +249,32 @@ resolve_version() {
 	[ -n "$VERSION" ] || die "could not find the latest release tag; pass --version vX.Y.Z"
 }
 
+# verify_signature BASE checks the keyless Sigstore signature of
+# $TMP/checksums.txt against BASE/checksums.txt.sigstore.json when cosign is
+# installed, so that the SHA-256 checks below rest on a file the release
+# workflow signed. Without cosign it says so and leaves only the SHA-256 check.
+verify_signature() {
+	if ! command -v cosign >/dev/null 2>&1; then
+		say "cosign is not installed: the release signature was not checked, only SHA-256 (install cosign v3+ to check it: $COSIGN_INSTALL_URL)"
+		return
+	fi
+	if ! fetch "$1/checksums.txt.sigstore.json" "$TMP/checksums.txt.sigstore.json" 2>/dev/null; then
+		# A hub serves whatever its --assets-dir holds, which may be no bundle.
+		[ "$FROM_HUB" = 1 ] ||
+			die "could not download $1/checksums.txt.sigstore.json, the signature of checksums.txt; nothing was installed"
+		say "the hub has no checksums.txt.sigstore.json in its --assets-dir: the release signature was not checked, only SHA-256"
+		return
+	fi
+	say "verifying the signature of checksums.txt with cosign"
+	if ! out=$(cd "$TMP" && cosign verify-blob --bundle checksums.txt.sigstore.json \
+		--certificate-identity-regexp "$COSIGN_IDENTITY_REGEXP" \
+		--certificate-oidc-issuer "$COSIGN_OIDC_ISSUER" checksums.txt 2>&1); then
+		printf '%s\n' "$out" >&2
+		die "the signature of checksums.txt does not verify (not signed by the gvart/Hearth release workflow, or cosign is older than v3); nothing was installed"
+	fi
+	say "signature OK: checksums.txt was signed by the gvart/Hearth release workflow"
+}
+
 # download fetches and verifies the release archive, leaving the binary at $TMP/hearth.
 download() {
 	suffix=_${OS}_${ARCH}.tar.gz
@@ -267,6 +298,8 @@ download() {
 		fetch "$base/checksums.txt" "$TMP/checksums.txt" ||
 			die "could not download $base/checksums.txt (does release $VERSION exist?)"
 	fi
+
+	verify_signature "$base"
 
 	say "downloading $asset"
 	fetch "$base/$asset" "$TMP/$asset" || die "could not download $base/$asset"
