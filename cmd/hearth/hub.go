@@ -17,6 +17,7 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/gvart/hearth/internal/cluster"
 	"github.com/gvart/hearth/internal/hub"
 	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/policy"
@@ -32,6 +33,9 @@ type hubOptions struct {
 	// adminPassword is HEARTH_ADMIN_PASSWORD: it sets the admin password on a
 	// hub that has none yet.
 	adminPassword string
+	// joinTokenEnv is HEARTH_JOIN_TOKEN, the preferred way to pass --join-token.
+	joinTokenEnv string
+	cluster      clusterOptions
 }
 
 func newHubCmd() *cobra.Command {
@@ -45,10 +49,13 @@ func newHubCmd() *cobra.Command {
 			"--host names. The http-listen address serves the UI and API over plain HTTP, plus\n" +
 			"/install.sh, /download/ and the CA certificate at /ca.crt (see docs/https.md).\n\n" +
 			"If HEARTH_ADMIN_PASSWORD is set and no admin password is stored yet, it becomes the\n" +
-			"admin password. Otherwise use `hearth admin set-password`.",
+			"admin password. Otherwise use `hearth admin set-password`.\n\n" +
+			"Without cluster flags the hub runs standalone. --cluster forms a Raft cluster from this hub;\n" +
+			"--join adds this hub to an existing one (see docs/design/ha-hub.md).",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			opts.adminPassword = os.Getenv("HEARTH_ADMIN_PASSWORD")
+			opts.joinTokenEnv = os.Getenv("HEARTH_JOIN_TOKEN")
 			return runHub(cmd.Context(), opts, newLogger(cmd.ErrOrStderr()))
 		},
 	}
@@ -61,6 +68,7 @@ func newHubCmd() *cobra.Command {
 			"(default: this hostname, localhost, 127.0.0.1, ::1)")
 	cmd.Flags().StringVar(&opts.assetsDir, "assets-dir", "",
 		"directory of release archives and checksums.txt to serve at /download/ for `install.sh --from-hub`")
+	addClusterFlags(cmd, &opts.cluster)
 	return cmd
 }
 
@@ -73,17 +81,32 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if err := os.MkdirAll(opts.dataDir, 0o700); err != nil {
 		return fmt.Errorf("create data dir: %w", err)
 	}
-	st, err := store.Open(ctx, filepath.Join(opts.dataDir, dbFile))
-	if err != nil {
-		return err
+	// A Raft node that fails to apply a committed write stops the hub.
+	fatal := make(chan error, 1)
+	var (
+		st   *store.Store
+		ca   *pki.CA
+		node *cluster.Node
+		err  error
+	)
+	if opts.cluster.clustered(opts.dataDir) {
+		st, ca, node, err = startClusterNode(ctx, opts, log, func(err error) { fatal <- err })
+		if err != nil {
+			return err
+		}
+		defer st.Close()
+		defer func() { _ = node.Shutdown() }() // before the store closes
+	} else {
+		st, err = store.Open(ctx, filepath.Join(opts.dataDir, dbFile))
+		if err != nil {
+			return err
+		}
+		defer st.Close()
+		if ca, err = pki.LoadOrCreateCA(opts.dataDir, time.Now()); err != nil {
+			return err
+		}
 	}
-	defer st.Close()
-
 	now := time.Now()
-	ca, err := pki.LoadOrCreateCA(opts.dataDir, now)
-	if err != nil {
-		return err
-	}
 	hosts := opts.hosts
 	if len(hosts) == 0 {
 		hosts = []string{hostnameOr("localhost"), "localhost", "127.0.0.1", "::1"}
@@ -127,8 +150,17 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	uiMux := http.NewServeMux()
 	uiMux.Handle("/", webH)
 	uiMux.Handle("GET /api/v1/events", hub.EndOnStop(stopping, webH))
+	var tlsWeb http.Handler = uiMux
+	if node != nil {
+		// ClusterService is served over TLS only: Promote authenticates
+		// hubs by their client certificate.
+		m := http.NewServeMux()
+		m.Handle("/", uiMux)
+		m.Handle(cluster.NewJoinServer(node, st, ca, pol, log).Handler())
+		tlsWeb = m
+	}
 	agentSrv := &http.Server{
-		Handler:           hub.NewTLSHandler(cfg, uiMux),
+		Handler:           hub.NewTLSHandler(cfg, tlsWeb),
 		TLSConfig:         hub.TLSConfig(ca, serverCert),
 		ReadHeaderTimeout: 10 * time.Second,
 		ErrorLog:          errLog,
@@ -160,13 +192,33 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		return fmt.Errorf("listen on %s: %w", opts.httpListen, err)
 	}
 	fp := ca.Fingerprint()
-	log.InfoContext(ctx, "hub listening", "addr", agentLn.Addr().String(), "http_addr", webLn.Addr().String(),
-		"hosts", hosts, "data_dir", opts.dataDir, "ca_fingerprint", hex.EncodeToString(fp[:]))
+	logAttrs := []any{
+		"addr", agentLn.Addr().String(), "http_addr", webLn.Addr().String(),
+		"hosts", hosts, "data_dir", opts.dataDir, "ca_fingerprint", hex.EncodeToString(fp[:]),
+	}
+	if node != nil {
+		logAttrs = append(logAttrs, "node_id", node.ID(), "raft_addr", node.Addr())
+	}
+	log.InfoContext(ctx, "hub listening", logAttrs...)
 
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return reg.Run(gctx) })
 	g.Go(func() error { return serve(gctx, agentSrv, func() error { return agentSrv.ServeTLS(agentLn, "", "") }) })
 	g.Go(func() error { return serve(gctx, webSrv, func() error { return webSrv.Serve(webLn) }) })
+	if node != nil {
+		g.Go(func() error {
+			return cluster.ServeControl(gctx, filepath.Join(opts.dataDir, cluster.ControlSocket), node, log)
+		})
+		g.Go(func() error { return promoteUntilVoter(gctx, node, opts.dataDir, log) })
+		g.Go(func() error {
+			select {
+			case err := <-fatal:
+				return err
+			case <-gctx.Done():
+				return nil
+			}
+		})
+	}
 	err = g.Wait()
 	log.InfoContext(ctx, "hub stopped")
 	return err
@@ -212,6 +264,11 @@ func ensureAdminPassword(ctx context.Context, st *store.Store, pol *policy.Engin
 		return nil
 	}
 	if err := hub.SetAdminPassword(ctx, st, pol, "env:HEARTH_ADMIN_PASSWORD", opts.adminPassword); err != nil {
+		var nl *cluster.ErrNotLeader
+		if errors.As(err, &nl) {
+			log.WarnContext(ctx, "HEARTH_ADMIN_PASSWORD not applied: only the cluster leader can set it", "leader_id", nl.LeaderID)
+			return nil
+		}
 		return fmt.Errorf("set admin password from HEARTH_ADMIN_PASSWORD: %w", err)
 	}
 	log.InfoContext(ctx, "admin password set from HEARTH_ADMIN_PASSWORD")

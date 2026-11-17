@@ -3,11 +3,15 @@
 package main
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"os"
 	"os/user"
 	"path/filepath"
+
+	"github.com/gvart/hearth/internal/cluster"
+	"github.com/gvart/hearth/internal/store"
 )
 
 const (
@@ -52,4 +56,22 @@ func hostnameOr(fallback string) string {
 		return h
 	}
 	return fallback
+}
+
+// openHubStore opens the hub database for a CLI command on the hub host. On a
+// standalone hub it opens the file directly, as always. On a cluster member,
+// reads still come from the local file but writes go through the running
+// hub's control socket and so through Raft: writing the local file directly
+// would silently diverge from the other hubs.
+func openHubStore(ctx context.Context, dataDir string) (*store.Store, error) {
+	path := filepath.Join(dataDir, dbFile)
+	if !cluster.IsMember(dataDir) {
+		return store.Open(ctx, path)
+	}
+	cc, err := cluster.DialControl(dataDir)
+	if err != nil {
+		return nil, err
+	}
+	return store.Open(ctx, path, store.WithoutUpgrade(),
+		store.WithApplier(func(*store.Store) store.Applier { return cc }))
 }

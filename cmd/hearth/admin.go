@@ -17,7 +17,6 @@ import (
 
 	"github.com/gvart/hearth/internal/hub"
 	"github.com/gvart/hearth/internal/policy"
-	"github.com/gvart/hearth/internal/store"
 )
 
 func newAdminCmd() *cobra.Command {
@@ -53,7 +52,7 @@ func runAdminSetPassword(ctx context.Context, dataDir, password string, out io.W
 	if _, err := os.Stat(dbPath); err != nil {
 		return fmt.Errorf("open hub database: %w (has `hearth hub` been started with --data-dir %s?)", err, dataDir)
 	}
-	st, err := store.Open(ctx, dbPath)
+	st, err := openHubStore(ctx, dataDir)
 	if err != nil {
 		return err
 	}

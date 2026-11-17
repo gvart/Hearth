@@ -7,14 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/policy"
-	"github.com/gvart/hearth/internal/store"
 )
 
 type tokenCreateOptions struct {
@@ -60,7 +58,7 @@ func runTokenCreate(ctx context.Context, opts tokenCreateOptions, out io.Writer)
 	if err != nil {
 		return fmt.Errorf("%w (has `hearth hub` been started with --data-dir %s?)", err, opts.dataDir)
 	}
-	st, err := store.Open(ctx, filepath.Join(opts.dataDir, dbFile))
+	st, err := openHubStore(ctx, opts.dataDir)
 	if err != nil {
 		return err
 	}
