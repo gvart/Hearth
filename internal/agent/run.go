@@ -37,6 +37,10 @@ const (
 	defaultFactsInterval = 10 * time.Minute
 	// closeGrace is how long a closing stream waits for the hub to finish.
 	closeGrace = 2 * time.Second
+	// stableSession is how long a session must have lasted for its end to
+	// earn a quick reconnect. A hub that welcomes and then drops the agent
+	// at once gets the normal backoff instead of a fast loop.
+	stableSession = time.Second
 )
 
 // Config holds what Run needs.
@@ -60,8 +64,10 @@ type runner struct {
 // Run keeps the agent connected to its hub until ctx is canceled: it loads the
 // identity from cfg.DataDir, opens the mTLS stream, sends Hello with host facts,
 // then heartbeats at the interval the hub asks for. Lost or refused connections
-// are retried with exponential backoff; Run only returns early when the data
-// dir holds no usable identity. Cancellation returns nil.
+// are retried with exponential backoff; when an established session ends, the
+// first retry comes almost at once, as the hub is likely restarting. Run only
+// returns early when the data dir holds no usable identity. Cancellation
+// returns nil.
 func Run(ctx context.Context, cfg Config) error {
 	id, err := loadIdentity(cfg.DataDir)
 	if err != nil {
@@ -91,6 +97,7 @@ func Run(ctx context.Context, cfg Config) error {
 
 	b := newBackoff()
 	for {
+		started := time.Now()
 		welcomed, err := r.session(ctx)
 		tr.CloseIdleConnections()
 		if ctx.Err() != nil {
@@ -98,7 +105,7 @@ func Run(ctx context.Context, cfg Config) error {
 			return nil
 		}
 		if welcomed {
-			b.reset()
+			b.reset(time.Since(started) >= stableSession)
 		}
 		d := b.next()
 		log.WarnContext(ctx, "hub connection lost; reconnecting", "err", err, "retry_in", d.Round(time.Millisecond))
