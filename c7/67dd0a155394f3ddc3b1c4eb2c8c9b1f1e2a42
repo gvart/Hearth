@@ -18,6 +18,7 @@ internal/cluster/node.go
   s_815aef767535ea::t_d8597d26b9011f 7
   s_815aef767535ea::t_8912c0f47849b4 248
   s_815aef767535ea::t_df69619bd8af01 298
+  s_815aef767535ea::t_b782513cf8001e 125
 cmd/hearth/cluster.go
   s_815aef767535ea::t_4a0fa117621cff 19
   s_815aef767535ea::t_fff5f5e0b94d1e 24,28-144
@@ -60,6 +61,8 @@ internal/cluster/join.go
   s_815aef767535ea::t_696f372f6d4422 215
 internal/cluster/transport_test.go
   s_815aef767535ea::t_cdf79dbf8bb491 48,83,87-88,97
+internal/proto/hearth/cluster/v1/clusterv1connect/cluster.connect.go
+  s_815aef767535ea::t_b2eb4c1bb851d1 44-49,67-74,106-117,123-127,145-154,170-177,205-216,225-228,249-256
 ---
 {
   "schema_version": "authorship/3.0.0",
