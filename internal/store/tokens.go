@@ -5,8 +5,6 @@ package store
 import (
 	"context"
 	"crypto/sha256"
-	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -20,10 +18,10 @@ var (
 
 // Tokens is the repository for single-use enrollment tokens. Callers pass the
 // token secret; only its SHA-256 hash is ever stored.
-type Tokens struct{ db *sql.DB }
+type Tokens struct{ s *Store }
 
 // Tokens returns the token repository.
-func (s *Store) Tokens() Tokens { return Tokens{db: s.db} }
+func (s *Store) Tokens() Tokens { return Tokens{s: s} }
 
 // Create stores a new token that is valid until expiresAt.
 func (r Tokens) Create(ctx context.Context, secret string, labels map[string]string, expiresAt time.Time) error {
@@ -35,9 +33,7 @@ func (r Tokens) Create(ctx context.Context, secret string, labels map[string]str
 		return fmt.Errorf("create token: %w", err)
 	}
 	h := hashSecret(secret)
-	if _, err := r.db.ExecContext(ctx,
-		`INSERT INTO tokens (hash, labels, expires_at) VALUES (?, ?, ?)`,
-		h[:], l, toMillis(expiresAt)); err != nil {
+	if _, err := r.s.apply(ctx, CreateToken{Hash: h[:], Labels: l, ExpiresAt: toMillis(expiresAt)}); err != nil {
 		return fmt.Errorf("create token: %w", err)
 	}
 	return nil
@@ -48,46 +44,11 @@ func (r Tokens) Create(ctx context.Context, secret string, labels map[string]str
 // ErrNotFound, ErrTokenUsed or ErrTokenExpired when the token cannot be used.
 func (r Tokens) Consume(ctx context.Context, secret string, now time.Time) (map[string]string, error) {
 	h := hashSecret(secret)
-	nowMs := toMillis(now)
-	var labels string
-	err := r.db.QueryRowContext(ctx, `
-		UPDATE tokens SET used_at = ?
-		WHERE hash = ? AND used_at IS NULL AND expires_at > ?
-		RETURNING labels`, nowMs, h[:], nowMs).Scan(&labels)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("consume token: %w", r.whyUnusable(ctx, h[:], nowMs))
-	}
+	res, err := r.s.apply(ctx, ConsumeToken{Hash: h[:], Now: toMillis(now)})
 	if err != nil {
 		return nil, fmt.Errorf("consume token: %w", err)
 	}
-	var out map[string]string
-	if err := json.Unmarshal([]byte(labels), &out); err != nil {
-		return nil, fmt.Errorf("consume token: decode labels: %w", err)
-	}
-	return out, nil
-}
-
-// whyUnusable explains a failed Consume. It only classifies the error; the
-// atomic decision has already been made by the UPDATE.
-func (r Tokens) whyUnusable(ctx context.Context, hash []byte, nowMs int64) error {
-	var (
-		expiresAt int64
-		usedAt    sql.NullInt64
-	)
-	err := r.db.QueryRowContext(ctx, `SELECT expires_at, used_at FROM tokens WHERE hash = ?`, hash).
-		Scan(&expiresAt, &usedAt)
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
-		return ErrNotFound
-	case err != nil:
-		return err
-	case usedAt.Valid:
-		return ErrTokenUsed
-	case expiresAt <= nowMs:
-		return ErrTokenExpired
-	default:
-		return errors.New("token not consumed") // unreachable unless the row changed in between
-	}
+	return res.Labels, nil
 }
 
 func hashSecret(secret string) [sha256.Size]byte {

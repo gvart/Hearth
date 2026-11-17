@@ -1,0 +1,494 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package store
+
+import (
+	"bytes"
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"slices"
+	"strings"
+)
+
+// Command is a typed, serializable description of one store write. It carries
+// every non-deterministic input (timestamps, hashes, encoded JSON), so applying
+// the same sequence of commands to the same starting state yields the same
+// rows on every node. Commands are built by the repository methods; the set is
+// closed to this package.
+//
+// Timestamps are unix milliseconds (UTC), matching the schema. JSON documents
+// (facts, labels, detail) are carried as strings so they are stored byte for
+// byte as the caller passed them, whether applied directly or after a round
+// trip through EncodeCommand.
+type Command interface {
+	// Op is the command's stable name in its encoded form.
+	Op() string
+	// apply executes the command inside tx.
+	apply(ctx context.Context, tx *sql.Tx) (Result, error)
+}
+
+// Result is what applying a Command returns. Each command fills only the
+// fields documented on it; the rest stay zero.
+type Result struct {
+	// Device is the row written by a single-device command.
+	Device Device
+	// PrevStatus is the device's status before ReportFacts or MarkSeen.
+	PrevStatus string
+	// Devices are the rows changed by MarkOffline, ordered by ID.
+	Devices []Device
+	// Labels are the labels of the token consumed by ConsumeToken.
+	Labels map[string]string
+	// ID is the audit_log ID assigned by AppendAudit.
+	ID int64
+	// Count is the number of certificates revoked by RevokeDevice.
+	Count int
+}
+
+// UpsertDevice inserts a device or replaces every field but first_seen.
+type UpsertDevice struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Hostname  string `json:"hostname"`
+	OS        string `json:"os"`
+	Arch      string `json:"arch"`
+	Facts     string `json:"facts"`
+	Labels    string `json:"labels"`
+	FirstSeen int64  `json:"first_seen"`
+	LastSeen  int64  `json:"last_seen"`
+	Status    string `json:"status"`
+	// BootTime is nil when unknown.
+	BootTime *int64 `json:"boot_time,omitempty"`
+}
+
+// Op implements Command.
+func (UpsertDevice) Op() string { return "upsert_device" }
+
+func (c UpsertDevice) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO devices (id, name, hostname, os, arch, facts, labels, first_seen, last_seen, status, boot_time)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT (id) DO UPDATE SET
+			name = excluded.name, hostname = excluded.hostname, os = excluded.os,
+			arch = excluded.arch, facts = excluded.facts, labels = excluded.labels,
+			last_seen = excluded.last_seen, status = excluded.status, boot_time = excluded.boot_time`,
+		c.ID, c.Name, c.Hostname, c.OS, c.Arch, c.Facts, c.Labels,
+		c.FirstSeen, c.LastSeen, c.Status, nullInt(c.BootTime))
+	return Result{}, err
+}
+
+// ReportFacts records facts reported by a device and marks it online.
+// Result: Device, PrevStatus.
+type ReportFacts struct {
+	ID       string `json:"id"`
+	Hostname string `json:"hostname"`
+	OS       string `json:"os"`
+	Arch     string `json:"arch"`
+	Facts    string `json:"facts"`
+	Now      int64  `json:"now"`
+}
+
+// Op implements Command.
+func (ReportFacts) Op() string { return "report_facts" }
+
+func (c ReportFacts) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
+	return updateDevice(ctx, tx, c.ID,
+		`hostname = ?, os = ?, arch = ?, facts = ?, last_seen = ?, status = '`+StatusOnline+`'`,
+		c.Hostname, c.OS, c.Arch, c.Facts, c.Now)
+}
+
+// MarkSeen sets a device's last_seen and marks it online.
+// Result: Device, PrevStatus.
+type MarkSeen struct {
+	ID  string `json:"id"`
+	Now int64  `json:"now"`
+}
+
+// Op implements Command.
+func (MarkSeen) Op() string { return "mark_seen" }
+
+func (c MarkSeen) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
+	return updateDevice(ctx, tx, c.ID, `last_seen = ?, status = '`+StatusOnline+`'`, c.Now)
+}
+
+// updateDevice applies set to device id and returns the updated row and the
+// status it had before, or ErrNotFound.
+func updateDevice(ctx context.Context, tx *sql.Tx, id, set string, args ...any) (Result, error) {
+	var prev string
+	err := tx.QueryRowContext(ctx, `SELECT status FROM devices WHERE id = ?`, id).Scan(&prev)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Result{}, ErrNotFound
+	}
+	if err != nil {
+		return Result{}, err
+	}
+	// set is a constant from this file's callers; values are bound parameters.
+	row := tx.QueryRowContext(ctx, `UPDATE devices SET `+set+` WHERE id = ? RETURNING `+deviceColumns, //nolint:gosec // see above
+		append(args, id)...)
+	d, err := scanDevice(row)
+	if err != nil {
+		return Result{}, err
+	}
+	return Result{Device: d, PrevStatus: prev}, nil
+}
+
+// SetBootTime sets or clears a device's boot time. Result: Device.
+type SetBootTime struct {
+	ID string `json:"id"`
+	// BootTime is nil to clear it.
+	BootTime *int64 `json:"boot_time,omitempty"`
+}
+
+// Op implements Command.
+func (SetBootTime) Op() string { return "set_boot_time" }
+
+func (c SetBootTime) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
+	row := tx.QueryRowContext(ctx, `UPDATE devices SET boot_time = ? WHERE id = ? RETURNING `+deviceColumns,
+		nullInt(c.BootTime), c.ID)
+	d, err := scanDevice(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Result{}, ErrNotFound
+	}
+	if err != nil {
+		return Result{}, err
+	}
+	return Result{Device: d}, nil
+}
+
+// MarkOffline marks every online device last seen before Cutoff as offline.
+// Result: Devices.
+type MarkOffline struct {
+	Cutoff int64 `json:"cutoff"`
+}
+
+// Op implements Command.
+func (MarkOffline) Op() string { return "mark_offline" }
+
+func (c MarkOffline) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
+	rows, err := tx.QueryContext(ctx, `
+		UPDATE devices SET status = '`+StatusOffline+`'
+		WHERE status = '`+StatusOnline+`' AND last_seen < ?
+		RETURNING `+deviceColumns, c.Cutoff)
+	if err != nil {
+		return Result{}, err
+	}
+	defer rows.Close()
+	var out []Device
+	for rows.Next() {
+		d, err := scanDevice(rows)
+		if err != nil {
+			return Result{}, err
+		}
+		out = append(out, d)
+	}
+	if err := rows.Err(); err != nil {
+		return Result{}, err
+	}
+	slices.SortFunc(out, func(a, b Device) int { return strings.Compare(a.ID, b.ID) })
+	return Result{Devices: out}, nil
+}
+
+// CreateToken stores a single-use enrollment token by its SHA-256 hash.
+type CreateToken struct {
+	Hash      []byte `json:"hash"`
+	Labels    string `json:"labels"`
+	ExpiresAt int64  `json:"expires_at"`
+}
+
+// Op implements Command.
+func (CreateToken) Op() string { return "create_token" }
+
+func (c CreateToken) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
+	_, err := tx.ExecContext(ctx,
+		`INSERT INTO tokens (hash, labels, expires_at) VALUES (?, ?, ?)`, c.Hash, c.Labels, c.ExpiresAt)
+	return Result{}, err
+}
+
+// ConsumeToken marks a token used at Now if it is unused and unexpired. The
+// outcome is decided inside apply, so exactly one ConsumeToken per token wins
+// however often the log is replayed. Result: Labels. It fails with
+// ErrNotFound, ErrTokenUsed or ErrTokenExpired.
+type ConsumeToken struct {
+	Hash []byte `json:"hash"`
+	Now  int64  `json:"now"`
+}
+
+// Op implements Command.
+func (ConsumeToken) Op() string { return "consume_token" }
+
+func (c ConsumeToken) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
+	var labels string
+	err := tx.QueryRowContext(ctx, `
+		UPDATE tokens SET used_at = ?
+		WHERE hash = ? AND used_at IS NULL AND expires_at > ?
+		RETURNING labels`, c.Now, c.Hash, c.Now).Scan(&labels)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Result{}, whyUnusable(ctx, tx, c.Hash, c.Now)
+	}
+	if err != nil {
+		return Result{}, err
+	}
+	var out map[string]string
+	if err := json.Unmarshal([]byte(labels), &out); err != nil {
+		return Result{}, fmt.Errorf("decode labels: %w", err)
+	}
+	return Result{Labels: out}, nil
+}
+
+// whyUnusable explains a failed ConsumeToken. It only classifies the error;
+// the atomic decision has already been made by the UPDATE.
+func whyUnusable(ctx context.Context, tx *sql.Tx, hash []byte, nowMs int64) error {
+	var (
+		expiresAt int64
+		usedAt    sql.NullInt64
+	)
+	err := tx.QueryRowContext(ctx, `SELECT expires_at, used_at FROM tokens WHERE hash = ?`, hash).
+		Scan(&expiresAt, &usedAt)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return ErrNotFound
+	case err != nil:
+		return err
+	case usedAt.Valid:
+		return ErrTokenUsed
+	case expiresAt <= nowMs:
+		return ErrTokenExpired
+	default:
+		return errors.New("token not consumed") // unreachable: same transaction as the UPDATE
+	}
+}
+
+// CreateCert records a certificate issued to a device.
+type CreateCert struct {
+	Serial   string `json:"serial"`
+	DeviceID string `json:"device_id"`
+}
+
+// Op implements Command.
+func (CreateCert) Op() string { return "create_cert" }
+
+func (c CreateCert) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
+	_, err := tx.ExecContext(ctx, `INSERT INTO certs (serial, device_id) VALUES (?, ?)`, c.Serial, c.DeviceID)
+	return Result{}, err
+}
+
+// RevokeDevice revokes every unrevoked certificate of a device at Now.
+// Result: Count. It fails with ErrNotFound if the device has no certificates.
+type RevokeDevice struct {
+	DeviceID string `json:"device_id"`
+	Now      int64  `json:"now"`
+}
+
+// Op implements Command.
+func (RevokeDevice) Op() string { return "revoke_device" }
+
+func (c RevokeDevice) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
+	res, err := tx.ExecContext(ctx,
+		`UPDATE certs SET revoked_at = ? WHERE device_id = ? AND revoked_at IS NULL`, c.Now, c.DeviceID)
+	if err != nil {
+		return Result{}, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return Result{}, err
+	}
+	if n == 0 {
+		var exists bool
+		if err := tx.QueryRowContext(ctx,
+			`SELECT EXISTS (SELECT 1 FROM certs WHERE device_id = ?)`, c.DeviceID).Scan(&exists); err != nil {
+			return Result{}, err
+		}
+		if !exists {
+			return Result{}, ErrNotFound
+		}
+	}
+	return Result{Count: int(n)}, nil
+}
+
+// AppendAudit appends one audit log entry. IDs are assigned in apply order,
+// so every node that applies the same commands holds identical rows.
+// Result: ID.
+type AppendAudit struct {
+	TS        int64  `json:"ts"`
+	ActorKind string `json:"actor_kind"`
+	ActorID   string `json:"actor_id"`
+	Action    string `json:"action"`
+	Target    string `json:"target"`
+	Decision  string `json:"decision"`
+	Result    string `json:"result"`
+	Detail    string `json:"detail"`
+}
+
+// Op implements Command.
+func (AppendAudit) Op() string { return "append_audit" }
+
+func (c AppendAudit) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
+	res, err := tx.ExecContext(ctx, `
+		INSERT INTO audit_log (ts, actor_kind, actor_id, action, target, decision, result, detail)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		c.TS, c.ActorKind, c.ActorID, c.Action, c.Target, c.Decision, c.Result, c.Detail)
+	if err != nil {
+		return Result{}, err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return Result{}, err
+	}
+	return Result{ID: id}, nil
+}
+
+// SetPasswordHash sets the admin password hash and ends every session.
+type SetPasswordHash struct {
+	Hash string `json:"hash"`
+}
+
+// Op implements Command.
+func (SetPasswordHash) Op() string { return "set_password_hash" }
+
+func (c SetPasswordHash) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO admin (id, password_hash) VALUES (1, ?)
+		ON CONFLICT (id) DO UPDATE SET password_hash = excluded.password_hash`, c.Hash); err != nil {
+		return Result{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM sessions`); err != nil {
+		return Result{}, fmt.Errorf("end sessions: %w", err)
+	}
+	return Result{}, nil
+}
+
+// CreateSession prunes sessions expired at Now and stores a new one by its
+// SHA-256 hash.
+type CreateSession struct {
+	Hash      []byte `json:"hash"`
+	Now       int64  `json:"now"`
+	ExpiresAt int64  `json:"expires_at"`
+}
+
+// Op implements Command.
+func (CreateSession) Op() string { return "create_session" }
+
+func (c CreateSession) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM sessions WHERE expires_at <= ?`, c.Now); err != nil {
+		return Result{}, fmt.Errorf("prune: %w", err)
+	}
+	_, err := tx.ExecContext(ctx,
+		`INSERT INTO sessions (hash, created_at, expires_at) VALUES (?, ?, ?)`, c.Hash, c.Now, c.ExpiresAt)
+	return Result{}, err
+}
+
+// DeleteSession ends a session; an unknown session is not an error.
+type DeleteSession struct {
+	Hash []byte `json:"hash"`
+}
+
+// Op implements Command.
+func (DeleteSession) Op() string { return "delete_session" }
+
+func (c DeleteSession) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
+	_, err := tx.ExecContext(ctx, `DELETE FROM sessions WHERE hash = ?`, c.Hash)
+	return Result{}, err
+}
+
+func nullInt(v *int64) sql.NullInt64 {
+	if v == nil {
+		return sql.NullInt64{}
+	}
+	return sql.NullInt64{Int64: *v, Valid: true}
+}
+
+// commandVersion is the encoding version written by EncodeCommand. Bump it
+// (and keep decoding the old one) when a command's fields change meaning.
+const commandVersion = 1
+
+type envelope struct {
+	V   int             `json:"v"`
+	Op  string          `json:"op"`
+	Cmd json.RawMessage `json:"cmd"`
+}
+
+// EncodeCommand serializes cmd for a replicated log.
+func EncodeCommand(cmd Command) ([]byte, error) {
+	body, err := json.Marshal(cmd)
+	if err != nil {
+		return nil, fmt.Errorf("encode command %s: %w", cmd.Op(), err)
+	}
+	b, err := json.Marshal(envelope{V: commandVersion, Op: cmd.Op(), Cmd: body})
+	if err != nil {
+		return nil, fmt.Errorf("encode command %s: %w", cmd.Op(), err)
+	}
+	return b, nil
+}
+
+// DecodeCommand parses a command written by EncodeCommand. Unknown versions,
+// ops and fields are errors: a node must never silently drop part of a write
+// that other nodes applied in full.
+func DecodeCommand(b []byte) (Command, error) {
+	var env envelope
+	if err := strictUnmarshal(b, &env); err != nil {
+		return nil, fmt.Errorf("decode command: %w", err)
+	}
+	if env.V != commandVersion {
+		return nil, fmt.Errorf("decode command %s: unsupported version %d", env.Op, env.V)
+	}
+	var (
+		cmd Command
+		err error
+	)
+	switch env.Op {
+	case UpsertDevice{}.Op():
+		cmd, err = decodeAs[UpsertDevice](env.Cmd)
+	case ReportFacts{}.Op():
+		cmd, err = decodeAs[ReportFacts](env.Cmd)
+	case MarkSeen{}.Op():
+		cmd, err = decodeAs[MarkSeen](env.Cmd)
+	case SetBootTime{}.Op():
+		cmd, err = decodeAs[SetBootTime](env.Cmd)
+	case MarkOffline{}.Op():
+		cmd, err = decodeAs[MarkOffline](env.Cmd)
+	case CreateToken{}.Op():
+		cmd, err = decodeAs[CreateToken](env.Cmd)
+	case ConsumeToken{}.Op():
+		cmd, err = decodeAs[ConsumeToken](env.Cmd)
+	case CreateCert{}.Op():
+		cmd, err = decodeAs[CreateCert](env.Cmd)
+	case RevokeDevice{}.Op():
+		cmd, err = decodeAs[RevokeDevice](env.Cmd)
+	case AppendAudit{}.Op():
+		cmd, err = decodeAs[AppendAudit](env.Cmd)
+	case SetPasswordHash{}.Op():
+		cmd, err = decodeAs[SetPasswordHash](env.Cmd)
+	case CreateSession{}.Op():
+		cmd, err = decodeAs[CreateSession](env.Cmd)
+	case DeleteSession{}.Op():
+		cmd, err = decodeAs[DeleteSession](env.Cmd)
+	default:
+		return nil, fmt.Errorf("decode command: unknown op %q", env.Op)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("decode command %s: %w", env.Op, err)
+	}
+	return cmd, nil
+}
+
+func decodeAs[T Command](b []byte) (Command, error) {
+	var c T
+	if err := strictUnmarshal(b, &c); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+func strictUnmarshal(b []byte, v any) error {
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(v); err != nil {
+		return err
+	}
+	if dec.More() {
+		return errors.New("trailing data")
+	}
+	return nil
+}

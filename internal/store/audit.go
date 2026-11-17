@@ -4,7 +4,6 @@ package store
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,10 +26,10 @@ type AuditEntry struct {
 
 // Audit is the repository for the audit log. Append is the only write path:
 // there is no update or delete, and the schema rejects both.
-type Audit struct{ db *sql.DB }
+type Audit struct{ s *Store }
 
 // Audit returns the audit log repository.
-func (s *Store) Audit() Audit { return Audit{db: s.db} }
+func (s *Store) Audit() Audit { return Audit{s: s} }
 
 // Append writes e and returns its ID. A zero TS is set to the current time.
 func (r Audit) Append(ctx context.Context, e AuditEntry) (int64, error) {
@@ -47,18 +46,14 @@ func (r Audit) Append(ctx context.Context, e AuditEntry) (int64, error) {
 	if e.TS.IsZero() {
 		e.TS = time.Now()
 	}
-	res, err := r.db.ExecContext(ctx, `
-		INSERT INTO audit_log (ts, actor_kind, actor_id, action, target, decision, result, detail)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		toMillis(e.TS), e.ActorKind, e.ActorID, e.Action, e.Target, e.Decision, e.Result, string(detail))
+	res, err := r.s.apply(ctx, AppendAudit{
+		TS: toMillis(e.TS), ActorKind: e.ActorKind, ActorID: e.ActorID, Action: e.Action,
+		Target: e.Target, Decision: e.Decision, Result: e.Result, Detail: string(detail),
+	})
 	if err != nil {
 		return 0, fmt.Errorf("append audit %s: %w", e.Action, err)
 	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		return 0, fmt.Errorf("append audit %s: %w", e.Action, err)
-	}
-	return id, nil
+	return res.ID, nil
 }
 
 // List returns up to limit entries, newest first.
@@ -66,7 +61,7 @@ func (r Audit) List(ctx context.Context, limit int) ([]AuditEntry, error) {
 	if limit <= 0 {
 		return nil, errors.New("list audit: limit must be positive")
 	}
-	rows, err := r.db.QueryContext(ctx, `
+	rows, err := r.s.db.QueryContext(ctx, `
 		SELECT id, ts, actor_kind, actor_id, action, target, decision, result, detail
 		FROM audit_log ORDER BY id DESC LIMIT ?`, limit)
 	if err != nil {

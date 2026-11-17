@@ -155,3 +155,48 @@ Ship (a) first as a cheap win, then (b) with hashicorp/raft.
 5. UI failover: require a shared DNS name/VIP, or accept re-login on another hub.
 6. Raft log store: raft-boltdb, or a log table in SQLite.
 7. Cluster sizes: 3 and 5 voters only, or also non-voting read replicas.
+
+Resolved on 2026-11-17, except item 2: 1 → HA-D2, 3 → HA-D3, 4 → HA-D5, 5 → HA-D7, 6 → HA-D4,
+7 → HA-D6. Item 2 was not decided; HA-D1 goes straight to Raft.
+
+## Decisions (2026-11-17)
+
+- **HA-D1. Full Raft cluster** with hashicorp/raft. A single hub stays the default and behaves
+  exactly as today, as a cluster of one, with no new flags needed.
+- **HA-D2. The CA key is replicated to every voter**, each keeping it at 0600. CLAUDE.md's rule
+  "the hub CA key never leaves the hub data dir" becomes "never leaves a hub voter's data dir"
+  (CLAUDE.md is updated by a later PR).
+- **HA-D3. Agents stream to the leader only**; followers refuse and name the leader.
+- **HA-D4. Raft log store is raft-boltdb** (bbolt, pure Go). The FSM applies typed commands to the
+  local SQLite file.
+- **HA-D5. Presence:** only online/offline transitions and boot_time changes go through Raft;
+  last_seen is batched about every 30 s.
+- **HA-D6. 3 or 5 voters only**; no non-voting replicas yet.
+- **HA-D7. UI failover: sessions are replicated.** A shared DNS name keeps the login; a different
+  hostname means a new login (cookies are per host).
+- **HA-D8. Hub-to-hub traffic is Raft over mTLS using the hub CA.** Nodes join with
+  `hearth hub --join <peer>` plus a cluster join token.
+
+### HA-1: store commands (the FSM seam)
+
+Every write in `internal/store` goes through `Applier.Apply(ctx, Command) (Result, error)`. A
+`Command` is a typed value (`UpsertDevice`, `ReportFacts`, `MarkSeen`, `SetBootTime`,
+`MarkOffline`, `CreateToken`, `ConsumeToken`, `CreateCert`, `RevokeDevice`, `AppendAudit`,
+`SetPasswordHash`, `CreateSession`, `DeleteSession`) that carries every non-deterministic input:
+timestamps as unix milliseconds, secret hashes, and JSON documents as strings stored byte for byte.
+The default applier is `Store.ApplyLocal` (one local transaction); `store.WithApplier` lets the
+Raft layer wrap it without touching callers. Reads stay direct SQL.
+
+- Encoding: versioned JSON envelope `{"v":1,"op":"mark_seen","cmd":{...}}` via `EncodeCommand` /
+  `DecodeCommand`. Chosen over protobuf because the commands are internal to the hub, small and
+  low-rate (consensus cost dwarfs encoding), readable when debugging a Raft log, and need no
+  generated code. Decoding rejects unknown versions, ops and fields, so a node never silently drops
+  part of a write the others applied.
+- `ConsumeToken` decides used/expired/unknown inside apply, in the same transaction as the
+  `UPDATE`, so exactly one consume wins however often the log is replayed.
+- `AppendAudit` gets its ID from AUTOINCREMENT in apply order; a zero timestamp is filled in when
+  the command is built, never during apply.
+- `Store.Snapshot` writes a `VACUUM INTO` copy (in a 0700 temp dir next to the database) to the
+  writer; `Store.Restore` stages the incoming copy, checks it (`quick_check` plus a goose version)
+  and copies it into the live database in one transaction with SQLite's backup API, so the open
+  `*sql.DB` stays valid.
