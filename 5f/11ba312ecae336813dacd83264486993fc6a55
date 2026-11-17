@@ -1,0 +1,35 @@
+deploy/test/install-e2e.sh
+  s_815aef767535ea::t_119a011d26e0d0 55-57
+docs/tasks/T07-ui-shell.md
+  s_815aef767535ea::t_681cf33265a2d5 14
+deploy/install.sh
+  s_815aef767535ea::t_5030d408ebdff2 8-12
+  s_815aef767535ea::t_2a0e67df3131e2 26
+  s_815aef767535ea::t_9a87e169aaf927 139-149
+  s_815aef767535ea::t_3adb304936d152 448
+  s_815aef767535ea::t_0b243084352983 444
+  s_815aef767535ea::t_cb69782e2a6df7 55-60,64-65
+deploy/test/install-e2e-inner.sh
+  s_815aef767535ea::t_4e816149212a73 174
+  s_815aef767535ea::t_f24282a4d35a48 129-131,134-135
+  s_815aef767535ea::t_2e089b6bb074c5 89,91,93,96,98-107,109-111,114,120-124,140,144-149,152
+  s_815aef767535ea::t_a5df01da36f36b 169
+  s_815aef767535ea::t_12fde3aec6c4b5 151
+  s_815aef767535ea::t_6e5f66b970c149 35-36,38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5f11ba312ecae336813dacd83264486993fc6a55",
+  "prompts": {},
+  "sessions": {
+    "s_815aef767535ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1866255a-7d59-4f07-869c-b29b78c7a98d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
