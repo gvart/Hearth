@@ -46,7 +46,9 @@ Tagged releases (`vX.Y.Z`, with `-rc.N` tags marked as pre-releases) publish to
 
 - `hearth_<version>_<os>_<arch>.tar.gz` for linux (amd64, arm64, armv7) and darwin (amd64, arm64),
   `hearth_<version>_windows_amd64.zip` for Windows, each with the `hearth` binary at its root;
-- `checksums.txt` with the SHA-256 of every archive.
+- `checksums.txt` with the SHA-256 of every archive;
+- `checksums.txt.sigstore.json`, a keyless [cosign](https://github.com/sigstore/cosign) signature
+  bundle for `checksums.txt` (see [Verifying releases](#verifying-releases)).
 
 The hub also ships as a multi-arch (amd64, arm64) container image, distroless and non-root:
 
@@ -56,6 +58,30 @@ docker run -d --name hearth -p 7443:7443 -p 7080:7080 -v hearth:/var/lib/hearth 
 
 Port 7443 is for agents (mTLS), 7080 serves the web UI and API; hub state lives in `/var/lib/hearth`.
 `task release:snapshot` builds the same artifacts locally into `dist/` without publishing.
+
+### Verifying releases
+
+Release artifacts and images are signed keylessly with [Sigstore](https://www.sigstore.dev/) by
+this repository's release workflow. Any other signer fails verification. With
+[cosign](https://docs.sigstore.dev/cosign/system_config/installation/) v3 or later, first check
+the checksum file's signature, then check the archives against it:
+
+```sh
+cosign verify-blob \
+  --bundle checksums.txt.sigstore.json \
+  --certificate-identity-regexp '^https://github\.com/gvart/Hearth/\.github/workflows/release\.yml@refs/tags/v' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  checksums.txt
+sha256sum --check --ignore-missing checksums.txt
+```
+
+The container image is signed by digest for every tag:
+
+```sh
+cosign verify ghcr.io/gvart/hearth:<tag> \
+  --certificate-identity-regexp '^https://github\.com/gvart/Hearth/\.github/workflows/release\.yml@refs/tags/v' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
 
 ## Contributing
 
