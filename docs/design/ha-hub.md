@@ -326,9 +326,8 @@ Operator view: [../cluster.md](../cluster.md).
   (not the static UI) holds each request for up to 5 s and then answers 503 `catching_up`.
   `HEARTH_ADMIN_PASSWORD` is applied only after catching up, so a new member never replaces the
   cluster's password because its own copy is still empty.
-- **Not in HA-3.** Live SSE events on followers (they come from the leader's registry; a UI on a
-  follower sees the replicated state when it reloads; #27), member removal, and rolling schema upgrades
-  (#25).
+- **Not in HA-3.** Live SSE events on followers (added later, see "SSE on followers" below; #27),
+  member removal, and rolling schema upgrades (#25).
 
 ### HA-5: cluster failover end to end
 
@@ -373,3 +372,53 @@ serving the device 1.4–2.8 s, and the agent back after the quorum loss 3.4–6
 
 Not covered: live SSE on followers (#27), rolling schema upgrades (#25), member removal and
 revoking a removed hub's certificate (#29).
+
+### SSE on followers (#27)
+
+A UI open on a follower gets the same live device events as one on the leader. Events are published
+from the FSM apply, as section 3 ("SSE clients and sessions") proposed, but the leader keeps
+publishing from its own calls, so its behaviour, and a standalone hub's, is unchanged.
+
+- **Hook.** `Node.ObserveApplies(o cluster.ApplyObserver)` registers an observer with
+  `Applied(cmd store.Command, res store.Result, local bool)` and `Restored()`. The FSM calls `Applied`
+  after each successful apply (domain errors are not reported), on raft's apply goroutine, in log
+  order. `local` is true when this node proposed the entry: it is the leader of the entry's Raft term
+  when it applies it (only that term's leader appends its entries). A leader that steps down before
+  applying its own entry answers false, and its proposer got `ErrLeadershipLost` and published
+  nothing, so the entry is still published exactly once. `*hub.Registry` is the observer; the hub
+  registers it after the node starts, before it serves the API. It is a method rather than a
+  `Config` field because the registry needs the store, which is opened with the node's applier.
+- **Mapping** (`Registry.Applied`, for entries that are not local): `ReportFacts` and `MarkSeen` give
+  `device.online` if the device was not online and `device.updated` otherwise; `SetBootTime` gives
+  `device.updated`; `MarkOffline` and `MarkDevicesOffline` give `device.offline` per changed device;
+  `MarkSeenBatch` gives `device.updated` for each device whose last_seen it moved (the only case that
+  reads rows from the local store). `UpsertDevice` (enrollment), `RevokeDevice` and every other
+  command publish nothing, as on the leader. The payload is the stored row, the same JSON as an
+  `/api/v1/devices` item on that hub. Followers do not log these transitions; the leader logs those
+  it made. A leader's Heartbeat that brings a device online and changes its boot time publishes one
+  `device.online`; a follower publishes `device.online` then `device.updated` for the two entries.
+  The final state is the same.
+- **No duplicates, clean term changes.** On the leader every local entry is skipped, so nothing is
+  published twice. The source follows the log rather than a flag the registry flips: a new leader
+  publishes the tail of the previous term from the log while it catches up, then its own calls; an
+  old leader publishes from the log from the first entry of the next term. Known edge: a presence
+  write the old leader starts in the instant between losing leadership and ending its term (a sweep
+  or an online transition) is forwarded to the new leader and can be published twice on the old
+  leader, as the same event. The UI applies events idempotently, so that is harmless.
+- **Backpressure.** Publishing never blocks: the bus drops a subscriber whose 64-event buffer is full
+  (its SSE stream ends, EventSource reconnects and the UI refetches). The observer takes no registry
+  lock (the leader holds it while it waits for its own writes) and skips all work when nobody is
+  subscribed, so slow SSE clients cannot stall Raft.
+- **Snapshot restore.** A restore (a far-behind follower installing the leader's snapshot) makes no
+  `Applied` calls; `Restored` ends every subscription instead, so clients resync with a list call.
+  At start nobody is subscribed until the hub has caught up (the API waits for it), so the restored
+  snapshot and the replayed log publish nothing.
+- **last_seen lag.** A follower's last_seen trails the leader's by up to one batch (30 s, HA-D5):
+  the leader overlays its in-memory value, a follower only has the stored one. This is accepted. The
+  UI shows "now" for an online device and derives the online state from `status`, never from the age
+  of last_seen, so a follower does not show a device as stale.
+- **Tests.** `internal/hub/applied_test.go` (the mapping, local entries, standalone, restore);
+  `internal/cluster/events_test.go` on an in-process 3-hub cluster: `TestFollowerSSE` (online, updated
+  and offline over HTTPS SSE on a follower, in order, within bounds, payload equal to the list item,
+  exactly once on the leader), `TestSlowSubscriberDoesNotBlockApplies` and
+  `TestLeadershipChangeMidStream`.
