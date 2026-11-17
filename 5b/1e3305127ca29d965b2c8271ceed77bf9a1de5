@@ -1,0 +1,68 @@
+cmd/hearth/hub.go
+  s_815aef767535ea::t_9405f9f5be92cb 18,27-33,42-45,48,53-54,84-100,103-111,113-114,118-122,124-125,127-138,140,156-178,180
+  s_815aef767535ea::t_6e0e44c5c0813e 179
+internal/hub/registry.go
+  s_815aef767535ea::t_0affb106375ef4 1-204
+internal/hub/facts.go
+  s_815aef767535ea::t_332d6ac5d5abb0 1-78
+internal/hub/helpers_test.go
+  s_815aef767535ea::t_826e179795aa55 1-74
+cmd/hearth/common.go
+  s_815aef767535ea::t_9405f9f5be92cb 14-16
+cmd/hearth/admin_test.go
+  s_815aef767535ea::t_5e45ebe2d6fb6f 1-203
+internal/hub/registry_test.go
+  s_815aef767535ea::t_7f77ca1040049b 67-68
+  s_815aef767535ea::t_f570b03b9bb68d 1-66,69-229
+cmd/hearth/root.go
+  s_815aef767535ea::t_9405f9f5be92cb 18
+cmd/hearth/admin.go
+  s_815aef767535ea::t_6d71a50dbbd843 1-72,75-102
+  s_815aef767535ea::t_7f77ca1040049b 73-74
+internal/hub/api.go
+  s_815aef767535ea::t_2eeec787a1f503 145
+  s_815aef767535ea::t_81fabb017e616b 1-39,44-47,52-144,146-188,191-208,210-359
+  s_815aef767535ea::t_7f77ca1040049b 189-190,209
+  s_815aef767535ea::t_e4a77b4dc5036f 40-43,48-51
+internal/hub/agentstream_test.go
+  s_815aef767535ea::t_8dfad6bac4be9d 28-31
+  s_815aef767535ea::t_e8cc5c258ce9ba 86-89
+  s_815aef767535ea::t_7c13c91e839971 90
+internal/hub/api_test.go
+  s_815aef767535ea::t_7f77ca1040049b 44-64,71,80-85,88,94,105,108,123-125,170,324-325
+  s_815aef767535ea::t_42d3905a08d272 1-43,65-70,72-79,86-87,89-93,95-104,106-107,109-122,126-169,171-323,326-327
+internal/hub/password_test.go
+  s_815aef767535ea::t_c4db36a7b83166 14-16,24-32,34,75,81
+  s_815aef767535ea::t_c4b5416cd06ec0 1-13,17-23,33,35-74,76-80,82-101
+internal/hub/password.go
+  s_815aef767535ea::t_c4db36a7b83166 28-39,44-47,52,54,67-68,79,86-89,93
+  s_815aef767535ea::t_d7d7862b4eb5fd 1-27,40-43,48-51,53,55-66,69-78,80-85,90-92,94-104
+internal/hub/server.go
+  s_815aef767535ea::t_7c2f06a50c8ac7 29-32,40-44
+internal/hub/agentstream.go
+  s_815aef767535ea::t_7c2f06a50c8ac7 31,37-39,69-72,91-92,95-102
+internal/hub/sse_test.go
+  s_815aef767535ea::t_4c1c87af15bb73 1-124,126-177,179,187-212
+  s_815aef767535ea::t_2256100e67daae 178,180-186
+  s_815aef767535ea::t_7f77ca1040049b 125
+go.mod
+  s_815aef767535ea::t_88dbf6edbc28d8 9-11
+go.sum
+  s_815aef767535ea::t_ca479b75ccc8dd 40-41,48-49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5b1e3305127ca29d965b2c8271ceed77bf9a1de5",
+  "prompts": {},
+  "sessions": {
+    "s_815aef767535ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1866255a-7d59-4f07-869c-b29b78c7a98d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
