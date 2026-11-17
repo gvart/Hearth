@@ -15,6 +15,7 @@ import (
 
 	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/policy"
+	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
 	"github.com/gvart/hearth/internal/proto/hearth/agent/v1/agentv1connect"
 	"github.com/gvart/hearth/internal/store"
 )
@@ -65,10 +66,12 @@ func NewHandler(cfg Config) http.Handler {
 	if reg == nil {
 		reg = NewRegistry(RegistryConfig{Store: cfg.Store, Log: cfg.Log})
 	}
+	authority := reg.certAuthority(lead)
 	stream := NewAgentStream(cfg.Log, cfg.HeartbeatInterval, reg)
 	stream.leadership = lead
+	stream.certs, stream.authority = cfg.Store.Certs(), authority
 	path, h := agentv1connect.NewAgentServiceHandler(stream)
-	mux.Handle(path, requireClientCert(cfg.Store.Certs(), cfg.Log, reg.certAuthority(lead),
+	mux.Handle(path, requireClientCert(cfg.Store.Certs(), cfg.Log, authority,
 		EndOnStop(cfg.Stopping, reg.endOnStepDown(h))))
 	return mux
 }
@@ -184,8 +187,9 @@ type certChecker interface {
 
 // requireClientCert admits only requests with a verified client certificate
 // that the hub issued and has not revoked, and puts the device ID it carries
-// into the request context. The store is consulted on every request so
-// revocations by another process (the CLI) take effect immediately. A
+// and the certificate serial into the request context. The store is consulted
+// on every request so revocations by another process (the CLI) refuse the
+// next connect; AgentStream re-checks open streams on every heartbeat. A
 // certificate the store does not know or has revoked is rejected only when
 // authority returns nil; otherwise its error is the answer (see
 // Registry.certAuthority).
@@ -219,7 +223,8 @@ func requireClientCert(certs certChecker, log *slog.Logger, authority func() err
 		}
 		switch {
 		case errors.Is(err, store.ErrCertRevoked):
-			deny("certificate revoked", "device_id", deviceID, "serial", serial)
+			log.WarnContext(ctx, "agent rejected: certificate revoked", "device_id", deviceID, "serial", serial)
+			_ = errWriter.Write(w, r, certRejection(true))
 			return
 		case errors.Is(err, store.ErrNotFound):
 			deny("certificate unknown", "device_id", deviceID, "serial", serial)
@@ -229,8 +234,31 @@ func requireClientCert(certs certChecker, log *slog.Logger, authority func() err
 			_ = errWriter.Write(w, r, connect.NewError(connect.CodeUnavailable, errors.New("cannot check certificate")))
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(withDeviceID(ctx, deviceID)))
+		next.ServeHTTP(w, r.WithContext(context.WithValue(withDeviceID(ctx, deviceID), serialKey{}, serial)))
 	})
+}
+
+// certRejection is the error for a client certificate this hub has judged
+// revoked (revoked true) or does not know. Both are Unauthenticated; a
+// revocation also carries the CertificateRevoked detail, on which the agent
+// stops instead of retrying.
+func certRejection(revoked bool) error {
+	if !revoked {
+		return connect.NewError(connect.CodeUnauthenticated, errors.New("certificate unknown"))
+	}
+	err := connect.NewError(connect.CodeUnauthenticated, errors.New("certificate revoked"))
+	if d, derr := connect.NewErrorDetail(&agentv1.CertificateRevoked{}); derr == nil {
+		err.AddDetail(d)
+	}
+	return err
+}
+
+type serialKey struct{}
+
+// serialFrom returns the client certificate serial set by requireClientCert.
+func serialFrom(ctx context.Context) (string, bool) {
+	s, ok := ctx.Value(serialKey{}).(string)
+	return s, ok && s != ""
 }
 
 type deviceIDKey struct{}

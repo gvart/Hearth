@@ -16,6 +16,7 @@ import (
 
 	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
 	"github.com/gvart/hearth/internal/proto/hearth/agent/v1/agentv1connect"
+	"github.com/gvart/hearth/internal/store"
 )
 
 // ProtocolMajor is the agent protocol major version this hub speaks.
@@ -31,13 +32,22 @@ type AgentStream struct {
 	registry          *Registry
 	leadership        Leadership
 	now               func() time.Time
+	// certs, when set, re-checks each stream's client certificate on every
+	// heartbeat, so a revocation (also one written by the CLI in another
+	// process) ends a live stream within one heartbeat interval. authority
+	// gates that judgement exactly as in requireClientCert.
+	certs     certChecker
+	authority func() error
 }
 
 var _ agentv1connect.AgentServiceHandler = (*AgentStream)(nil)
 
 // NewAgentStream returns an AgentService handler that reports to reg.
 func NewAgentStream(log *slog.Logger, heartbeatInterval time.Duration, reg *Registry) *AgentStream {
-	return &AgentStream{log: log, heartbeatInterval: heartbeatInterval, registry: reg, leadership: soloLeadership{}, now: time.Now}
+	return &AgentStream{
+		log: log, heartbeatInterval: heartbeatInterval, registry: reg, leadership: soloLeadership{}, now: time.Now,
+		authority: func() error { return nil },
+	}
 }
 
 // Connect serves one agent stream: it requires a Hello first, checks the protocol
@@ -114,6 +124,9 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 		switch p := msg.GetPayload().(type) {
 		case *agentv1.AgentMessage_Heartbeat:
 			log.DebugContext(ctx, "heartbeat")
+			if err := s.recheckCert(ctx, log, deviceID); err != nil {
+				return err
+			}
 			if err := s.registry.Heartbeat(ctx, deviceID, p.Heartbeat.GetUptime().AsDuration()); err != nil {
 				log.WarnContext(ctx, "record heartbeat", "err", err)
 			}
@@ -128,4 +141,79 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 			// Metrics and exec results are handled by later tasks.
 		}
 	}
+}
+
+// recheckCert re-runs the client certificate check of requireClientCert on an
+// open stream. If the certificate is now revoked or unknown, and this hub can
+// vouch for its store (authority returns nil: standalone, or the cluster
+// leader within its term), it marks the device offline and returns the error
+// that ends the stream. A hub that cannot vouch, or a failed lookup, keeps
+// the stream: a follower or a hub catching up must not kick agents on stale
+// data, and the next heartbeat checks again.
+func (s *AgentStream) recheckCert(ctx context.Context, log *slog.Logger, deviceID string) error {
+	serial, ok := serialFrom(ctx)
+	if s.certs == nil || !ok {
+		return nil
+	}
+	err := s.certs.Check(ctx, serial, deviceID)
+	revoked := errors.Is(err, store.ErrCertRevoked)
+	switch {
+	case err == nil:
+		return nil
+	case !revoked && !errors.Is(err, store.ErrNotFound):
+		log.WarnContext(ctx, "recheck client certificate", "err", err)
+		return nil
+	case s.authority() != nil:
+		return nil
+	}
+	reason := "certificate unknown"
+	if revoked {
+		reason = "certificate revoked"
+	}
+	log.InfoContext(ctx, "agent stream ended: "+reason)
+	if err := s.registry.markOffline(ctx, deviceID); err != nil {
+		log.WarnContext(ctx, "mark device offline", "err", err)
+	}
+	return certRejection(revoked)
+}
+
+// markOffline marks one online device offline now and publishes
+// device.offline, the transition Sweep makes for a silent device: the same
+// MarkDevicesOffline command a clustered leader's sweep writes, the same
+// cleanup of its presence memory, the same event. Only a standalone hub or a
+// clustered leader (which holds presence memory) writes; elsewhere it does
+// nothing. It lives here rather than in registry.go only to keep this change
+// apart from concurrent registry work; it belongs next to Sweep.
+func (r *Registry) markOffline(ctx context.Context, deviceID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.replicated {
+		r.liveMu.Lock()
+		leading := r.seen != nil
+		_, dirty := r.dirty[deviceID]
+		r.liveMu.Unlock()
+		if !leading {
+			return nil
+		}
+		if dirty {
+			if err := r.flushLocked(ctx); err != nil {
+				return err
+			}
+		}
+	}
+	devs, err := r.devices.MarkDevicesOffline(ctx, []string{deviceID})
+	if err != nil {
+		return err
+	}
+	if r.replicated {
+		r.liveMu.Lock()
+		for _, d := range devs {
+			delete(r.seen, d.ID)
+		}
+		r.liveMu.Unlock()
+	}
+	for _, d := range devs {
+		r.publish(ctx, Event{Type: EventDeviceOffline, Device: d})
+	}
+	return nil
 }
