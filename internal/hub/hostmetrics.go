@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log/slog"
 	"math"
+	"net/http"
 	"time"
 
 	"github.com/gvart/hearth/internal/metrics"
@@ -45,6 +46,20 @@ func (a *api) builtinCharts(ctx context.Context, out *MetricsJSON, deviceID stri
 	if err != nil {
 		return err
 	}
+	out.Charts = append(out.Charts, builtinChartList(series)...)
+	out.Start, out.End = start.UnixMilli(), end.UnixMilli()
+	out.Status = metricsOK
+	if len(out.Charts) == 0 {
+		out.Status = metricsNoData
+		out.Message = "no metrics from this device in this range yet; an older agent sends none"
+	}
+	return nil
+}
+
+// builtinChartList is series as charts, in chart order, leaving out metrics
+// with no points.
+func builtinChartList(series map[string][]metrics.Point) []ChartJSON {
+	out := []ChartJSON{}
 	for _, k := range metrics.Known {
 		pts := series[k.Key]
 		if len(pts) == 0 {
@@ -54,15 +69,57 @@ func (a *api) builtinCharts(ctx context.Context, out *MetricsJSON, deviceID stri
 		for _, p := range pts {
 			c.Points = append(c.Points, [2]float64{float64(p.T.UnixMilli()), p.V})
 		}
-		out.Charts = append(out.Charts, c)
+		out = append(out, c)
 	}
-	out.Start, out.End = start.UnixMilli(), end.UnixMilli()
-	out.Status = metricsOK
-	if len(out.Charts) == 0 {
-		out.Status = metricsNoData
-		out.Message = "no metrics from this device in this range yet; an older agent sends none"
+	return out
+}
+
+const (
+	// sparklineWindow is the time a device list sparkline spans.
+	sparklineWindow = time.Hour
+	// sparklineStep gives a sparkline 30 points, read from one-minute rollups.
+	sparklineStep = 2 * time.Minute
+)
+
+// SparklinesJSON is the body of GET /metrics/sparklines.
+type SparklinesJSON struct {
+	// Start and End bound the sparklines, in unix milliseconds.
+	Start int64 `json:"start"`
+	End   int64 `json:"end"`
+	// Devices holds the charts of each device with recent metrics, by ID.
+	Devices map[string][]ChartJSON `json:"devices"`
+}
+
+// metricsSparklines serves the last hour of every device's built-in metrics,
+// coarsely, so the device list draws its sparklines from one request. It never
+// reads Prometheus, which would cost a remote query per device per refresh.
+func (a *api) metricsSparklines(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	end := a.now()
+	start := end.Add(-sparklineWindow)
+	out := SparklinesJSON{Start: start.UnixMilli(), End: end.UnixMilli(), Devices: map[string][]ChartJSON{}}
+	if a.metrics == nil {
+		writeJSON(w, http.StatusOK, out)
+		return
 	}
-	return nil
+	devices, err := a.store.Devices().List(ctx)
+	if err != nil {
+		a.log.ErrorContext(ctx, "list devices", "err", err)
+		writeError(w, http.StatusInternalServerError, "internal", "cannot list devices")
+		return
+	}
+	for _, d := range devices {
+		series, err := a.metrics.Query(ctx, d.ID, nil, start, end, sparklineStep)
+		if err != nil {
+			a.log.ErrorContext(ctx, "read metrics", "device_id", d.ID, "err", err)
+			writeError(w, http.StatusInternalServerError, "internal", "cannot read metrics")
+			return
+		}
+		if charts := builtinChartList(series); len(charts) > 0 {
+			out.Devices[d.ID] = charts
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // latestMaxAge is how old the newest sample may be for the metric trigger to

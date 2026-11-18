@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import type { Device } from '../api/client.ts';
-import { useDevices } from '../api/hooks.ts';
+import { useDevices, useMetricsSparklines } from '../api/hooks.ts';
 import { displayName, formatUptime, osArch, primaryIP, relativeTime, statusLabel } from '../format.ts';
 import { AddDeviceDialog } from './AddDeviceDialog.tsx';
 import { DeviceDrawer } from './DeviceDrawer.tsx';
+import { DeviceSparklines } from './DeviceSparklines.tsx';
 import { StatusDot } from './StatusDot.tsx';
 import { UnmanagedHosts } from './UnmanagedHosts.tsx';
 
@@ -29,6 +30,7 @@ function useNow(intervalMs: number) {
 
 export function DevicesPage() {
   const devices = useDevices();
+  const sparklines = useMetricsSparklines();
   const now = useNow(1_000); // uptime ticks in seconds
   const [selectedId, setSelectedId] = useState<string>();
   const [adding, setAdding] = useState(false);
@@ -89,6 +91,7 @@ export function DevicesPage() {
                   <th>IP</th>
                   <th>Last seen</th>
                   <th>Uptime</th>
+                  <th className="spark-col">Last hour</th>
                 </tr>
               </thead>
               <tbody>
@@ -121,6 +124,13 @@ export function DevicesPage() {
                       {d.status === 'online' ? 'now' : d.status === 'unknown' ? '—' : relativeTime(d.last_seen, now)}
                     </td>
                     <td className="muted uptime">{formatUptime(d, now)}</td>
+                    <td className="spark-col">
+                      <DeviceSparklines
+                        charts={sparklines.data?.devices[d.id]}
+                        start={sparklines.data?.start ?? 0}
+                        end={sparklines.data?.end ?? 0}
+                      />
+                    </td>
                   </tr>
                 ))}
               </tbody>

@@ -93,6 +93,18 @@ export interface DeviceMetrics {
   charts: MetricChart[];
 }
 
+/** A range the device charts offer, as the hub parses it. */
+export type MetricsRange = '1h' | '24h' | '168h';
+
+/** The last hour of every device's built-in metrics; see GET /api/v1/metrics/sparklines. */
+export interface MetricsSparklines {
+  /** The range in unix milliseconds. */
+  start: number;
+  end: number;
+  /** Charts by device ID; devices without recent metrics are absent. */
+  devices: Record<string, MetricChart[] | undefined>;
+}
+
 export type DeviceEventType = 'device.online' | 'device.offline' | 'device.updated';
 
 export interface DeviceEvent {
@@ -368,8 +380,9 @@ export const api = {
   },
   devices: async () => (await request<{ devices: Device[] }>('GET', '/devices')).devices,
   networkHosts: async () => (await request<{ hosts: NetworkHost[] }>('GET', '/network/hosts')).hosts,
-  deviceMetrics: (id: string, range = '1h') =>
+  deviceMetrics: (id: string, range: MetricsRange = '1h') =>
     request<DeviceMetrics>('GET', `/devices/${encodeURIComponent(id)}/metrics?range=${encodeURIComponent(range)}`),
+  metricsSparklines: () => request<MetricsSparklines>('GET', '/metrics/sparklines'),
   tlsInfo: () => request<TlsInfo>('GET', '/tls'),
   createToken: (opts: { ttl?: string; labels?: Record<string, string> } = {}) =>
     request<CreatedToken>('POST', '/tokens', opts),

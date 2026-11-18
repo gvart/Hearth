@@ -1,4 +1,4 @@
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 import {
   api,
@@ -16,6 +16,7 @@ import {
   type KubePod,
   type KubeSnapshot,
   type KubeWorkload,
+  type MetricsRange,
   type NetworkHostState,
 } from './client.ts';
 
@@ -24,7 +25,8 @@ export const keys = {
   devices: ['devices'] as const,
   networkHosts: ['network', 'hosts'] as const,
   tls: ['tls'] as const,
-  metrics: (id: string) => ['metrics', id] as const,
+  metrics: (id: string, range: MetricsRange) => ['metrics', id, range] as const,
+  metricsSparklines: ['metrics-sparklines'] as const,
   kubeClusters: ['kube', 'clusters'] as const,
   kubeCluster: (id: string) => ['kube', 'cluster', id] as const,
   notifyChannels: ['notify', 'channels'] as const,
@@ -36,7 +38,12 @@ export const keys = {
 /** Approvals change on other hubs and in automations, so they are polled. */
 const approvalsRefreshMs = 5000;
 
-const metricsRefreshMs = 30_000;
+/**
+ * How often metrics are refetched, and how long a fetched answer counts as
+ * fresh so that a remount or window focus cannot refetch sooner: agents send a
+ * sample every 15 s, so polling faster would show nothing new.
+ */
+const metricsRefreshMs = 15_000;
 
 const networkHostsRefreshMs = 60_000;
 
@@ -105,12 +112,24 @@ export function useTlsInfo(enabled: boolean) {
   return useQuery({ queryKey: keys.tls, queryFn: api.tlsInfo, staleTime: Infinity, enabled });
 }
 
-/** A device's chart series, refreshed while mounted. */
-export function useDeviceMetrics(id: string) {
+/** A device's chart series over range, refreshed while mounted; the last range stays up while the next loads. */
+export function useDeviceMetrics(id: string, range: MetricsRange) {
   return useQuery({
-    queryKey: keys.metrics(id),
-    queryFn: () => api.deviceMetrics(id),
+    queryKey: keys.metrics(id, range),
+    queryFn: () => api.deviceMetrics(id, range),
     refetchInterval: metricsRefreshMs,
+    staleTime: metricsRefreshMs,
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** Every device's sparklines from one request, refreshed while mounted. */
+export function useMetricsSparklines() {
+  return useQuery({
+    queryKey: keys.metricsSparklines,
+    queryFn: api.metricsSparklines,
+    refetchInterval: metricsRefreshMs,
+    staleTime: metricsRefreshMs,
   });
 }
 
