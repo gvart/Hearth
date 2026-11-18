@@ -9,8 +9,10 @@ internal/store/command_test.go
   s_344993999c180f::t_c01208c201241d 70-73
 internal/hub/network.go
   s_344993999c180f::t_59658a0f453484 32-35,39-42
+  s_344993999c180f::t_0e499a98995dad 46
 docs/discovery.md
   s_344993999c180f::t_aff17dc6a09222 57-59
+  s_344993999c180f::t_0e499a98995dad 146-147
 cmd/hearth/hub_import.go
   s_344993999c180f::t_5e133207d0149b 1-67
 cmd/hearth/hub_import_test.go
@@ -40,6 +42,7 @@ cmd/hearth/hub.go
   s_344993999c180f::t_21c02b37920b23 377
   s_344993999c180f::t_7eb8d63d6af1f4 433-435
   s_344993999c180f::t_caf1313027a1ae 195-198
+  s_344993999c180f::t_0e499a98995dad 101-102
 site/src/pages.mjs
   s_344993999c180f::t_3d293d9dec2339 11
 internal/hub/network_test.go
