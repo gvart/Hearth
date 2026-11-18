@@ -1,0 +1,83 @@
+internal/agent/probe.go
+  s_344993999c180f::t_b31f4fcc988b98 1-39
+docs/concepts.md
+  s_344993999c180f::t_c81d7806effaef 89-90
+internal/automation/trigger_check.go
+  s_344993999c180f::t_3caad5b960a2e5 82,127,131,140,142,144,146
+  s_344993999c180f::t_6df469da1957d3 15-20,26-49,56-63,67-71,75-81,83-94,96,101,105-126,128-130,132-139,141,143,145,147-148,156-157,159-165,172,187,195-200,222,233,237-240,247,255-256,265,269-272
+internal/automation/trigger_metric.go
+  s_344993999c180f::t_7d0dd4a47d2833 105,118,120
+internal/hub/agentstream.go
+  s_344993999c180f::t_49cfca96661f6f 108,146-147
+internal/hub/facts.go
+  s_344993999c180f::t_49cfca96661f6f 36-37,70
+internal/hub/agentprobe_test.go
+  s_344993999c180f::t_42ee6400f832f1 1-118
+internal/automation/trigger.go
+  s_344993999c180f::t_f0a3f476c05dec 58-62,66-81
+  s_344993999c180f::t_663e6478c27133 82
+internal/policy/guardrails_test.go
+  s_344993999c180f::t_533121819c3147 114
+internal/probe/probe.go
+  s_344993999c180f::t_9e14fa3e5942b7 1-139
+internal/automation/trigger_check_from_test.go
+  s_344993999c180f::t_c12e94778d69d5 1-47,53-54,59-118,121-177,180-185,187-204
+  s_344993999c180f::t_355e7e74cadcf2 52,56
+  s_344993999c180f::t_b652a7336a5365 48-51,55,57-58,178-179,186
+  s_344993999c180f::t_fd2875f0400208 119-120
+docs/security.md
+  s_344993999c180f::t_c81d7806effaef 17-18
+internal/agent/probe_test.go
+  s_344993999c180f::t_54a3ea87622514 1-43
+internal/policy/ceiling.go
+  s_344993999c180f::t_8e663bdda8b613 37-47
+docs/automations.md
+  s_344993999c180f::t_5775089c495623 110-139
+  s_344993999c180f::t_0b504f6de7b5e0 231-232
+internal/probe/probe_test.go
+  s_344993999c180f::t_aef77019828e67 1-5,7-77,81-93
+  s_344993999c180f::t_219c67ea70893e 6,78-80
+docs/guardrails.md
+  s_344993999c180f::t_c0ebd86fba0c31 64
+  s_344993999c180f::t_c81d7806effaef 77
+internal/automation/trigger_poll.go
+  s_344993999c180f::t_7d0dd4a47d2833 11-22,30-32,41,46-47,56,58
+proto/hearth/agent/v1/agent.proto
+  s_344993999c180f::t_48f71197490e79 26,36,78-80,189-237
+  s_344993999c180f::t_5f2680db3b4501 238
+internal/agent/run.go
+  s_344993999c180f::t_b31f4fcc988b98 32,279,320-322,324,326-331,337-356,363,366,381
+internal/agent/exec.go
+  s_344993999c180f::t_b31f4fcc988b98 29-31,57
+internal/policy/policy.go
+  s_344993999c180f::t_50932fcf977ecd 62-64
+  s_344993999c180f::t_e69c51c81a1a80 174-176
+internal/hub/agentexec.go
+  s_344993999c180f::t_49cfca96661f6f 27-30,65,75-76,123-149,206-244,246,250,254,259,263,269,271
+internal/automation/runtime.go
+  s_344993999c180f::t_f0a3f476c05dec 207
+cmd/hearth/hub.go
+  s_344993999c180f::t_5f0684ddf848ff 289-290
+internal/agent/probe_stream_test.go
+  s_344993999c180f::t_3071edb4bd50e6 1-59
+cmd/hearth/agent.go
+  s_344993999c180f::t_5f0684ddf848ff 35-36,59-60
+internal/proto/hearth/agent/v1/agent.pb.go
+  s_344993999c180f::t_0f407d0aca7037 38,126-134,160-163,174-175,184,254-262,279-282,289-290,507-510,559-565,1307-1648,1658,1670,1683,1690,1697-1699,1704-1705,1727,1730-1731,1783-1802,1821,1840-1848,1856-1885,1899,1905,1911-1915,1922
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "edaa0b1ec18c4f580c9101cf535b81c9c3434fa7",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
