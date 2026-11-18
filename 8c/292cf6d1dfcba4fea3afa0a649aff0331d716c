@@ -1,0 +1,26 @@
+internal/cluster/node.go
+  s_344993999c180f::t_ded3dec410d6a4 78-80
+  s_344993999c180f::t_35fd19547f8f55 77
+internal/cluster/fsm.go
+  s_344993999c180f::t_1fbe07c1242014 133-135
+  s_344993999c180f::t_92805cd295150a 167-168,172
+internal/cluster/fsm_test.go
+  s_344993999c180f::t_d256ba8cd7916b 102-150
+  s_344993999c180f::t_ad1fdd641367b5 6,8-9,11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8c292cf6d1dfcba4fea3afa0a649aff0331d716c",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
