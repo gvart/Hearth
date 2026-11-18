@@ -1,0 +1,63 @@
+internal/integrations/prometheus/prometheus_test.go
+  s_344993999c180f::t_630af891380f63 116,138
+  s_344993999c180f::t_5c1f345e089daa 1-115,117-137,139-203
+internal/integrations/prometheus/client.go
+  s_344993999c180f::t_50e6c4336a83a6 1-104,107-184
+  s_344993999c180f::t_277658adf86b20 105-106
+cmd/hearth/hub.go
+  s_344993999c180f::t_849b37723e6bf9 22,39-42,58-60,77-78,89-96,166,234
+web/src/components/DeviceCharts.tsx
+  s_344993999c180f::t_d632df5de7c259 44-46,49
+  s_344993999c180f::t_365a442cfe6b5c 29,41-42,48,50-51,53-54,64
+  s_344993999c180f::t_62f78b7ba9e4fe 1-28,30-40,43,47,52,55-63,65-76
+internal/integrations/prometheus/device.go
+  s_344993999c180f::t_277658adf86b20 114-115
+  s_344993999c180f::t_77e0b5894ad725 1-113,116-118,131-136,140-165
+  s_344993999c180f::t_2e533ecb9c716f 119-130
+  s_344993999c180f::t_372b21f132bbca 137-139
+internal/hub/metrics.go
+  s_344993999c180f::t_7d28070421b078 95-96,99
+  s_344993999c180f::t_f497b0f3a29951 40-45
+  s_344993999c180f::t_8e0b13b5f83f8c 1-39,46-94,97-98,100-108,110-139
+  s_344993999c180f::t_423aa42d483601 109
+internal/hub/api_test.go
+  s_344993999c180f::t_88d41c54561ccb 28,43,46-50,144
+internal/hub/metrics_test.go
+  s_344993999c180f::t_fd2bd74791da16 1-105,109-139
+  s_344993999c180f::t_fbaa3b1aea8546 106-108
+internal/hub/server.go
+  s_344993999c180f::t_249759f54b7733 16,56-58
+docs/prometheus.md
+  s_344993999c180f::t_5878088338b723 1-37
+web/src/components/DeviceDrawer.tsx
+  s_344993999c180f::t_f24c515d55ffd3 4
+  s_344993999c180f::t_44b9d1c9b9f911 55-58
+web/src/api/hooks.ts
+  s_344993999c180f::t_f7eb8dc2043ee5 9,12
+  s_344993999c180f::t_84c079b31f5b9c 51-59
+  s_344993999c180f::t_1b02e625e25cf6 13
+web/src/api/client.ts
+  s_344993999c180f::t_b86f202f6e94cd 152-153
+  s_344993999c180f::t_b76d313442c56c 90-92
+  s_344993999c180f::t_589855aeda0697 72-89,93-95
+internal/hub/api.go
+  s_344993999c180f::t_249759f54b7733 21,67,80,135-136
+web/src/index.css
+  s_344993999c180f::t_3de7657be21718 696-717
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "17923cf43f71a67b7a0f8817981fefdbbf19a78d",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
