@@ -86,7 +86,9 @@ start.
   surviving hub, with the data it had. Every write (logging in, creating a token, enrolling, an agent
   coming online) waits up to 5 seconds for a leader and then fails with HTTP 503
   `cluster_unavailable` (or a "cluster unavailable" CLI error); nothing is written. Agents keep
-  retrying. Bring a second hub back and everything resumes.
+  retrying. Bring a second hub back and everything resumes. A write caught by a leader change (the
+  leader steps down or hands over while applying it) also fails with 503 `cluster_unavailable`; it
+  may or may not have been applied, and retrying it is safe.
 - **A hub restarts.** Until it has caught up with the cluster, its API waits up to 5 seconds per
   request and then answers 503 `catching_up`; the UI shows the error and works again once the hub is
   ready, usually within a second or two.

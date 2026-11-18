@@ -13,10 +13,12 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/hashicorp/raft"
 
 	"github.com/gvart/hearth/internal/hub"
 	"github.com/gvart/hearth/internal/pki"
@@ -396,7 +398,7 @@ func TestForwardWithoutLeaderFailsInBoundedTime(t *testing.T) {
 		t.Errorf("gave up after %v, want about %v", took, wait)
 	}
 
-	// The API answers 503 and says nothing was written.
+	// The API answers a retryable 503.
 	api := &apiClient{t: t, base: last.url, c: tlsClient(last.ca)}
 	code, body := api.do(http.MethodPost, "/api/v1/login", map[string]string{"password": "correct horse"})
 	if code != http.StatusServiceUnavailable || !strings.Contains(string(body), "cluster_unavailable") {
@@ -570,5 +572,69 @@ func TestAgentURL(t *testing.T) {
 	n.cfg.AgentPort = ""
 	if got := n.agentURL(urls, "c", "10.0.0.3:7444"); got != "" {
 		t.Errorf("without a fallback port: %q, want unknown", got)
+	}
+}
+
+// A write whose leader changes under it (the leader stepped down after
+// proposing it, or is handing leadership over) is retryable, like a write
+// without a leader: it matches store.ErrUnavailable, here and after
+// crossing the wire from the leader to a follower that forwarded it.
+func TestApplyFailedDuringLeaderChangeIsUnavailable(t *testing.T) {
+	tests := []struct {
+		err         error
+		unavailable bool
+	}{
+		{raft.ErrLeadershipLost, true},
+		{raft.ErrLeadershipTransferInProgress, true},
+		{raft.ErrEnqueueTimeout, false},
+		{raft.ErrRaftShutdown, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.err.Error(), func(t *testing.T) {
+			err := applyFailed("login", tt.err)
+			if !errors.Is(err, tt.err) {
+				t.Errorf("err = %v, want it to wrap %v", err, tt.err)
+			}
+			if got := errors.Is(err, store.ErrUnavailable); got != tt.unavailable {
+				t.Errorf("errors.Is(%v, ErrUnavailable) = %v, want %v", err, got, tt.unavailable)
+			}
+			forwarded := toWireError(err).toError()
+			if got := errors.Is(forwarded, store.ErrUnavailable); got != tt.unavailable {
+				t.Errorf("forwarded: errors.Is(%v, ErrUnavailable) = %v, want %v", forwarded, got, tt.unavailable)
+			}
+		})
+	}
+}
+
+// The API answers a write that failed during a leader change with 503
+// cluster_unavailable, not 500.
+func TestAPIWriteDuringLeaderChangeIs503(t *testing.T) {
+	for _, raftErr := range []error{raft.ErrLeadershipLost, raft.ErrLeadershipTransferInProgress} {
+		t.Run(raftErr.Error(), func(t *testing.T) {
+			ca := newTestCA(t)
+			var fail atomic.Bool
+			bind := func(n *Node, s *store.Store) store.Applier {
+				fwd := n.BindForwarding(s)
+				return store.ApplierFunc(func(ctx context.Context, cmd store.Command) (store.Result, error) {
+					if fail.Load() {
+						return store.Result{}, applyFailed(cmd.Op(), raftErr)
+					}
+					return fwd.Apply(ctx, cmd)
+				})
+			}
+			n := startNodeBound(t, ca, "n1", "", "", true, bind)
+			leaderOf(t, n)
+			h := startHub(t, n, ca, hubOpts{offlineAfter: 5 * time.Second, flushEvery: time.Minute})
+			if err := hub.SetAdminPassword(t.Context(), h.st, h.pol, "test", "correct horse"); err != nil {
+				t.Fatal(err)
+			}
+
+			fail.Store(true)
+			api := &apiClient{t: t, base: h.url, c: tlsClient(ca)}
+			code, body := api.do(http.MethodPost, "/api/v1/login", map[string]string{"password": "correct horse"})
+			if code != http.StatusServiceUnavailable || !strings.Contains(string(body), "cluster_unavailable") {
+				t.Errorf("login during a leader change: %d %s, want 503 cluster_unavailable", code, body)
+			}
+		})
 	}
 }

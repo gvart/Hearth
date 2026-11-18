@@ -11,7 +11,8 @@ import (
 )
 
 // ErrUnavailable is returned by a replicated Applier that cannot reach a
-// cluster leader in time: the write did not happen and may be retried.
+// cluster leader in time, or whose leader changed while it applied a write:
+// the write may be retried.
 var ErrUnavailable = errors.New("cluster unavailable: no leader reachable")
 
 // Hubs is the repository for cluster hub metadata: the agent-facing URL of
