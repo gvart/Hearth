@@ -74,7 +74,7 @@ func TestNetworkHostsRescanKeyedByMAC(t *testing.T) {
 	}
 }
 
-// A newer binary on a cluster database before schema 13 records no scans:
+// A newer binary on a cluster database before schema 12 records no scans:
 // the write is refused the same way on every node.
 func TestNetworkHostsBeforeTheirSchema(t *testing.T) {
 	ctx := t.Context()

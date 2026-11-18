@@ -74,7 +74,7 @@ returned, duration) in its detail. A policy that denies the `read` class stops s
 
 Only the leader scans; the results are replicated to every hub through Raft (one log entry per scan).
 Set the discovery flags on every hub, so the new leader keeps scanning after a failover. The scan
-needs schema 13: run `hearth cluster migrate` after upgrading every hub.
+needs schema 12: run `hearth cluster migrate` after upgrading every hub.
 
 ## In a container
 

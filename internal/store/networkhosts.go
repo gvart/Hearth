@@ -10,10 +10,10 @@ import (
 	"time"
 )
 
-// networkHostsSchema is the schema version whose migration (00013) added the
+// networkHostsSchema is the schema version whose migration (00012) added the
 // network_hosts table. Until a cluster migrates to it, scans are not
 // recorded and no host is listed.
-const networkHostsSchema = 13
+const networkHostsSchema = 12
 
 // NetworkHost is a host network discovery found, keyed by its MAC address.
 type NetworkHost struct {
@@ -47,7 +47,7 @@ type ScanResult struct {
 // RecordScan stores the hosts one scan at time at found, in one write: a
 // known MAC gets the new IP, last_seen and any hostname or vendor found (an
 // empty one keeps the stored value), so re-scans never duplicate a host.
-// Before schema 13 it fails with ErrSchemaTooOld.
+// Before schema 12 it fails with ErrSchemaTooOld.
 func (r NetworkHosts) RecordScan(ctx context.Context, at time.Time, absentAfter time.Duration, hosts []NetworkHost) (ScanResult, error) {
 	cmd := RecordNetworkScan{At: toMillis(at), AbsentAfter: absentAfter.Milliseconds(), Hosts: make([]ScannedHost, 0, len(hosts))}
 	for _, h := range hosts {
@@ -63,7 +63,7 @@ func (r NetworkHosts) RecordScan(ctx context.Context, at time.Time, absentAfter 
 	return ScanResult{New: res.NewHosts, Returned: res.ReturnedHosts}, nil
 }
 
-// List returns every host, by IP address text then MAC. Before schema 13
+// List returns every host, by IP address text then MAC. Before schema 12
 // it returns none.
 func (r NetworkHosts) List(ctx context.Context) ([]NetworkHost, error) {
 	v, err := schemaVersion(ctx, r.s.db)

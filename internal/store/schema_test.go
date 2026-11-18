@@ -85,14 +85,12 @@ func TestWithoutUpgrade(t *testing.T) {
 	if _, err := p.DownTo(ctx, SchemaVersion()-1); err != nil {
 		t.Fatal(err)
 	}
-	// Migration numbers may have gaps: behind is the version DownTo left.
-	behind := gooseVersion(t, s.db)
 	_ = s.Close()
 	s, err = Open(ctx, path, WithoutUpgrade())
 	if err != nil {
 		t.Fatalf("Open behind: %v", err)
 	}
-	if v := gooseVersion(t, s.db); v != behind {
+	if v := gooseVersion(t, s.db); v != SchemaVersion()-1 {
 		t.Fatalf("Open behind migrated the database to %d", v)
 	}
 	_ = s.Close()
