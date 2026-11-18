@@ -3,6 +3,7 @@
 package automation
 
 import (
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -221,5 +222,28 @@ func TestHTTPCheckRedactsPassword(t *testing.T) {
 	tr := mustBuildTrigger(t, TriggerDeps{}, "type: http\nurl: http://admin:s3cret@nas.lan/")
 	if got := tr.Describe(); strings.Contains(got, "s3cret") {
 		t.Errorf("Describe leaks the password: %q", got)
+	}
+}
+
+func TestHTTPCheckRedactsQueryValues(t *testing.T) {
+	clock := newFakeClock(time.Now())
+	tr := mustBuildTrigger(t, TriggerDeps{Clock: clock},
+		"type: http\nurl: http://admin:s3cret@127.0.0.1:1/ping?token=t0ken&x=1#frag")
+	w := watch(t, tr)
+	clock.waitForWaiter(t)
+	fired := w.fired()
+	if len(fired) != 1 {
+		t.Fatalf("fired %v, want once", fired)
+	}
+	want := "http://admin:" + "xxxxx@127.0.0.1:1/ping?token=REDACTED&x=REDACTED"
+	if fired[0]["Target"] != want || tr.Sample()["Target"] != want {
+		t.Errorf("target = %v, sample %v, want %q", fired[0]["Target"], tr.Sample()["Target"], want)
+	}
+	for name, s := range map[string]string{
+		"describe": tr.Describe(), "error": fmt.Sprint(fired[0]["Error"]), "target": fmt.Sprint(fired[0]["Target"]),
+	} {
+		if strings.Contains(s, "t0ken") || strings.Contains(s, "s3cret") {
+			t.Errorf("%s leaks a secret: %q", name, s)
+		}
 	}
 }

@@ -97,6 +97,9 @@ A check fires once per outage: again only after it has passed. The DNS check ask
 directly over UDP, so the hub's own resolver and `/etc/hosts` play no part. With the defaults, a
 stopped Pi-hole is noticed within about 15 s.
 
+An HTTP check's URL is shown (in plans, logs, run history and templates) with its password and
+query values replaced by `REDACTED`, as health-check URLs often carry a token.
+
 Checks run from the hub (the leader, in a cluster). Running them from an agent is tracked in
 [#105](https://github.com/gvart/Hearth/issues/105).
 
@@ -229,7 +232,7 @@ The webhook `url`, `command` and `service` are not templates.
 | `.Trigger.State`       | device                     | `online` or `offline`                              |
 | `.Trigger.Device`      | metric with `device`       | the device as the trigger names it                 |
 | `.Trigger.Value`       | metric                     | the value past the threshold (a number)            |
-| `.Trigger.Target`      | http, dns, tcp             | the URL (password hidden), name or address checked |
+| `.Trigger.Target`      | http, dns, tcp             | the URL (password and query values hidden), name or address checked |
 | `.Trigger.Error`       | http, dns, tcp             | why the check failed                               |
 
 Only text/template's built-in functions are there (`printf`, `eq`, `if`, ...): format a value with

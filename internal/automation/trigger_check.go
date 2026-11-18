@@ -97,14 +97,29 @@ func buildHTTPCheck(p Params, deps TriggerDeps) (Trigger, error) {
 		want = fmt.Sprintf("status %d", cfg.Status)
 	}
 	return &checkTrigger{
-		// u.Redacted keeps any password in the URL out of plans and logs.
-		what:   fmt.Sprintf("HTTP GET %s (expecting %s)", u.Redacted(), want),
-		target: u.Redacted(),
+		what:   fmt.Sprintf("HTTP GET %s (expecting %s)", redactURL(u), want),
+		target: redactURL(u),
 		timing: timing, clock: deps.Clock, log: deps.Log,
 		probe: func(ctx context.Context) error {
 			return probeHTTP(ctx, hc, cfg.URL, cfg.Status)
 		},
 	}, nil
+}
+
+// redactURL is u with its password and query values replaced by REDACTED,
+// as it may be shown: in plans, logs, run history and action templates.
+// Health-check URLs often carry a token in either.
+func redactURL(u *url.URL) string {
+	r := *u
+	// A part of the query that does not parse is dropped, never shown.
+	q := r.Query()
+	for _, vs := range q {
+		for i := range vs {
+			vs[i] = "REDACTED"
+		}
+	}
+	r.RawQuery, r.Fragment, r.RawFragment = q.Encode(), "", ""
+	return r.Redacted()
 }
 
 // probeHTTP GETs rawURL and checks the status: want, or 2xx/3xx if want is 0.
