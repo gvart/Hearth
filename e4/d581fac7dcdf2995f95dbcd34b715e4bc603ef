@@ -1,0 +1,21 @@
+internal/store/auditquery_test.go
+  s_344993999c180f::t_74794288ad10bb 1-69
+internal/store/audit.go
+  s_344993999c180f::t_c669360563e307 59-75,78-82,86-100,103-113,138-144
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e4d581fac7dcdf2995f95dbcd34b715e4bc603ef",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
