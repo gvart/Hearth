@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/gvart/hearth/internal/hub/webui"
+	"github.com/gvart/hearth/internal/integrations/prometheus"
 	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/policy"
 	"github.com/gvart/hearth/internal/store"
@@ -63,6 +64,7 @@ func newAPI(cfg Config) *api {
 	return &api{
 		store: cfg.Store, policy: cfg.Policy, registry: reg, log: cfg.Log, now: time.Now, keepalive: sseKeepalive,
 		ca: cfg.CA, agentHosts: cfg.AgentHosts, agentPort: agentPort, httpPort: httpPort, ready: cfg.Ready, readyWait: readyWait,
+		prom: cfg.Prometheus,
 	}
 }
 
@@ -75,6 +77,7 @@ func (a *api) routes() http.Handler {
 	mux.Handle("GET /api/v1/session", a.auth(a.session))
 	mux.Handle("GET /api/v1/devices", a.auth(a.listDevices))
 	mux.Handle("GET /api/v1/devices/{id}", a.auth(a.getDevice))
+	mux.Handle("GET /api/v1/devices/{id}/metrics", a.auth(a.deviceMetrics))
 	mux.Handle("GET /api/v1/events", a.auth(a.events))
 	mux.Handle("POST /api/v1/tokens", a.auth(a.createToken))
 	mux.Handle("/api/v1/", a.auth(func(w http.ResponseWriter, _ *http.Request) {
@@ -129,6 +132,8 @@ type api struct {
 	// verifyMu runs one argon2 verification at a time, so a flood of login
 	// attempts cannot exhaust a small hub's memory.
 	verifyMu sync.Mutex
+	// prom is Config.Prometheus; nil when no Prometheus is configured.
+	prom *prometheus.Reader
 }
 
 // DeviceJSON is the API representation of a device.

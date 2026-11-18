@@ -25,7 +25,7 @@ type apiFixture struct {
 	logs *syncBuffer
 }
 
-func newAPIFixture(t *testing.T, withPassword bool) *apiFixture {
+func newAPIFixture(t *testing.T, withPassword bool, opts ...func(*Config)) *apiFixture {
 	t.Helper()
 	st := newTestStore(t)
 	logs := &syncBuffer{}
@@ -40,10 +40,14 @@ func newAPIFixture(t *testing.T, withPassword bool) *apiFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a := newAPI(Config{
+	cfg := Config{
 		Store: st, Policy: pol, Log: log, Registry: NewRegistry(RegistryConfig{Store: st, Log: log}),
 		CA: ca, AgentHosts: []string{"hub.lan", "localhost", "127.0.0.1"},
-	})
+	}
+	for _, o := range opts {
+		o(&cfg)
+	}
+	a := newAPI(cfg)
 	srv := httptest.NewServer(a.routes())
 	t.Cleanup(srv.Close)
 	return &apiFixture{srv: srv, st: st, logs: logs}
@@ -137,6 +141,7 @@ func TestAPIUnauthenticated(t *testing.T) {
 		{http.MethodPost, "/api/v1/logout"},
 		{http.MethodGet, "/api/v1/devices"},
 		{http.MethodGet, "/api/v1/devices/pi"},
+		{http.MethodGet, "/api/v1/devices/pi/metrics"},
 		{http.MethodGet, "/api/v1/events"},
 		{http.MethodGet, "/api/v1/no-such-endpoint"},
 		{http.MethodPost, "/api/v1/tokens"},

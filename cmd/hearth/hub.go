@@ -19,6 +19,7 @@ import (
 
 	"github.com/gvart/hearth/internal/cluster"
 	"github.com/gvart/hearth/internal/hub"
+	"github.com/gvart/hearth/internal/integrations/prometheus"
 	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/policy"
 	"github.com/gvart/hearth/internal/store"
@@ -35,7 +36,10 @@ type hubOptions struct {
 	adminPassword string
 	// joinTokenEnv is HEARTH_JOIN_TOKEN, the preferred way to pass --join-token.
 	joinTokenEnv string
-	cluster      clusterOptions
+	// prometheusURL is an existing Prometheus server to read device charts
+	// from; empty means none.
+	prometheusURL string
+	cluster       clusterOptions
 }
 
 func newHubCmd() *cobra.Command {
@@ -51,7 +55,9 @@ func newHubCmd() *cobra.Command {
 			"If HEARTH_ADMIN_PASSWORD is set and no admin password is stored yet, it becomes the\n" +
 			"admin password. Otherwise use `hearth admin set-password`.\n\n" +
 			"Without cluster flags the hub runs standalone. --cluster forms a Raft cluster from this hub;\n" +
-			"--join adds this hub to an existing one (see docs/design/ha-hub.md).",
+			"--join adds this hub to an existing one (see docs/design/ha-hub.md).\n\n" +
+			"--prometheus-url points the hub at an existing Prometheus; device charts then show its\n" +
+			"node-exporter data (see docs/prometheus.md).",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			opts.adminPassword = os.Getenv("HEARTH_ADMIN_PASSWORD")
@@ -68,6 +74,8 @@ func newHubCmd() *cobra.Command {
 			"(default: this hostname, localhost, 127.0.0.1, ::1)")
 	cmd.Flags().StringVar(&opts.assetsDir, "assets-dir", "",
 		"directory of release archives and checksums.txt to serve at /download/ for `install.sh --from-hub`")
+	cmd.Flags().StringVar(&opts.prometheusURL, "prometheus-url", os.Getenv("HEARTH_PROMETHEUS_URL"),
+		"Prometheus server to read device charts from, e.g. http://prometheus.lan:9090 (env HEARTH_PROMETHEUS_URL)")
 	addClusterFlags(cmd, &opts.cluster)
 	return cmd
 }
@@ -77,6 +85,14 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		if info, err := os.Stat(opts.assetsDir); err != nil || !info.IsDir() {
 			return fmt.Errorf("--assets-dir %s is not a directory", opts.assetsDir)
 		}
+	}
+	var prom *prometheus.Reader
+	if opts.prometheusURL != "" {
+		c, err := prometheus.NewClient(opts.prometheusURL, nil)
+		if err != nil {
+			return fmt.Errorf("--prometheus-url: %w", err)
+		}
+		prom = prometheus.NewReader(c)
 	}
 	if err := os.MkdirAll(opts.dataDir, 0o700); err != nil {
 		return fmt.Errorf("create data dir: %w", err)
@@ -147,6 +163,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		AgentHosts:        hosts,
 		AgentPort:         agentPort,
 		Stopping:          stopping,
+		Prometheus:        prom,
 	}
 	// ready is closed once a clustered hub has caught up with the cluster.
 	ready := make(chan struct{})
@@ -214,6 +231,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if node != nil {
 		logAttrs = append(logAttrs, "node_id", node.ID(), "raft_addr", node.Addr())
 	}
+	logAttrs = append(logAttrs, "prometheus", prom != nil)
 	log.InfoContext(ctx, "hub listening", logAttrs...)
 
 	g, gctx := errgroup.WithContext(ctx)

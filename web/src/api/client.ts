@@ -69,6 +69,30 @@ export interface TlsInfo {
   ca_fingerprint: string;
 }
 
+/** Why device metrics have no charts; `ok` means they do. */
+export type MetricsStatus = 'ok' | 'not_configured' | 'unreachable' | 'no_target';
+
+export interface MetricChart {
+  key: string;
+  name: string;
+  unit: string;
+  /** [unix milliseconds, value] pairs. */
+  points: [number, number][];
+}
+
+/** A device's chart series, read from Prometheus; see GET /api/v1/devices/{id}/metrics. */
+export interface DeviceMetrics {
+  source: string;
+  status: MetricsStatus;
+  message?: string;
+  /** The Prometheus `instance` label the device mapped to. */
+  instance?: string;
+  /** The charted range in unix milliseconds; set when status is ok. */
+  start?: number;
+  end?: number;
+  charts: MetricChart[];
+}
+
 export type DeviceEventType = 'device.online' | 'device.offline' | 'device.updated';
 
 export interface DeviceEvent {
@@ -125,6 +149,8 @@ export const api = {
     }
   },
   devices: async () => (await request<{ devices: Device[] }>('GET', '/devices')).devices,
+  deviceMetrics: (id: string, range = '1h') =>
+    request<DeviceMetrics>('GET', `/devices/${encodeURIComponent(id)}/metrics?range=${encodeURIComponent(range)}`),
   tlsInfo: () => request<TlsInfo>('GET', '/tls'),
   createToken: (opts: { ttl?: string; labels?: Record<string, string> } = {}) =>
     request<CreatedToken>('POST', '/tokens', opts),
