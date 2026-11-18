@@ -1,0 +1,105 @@
+internal/store/command_test.go
+  s_344993999c180f::t_bb94cbca5b1bd1 62-63
+  s_344993999c180f::t_9ffaf0a9889a27 318-321,414
+site/src/pages.mjs
+  s_344993999c180f::t_6ac2e3a09af8f2 11
+docs/security.md
+  s_344993999c180f::t_0a2a1de39aafd9 89-91
+internal/store/migrations/00011_mcp_tokens.sql
+  s_344993999c180f::t_c74d76c740768c 1-15
+internal/integrations/kubernetes/actions.go
+  s_344993999c180f::t_d5aa6b7741f423 118
+  s_344993999c180f::t_ea1dc9bf1ba5ab 114
+  s_344993999c180f::t_947d05045a7f75 115-117,130
+internal/mcpserver/bridge.go
+  s_344993999c180f::t_08160ea1f57490 1-207
+internal/integrations/kubernetes/manager.go
+  s_344993999c180f::t_d5aa6b7741f423 474-476,492
+cmd/hearth/root.go
+  s_344993999c180f::t_2a21bf7f69f32f 18
+internal/policy/engine.go
+  s_344993999c180f::t_b8d78a34497808 65,67,119
+  s_344993999c180f::t_2a8249c9e60461 53-64,66,68-71,118,120-122
+cmd/hearth/mcp_test.go
+  s_344993999c180f::t_63908a63fd38c7 1-88
+internal/integrations/kubernetes/actions_test.go
+  s_344993999c180f::t_ef6e4c55d12bf2 92,135,156,185,246,290,322,326,330
+go.mod
+  s_344993999c180f::t_909ad84f1671e8 10,30,44-45,50,54,56
+internal/integrations/kubernetes/manager_test.go
+  s_344993999c180f::t_ef6e4c55d12bf2 278,287,291,294
+internal/store/mcptokens_test.go
+  s_344993999c180f::t_cfd5966d35afd9 1-94
+internal/hub/kube.go
+  s_344993999c180f::t_d5aa6b7741f423 90,113
+internal/mcpserver/tools.go
+  s_344993999c180f::t_37d84955ef266a 15,32-51,54-56,61-62,64-65,67-68,70-71,73,77,81,88,92,95,128,130,167,174,214,216,244,253,264,271,285,299,369,371,384,395,450,456,544,575
+  s_344993999c180f::t_44712adb77c517 63,66,69,72,74,76,78,80,82,84,89,91,93-94,96,98
+  s_344993999c180f::t_0529b853db46b0 1-14,16-31,52-53,57-60,75,79,83,85-87,90,97,99-116,121-127,129,134-166,168-173,175-213,215,217-243,245-252,254-263,265-270,272-284,286-298,300-368,370,372-383,385-394,396-449,451-455,460-543,545-574,576-586
+  s_344993999c180f::t_2d78db094f6037 117-120,131-133,457-459
+internal/policy/policy.go
+  s_344993999c180f::t_ac457a924e6c0a 220-224,228
+  s_344993999c180f::t_0cc686e3f4e375 97-118,120,146-149,216,239-254
+  s_344993999c180f::t_9912f65d7d4c4e 119,121
+go.sum
+  s_344993999c180f::t_689dcec439ea1d 19-20,24-25,67-68,81-84,101-102,118-119,133-134
+internal/mcpserver/server_test.go
+  s_344993999c180f::t_9912f65d7d4c4e 198
+  s_344993999c180f::t_c10ddefb66a365 1-197,199-272,278-347,350,358-422,425-455
+  s_344993999c180f::t_2d78db094f6037 273-277,348-349,351-357,423-424
+internal/mcpserver/server.go
+  s_344993999c180f::t_9912f65d7d4c4e 32
+  s_344993999c180f::t_2aea0123e3792b 1-31,33-76,81-84,86-126,130,133-134,136-138,141-149
+  s_344993999c180f::t_37d84955ef266a 77-80,85,127-129,131-132,135,139-140
+docs/guardrails.md
+  s_344993999c180f::t_c80fed03b40d78 116-117
+  s_344993999c180f::t_6ac2e3a09af8f2 6,17-18,21,121
+internal/policy/guardrails_test.go
+  s_344993999c180f::t_8f08c090487986 117,128-136,195-196
+  s_344993999c180f::t_ac457a924e6c0a 118-123
+  s_344993999c180f::t_c4edb677fc67de 505
+  s_344993999c180f::t_e277eb2eb676c3 90
+internal/mcpserver/protocol.go
+  s_344993999c180f::t_44712adb77c517 171-172,176,248
+  s_344993999c180f::t_8a1e077e4d7fe1 1-170,173-175,177-247,249
+internal/mcpserver/protocol_test.go
+  s_344993999c180f::t_d3ca0edcd99393 1-23,32-35,40-64
+  s_344993999c180f::t_8e47f0cbb16fb3 24-31,36-39
+cmd/hearth/hub.go
+  s_344993999c180f::t_2a21bf7f69f32f 27,233-240
+internal/store/mcptokens.go
+  s_344993999c180f::t_9912f65d7d4c4e 88
+  s_344993999c180f::t_9cf4f5f77a397d 1-87,89-167
+cmd/hearth/mcp.go
+  s_344993999c180f::t_311d3e428b6a42 1-246
+internal/policy/config.go
+  s_344993999c180f::t_e62812663b31e6 89
+  s_344993999c180f::t_0cc686e3f4e375 37,41-42,87-88
+internal/policy/scope_test.go
+  s_344993999c180f::t_013a3fca290225 1-87
+internal/mcpserver/bridge_test.go
+  s_344993999c180f::t_2c1d9fe358d23a 1-98
+docs/mcp.md
+  s_344993999c180f::t_2fa233931288d9 1-81,85-107
+  s_344993999c180f::t_2aafe712ee39a1 82-84
+internal/store/command.go
+  s_344993999c180f::t_bd06e1646c5054 686-689
+internal/store/store_test.go
+  s_344993999c180f::t_e277eb2eb676c3 54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "723b28cb8bfaef729c35a1cab4e412055acf9a26",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
