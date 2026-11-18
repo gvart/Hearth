@@ -7,8 +7,8 @@
 // goes through Raft. Only the cluster leader serves agents, so the leader
 // records the samples; a hub keeps what it recorded while it led. Raw samples
 // are kept for RawRetention, and rollups for RollupRetention: one-minute
-// rollups, and hourly ones so that a week's chart reads a few hundred rows.
-// Both are written along with each sample.
+// rollups, and ten-minute and hourly ones so that a day's or a week's chart
+// reads a few hundred rows. All are written along with each sample.
 package metrics
 
 import (
@@ -31,11 +31,12 @@ const (
 	// pruneEvery is how often Run deletes expired data.
 	pruneEvery = 10 * time.Minute
 	// schemaVersion is the PRAGMA user_version of this schema.
-	schemaVersion = 1
+	schemaVersion = 2
 )
 
-// resolutions are the rollup periods, finest first.
-var resolutions = []time.Duration{time.Minute, time.Hour}
+// resolutions are the rollup periods, finest first. Ten minutes keeps a day's
+// chart to a few hundred rows, which a Pi reads in milliseconds.
+var resolutions = []time.Duration{time.Minute, 10 * time.Minute, time.Hour}
 
 // Series is a metric agents send, and how a chart shows it.
 type Series struct {
@@ -102,6 +103,15 @@ CREATE TABLE rollups (
 CREATE INDEX rollups_ts ON rollups (ts);
 `
 
+// tenMinuteRollups derives the ten-minute rollups schema 2 adds from the
+// one-minute ones a schema 1 database holds.
+const tenMinuteRollups = `
+INSERT OR IGNORE INTO rollups (device_id, res, name, ts, sum, count)
+SELECT device_id, 600000, name, ts / 600000 * 600000, SUM(sum), SUM(count)
+FROM rollups WHERE res = 60000
+GROUP BY device_id, name, ts / 600000
+`
+
 // Store is the metrics database. It is safe for concurrent use.
 type Store struct {
 	db  *sql.DB
@@ -151,8 +161,13 @@ func (s *Store) init(ctx context.Context) error {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, schema); err != nil {
-		return fmt.Errorf("create schema: %w", err)
+	if v == 0 {
+		if _, err := tx.ExecContext(ctx, schema); err != nil {
+			return fmt.Errorf("create schema: %w", err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, tenMinuteRollups); err != nil {
+		return fmt.Errorf("add ten-minute rollups: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion)); err != nil {
 		return err
@@ -214,11 +229,16 @@ func (s *Store) Query(ctx context.Context, deviceID string, names []string, star
 	}
 	q += ` AND ts >= ? AND ts <= ?`
 	args = append(args, start.UnixMilli(), end.UnixMilli())
-	if len(names) > 0 {
-		q += ` AND name IN (?` + strings.Repeat(`, ?`, len(names)-1) + `)` //nolint:gosec // only placeholders are added
-		for _, n := range names {
-			args = append(args, n)
+	// Always naming the metrics lets SQLite seek each series through the
+	// primary key, rather than scan all of the device's data for the range.
+	if len(names) == 0 {
+		for _, k := range Known {
+			names = append(names, k.Key)
 		}
+	}
+	q += ` AND name IN (?` + strings.Repeat(`, ?`, len(names)-1) + `)` //nolint:gosec // only placeholders are added
+	for _, n := range names {
+		args = append(args, n)
 	}
 	// Rows come in primary key order, by name then time, so buckets are
 	// summed as they stream; a GROUP BY would sort them all again.

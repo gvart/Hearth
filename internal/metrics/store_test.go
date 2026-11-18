@@ -185,6 +185,47 @@ func TestReopen(t *testing.T) {
 	}
 }
 
+// TestMigrateTenMinuteRollups opens a schema 1 database: its one-minute
+// rollups become ten-minute ones, and samples written later add to them.
+func TestMigrateTenMinuteRollups(t *testing.T) {
+	clock := &fakeClock{t0}
+	path := filepath.Join(t.TempDir(), "metrics.db")
+	s, err := Open(t.Context(), path, clock.now, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, v := range []float64{10, 20, 30} {
+		write(t, s, "pi", t0.Add(time.Duration(i)*time.Minute), "cpu", v)
+	}
+	for _, stmt := range []string{`DELETE FROM rollups WHERE res = 600000`, `PRAGMA user_version = 1`} {
+		if _, err := s.db.ExecContext(t.Context(), stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err = Open(t.Context(), path, clock.now, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	write(t, s, "pi", t0.Add(3*time.Minute), "cpu", 40)
+	var (
+		sum   float64
+		count int
+	)
+	err = s.db.QueryRowContext(t.Context(), `SELECT sum, count FROM rollups WHERE res = 600000 AND device_id = 'pi' AND name = 'cpu' AND ts = ?`,
+		t0.UnixMilli()).Scan(&sum, &count)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sum != 100 || count != 4 {
+		t.Errorf("ten-minute rollup = sum %v, count %d; want 100, 4", sum, count)
+	}
+}
+
 // fill writes a week of one device's metrics as an agent sends them, every
 // 15 s: raw samples for the last RawRetention, rollups for the whole week.
 func fill(b testing.TB, s *Store, device string, end time.Time) {
@@ -199,6 +240,11 @@ func fill(b testing.TB, s *Store, device string, end time.Time) {
 		for _, k := range Known {
 			if _, err := tx.ExecContext(ctx, `INSERT INTO rollups VALUES (?, 60000, ?, ?, 200, 4)`, device, k.Key, m.UnixMilli()); err != nil {
 				b.Fatal(err)
+			}
+			if m.Equal(m.Truncate(10 * time.Minute)) {
+				if _, err := tx.ExecContext(ctx, `INSERT INTO rollups VALUES (?, 600000, ?, ?, 2000, 40)`, device, k.Key, m.UnixMilli()); err != nil {
+					b.Fatal(err)
+				}
 			}
 			if m.Equal(m.Truncate(time.Hour)) {
 				if _, err := tx.ExecContext(ctx, `INSERT INTO rollups VALUES (?, 3600000, ?, ?, 12000, 240)`, device, k.Key, m.UnixMilli()); err != nil {
@@ -221,22 +267,32 @@ func fill(b testing.TB, s *Store, device string, end time.Time) {
 	}
 }
 
-// BenchmarkQuery7d is a 7-day chart query of one device among ten, at the
-// API's 120-point resolution.
-func BenchmarkQuery7d(b *testing.B) {
+// BenchmarkQuery is a chart query of one device among ten holding a week of
+// data, for each range the UI offers, at the API's 120-point resolution.
+func BenchmarkQuery(b *testing.B) {
 	clock := &fakeClock{t0}
 	s := openTest(b, clock)
 	for _, d := range []string{"d0", "d1", "d2", "d3", "d4", "d5", "d6", "d7", "d8", "d9"} {
 		fill(b, s, d, t0)
 	}
-	start := t0.Add(-RollupRetention)
-	for b.Loop() {
-		got, err := s.Query(b.Context(), "d3", nil, start, t0, RollupRetention/120)
-		if err != nil {
-			b.Fatal(err)
-		}
-		if len(got) != len(Known) {
-			b.Fatalf("got %d series", len(got))
-		}
+	for _, tt := range []struct {
+		name   string
+		window time.Duration
+	}{
+		{"1h", time.Hour},
+		{"24h", RawRetention},
+		{"7d", RollupRetention},
+	} {
+		b.Run(tt.name, func(b *testing.B) {
+			for b.Loop() {
+				got, err := s.Query(b.Context(), "d3", nil, t0.Add(-tt.window), t0, tt.window/120)
+				if err != nil {
+					b.Fatal(err)
+				}
+				if len(got) != len(Known) {
+					b.Fatalf("got %d series", len(got))
+				}
+			}
+		})
 	}
 }
