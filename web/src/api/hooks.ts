@@ -6,6 +6,7 @@ import {
   subscribeEvents,
   type Device,
   type DeviceEvent,
+  type KubeActionRequest,
   type KubeChange,
   type KubeCluster,
   type KubeEvent,
@@ -160,6 +161,26 @@ export function useKubePodLogs(opts: { cluster: string; namespace: string; pod: 
     gcTime: 0,
     retry: false,
   });
+}
+
+/** The dry run of a Kubernetes action: what it would do, read from the cluster. */
+export function useKubeActionPlan(cluster: string, req: KubeActionRequest, enabled: boolean) {
+  return useQuery({
+    queryKey: ['kube', 'plan', cluster, req] as const,
+    queryFn: () => api.kubeAction(cluster, { ...req, dry_run: true }),
+    staleTime: 0,
+    gcTime: 0,
+    retry: false,
+    enabled,
+  });
+}
+
+/**
+ * Carries out a Kubernetes action. The cluster's changes reach the page
+ * through the event stream.
+ */
+export function useKubeAction(cluster: string) {
+  return useMutation({ mutationFn: (req: KubeActionRequest) => api.kubeAction(cluster, { ...req, dry_run: false }) });
 }
 
 export function useAddKubeCluster() {

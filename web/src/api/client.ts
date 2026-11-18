@@ -196,6 +196,33 @@ export interface KubeChange {
   object?: KubeNode | KubeNamespace | KubeWorkload | KubePod | KubeEvent;
 }
 
+/** A Kubernetes action; see POST /api/v1/kube/clusters/{id}/actions. */
+export type KubeActionName = 'restart' | 'scale' | 'delete_pod' | 'cordon' | 'uncordon' | 'drain';
+
+export interface KubeActionRequest {
+  action: KubeActionName;
+  /** The workload's kind, for restart and scale. */
+  kind?: string;
+  namespace?: string;
+  name: string;
+  replicas?: number;
+  timeout_seconds?: number;
+  /** Only plan: read the objects involved and change nothing. */
+  dry_run?: boolean;
+}
+
+/** The plan of an action and, unless it was a dry run, what came of it. */
+export interface KubeActionResult {
+  action: KubeActionName;
+  class: 'read' | 'safe' | 'dangerous';
+  target: string;
+  dry_run: boolean;
+  summary: string;
+  steps: string[];
+  warnings: string[];
+  result?: string;
+}
+
 /** ApiError carries the hub's `{"error","code"}` body and the HTTP status. */
 export class ApiError extends Error {
   readonly status: number;
@@ -260,6 +287,8 @@ export const api = {
     const path = `/kube/clusters/${e(opts.cluster)}/pods/${e(opts.namespace)}/${e(opts.pod)}/logs?${q.toString()}`;
     return (await request<{ logs: string }>('GET', path)).logs;
   },
+  kubeAction: (cluster: string, req: KubeActionRequest) =>
+    request<KubeActionResult>('POST', `/kube/clusters/${encodeURIComponent(cluster)}/actions`, req),
 };
 
 export interface EventHandlers {

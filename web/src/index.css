@@ -998,6 +998,76 @@ dialog::backdrop {
   padding: 0;
 }
 
+/* Kubernetes actions */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.row-actions {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.row-actions .btn + .btn {
+  margin-left: 0.35rem;
+}
+
+.btn-danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--on-accent);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 88%, black);
+}
+
+.plan {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.plan p {
+  margin: 0;
+}
+
+.plan-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.plan-steps,
+.plan-warnings {
+  margin: 0;
+  padding-left: 1.75rem;
+  max-height: 14rem;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+}
+
+.plan-warnings {
+  color: var(--warn);
+}
+
+.ok-box {
+  padding: 0.9rem 1rem;
+  border-radius: 8px;
+  color: var(--online);
+  background: var(--ok-soft);
+  border: 1px solid color-mix(in srgb, var(--online) 30%, transparent);
+}
+
 .logs {
   height: min(60vh, 36rem);
   margin: 0;

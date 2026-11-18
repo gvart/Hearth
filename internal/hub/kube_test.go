@@ -153,6 +153,27 @@ func TestKubeAPI(t *testing.T) {
 		t.Errorf("logs from an unreachable cluster = %d %s, want 502", r.StatusCode, r.body)
 	}
 
+	actions := "/api/v1/kube/clusters/" + added.ID + "/actions"
+	cordon := `{"action": "cordon", "name": "pi-1", "dry_run": true}`
+	if r := f.do(t, http.MethodPost, actions, cordon, nil); r.StatusCode != http.StatusUnauthorized {
+		t.Errorf("unauthenticated action = %d, want 401", r.StatusCode)
+	}
+	for _, tc := range []struct {
+		name, path, contentType, body string
+		want                          int
+	}{
+		{"not JSON", actions, "text/plain", cordon, http.StatusUnsupportedMediaType},
+		{"bad body", actions, "application/json", "[]", http.StatusBadRequest},
+		{"unknown action", actions, "application/json", `{"action": "reboot", "name": "pi-1"}`, http.StatusBadRequest},
+		{"bad name", actions, "application/json", `{"action": "cordon", "name": "Pi 1"}`, http.StatusBadRequest},
+		{"unknown cluster", "/api/v1/kube/clusters/nope/actions", "application/json", cordon, http.StatusNotFound},
+		{"unreachable cluster", actions, "application/json", cordon, http.StatusBadGateway},
+	} {
+		if r := f.send(t, http.MethodPost, tc.path, tc.contentType, tc.body, cookie); r.StatusCode != tc.want {
+			t.Errorf("action with %s = %d %s, want %d", tc.name, r.StatusCode, r.body, tc.want)
+		}
+	}
+
 	if r := f.do(t, http.MethodDelete, "/api/v1/kube/clusters/"+added.ID, "", cookie); r.StatusCode != http.StatusNoContent {
 		t.Fatalf("delete = %d %s", r.StatusCode, r.body)
 	}

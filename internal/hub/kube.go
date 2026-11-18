@@ -30,6 +30,7 @@ func (a *api) kubeRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /api/v1/kube/clusters/{id}", a.auth(a.getKubeCluster))
 	mux.Handle("DELETE /api/v1/kube/clusters/{id}", a.auth(a.removeKubeCluster))
 	mux.Handle("GET /api/v1/kube/clusters/{id}/pods/{namespace}/{pod}/logs", a.auth(a.kubePodLogs))
+	mux.Handle("POST /api/v1/kube/clusters/{id}/actions", a.auth(a.kubeAction))
 }
 
 func (a *api) listKubeClusters(w http.ResponseWriter, _ *http.Request) {
@@ -97,6 +98,26 @@ func (a *api) kubePodLogs(w http.ResponseWriter, r *http.Request) {
 	}{Logs: logs})
 }
 
+// kubeAction plans a Kubernetes action and, unless it is a dry run, carries
+// it out. A drain answers when its pods are gone or its timeout passed.
+func (a *api) kubeAction(w http.ResponseWriter, r *http.Request) {
+	if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" {
+		writeError(w, http.StatusUnsupportedMediaType, "bad_request", "content type must be application/json")
+		return
+	}
+	var req kubernetes.ActionRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", `body must be an action: {"action": "...", "name": "...", ...}`)
+		return
+	}
+	res, err := a.kube.Act(r.Context(), remoteHost(r), r.PathValue("id"), req)
+	if err != nil {
+		a.writeKubeError(w, r, "kube action", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
 // writeKubeError answers a failed Kubernetes API call.
 func (a *api) writeKubeError(w http.ResponseWriter, r *http.Request, op string, err error) {
 	switch {
@@ -104,7 +125,9 @@ func (a *api) writeKubeError(w http.ResponseWriter, r *http.Request, op string, 
 		writeError(w, http.StatusNotFound, "not_found", "no such cluster")
 	case errors.Is(err, kubernetes.ErrPodNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "no such pod or container")
-	case errors.Is(err, kubernetes.ErrInvalidKubeconfig), errors.Is(err, kubernetes.ErrBadName):
+	case errors.Is(err, kubernetes.ErrObjectNotFound):
+		writeError(w, http.StatusNotFound, "not_found", err.Error())
+	case errors.Is(err, kubernetes.ErrInvalidKubeconfig), errors.Is(err, kubernetes.ErrBadName), errors.Is(err, kubernetes.ErrBadAction):
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 	case errors.Is(err, kubernetes.ErrNameTaken):
 		writeError(w, http.StatusConflict, "conflict", "a cluster with that name exists")
