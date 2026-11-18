@@ -5,7 +5,6 @@ package hub
 import (
 	"context"
 	"crypto/rand"
-	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -18,12 +17,85 @@ import (
 // and reports which sources its ceiling allows.
 const minLogsMinor = 5
 
-// logBuffer is how many LogLines messages of one stream the hub holds for a
-// slow reader before it ends the stream.
-const logBuffer = 64
+const (
+	// logQueueLines is how many lines of one stream the hub holds for its
+	// reader. It counts lines, not messages, because an agent sends a tail in
+	// as many small messages as its source happens to write; it holds a whole
+	// tail (an agent keeps at most 500 lines) with room for new ones.
+	logQueueLines = 2048
+	// logEventLines caps the lines of one event to the reader.
+	logEventLines = 256
+)
 
-// ErrLogReaderTooSlow ends a log stream whose reader fell too far behind.
-var ErrLogReaderTooSlow = errors.New("log stream ended: the reader fell too far behind")
+// logQueue holds the lines of one stream until its reader takes them. The
+// reader starts late, once the stream's audit entry is written, and may fall
+// behind, and the agent's stream must not wait for it. Past logQueueLines the
+// oldest lines go, and the message after them says how many.
+type logQueue struct {
+	// ready has a value when there may be messages to take.
+	ready chan struct{}
+
+	mu    sync.Mutex
+	msgs  []*agentv1.LogLines
+	lines int
+}
+
+func newLogQueue() *logQueue { return &logQueue{ready: make(chan struct{}, 1)} }
+
+// put adds m, dropping the oldest messages over logQueueLines. It never
+// blocks and never drops m itself, so the end of a stream always arrives.
+func (q *logQueue) put(m *agentv1.LogLines) {
+	q.mu.Lock()
+	q.msgs = append(q.msgs, m)
+	q.lines += len(m.GetLines())
+	for q.lines > logQueueLines && len(q.msgs) > 1 {
+		old := q.msgs[0]
+		q.msgs[0] = nil
+		q.msgs = q.msgs[1:]
+		q.lines -= len(old.GetLines())
+		q.msgs[0].Skipped += old.GetSkipped() + uint64(len(old.GetLines()))
+	}
+	q.mu.Unlock()
+	q.wake()
+}
+
+func (q *logQueue) wake() {
+	select {
+	case q.ready <- struct{}{}:
+	default:
+	}
+}
+
+// take returns the oldest messages joined into one of at most logEventLines
+// lines, or nil if there are none. Lines after a gap start a message of their
+// own, so that Skipped says where the gap is.
+func (q *logQueue) take() *agentv1.LogLines {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if len(q.msgs) == 0 {
+		return nil
+	}
+	out := q.msgs[0]
+	n := 1
+	for n < len(q.msgs) && !out.GetEnd() {
+		m := q.msgs[n]
+		if m.GetSkipped() > 0 || len(out.GetLines())+len(m.GetLines()) > logEventLines {
+			break
+		}
+		out.Lines = append(out.Lines, m.GetLines()...)
+		out.End, out.Error = m.GetEnd(), m.GetError()
+		n++
+	}
+	clear(q.msgs[:n])
+	q.msgs = q.msgs[n:]
+	q.lines -= len(out.GetLines())
+	if len(q.msgs) == 0 {
+		q.msgs = nil
+	} else {
+		q.wake()
+	}
+	return out
+}
 
 // checkLogs refuses src unless the agent reported a ceiling that allows it.
 func (s *agentSession) checkLogs(device string, src *agentv1.LogSource) error {
@@ -40,30 +112,18 @@ func (s *agentSession) checkLogs(device string, src *agentv1.LogSource) error {
 }
 
 // deliverLogs hands lines to the stream of their id. It never blocks the
-// agent's stream: a reader that fell logBuffer messages behind loses its
-// stream, and the agent is told to stop it. The channel is closed after the
-// last message, or at once for a reader too slow.
+// agent's stream: a reader too far behind loses its oldest lines and is told
+// how many (see logQueue).
 func (s *agentSession) deliverLogs(m *agentv1.LogLines) {
 	id := m.GetId()
 	s.mu.Lock()
-	ch := s.logs[id]
-	if ch == nil {
-		s.mu.Unlock()
-		return
-	}
-	full := false
-	select {
-	case ch <- m:
-	default:
-		full = true
-	}
-	if full || m.GetEnd() {
+	q := s.logs[id]
+	if q != nil && m.GetEnd() {
 		delete(s.logs, id)
-		close(ch)
 	}
 	s.mu.Unlock()
-	if full {
-		s.sendNoWait(&agentv1.HubMessage{Payload: &agentv1.HubMessage_LogCancel{LogCancel: &agentv1.LogCancel{Id: id}}})
+	if q != nil {
+		q.put(m)
 	}
 }
 
@@ -81,14 +141,17 @@ func (s *agentSession) sendNoWait(msg *agentv1.HubMessage) {
 type LogStream struct {
 	s    *agentSession
 	id   string
-	ch   chan *agentv1.LogLines
+	q    *logQueue
 	once sync.Once
 }
 
-// Lines delivers the stream's messages from the agent. It is closed after
-// the last one, which has End set, or early, without one, when the reader
-// fell too far behind (ErrLogReaderTooSlow).
-func (l *LogStream) Lines() <-chan *agentv1.LogLines { return l.ch }
+// Ready has a value when Take may return a message.
+func (l *LogStream) Ready() <-chan struct{} { return l.q.ready }
+
+// Take returns the stream's next message from the agent, or nil if there is
+// none yet. The last one has End set. Skipped counts the lines lost before a
+// message, by the agent or here, because the reader fell behind.
+func (l *LogStream) Take() *agentv1.LogLines { return l.q.take() }
 
 // Disconnected is closed when the agent's stream to the hub ends, which
 // ends the log stream too.
@@ -132,9 +195,9 @@ func (a *Agents) Logs(ctx context.Context, device string, src *agentv1.LogSource
 	if err := s.checkLogs(device, src); err != nil {
 		return nil, err
 	}
-	l := &LogStream{s: s, id: strings.ToLower(rand.Text()), ch: make(chan *agentv1.LogLines, logBuffer)}
+	l := &LogStream{s: s, id: strings.ToLower(rand.Text()), q: newLogQueue()}
 	s.mu.Lock()
-	s.logs[l.id] = l.ch
+	s.logs[l.id] = l.q
 	s.mu.Unlock()
 	req := &agentv1.HubMessage{Payload: &agentv1.HubMessage_LogRequest{LogRequest: &agentv1.LogRequest{
 		Id: l.id, Source: src, Tail: tail,

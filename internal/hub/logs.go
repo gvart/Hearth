@@ -41,7 +41,7 @@ type LogLineJSON struct {
 type LogLinesJSON struct {
 	Lines []LogLineJSON `json:"lines"`
 	// Skipped counts the lines dropped before these: the stream read too
-	// slowly for the agent to keep them.
+	// slowly for the agent and the hub to keep them.
 	Skipped uint64 `json:"skipped,omitempty"`
 }
 
@@ -85,11 +85,13 @@ func (a *api) deviceLogs(w http.ResponseWriter, r *http.Request) {
 		stream, err = a.agents.Logs(ctx, device, src, uint32(tail)) //nolint:gosec // parsed as 32 bits
 		return err
 	})
+	if stream != nil {
+		defer stream.Close() // also when the audit entry could not be written
+	}
 	if err != nil {
 		a.writeLogsError(w, r, err)
 		return
 	}
-	defer stream.Close()
 
 	rc := http.NewResponseController(w)
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -100,6 +102,25 @@ func (a *api) deviceLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// drain writes the messages waiting; done means the stream is over.
+	drain := func() (done bool) {
+		for m := stream.Take(); m != nil; m = stream.Take() {
+			if len(m.GetLines()) > 0 || m.GetSkipped() > 0 {
+				if writeSSE(w, "lines", logLinesJSON(m)) != nil {
+					return true
+				}
+			}
+			if m.GetEnd() {
+				endLogs(w, rc, m.GetError())
+				return true
+			}
+			if rc.Flush() != nil {
+				return true
+			}
+		}
+		return false
+	}
+
 	keepalive := time.NewTicker(a.keepalive)
 	defer keepalive.Stop()
 	for {
@@ -108,20 +129,15 @@ func (a *api) deviceLogs(w http.ResponseWriter, r *http.Request) {
 		case <-ctx.Done():
 			return
 		case <-stream.Disconnected():
-			endLogs(w, rc, "agent disconnected")
+			if !drain() {
+				endLogs(w, rc, "agent disconnected")
+			}
 			return
-		case m, ok := <-stream.Lines():
-			if !ok {
-				endLogs(w, rc, ErrLogReaderTooSlow.Error())
+		case <-stream.Ready():
+			if drain() {
 				return
 			}
-			if len(m.GetLines()) > 0 || m.GetSkipped() > 0 {
-				err = writeSSE(w, "lines", logLinesJSON(m))
-			}
-			if err == nil && m.GetEnd() {
-				endLogs(w, rc, m.GetError())
-				return
-			}
+			continue
 		case <-keepalive.C:
 			if _, err := a.checkSession(r); err != nil {
 				return

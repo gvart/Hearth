@@ -83,7 +83,8 @@ func TestLogsOverStream(t *testing.T) {
 			t.Fatal(err)
 		}
 		select {
-		case m := <-stream.Lines():
+		case <-stream.Ready():
+			m := stream.Take()
 			if len(m.GetLines()) == 0 || !strings.HasPrefix(m.GetLines()[0].GetText(), "line ") {
 				t.Fatalf("first message = %v, want lines", m)
 			}
@@ -104,7 +105,7 @@ func TestLogsOverStream(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	<-stream.Lines()
+	<-stream.Ready()
 	a.stop(t)
 	select {
 	case <-stream.Disconnected():

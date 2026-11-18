@@ -6,10 +6,12 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +21,7 @@ import (
 	"github.com/gvart/hearth/internal/policy"
 	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
 	"github.com/gvart/hearth/internal/proto/hearth/agent/v1/agentv1connect"
+	"github.com/gvart/hearth/internal/store"
 )
 
 // fakeLogAgent answers each LogRequest on stream with lines, then end if
@@ -64,11 +67,17 @@ type logsFixture struct {
 
 func newLogsFixture(t *testing.T) *logsFixture {
 	t.Helper()
+	return newLogsFixtureAudit(t, func(a policy.Auditor) policy.Auditor { return a })
+}
+
+// newLogsFixtureAudit is newLogsFixture with the audit log wrapped.
+func newLogsFixtureAudit(t *testing.T, wrap func(policy.Auditor) policy.Auditor) *logsFixture {
+	t.Helper()
 	st := newTestStore(t)
 	enrollDevice(t, st, "dev-1")
 	client, agents := newExecClient(t, st)
 	log := slog.New(slog.DiscardHandler)
-	a := newAPI(Config{Store: st, Policy: policy.New(st.Audit()), Log: log, Agents: agents})
+	a := newAPI(Config{Store: st, Policy: policy.New(wrap(st.Audit())), Log: log, Agents: agents})
 	srv := httptest.NewServer(a.routes())
 	t.Cleanup(srv.Close)
 	if err := st.Admin().CreateSession(t.Context(), "logs-session", time.Now(), time.Now().Add(time.Hour)); err != nil {
@@ -268,32 +277,226 @@ func TestDeviceLogsRefused(t *testing.T) {
 	}
 }
 
-// TestDeliverLogsSlowReader: a reader that falls logBuffer messages behind
-// loses its stream, and the agent is told to stop it, without blocking the
-// agent's stream.
+// stalledAudit holds the audit entry of an opened stream until release is
+// closed, as a busy disk does.
+type stalledAudit struct {
+	policy.Auditor
+	release <-chan struct{}
+}
+
+func (a stalledAudit) Append(ctx context.Context, e store.AuditEntry) (int64, error) {
+	if e.Result == "ok" {
+		<-a.release
+	}
+	return a.Auditor.Append(ctx, e)
+}
+
+// TestDeviceLogsLinesBeforeTheReader: the agent answers as soon as it is
+// asked, while the hub is still writing the audit entry and reads nothing
+// yet. Every line of the tail still reaches the client.
+func TestDeviceLogsLinesBeforeTheReader(t *testing.T) {
+	t.Parallel()
+	const total = 300
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+	release := make(chan struct{})
+	f := newLogsFixtureAudit(t, func(a policy.Auditor) policy.Auditor { return stalledAudit{a, release} })
+	stream := connectAgent(ctx, t, f.client, minLogsMinor, &agentv1.Ceiling{Logs: []string{"systemd:*"}})
+	go func() {
+		defer close(release)
+		for {
+			msg, err := stream.Receive()
+			if err != nil {
+				return
+			}
+			req := msg.GetLogRequest()
+			if req == nil {
+				continue
+			}
+			for i := range total {
+				_ = stream.Send(&agentv1.AgentMessage{Payload: &agentv1.AgentMessage_LogLines{LogLines: &agentv1.LogLines{
+					Id: req.GetId(), Lines: []*agentv1.LogLine{{Text: strconv.Itoa(i)}},
+				}}})
+			}
+			time.Sleep(300 * time.Millisecond) // the hub takes them all in
+			return
+		}
+	}()
+
+	var resp *http.Response
+	for range 100 {
+		resp = f.open(ctx, t, "systemd:a.service")
+		if resp.StatusCode != http.StatusConflict {
+			break
+		}
+		_ = resp.Body.Close()
+		time.Sleep(10 * time.Millisecond)
+	}
+	events := logEvents(resp.Body)
+	for got := 0; got < total; {
+		name, data := nextEvent(t, events)
+		if name != "lines" {
+			t.Fatalf("after %d of %d lines: event %s %s", got, total, name, data)
+		}
+		var m LogLinesJSON
+		if err := json.Unmarshal([]byte(data), &m); err != nil {
+			t.Fatal(err)
+		}
+		if m.Skipped != 0 {
+			t.Fatalf("after %d of %d lines: %d skipped", got, total, m.Skipped)
+		}
+		for _, l := range m.Lines {
+			if l.Text != strconv.Itoa(got) {
+				t.Fatalf("line %d is %q", got, l.Text)
+			}
+			got++
+		}
+	}
+}
+
+// failingAudit cannot write the audit entry of an opened stream.
+type failingAudit struct{ policy.Auditor }
+
+func (a failingAudit) Append(ctx context.Context, e store.AuditEntry) (int64, error) {
+	if e.Result == "ok" {
+		return 0, errors.New("disk full")
+	}
+	return a.Auditor.Append(ctx, e)
+}
+
+// TestDeviceLogsAuditFails: a stream whose audit entry cannot be written is
+// refused, and the agent is told to stop the stream it already started.
+func TestDeviceLogsAuditFails(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	f := newLogsFixtureAudit(t, func(a policy.Auditor) policy.Auditor { return failingAudit{a} })
+	stream := connectAgent(ctx, t, f.client, minLogsMinor, &agentv1.Ceiling{Logs: []string{"systemd:*"}})
+	reqs, cancels := fakeLogAgent(stream, "")
+	var resp *http.Response
+	for range 100 {
+		resp = f.open(ctx, t, "systemd:a.service")
+		if resp.StatusCode != http.StatusConflict {
+			break
+		}
+		_ = resp.Body.Close()
+		time.Sleep(10 * time.Millisecond)
+	}
+	if resp.StatusCode == http.StatusOK {
+		t.Fatal("stream opened without an audit entry")
+	}
+	req := <-reqs
+	select {
+	case id := <-cancels:
+		if id != req.GetId() {
+			t.Errorf("cancel of %s, want %s", id, req.GetId())
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("agent got no LogCancel")
+	}
+}
+
+// TestDeliverLogsSlowReader: a reader too far behind keeps its stream and
+// loses its oldest lines, told how many, without the agent being stopped.
 func TestDeliverLogsSlowReader(t *testing.T) {
 	t.Parallel()
 	var sent []*agentv1.HubMessage
-	s := &agentSession{done: make(chan struct{}), logs: map[string]chan *agentv1.LogLines{}, send: func(m *agentv1.HubMessage) error {
+	s := &agentSession{done: make(chan struct{}), logs: map[string]*logQueue{}, send: func(m *agentv1.HubMessage) error {
 		sent = append(sent, m)
 		return nil
 	}}
-	ch := make(chan *agentv1.LogLines, logBuffer)
-	s.logs["x"] = ch
-	for range logBuffer + 5 {
-		s.deliverLogs(&agentv1.LogLines{Id: "x", Lines: []*agentv1.LogLine{{Text: "a"}}})
+	q := newLogQueue()
+	s.logs["x"] = q
+	const extra = 5
+	for i := range logQueueLines + extra {
+		s.deliverLogs(&agentv1.LogLines{Id: "x", Lines: []*agentv1.LogLine{{Text: strconv.Itoa(i)}}})
 	}
-	if len(sent) != 1 || sent[0].GetLogCancel().GetId() != "x" {
-		t.Fatalf("sent %v, want one LogCancel", sent)
+	if len(sent) != 0 {
+		t.Errorf("sent %v to the agent, want nothing", sent)
 	}
-	n := 0
-	for range ch {
-		n++
+	if _, open := s.logs["x"]; !open {
+		t.Error("stream no longer registered")
 	}
-	if n != logBuffer {
-		t.Errorf("reader got %d messages, then the closed channel; want %d", n, logBuffer)
+	m := q.take()
+	if m.GetSkipped() != extra || m.GetLines()[0].GetText() != strconv.Itoa(extra) {
+		t.Fatalf("first message skipped %d and starts at %q, want %d and %d", m.GetSkipped(), m.GetLines()[0].GetText(), extra, extra)
 	}
-	if _, open := s.logs["x"]; open {
-		t.Error("stream still registered")
+	got := len(m.GetLines())
+	for m = q.take(); m != nil; m = q.take() {
+		if m.GetSkipped() != 0 {
+			t.Errorf("later message skipped %d", m.GetSkipped())
+		}
+		got += len(m.GetLines())
+	}
+	if got != logQueueLines {
+		t.Errorf("reader got %d lines, want %d", got, logQueueLines)
+	}
+}
+
+func TestLogQueue(t *testing.T) {
+	t.Parallel()
+	line := func(n int) []*agentv1.LogLine { return make([]*agentv1.LogLine, n) }
+	for _, tc := range []struct {
+		name string
+		put  []*agentv1.LogLines
+		want []*agentv1.LogLines
+	}{
+		{"nothing", nil, nil},
+		{
+			"small messages join",
+			[]*agentv1.LogLines{{Lines: line(2)}, {Lines: line(3)}},
+			[]*agentv1.LogLines{{Lines: line(5)}},
+		},
+		{
+			"an event stays within its cap",
+			[]*agentv1.LogLines{{Lines: line(logEventLines)}, {Lines: line(1)}},
+			[]*agentv1.LogLines{{Lines: line(logEventLines)}, {Lines: line(1)}},
+		},
+		{
+			"a gap the agent reports keeps its place",
+			[]*agentv1.LogLines{{Lines: line(2)}, {Lines: line(3), Skipped: 7}, {Lines: line(1)}},
+			[]*agentv1.LogLines{{Lines: line(2)}, {Lines: line(4), Skipped: 7}},
+		},
+		{
+			"the end comes with the last lines",
+			[]*agentv1.LogLines{{Lines: line(2)}, {Lines: line(1), End: true, Error: "gone"}},
+			[]*agentv1.LogLines{{Lines: line(3), End: true, Error: "gone"}},
+		},
+		{
+			"dropping adds what the dropped message had skipped",
+			[]*agentv1.LogLines{{Lines: line(10), Skipped: 4}, {Lines: line(logQueueLines - 1)}, {Lines: line(1)}},
+			[]*agentv1.LogLines{{Lines: line(logQueueLines - 1), Skipped: 14}, {Lines: line(1)}},
+		},
+		{
+			"the end is never dropped",
+			[]*agentv1.LogLines{{Lines: line(logQueueLines)}, {Lines: line(logQueueLines), End: true}},
+			[]*agentv1.LogLines{{Lines: line(logQueueLines), Skipped: logQueueLines, End: true}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			q := newLogQueue()
+			for _, m := range tc.put {
+				q.put(m)
+			}
+			for i, want := range tc.want {
+				m := q.take()
+				if m == nil {
+					t.Fatalf("message %d: none", i)
+				}
+				if len(m.GetLines()) != len(want.GetLines()) || m.GetSkipped() != want.GetSkipped() ||
+					m.GetEnd() != want.GetEnd() || m.GetError() != want.GetError() {
+					t.Errorf("message %d: %d lines, skipped %d, end %v %q; want %d, %d, %v %q", i,
+						len(m.GetLines()), m.GetSkipped(), m.GetEnd(), m.GetError(),
+						len(want.GetLines()), want.GetSkipped(), want.GetEnd(), want.GetError())
+				}
+			}
+			if m := q.take(); m != nil {
+				t.Errorf("extra message %v", m)
+			}
+			if q.lines != 0 {
+				t.Errorf("queue counts %d lines when empty", q.lines)
+			}
+		})
 	}
 }
