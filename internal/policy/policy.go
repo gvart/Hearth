@@ -51,6 +51,9 @@ const (
 	// ClusterMigrate migrates the cluster's store schema to a newer version
 	// on every hub, through the Raft log.
 	ClusterMigrate Action = "cluster.migrate"
+	// AutomationLog is an automation's log action: it writes a line to the
+	// hub log and touches no device.
+	AutomationLog Action = "automation.log"
 )
 
 // Actor kinds.
@@ -68,6 +71,9 @@ const (
 	ActorJoinToken = "join_token"
 	// ActorHub is a cluster member identified by its hub node certificate.
 	ActorHub = "hub"
+	// ActorAutomation is an automation run on the cluster leader, identified
+	// by the automation's id.
+	ActorAutomation = "automation"
 )
 
 // Decisions recorded in the audit log.
@@ -102,6 +108,8 @@ var rules = map[Action]rule{
 	ClusterTransferLeadership: {class: Safe, actors: []string{ActorAdmin}},
 	// A schema migration cannot be undone: downgrades are unsupported.
 	ClusterMigrate: {class: Dangerous, actors: []string{ActorAdmin}},
+	// Writing a log line changes nothing.
+	AutomationLog: {class: Read, actors: []string{ActorAutomation}},
 }
 
 // ClassOf returns the class of a known action.

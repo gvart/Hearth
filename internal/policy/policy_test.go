@@ -180,6 +180,27 @@ func TestEngineDo(t *testing.T) {
 			wantResult:   "actor kind not allowed",
 		},
 		{
+			name:         "automation can log",
+			req:          Request{ActorKind: ActorAutomation, ActorID: "hello", Action: AutomationLog},
+			wantRan:      true,
+			wantDecision: Allow,
+			wantResult:   "ok",
+		},
+		{
+			name:         "web session cannot run an automation's action",
+			req:          Request{ActorKind: ActorWeb, ActorID: "192.0.2.1", Action: AutomationLog},
+			wantErr:      ErrDenied,
+			wantDecision: Deny,
+			wantResult:   "actor kind not allowed",
+		},
+		{
+			name:         "anonymous automation denied",
+			req:          Request{ActorKind: ActorAutomation, Action: AutomationLog},
+			wantErr:      ErrDenied,
+			wantDecision: Deny,
+			wantResult:   "anonymous actor",
+		},
+		{
 			name:         "anonymous actor denied",
 			req:          Request{ActorKind: ActorAdmin, Action: TokenCreate},
 			wantErr:      ErrDenied,
