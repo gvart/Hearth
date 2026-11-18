@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/gvart/hearth/internal/hub/webui"
+	"github.com/gvart/hearth/internal/integrations/kubernetes"
 	"github.com/gvart/hearth/internal/integrations/prometheus"
 	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/policy"
@@ -65,6 +66,7 @@ func newAPI(cfg Config) *api {
 		store: cfg.Store, policy: cfg.Policy, registry: reg, log: cfg.Log, now: time.Now, keepalive: sseKeepalive,
 		ca: cfg.CA, agentHosts: cfg.AgentHosts, agentPort: agentPort, httpPort: httpPort, ready: cfg.Ready, readyWait: readyWait,
 		prom: cfg.Prometheus,
+		kube: cfg.Kube,
 	}
 }
 
@@ -80,6 +82,7 @@ func (a *api) routes() http.Handler {
 	mux.Handle("GET /api/v1/devices/{id}/metrics", a.auth(a.deviceMetrics))
 	mux.Handle("GET /api/v1/events", a.auth(a.events))
 	mux.Handle("POST /api/v1/tokens", a.auth(a.createToken))
+	a.kubeRoutes(mux)
 	mux.Handle("/api/v1/", a.auth(func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "no such endpoint")
 	}))
@@ -134,6 +137,8 @@ type api struct {
 	verifyMu sync.Mutex
 	// prom is Config.Prometheus; nil when no Prometheus is configured.
 	prom *prometheus.Reader
+	// kube is Config.Kube; nil when Kubernetes clusters are not served.
+	kube *kubernetes.Manager
 }
 
 // DeviceJSON is the API representation of a device.
@@ -330,14 +335,21 @@ type EventJSON struct {
 	Device DeviceJSON `json:"device"`
 }
 
-// events streams registry events as server-sent events until the client goes
-// away, its session ends, or it falls too far behind (it should then refetch
-// /devices and reconnect, which EventSource does by itself).
+// events streams registry events, and Kubernetes notices when a.kube is
+// set, as server-sent events until the client goes away, its session ends,
+// or it falls too far behind (it should then refetch /devices and the
+// clusters and reconnect, which EventSource does by itself).
 func (a *api) events(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	rc := http.NewResponseController(w)
 	ch, unsubscribe := a.registry.Subscribe()
 	defer unsubscribe()
+	var kubeCh <-chan kubernetes.Notice // nil, never ready, without a.kube
+	if a.kube != nil {
+		var unsubscribeKube func()
+		kubeCh, unsubscribeKube = a.kube.Subscribe()
+		defer unsubscribeKube()
+	}
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-store")
@@ -365,6 +377,16 @@ func (a *api) events(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			_, err = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", ev.Type, data)
+		case n, ok := <-kubeCh:
+			if !ok {
+				return
+			}
+			data, mErr := json.Marshal(n.Data)
+			if mErr != nil {
+				a.log.ErrorContext(ctx, "encode kube event", "err", mErr)
+				continue
+			}
+			_, err = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", n.Type, data)
 		case <-keepalive.C:
 			if _, err := a.checkSession(r); err != nil {
 				return

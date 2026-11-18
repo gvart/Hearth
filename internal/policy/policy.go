@@ -63,6 +63,14 @@ const (
 	AutomationRestart Action = "automation.restart"
 	// AutomationExec runs a command on a device, through its agent.
 	AutomationExec Action = "automation.exec"
+	// KubeClusterAdd adopts a Kubernetes cluster: the hub stores its
+	// kubeconfig, sealed, and starts watching it read-only.
+	KubeClusterAdd Action = "kube.cluster.add"
+	// KubeClusterRemove forgets an adopted Kubernetes cluster and its
+	// kubeconfig.
+	KubeClusterRemove Action = "kube.cluster.remove"
+	// KubePodLogs reads the recent log lines of a pod's container.
+	KubePodLogs Action = "kube.pod.logs"
 )
 
 // Actor kinds.
@@ -126,6 +134,12 @@ var rules = map[Action]rule{
 	AutomationRestart: {class: Safe, actors: []string{ActorAutomation}},
 	// An arbitrary command can do anything the agent can.
 	AutomationExec: {class: Dangerous, actors: []string{ActorAutomation}},
+	// Adding a cluster hands the hub a credential to it; the hub only ever
+	// reads with it (no Kubernetes write action exists yet).
+	KubeClusterAdd:    {class: Safe, actors: []string{ActorWeb}},
+	KubeClusterRemove: {class: Safe, actors: []string{ActorWeb}},
+	// Logs may carry secrets, so reading them is audited.
+	KubePodLogs: {class: Read, actors: []string{ActorWeb}},
 }
 
 // ClassOf returns the class of a known action.

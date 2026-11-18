@@ -13,6 +13,7 @@ import (
 
 	"connectrpc.com/connect"
 
+	"github.com/gvart/hearth/internal/integrations/kubernetes"
 	"github.com/gvart/hearth/internal/integrations/prometheus"
 	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/policy"
@@ -59,6 +60,9 @@ type Config struct {
 	// Agents runs exec requests over the open agent streams. Share one with
 	// whatever sends them (the automations). If nil, NewHandler creates one.
 	Agents *Agents
+	// Kube serves adopted Kubernetes clusters under /api/v1/kube and streams
+	// their changes on /api/v1/events. Nil disables both.
+	Kube *kubernetes.Manager
 }
 
 // NewHandler serves EnrollService to anyone (the token is the credential) and

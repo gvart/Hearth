@@ -50,6 +50,8 @@ func allCommands() []Command {
 			ID: "r1", AutomationID: "a", TriggerID: "manual", StartedAt: 17, FinishedAt: 18,
 			Status: "succeeded", Error: "", Steps: `[{"id":"x"}]`, Keep: 100,
 		},
+		AddKubeCluster{ID: "k1", Name: "lab", Sealed: []byte{9, 9}, CreatedAt: 17},
+		RemoveKubeCluster{ID: "k1"},
 	}
 }
 
@@ -281,6 +283,14 @@ func runScenario(t *testing.T, s *Store) {
 			Status: "succeeded",
 		}))
 	}
+	// Kubernetes clusters: added, a duplicate name refused, one removed.
+	must(s.KubeClusters().Add(ctx, KubeCluster{ID: "k1", Name: "lab", Sealed: []byte{1}, CreatedAt: at(5 * time.Hour)}))
+	must(s.KubeClusters().Add(ctx, KubeCluster{ID: "k2", Name: "edge", Sealed: []byte{2}, CreatedAt: at(5 * time.Hour)}))
+	if err := s.KubeClusters().Add(ctx, KubeCluster{ID: "k3", Name: "lab", Sealed: []byte{3}, CreatedAt: at(5 * time.Hour)}); !IsDomainError(err) {
+		t.Fatalf("duplicate kube cluster name = %v, want a constraint violation", err)
+	}
+	must(s.KubeClusters().Remove(ctx, "k2"))
+	wantErr(s.KubeClusters().Remove(ctx, "k2"), ErrNotFound)
 }
 
 // dumpTables returns every row of every table (sqlite_sequence included,

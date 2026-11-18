@@ -669,6 +669,10 @@ func DecodeCommand(b []byte) (Command, error) {
 		cmd, err = decodeAs[MigrateSchema](env.Cmd)
 	case RecordAutomationRun{}.Op():
 		cmd, err = decodeAs[RecordAutomationRun](env.Cmd)
+	case AddKubeCluster{}.Op():
+		cmd, err = decodeAs[AddKubeCluster](env.Cmd)
+	case RemoveKubeCluster{}.Op():
+		cmd, err = decodeAs[RemoveKubeCluster](env.Cmd)
 	default:
 		return nil, fmt.Errorf("decode command: unknown op %q", env.Op)
 	}
