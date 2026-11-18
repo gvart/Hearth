@@ -188,6 +188,9 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	if err := notifyApprovals(pol, polCfg.ApprovalNotify, st, notifier, hosts[0], agentPort, log); err != nil {
+		return err
+	}
 	// stopping ends agent streams and /events subscriptions as soon as either
 	// server begins shutting down, so Shutdown waits only on ordinary requests
 	// and agents see a clean end of stream and reconnect at once.
@@ -424,6 +427,32 @@ func ensureAdminPassword(ctx context.Context, st *store.Store, pol *policy.Engin
 // loadNotifier reads the notification channels file: --notify-config, or
 // <data-dir>/notify.yaml if it exists. Without one the hub has no channels.
 // It logs channel names only, never their addresses or credentials.
+// notifyApprovals sends every action pol holds to the policy file's
+// approval_notify channel, with an approval link based at its url or, by
+// default, the hub's HTTPS address for host.
+func notifyApprovals(pol *policy.Engine, cfg policy.ApprovalNotify, st *store.Store, n *notify.Notifier,
+	host, port string, log *slog.Logger,
+) error {
+	if cfg.Channel == "" {
+		return nil
+	}
+	if !n.Has(cfg.Channel) {
+		return fmt.Errorf("policy config: approval_notify.channel %q is not in the notification channels file", cfg.Channel)
+	}
+	base := cfg.URL
+	if base == "" {
+		if port == "" {
+			port = defaultPort
+		}
+		base = "https://" + net.JoinHostPort(host, port)
+	}
+	pol.OnHeld(hub.NewApprovalNotifier(hub.ApprovalNotifierConfig{
+		Links: st.ApprovalLinks(), Notifier: n, Channel: cfg.Channel, BaseURL: base, Log: log,
+	}))
+	log.Info("held actions are notified", "channel", cfg.Channel, "link_base", base)
+	return nil
+}
+
 func loadNotifier(opts hubOptions, log *slog.Logger) (*notify.Notifier, error) {
 	path := opts.notifyConfig
 	if path == "" {

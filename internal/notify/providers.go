@@ -31,12 +31,20 @@ func newNtfy(server, topic, token string) (channel, error) {
 	if token != "" {
 		header.Set("Authorization", "Bearer "+token)
 	}
-	return channel{typ: "ntfy", send: func(ctx context.Context, c *http.Client, title, message string) error {
+	return channel{typ: "ntfy", send: func(ctx context.Context, c *http.Client, m Message) error {
 		// JSON publishing carries any UTF-8 title, which a Title header
 		// cannot.
-		body := map[string]string{"topic": topic, "message": message}
-		if title != "" {
-			body["title"] = title
+		body := map[string]any{"topic": topic, "message": m.Body}
+		if m.Title != "" {
+			body["title"] = m.Title
+		}
+		if m.Link != "" {
+			label := m.LinkLabel
+			if label == "" {
+				label = "Open"
+			}
+			body["click"] = m.Link
+			body["actions"] = []map[string]any{{"action": "view", "label": label, "url": m.Link, "clear": true}}
 		}
 		return post(ctx, c, endpoint, header, body, func(b []byte) string { return field(b, "error") })
 	}}, nil
@@ -52,10 +60,13 @@ func newTelegram(api, botToken, chatID string) (channel, error) {
 		return channel{}, errors.New("chat_id is required: the chat's id, or @channelname")
 	}
 	endpoint := api + "/bot" + botToken + "/sendMessage"
-	return channel{typ: "telegram", send: func(ctx context.Context, c *http.Client, title, message string) error {
-		text := message
-		if title != "" {
-			text = title + "\n" + message
+	return channel{typ: "telegram", send: func(ctx context.Context, c *http.Client, m Message) error {
+		text := m.Body
+		if m.Title != "" {
+			text = m.Title + "\n" + m.Body
+		}
+		if m.Link != "" {
+			text += "\n" + m.Link
 		}
 		// Plain text: no parse_mode, so template values need no escaping.
 		body := map[string]string{"chat_id": chatID, "text": text}

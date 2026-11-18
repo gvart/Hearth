@@ -68,6 +68,12 @@ after 10 s.
 ntfy gets the title and message as they are. Telegram gets the title, a newline and the message, as
 plain text.
 
+## Approvals
+
+A channel can also get every action policy holds for approval, with a single-use link to approve
+or deny it from the phone: `approval_notify` in `policy.yaml`, see
+[Approve from your phone](guardrails.md#approve-from-your-phone).
+
 ## Test-send
 
 The web UI's **Notifications** page lists the channels by name and type, with a **Send test**

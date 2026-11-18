@@ -58,7 +58,16 @@ type Engine struct {
 	now       func() time.Time
 	// poll is how often a held request reads its approval.
 	poll time.Duration
+	// onHeld is told about every approval this engine holds; see OnHeld.
+	onHeld func(ctx context.Context, ap store.Approval)
 }
+
+// OnHeld sets fn to be called with every approval the engine holds, once
+// it is stored and audited and before the requester waits: the hub sends
+// it to a notification channel. fn must not block for long (it delays the
+// requester's wait, not the approval's expiry) and its failures are its
+// own. Call it before the engine is used.
+func (e *Engine) OnHeld(fn func(ctx context.Context, ap store.Approval)) { e.onHeld = fn }
 
 // DefaultApprovalTimeout is how long an action waits for approval when the
 // configuration sets no timeout. An action nobody approves in time is
@@ -230,6 +239,9 @@ func (e *Engine) hold(ctx context.Context, req Request, class Class) (decision, 
 	if req.OnHold != nil {
 		req.OnHold(ap.ID, ap.ExpiresAt)
 	}
+	if e.onHeld != nil {
+		e.onHeld(ctx, ap)
+	}
 
 	final, err := e.wait(ctx, ap)
 	switch {
@@ -306,6 +318,29 @@ func (e *Engine) Decide(ctx context.Context, actorKind, actorID, id string, appr
 	}, func(ctx context.Context) error {
 		return e.approvals.Decide(ctx, id, status, actorKind+"/"+actorID, e.now())
 	})
+}
+
+// DecideLink approves or denies, as the holder of an approval link from
+// actorID (its remote address), the approval the link was sent for. use
+// spends the link, once, and returns its approval's id. A link that cannot
+// be used (unknown, used or expired) is audited as a denial and returns
+// use's error, which also wraps ErrDenied; otherwise it is Decide as
+// ActorApprovalLink.
+func (e *Engine) DecideLink(ctx context.Context, actorID string, approve bool, use func(context.Context) (string, error)) error {
+	action := ApprovalDeny
+	if approve {
+		action = ApprovalApprove
+	}
+	id, err := use(ctx)
+	if err != nil {
+		req := Request{ActorKind: ActorApprovalLink, ActorID: actorID, Action: action}
+		reason := "approval link not usable: " + err.Error()
+		if aErr := e.record(ctx, req, Deny, reason, nil); aErr != nil {
+			return errors.Join(err, aErr)
+		}
+		return fmt.Errorf("%s by %s/%s: %w (%w)", action, ActorApprovalLink, orUnknown(actorID), err, ErrDenied)
+	}
+	return e.Decide(ctx, ActorApprovalLink, actorID, id, approve)
 }
 
 // withAuditErr combines a failed action with its failed audit append. When

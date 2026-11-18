@@ -87,7 +87,7 @@ func (a *autoApprovals) Decide(_ context.Context, id, status, by string, _ time.
 }
 
 // actorKinds are every actor kind there is.
-var actorKinds = []string{ActorAdmin, ActorToken, ActorWeb, ActorJoinToken, ActorHub, ActorAutomation}
+var actorKinds = []string{ActorAdmin, ActorToken, ActorWeb, ActorJoinToken, ActorHub, ActorAutomation, ActorApprovalLink}
 
 // expected is the action table written out independently of rules: its
 // class, the actor kinds it admits, and whether the configuration applies.
@@ -123,8 +123,8 @@ var expected = map[Action]struct {
 	KubeNodeDrain:             {Dangerous, []string{ActorWeb, ActorAutomation}, false},
 	AutomationNotify:          {Safe, []string{ActorAutomation}, false},
 	NotifyTest:                {Safe, []string{ActorWeb}, false},
-	ApprovalApprove:           {Dangerous, []string{ActorAdmin, ActorWeb}, true},
-	ApprovalDeny:              {Safe, []string{ActorAdmin, ActorWeb}, true},
+	ApprovalApprove:           {Dangerous, []string{ActorAdmin, ActorWeb, ActorApprovalLink}, true},
+	ApprovalDeny:              {Safe, []string{ActorAdmin, ActorWeb, ActorApprovalLink}, true},
 }
 
 func TestExpectedCoversEveryAction(t *testing.T) {
@@ -473,12 +473,14 @@ actors:
   automation: {safe: deny}
 dangerous_automations: [backup]
 approval_timeout: 5m
+approval_notify: {channel: phone, url: "https://hearth.lan:8443"}
 `))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if c.Classes[Dangerous] != ModeConfirm || c.Actors[ActorAutomation][Safe] != ModeDeny ||
-		!slices.Equal(c.DangerousAutomations, []string{"backup"}) || c.ApprovalTimeout != 5*time.Minute {
+		!slices.Equal(c.DangerousAutomations, []string{"backup"}) || c.ApprovalTimeout != 5*time.Minute ||
+		c.ApprovalNotify != (ApprovalNotify{Channel: "phone", URL: "https://hearth.lan:8443"}) {
 		t.Errorf("config = %+v", c)
 	}
 	if _, err := LoadConfig(write("")); err != nil {
@@ -492,6 +494,12 @@ approval_timeout: 5m
 		"unknown actor kind":    "actors: {mcp: {safe: deny}}",
 		"actor with a bad mode": "actors: {web: {safe: ask}}",
 		"negative timeout":      "approval_timeout: -1m",
+		"notify url scheme":     "approval_notify: {channel: phone, url: ftp://hub}",
+		"notify url no host":    "approval_notify: {channel: phone, url: https://}",
+		"notify url query":      "approval_notify: {channel: phone, url: 'https://hub/?t=1'}",
+		"notify url userinfo":   "approval_notify: {channel: phone, url: 'https://u:p@hub'}",
+		"notify url no channel": "approval_notify: {url: https://hub}",
+		"notify unknown key":    "approval_notify: {channel: phone, topic: x}",
 	} {
 		if _, err := LoadConfig(write(body)); err == nil {
 			t.Errorf("%s: loaded, want an error", name)

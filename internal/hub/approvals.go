@@ -53,15 +53,7 @@ func (a *api) listApprovals(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]ApprovalJSON, 0, len(aps))
 	for _, ap := range aps {
-		j := ApprovalJSON{
-			ID: ap.ID, CreatedAt: ap.CreatedAt, ExpiresAt: ap.ExpiresAt, ActorKind: ap.ActorKind,
-			ActorID: ap.ActorID, Action: ap.Action, Class: ap.Class, Target: ap.Target, Detail: ap.Detail,
-			Status: ap.Status, DecidedBy: ap.DecidedBy,
-		}
-		if !ap.DecidedAt.IsZero() {
-			j.DecidedAt = &ap.DecidedAt
-		}
-		out = append(out, j)
+		out = append(out, approvalJSON(ap))
 	}
 	writeJSON(w, http.StatusOK, out)
 }

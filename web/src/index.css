@@ -1268,3 +1268,82 @@ dialog::backdrop {
   justify-content: flex-end;
   gap: 0.75rem;
 }
+
+/* Approvals */
+.nav-badge {
+  margin-left: 0.35rem;
+}
+
+.section-title {
+  margin: 2rem 0 0.75rem;
+  font-size: 1rem;
+}
+
+.approval-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr));
+  gap: 1rem;
+}
+
+.approval-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--warn);
+  border-radius: var(--radius);
+}
+
+.approval-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.approval-details {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.35rem 1rem;
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.approval-details dt {
+  color: var(--muted);
+}
+
+.approval-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.approval-detail {
+  margin: 0;
+  padding: 0.5rem 0.65rem;
+  max-height: 12rem;
+  overflow: auto;
+  border-radius: 6px;
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+}
+
+.approval-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.approve-card .approval-actions .btn {
+  flex: 1;
+  height: 2.75rem;
+}
+
+.approve-card h1 {
+  font-size: 1.25rem;
+}

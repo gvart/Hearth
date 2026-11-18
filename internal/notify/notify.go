@@ -51,7 +51,19 @@ type Notifier struct {
 
 type channel struct {
 	typ  string
-	send func(ctx context.Context, c *http.Client, title, message string) error
+	send func(ctx context.Context, c *http.Client, m Message) error
+}
+
+// Message is one notification.
+type Message struct {
+	// Title may be empty.
+	Title string
+	Body  string
+	// Link, when set, is a URL the notification opens: ntfy shows it as a
+	// button labelled LinkLabel and opens it on a tap; Telegram gets it on
+	// a line of its own.
+	Link      string
+	LinkLabel string
 }
 
 // Load reads the channels file at path. A missing file is an error.
@@ -161,6 +173,11 @@ func (n *Notifier) Has(channel string) bool {
 // channel and its type, never its topic or credentials; a connection error
 // may name the server's host and port.
 func (n *Notifier) Send(ctx context.Context, channel, title, message string) error {
+	return n.SendMessage(ctx, channel, Message{Title: title, Body: message})
+}
+
+// SendMessage sends m to channel, as Send does.
+func (n *Notifier) SendMessage(ctx context.Context, channel string, m Message) error {
 	if n == nil {
 		return fmt.Errorf("%w %q", ErrNoChannel, channel)
 	}
@@ -170,7 +187,7 @@ func (n *Notifier) Send(ctx context.Context, channel, title, message string) err
 	}
 	ctx, cancel := context.WithTimeout(ctx, sendTimeout)
 	defer cancel()
-	if err := c.send(ctx, n.client, title, message); err != nil {
+	if err := c.send(ctx, n.client, m); err != nil {
 		return fmt.Errorf("notify %s (%s): %w", channel, c.typ, err)
 	}
 	return nil

@@ -16,6 +16,44 @@ import (
 	"testing"
 )
 
+func TestSendMessageLink(t *testing.T) {
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(b, &got)
+		_, _ = io.WriteString(w, `{"ok":true}`)
+	}))
+	t.Cleanup(srv.Close)
+	n, err := Parse([]byte("channels:\n  phone:\n    type: ntfy\n    url: " + srv.URL + "\n    topic: lab\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	link := "https://hub.lan:8443/#/approve/abc"
+	if err := n.SendMessage(context.Background(), "phone", Message{Title: "t", Body: "b", Link: link, LinkLabel: "Review"}); err != nil {
+		t.Fatal(err)
+	}
+	actions, _ := got["actions"].([]any)
+	if got["click"] != link || len(actions) != 1 {
+		t.Fatalf("ntfy body = %v", got)
+	}
+	a, _ := actions[0].(map[string]any)
+	if a["action"] != "view" || a["label"] != "Review" || a["url"] != link {
+		t.Errorf("ntfy action = %v", a)
+	}
+
+	ch, err := newTelegram(srv.URL, "123:SECRET", "-100")
+	if err != nil {
+		t.Fatal(err)
+	}
+	n = &Notifier{client: srv.Client(), channels: map[string]channel{"family": ch}}
+	if err := n.SendMessage(context.Background(), "family", Message{Title: "t", Body: "b", Link: link}); err != nil {
+		t.Fatal(err)
+	}
+	if got["text"] != "t\nb\n"+link {
+		t.Errorf("telegram text = %q", got["text"])
+	}
+}
+
 // fake records the requests a provider fake gets and answers them.
 type fake struct {
 	mu     sync.Mutex

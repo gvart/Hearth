@@ -273,6 +273,26 @@ export interface AuditFilter {
   until?: string;
 }
 
+export type ApprovalStatus = 'pending' | 'approved' | 'denied' | 'expired';
+
+/** An action policy holds until someone approves it; see /api/v1/approvals. */
+export interface Approval {
+  id: string;
+  created_at: string;
+  expires_at: string;
+  actor_kind: string;
+  actor_id: string;
+  action: string;
+  class: ActionClass;
+  target: string;
+  /** The request's audit detail. */
+  detail: Record<string, unknown>;
+  status: ApprovalStatus;
+  /** Who decided, as kind/id ("web/192.168.1.5", "approval_link/...", "timeout"). */
+  decided_by?: string;
+  decided_at?: string;
+}
+
 /** ApiError carries the hub's `{"error","code"}` body and the HTTP status. */
 export class ApiError extends Error {
   readonly status: number;
@@ -354,6 +374,15 @@ export const api = {
   notifyChannels: async () => (await request<{ channels: NotifyChannel[] }>('GET', '/notify/channels')).channels,
   testNotifyChannel: (name: string) =>
     request<undefined>('POST', `/notify/channels/${encodeURIComponent(name)}/test`),
+  /** The newest approvals: pending ones, or all of them. */
+  approvals: (status: 'pending' | 'all') => request<Approval[]>('GET', `/approvals?status=${status}`),
+  decideApproval: (id: string, approve: boolean) =>
+    request<undefined>('POST', `/approvals/${encodeURIComponent(id)}/${approve ? 'approve' : 'deny'}`),
+  /** The approval an approval link is for; needs no session, and does not use the link. */
+  approvalLink: (token: string) => request<Approval>('POST', '/approval-link', { token }),
+  /** Approves or denies through an approval link, which this spends. */
+  decideApprovalLink: (token: string, approve: boolean) =>
+    request<undefined>('POST', `/approval-link/${approve ? 'approve' : 'deny'}`, { token }),
 };
 
 export interface EventHandlers {

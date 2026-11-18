@@ -42,6 +42,8 @@ type Result struct {
 	Devices []Device
 	// Labels are the labels of the token consumed by ConsumeToken.
 	Labels map[string]string
+	// ApprovalID is the approval of the link spent by UseApprovalLink.
+	ApprovalID string
 	// ID is the audit_log ID assigned by AppendAudit.
 	ID int64
 	// Count is the number of certificates revoked by RevokeDevice or
@@ -677,6 +679,10 @@ func DecodeCommand(b []byte) (Command, error) {
 		cmd, err = decodeAs[CreateApproval](env.Cmd)
 	case DecideApproval{}.Op():
 		cmd, err = decodeAs[DecideApproval](env.Cmd)
+	case CreateApprovalLink{}.Op():
+		cmd, err = decodeAs[CreateApprovalLink](env.Cmd)
+	case UseApprovalLink{}.Op():
+		cmd, err = decodeAs[UseApprovalLink](env.Cmd)
 	default:
 		return nil, fmt.Errorf("decode command: unknown op %q", env.Op)
 	}

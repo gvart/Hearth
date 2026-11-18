@@ -99,3 +99,13 @@ export function formatDateTime(iso: string | null): string {
   const t = iso ? Date.parse(iso) : NaN;
   return Number.isNaN(t) || t <= 0 ? '—' : new Date(t).toLocaleString();
 }
+
+/** "4m 12s" left until iso, or "expired". */
+export function timeLeft(iso: string, now: number): string {
+  const secs = Math.floor((Date.parse(iso) - now) / 1000);
+  if (Number.isNaN(secs) || secs <= 0) {
+    return 'expired';
+  }
+  const m = Math.floor(secs / 60);
+  return m > 0 ? `${String(m)}m ${String(secs % 60)}s` : `${String(secs)}s`;
+}

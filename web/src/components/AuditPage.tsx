@@ -10,6 +10,7 @@ const actorKinds: { id: string; label: string }[] = [
   { id: 'token', label: 'Enrolling agent' },
   { id: 'join_token', label: 'Joining hub' },
   { id: 'hub', label: 'Cluster hub' },
+  { id: 'approval_link', label: 'Approval link' },
 ];
 
 const ranges: { id: string; label: string; ms?: number }[] = [
