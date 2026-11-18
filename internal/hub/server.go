@@ -15,6 +15,7 @@ import (
 
 	"github.com/gvart/hearth/internal/integrations/kubernetes"
 	"github.com/gvart/hearth/internal/integrations/prometheus"
+	"github.com/gvart/hearth/internal/notify"
 	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/policy"
 	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
@@ -63,6 +64,9 @@ type Config struct {
 	// Kube serves adopted Kubernetes clusters under /api/v1/kube and streams
 	// their changes on /api/v1/events. Nil disables both.
 	Kube *kubernetes.Manager
+	// Notify serves the notification channels under /api/v1/notify. Nil
+	// disables it.
+	Notify *notify.Notifier
 }
 
 // NewHandler serves EnrollService to anyone (the token is the credential) and

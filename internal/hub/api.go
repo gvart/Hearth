@@ -20,6 +20,7 @@ import (
 	"github.com/gvart/hearth/internal/hub/webui"
 	"github.com/gvart/hearth/internal/integrations/kubernetes"
 	"github.com/gvart/hearth/internal/integrations/prometheus"
+	"github.com/gvart/hearth/internal/notify"
 	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/policy"
 	"github.com/gvart/hearth/internal/store"
@@ -65,8 +66,9 @@ func newAPI(cfg Config) *api {
 	return &api{
 		store: cfg.Store, policy: cfg.Policy, registry: reg, log: cfg.Log, now: time.Now, keepalive: sseKeepalive,
 		ca: cfg.CA, agentHosts: cfg.AgentHosts, agentPort: agentPort, httpPort: httpPort, ready: cfg.Ready, readyWait: readyWait,
-		prom: cfg.Prometheus,
-		kube: cfg.Kube,
+		prom:   cfg.Prometheus,
+		kube:   cfg.Kube,
+		notify: cfg.Notify,
 	}
 }
 
@@ -83,6 +85,7 @@ func (a *api) routes() http.Handler {
 	mux.Handle("GET /api/v1/events", a.auth(a.events))
 	mux.Handle("POST /api/v1/tokens", a.auth(a.createToken))
 	a.kubeRoutes(mux)
+	a.notifyRoutes(mux)
 	mux.Handle("/api/v1/", a.auth(func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "no such endpoint")
 	}))
@@ -139,6 +142,8 @@ type api struct {
 	prom *prometheus.Reader
 	// kube is Config.Kube; nil when Kubernetes clusters are not served.
 	kube *kubernetes.Manager
+	// notify is Config.Notify; nil when notification channels are not served.
+	notify *notify.Notifier
 }
 
 // DeviceJSON is the API representation of a device.

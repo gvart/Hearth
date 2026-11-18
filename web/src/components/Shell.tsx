@@ -3,15 +3,20 @@ import { useDeviceEvents, useLogout } from '../api/hooks.ts';
 import { DevicesPage } from './DevicesPage.tsx';
 import { KubernetesPage } from './KubernetesPage.tsx';
 import { Logo } from './Logo.tsx';
+import { NotificationsPage } from './NotificationsPage.tsx';
 
-type Page = 'devices' | 'kubernetes';
+type Page = 'devices' | 'kubernetes' | 'notifications';
 
 const pages: { id: Page; label: string; hash: string }[] = [
   { id: 'devices', label: 'Devices', hash: '#/' },
   { id: 'kubernetes', label: 'Kubernetes', hash: '#/kubernetes' },
+  { id: 'notifications', label: 'Notifications', hash: '#/notifications' },
 ];
 
 function pageOf(hash: string): Page {
+  if (hash.startsWith('#/notifications')) {
+    return 'notifications';
+  }
   return hash.startsWith('#/kubernetes') ? 'kubernetes' : 'devices';
 }
 
@@ -62,7 +67,7 @@ export function Shell() {
           Sign out
         </button>
       </header>
-      {page === 'kubernetes' ? <KubernetesPage /> : <DevicesPage />}
+      {page === 'kubernetes' ? <KubernetesPage /> : page === 'notifications' ? <NotificationsPage /> : <DevicesPage />}
     </div>
   );
 }

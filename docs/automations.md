@@ -148,6 +148,7 @@ reported with their line, as `file:line: message`.
 |-----------|---------------------------------------------------|--------------|---------|
 | `log`     | writes a line to the hub log                      | read         | hub     |
 | `webhook` | sends one HTTP request                            | safe         | hub     |
+| `notify`  | sends a notification (ntfy, Telegram)             | safe         | hub     |
 | `restart` | restarts a systemd unit or Docker container       | safe         | device  |
 | `exec`    | runs a command                                    | dangerous    | device  |
 
@@ -193,6 +194,9 @@ A denial by either gate stops the run with status `denied`, shown in `hearth aut
 is in the audit log with actor `automation/<id>`. A failed action (non-zero exit, a non-2xx answer,
 an offline device) stops it with status `failed`.
 
+A `notify` action sends to a channel configured on the hub, by name: see
+[notifications.md](notifications.md).
+
 Webhook URLs and headers often carry secrets: errors, logs and the audit log name only the URL's
 scheme and host. Command arguments are never logged either; a failed command's error ends with up
 to 256 bytes of its stderr.
@@ -218,7 +222,8 @@ actions:
     body: "{{ .Trigger.Hostname }} went {{ .Trigger.State }} at {{ .Trigger.At }}"
 ```
 
-Templated fields: `device` (exec, restart), `body` and header values (webhook), `message` (log).
+Templated fields: `device` (exec, restart), `body` and header values (webhook), `message` (log),
+`title` and `message` (notify).
 The webhook `url`, `command` and `service` are not templates.
 
 | field                  | trigger types              | value                                              |

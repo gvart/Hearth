@@ -23,15 +23,18 @@ type Agents interface {
 	Exec(ctx context.Context, device string, req *agentv1.ExecRequest) (*agentv1.ExecResult, error)
 }
 
-// ActionDeps are what the exec, restart and webhook actions use when they
+// ActionDeps are what the exec, restart, webhook and notify actions use when they
 // run. Zero values are enough to load and plan automations.
 type ActionDeps struct {
 	Agents Agents
 	// HTTP sends webhooks; nil means a default client.
 	HTTP *http.Client
+	// Notifier sends notify actions; nil (as in a dry run) skips checking
+	// that their channels exist.
+	Notifier Notifier
 }
 
-// Actions returns the exec, restart and webhook action kinds, to add to
+// Actions returns the exec, restart, webhook and notify action kinds, to add to
 // Builtin's.
 func Actions(d ActionDeps) map[string]Builder[Action] {
 	if d.HTTP == nil {
@@ -41,6 +44,7 @@ func Actions(d ActionDeps) map[string]Builder[Action] {
 		"exec":    func(p Params) (Action, error) { return buildExec(p, d.Agents) },
 		"restart": func(p Params) (Action, error) { return buildRestart(p, d.Agents) },
 		"webhook": func(p Params) (Action, error) { return buildWebhook(p, d.HTTP) },
+		"notify":  func(p Params) (Action, error) { return buildNotify(p, d.Notifier) },
 	}
 }
 
