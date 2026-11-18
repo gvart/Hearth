@@ -25,7 +25,10 @@ const defaultCheckEvery = 10 * time.Second
 // checkTrigger fires when a synthetic check, run from the hub, has failed for
 // a duration. It fires once per outage: again only after the check passed.
 type checkTrigger struct {
-	what   string // for Describe: "HTTP GET http://nas.lan" ...
+	what string // for Describe: "HTTP GET http://nas.lan" ...
+	// target is what is checked, for actions: the URL (password redacted),
+	// name or address.
+	target string
 	timing pollTiming
 	probe  func(ctx context.Context) error
 	clock  Clock
@@ -36,16 +39,26 @@ func (t *checkTrigger) Describe() string {
 	return fmt.Sprintf("fires when %s fails%s (checked every %s from the hub)", t.what, forText(t.timing.For), t.timing.Every)
 }
 
-func (t *checkTrigger) Watch(ctx context.Context, fire func()) error {
-	return poller{clock: t.clock, every: t.timing.Every, hold: t.timing.For, bad: func(ctx context.Context) bool {
+func (t *checkTrigger) Watch(ctx context.Context, fire FireFunc) error {
+	return poller{clock: t.clock, every: t.timing.Every, hold: t.timing.For, bad: func(ctx context.Context) (map[string]any, bool) {
 		pctx, cancel := context.WithTimeout(ctx, t.timing.Timeout)
 		defer cancel()
 		err := t.probe(pctx)
-		if err != nil && ctx.Err() == nil {
+		if err == nil {
+			return nil, false
+		}
+		if ctx.Err() == nil {
 			t.log.DebugContext(ctx, "check failed", "check", t.what, "err", err)
 		}
-		return err != nil
+		return t.data(err.Error()), true
 	}}.watch(ctx, fire)
+}
+
+func (t *checkTrigger) Sample() map[string]any { return t.data("connection refused") }
+
+// data is what a failed check tells actions.
+func (t *checkTrigger) data(err string) map[string]any {
+	return map[string]any{"Target": t.target, "Error": err}
 }
 
 // checkTiming builds a check's timing from its fields.
@@ -84,13 +97,29 @@ func buildHTTPCheck(p Params, deps TriggerDeps) (Trigger, error) {
 		want = fmt.Sprintf("status %d", cfg.Status)
 	}
 	return &checkTrigger{
-		// u.Redacted keeps any password in the URL out of plans and logs.
-		what:   fmt.Sprintf("HTTP GET %s (expecting %s)", u.Redacted(), want),
+		what:   fmt.Sprintf("HTTP GET %s (expecting %s)", redactURL(u), want),
+		target: redactURL(u),
 		timing: timing, clock: deps.Clock, log: deps.Log,
 		probe: func(ctx context.Context) error {
 			return probeHTTP(ctx, hc, cfg.URL, cfg.Status)
 		},
 	}, nil
+}
+
+// redactURL is u with its password and query values replaced by REDACTED,
+// as it may be shown: in plans, logs, run history and action templates.
+// Health-check URLs often carry a token in either.
+func redactURL(u *url.URL) string {
+	r := *u
+	// A part of the query that does not parse is dropped, never shown.
+	q := r.Query()
+	for _, vs := range q {
+		for i := range vs {
+			vs[i] = "REDACTED"
+		}
+	}
+	r.RawQuery, r.Fragment, r.RawFragment = q.Encode(), "", ""
+	return r.Redacted()
 }
 
 // probeHTTP GETs rawURL and checks the status: want, or 2xx/3xx if want is 0.
@@ -101,6 +130,10 @@ func probeHTTP(ctx context.Context, hc *http.Client, rawURL string, want int) er
 	}
 	resp, err := hc.Do(req)
 	if err != nil {
+		var uerr *url.Error
+		if errors.As(err, &uerr) {
+			err = uerr.Err // url.Error repeats the full URL, password and all
+		}
 		return err
 	}
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
@@ -131,6 +164,7 @@ func buildTCPCheck(p Params, deps TriggerDeps) (Trigger, error) {
 	}
 	return &checkTrigger{
 		what:   "TCP connect to " + cfg.Address,
+		target: cfg.Address,
 		timing: timing, clock: deps.Clock, log: deps.Log,
 		probe: func(ctx context.Context) error {
 			var d net.Dialer
@@ -171,6 +205,7 @@ func buildDNSCheck(p Params, deps TriggerDeps) (Trigger, error) {
 	}
 	return &checkTrigger{
 		what:   fmt.Sprintf("DNS lookup of %s A at %s", cfg.Name, server),
+		target: cfg.Name,
 		timing: timing, clock: deps.Clock, log: deps.Log,
 		probe: func(ctx context.Context) error { return probeDNS(ctx, server, name) },
 	}, nil

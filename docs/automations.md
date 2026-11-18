@@ -97,6 +97,9 @@ A check fires once per outage: again only after it has passed. The DNS check ask
 directly over UDP, so the hub's own resolver and `/etc/hosts` play no part. With the defaults, a
 stopped Pi-hole is noticed within about 15 s.
 
+An HTTP check's URL is shown (in plans, logs, run history and templates) with its password and
+query values replaced by `REDACTED`, as health-check URLs often carry a token.
+
 Checks run from the hub (the leader, in a cluster). Running them from an agent is tracked in
 [#105](https://github.com/gvart/Hearth/issues/105).
 
@@ -193,3 +196,51 @@ an offline device) stops it with status `failed`.
 Webhook URLs and headers often carry secrets: errors, logs and the audit log name only the URL's
 scheme and host. Command arguments are never logged either; a failed command's error ends with up
 to 256 bytes of its stderr.
+
+## Using the trigger's event in actions
+
+Some action fields are [Go templates](https://pkg.go.dev/text/template) over the event that started
+the run, so one automation can act on whichever device went offline:
+
+```yaml
+id: revive
+triggers:
+  - id: down
+    type: device
+    to: offline                  # no device: any device
+actions:
+  - type: restart
+    device: "{{ .Trigger.Device }}"
+    service: systemd:hearth-agent.service
+  - type: webhook
+    url: https://ntfy.sh/my-lab
+    headers: {Title: "{{ .Trigger.Name }} is {{ .Trigger.State }}"}
+    body: "{{ .Trigger.Hostname }} went {{ .Trigger.State }} at {{ .Trigger.At }}"
+```
+
+Templated fields: `device` (exec, restart), `body` and header values (webhook), `message` (log).
+The webhook `url`, `command` and `service` are not templates.
+
+| field                  | trigger types              | value                                              |
+|------------------------|----------------------------|----------------------------------------------------|
+| `.Trigger.ID`          | all                        | the trigger's id                                   |
+| `.Trigger.Type`        | all                        | its type: `device`, `metric`, ...                  |
+| `.Trigger.At`          | all                        | when it fired, RFC 3339 in UTC                     |
+| `.Trigger.Device`      | device                     | the device's id                                    |
+| `.Trigger.Name`        | device                     | the device's name                                  |
+| `.Trigger.Hostname`    | device                     | the device's hostname                              |
+| `.Trigger.State`       | device                     | `online` or `offline`                              |
+| `.Trigger.Device`      | metric with `device`       | the device as the trigger names it                 |
+| `.Trigger.Value`       | metric                     | the value past the threshold (a number)            |
+| `.Trigger.Target`      | http, dns, tcp             | the URL (password and query values hidden), name or address checked |
+| `.Trigger.Error`       | http, dns, tcp             | why the check failed                               |
+
+Only text/template's built-in functions are there (`printf`, `eq`, `if`, ...): format a value with
+`{{ printf "%.1f" .Trigger.Value }}`. A field the event does not have is an error, never an empty
+string, and it is caught when the file is loaded: every template is tried against each trigger of
+its automation, so `{{ .Trigger.Device }}` next to a `schedule` trigger is rejected with its line.
+A `device` that renders empty fails the run.
+
+`hearth automation plan` shows templates as written, and lists the fields each trigger provides.
+Policy decides on, and the audit log records, the rendered device. Run history keeps the trigger's
+fields as the first step of each run.

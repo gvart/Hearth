@@ -85,13 +85,25 @@ func (t *metricTrigger) Describe() string {
 		what, cmp, strconv.FormatFloat(t.threshold, 'g', -1, 64), forText(t.timing.For), t.timing.Every)
 }
 
-func (t *metricTrigger) Watch(ctx context.Context, fire func()) error {
+func (t *metricTrigger) Sample() map[string]any { return t.data(t.threshold) }
+
+// data is what a metric trigger tells actions: the value past the threshold,
+// and the device as the trigger names it, if it names one.
+func (t *metricTrigger) data(v float64) map[string]any {
+	d := map[string]any{"Value": v}
+	if t.query == "" {
+		d["Device"] = t.device
+	}
+	return d
+}
+
+func (t *metricTrigger) Watch(ctx context.Context, fire FireFunc) error {
 	if t.metrics == nil {
 		return errors.New("metric triggers need a Prometheus: start the hub with --prometheus-url")
 	}
 	var lastErr string
-	return poller{clock: t.clock, every: t.timing.Every, hold: t.timing.For, bad: func(ctx context.Context) bool {
-		held, err := t.crossed(ctx)
+	return poller{clock: t.clock, every: t.timing.Every, hold: t.timing.For, bad: func(ctx context.Context) (map[string]any, bool) {
+		v, held, err := t.crossed(ctx)
 		// A value that cannot be read does not count as crossed: like
 		// Prometheus alerts, missing data resets the duration. Log each new
 		// error once, not on every check.
@@ -102,32 +114,35 @@ func (t *metricTrigger) Watch(ctx context.Context, fire func()) error {
 		case err == nil:
 			lastErr = ""
 		}
-		return held
+		if !held {
+			return nil, false
+		}
+		return t.data(v), true
 	}}.watch(ctx, fire)
 }
 
-// crossed reads the value and reports whether it is past the threshold. For
-// a query, any series past it counts.
-func (t *metricTrigger) crossed(ctx context.Context) (bool, error) {
+// crossed reads the value and reports whether it is past the threshold,
+// and the value that is. For a query, any series past it counts.
+func (t *metricTrigger) crossed(ctx context.Context) (float64, bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, t.timing.Timeout)
 	defer cancel()
 	var values []float64
 	if t.query != "" {
 		var err error
 		if values, err = t.metrics.Query(ctx, t.query); err != nil {
-			return false, err
+			return 0, false, err
 		}
 	} else {
 		v, err := t.metrics.DeviceMetric(ctx, t.device, t.metric)
 		if err != nil {
-			return false, err
+			return 0, false, err
 		}
 		values = []float64{v}
 	}
 	for _, v := range values {
 		if (t.above && v > t.threshold) || (!t.above && v < t.threshold) {
-			return true, nil
+			return v, true, nil
 		}
 	}
-	return false, nil
+	return 0, false, nil
 }

@@ -7,8 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -28,8 +30,8 @@ type webhookAction struct {
 	client  *http.Client
 	method  string
 	url     string
-	headers map[string]string
-	body    string
+	headers map[string]Text
+	body    Text
 	timeout time.Duration
 	// site is the URL without path, query or user info: webhook URLs often
 	// carry their secret there, so only site is ever logged or audited.
@@ -64,35 +66,65 @@ func buildWebhook(p Params, client *http.Client) (Action, error) {
 	case cfg.Timeout < 0 || cfg.Timeout > maxWebhookTimeout:
 		return nil, fmt.Errorf("timeout must be between 0 and %s", maxWebhookTimeout)
 	}
+	// The URL is not a template: it often holds the secret, and only its
+	// site may be logged, which a rendered URL would make unknowable.
+	headers := make(map[string]Text, len(cfg.Headers))
+	for k, v := range cfg.Headers {
+		if headers[k], err = p.Text(v, "headers", k); err != nil {
+			return nil, err
+		}
+	}
+	body, err := p.Text(cfg.Body, "body")
+	if err != nil {
+		return nil, err
+	}
 	return &webhookAction{
-		client: client, method: method, url: cfg.URL, headers: cfg.Headers, body: cfg.Body,
+		client: client, method: method, url: cfg.URL, headers: headers, body: body,
 		timeout: cfg.Timeout, site: u.Scheme + "://" + u.Host,
 	}, nil
 }
 
-func newWebhookRequest(ctx context.Context, method, rawURL string, headers map[string]string, body string) (*http.Request, error) {
-	req, err := http.NewRequestWithContext(ctx, method, rawURL, strings.NewReader(body))
+// newWebhookRequest renders the headers and body for ev. Errors never hold
+// their values, which may be secrets.
+func newWebhookRequest(ctx context.Context, method, rawURL string, headers map[string]Text, body Text, ev Event) (*http.Request, error) {
+	b, err := body.Render(ev)
 	if err != nil {
 		return nil, err
 	}
+	req, err := http.NewRequestWithContext(ctx, method, rawURL, strings.NewReader(b))
+	if err != nil {
+		return nil, errors.New("invalid request")
+	}
 	for k, v := range headers {
-		req.Header.Set(k, v)
+		h, err := v.Render(ev)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set(k, h)
 	}
 	return req, nil
 }
 
+func (a *webhookAction) texts() []Text {
+	out := []Text{a.body}
+	for _, k := range slices.Sorted(maps.Keys(a.headers)) {
+		out = append(out, a.headers[k])
+	}
+	return out
+}
+
 func (a *webhookAction) Describe() string      { return fmt.Sprintf("send %s %s/…", a.method, a.site) }
 func (a *webhookAction) Policy() policy.Action { return policy.AutomationWebhook }
-func (a *webhookAction) Target() string        { return a.site }
+func (a *webhookAction) Target() Text          { return Literal(a.site) }
 
 // Run sends the request. Any 2xx answer is success. Errors name the site
 // only: never the full URL, headers or body, which may hold secrets.
-func (a *webhookAction) Run(ctx context.Context, _ Event) error {
+func (a *webhookAction) Run(ctx context.Context, ev Event) error {
 	ctx, cancel := context.WithTimeout(ctx, a.timeout)
 	defer cancel()
-	req, err := newWebhookRequest(ctx, a.method, a.url, a.headers, a.body)
+	req, err := newWebhookRequest(ctx, a.method, a.url, a.headers, a.body, ev)
 	if err != nil {
-		return fmt.Errorf("webhook %s: invalid request", a.site)
+		return fmt.Errorf("webhook %s: %w", a.site, err)
 	}
 	resp, err := a.client.Do(req)
 	if err != nil {

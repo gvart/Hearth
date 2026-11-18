@@ -36,14 +36,16 @@ func buildManual(p Params) (Trigger, error) {
 
 func (manualTrigger) Describe() string { return "fires when run by hand" }
 
-func (manualTrigger) Watch(ctx context.Context, _ func()) error {
+func (manualTrigger) Sample() map[string]any { return map[string]any{} }
+
+func (manualTrigger) Watch(ctx context.Context, _ FireFunc) error {
 	<-ctx.Done()
 	return nil
 }
 
 // logAction writes a message to the hub log.
 type logAction struct {
-	message string
+	message Text
 	log     *slog.Logger
 }
 
@@ -57,16 +59,26 @@ func buildLog(p Params, logger *slog.Logger) (Action, error) {
 	if cfg.Message == "" {
 		return nil, errors.New("message is required")
 	}
-	return &logAction{message: cfg.Message, log: logger}, nil
+	msg, err := p.Text(cfg.Message, "message")
+	if err != nil {
+		return nil, err
+	}
+	return &logAction{message: msg, log: logger}, nil
 }
 
 func (a *logAction) Describe() string { return fmt.Sprintf("log %q", a.message) }
 
+func (a *logAction) texts() []Text { return []Text{a.message} }
+
 func (a *logAction) Policy() policy.Action { return policy.AutomationLog }
 
-func (a *logAction) Target() string { return "" }
+func (a *logAction) Target() Text { return Literal("") }
 
 func (a *logAction) Run(ctx context.Context, ev Event) error {
-	a.log.InfoContext(ctx, "automation log", "message", a.message, "trigger", ev.TriggerID)
+	msg, err := a.message.Render(ev)
+	if err != nil {
+		return err
+	}
+	a.log.InfoContext(ctx, "automation log", "message", msg, "trigger", ev.TriggerID)
 	return nil
 }

@@ -35,15 +35,28 @@ const MaxQueued = 10
 type Event struct {
 	// TriggerID is the id of the trigger that fired.
 	TriggerID string
-	At        time.Time
+	// TriggerType is its type: device, metric, http ...
+	TriggerType string
+	At          time.Time
+	// Data is what the trigger tells about this firing, by field name:
+	// Device, Value, Error ... Action templates see it, with ID, Type and
+	// At, as .Trigger.
+	Data map[string]any
 }
+
+// FireFunc starts a run with the data of one firing; data has the same keys
+// as the trigger's Sample.
+type FireFunc func(data map[string]any)
 
 // Trigger starts runs of its automation.
 type Trigger interface {
 	// Describe says when the trigger fires, for a dry run.
 	Describe() string
 	// Watch calls fire every time the trigger fires, until ctx is done.
-	Watch(ctx context.Context, fire func()) error
+	Watch(ctx context.Context, fire FireFunc) error
+	// Sample is the data every firing carries, with example values: action
+	// templates are checked against it when the automation is loaded.
+	Sample() map[string]any
 }
 
 // Condition decides whether a run goes on to its actions.
@@ -62,7 +75,8 @@ type Action interface {
 	// internal/policy, or the automation is rejected when loaded.
 	Policy() policy.Action
 	// Target is what the action acts on, for the audit log ("" if nothing).
-	Target() string
+	// The runtime renders it for each run.
+	Target() Text
 	Run(ctx context.Context, ev Event) error
 }
 
