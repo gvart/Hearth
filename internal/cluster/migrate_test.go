@@ -418,12 +418,14 @@ func TestMigrateNeedsEveryHub(t *testing.T) {
 		}
 	}
 
-	// A hub that cannot be asked blocks it too.
+	// A hub that cannot be asked blocks it too. (The leader reads its own
+	// schema locally, so the unreachable one is a follower.)
 	c.restart("n1", true)
-	c.byID("n3").srv.Close()
+	gone := c.followers()[0]
+	gone.srv.Close()
 	_, err = c.leader().MigrateSchema(ctx, nextSchema)
-	if !errors.Is(err, ErrSchemaUnsupported) || !strings.Contains(err.Error(), "n3 (cannot read its schema") {
-		t.Fatalf("migrate with n3 unreachable: err = %v", err)
+	if !errors.Is(err, ErrSchemaUnsupported) || !strings.Contains(err.Error(), gone.ID()+" (cannot read its schema") {
+		t.Fatalf("migrate with %s unreachable: err = %v", gone.ID(), err)
 	}
 	for _, h := range c.hubs {
 		if v := schemaOf(t, h.testNode).Current; v != store.SchemaVersion() {
