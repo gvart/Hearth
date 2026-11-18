@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -45,6 +46,10 @@ func allCommands() []Command {
 		CreateSession{Hash: []byte{4, 5}, Now: 10, ExpiresAt: 11},
 		DeleteSession{Hash: []byte{4, 5}},
 		MigrateSchema{To: 7},
+		RecordAutomationRun{
+			ID: "r1", AutomationID: "a", TriggerID: "manual", StartedAt: 17, FinishedAt: 18,
+			Status: "succeeded", Error: "", Steps: `[{"id":"x"}]`, Keep: 100,
+		},
 	}
 }
 
@@ -267,6 +272,15 @@ func runScenario(t *testing.T, s *Store) {
 	must(s.Admin().DeleteSession(ctx, "session-unknown"))
 	must(s.Admin().SetPasswordHash(ctx, "$argon2id$two"))
 	must(s.Admin().CreateSession(ctx, "session-4", at(4*time.Hour), at(5*time.Hour)))
+
+	// Automation runs, pruned to the newest RunsKept of each automation.
+	for i := range RunsKept + 2 {
+		must(s.AutomationRuns().Record(ctx, AutomationRun{
+			ID: fmt.Sprintf("run-%d", i), AutomationID: "a", TriggerID: "manual",
+			StartedAt: at(time.Duration(i) * time.Second), FinishedAt: at(time.Duration(i) * time.Second),
+			Status: "succeeded",
+		}))
+	}
 }
 
 // dumpTables returns every row of every table (sqlite_sequence included,
@@ -359,7 +373,7 @@ func TestReplayIsDeterministic(t *testing.T) {
 		}
 	}
 	want, got := dumpTables(t, src.db), dumpTables(t, dst.db)
-	for _, table := range []string{"admin", "audit_log", "certs", "cluster_hubs", "devices", "join_tokens", "sessions", "sqlite_sequence", "tokens"} {
+	for _, table := range []string{"admin", "audit_log", "automation_runs", "certs", "cluster_hubs", "devices", "join_tokens", "sessions", "sqlite_sequence", "tokens"} {
 		if len(want[table]) == 0 {
 			t.Errorf("scenario left %s empty; the comparison would prove nothing", table)
 		}
