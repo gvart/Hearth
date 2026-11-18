@@ -1,0 +1,88 @@
+internal/integrations/kubernetes/watcher.go
+  s_344993999c180f::t_d98ad888179060 1-36,49-59,61-76,91-99,101-102,104-151,154-185,197-213
+  s_344993999c180f::t_b9e80bec7f8249 37-48,77-90,100,103,186-196
+  s_344993999c180f::t_27ca2fa73b2bdb 60,152-153
+go.mod
+  s_344993999c180f::t_537282b6e5fc23 69
+  s_344993999c180f::t_54876d7ec47a8a 18-20,27,30,32-33,35-49,56,61-63,65,72,76-79,81-86,90-93
+  s_344993999c180f::t_6198e2fc7d9696 21
+internal/integrations/kubernetes/model.go
+  s_344993999c180f::t_bd39fdddeaf5f6 1-138,140-149,151-156,158-254
+  s_344993999c180f::t_67d0aa1da8ed7c 139,150,157
+internal/integrations/kubernetes/seal.go
+  s_344993999c180f::t_6d4d08e1797f09 1-72
+internal/integrations/kubernetes/manager.go
+  s_344993999c180f::t_8b2c6d7dfd54db 1-18,20-314,316-355,359-477,481-483,485-510
+  s_344993999c180f::t_1b28d0437502d9 315,478-480
+  s_344993999c180f::t_80356635814e02 19,356-358,484
+internal/hub/api.go
+  s_344993999c180f::t_c607a8f0d42085 21,69,85,140-141,338-341,347-352,380-389
+internal/integrations/kubernetes/model_test.go
+  s_344993999c180f::t_9ee4a77ba7f8c3 1-24,26-34,39-40,42-44,46-48,50-52,54-55,57-58,60-69,71-86,88-90,92-159
+  s_344993999c180f::t_a2d192d3c9d619 25,38,56,59,91
+  s_344993999c180f::t_b5f2ce75e8f98f 35-36
+  s_344993999c180f::t_7f244ff43ab68f 37,41,45,49,53,70,87
+internal/policy/policy.go
+  s_344993999c180f::t_4c163b6137a510 57-64,121-126
+internal/store/kube.go
+  s_344993999c180f::t_9b8c1f7e991089 13,16
+  s_344993999c180f::t_4ba024c0bdcc63 1-12,14-15,17-133
+internal/store/command.go
+  s_344993999c180f::t_afb060f55343f7 672-675
+internal/store/command_test.go
+  s_344993999c180f::t_a7cebf771408dd 53-54,277,286-293
+internal/store/kube_test.go
+  s_344993999c180f::t_9b8c1f7e991089 56
+  s_344993999c180f::t_4f07bf0e46e27f 1-55,57-92
+internal/integrations/kubernetes/kubeconfig.go
+  s_344993999c180f::t_13b44c026f0cb5 1-77
+internal/hub/server.go
+  s_344993999c180f::t_c607a8f0d42085 16,60-62
+cmd/hearth/hub.go
+  s_344993999c180f::t_6198e2fc7d9696 19,24,158-161,178,266-267,321-334
+  s_344993999c180f::t_7a1ba8d26c5cba 335-336
+internal/policy/policy_test.go
+  s_344993999c180f::t_483ed6bc2c0d03 203-231,234-237
+internal/integrations/kubernetes/client.go
+  s_344993999c180f::t_d8580ea24679fe 1-122
+internal/integrations/kubernetes/seal_test.go
+  s_344993999c180f::t_1b064073ba754a 1-51
+internal/integrations/kubernetes/kubeconfig_test.go
+  s_344993999c180f::t_454b68f2d55512 1-89
+internal/integrations/kubernetes/link.go
+  s_344993999c180f::t_4783b4a234c96c 1-91
+internal/hub/kube.go
+  s_344993999c180f::t_11cf498388b61b 1-122
+internal/integrations/kubernetes/manager_test.go
+  s_344993999c180f::t_2c4cecc30c40ed 244,272,306,308,400
+  s_344993999c180f::t_df56b2f08fd25d 1-187,189-191,193-243,245-271,273-305,307,309-399,401-403
+  s_344993999c180f::t_623796c0269f37 188,192
+internal/hub/kube_test.go
+  s_344993999c180f::t_b6d03d8630ca0e 1-8,10-47,49-84,86-171,185
+  s_344993999c180f::t_3c36fefe99e455 9,85,172-184
+  s_344993999c180f::t_62d8e4aab4b716 48
+go.sum
+  s_344993999c180f::t_b341447317afdb 10-11,16-17,21-24,27-62,66,96-97,110-117,121-122,137-138,140-142,150-151,156-157,160-161,169-172,186-189,196-199,201-212,241-248
+internal/integrations/kubernetes/bus.go
+  s_344993999c180f::t_0c59a4f4bb054e 1-49
+internal/integrations/kubernetes/doc.go
+  s_344993999c180f::t_9de9090250a589 1-8
+internal/store/migrations/00008_kube_clusters.sql
+  s_344993999c180f::t_03d2bb2037593a 1-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c7406ecd303bfcb63a16d42b0aa224a42c4ef4cc",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
