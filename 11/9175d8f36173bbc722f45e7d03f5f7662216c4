@@ -1,0 +1,47 @@
+web/src/index.css
+  s_344993999c180f::t_d809f07dd18d66 1085-1193,1214-1217,1225,1227,1236
+  s_344993999c180f::t_07fdb911431116 1226,1228-1235,1237-1240
+internal/hub/api.go
+  s_344993999c180f::t_bf23cce4273c95 86
+web/src/api/client.ts
+  s_344993999c180f::t_8ab602b8bbb0e3 324-335
+  s_344993999c180f::t_70d7d9d53e1bca 226-269
+internal/hub/audit.go
+  s_344993999c180f::t_cce918697cef14 1-124,130-161
+  s_344993999c180f::t_9822f1aa6f709d 125-129
+docs/guardrails.md
+  s_344993999c180f::t_1970b6d5264c2f 76-87
+web/src/components/AuditPage.tsx
+  s_344993999c180f::t_6184a8b07ce088 1,46-59,106
+  s_344993999c180f::t_a586132c380064 2-45,60-105,107-308
+  s_344993999c180f::t_6a75c17d7e91b4 309
+internal/store/audit.go
+  s_344993999c180f::t_c669360563e307 59-75,78-82,86-100,103-113,138-144
+web/src/api/hooks.ts
+  s_344993999c180f::t_fe760c68770c25 28
+  s_344993999c180f::t_49990167746ab2 1,7
+  s_344993999c180f::t_c7a0022048ddf1 56
+  s_344993999c180f::t_337b9085931b2c 62-71
+internal/hub/audit_test.go
+  s_344993999c180f::t_b09c7667fd3c68 1-88
+web/src/components/Shell.tsx
+  s_344993999c180f::t_bf433576c50e6a 3,8,13,17-19,70
+internal/store/auditquery_test.go
+  s_344993999c180f::t_74794288ad10bb 1-69
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "119175d8f36173bbc722f45e7d03f5f7662216c4",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": null
+    }
+  }
+}
