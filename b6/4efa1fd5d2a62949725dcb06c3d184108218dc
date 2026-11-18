@@ -1,0 +1,60 @@
+internal/cluster/control.go
+  s_815aef767535ea::t_2f95eb55dcb383 76-79,82-83,127-134,138-146,343-355
+internal/cluster/node.go
+  s_815aef767535ea::t_8cea529833ca24 561-564
+  s_815aef767535ea::t_2f95eb55dcb383 333,335-342,509-512,554-560,565-580,582
+  s_815aef767535ea::t_c877516cdef7ef 581
+  s_815aef767535ea::t_850239772b0cfb 583
+internal/cluster/migrate_test.go
+  s_815aef767535ea::t_48b2c2ab2e7e8c 366
+  s_815aef767535ea::t_be9792f40c626b 1-242,244-268,270-293,295-349,351-365,367,370-389,394-396,398-415,417-428,430-454,458-460,462-470
+  s_815aef767535ea::t_7098aee3e3efb6 243,269,294,350,368-369,390-393,397,416,429,455-457,461
+proto/hearth/cluster/v1/cluster.proto
+  s_815aef767535ea::t_14223c04f43ec1 32-40,53-54,127-150
+internal/cluster/members.go
+  s_815aef767535ea::t_2f95eb55dcb383 433-434,441-442
+internal/cluster/join_test.go
+  s_815aef767535ea::t_2a9f4127b0f334 217,219-226,228-234,236
+cmd/hearth/cluster_test.go
+  s_815aef767535ea::t_126e3cb30647e3 11-12,30-32,77-110
+  s_815aef767535ea::t_81f1f01069011c 111
+internal/cluster/migrate.go
+  s_815aef767535ea::t_24ec251db03590 1-34,38-208
+  s_815aef767535ea::t_750ad62da235ae 35-37
+internal/cluster/fsm_test.go
+  s_815aef767535ea::t_c4e8a1ceadf380 56-57,59-60
+  s_815aef767535ea::t_a08e2873b32dfd 58
+cmd/hearth/cluster.go
+  s_815aef767535ea::t_c24d1add1f3557 139-142
+  s_815aef767535ea::t_63dfb8c87fbf6a 144,174-251,352-354
+  s_815aef767535ea::t_4311f59737b4e7 11,25-26,130-138,143,145-173,391,397
+internal/store/schema_test.go
+  s_815aef767535ea::t_63dfb8c87fbf6a 287
+internal/cluster/join.go
+  s_815aef767535ea::t_e2c4b37daff3e2 112-117,264-267,297-299,305
+internal/proto/hearth/cluster/v1/clusterv1connect/cluster.connect.go
+  s_815aef767535ea::t_14223c04f43ec1 50-55,81-89,133-144,155-156,184-193,217-225,265-276,289-292,321-328
+internal/cluster/helpers_test.go
+  s_815aef767535ea::t_c4e8a1ceadf380 74-80,105-107
+  s_815aef767535ea::t_6a985da15a257b 72-73
+cmd/hearth/hub_cluster.go
+  s_815aef767535ea::t_fbe632f97a52b9 77-78,135-136,141-144
+internal/proto/hearth/cluster/v1/cluster.pb.go
+  s_815aef767535ea::t_59361eb7ba24f6 37-38,576-760,796-804,810-813,828,840-843,846-864,878
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b64efa1fd5d2a62949725dcb06c3d184108218dc",
+  "prompts": {},
+  "sessions": {
+    "s_815aef767535ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1866255a-7d59-4f07-869c-b29b78c7a98d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
