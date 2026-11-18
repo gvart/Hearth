@@ -78,9 +78,10 @@ triggers:
     for: 1m
 ```
 
-Metrics come from Prometheus, so the metric trigger needs `hearth hub --prometheus-url` (see
-[Prometheus](prometheus.md)); devices map to node-exporter targets as for charts. Without it the
-automation loads, but its metric trigger stops with an error in the hub log. A value that cannot be
+With `hearth hub --prometheus-url` (see [Prometheus](prometheus.md)), metrics come from Prometheus,
+and devices map to node-exporter targets as for charts. Without it, a `device` metric is the newest
+of the [built-in metrics](prometheus.md#built-in-metrics) the device's agent sent, if it is under a
+minute old; a `query` needs Prometheus, and its trigger stops with an error in the hub log. A value that cannot be
 read does not count as past the threshold, and starts the `for` duration over. A metric trigger
 fires once per spell past the threshold: again only after the value has come back.
 

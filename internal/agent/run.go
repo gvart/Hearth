@@ -29,7 +29,7 @@ import (
 // Protocol version this agent speaks.
 const (
 	ProtocolMajor = 1
-	ProtocolMinor = 3 // 1: answers ExecRequest; 2: reports its capability ceiling; 3: answers ProbeRequest
+	ProtocolMinor = 4 // 1: answers ExecRequest; 2: reports its capability ceiling; 3: answers ProbeRequest; 4: sends MetricsBatch
 )
 
 const (
@@ -54,6 +54,8 @@ type Config struct {
 	Log     *slog.Logger // required
 	// FactsInterval is how often host facts are re-sent; 0 means every 10 min.
 	FactsInterval time.Duration
+	// MetricsInterval is how often host metrics are sent; 0 means every 15 s.
+	MetricsInterval time.Duration
 	// Ceiling is what the hub may run on this device; the zero value allows
 	// nothing.
 	Ceiling Ceiling
@@ -66,6 +68,10 @@ type runner struct {
 	id            *identity
 	httpClient    *http.Client
 	boot          time.Time
+	// metrics samples host metrics every metricsInterval; it keeps its
+	// previous readings across sessions.
+	metrics         *collector
+	metricsInterval time.Duration
 	// hubs are the hubs to try, in order, and cur the index of the next one.
 	// Only Run's goroutine touches them.
 	hubs []string
@@ -120,6 +126,9 @@ func Run(ctx context.Context, cfg Config) error {
 		httpClient:    &http.Client{Transport: tr},
 		boot:          bootTime(ctx, cfg.Log),
 		hubs:          id.hubs,
+
+		metrics:         newCollector(log),
+		metricsInterval: cmp.Or(cfg.MetricsInterval, defaultMetricsInterval),
 	}
 	log.InfoContext(ctx, "agent starting", "version", cfg.Version, "hubs", r.hubs)
 
@@ -360,8 +369,8 @@ func (r *runner) receive(ctx context.Context, stream *connect.BidiStreamForClien
 	}
 }
 
-// sendLoop sends heartbeats, periodic facts and exec and probe results until ctx is canceled or a
-// send fails. It is the only sender after Hello.
+// sendLoop sends heartbeats, periodic facts and metrics, and exec and probe results until ctx is
+// canceled or a send fails. It is the only sender after Hello.
 func (r *runner) sendLoop(ctx context.Context, stream *connect.BidiStreamForClient[agentv1.AgentMessage, agentv1.HubMessage],
 	interval time.Duration, results <-chan *agentv1.AgentMessage,
 ) error {
@@ -369,6 +378,8 @@ func (r *runner) sendLoop(ctx context.Context, stream *connect.BidiStreamForClie
 	defer hb.Stop()
 	facts := time.NewTicker(r.factsInterval)
 	defer facts.Stop()
+	metrics := time.NewTicker(r.metricsInterval)
+	defer metrics.Stop()
 	for {
 		var msg *agentv1.AgentMessage
 		select {
@@ -378,6 +389,12 @@ func (r *runner) sendLoop(ctx context.Context, stream *connect.BidiStreamForClie
 			msg = &agentv1.AgentMessage{Payload: &agentv1.AgentMessage_Heartbeat{Heartbeat: r.heartbeat(now)}}
 		case <-facts.C:
 			msg = &agentv1.AgentMessage{Payload: &agentv1.AgentMessage_Facts{Facts: r.hello(ctx)}}
+		case now := <-metrics.C:
+			samples := r.metrics.collect(ctx, now)
+			if len(samples) == 0 {
+				continue
+			}
+			msg = &agentv1.AgentMessage{Payload: &agentv1.AgentMessage_MetricsBatch{MetricsBatch: &agentv1.MetricsBatch{Samples: samples}}}
 		case msg = <-results:
 		}
 		if err := stream.Send(msg); err != nil {

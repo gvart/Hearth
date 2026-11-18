@@ -746,7 +746,13 @@ func (x *Heartbeat) GetUptime() *durationpb.Duration {
 	return nil
 }
 
-// MetricsBatch carries metric samples collected since the last batch.
+// MetricsBatch carries metric samples collected since the last batch. Agents
+// of protocol minor 4 and later send one every 15 s, with a sample of each
+// host metric the platform provides: cpu, memory and disk (of the root
+// filesystem) in percent, temperature in °C (the hottest thermal zone), and
+// net_rx and net_tx in bytes per second over the non-loopback interfaces.
+// The hub records only those names, stamped with its own clock; labels are
+// ignored.
 type MetricsBatch struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Samples       []*MetricSample        `protobuf:"bytes,1,rep,name=samples,proto3" json:"samples,omitempty"`

@@ -20,6 +20,7 @@ import (
 	"github.com/gvart/hearth/internal/hub/webui"
 	"github.com/gvart/hearth/internal/integrations/kubernetes"
 	"github.com/gvart/hearth/internal/integrations/prometheus"
+	"github.com/gvart/hearth/internal/metrics"
 	"github.com/gvart/hearth/internal/notify"
 	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/policy"
@@ -74,7 +75,8 @@ func newAPI(cfg Config) *api {
 		kube:   cfg.Kube,
 		notify: cfg.Notify,
 		verify: newVerifyGate(), verifyWait: verifyWait, verifyPassword: verifier,
-		logins: newLoginLimiter(time.Now, loginBurst, loginEvery),
+		logins:  newLoginLimiter(time.Now, loginBurst, loginEvery),
+		metrics: cfg.Metrics,
 		// Only a release tag is pinned: dev builds have no release to install.
 		installVersion: releaseVersion(cfg.Version),
 	}
@@ -158,6 +160,8 @@ type api struct {
 	logins *loginLimiter
 	// prom is Config.Prometheus; nil when no Prometheus is configured.
 	prom *prometheus.Reader
+	// metrics is Config.Metrics; nil when the hub keeps no metrics.
+	metrics *metrics.Store
 	// kube is Config.Kube; nil when Kubernetes clusters are not served.
 	kube *kubernetes.Manager
 	// notify is Config.Notify; nil when notification channels are not served.

@@ -5,9 +5,10 @@ const emptyText: Record<Exclude<MetricsStatus, 'ok'>, string> = {
   not_configured: 'No Prometheus configured. Start the hub with --prometheus-url to chart node-exporter data.',
   no_target: 'Prometheus has no node-exporter target for this device.',
   unreachable: 'Prometheus is unreachable right now.',
+  no_data: 'No metrics from this device yet.',
 };
 
-/** Charts of a device's Prometheus (node-exporter) series, or why there are none. */
+/** Charts of a device's metrics, built-in or from Prometheus (node-exporter), or why there are none. */
 export function DeviceCharts({ deviceId }: { deviceId: string }) {
   const { data, isPending, isError } = useDeviceMetrics(deviceId);
   if (isPending) {
@@ -29,7 +30,13 @@ export function DeviceCharts({ deviceId }: { deviceId: string }) {
         <Chart key={c.key} chart={c} start={data.start ?? 0} end={data.end ?? 0} />
       ))}
       <p className="muted small">
-        From Prometheus · last hour · <span className="mono">{data.instance}</span>
+        {data.source === 'prometheus' ? (
+          <>
+            From Prometheus · last hour · <span className="mono">{data.instance}</span>
+          </>
+        ) : (
+          'Last hour'
+        )}
       </p>
     </>
   );
@@ -72,5 +79,24 @@ function Chart({ chart, start, end }: { chart: MetricChart; start: number; end: 
 }
 
 function formatValue(v: number, unit: string): string {
-  return unit === 'percent' ? `${v.toFixed(1)}%` : v.toPrecision(3);
+  switch (unit) {
+    case 'percent':
+      return `${v.toFixed(1)}%`;
+    case 'celsius':
+      return `${v.toFixed(1)} °C`;
+    case 'bytes_per_second':
+      return formatRate(v);
+    default:
+      return v.toPrecision(3);
+  }
+}
+
+function formatRate(v: number): string {
+  const units = ['B/s', 'kB/s', 'MB/s', 'GB/s'];
+  let i = 0;
+  while (v >= 1000 && i < units.length - 1) {
+    v /= 1000;
+    i++;
+  }
+  return `${v.toPrecision(3)} ${units[i] ?? ''}`;
 }

@@ -6,9 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gvart/hearth/internal/integrations/prometheus"
+	"github.com/gvart/hearth/internal/metrics"
 	"github.com/gvart/hearth/internal/store"
 )
 
@@ -19,6 +23,13 @@ const (
 	metricsNotConfigured = "not_configured"
 	metricsUnreachable   = "unreachable"
 	metricsNoTarget      = "no_target"
+	metricsNoData        = "no_data"
+)
+
+// Metrics sources.
+const (
+	sourcePrometheus = "prometheus"
+	sourceBuiltin    = "builtin"
 )
 
 const (
@@ -32,8 +43,11 @@ const (
 
 // MetricsJSON is the body of GET /devices/{id}/metrics.
 type MetricsJSON struct {
+	// Source is builtin (the hub's own metrics, sent by the agent) or
+	// prometheus.
 	Source string `json:"source"`
-	// Status is ok, not_configured, unreachable or no_target.
+	// Status is ok, not_configured, unreachable, no_target (Prometheus) or
+	// no_data (builtin).
 	Status  string `json:"status"`
 	Message string `json:"message,omitempty"`
 	// Instance is the Prometheus instance label the device mapped to.
@@ -53,11 +67,37 @@ type ChartJSON struct {
 	Points [][2]float64 `json:"points"`
 }
 
-// deviceMetrics serves a device's chart series from Prometheus. A missing or
-// unreachable Prometheus, or one that does not scrape the device, is a normal
-// answer with a status, never a 5xx.
+// deviceMetrics serves a device's chart series: from Prometheus when one is
+// configured, else from the hub's own metrics; ?source=builtin or
+// ?source=prometheus picks one. ?names=cpu,memory limits the series. A
+// missing or unreachable Prometheus, one that does not scrape the device, or
+// a device that sent no metrics, is a normal answer with a status, never a
+// 5xx.
 func (a *api) deviceMetrics(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	q := r.URL.Query()
+	var names []string
+	if v := q.Get("names"); v != "" {
+		for n := range strings.SplitSeq(v, ",") {
+			if !metrics.IsKnown(n) {
+				writeError(w, http.StatusBadRequest, "bad_request", "unknown metric "+strconv.Quote(n))
+				return
+			}
+			names = append(names, n)
+		}
+	}
+	source := q.Get("source")
+	switch source {
+	case "":
+		source = sourcePrometheus
+		if a.prom == nil && a.metrics != nil {
+			source = sourceBuiltin
+		}
+	case sourceBuiltin, sourcePrometheus:
+	default:
+		writeError(w, http.StatusBadRequest, "bad_request", "source must be builtin or prometheus")
+		return
+	}
 	window := defaultMetricsRange
 	if v := r.URL.Query().Get("range"); v != "" {
 		d, err := time.ParseDuration(v)
@@ -77,7 +117,21 @@ func (a *api) deviceMetrics(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "cannot get device")
 		return
 	}
-	out := MetricsJSON{Source: "prometheus", Charts: []ChartJSON{}}
+	end := a.now()
+	start := end.Add(-window)
+	out := MetricsJSON{Source: source, Charts: []ChartJSON{}}
+	if source == sourceBuiltin {
+		if a.metrics == nil {
+			out.Status = metricsNotConfigured
+			out.Message = "this hub keeps no metrics"
+		} else if err := a.builtinCharts(ctx, &out, d.ID, names, start, end); err != nil {
+			a.log.ErrorContext(ctx, "read metrics", "device_id", d.ID, "err", err)
+			writeError(w, http.StatusInternalServerError, "internal", "cannot read metrics")
+			return
+		}
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
 	if a.prom == nil {
 		out.Status = metricsNotConfigured
 		out.Message = "no Prometheus endpoint configured (hearth hub --prometheus-url)"
@@ -92,8 +146,6 @@ func (a *api) deviceMetrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var charts []prometheus.Chart
-	end := a.now()
-	start := end.Add(-window)
 	if err == nil {
 		out.Instance = inst
 		charts, err = a.prom.Charts(ctx, inst, start, end, metricsStep(window))
@@ -108,6 +160,9 @@ func (a *api) deviceMetrics(w http.ResponseWriter, r *http.Request) {
 	out.Status = metricsOK
 	out.Start, out.End = start.UnixMilli(), end.UnixMilli()
 	for _, c := range charts {
+		if len(names) > 0 && !slices.Contains(names, c.Key) {
+			continue
+		}
 		pts := make([][2]float64, 0, len(c.Samples))
 		for _, s := range c.Samples {
 			pts = append(pts, [2]float64{float64(s.T.UnixMilli()), s.V})
