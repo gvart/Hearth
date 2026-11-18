@@ -23,6 +23,7 @@ message AgentMessage {
     ExecResult exec_result = 4;
     // Facts re-sent periodically by the agent; protocol_version and device_id are ignored.
     Hello facts = 5;
+    ProbeResult probe_result = 6;
   }
 }
 
@@ -32,6 +33,7 @@ message HubMessage {
     Welcome welcome = 1;
     ExecRequest exec_request = 2;
     Ping ping = 3;
+    ProbeRequest probe_request = 4;
   }
 }
 
@@ -73,6 +75,9 @@ message Ceiling {
   // restart are the services the hub may restart, as manager:name (see
   // RestartService).
   repeated string restart = 2;
+  // probe allows ProbeRequests: the hub may run HTTP, TCP and DNS checks
+  // from this device. Reported by agents of protocol minor 3 and later.
+  bool probe = 3;
 }
 
 // Disk is a mounted filesystem.
@@ -179,6 +184,56 @@ message RestartService {
   string manager = 1;
   // name is the systemd unit or Docker container.
   string name = 2;
+}
+
+// ProbeRequest asks the agent to run a network check from the device, as an
+// automation's http, tcp or dns trigger does from the hub. The agent runs it
+// only if its ceiling allows probes, and answers with a ProbeResult of the
+// same id. Hubs send it only to agents of protocol minor 3 and later.
+message ProbeRequest {
+  // id correlates the ProbeResult; unique per stream.
+  string id = 1;
+  // timeout bounds the check.
+  google.protobuf.Duration timeout = 2;
+  oneof probe {
+    HTTPProbe http = 3;
+    TCPProbe tcp = 4;
+    DNSProbe dns = 5;
+  }
+}
+
+// HTTPProbe GETs a URL and checks the status.
+message HTTPProbe {
+  // url is http(s)://host[:port][/path]; it may carry credentials, which the
+  // agent never logs.
+  string url = 1;
+  // status is the status expected; 0 means any 2xx or 3xx.
+  int32 status = 2;
+}
+
+// TCPProbe opens a TCP connection.
+message TCPProbe {
+  // address is host:port.
+  string address = 1;
+}
+
+// DNSProbe asks a DNS server, over UDP, for the A records of a name.
+message DNSProbe {
+  // name is the domain name.
+  string name = 1;
+  // server is host:port.
+  string server = 2;
+}
+
+// ProbeResult is the outcome of a ProbeRequest.
+message ProbeResult {
+  // id is the id of the ProbeRequest it answers.
+  string id = 1;
+  // denied is set when the agent refused the request: its ceiling does not
+  // allow probes. Nothing ran.
+  bool denied = 2;
+  // error says why the check failed or was denied; empty when it passed.
+  string error = 3;
 }
 
 // Ping checks the stream is alive.

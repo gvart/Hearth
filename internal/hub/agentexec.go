@@ -24,6 +24,10 @@ const minExecMinor = 1
 // it cannot check one against a ceiling it does not know.
 const minCeilingMinor = 2
 
+// minProbeMinor is the first agent protocol minor version that answers
+// ProbeRequest and reports whether its ceiling allows probes.
+const minProbeMinor = 3
+
 // ErrAgentNotConnected is returned by Agents.Exec for a device whose agent has
 // no open stream to this hub.
 var ErrAgentNotConnected = errors.New("agent not connected")
@@ -58,6 +62,7 @@ type agentSession struct {
 
 	mu      sync.Mutex
 	pending map[string]chan *agentv1.ExecResult
+	probes  map[string]chan *agentv1.ProbeResult
 	// ceiling is the capability ceiling the agent last reported.
 	ceiling *agentv1.Ceiling
 }
@@ -67,7 +72,8 @@ type agentSession struct {
 func (a *Agents) attach(deviceID string, hello *agentv1.Hello, send func(*agentv1.HubMessage) error) *agentSession {
 	s := &agentSession{
 		minor: hello.GetProtocolVersion().GetMinor(), send: send, done: make(chan struct{}),
-		pending: map[string]chan *agentv1.ExecResult{}, ceiling: hello.GetCeiling(),
+		pending: map[string]chan *agentv1.ExecResult{}, probes: map[string]chan *agentv1.ProbeResult{},
+		ceiling: hello.GetCeiling(),
 	}
 	a.mu.Lock()
 	a.sessions[deviceID] = s
@@ -112,6 +118,33 @@ func (s *agentSession) check(device string, req *agentv1.ExecRequest) error {
 		return fmt.Errorf("device %s: %w", device, err)
 	}
 	return nil
+}
+
+// checkProbe refuses a probe unless the agent reported a ceiling that
+// allows probes.
+func (s *agentSession) checkProbe(device string) error {
+	if s.minor < minProbeMinor {
+		return fmt.Errorf("device %s: agent is too old to run checks; upgrade it: %w", device, policy.ErrBeyondCeiling)
+	}
+	s.mu.Lock()
+	c := s.ceiling
+	s.mu.Unlock()
+	if err := policy.ProbeWithinCeiling(c); err != nil {
+		return fmt.Errorf("device %s: %w (start its agent with --allow-probe)", device, err)
+	}
+	return nil
+}
+
+// deliverProbe hands a probe result to the request waiting for it, as
+// deliver does.
+func (s *agentSession) deliverProbe(r *agentv1.ProbeResult) {
+	s.mu.Lock()
+	ch := s.probes[r.GetId()]
+	delete(s.probes, r.GetId())
+	s.mu.Unlock()
+	if ch != nil {
+		ch <- r
+	}
 }
 
 // deliver hands a result to the request waiting for it; a result nobody
@@ -170,33 +203,72 @@ func (a *Agents) Exec(ctx context.Context, device string, req *agentv1.ExecReque
 	}
 
 	req.Id = strings.ToLower(rand.Text())
-	ch := make(chan *agentv1.ExecResult, 1)
+	return roundTrip(ctx, s, device, s.pending, req.Id,
+		&agentv1.HubMessage{Payload: &agentv1.HubMessage_ExecRequest{ExecRequest: req}})
+}
+
+// CheckProbe reports whether a probe would be sent to the agent of device:
+// it fails with an error wrapping policy.ErrBeyondCeiling when the agent is
+// too old for probes or its reported ceiling does not allow them, and with
+// ErrAgentNotConnected when the agent has no open stream to this hub.
+func (a *Agents) CheckProbe(ctx context.Context, device string) error {
+	s, err := a.session(ctx, device)
+	if err != nil {
+		return err
+	}
+	return s.checkProbe(device)
+}
+
+// Probe sends req to the agent of device and waits for its result, as Exec
+// does. A probe the agent's reported ceiling does not allow is never sent:
+// Probe fails with an error wrapping policy.ErrBeyondCeiling.
+func (a *Agents) Probe(ctx context.Context, device string, req *agentv1.ProbeRequest) (*agentv1.ProbeResult, error) {
+	s, err := a.session(ctx, device)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.checkProbe(device); err != nil {
+		return nil, err
+	}
+	req.Id = strings.ToLower(rand.Text())
+	return roundTrip(ctx, s, device, s.probes, req.Id,
+		&agentv1.HubMessage{Payload: &agentv1.HubMessage_ProbeRequest{ProbeRequest: req}})
+}
+
+// roundTrip sends msg, a request of this id, on s and waits for its result
+// in pending, until ctx is done or the stream ends.
+func roundTrip[R any](ctx context.Context, s *agentSession, device string, pending map[string]chan R, id string,
+	msg *agentv1.HubMessage,
+) (R, error) {
+	var zero R
+	ch := make(chan R, 1)
 	s.mu.Lock()
-	s.pending[req.Id] = ch
+	pending[id] = ch
 	s.mu.Unlock()
 	defer func() {
 		s.mu.Lock()
-		delete(s.pending, req.Id)
+		delete(pending, id)
 		s.mu.Unlock()
 	}()
 
+	var err error
 	s.sendMu.Lock()
 	if s.closed {
 		err = ErrAgentNotConnected
 	} else {
-		err = s.send(&agentv1.HubMessage{Payload: &agentv1.HubMessage_ExecRequest{ExecRequest: req}})
+		err = s.send(msg)
 	}
 	s.sendMu.Unlock()
 	if err != nil {
-		return nil, fmt.Errorf("send request to device %s: %w", device, err)
+		return zero, fmt.Errorf("send request to device %s: %w", device, err)
 	}
 	select {
 	case r := <-ch:
 		return r, nil
 	case <-s.done:
-		return nil, fmt.Errorf("device %s: agent disconnected before answering", device)
+		return zero, fmt.Errorf("device %s: agent disconnected before answering", device)
 	case <-ctx.Done():
-		return nil, fmt.Errorf("device %s: %w", device, context.Cause(ctx))
+		return zero, fmt.Errorf("device %s: %w", device, context.Cause(ctx))
 	}
 }
 

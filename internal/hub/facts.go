@@ -33,6 +33,8 @@ type Facts struct {
 type Ceiling struct {
 	Exec    []string `json:"exec"`
 	Restart []string `json:"restart"`
+	// Probe is whether the hub may run checks from the device.
+	Probe bool `json:"probe"`
 }
 
 // Disk is a mounted filesystem.
@@ -65,7 +67,7 @@ func factsFromHello(h *agentv1.Hello) (store.DeviceFacts, error) {
 		Capabilities:  nonNil(h.GetCapabilities()),
 	}
 	if c := h.GetCeiling(); c != nil {
-		f.Ceiling = &Ceiling{Exec: nonNil(c.GetExec()), Restart: nonNil(c.GetRestart())}
+		f.Ceiling = &Ceiling{Exec: nonNil(c.GetExec()), Restart: nonNil(c.GetRestart()), Probe: c.GetProbe()}
 	}
 	for _, d := range h.GetDisks() {
 		f.Disks = append(f.Disks, Disk{

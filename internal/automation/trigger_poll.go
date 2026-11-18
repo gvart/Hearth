@@ -8,6 +8,18 @@ import (
 	"time"
 )
 
+// pollState is what one check of a poller found.
+type pollState int
+
+const (
+	stateGood pollState = iota
+	stateBad
+	// stateUnknown is a check that could not run (a check from a device
+	// whose agent is offline): it changes nothing, neither ending a bad
+	// spell nor counting towards one.
+	stateUnknown
+)
+
 // poller checks a state every interval and fires once the state has been bad
 // for the hold duration. It fires once per bad spell: it fires again only
 // after a good check.
@@ -15,9 +27,9 @@ type poller struct {
 	clock Clock
 	every time.Duration
 	hold  time.Duration
-	// bad reports whether the state is bad now, and if so what a firing
-	// tells about it.
-	bad func(ctx context.Context) (map[string]any, bool)
+	// bad reports the state now, and if it is bad what a firing tells
+	// about it.
+	bad func(ctx context.Context) (map[string]any, pollState)
 }
 
 // watch runs the first check at once, then one every p.every, until ctx is
@@ -26,12 +38,13 @@ func (p poller) watch(ctx context.Context, fire FireFunc) error {
 	var since time.Time // start of the current bad spell; zero when good
 	fired := false
 	for {
-		data, bad := p.bad(ctx)
+		data, state := p.bad(ctx)
 		if ctx.Err() != nil {
 			// A check cut short by the stop is not a failure.
 			return nil
 		}
-		if bad {
+		switch state {
+		case stateBad:
 			now := p.clock.Now()
 			if since.IsZero() {
 				since = now
@@ -40,8 +53,9 @@ func (p poller) watch(ctx context.Context, fire FireFunc) error {
 				fire(data)
 				fired = true
 			}
-		} else {
+		case stateGood:
 			since, fired = time.Time{}, false
+		case stateUnknown:
 		}
 		select {
 		case <-ctx.Done():

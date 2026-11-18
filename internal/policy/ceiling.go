@@ -34,3 +34,14 @@ func WithinCeiling(c *agentv1.Ceiling, req *agentv1.ExecRequest) error {
 	}
 	return errors.New("unknown action")
 }
+
+// ProbeWithinCeiling checks a ProbeRequest against a device's capability
+// ceiling c, as the hub does before it sends one and the agent does again
+// before it runs it. It returns an error wrapping ErrBeyondCeiling unless c
+// allows probes; a nil c allows nothing.
+func ProbeWithinCeiling(c *agentv1.Ceiling) error {
+	if !c.GetProbe() {
+		return fmt.Errorf("probe: %w", ErrBeyondCeiling)
+	}
+	return nil
+}

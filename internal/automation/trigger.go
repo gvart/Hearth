@@ -55,7 +55,29 @@ type TriggerDeps struct {
 	Clock   Clock
 	Devices DeviceEvents
 	Metrics Metrics
+	// Probers run the http, tcp and dns checks that name a device in from:
+	// *hub.Agents. Policy decides on them. With either nil those triggers
+	// load, but stop with an error when the hub starts them.
+	Probers Probers
+	Policy  Policy
 	Log     *slog.Logger
+}
+
+// triggerKey is the context key of a watching trigger's automation and id.
+type triggerKey struct{}
+
+type triggerOf struct{ automation, trigger string }
+
+// withTrigger tells a trigger's Watch which automation it belongs to, for
+// the policy requests it makes.
+func withTrigger(ctx context.Context, automation, trigger string) context.Context {
+	return context.WithValue(ctx, triggerKey{}, triggerOf{automation, trigger})
+}
+
+// triggerFrom returns what withTrigger put in ctx.
+func triggerFrom(ctx context.Context) triggerOf {
+	t, _ := ctx.Value(triggerKey{}).(triggerOf)
+	return t
 }
 
 // Triggers returns the trigger types that watch the lab, to add to Builtin's:

@@ -204,7 +204,7 @@ func (r *Runtime) start(ctx context.Context, a *Automation) *instance {
 	in.wg.Go(func() { in.work(ictx) })
 	for _, t := range a.Triggers {
 		in.wg.Go(func() {
-			if err := t.Impl.Watch(ictx, func(data map[string]any) { in.fire(t, data) }); err != nil && ictx.Err() == nil {
+			if err := t.Impl.Watch(withTrigger(ictx, a.ID, t.ID), func(data map[string]any) { in.fire(t, data) }); err != nil && ictx.Err() == nil {
 				r.cfg.Log.ErrorContext(ictx, "automation trigger stopped", "automation", a.ID, "trigger", t.ID, "err", err)
 			}
 		})

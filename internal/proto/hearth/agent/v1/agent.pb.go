@@ -35,6 +35,7 @@ type AgentMessage struct {
 	//	*AgentMessage_MetricsBatch
 	//	*AgentMessage_ExecResult
 	//	*AgentMessage_Facts
+	//	*AgentMessage_ProbeResult
 	Payload       isAgentMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -122,6 +123,15 @@ func (x *AgentMessage) GetFacts() *Hello {
 	return nil
 }
 
+func (x *AgentMessage) GetProbeResult() *ProbeResult {
+	if x != nil {
+		if x, ok := x.Payload.(*AgentMessage_ProbeResult); ok {
+			return x.ProbeResult
+		}
+	}
+	return nil
+}
+
 type isAgentMessage_Payload interface {
 	isAgentMessage_Payload()
 }
@@ -147,6 +157,10 @@ type AgentMessage_Facts struct {
 	Facts *Hello `protobuf:"bytes,5,opt,name=facts,proto3,oneof"`
 }
 
+type AgentMessage_ProbeResult struct {
+	ProbeResult *ProbeResult `protobuf:"bytes,6,opt,name=probe_result,json=probeResult,proto3,oneof"`
+}
+
 func (*AgentMessage_Hello) isAgentMessage_Payload() {}
 
 func (*AgentMessage_Heartbeat) isAgentMessage_Payload() {}
@@ -157,6 +171,8 @@ func (*AgentMessage_ExecResult) isAgentMessage_Payload() {}
 
 func (*AgentMessage_Facts) isAgentMessage_Payload() {}
 
+func (*AgentMessage_ProbeResult) isAgentMessage_Payload() {}
+
 // HubMessage is anything the hub sends to an agent.
 type HubMessage struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -165,6 +181,7 @@ type HubMessage struct {
 	//	*HubMessage_Welcome
 	//	*HubMessage_ExecRequest
 	//	*HubMessage_Ping
+	//	*HubMessage_ProbeRequest
 	Payload       isHubMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -234,6 +251,15 @@ func (x *HubMessage) GetPing() *Ping {
 	return nil
 }
 
+func (x *HubMessage) GetProbeRequest() *ProbeRequest {
+	if x != nil {
+		if x, ok := x.Payload.(*HubMessage_ProbeRequest); ok {
+			return x.ProbeRequest
+		}
+	}
+	return nil
+}
+
 type isHubMessage_Payload interface {
 	isHubMessage_Payload()
 }
@@ -250,11 +276,17 @@ type HubMessage_Ping struct {
 	Ping *Ping `protobuf:"bytes,3,opt,name=ping,proto3,oneof"`
 }
 
+type HubMessage_ProbeRequest struct {
+	ProbeRequest *ProbeRequest `protobuf:"bytes,4,opt,name=probe_request,json=probeRequest,proto3,oneof"`
+}
+
 func (*HubMessage_Welcome) isHubMessage_Payload() {}
 
 func (*HubMessage_ExecRequest) isHubMessage_Payload() {}
 
 func (*HubMessage_Ping) isHubMessage_Payload() {}
+
+func (*HubMessage_ProbeRequest) isHubMessage_Payload() {}
 
 // ProtocolVersion is the agent<->hub protocol version. A major bump is incompatible;
 // the hub rejects majors it does not know.
@@ -472,7 +504,10 @@ type Ceiling struct {
 	Exec []string `protobuf:"bytes,1,rep,name=exec,proto3" json:"exec,omitempty"`
 	// restart are the services the hub may restart, as manager:name (see
 	// RestartService).
-	Restart       []string `protobuf:"bytes,2,rep,name=restart,proto3" json:"restart,omitempty"`
+	Restart []string `protobuf:"bytes,2,rep,name=restart,proto3" json:"restart,omitempty"`
+	// probe allows ProbeRequests: the hub may run HTTP, TCP and DNS checks
+	// from this device. Reported by agents of protocol minor 3 and later.
+	Probe         bool `protobuf:"varint,3,opt,name=probe,proto3" json:"probe,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -519,6 +554,13 @@ func (x *Ceiling) GetRestart() []string {
 		return x.Restart
 	}
 	return nil
+}
+
+func (x *Ceiling) GetProbe() bool {
+	if x != nil {
+		return x.Probe
+	}
+	return false
 }
 
 // Disk is a mounted filesystem.
@@ -1262,6 +1304,348 @@ func (x *RestartService) GetName() string {
 	return ""
 }
 
+// ProbeRequest asks the agent to run a network check from the device, as an
+// automation's http, tcp or dns trigger does from the hub. The agent runs it
+// only if its ceiling allows probes, and answers with a ProbeResult of the
+// same id. Hubs send it only to agents of protocol minor 3 and later.
+type ProbeRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// id correlates the ProbeResult; unique per stream.
+	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// timeout bounds the check.
+	Timeout *durationpb.Duration `protobuf:"bytes,2,opt,name=timeout,proto3" json:"timeout,omitempty"`
+	// Types that are valid to be assigned to Probe:
+	//
+	//	*ProbeRequest_Http
+	//	*ProbeRequest_Tcp
+	//	*ProbeRequest_Dns
+	Probe         isProbeRequest_Probe `protobuf_oneof:"probe"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProbeRequest) Reset() {
+	*x = ProbeRequest{}
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProbeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProbeRequest) ProtoMessage() {}
+
+func (x *ProbeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProbeRequest.ProtoReflect.Descriptor instead.
+func (*ProbeRequest) Descriptor() ([]byte, []int) {
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *ProbeRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ProbeRequest) GetTimeout() *durationpb.Duration {
+	if x != nil {
+		return x.Timeout
+	}
+	return nil
+}
+
+func (x *ProbeRequest) GetProbe() isProbeRequest_Probe {
+	if x != nil {
+		return x.Probe
+	}
+	return nil
+}
+
+func (x *ProbeRequest) GetHttp() *HTTPProbe {
+	if x != nil {
+		if x, ok := x.Probe.(*ProbeRequest_Http); ok {
+			return x.Http
+		}
+	}
+	return nil
+}
+
+func (x *ProbeRequest) GetTcp() *TCPProbe {
+	if x != nil {
+		if x, ok := x.Probe.(*ProbeRequest_Tcp); ok {
+			return x.Tcp
+		}
+	}
+	return nil
+}
+
+func (x *ProbeRequest) GetDns() *DNSProbe {
+	if x != nil {
+		if x, ok := x.Probe.(*ProbeRequest_Dns); ok {
+			return x.Dns
+		}
+	}
+	return nil
+}
+
+type isProbeRequest_Probe interface {
+	isProbeRequest_Probe()
+}
+
+type ProbeRequest_Http struct {
+	Http *HTTPProbe `protobuf:"bytes,3,opt,name=http,proto3,oneof"`
+}
+
+type ProbeRequest_Tcp struct {
+	Tcp *TCPProbe `protobuf:"bytes,4,opt,name=tcp,proto3,oneof"`
+}
+
+type ProbeRequest_Dns struct {
+	Dns *DNSProbe `protobuf:"bytes,5,opt,name=dns,proto3,oneof"`
+}
+
+func (*ProbeRequest_Http) isProbeRequest_Probe() {}
+
+func (*ProbeRequest_Tcp) isProbeRequest_Probe() {}
+
+func (*ProbeRequest_Dns) isProbeRequest_Probe() {}
+
+// HTTPProbe GETs a URL and checks the status.
+type HTTPProbe struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// url is http(s)://host[:port][/path]; it may carry credentials, which the
+	// agent never logs.
+	Url string `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"`
+	// status is the status expected; 0 means any 2xx or 3xx.
+	Status        int32 `protobuf:"varint,2,opt,name=status,proto3" json:"status,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HTTPProbe) Reset() {
+	*x = HTTPProbe{}
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HTTPProbe) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HTTPProbe) ProtoMessage() {}
+
+func (x *HTTPProbe) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HTTPProbe.ProtoReflect.Descriptor instead.
+func (*HTTPProbe) Descriptor() ([]byte, []int) {
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *HTTPProbe) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+func (x *HTTPProbe) GetStatus() int32 {
+	if x != nil {
+		return x.Status
+	}
+	return 0
+}
+
+// TCPProbe opens a TCP connection.
+type TCPProbe struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// address is host:port.
+	Address       string `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TCPProbe) Reset() {
+	*x = TCPProbe{}
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TCPProbe) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TCPProbe) ProtoMessage() {}
+
+func (x *TCPProbe) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TCPProbe.ProtoReflect.Descriptor instead.
+func (*TCPProbe) Descriptor() ([]byte, []int) {
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *TCPProbe) GetAddress() string {
+	if x != nil {
+		return x.Address
+	}
+	return ""
+}
+
+// DNSProbe asks a DNS server, over UDP, for the A records of a name.
+type DNSProbe struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// name is the domain name.
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// server is host:port.
+	Server        string `protobuf:"bytes,2,opt,name=server,proto3" json:"server,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DNSProbe) Reset() {
+	*x = DNSProbe{}
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DNSProbe) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DNSProbe) ProtoMessage() {}
+
+func (x *DNSProbe) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DNSProbe.ProtoReflect.Descriptor instead.
+func (*DNSProbe) Descriptor() ([]byte, []int) {
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *DNSProbe) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *DNSProbe) GetServer() string {
+	if x != nil {
+		return x.Server
+	}
+	return ""
+}
+
+// ProbeResult is the outcome of a ProbeRequest.
+type ProbeResult struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// id is the id of the ProbeRequest it answers.
+	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// denied is set when the agent refused the request: its ceiling does not
+	// allow probes. Nothing ran.
+	Denied bool `protobuf:"varint,2,opt,name=denied,proto3" json:"denied,omitempty"`
+	// error says why the check failed or was denied; empty when it passed.
+	Error         string `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProbeResult) Reset() {
+	*x = ProbeResult{}
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProbeResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProbeResult) ProtoMessage() {}
+
+func (x *ProbeResult) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProbeResult.ProtoReflect.Descriptor instead.
+func (*ProbeResult) Descriptor() ([]byte, []int) {
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *ProbeResult) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ProbeResult) GetDenied() bool {
+	if x != nil {
+		return x.Denied
+	}
+	return false
+}
+
+func (x *ProbeResult) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
 // Ping checks the stream is alive.
 type Ping struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1271,7 +1655,7 @@ type Ping struct {
 
 func (x *Ping) Reset() {
 	*x = Ping{}
-	mi := &file_hearth_agent_v1_agent_proto_msgTypes[17]
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1283,7 +1667,7 @@ func (x *Ping) String() string {
 func (*Ping) ProtoMessage() {}
 
 func (x *Ping) ProtoReflect() protoreflect.Message {
-	mi := &file_hearth_agent_v1_agent_proto_msgTypes[17]
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1296,27 +1680,29 @@ func (x *Ping) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Ping.ProtoReflect.Descriptor instead.
 func (*Ping) Descriptor() ([]byte, []int) {
-	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{17}
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{22}
 }
 
 var File_hearth_agent_v1_agent_proto protoreflect.FileDescriptor
 
 const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"\n" +
-	"\x1bhearth/agent/v1/agent.proto\x12\x0fhearth.agent.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xbb\x02\n" +
+	"\x1bhearth/agent/v1/agent.proto\x12\x0fhearth.agent.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xfe\x02\n" +
 	"\fAgentMessage\x12.\n" +
 	"\x05hello\x18\x01 \x01(\v2\x16.hearth.agent.v1.HelloH\x00R\x05hello\x12:\n" +
 	"\theartbeat\x18\x02 \x01(\v2\x1a.hearth.agent.v1.HeartbeatH\x00R\theartbeat\x12D\n" +
 	"\rmetrics_batch\x18\x03 \x01(\v2\x1d.hearth.agent.v1.MetricsBatchH\x00R\fmetricsBatch\x12>\n" +
 	"\vexec_result\x18\x04 \x01(\v2\x1b.hearth.agent.v1.ExecResultH\x00R\n" +
 	"execResult\x12.\n" +
-	"\x05facts\x18\x05 \x01(\v2\x16.hearth.agent.v1.HelloH\x00R\x05factsB\t\n" +
-	"\apayload\"\xbd\x01\n" +
+	"\x05facts\x18\x05 \x01(\v2\x16.hearth.agent.v1.HelloH\x00R\x05facts\x12A\n" +
+	"\fprobe_result\x18\x06 \x01(\v2\x1c.hearth.agent.v1.ProbeResultH\x00R\vprobeResultB\t\n" +
+	"\apayload\"\x83\x02\n" +
 	"\n" +
 	"HubMessage\x124\n" +
 	"\awelcome\x18\x01 \x01(\v2\x18.hearth.agent.v1.WelcomeH\x00R\awelcome\x12A\n" +
 	"\fexec_request\x18\x02 \x01(\v2\x1c.hearth.agent.v1.ExecRequestH\x00R\vexecRequest\x12+\n" +
-	"\x04ping\x18\x03 \x01(\v2\x15.hearth.agent.v1.PingH\x00R\x04pingB\t\n" +
+	"\x04ping\x18\x03 \x01(\v2\x15.hearth.agent.v1.PingH\x00R\x04ping\x12D\n" +
+	"\rprobe_request\x18\x04 \x01(\v2\x1d.hearth.agent.v1.ProbeRequestH\x00R\fprobeRequestB\t\n" +
 	"\apayload\"=\n" +
 	"\x0fProtocolVersion\x12\x14\n" +
 	"\x05major\x18\x01 \x01(\rR\x05major\x12\x14\n" +
@@ -1338,10 +1724,11 @@ const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"interfaces\x12#\n" +
 	"\ragent_version\x18\f \x01(\tR\fagentVersion\x12\"\n" +
 	"\fcapabilities\x18\r \x03(\tR\fcapabilities\x122\n" +
-	"\aceiling\x18\x0e \x01(\v2\x18.hearth.agent.v1.CeilingR\aceiling\"7\n" +
+	"\aceiling\x18\x0e \x01(\v2\x18.hearth.agent.v1.CeilingR\aceiling\"M\n" +
 	"\aCeiling\x12\x12\n" +
 	"\x04exec\x18\x01 \x03(\tR\x04exec\x12\x18\n" +
-	"\arestart\x18\x02 \x03(\tR\arestart\"w\n" +
+	"\arestart\x18\x02 \x03(\tR\arestart\x12\x14\n" +
+	"\x05probe\x18\x03 \x01(\bR\x05probe\"w\n" +
 	"\x04Disk\x12\x16\n" +
 	"\x06device\x18\x01 \x01(\tR\x06device\x12\x1e\n" +
 	"\n" +
@@ -1393,7 +1780,26 @@ const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"\x04argv\x18\x01 \x03(\tR\x04argv\">\n" +
 	"\x0eRestartService\x12\x18\n" +
 	"\amanager\x18\x01 \x01(\tR\amanager\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\"\x06\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"\xec\x01\n" +
+	"\fProbeRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x123\n" +
+	"\atimeout\x18\x02 \x01(\v2\x19.google.protobuf.DurationR\atimeout\x120\n" +
+	"\x04http\x18\x03 \x01(\v2\x1a.hearth.agent.v1.HTTPProbeH\x00R\x04http\x12-\n" +
+	"\x03tcp\x18\x04 \x01(\v2\x19.hearth.agent.v1.TCPProbeH\x00R\x03tcp\x12-\n" +
+	"\x03dns\x18\x05 \x01(\v2\x19.hearth.agent.v1.DNSProbeH\x00R\x03dnsB\a\n" +
+	"\x05probe\"5\n" +
+	"\tHTTPProbe\x12\x10\n" +
+	"\x03url\x18\x01 \x01(\tR\x03url\x12\x16\n" +
+	"\x06status\x18\x02 \x01(\x05R\x06status\"$\n" +
+	"\bTCPProbe\x12\x18\n" +
+	"\aaddress\x18\x01 \x01(\tR\aaddress\"6\n" +
+	"\bDNSProbe\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
+	"\x06server\x18\x02 \x01(\tR\x06server\"K\n" +
+	"\vProbeResult\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
+	"\x06denied\x18\x02 \x01(\bR\x06denied\x12\x14\n" +
+	"\x05error\x18\x03 \x01(\tR\x05error\"\x06\n" +
 	"\x04Ping2Y\n" +
 	"\fAgentService\x12I\n" +
 	"\aConnect\x12\x1d.hearth.agent.v1.AgentMessage\x1a\x1b.hearth.agent.v1.HubMessage(\x010\x01B\xbf\x01\n" +
@@ -1412,7 +1818,7 @@ func file_hearth_agent_v1_agent_proto_rawDescGZIP() []byte {
 	return file_hearth_agent_v1_agent_proto_rawDescData
 }
 
-var file_hearth_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
+var file_hearth_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
 var file_hearth_agent_v1_agent_proto_goTypes = []any{
 	(*AgentMessage)(nil),          // 0: hearth.agent.v1.AgentMessage
 	(*HubMessage)(nil),            // 1: hearth.agent.v1.HubMessage
@@ -1431,10 +1837,15 @@ var file_hearth_agent_v1_agent_proto_goTypes = []any{
 	(*ExecRequest)(nil),           // 14: hearth.agent.v1.ExecRequest
 	(*Command)(nil),               // 15: hearth.agent.v1.Command
 	(*RestartService)(nil),        // 16: hearth.agent.v1.RestartService
-	(*Ping)(nil),                  // 17: hearth.agent.v1.Ping
-	nil,                           // 18: hearth.agent.v1.MetricSample.LabelsEntry
-	(*timestamppb.Timestamp)(nil), // 19: google.protobuf.Timestamp
-	(*durationpb.Duration)(nil),   // 20: google.protobuf.Duration
+	(*ProbeRequest)(nil),          // 17: hearth.agent.v1.ProbeRequest
+	(*HTTPProbe)(nil),             // 18: hearth.agent.v1.HTTPProbe
+	(*TCPProbe)(nil),              // 19: hearth.agent.v1.TCPProbe
+	(*DNSProbe)(nil),              // 20: hearth.agent.v1.DNSProbe
+	(*ProbeResult)(nil),           // 21: hearth.agent.v1.ProbeResult
+	(*Ping)(nil),                  // 22: hearth.agent.v1.Ping
+	nil,                           // 23: hearth.agent.v1.MetricSample.LabelsEntry
+	(*timestamppb.Timestamp)(nil), // 24: google.protobuf.Timestamp
+	(*durationpb.Duration)(nil),   // 25: google.protobuf.Duration
 }
 var file_hearth_agent_v1_agent_proto_depIdxs = []int32{
 	3,  // 0: hearth.agent.v1.AgentMessage.hello:type_name -> hearth.agent.v1.Hello
@@ -1442,30 +1853,36 @@ var file_hearth_agent_v1_agent_proto_depIdxs = []int32{
 	8,  // 2: hearth.agent.v1.AgentMessage.metrics_batch:type_name -> hearth.agent.v1.MetricsBatch
 	10, // 3: hearth.agent.v1.AgentMessage.exec_result:type_name -> hearth.agent.v1.ExecResult
 	3,  // 4: hearth.agent.v1.AgentMessage.facts:type_name -> hearth.agent.v1.Hello
-	11, // 5: hearth.agent.v1.HubMessage.welcome:type_name -> hearth.agent.v1.Welcome
-	14, // 6: hearth.agent.v1.HubMessage.exec_request:type_name -> hearth.agent.v1.ExecRequest
-	17, // 7: hearth.agent.v1.HubMessage.ping:type_name -> hearth.agent.v1.Ping
-	2,  // 8: hearth.agent.v1.Hello.protocol_version:type_name -> hearth.agent.v1.ProtocolVersion
-	5,  // 9: hearth.agent.v1.Hello.disks:type_name -> hearth.agent.v1.Disk
-	6,  // 10: hearth.agent.v1.Hello.interfaces:type_name -> hearth.agent.v1.NetworkInterface
-	4,  // 11: hearth.agent.v1.Hello.ceiling:type_name -> hearth.agent.v1.Ceiling
-	19, // 12: hearth.agent.v1.Heartbeat.ts:type_name -> google.protobuf.Timestamp
-	20, // 13: hearth.agent.v1.Heartbeat.uptime:type_name -> google.protobuf.Duration
-	9,  // 14: hearth.agent.v1.MetricsBatch.samples:type_name -> hearth.agent.v1.MetricSample
-	18, // 15: hearth.agent.v1.MetricSample.labels:type_name -> hearth.agent.v1.MetricSample.LabelsEntry
-	19, // 16: hearth.agent.v1.MetricSample.ts:type_name -> google.protobuf.Timestamp
-	19, // 17: hearth.agent.v1.Welcome.server_time:type_name -> google.protobuf.Timestamp
-	20, // 18: hearth.agent.v1.Welcome.heartbeat_interval:type_name -> google.protobuf.Duration
-	20, // 19: hearth.agent.v1.ExecRequest.timeout:type_name -> google.protobuf.Duration
-	15, // 20: hearth.agent.v1.ExecRequest.command:type_name -> hearth.agent.v1.Command
-	16, // 21: hearth.agent.v1.ExecRequest.restart:type_name -> hearth.agent.v1.RestartService
-	0,  // 22: hearth.agent.v1.AgentService.Connect:input_type -> hearth.agent.v1.AgentMessage
-	1,  // 23: hearth.agent.v1.AgentService.Connect:output_type -> hearth.agent.v1.HubMessage
-	23, // [23:24] is the sub-list for method output_type
-	22, // [22:23] is the sub-list for method input_type
-	22, // [22:22] is the sub-list for extension type_name
-	22, // [22:22] is the sub-list for extension extendee
-	0,  // [0:22] is the sub-list for field type_name
+	21, // 5: hearth.agent.v1.AgentMessage.probe_result:type_name -> hearth.agent.v1.ProbeResult
+	11, // 6: hearth.agent.v1.HubMessage.welcome:type_name -> hearth.agent.v1.Welcome
+	14, // 7: hearth.agent.v1.HubMessage.exec_request:type_name -> hearth.agent.v1.ExecRequest
+	22, // 8: hearth.agent.v1.HubMessage.ping:type_name -> hearth.agent.v1.Ping
+	17, // 9: hearth.agent.v1.HubMessage.probe_request:type_name -> hearth.agent.v1.ProbeRequest
+	2,  // 10: hearth.agent.v1.Hello.protocol_version:type_name -> hearth.agent.v1.ProtocolVersion
+	5,  // 11: hearth.agent.v1.Hello.disks:type_name -> hearth.agent.v1.Disk
+	6,  // 12: hearth.agent.v1.Hello.interfaces:type_name -> hearth.agent.v1.NetworkInterface
+	4,  // 13: hearth.agent.v1.Hello.ceiling:type_name -> hearth.agent.v1.Ceiling
+	24, // 14: hearth.agent.v1.Heartbeat.ts:type_name -> google.protobuf.Timestamp
+	25, // 15: hearth.agent.v1.Heartbeat.uptime:type_name -> google.protobuf.Duration
+	9,  // 16: hearth.agent.v1.MetricsBatch.samples:type_name -> hearth.agent.v1.MetricSample
+	23, // 17: hearth.agent.v1.MetricSample.labels:type_name -> hearth.agent.v1.MetricSample.LabelsEntry
+	24, // 18: hearth.agent.v1.MetricSample.ts:type_name -> google.protobuf.Timestamp
+	24, // 19: hearth.agent.v1.Welcome.server_time:type_name -> google.protobuf.Timestamp
+	25, // 20: hearth.agent.v1.Welcome.heartbeat_interval:type_name -> google.protobuf.Duration
+	25, // 21: hearth.agent.v1.ExecRequest.timeout:type_name -> google.protobuf.Duration
+	15, // 22: hearth.agent.v1.ExecRequest.command:type_name -> hearth.agent.v1.Command
+	16, // 23: hearth.agent.v1.ExecRequest.restart:type_name -> hearth.agent.v1.RestartService
+	25, // 24: hearth.agent.v1.ProbeRequest.timeout:type_name -> google.protobuf.Duration
+	18, // 25: hearth.agent.v1.ProbeRequest.http:type_name -> hearth.agent.v1.HTTPProbe
+	19, // 26: hearth.agent.v1.ProbeRequest.tcp:type_name -> hearth.agent.v1.TCPProbe
+	20, // 27: hearth.agent.v1.ProbeRequest.dns:type_name -> hearth.agent.v1.DNSProbe
+	0,  // 28: hearth.agent.v1.AgentService.Connect:input_type -> hearth.agent.v1.AgentMessage
+	1,  // 29: hearth.agent.v1.AgentService.Connect:output_type -> hearth.agent.v1.HubMessage
+	29, // [29:30] is the sub-list for method output_type
+	28, // [28:29] is the sub-list for method input_type
+	28, // [28:28] is the sub-list for extension type_name
+	28, // [28:28] is the sub-list for extension extendee
+	0,  // [0:28] is the sub-list for field type_name
 }
 
 func init() { file_hearth_agent_v1_agent_proto_init() }
@@ -1479,15 +1896,22 @@ func file_hearth_agent_v1_agent_proto_init() {
 		(*AgentMessage_MetricsBatch)(nil),
 		(*AgentMessage_ExecResult)(nil),
 		(*AgentMessage_Facts)(nil),
+		(*AgentMessage_ProbeResult)(nil),
 	}
 	file_hearth_agent_v1_agent_proto_msgTypes[1].OneofWrappers = []any{
 		(*HubMessage_Welcome)(nil),
 		(*HubMessage_ExecRequest)(nil),
 		(*HubMessage_Ping)(nil),
+		(*HubMessage_ProbeRequest)(nil),
 	}
 	file_hearth_agent_v1_agent_proto_msgTypes[14].OneofWrappers = []any{
 		(*ExecRequest_Command)(nil),
 		(*ExecRequest_Restart)(nil),
+	}
+	file_hearth_agent_v1_agent_proto_msgTypes[17].OneofWrappers = []any{
+		(*ProbeRequest_Http)(nil),
+		(*ProbeRequest_Tcp)(nil),
+		(*ProbeRequest_Dns)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1495,7 +1919,7 @@ func file_hearth_agent_v1_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_hearth_agent_v1_agent_proto_rawDesc), len(file_hearth_agent_v1_agent_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   19,
+			NumMessages:   24,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

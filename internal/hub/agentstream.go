@@ -105,7 +105,7 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 	if err := stream.Send(welcome); err != nil {
 		return fmt.Errorf("send welcome to %s: %w", deviceID, err)
 	}
-	// From here on only Agents.Exec sends on the stream.
+	// From here on only Agents.Exec and Agents.Probe send on the stream.
 	sess := s.agents.attach(deviceID, hello, stream.Send)
 	defer s.agents.detach(deviceID, sess)
 
@@ -143,6 +143,8 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 			}
 		case *agentv1.AgentMessage_ExecResult:
 			sess.deliver(p.ExecResult)
+		case *agentv1.AgentMessage_ProbeResult:
+			sess.deliverProbe(p.ProbeResult)
 		case *agentv1.AgentMessage_Hello:
 			return connect.NewError(connect.CodeInvalidArgument, errors.New("duplicate Hello"))
 		default:

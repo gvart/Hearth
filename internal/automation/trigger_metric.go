@@ -102,7 +102,7 @@ func (t *metricTrigger) Watch(ctx context.Context, fire FireFunc) error {
 		return errors.New("metric triggers need a Prometheus: start the hub with --prometheus-url")
 	}
 	var lastErr string
-	return poller{clock: t.clock, every: t.timing.Every, hold: t.timing.For, bad: func(ctx context.Context) (map[string]any, bool) {
+	return poller{clock: t.clock, every: t.timing.Every, hold: t.timing.For, bad: func(ctx context.Context) (map[string]any, pollState) {
 		v, held, err := t.crossed(ctx)
 		// A value that cannot be read does not count as crossed: like
 		// Prometheus alerts, missing data resets the duration. Log each new
@@ -115,9 +115,9 @@ func (t *metricTrigger) Watch(ctx context.Context, fire FireFunc) error {
 			lastErr = ""
 		}
 		if !held {
-			return nil, false
+			return nil, stateGood
 		}
-		return t.data(v), true
+		return t.data(v), stateBad
 	}}.watch(ctx, fire)
 }
 
