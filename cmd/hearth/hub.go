@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -243,9 +244,15 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if automationsDir == "" {
 		automationsDir = filepath.Join(opts.dataDir, "automations")
 	}
+	kinds := automation.Builtin(log)
+	maps.Copy(kinds.Triggers, automation.Triggers(automation.TriggerDeps{
+		Devices: hub.AutomationDevices(reg),
+		Metrics: hub.AutomationMetrics(st, prom),
+		Log:     log,
+	}))
 	automations := automation.New(automation.Config{
 		Dir:    automationsDir,
-		Kinds:  automation.Builtin(log),
+		Kinds:  kinds,
 		Policy: pol,
 		Runs:   st.AutomationRuns(),
 		Log:    log,
