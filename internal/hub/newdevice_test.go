@@ -5,6 +5,7 @@ package hub
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"maps"
@@ -30,6 +31,9 @@ type alertHarness struct {
 	reg *Registry
 	t0  time.Time
 
+	// hold, while locked, keeps ntfy from answering, as a slow channel would.
+	hold sync.RWMutex
+
 	mu   sync.Mutex
 	sent []map[string]string
 }
@@ -39,6 +43,8 @@ func newAlertHarness(t *testing.T) *alertHarness {
 	h := &alertHarness{st: newTestStore(t), t0: time.UnixMilli(1_700_000_000_000).UTC()}
 	h.reg = NewRegistry(RegistryConfig{Store: h.st})
 	ntfy := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		h.hold.RLock()
+		defer h.hold.RUnlock()
 		var body map[string]string
 		b, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(b, &body)
@@ -314,5 +320,72 @@ func TestNewDeviceAlertRotatingPrivateMAC(t *testing.T) {
 		if !strings.Contains(m["message"], "private address") {
 			t.Errorf("notification = %v; want it to say the address is private", m)
 		}
+	}
+}
+
+// burstHosts returns n hosts no scan has found yet.
+func burstHosts(n int) []store.NetworkHost {
+	hosts := make([]store.NetworkHost, n)
+	for i := range hosts {
+		hosts[i] = store.NetworkHost{
+			MAC: fmt.Sprintf("00:11:32:10:%02x:%02x", i>>8, i&0xff),
+			IP:  fmt.Sprintf("192.168.%d.%d", 10+i/250, 1+i%250),
+		}
+	}
+	return hosts
+}
+
+// drained waits until every subscriber has taken its events off the bus.
+func (h *alertHarness) drained(t *testing.T) {
+	t.Helper()
+	waitFor(t, "the bus to drain", func() bool {
+		h.reg.bus.mu.Lock()
+		defer h.reg.bus.mu.Unlock()
+		for ch := range h.reg.bus.subs {
+			if len(ch) > 0 {
+				return false
+			}
+		}
+		return true
+	})
+}
+
+// Every host one scan finds is reported, however many there are, even when
+// the channel is still busy with the first notification as the rest arrive.
+func TestNewDeviceAlertBurstReportsEveryHost(t *testing.T) {
+	for _, n := range []int{1, 11, 12, 50} {
+		t.Run(fmt.Sprintf("%d hosts", n), func(t *testing.T) {
+			h := newAlertHarness(t)
+			h.scan(t, 0, router) // the baseline, silent
+			hosts := burstHosts(n)
+
+			h.hold.Lock()
+			h.scan(t, 5*time.Minute, append([]store.NetworkHost{router}, hosts...)...)
+			h.drained(t)
+			h.hold.Unlock()
+
+			missing := func() []string {
+				h.mu.Lock()
+				defer h.mu.Unlock()
+				var out []string
+				for _, x := range hosts {
+					found := false
+					for _, m := range h.sent {
+						found = found || strings.Contains(m["message"], x.MAC)
+					}
+					if !found {
+						out = append(out, x.MAC)
+					}
+				}
+				return out
+			}
+			deadline := time.Now().Add(3 * time.Second)
+			for len(missing()) > 0 && time.Now().Before(deadline) {
+				time.Sleep(5 * time.Millisecond)
+			}
+			if m := missing(); len(m) > 0 {
+				t.Fatalf("%d of %d hosts never reported", len(m), n)
+			}
+		})
 	}
 }
