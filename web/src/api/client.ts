@@ -229,6 +229,50 @@ export interface NotifyChannel {
   type: 'ntfy' | 'telegram';
 }
 
+export type ActionClass = 'read' | 'safe' | 'dangerous';
+
+/** A policy decision: allowed, held for approval, or denied. */
+export type Decision = 'allow' | 'confirm' | 'deny';
+
+/** One audit log entry; see GET /api/v1/audit. */
+export interface AuditEntry {
+  id: number;
+  ts: string;
+  actor_kind: string;
+  actor_id: string;
+  action: string;
+  /** The action's policy class; empty for an action the hub no longer knows. */
+  class: ActionClass | '';
+  target: string;
+  decision: Decision;
+  result: string;
+  detail: Record<string, unknown>;
+}
+
+export interface AuditPage {
+  /** Newest first. */
+  entries: AuditEntry[];
+  /** The before= cursor of the next, older page; absent on the last page. */
+  next_before?: number;
+  /** Every action policy knows, for the filter. */
+  actions: string[];
+}
+
+/** Audit log filters; empty fields match everything. */
+export interface AuditFilter {
+  actor_kind?: string;
+  /** Part of the actor id. */
+  actor?: string;
+  action?: string;
+  class?: ActionClass;
+  decision?: Decision;
+  /** A device id: entries targeting its id, name or hostname. */
+  device?: string;
+  /** RFC 3339. */
+  since?: string;
+  until?: string;
+}
+
 /** ApiError carries the hub's `{"error","code"}` body and the HTTP status. */
 export class ApiError extends Error {
   readonly status: number;
@@ -283,6 +327,18 @@ export const api = {
   tlsInfo: () => request<TlsInfo>('GET', '/tls'),
   createToken: (opts: { ttl?: string; labels?: Record<string, string> } = {}) =>
     request<CreatedToken>('POST', '/tokens', opts),
+  audit: (filter: AuditFilter, before?: number) => {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(filter)) {
+      if (typeof v === 'string' && v !== '') {
+        q.set(k, v);
+      }
+    }
+    if (before !== undefined) {
+      q.set('before', String(before));
+    }
+    return request<AuditPage>('GET', `/audit?${q.toString()}`);
+  },
   kubeClusters: async () => (await request<{ clusters: KubeCluster[] }>('GET', '/kube/clusters')).clusters,
   kubeCluster: (id: string) => request<KubeSnapshot>('GET', `/kube/clusters/${encodeURIComponent(id)}`),
   addKubeCluster: (opts: { name: string; kubeconfig: string }) => request<KubeCluster>('POST', '/kube/clusters', opts),

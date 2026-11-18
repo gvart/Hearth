@@ -747,9 +747,15 @@ dialog::backdrop {
 .nav {
   display: flex;
   gap: 0.25rem;
+  min-width: 0;
+  /* On a phone the links scroll sideways rather than run under "Sign out". */
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
 .nav-link {
+  flex: none;
+  white-space: nowrap;
   padding: 0.35rem 0.7rem;
   border-radius: 8px;
   color: var(--muted);
@@ -1082,6 +1088,115 @@ dialog::backdrop {
   overflow-wrap: anywhere;
 }
 
+/* Audit log */
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  padding: 0.9rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.filter {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.filter select,
+.filter input {
+  height: 2rem;
+  min-width: 8.5rem;
+  padding: 0 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 400;
+}
+
+.filter select:focus,
+.filter input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.filters-clear {
+  margin-left: auto;
+}
+
+.pill-muted {
+  color: var(--muted);
+  background: var(--surface-2);
+}
+
+.audit th,
+.audit td {
+  padding: 0.6rem 0.75rem;
+}
+
+.audit td {
+  font-size: 0.88rem;
+}
+
+/* Actor ids, targets and results can be long: they wrap, the rest does not. */
+.audit td.wrap {
+  min-width: 8.5rem;
+  max-width: 16rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.audit tr[aria-expanded='true'] td {
+  background: var(--surface-2);
+}
+
+.audit td.audit-result {
+  min-width: 10rem;
+  max-width: none;
+}
+
+.decision-cell {
+  display: inline-flex;
+  gap: 0.3rem;
+}
+
+.audit .audit-detail {
+  cursor: default;
+}
+
+.audit .audit-detail:hover {
+  background: none;
+}
+
+.audit-detail td {
+  background: var(--surface-2);
+  border-top: 0 !important;
+}
+
+.audit-detail pre {
+  margin: 0;
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.load-more {
+  display: flex;
+  justify-content: center;
+  margin-top: 1rem;
+}
+
 @media (max-width: 640px) {
   .content {
     padding-top: 1.25rem;
@@ -1102,15 +1217,35 @@ dialog::backdrop {
   }
 
   /* Keep the table readable on phones: name, IP and last seen. */
-  .devices:not(.kube) th:nth-child(2),
-  .devices:not(.kube) td:nth-child(2),
-  .devices:not(.kube) th:nth-child(5),
-  .devices:not(.kube) td:nth-child(5) {
+  .devices:not(.kube, .audit) th:nth-child(2),
+  .devices:not(.kube, .audit) td:nth-child(2),
+  .devices:not(.kube, .audit) th:nth-child(5),
+  .devices:not(.kube, .audit) td:nth-child(5) {
     display: none;
   }
 
   .topbar-left {
     gap: 0.75rem;
+  }
+
+  .topbar > button {
+    flex: none;
+  }
+
+  /* The audit log on phones: time, action, decision. */
+  .audit th:nth-child(2),
+  .audit td:nth-child(2),
+  .audit th:nth-child(4),
+  .audit td:nth-child(4),
+  .audit th:nth-child(5),
+  .audit td:nth-child(5),
+  .audit th:nth-child(7),
+  .audit td:nth-child(7) {
+    display: none;
+  }
+
+  .filter {
+    flex: 1 1 8rem;
   }
 
   .brand span {

@@ -1,9 +1,10 @@
-import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 import {
   api,
   ApiError,
   subscribeEvents,
+  type AuditFilter,
   type Device,
   type DeviceEvent,
   type KubeActionRequest,
@@ -25,6 +26,7 @@ export const keys = {
   kubeClusters: ['kube', 'clusters'] as const,
   kubeCluster: (id: string) => ['kube', 'cluster', id] as const,
   notifyChannels: ['notify', 'channels'] as const,
+  audit: (filter: AuditFilter) => ['audit', filter] as const,
 };
 
 const metricsRefreshMs = 30_000;
@@ -52,8 +54,19 @@ export function useLogout() {
     onSettled: () => {
       qc.removeQueries({ queryKey: keys.devices });
       qc.removeQueries({ queryKey: ['kube'] });
+      qc.removeQueries({ queryKey: ['audit'] });
       qc.setQueryData(keys.session, null);
     },
+  });
+}
+
+/** The audit log under filter, newest first, a page at a time. */
+export function useAudit(filter: AuditFilter) {
+  return useInfiniteQuery({
+    queryKey: keys.audit(filter),
+    queryFn: ({ pageParam }) => api.audit(filter, pageParam),
+    initialPageParam: undefined as number | undefined,
+    getNextPageParam: (last) => last.next_before,
   });
 }
 

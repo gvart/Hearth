@@ -95,6 +95,8 @@ it before sending, and the agent checks again before running.
 Every policy decision, allowed or denied, is written to the audit log in the hub database: who
 (actor), what (action and target), when, and the decision, with details that never include secrets.
 In a cluster the audit entry is replicated like any other write, in order with the action it records.
+The web UI's **Audit** page lists it with filters (time, actor, action, class, decision, device); see
+[Guardrails](guardrails.md#audit-log).
 
 ## Automations and integrations
 

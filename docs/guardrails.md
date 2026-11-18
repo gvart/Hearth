@@ -76,3 +76,15 @@ report no ceiling, and the hub sends them no actions until they are upgraded.
   audits the decision as a dry run.
 - Automations: `hearth hub --automations-dry-run` audits every action's decision and runs none;
   `hearth automation plan <file>` checks a file without touching policy.
+
+## Audit log
+
+Every decision above lands in the audit log. The web UI's **Audit** page lists it, newest first,
+with filters for time range, actor kind and id, action, class, decision and device. Click a row
+for its detail (approval id, automation run, step). Dry runs carry a "dry run" tag.
+
+`GET /api/v1/audit` serves the same data. It takes the query parameters `actor_kind`, `actor`
+(part of the actor id), `action`, `class` (`read` / `safe` / `dangerous`), `decision`, `device` (a
+device id; matches entries that target its id, name or hostname), `since` and `until` (RFC 3339),
+and `limit` (1-500, default 100). A page answers `{"entries": [...], "next_before": <id>,
+"actions": [...]}`; pass `before=<next_before>` for the next, older page.
