@@ -92,8 +92,10 @@ func TestParseRejectsWithLineNumbers(t *testing.T) {
 		{
 			name: "missing id, triggers and actions",
 			yaml: "description: nothing\n",
-			want: []string{`a.yaml:1: id ""`, "a.yaml:1: an automation needs at least one trigger",
-				"a.yaml:1: an automation needs at least one action"},
+			want: []string{
+				`a.yaml:1: id ""`, "a.yaml:1: an automation needs at least one trigger",
+				"a.yaml:1: an automation needs at least one action",
+			},
 		},
 		{
 			name: "unknown step type",

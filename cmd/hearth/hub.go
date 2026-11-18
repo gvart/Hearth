@@ -17,6 +17,7 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/gvart/hearth/internal/automation"
 	"github.com/gvart/hearth/internal/cluster"
 	"github.com/gvart/hearth/internal/hub"
 	"github.com/gvart/hearth/internal/integrations/prometheus"
@@ -31,6 +32,8 @@ type hubOptions struct {
 	httpListen string
 	hosts      []string
 	assetsDir  string
+	// automationsDir holds the automation files; default <dataDir>/automations.
+	automationsDir string
 	// adminPassword is HEARTH_ADMIN_PASSWORD: it sets the admin password on a
 	// hub that has none yet.
 	adminPassword string
@@ -76,6 +79,8 @@ func newHubCmd() *cobra.Command {
 		"directory of release archives and checksums.txt to serve at /download/ for `install.sh --from-hub`")
 	cmd.Flags().StringVar(&opts.prometheusURL, "prometheus-url", os.Getenv("HEARTH_PROMETHEUS_URL"),
 		"Prometheus server to read device charts from, e.g. http://prometheus.lan:9090 (env HEARTH_PROMETHEUS_URL)")
+	cmd.Flags().StringVar(&opts.automationsDir, "automations-dir", "",
+		"directory of automation YAML files, reloaded when they change (default <data-dir>/automations)")
 	addClusterFlags(cmd, &opts.cluster)
 	return cmd
 }
@@ -234,24 +239,43 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	logAttrs = append(logAttrs, "prometheus", prom != nil)
 	log.InfoContext(ctx, "hub listening", logAttrs...)
 
+	automationsDir := opts.automationsDir
+	if automationsDir == "" {
+		automationsDir = filepath.Join(opts.dataDir, "automations")
+	}
+	automations := automation.New(automation.Config{
+		Dir:    automationsDir,
+		Kinds:  automation.Builtin(log),
+		Policy: pol,
+		Runs:   st.AutomationRuns(),
+		Log:    log,
+	})
+
 	g, gctx := errgroup.WithContext(ctx)
 	if node == nil {
 		g.Go(func() error { return reg.Run(gctx) })
+		g.Go(func() error { return automations.Run(gctx) })
 	}
 	g.Go(func() error { return serve(gctx, agentSrv, func() error { return agentSrv.ServeTLS(agentLn, "", "") }) })
 	g.Go(func() error { return serve(gctx, webSrv, func() error { return webSrv.Serve(webLn) }) })
 	if node != nil {
 		// Followers publish device events from the entries they apply.
 		node.ObserveApplies(reg)
-		// Presence runs on the leader only and follows leadership.
-		changed := make(chan struct{}, 1)
+		// Presence and automations run on the leader only and follow
+		// leadership.
+		changed, automationsChanged := make(chan struct{}, 1), make(chan struct{}, 1)
 		node.OnLeaderChange(func(cluster.LeaderInfo) {
-			select {
-			case changed <- struct{}{}:
-			default:
+			for _, c := range []chan struct{}{changed, automationsChanged} {
+				select {
+				case c <- struct{}{}:
+				default:
+				}
 			}
 		})
 		g.Go(func() error { return reg.RunReplicated(gctx, node, changed) })
+		g.Go(func() error {
+			return automation.RunWhileLeading(gctx, node, automationsChanged, log, automations.Run)
+		})
 		g.Go(func() error {
 			if node.WaitReady(gctx) != nil {
 				return nil
