@@ -43,6 +43,7 @@ cmd/hearth/hub.go
   s_344993999c180f::t_7a1ba8d26c5cba 342-343
 internal/policy/policy_test.go
   s_344993999c180f::t_483ed6bc2c0d03 203-231,234-237
+  s_344993999c180f::t_30c5eb716aa328 232-233
 internal/integrations/kubernetes/client.go
   s_344993999c180f::t_d8580ea24679fe 1-122
 internal/integrations/kubernetes/seal_test.go
@@ -69,6 +70,8 @@ internal/integrations/kubernetes/doc.go
   s_344993999c180f::t_9de9090250a589 1-8
 internal/store/migrations/00008_kube_clusters.sql
   s_344993999c180f::t_03d2bb2037593a 1-15
+internal/store/store_test.go
+  s_344993999c180f::t_30c5eb716aa328 54
 ---
 {
   "schema_version": "authorship/3.0.0",
