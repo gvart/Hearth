@@ -1,0 +1,65 @@
+docs/automations.md
+  s_344993999c180f::t_240bbf7e15e8d4 141-195
+internal/agent/exec.go
+  s_344993999c180f::t_27651b8706d580 1-99,101-104,106-129
+  s_344993999c180f::t_245aa1e4494066 100,105
+internal/hub/agentexec_test.go
+  s_344993999c180f::t_fb2da38fb75ad2 15-16
+  s_344993999c180f::t_6f6e74aa17b5d9 1-14,17-44,46-47,52-74,76-124,126-150
+  s_344993999c180f::t_245aa1e4494066 45,75,125
+  s_344993999c180f::t_991f1642cf25a0 48-51
+cmd/hearth/hub.go
+  s_344993999c180f::t_869c50a6660143 11,46-48,87-88,154,161,178
+proto/hearth/agent/v1/agent.proto
+  s_344993999c180f::t_8c9364d3eac731 96-110,139-166
+internal/hub/agentstream.go
+  s_344993999c180f::t_55a49a7a93517f 41-42,51,108-110,143-144,148
+internal/policy/policy.go
+  s_344993999c180f::t_9d3bc25b0d7f8d 10,58-65,122-128,140-144,164-174,178-187,193,264,272-276,278
+cmd/hearth/agent.go
+  s_344993999c180f::t_5b1eb791fff53a 25-28,33-37,40-44,49,54-57
+internal/automation/action_webhook.go
+  s_344993999c180f::t_b7a6391a0c720e 1-111
+internal/agent/run_test.go
+  s_344993999c180f::t_1187916558c3f2 46-47,83,85-86,89
+internal/automation/action_test.go
+  s_344993999c180f::t_4e128af936d5e3 1-332
+internal/hub/agentexec.go
+  s_344993999c180f::t_07597fcdcac842 1-42,46-47,49-73,77-122,128-165
+  s_344993999c180f::t_7eb8efeb7eaa56 123-127
+  s_344993999c180f::t_2bcb997822c84f 43-45,48
+  s_344993999c180f::t_a0b4e6fa3fafe9 74-76
+internal/agent/run.go
+  s_344993999c180f::t_78c678c95975f0 323-324,352-353
+  s_344993999c180f::t_ccec854bac5fa4 17,32,57-59,279,282-284,287,319-322,330-345,349,351,367-368
+internal/hub/server.go
+  s_344993999c180f::t_55a49a7a93517f 59-61,80-82
+internal/policy/policy_test.go
+  s_344993999c180f::t_9d3bc25b0d7f8d 203-244,263-264,333-335
+  s_344993999c180f::t_000f4469dc34bd 336-338
+internal/automation/action_device.go
+  s_344993999c180f::t_7866655524bb10 1-169
+internal/agent/exec_test.go
+  s_344993999c180f::t_52b06092229e3b 102-107,111
+  s_344993999c180f::t_6718132b1f69f2 1-61,65-88,90-101,108-110,112-163
+  s_344993999c180f::t_203b524e55bc0b 62-64
+  s_344993999c180f::t_6f709ddf76c3c5 89
+internal/proto/hearth/agent/v1/agent.pb.go
+  s_344993999c180f::t_bd68be031e3dcf 751-752,754-765,800-827,990-992,994-1003,1038-1194,1204,1216,1229,1295,1297-1301,1311-1322,1341,1357-1362,1372,1376-1377,1379-1392,1412-1415,1422
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ad81abdf0ad1fe81880e368e27c57a14d414f32c",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
