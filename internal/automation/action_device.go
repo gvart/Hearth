@@ -58,7 +58,7 @@ const (
 // agentAction is an action a device's agent executes: exec or restart.
 type agentAction struct {
 	agents  Agents
-	device  string
+	device  Text
 	timeout time.Duration
 	policy  policy.Action
 	desc    string
@@ -69,27 +69,52 @@ type agentAction struct {
 
 func (a *agentAction) Describe() string      { return a.desc }
 func (a *agentAction) Policy() policy.Action { return a.policy }
-func (a *agentAction) Target() string        { return a.device }
+func (a *agentAction) Target() Text          { return a.device }
+func (a *agentAction) texts() []Text         { return []Text{a.device} }
 
-func (a *agentAction) Run(ctx context.Context, _ Event) error {
+func (a *agentAction) Run(ctx context.Context, ev Event) error {
 	if a.agents == nil {
 		return errors.New("this hub does not run actions on devices")
+	}
+	device, err := renderDevice(a.device, ev)
+	if err != nil {
+		return err
 	}
 	req := a.req()
 	req.Timeout = durationpb.New(a.timeout)
 	ctx, cancel := context.WithTimeout(ctx, a.timeout+answerGrace)
 	defer cancel()
-	res, err := a.agents.Exec(ctx, a.device, req)
+	res, err := a.agents.Exec(ctx, device, req)
 	if err != nil {
 		return fmt.Errorf("%s: %w", a.what, err)
 	}
 	if res.GetDenied() {
-		return fmt.Errorf("%s on device %s: %w", a.what, a.device, policy.ErrBeyondCeiling)
+		return fmt.Errorf("%s on device %s: %w", a.what, device, policy.ErrBeyondCeiling)
 	}
 	if res.GetError() != "" {
-		return fmt.Errorf("%s on device %s: %s", a.what, a.device, res.GetError())
+		return fmt.Errorf("%s on device %s: %s", a.what, device, res.GetError())
 	}
 	return nil
+}
+
+// renderDevice renders a device field, which must not come out empty.
+func renderDevice(device Text, ev Event) (string, error) {
+	d, err := device.Render(ev)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(d) == "" {
+		return "", fmt.Errorf("device %q is empty for this event", device)
+	}
+	return d, nil
+}
+
+// deviceText parses a device field: required, and may be a template.
+func deviceText(p Params, raw string) (Text, error) {
+	if raw == "" {
+		return Text{}, errors.New("device is required")
+	}
+	return p.Text(raw, "device")
 }
 
 // agentTimeout checks a timeout field: 0 means the default.
@@ -112,8 +137,9 @@ func buildExec(p Params, agents Agents) (Action, error) {
 	if err := p.Decode(&cfg); err != nil {
 		return nil, err
 	}
-	if cfg.Device == "" {
-		return nil, errors.New("device is required")
+	device, err := deviceText(p, cfg.Device)
+	if err != nil {
+		return nil, err
 	}
 	if len(cfg.Command) == 0 || cfg.Command[0] == "" {
 		return nil, errors.New("command is required: a list, program first, e.g. [/usr/bin/df, -h]")
@@ -124,7 +150,7 @@ func buildExec(p Params, agents Agents) (Action, error) {
 	}
 	argv := cfg.Command
 	return &agentAction{
-		agents: agents, device: cfg.Device, timeout: timeout, policy: policy.AutomationExec,
+		agents: agents, device: device, timeout: timeout, policy: policy.AutomationExec,
 		desc: fmt.Sprintf("run %q", argv), what: "exec " + argv[0],
 		req: func() *agentv1.ExecRequest {
 			return &agentv1.ExecRequest{Action: &agentv1.ExecRequest_Command{Command: &agentv1.Command{Argv: argv}}}
@@ -145,8 +171,9 @@ func buildRestart(p Params, agents Agents) (Action, error) {
 	if err := p.Decode(&cfg); err != nil {
 		return nil, err
 	}
-	if cfg.Device == "" {
-		return nil, errors.New("device is required")
+	device, err := deviceText(p, cfg.Device)
+	if err != nil {
+		return nil, err
 	}
 	manager, name, ok := strings.Cut(cfg.Service, ":")
 	if !ok || name == "" || !slices.Contains(serviceManagers, manager) {
@@ -158,7 +185,7 @@ func buildRestart(p Params, agents Agents) (Action, error) {
 		return nil, err
 	}
 	return &agentAction{
-		agents: agents, device: cfg.Device, timeout: timeout, policy: policy.AutomationRestart,
+		agents: agents, device: device, timeout: timeout, policy: policy.AutomationRestart,
 		desc: "restart " + cfg.Service, what: "restart " + cfg.Service,
 		req: func() *agentv1.ExecRequest {
 			return &agentv1.ExecRequest{Action: &agentv1.ExecRequest_Restart{

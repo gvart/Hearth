@@ -163,7 +163,7 @@ below: 1
 
 func TestMetricTriggerWithoutPrometheus(t *testing.T) {
 	tr := mustBuildTrigger(t, TriggerDeps{}, "type: metric\ndevice: nas\nmetric: cpu\nabove: 90")
-	err := tr.Watch(t.Context(), func() {})
+	err := tr.Watch(t.Context(), func(map[string]any) {})
 	wantErrContains(t, err, "--prometheus-url")
 }
 

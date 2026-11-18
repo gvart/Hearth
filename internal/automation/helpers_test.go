@@ -27,7 +27,7 @@ type fakeAction struct {
 
 func (a *fakeAction) Describe() string      { return "do the fake thing" }
 func (a *fakeAction) Policy() policy.Action { return a.policy }
-func (a *fakeAction) Target() string        { return "fake-target" }
+func (a *fakeAction) Target() Text          { return Literal("fake-target") }
 
 func (a *fakeAction) Run(ctx context.Context, ev Event) error {
 	a.mu.Lock()
@@ -74,7 +74,9 @@ type fakeTrigger struct {
 
 func (t *fakeTrigger) Describe() string { return "fires in tests" }
 
-func (t *fakeTrigger) Watch(ctx context.Context, _ func()) error {
+func (t *fakeTrigger) Sample() map[string]any { return map[string]any{} }
+
+func (t *fakeTrigger) Watch(ctx context.Context, _ FireFunc) error {
 	t.mu.Lock()
 	t.watched++
 	t.mu.Unlock()

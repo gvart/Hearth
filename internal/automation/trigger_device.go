@@ -47,15 +47,29 @@ func (t *deviceTrigger) Describe() string {
 	return "fires when " + who + " goes offline"
 }
 
-func (t *deviceTrigger) Watch(ctx context.Context, fire func()) error {
+func (t *deviceTrigger) Watch(ctx context.Context, fire FireFunc) error {
 	if t.events == nil {
 		return errors.New("device events are not available")
 	}
 	return t.events.WatchDevices(ctx, func(e DeviceEvent) {
 		if e.Online == t.online && t.matches(e) {
-			fire()
+			fire(deviceData(e))
 		}
 	})
+}
+
+func (t *deviceTrigger) Sample() map[string]any {
+	return deviceData(DeviceEvent{ID: "device-id", Name: "nas", Hostname: "nas.lan", Online: t.online})
+}
+
+// deviceData is what a device trigger tells actions: Device is the id, which
+// any action's device field accepts.
+func deviceData(e DeviceEvent) map[string]any {
+	state := "offline"
+	if e.Online {
+		state = "online"
+	}
+	return map[string]any{"Device": e.ID, "Name": e.Name, "Hostname": e.Hostname, "State": state}
 }
 
 func (t *deviceTrigger) matches(e DeviceEvent) bool {

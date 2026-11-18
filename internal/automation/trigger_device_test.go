@@ -66,7 +66,7 @@ func TestDeviceTriggerWithoutEvents(t *testing.T) {
 	tr := mustBuildTrigger(t, TriggerDeps{}, "type: device\nto: offline")
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
-	wantErrContains(t, tr.Watch(ctx, func() {}), "not available")
+	wantErrContains(t, tr.Watch(ctx, func(map[string]any) {}), "not available")
 	if got, want := tr.Describe(), "fires when any device goes offline"; got != want {
 		t.Errorf("Describe = %q, want %q", got, want)
 	}

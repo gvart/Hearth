@@ -4,6 +4,7 @@ package automation
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -96,13 +97,30 @@ type watching struct {
 	fires  atomic.Int32
 	cancel context.CancelFunc
 	done   chan error
+
+	mu   sync.Mutex
+	data []map[string]any // of each firing
+}
+
+// fired returns the data of each firing so far.
+func (w *watching) fired() []map[string]any {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return slices.Clone(w.data)
 }
 
 func watch(t *testing.T, tr Trigger) *watching {
 	t.Helper()
 	ctx, cancel := context.WithCancel(t.Context())
 	w := &watching{cancel: cancel, done: make(chan error, 1)}
-	go func() { w.done <- tr.Watch(ctx, func() { w.fires.Add(1) }) }()
+	go func() {
+		w.done <- tr.Watch(ctx, func(data map[string]any) {
+			w.mu.Lock()
+			w.data = append(w.data, data)
+			w.mu.Unlock()
+			w.fires.Add(1)
+		})
+	}()
 	t.Cleanup(func() {
 		cancel()
 		select {

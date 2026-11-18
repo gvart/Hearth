@@ -38,7 +38,9 @@ func (t *scheduleTrigger) Describe() string {
 	return fmt.Sprintf("fires on schedule %q", t.spec)
 }
 
-func (t *scheduleTrigger) Watch(ctx context.Context, fire func()) error {
+func (t *scheduleTrigger) Sample() map[string]any { return map[string]any{} }
+
+func (t *scheduleTrigger) Watch(ctx context.Context, fire FireFunc) error {
 	for {
 		now := t.clock.Now()
 		next := t.sched.Next(now)
@@ -50,7 +52,7 @@ func (t *scheduleTrigger) Watch(ctx context.Context, fire func()) error {
 		case <-ctx.Done():
 			return nil
 		case <-t.clock.After(next.Sub(now)):
-			fire()
+			fire(map[string]any{})
 		}
 	}
 }

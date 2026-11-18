@@ -173,7 +173,7 @@ func (r *Runtime) Fire(automationID, triggerID string) error {
 	}
 	for _, t := range in.a.Triggers {
 		if _, ok := t.Impl.(manualTrigger); ok && t.ID == triggerID {
-			in.fire(triggerID)
+			in.fire(t, map[string]any{})
 			return nil
 		}
 	}
@@ -201,7 +201,7 @@ func (r *Runtime) start(ctx context.Context, a *Automation) *instance {
 	in.wg.Go(func() { in.work(ictx) })
 	for _, t := range a.Triggers {
 		in.wg.Go(func() {
-			if err := t.Impl.Watch(ictx, func() { in.fire(t.ID) }); err != nil && ictx.Err() == nil {
+			if err := t.Impl.Watch(ictx, func(data map[string]any) { in.fire(t, data) }); err != nil && ictx.Err() == nil {
 				r.cfg.Log.ErrorContext(ictx, "automation trigger stopped", "automation", a.ID, "trigger", t.ID, "err", err)
 			}
 		})
@@ -216,9 +216,9 @@ func (in *instance) close() {
 }
 
 // fire starts a run, or not, as the automation's mode says.
-func (in *instance) fire(triggerID string) {
-	ev := Event{TriggerID: triggerID, At: in.r.cfg.Now()}
-	log := in.r.cfg.Log.With("automation", in.a.ID, "trigger", triggerID)
+func (in *instance) fire(t Step[Trigger], data map[string]any) {
+	ev := Event{TriggerID: t.ID, TriggerType: t.Type, At: in.r.cfg.Now(), Data: data}
+	log := in.r.cfg.Log.With("automation", in.a.ID, "trigger", t.ID)
 	in.mu.Lock()
 	switch in.a.Mode {
 	case ModeSingle:
@@ -277,16 +277,20 @@ func (in *instance) work(ctx context.Context) {
 	}
 }
 
-// StepResult is one step of a run, as recorded in run history.
+// StepResult is one step of a run, as recorded in run history. The first
+// is the trigger that fired, with status fired and the data it passed to
+// the actions.
 type StepResult struct {
-	ID     string `json:"id"`
-	Type   string `json:"type"`
-	Status string `json:"status"`
-	Error  string `json:"error,omitempty"`
+	ID     string         `json:"id"`
+	Type   string         `json:"type"`
+	Status string         `json:"status"`
+	Error  string         `json:"error,omitempty"`
+	Data   map[string]any `json:"data,omitempty"`
 }
 
 // Step statuses.
 const (
+	stepFired     = "fired"
 	stepOK        = "ok"
 	stepNotMet    = "not_met"
 	stepFailed    = "failed"
@@ -301,7 +305,7 @@ func (r *Runtime) execute(ctx context.Context, a *Automation, ev Event) string {
 		ID: strings.ToLower(rand.Text()), AutomationID: a.ID, TriggerID: ev.TriggerID,
 		StartedAt: r.cfg.Now(), Status: StatusSucceeded,
 	}
-	var steps []StepResult
+	steps := []StepResult{{ID: ev.TriggerID, Type: ev.TriggerType, Status: stepFired, Data: ev.Data}}
 	fail := func(status string, step StepResult, err error) {
 		run.Status, run.Error = status, fmt.Sprintf("%s: %v", step.ID, err)
 		step.Status, step.Error = status, err.Error()
@@ -379,11 +383,15 @@ func (r *Runtime) execute(ctx context.Context, a *Automation, ev Event) string {
 // is written even when the run is cancelled while the action executes (the
 // store bounds the write itself), so only the action sees ctx.
 func (r *Runtime) act(ctx context.Context, a *Automation, s Step[Action], runID string, ev Event) error {
+	target, err := s.Impl.Target().Render(ev)
+	if err != nil {
+		return err
+	}
 	return r.cfg.Policy.Do(context.WithoutCancel(ctx), policy.Request{
 		ActorKind: policy.ActorAutomation,
 		ActorID:   a.ID,
 		Action:    s.Impl.Policy(),
-		Target:    s.Impl.Target(),
+		Target:    target,
 		Detail:    map[string]any{"run": runID, "step": s.ID, "trigger": ev.TriggerID},
 	}, func(context.Context) error { return s.Impl.Run(ctx, ev) })
 }

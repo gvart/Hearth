@@ -162,6 +162,7 @@ func Parse(name string, b []byte, kinds Kinds) (*Automation, error) {
 		}
 	}
 	checkStepIDs(a, &errs)
+	checkTemplates(a, &errs)
 	if len(errs) > 0 {
 		return nil, &LoadError{File: name, Errs: errs}
 	}

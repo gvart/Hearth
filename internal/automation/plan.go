@@ -5,6 +5,8 @@ package automation
 import (
 	"fmt"
 	"io"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/gvart/hearth/internal/policy"
@@ -22,6 +24,7 @@ func Plan(w io.Writer, a *Automation) error {
 	b.WriteString("\nRuns when any of these fire:\n")
 	for _, t := range a.Triggers {
 		fmt.Fprintf(&b, "  - %s (%s): %s%s\n", t.ID, t.Type, t.Impl.Describe(), suffix(t.Description))
+		fmt.Fprintf(&b, "    templates see: %s\n", strings.Join(fieldNames(t.Impl.Sample()), ", "))
 	}
 	if len(a.Conditions) > 0 {
 		b.WriteString("\nIf all of these hold:\n")
@@ -33,7 +36,7 @@ func Plan(w io.Writer, a *Automation) error {
 	for i, s := range a.Actions {
 		class, _ := policy.ClassOf(s.Impl.Policy())
 		target := ""
-		if t := s.Impl.Target(); t != "" {
+		if t := s.Impl.Target().String(); t != "" {
 			target = " on " + t
 		}
 		fmt.Fprintf(&b, "  %d. %s (%s): %s%s%s\n     policy: %s (%s), actor automation/%s\n",
@@ -44,6 +47,15 @@ func Plan(w io.Writer, a *Automation) error {
 		return fmt.Errorf("write plan: %w", err)
 	}
 	return nil
+}
+
+// fieldNames lists the template fields a firing with this data provides.
+func fieldNames(data map[string]any) []string {
+	names := []string{".Trigger.ID", ".Trigger.Type", ".Trigger.At"}
+	for _, k := range slices.Sorted(maps.Keys(data)) {
+		names = append(names, ".Trigger."+k)
+	}
+	return names
 }
 
 func suffix(description string) string {

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -44,8 +45,12 @@ func TestRunSucceedsThroughPolicy(t *testing.T) {
 		run.Error != "" || run.FinishedAt.Before(run.StartedAt) {
 		t.Errorf("run = %+v", run)
 	}
-	want := []StepResult{{ID: "check", Type: "fake", Status: "ok"}, {ID: "act", Type: "fake", Status: "ok"}}
-	if got := steps(t, run); !slices.Equal(got, want) {
+	want := []StepResult{
+		{ID: "go", Type: "manual", Status: "fired"},
+		{ID: "check", Type: "fake", Status: "ok"},
+		{ID: "act", Type: "fake", Status: "ok"},
+	}
+	if got := steps(t, run); !reflect.DeepEqual(got, want) {
 		t.Errorf("steps = %+v, want %+v", got, want)
 	}
 	// One audit entry for the action, with the automation as the actor.
@@ -72,7 +77,7 @@ func TestRunSkippedWhenConditionFails(t *testing.T) {
 	if run.Status != StatusSkipped || act.started() != 0 || len(h.audit.all()) != 0 {
 		t.Errorf("run = %+v, actions started %d, audit %v; want skipped with nothing done", run, act.started(), h.audit.all())
 	}
-	if got := steps(t, run); len(got) != 1 || got[0].Status != "not_met" {
+	if got := steps(t, run); len(got) != 2 || got[1].Status != "not_met" {
 		t.Errorf("steps = %+v", got)
 	}
 }
@@ -92,7 +97,7 @@ func TestRunDeniedByPolicy(t *testing.T) {
 	if run.Status != StatusDenied || !strings.Contains(run.Error, "denied by policy") || act.started() != 0 {
 		t.Errorf("run = %+v, action started %d times", run, act.started())
 	}
-	if got := steps(t, run); len(got) != 2 || got[1].ID != "act" || got[1].Status != "denied" {
+	if got := steps(t, run); len(got) != 3 || got[2].ID != "act" || got[2].Status != "denied" {
 		t.Errorf("steps = %+v, want the denial last", got)
 	}
 	entries := h.audit.all()

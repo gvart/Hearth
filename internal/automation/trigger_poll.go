@@ -15,17 +15,18 @@ type poller struct {
 	clock Clock
 	every time.Duration
 	hold  time.Duration
-	// bad reports whether the state is bad now.
-	bad func(ctx context.Context) bool
+	// bad reports whether the state is bad now, and if so what a firing
+	// tells about it.
+	bad func(ctx context.Context) (map[string]any, bool)
 }
 
 // watch runs the first check at once, then one every p.every, until ctx is
 // done.
-func (p poller) watch(ctx context.Context, fire func()) error {
+func (p poller) watch(ctx context.Context, fire FireFunc) error {
 	var since time.Time // start of the current bad spell; zero when good
 	fired := false
 	for {
-		bad := p.bad(ctx)
+		data, bad := p.bad(ctx)
 		if ctx.Err() != nil {
 			// A check cut short by the stop is not a failure.
 			return nil
@@ -36,7 +37,7 @@ func (p poller) watch(ctx context.Context, fire func()) error {
 				since = now
 			}
 			if !fired && now.Sub(since) >= p.hold {
-				fire()
+				fire(data)
 				fired = true
 			}
 		} else {
