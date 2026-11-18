@@ -12,6 +12,7 @@ internal/notify/notify_test.go
   s_344993999c180f::t_23117743feb4e9 19-56
 web/src/components/Shell.tsx
   s_344993999c180f::t_c7560d96280ef4 2-3,17,21-23,53,67-71,86-91,94-96
+  s_344993999c180f::t_406a74d9b3409a 10
 cmd/hearth/hub_approvals_test.go
   s_344993999c180f::t_edc2eaf4d8941a 1-41
 internal/hub/api.go
@@ -37,6 +38,7 @@ internal/store/store_test.go
   s_344993999c180f::t_d4ec9dbb1691b3 54
 web/src/api/client.ts
   s_344993999c180f::t_f554558d553113 276-285,287-295,377-385
+  s_344993999c180f::t_70a16501e0ecda 286
 internal/policy/policy.go
   s_344993999c180f::t_6a73ae6175bcec 114-117,201-203
 internal/policy/engine.go
