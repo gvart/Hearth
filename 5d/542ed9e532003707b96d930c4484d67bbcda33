@@ -49,6 +49,7 @@ internal/cluster/control.go
   s_344993999c180f::t_ce2377f3354e30 229
 internal/automation/runtime.go
   s_344993999c180f::t_d211cd6559279f 66-68,393,399-401,403-409
+  s_344993999c180f::t_56863ce3f4a1e4 402,410
 internal/hub/agentstream.go
   s_344993999c180f::t_e2c09c6aedb1b7 109,140
 internal/store/command.go
@@ -62,6 +63,7 @@ internal/store/approvals.go
 internal/automation/action_device.go
   s_344993999c180f::t_0ae970829be3a9 91
   s_344993999c180f::t_005502290ffdcd 75-77,79-84,90
+  s_344993999c180f::t_56863ce3f4a1e4 78,85-89
 internal/store/approvals_test.go
   s_344993999c180f::t_df9af8a1f9981c 1-118
 internal/proto/hearth/agent/v1/agent.pb.go
