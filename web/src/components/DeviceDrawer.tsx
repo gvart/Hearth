@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import type { Device } from '../api/client.ts';
+import { markTerminalLaunch, terminalHttpsDocs, terminalTransportAllowed } from '../api/terminal.ts';
 import { displayName, formatBytes, formatDateTime, osArch, primaryIP, statusLabel } from '../format.ts';
 import { DeviceCharts } from './DeviceCharts.tsx';
 import { DeviceLogSources } from './DeviceLogSources.tsx';
@@ -30,6 +31,14 @@ export function DeviceDrawer({ device, onClose }: { device: Device; onClose: () 
           </button>
         </div>
       </header>
+      {device.facts.ceiling?.shell && !terminalTransportAllowed() ? (
+        <p className="small muted">
+          Terminals need HTTPS, or a browser on the hub itself.{' '}
+          <a href={terminalHttpsDocs} target="_blank" rel="noreferrer">
+            Set up HTTPS
+          </a>
+        </p>
+      ) : null}
 
       <Section title="Device">
         <Row k="ID" v={<span className="mono">{device.id}</span>} />
@@ -152,7 +161,9 @@ function TerminalButton({ device }: { device: Device }) {
       ? 'The device is not online'
       : !device.facts.ceiling?.shell
         ? 'Its agent does not allow shells: start it with --allow-shell'
-        : '';
+        : !terminalTransportAllowed()
+          ? 'Terminals need HTTPS, or a browser on the hub itself'
+          : '';
   if (why) {
     return (
       <button className="btn" type="button" disabled title={why}>
@@ -167,6 +178,9 @@ function TerminalButton({ device }: { device: Device }) {
       href={`#/terminal/${encodeURIComponent(device.id)}`}
       target="_blank"
       rel="noopener"
+      onClick={() => {
+        markTerminalLaunch(device.id);
+      }}
     >
       Terminal
     </a>

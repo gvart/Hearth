@@ -7,7 +7,13 @@ import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
 import { useEffect, useRef, useState } from 'react';
 import { useDevices } from '../api/hooks.ts';
-import { openTerminal, type TerminalEvent } from '../api/terminal.ts';
+import {
+  consumeTerminalLaunch,
+  openTerminal,
+  terminalHttpsDocs,
+  terminalTransportAllowed,
+  type TerminalEvent,
+} from '../api/terminal.ts';
 import { displayName } from '../format.ts';
 import { Logo } from './Logo.tsx';
 import './TerminalPage.css';
@@ -52,6 +58,10 @@ export default function TerminalPage({ deviceId }: { deviceId: string }) {
   const host = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<Status>({ kind: 'connecting' });
   const [attempt, setAttempt] = useState(0);
+  // Only a click starts a shell: the Terminal button's, or Connect here.
+  const [armedFor, setArmedFor] = useState(() => (consumeTerminalLaunch(deviceId) ? deviceId : null));
+  const allowed = terminalTransportAllowed();
+  const armed = allowed && armedFor === deviceId;
   const name = device ? displayName(device) : deviceId;
 
   useEffect(() => {
@@ -60,7 +70,7 @@ export default function TerminalPage({ deviceId }: { deviceId: string }) {
 
   useEffect(() => {
     const el = host.current;
-    if (!el) {
+    if (!el || !armed) {
       return;
     }
     const term = new Terminal({
@@ -108,7 +118,7 @@ export default function TerminalPage({ deviceId }: { deviceId: string }) {
       conn.close();
       term.dispose();
     };
-  }, [deviceId, attempt]);
+  }, [deviceId, attempt, armed]);
 
   return (
     <div className="terminal-page">
@@ -119,7 +129,16 @@ export default function TerminalPage({ deviceId }: { deviceId: string }) {
         <div className="terminal-title">
           <h1>{name}</h1>
           <p className="small" role="status">
-            {status.kind === 'connecting' ? (
+            {!allowed ? (
+              <span className="danger-text">
+                Terminals need HTTPS.{' '}
+                <a href={terminalHttpsDocs} target="_blank" rel="noreferrer">
+                  Set up HTTPS
+                </a>
+              </span>
+            ) : !armed ? (
+              <span className="muted">Not connected. Connecting starts a shell on this device.</span>
+            ) : status.kind === 'connecting' ? (
               <span className="muted">Connecting…</span>
             ) : status.kind === 'pending' ? (
               <span className="warn-text">
@@ -134,7 +153,17 @@ export default function TerminalPage({ deviceId }: { deviceId: string }) {
             )}
           </p>
         </div>
-        {status.kind === 'ended' ? (
+        {allowed && !armed ? (
+          <button
+            className="btn btn-primary"
+            type="button"
+            onClick={() => {
+              setArmedFor(deviceId);
+            }}
+          >
+            Connect
+          </button>
+        ) : armed && status.kind === 'ended' ? (
           <button
             className="btn btn-primary"
             type="button"

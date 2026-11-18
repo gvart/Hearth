@@ -6,6 +6,54 @@
 /** The largest input message sent; the hub refuses more than 64 KiB. */
 const maxInputMessage = 32 * 1024;
 
+/** How to set up what terminals need. */
+export const terminalHttpsDocs = 'https://github.com/gvart/hearth/blob/main/docs/https.md';
+
+const launchKey = 'hearth.terminal.launch';
+/** How long after a click on the Terminal button its tab may connect by itself. */
+const launchWindowMs = 10_000;
+
+/** The hub serves terminals only over HTTPS, or to a browser on the hub itself. */
+export function terminalTransportAllowed(): boolean {
+  const { protocol, hostname } = window.location;
+  return protocol === 'https:' || ['localhost', '127.0.0.1', '[::1]'].includes(hostname);
+}
+
+/** Records that the user asked for a terminal, for the tab about to open. */
+export function markTerminalLaunch(deviceId: string): void {
+  try {
+    localStorage.setItem(launchKey, JSON.stringify({ deviceId, at: Date.now() }));
+  } catch {
+    // Without storage the new tab asks for a click instead.
+  }
+}
+
+/**
+ * Whether the user just asked for this terminal. Anything else that loads the
+ * page, such as a link from elsewhere or a reload, must not start a shell.
+ */
+export function consumeTerminalLaunch(deviceId: string): boolean {
+  try {
+    const raw = localStorage.getItem(launchKey);
+    localStorage.removeItem(launchKey);
+    if (!raw) {
+      return false;
+    }
+    const launch = JSON.parse(raw) as { deviceId?: string; at?: number };
+    return launch.deviceId === deviceId && Date.now() - (launch.at ?? 0) < launchWindowMs;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether data is the terminal answering the shell by itself (device status,
+ * cursor position, focus, colour and settings reports), not someone typing.
+ */
+export function isAutoReply(data: string): boolean {
+  return data.startsWith('\u001b') && /^(?:\[[?>]?[\d;]*[cnRt]|\[[IO]|\].*|P.*)$/su.test(data.slice(1));
+}
+
 export interface TerminalSize {
   rows: number;
   cols: number;
@@ -43,6 +91,10 @@ export function openTerminal(
   ws.binaryType = 'arraybuffer';
   const encoder = new TextEncoder();
   let ended = false;
+  // Nothing is sent until the shell runs: a session held for approval has
+  // nobody to type to, and the hub drops what comes before the start.
+  let started = false;
+  let latest = size;
 
   ws.onmessage = (msg: MessageEvent<ArrayBuffer | string>) => {
     if (typeof msg.data !== 'string') {
@@ -52,6 +104,12 @@ export function openTerminal(
     const ev = JSON.parse(msg.data) as TerminalEvent;
     if (ev.type === 'exit' || ev.type === 'error') {
       ended = true;
+    }
+    if (ev.type === 'started') {
+      started = true;
+      if (latest.rows !== size.rows || latest.cols !== size.cols) {
+        ws.send(JSON.stringify({ type: 'resize', ...latest }));
+      }
     }
     onEvent(ev);
   };
@@ -64,7 +122,11 @@ export function openTerminal(
 
   return {
     send(data) {
-      if (ws.readyState !== WebSocket.OPEN) {
+      if (!started || ws.readyState !== WebSocket.OPEN) {
+        return;
+      }
+      if (isAutoReply(data)) {
+        ws.send(JSON.stringify({ type: 'reply', data }));
         return;
       }
       // A paste can exceed what the hub accepts in one message.
@@ -74,7 +136,8 @@ export function openTerminal(
       }
     },
     resize({ rows, cols }) {
-      if (ws.readyState === WebSocket.OPEN) {
+      latest = { rows, cols };
+      if (started && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'resize', rows, cols }));
       }
     },

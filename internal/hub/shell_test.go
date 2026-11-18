@@ -61,6 +61,22 @@ func fakeShellAgent(stream *connect.BidiStreamForClient[agentv1.AgentMessage, ag
 	return got
 }
 
+// grantShell is ctx with policy's grant of device.shell, as Do gives it.
+func grantShell(ctx context.Context, t *testing.T, st *store.Store) context.Context {
+	t.Helper()
+	var granted context.Context
+	err := policy.New(st.Audit()).Do(ctx, policy.Request{
+		ActorKind: policy.ActorWeb, ActorID: "test", Action: policy.DeviceShell, Target: "dev-1",
+	}, func(c context.Context) error {
+		granted = c //nolint:fatcontext // the grant is what the test needs
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return granted
+}
+
 // openShellUntilAttached retries OpenShell while the session is not attached yet.
 func openShellUntilAttached(ctx context.Context, t *testing.T, agents *Agents) (*Shell, error) {
 	t.Helper()
@@ -85,7 +101,7 @@ func TestAgentsShell(t *testing.T) {
 	stream := connectAgent(ctx, t, client, minShellMinor, &agentv1.Ceiling{Shell: true})
 	got := fakeShellAgent(stream, false)
 
-	sh, err := openShellUntilAttached(ctx, t, agents)
+	sh, err := openShellUntilAttached(grantShell(ctx, t, st), t, agents)
 	if err != nil || sh.Path() != "/bin/fake" {
 		t.Fatalf("OpenShell = %v, %v; want the started shell", sh, err)
 	}
@@ -125,7 +141,7 @@ func TestAgentsShellRefusedByAgent(t *testing.T) {
 	stream := connectAgent(ctx, t, client, minShellMinor, &agentv1.Ceiling{Shell: true})
 	fakeShellAgent(stream, true)
 
-	if _, err := openShellUntilAttached(ctx, t, agents); !errors.Is(err, policy.ErrBeyondCeiling) ||
+	if _, err := openShellUntilAttached(grantShell(ctx, t, st), t, agents); !errors.Is(err, policy.ErrBeyondCeiling) ||
 		!strings.Contains(err.Error(), "agent refused") {
 		t.Fatalf("OpenShell = %v, want the agent's refusal, beyond the ceiling", err)
 	}
@@ -151,7 +167,7 @@ func TestAgentsShellNeverBeyondCeiling(t *testing.T) {
 			client, agents := newExecClient(t, st)
 			stream := connectAgent(ctx, t, client, tc.minor, tc.ceiling)
 			got := fakeShellAgent(stream, false)
-			_, err := openShellUntilAttached(ctx, t, agents)
+			_, err := openShellUntilAttached(grantShell(ctx, t, st), t, agents)
 			if !errors.Is(err, policy.ErrBeyondCeiling) || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("OpenShell = %v, want beyond the ceiling (%s)", err, tc.want)
 			}

@@ -24,6 +24,9 @@ const minShellMinor = 6
 // one that does not has its session ended.
 const maxShellBuffer = 4 << 20
 
+// maxDeviceShells is how many terminals may be open on one device at a time.
+const maxDeviceShells = 4
+
 // Shell is an open shell session on a device, through its agent. Read
 // returns what the shell writes, Write sends it input; Close ends it.
 type Shell struct {
@@ -150,8 +153,12 @@ func (a *Agents) CheckShell(ctx context.Context, device string) error {
 // OpenShell opens a shell of rows x cols on the agent of device and waits
 // until it runs. A shell the agent's reported ceiling does not allow is
 // never asked for; one the agent refuses itself fails too. Both errors
-// wrap policy.ErrBeyondCeiling. Close the Shell when done.
+// wrap policy.ErrBeyondCeiling. ctx must carry policy's grant of
+// device.shell. Close the Shell when done.
 func (a *Agents) OpenShell(ctx context.Context, device string, rows, cols uint32) (*Shell, error) {
+	if !policy.Granted(ctx, policy.DeviceShell) {
+		return nil, fmt.Errorf("open shell on device %s: not granted by policy: %w", device, policy.ErrDenied)
+	}
 	s, err := a.session(ctx, device)
 	if err != nil {
 		return nil, err
@@ -164,6 +171,10 @@ func (a *Agents) OpenShell(ctx context.Context, device string, rows, cols uint32
 		opened: make(chan struct{}), more: make(chan struct{}, 1),
 	}
 	s.mu.Lock()
+	if len(s.shells) >= maxDeviceShells {
+		s.mu.Unlock()
+		return nil, fmt.Errorf("device %s already has %d terminals open", device, maxDeviceShells)
+	}
 	s.shells[sh.id] = sh
 	s.mu.Unlock()
 	open := &agentv1.ShellRequest{Op: &agentv1.ShellRequest_Open{Open: &agentv1.ShellOpen{

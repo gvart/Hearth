@@ -62,14 +62,15 @@ func pollable(f *os.File) (*os.File, error) {
 		return nil, fmt.Errorf("pty: %w", cerr)
 	}
 	if cerr := rc.Control(func(fd uintptr) {
-		dup, err = unix.Dup(int(fd))
+		// Atomically close-on-exec: a child started meanwhile must not
+		// inherit the terminal.
+		dup, err = unix.FcntlInt(fd, unix.F_DUPFD_CLOEXEC, 0)
 	}); cerr != nil {
 		return nil, fmt.Errorf("pty: %w", cerr)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("dup pty: %w", err)
 	}
-	unix.CloseOnExec(dup)
 	if err := unix.SetNonblock(dup, true); err != nil {
 		_ = unix.Close(dup)
 		return nil, fmt.Errorf("pty non-blocking: %w", err)

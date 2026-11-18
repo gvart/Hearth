@@ -21,9 +21,13 @@ const (
 	shellWindow = 256 << 10
 	// shellChunk is the largest output message.
 	shellChunk = 32 << 10
-	// shellInputQueue is how many input messages may wait for the PTY. A
-	// shell that reads none of them for this long has its session ended.
+	// shellInputQueue and shellInputBytes bound the input waiting for the
+	// PTY, in messages and in bytes. A shell that falls this far behind has
+	// its session ended.
 	shellInputQueue = 256
+	shellInputBytes = 512 << 10
+	// maxShells is how many shells may run at a time.
+	maxShells = 4
 	// shellKillGrace is how long a closed shell has between SIGHUP and
 	// SIGKILL.
 	shellKillGrace = 2 * time.Second
@@ -63,8 +67,10 @@ type shell struct {
 
 	mu      sync.Mutex
 	unacked int
-	killed  bool
-	kill    *time.Timer
+	// queued is how many input bytes wait in in or are being written.
+	queued int
+	killed bool
+	kill   *time.Timer
 	// acked wakes a reader waiting for the window.
 	acked chan struct{}
 }
@@ -87,9 +93,7 @@ func (h *shellHost) handle(ctx context.Context, req *agentv1.ShellRequest) {
 	}
 	switch op := req.GetOp().(type) {
 	case *agentv1.ShellRequest_Input:
-		select {
-		case sh.in <- op.Input:
-		default:
+		if !sh.enqueue(op.Input) {
 			h.log.WarnContext(ctx, "shell input overflow; ending the session", "id", id)
 			sh.close()
 		}
@@ -109,6 +113,7 @@ func (h *shellHost) handle(ctx context.Context, req *agentv1.ShellRequest) {
 func (h *shellHost) open(ctx context.Context, id string, open *agentv1.ShellOpen) {
 	h.mu.Lock()
 	_, dup := h.shells[id]
+	running := len(h.shells)
 	h.mu.Unlock()
 	if dup {
 		h.log.WarnContext(ctx, "shell request for a session already open", "id", id)
@@ -117,6 +122,13 @@ func (h *shellHost) open(ctx context.Context, id string, open *agentv1.ShellOpen
 	if err := policy.ShellWithinCeiling(h.ceiling.proto()); err != nil {
 		h.log.WarnContext(ctx, "shell request denied: beyond the capability ceiling (start the agent with --allow-shell)", "id", id)
 		h.wg.Go(func() { h.exit(id, &agentv1.ShellExited{Denied: true, ExitCode: -1, Error: err.Error()}) })
+		return
+	}
+	if running >= maxShells {
+		h.log.WarnContext(ctx, "shell request refused: too many shells running", "id", id)
+		h.wg.Go(func() {
+			h.exit(id, &agentv1.ShellExited{ExitCode: -1, Error: "too many terminals open on this device"})
+		})
 		return
 	}
 	sh, err := startShell(open.GetSize(), h.argv)
@@ -152,10 +164,8 @@ func (h *shellHost) run(ctx context.Context, id string, sh *shell) {
 	}
 	killed := sh.killed
 	sh.mu.Unlock()
-	if killed {
-		// The shell is gone; jobs that ignored the hangup are not.
-		killSession(sh.cmd.Process.Pid)
-	}
+	// The shell is gone, closed or by its own exit; its jobs go with it.
+	killSession(sh.cmd.Process.Pid)
 	t := time.NewTimer(shellDrain)
 	select {
 	case <-read:
@@ -225,12 +235,32 @@ func (sh *shell) write() {
 	for {
 		select {
 		case b := <-sh.in:
-			if _, err := sh.pty.Write(b); err != nil {
+			_, err := sh.pty.Write(b)
+			sh.mu.Lock()
+			sh.queued -= len(b)
+			sh.mu.Unlock()
+			if err != nil {
 				return
 			}
 		case <-sh.exited:
 			return
 		}
+	}
+}
+
+// enqueue queues input for the PTY; it reports false when the queue is full.
+func (sh *shell) enqueue(b []byte) bool {
+	sh.mu.Lock()
+	defer sh.mu.Unlock()
+	if sh.queued+len(b) > shellInputBytes {
+		return false
+	}
+	select {
+	case sh.in <- b:
+		sh.queued += len(b)
+		return true
+	default:
+		return false
 	}
 }
 
