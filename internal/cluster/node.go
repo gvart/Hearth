@@ -362,15 +362,25 @@ func (n *Node) propose(ctx context.Context, cmd store.Command) (store.Result, ui
 		if errors.Is(err, raft.ErrNotLeader) {
 			return store.Result{}, 0, n.notLeader()
 		}
-		// ErrLeadershipLost and timeouts are not ErrNotLeader: the entry may
-		// still commit, so the caller must not assume it did not happen.
-		return store.Result{}, 0, fmt.Errorf("cluster: apply %s: %w", cmd.Op(), err)
+		return store.Result{}, 0, applyFailed(cmd.Op(), err)
 	}
 	resp, ok := f.Response().(applyResponse)
 	if !ok {
 		return store.Result{}, 0, fmt.Errorf("cluster: apply %s: unexpected response %T", cmd.Op(), f.Response())
 	}
 	return resp.res, f.Index(), resp.err
+}
+
+// applyFailed wraps an error from proposing a command to the Raft log.
+// ErrLeadershipLost and timeouts are not ErrNotLeader: the entry may still
+// commit, so the caller must not assume it did not happen. A leader change
+// (lost, or being transferred) is transient, so it also matches
+// store.ErrUnavailable and the API answers a retryable 503.
+func applyFailed(op string, err error) error {
+	if errors.Is(err, raft.ErrLeadershipLost) || errors.Is(err, raft.ErrLeadershipTransferInProgress) {
+		return fmt.Errorf("cluster: apply %s: %w: %w", op, err, store.ErrUnavailable)
+	}
+	return fmt.Errorf("cluster: apply %s: %w", op, err)
 }
 
 func (n *Node) notLeader() *ErrNotLeader {

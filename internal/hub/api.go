@@ -438,8 +438,9 @@ func writeError(w http.ResponseWriter, status int, code, msg string) {
 }
 
 // writeUnavailable answers a write that a clustered hub could not get to the
-// leader (store.ErrUnavailable): nothing was written.
+// leader, or whose leader changed under it (store.ErrUnavailable). Retrying
+// is safe.
 func writeUnavailable(w http.ResponseWriter) {
 	writeError(w, http.StatusServiceUnavailable, "cluster_unavailable",
-		"no cluster leader is reachable, so nothing was written; try again shortly")
+		"no cluster leader is reachable right now; try again shortly")
 }
