@@ -1,0 +1,24 @@
+internal/automation/trigger_device_test.go
+  s_344993999c180f::t_7632af96318631 49-51
+internal/integrations/kubernetes/manager_test.go
+  s_344993999c180f::t_71472029ec6502 214-215,217,220
+internal/integrations/kubernetes/fakeapi_test.go
+  s_344993999c180f::t_68360babee95ef 37-38
+  s_344993999c180f::t_71472029ec6502 34-36,56,170-171
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a44535019a8182031d03ce2a71da0da557a6f853",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
