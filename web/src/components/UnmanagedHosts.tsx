@@ -55,10 +55,10 @@ export function UnmanagedHosts({ now, onAdd }: { now: number; onAdd: () => void 
             <tr>
               <th>Name</th>
               <th>Vendor</th>
-              <th>Source</th>
               <th>IP</th>
               <th>Last seen</th>
               <th>MAC</th>
+              <th>Source</th>
               <th>
                 <span className="sr-only">Actions</span>
               </th>
@@ -79,7 +79,12 @@ export function UnmanagedHosts({ now, onAdd }: { now: number; onAdd: () => void 
                     {h.state === 'ignored' ? <span className="badge badge-quiet">Ignored</span> : null}
                   </span>
                 </td>
-                <td className="muted">{vendorLabel(h)}</td>
+                <td className="muted" title={vendorLabel(h)}>
+                  {vendorLabel(h)}
+                </td>
+                <td className="mono">{h.ip}</td>
+                <td className="muted">{relativeTime(h.last_seen, now)}</td>
+                <td className="mono muted">{h.mac}</td>
                 <td>
                   <span className="chips">
                     {h.sources.map((s) => (
@@ -89,9 +94,6 @@ export function UnmanagedHosts({ now, onAdd }: { now: number; onAdd: () => void 
                     ))}
                   </span>
                 </td>
-                <td className="mono">{h.ip}</td>
-                <td className="muted">{relativeTime(h.last_seen, now)}</td>
-                <td className="mono muted">{h.mac}</td>
                 <td className="row-end">
                   <span className="host-actions">
                     {h.state === '' ? (
