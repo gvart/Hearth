@@ -1,0 +1,27 @@
+internal/agent/runtime_test.go
+  s_344993999c180f::t_65af3534e19dd5 1-133,135-145
+  s_344993999c180f::t_cce2f81cb99f09 134
+cmd/hearth/agent.go
+  s_344993999c180f::t_b0490f7e27a103 46
+cmd/hearth/main.go
+  s_344993999c180f::t_2e0a98a87ecd99 30-32
+internal/agent/runtime.go
+  s_344993999c180f::t_1637b48e2b12ad 31-34,38-41
+  s_344993999c180f::t_1c9a3e34586c54 1-30,35-37,42-44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ae78be1edf3079a613f6525a56dda0ed32cb8f89",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": null
+    }
+  }
+}
