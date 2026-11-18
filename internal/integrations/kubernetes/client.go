@@ -3,6 +3,7 @@
 package kubernetes
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -14,7 +15,8 @@ import (
 	"strings"
 )
 
-// apiClient reads from a Kubernetes API server: lists, watches and pod logs.
+// apiClient talks to a Kubernetes API server: lists, watches and pod logs,
+// and the few writes of the Kubernetes actions (patch, delete, eviction).
 type apiClient struct {
 	base *url.URL
 	http *http.Client
@@ -53,14 +55,27 @@ func hasCode(err error, code int) bool {
 // get sends GET path?q and returns the response of a 2xx answer; the
 // caller closes its body.
 func (c *apiClient) get(ctx context.Context, path string, q url.Values) (*http.Response, error) {
+	return c.do(ctx, http.MethodGet, path, q, "", nil)
+}
+
+// do sends method path?q with body, of contentType, and returns the
+// response of a 2xx answer; the caller closes its body.
+func (c *apiClient) do(ctx context.Context, method, path string, q url.Values, contentType string, body []byte) (*http.Response, error) {
 	u := *c.base
 	u.Path += path
 	u.RawQuery = q.Encode()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	var rd io.Reader
+	if body != nil {
+		rd = bytes.NewReader(body)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, u.String(), rd)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/json")
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return nil, err
@@ -92,12 +107,20 @@ type listPage struct {
 // list returns every item of path and the list's resource version,
 // following continue tokens.
 func (c *apiClient) list(ctx context.Context, path string) ([]json.RawMessage, string, error) {
+	return c.listSelected(ctx, path, "")
+}
+
+// listSelected is list with a field selector, if not empty.
+func (c *apiClient) listSelected(ctx context.Context, path, fieldSelector string) ([]json.RawMessage, string, error) {
 	var (
 		items []json.RawMessage
 		cont  string
 	)
 	for {
 		q := url.Values{"limit": {"500"}}
+		if fieldSelector != "" {
+			q.Set("fieldSelector", fieldSelector)
+		}
 		if cont != "" {
 			q.Set("continue", cont)
 		}
@@ -160,4 +183,51 @@ func (c *apiClient) logs(ctx context.Context, namespace, pod string, o podLogOpt
 	}
 	defer resp.Body.Close()
 	return io.ReadAll(io.LimitReader(resp.Body, o.limitBytes+1))
+}
+
+// Content types of the writes.
+const (
+	mergePatch     = "application/merge-patch+json"
+	strategicPatch = "application/strategic-merge-patch+json"
+)
+
+// getObject decodes the object at path into v.
+func (c *apiClient) getObject(ctx context.Context, path string, v any) error {
+	resp, err := c.get(ctx, path, nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if err := json.NewDecoder(resp.Body).Decode(v); err != nil {
+		return fmt.Errorf("decode %s: %w", path, err)
+	}
+	return nil
+}
+
+// send sends method path with a JSON body of contentType (application/json
+// if empty) and drops the answer.
+func (c *apiClient) send(ctx context.Context, method, path, contentType string, body any) error {
+	b, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	if contentType == "" {
+		contentType = "application/json"
+	}
+	resp, err := c.do(ctx, method, path, nil, contentType, b)
+	if err != nil {
+		return err
+	}
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
+	return resp.Body.Close()
+}
+
+// deleteObject deletes the object at path.
+func (c *apiClient) deleteObject(ctx context.Context, path string) error {
+	resp, err := c.do(ctx, http.MethodDelete, path, nil, "", nil)
+	if err != nil {
+		return err
+	}
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
+	return resp.Body.Close()
 }

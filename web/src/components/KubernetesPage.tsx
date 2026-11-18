@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import type { KubeCluster, KubePod, KubeSnapshot, KubeState } from '../api/client.ts';
+import type { KubeActionRequest, KubeCluster, KubePod, KubeSnapshot, KubeState } from '../api/client.ts';
 import { useDevices, useKubeCluster, useKubeClusters, useRemoveKubeCluster } from '../api/hooks.ts';
 import { displayName, relativeTime } from '../format.ts';
 import { AddClusterDialog } from './AddClusterDialog.tsx';
 import { DeviceDrawer } from './DeviceDrawer.tsx';
+import { KubeActionDialog } from './KubeActionDialog.tsx';
 import { PodLogsDialog } from './PodLogsDialog.tsx';
 
 type Tab = 'pods' | 'nodes' | 'workloads' | 'events';
@@ -69,7 +70,7 @@ export function KubernetesPage() {
             <p className="muted">
               {list.length === 0
                 ? 'No clusters yet'
-                : `${String(list.length)} cluster${list.length === 1 ? '' : 's'}, read-only`}
+                : `${String(list.length)} cluster${list.length === 1 ? '' : 's'}`}
             </p>
           ) : null}
         </div>
@@ -94,8 +95,8 @@ export function KubernetesPage() {
         <div className="empty">
           <h2>Adopt a cluster</h2>
           <p className="muted">
-            Paste a kubeconfig from Talos, k3s or kind. Hearth only reads: nodes, workloads, pods, events and logs. Nothing
-            is installed in the cluster.
+            Paste a kubeconfig from Talos, k3s or kind. Hearth reads nodes, workloads, pods, events and logs, and only
+            changes something when you ask it to. Nothing is installed in the cluster.
           </p>
           <button
             className="btn btn-primary"
@@ -153,6 +154,7 @@ function ClusterView({ cluster }: { cluster: KubeCluster }) {
   const [tab, setTab] = useState<Tab>('pods');
   const [namespace, setNamespace] = useState('');
   const [logsOf, setLogsOf] = useState<KubePod>();
+  const [action, setAction] = useState<KubeActionRequest>();
   const data = snap.data;
 
   return (
@@ -241,9 +243,18 @@ function ClusterView({ cluster }: { cluster: KubeCluster }) {
       ) : cluster.state === 'connecting' && data.pods.length === 0 ? (
         <p className="muted">Connecting to the cluster…</p>
       ) : (
-        <ClusterTab tab={tab} data={data} namespace={namespace} onLogs={setLogsOf} />
+        <ClusterTab tab={tab} data={data} namespace={namespace} onLogs={setLogsOf} onAction={setAction} />
       )}
 
+      {action ? (
+        <KubeActionDialog
+          cluster={cluster}
+          request={action}
+          onClose={() => {
+            setAction(undefined);
+          }}
+        />
+      ) : null}
       {logsOf ? (
         <PodLogsDialog
           cluster={cluster}
@@ -262,9 +273,31 @@ interface TabProps {
   data: KubeSnapshot;
   namespace: string;
   onLogs: (p: KubePod) => void;
+  onAction: (req: KubeActionRequest) => void;
 }
 
-function ClusterTab({ tab, data, namespace, onLogs }: TabProps) {
+/** A small button of a table row's actions. */
+function RowAction({ label, title, onClick }: { label: string; title: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      className="btn btn-small"
+      title={title}
+      aria-label={title}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+function ClusterTab({ tab, data, namespace, onLogs, onAction }: TabProps) {
   const now = useNow(10_000);
   const devices = useDevices();
   const [deviceId, setDeviceId] = useState<string>();
@@ -287,6 +320,9 @@ function ClusterTab({ tab, data, namespace, onLogs }: TabProps) {
                 <th>Restarts</th>
                 <th>Node</th>
                 <th>Age</th>
+                <th>
+                  <span className="sr-only">Actions</span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -316,6 +352,15 @@ function ClusterTab({ tab, data, namespace, onLogs }: TabProps) {
                   <td className="mono">{p.restarts}</td>
                   <td className="muted">{p.node || '—'}</td>
                   <td className="muted">{relativeTime(p.created, now)}</td>
+                  <td className="row-actions">
+                    <RowAction
+                      label="Delete"
+                      title={`Delete pod ${p.namespace}/${p.name}`}
+                      onClick={() => {
+                        onAction({ action: 'delete_pod', namespace: p.namespace, name: p.name });
+                      }}
+                    />
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -335,6 +380,9 @@ function ClusterTab({ tab, data, namespace, onLogs }: TabProps) {
                   <th>Version</th>
                   <th>Addresses</th>
                   <th>Device</th>
+                  <th>
+                    <span className="sr-only">Actions</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -375,6 +423,22 @@ function ClusterTab({ tab, data, namespace, onLogs }: TabProps) {
                           <span className="muted">—</span>
                         )}
                       </td>
+                      <td className="row-actions">
+                        <RowAction
+                          label={n.unschedulable ? 'Uncordon' : 'Cordon'}
+                          title={`${n.unschedulable ? 'Uncordon' : 'Cordon'} node ${n.name}`}
+                          onClick={() => {
+                            onAction({ action: n.unschedulable ? 'uncordon' : 'cordon', name: n.name });
+                          }}
+                        />
+                        <RowAction
+                          label="Drain"
+                          title={`Drain node ${n.name}`}
+                          onClick={() => {
+                            onAction({ action: 'drain', name: n.name });
+                          }}
+                        />
+                      </td>
                     </tr>
                   );
                 })}
@@ -404,6 +468,9 @@ function ClusterTab({ tab, data, namespace, onLogs }: TabProps) {
                 <th>Kind</th>
                 <th>Ready</th>
                 <th>Age</th>
+                <th>
+                  <span className="sr-only">Actions</span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -420,6 +487,30 @@ function ClusterTab({ tab, data, namespace, onLogs }: TabProps) {
                     </span>
                   </td>
                   <td className="muted">{relativeTime(w.created, now)}</td>
+                  <td className="row-actions">
+                    <RowAction
+                      label="Restart"
+                      title={`Restart ${w.kind} ${w.namespace}/${w.name}`}
+                      onClick={() => {
+                        onAction({ action: 'restart', kind: w.kind, namespace: w.namespace, name: w.name });
+                      }}
+                    />
+                    {w.kind === 'DaemonSet' ? null : (
+                      <RowAction
+                        label="Scale"
+                        title={`Scale ${w.kind} ${w.namespace}/${w.name}`}
+                        onClick={() => {
+                          onAction({
+                            action: 'scale',
+                            kind: w.kind,
+                            namespace: w.namespace,
+                            name: w.name,
+                            replicas: w.desired,
+                          });
+                        }}
+                      />
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

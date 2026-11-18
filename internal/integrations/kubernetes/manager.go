@@ -114,8 +114,9 @@ type Config struct {
 	Now func() time.Time
 }
 
-// Manager adopts Kubernetes clusters read-only. It keeps one watcher per
-// cluster stored in the hub, serves their state and streams their changes.
+// Manager adopts Kubernetes clusters. It keeps one watcher per cluster
+// stored in the hub, serves their state and streams their changes, and
+// carries out the few Kubernetes actions (see Act).
 //
 // Every hub of a Raft cluster runs its own Manager and watches every
 // cluster itself: Kubernetes state is a cache of the API server, never
@@ -128,6 +129,8 @@ type Manager struct {
 	every   time.Duration
 	now     func() time.Time
 	connect func(*kubeconfig) (*apiClient, error)
+	// evictRetry and gonePoll pace a drain.
+	evictRetry, gonePoll time.Duration
 
 	kick chan struct{}
 	bus  bus
@@ -152,6 +155,7 @@ func NewManager(cfg Config) *Manager {
 	m := &Manager{
 		store: cfg.Store, sealer: cfg.Sealer, policy: cfg.Policy, log: cfg.Log,
 		every: cfg.SyncInterval, now: cfg.Now, connect: newAPIClient,
+		evictRetry: defaultEvictRetry, gonePoll: defaultGonePoll,
 		kick: make(chan struct{}, 1), watchers: map[string]*running{},
 	}
 	if m.every <= 0 {

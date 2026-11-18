@@ -71,6 +71,20 @@ const (
 	KubeClusterRemove Action = "kube.cluster.remove"
 	// KubePodLogs reads the recent log lines of a pod's container.
 	KubePodLogs Action = "kube.pod.logs"
+	// KubeWorkloadRestart restarts a Deployment, StatefulSet or DaemonSet
+	// with a rolling update, as `kubectl rollout restart` does.
+	KubeWorkloadRestart Action = "kube.workload.restart"
+	// KubeWorkloadScale sets the replicas of a Deployment or StatefulSet.
+	KubeWorkloadScale Action = "kube.workload.scale"
+	// KubePodDelete deletes a pod; its controller, if any, recreates it.
+	KubePodDelete Action = "kube.pod.delete"
+	// KubeNodeCordon marks a node unschedulable.
+	KubeNodeCordon Action = "kube.node.cordon"
+	// KubeNodeUncordon marks a node schedulable again.
+	KubeNodeUncordon Action = "kube.node.uncordon"
+	// KubeNodeDrain cordons a node and evicts its pods, honouring their
+	// PodDisruptionBudgets.
+	KubeNodeDrain Action = "kube.node.drain"
 )
 
 // Actor kinds.
@@ -135,11 +149,22 @@ var rules = map[Action]rule{
 	// An arbitrary command can do anything the agent can.
 	AutomationExec: {class: Dangerous, actors: []string{ActorAutomation}},
 	// Adding a cluster hands the hub a credential to it; the hub only ever
-	// reads with it (no Kubernetes write action exists yet).
+	// reads with it, except for the kube.workload, kube.pod and kube.node
+	// write actions below, each decided and audited on its own.
 	KubeClusterAdd:    {class: Safe, actors: []string{ActorWeb}},
 	KubeClusterRemove: {class: Safe, actors: []string{ActorWeb}},
 	// Logs may carry secrets, so reading them is audited.
 	KubePodLogs: {class: Read, actors: []string{ActorWeb}},
+	// A rolling restart, a scale, a pod deletion and a cordon are bounded and
+	// undone by the next one: the controllers keep the workload running.
+	KubeWorkloadRestart: {class: Safe, actors: []string{ActorWeb}},
+	KubeWorkloadScale:   {class: Safe, actors: []string{ActorWeb}},
+	KubePodDelete:       {class: Safe, actors: []string{ActorWeb}},
+	KubeNodeCordon:      {class: Safe, actors: []string{ActorWeb}},
+	KubeNodeUncordon:    {class: Safe, actors: []string{ActorWeb}},
+	// A drain takes every workload off a node: on a small homelab cluster
+	// that can be most of the capacity.
+	KubeNodeDrain: {class: Dangerous, actors: []string{ActorWeb}},
 }
 
 // ClassOf returns the class of a known action.

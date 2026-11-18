@@ -23,8 +23,8 @@ export function AddClusterDialog({ onClose, onAdded }: Props) {
       </header>
       <p className="muted">
         Paste a kubeconfig, for example from <code>talosctl kubeconfig -</code>, <code>/etc/rancher/k3s/k3s.yaml</code> or{' '}
-        <code>kind get kubeconfig</code>. Only its current context is kept, encrypted on the hub. Hearth only reads from the
-        cluster.
+        <code>kind get kubeconfig</code>. Only its current context is kept, encrypted on the hub. Hearth only writes to the
+        cluster when you take an action, such as a restart or a drain.
       </p>
       <form
         className="form"

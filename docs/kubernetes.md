@@ -1,8 +1,9 @@
 # Kubernetes clusters
 
 Hearth adopts an existing Kubernetes cluster (Talos, k3s, kind, ...) through a kubeconfig. Nothing is
-installed in the cluster and Hearth only reads from it: nodes, namespaces, workloads (Deployments,
-StatefulSets, DaemonSets), pods with their status, events, and pod logs.
+installed in the cluster. Hearth reads nodes, namespaces, workloads (Deployments, StatefulSets,
+DaemonSets), pods with their status, events, and pod logs, and writes only when you take one of a few
+[actions](#actions): restart, scale, delete a pod, cordon, uncordon, drain.
 
 ## Adding a cluster
 
@@ -24,9 +25,11 @@ can use them. Refused, with an explanation:
 - `tokenFile`: it would send a file of the hub host to the API server.
 
 Use a service account token or a client certificate for those clusters instead. The kubeconfig grants
-whatever its user may do; Hearth itself never writes to the cluster, so a read-only role is enough
-(`get`, `list`, `watch` on nodes, namespaces, pods, events and the apps workloads, and `get` on
-`pods/log`).
+whatever its user may do. A read-only role is enough to watch (`get`, `list`, `watch` on nodes,
+namespaces, pods, events and the apps workloads, and `get` on `pods/log`); the actions also need
+`patch` on the apps workloads, `deployments/scale`, `statefulsets/scale` and nodes, `delete` on pods and
+`create` on `pods/eviction`. Without them an action fails with the API server's "forbidden" and nothing
+changes.
 
 ## How it works
 
@@ -52,3 +55,31 @@ other action. The kubeconfig never appears in the audit log, the hub log or the 
 
 On a hub cluster upgraded from an older version, run `hearth cluster migrate` before adding a cluster
 (the table arrives with schema 8).
+
+## Actions
+
+Deploys stay with your GitOps tool (Argo CD, Flux); Hearth has the few day-two actions a homelab needs.
+They are buttons on the Kubernetes page and `POST /api/v1/kube/clusters/{id}/actions`:
+
+| Action                                    | Policy action           | Class     | What it does                                                                |
+| ----------------------------------------- | ----------------------- | --------- | --------------------------------------------------------------------------- |
+| Restart a Deployment, StatefulSet or DaemonSet | `kube.workload.restart` | safe      | A rolling restart, as `kubectl rollout restart` (the `restartedAt` annotation) |
+| Scale a Deployment or StatefulSet         | `kube.workload.scale`   | safe      | Sets the replicas through the `scale` subresource                           |
+| Delete a pod                              | `kube.pod.delete`       | safe      | Deletes it with its grace period; its controller, if any, recreates it      |
+| Cordon, uncordon a node                   | `kube.node.cordon`, `kube.node.uncordon` | safe | Sets `spec.unschedulable`                                     |
+| Drain a node                              | `kube.node.drain`       | dangerous | Cordons it and evicts its pods (below)                                      |
+
+- **Dry run first.** Every action can be planned with `"dry_run": true`: Hearth reads the objects
+  involved and says what the action would do, with warnings (a pod no controller recreates, a
+  `Recreate` strategy, scaling to zero, ...). The UI always shows the dry run and asks to confirm. A dry
+  run changes nothing and is not audited.
+- **Decided, then audited.** Carrying an action out is a policy decision taken before anything is sent
+  to the cluster: a denied action sends no request at all. The decision and the outcome are audited with
+  the cluster, the object and, for a scale, the replica count.
+- **Drain** works like `kubectl drain`: it cordons the node, then evicts every pod on it through the
+  Eviction API, so **PodDisruptionBudgets are honoured**. An eviction a budget refuses (HTTP 429) is
+  retried every 5 seconds. DaemonSet pods and static (mirror) pods are skipped, as their controllers
+  would put them straight back. The drain waits until the evicted pods are gone, up to a timeout (2
+  minutes by default, at most 10); when it runs out, it stops and names the pods still there and why,
+  and the node stays cordoned. Pods without a controller are evicted too, after a warning in the dry
+  run.

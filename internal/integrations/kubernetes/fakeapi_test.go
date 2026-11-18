@@ -35,6 +35,12 @@ type fakeAPI struct {
 	gone   map[string]bool
 	lists  map[string]int // list requests by path
 	pageSz int
+	// actions are the requests of the Kubernetes actions: everything but
+	// the watchers' lists and watches.
+	actions []string
+	// refuse makes the next n evictions of a pod (namespace/name) answer
+	// 429, as a PodDisruptionBudget does.
+	refuse map[string]int
 }
 
 var fakePaths = []string{
@@ -47,6 +53,7 @@ func newFakeAPI(t *testing.T) *fakeAPI {
 	f := &fakeAPI{
 		token: "lab-secret-token", objs: map[string]map[string]map[string]any{},
 		watchers: map[string][]chan watchEvent{}, history: map[string][]fakeEvent{}, logs: map[string]string{}, gone: map[string]bool{}, lists: map[string]int{}, pageSz: 2,
+		refuse: map[string]int{},
 	}
 	for _, p := range fakePaths {
 		f.objs[p] = map[string]map[string]any{}
@@ -144,6 +151,14 @@ func (f *fakeAPI) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	f.mu.Lock()
+	if _, list := f.objs[r.URL.Path]; !list || r.URL.Query().Get("fieldSelector") != "" {
+		f.actions = append(f.actions, r.Method+" "+r.URL.Path)
+	}
+	f.mu.Unlock()
+	if f.serveObject(w, r) {
+		return
+	}
+	f.mu.Lock()
 	objs, ok := f.objs[r.URL.Path]
 	if !ok {
 		f.mu.Unlock()
@@ -195,8 +210,11 @@ func (f *fakeAPI) serve(w http.ResponseWriter, r *http.Request) {
 	// A list, paged by pageSz with the offset as continue token.
 	f.lists[r.URL.Path]++
 	keys := make([]string, 0, len(objs))
-	for k := range objs {
-		keys = append(keys, k)
+	nodeName, byNode := strings.CutPrefix(r.URL.Query().Get("fieldSelector"), "spec.nodeName=")
+	for k, o := range objs {
+		if spec, _ := o["spec"].(map[string]any); !byNode || spec["nodeName"] == nodeName {
+			keys = append(keys, k)
+		}
 	}
 	slices.Sort(keys)
 	from, _ := strconv.Atoi(r.URL.Query().Get("continue"))
