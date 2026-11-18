@@ -31,10 +31,11 @@ type fakeAPI struct {
 	watchers map[string][]chan watchEvent
 	history  map[string][]fakeEvent // every change by path, to replay a watch from a resource version
 	logs     map[string]string      // namespace/pod/container -> log
-	// gone makes the next watch of a path answer 410 Gone.
-	gone   map[string]bool
-	lists  map[string]int // list requests by path
-	pageSz int
+	// compacted is, by path, the oldest resource version a watch may
+	// start from; older ones answer 410 Gone, as after a compaction.
+	compacted map[string]int
+	lists     map[string]int // list requests by path
+	pageSz    int
 	// actions are the requests of the Kubernetes actions: everything but
 	// the watchers' lists and watches.
 	actions []string
@@ -52,7 +53,7 @@ func newFakeAPI(t *testing.T) *fakeAPI {
 	t.Helper()
 	f := &fakeAPI{
 		token: "lab-secret-token", objs: map[string]map[string]map[string]any{},
-		watchers: map[string][]chan watchEvent{}, history: map[string][]fakeEvent{}, logs: map[string]string{}, gone: map[string]bool{}, lists: map[string]int{}, pageSz: 2,
+		watchers: map[string][]chan watchEvent{}, history: map[string][]fakeEvent{}, logs: map[string]string{}, compacted: map[string]int{}, lists: map[string]int{}, pageSz: 2,
 		refuse: map[string]int{},
 	}
 	for _, p := range fakePaths {
@@ -166,8 +167,8 @@ func (f *fakeAPI) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.URL.Query().Get("watch") == "1" {
-		if f.gone[r.URL.Path] {
-			delete(f.gone, r.URL.Path)
+		from, _ := strconv.Atoi(r.URL.Query().Get("resourceVersion"))
+		if from < f.compacted[r.URL.Path] {
 			f.mu.Unlock()
 			writeStatus(w, http.StatusGone, "too old resource version")
 			return
@@ -175,7 +176,6 @@ func (f *fakeAPI) serve(w http.ResponseWriter, r *http.Request) {
 		// Replay what changed after the requested version, as the API
 		// server does, then stream what changes next.
 		ch := make(chan watchEvent, 256)
-		from, _ := strconv.Atoi(r.URL.Query().Get("resourceVersion"))
 		for _, e := range f.history[r.URL.Path] {
 			if e.rv > from {
 				ch <- e.ev

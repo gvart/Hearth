@@ -211,12 +211,13 @@ func TestManagerRelistsOnGone(t *testing.T) {
 	info := f.addCluster(t)
 	lists := f.api.listCount("/api/v1/pods")
 
-	// Drop every watch and answer the next ones 410, as after a compaction
-	// that also lost a deletion of b and an update of a.
+	// Drop every watch, after a compaction that lost a deletion of b and
+	// an update of a: a watch from before it answers 410, retried or not.
 	f.api.mu.Lock()
-	f.api.gone["/api/v1/pods"] = true
+	f.api.rv++
 	delete(f.api.objs["/api/v1/pods"], "default/b")
 	f.api.objs["/api/v1/pods"]["default/a"] = podObj("default", "a", false)
+	f.api.compacted["/api/v1/pods"] = f.api.rv
 	f.api.mu.Unlock()
 	f.api.srv.CloseClientConnections()
 

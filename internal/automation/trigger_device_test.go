@@ -46,8 +46,9 @@ func TestDeviceTrigger(t *testing.T) {
 				devs.ch <- e
 			}
 			// An unmatched event, sent unbuffered, is handled only after
-			// every event before it.
-			devs.ch <- DeviceEvent{ID: "none"}
+			// every event before it. It is online, so no offline trigger
+			// above can match it, and no device is called "none".
+			devs.ch <- DeviceEvent{ID: "none", Online: true}
 			if n := w.fires.Load(); n != tc.want {
 				t.Errorf("fires = %d, want %d", n, tc.want)
 			}
