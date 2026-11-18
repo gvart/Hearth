@@ -5,7 +5,9 @@ package policy
 import (
 	"errors"
 	"fmt"
+	"path"
 	"slices"
+	"strings"
 
 	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
 )
@@ -44,4 +46,26 @@ func ProbeWithinCeiling(c *agentv1.Ceiling) error {
 		return fmt.Errorf("probe: %w", ErrBeyondCeiling)
 	}
 	return nil
+}
+
+// LogsWithinCeiling checks a log source against a device's capability
+// ceiling c, as the hub does before it sends a LogRequest and the agent does
+// again before it reads the source. A ceiling entry manager:pattern allows
+// the sources of that manager whose name matches pattern (path.Match, so
+// "*" allows them all). It returns an error wrapping ErrBeyondCeiling
+// unless an entry allows src; a nil c allows nothing.
+func LogsWithinCeiling(c *agentv1.Ceiling, src *agentv1.LogSource) error {
+	if src.GetManager() == "" || src.GetName() == "" {
+		return errors.New("empty log source")
+	}
+	for _, e := range c.GetLogs() {
+		manager, pattern, ok := strings.Cut(e, ":")
+		if !ok || manager != src.GetManager() {
+			continue
+		}
+		if m, err := path.Match(pattern, src.GetName()); err == nil && m {
+			return nil
+		}
+	}
+	return fmt.Errorf("logs %s:%s: %w", src.GetManager(), src.GetName(), ErrBeyondCeiling)
 }

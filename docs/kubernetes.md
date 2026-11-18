@@ -50,7 +50,8 @@ changes.
 - **Nodes and devices.** A node is linked to the Hearth device it runs on when one of the node's
   addresses is one of the device's addresses, or failing that, when the node's hostname or name matches
   the device's hostname. A match that is not unique links nothing.
-- **Pod logs** are read on demand (the last 100 to 2000 lines), not streamed.
+- **Pod logs** are read on demand (the last 100 to 2000 lines), not streamed, in the same viewer as
+  device logs (see [logs.md](logs.md)).
 
 Adding and removing a cluster (`kube.cluster.add`, `kube.cluster.remove`, both safe) and reading pod
 logs (`kube.pod.logs`, read: logs may hold secrets) are policy actions, decided and audited like every

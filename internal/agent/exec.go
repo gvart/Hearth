@@ -29,6 +29,10 @@ type Ceiling struct {
 	// Probe lets the hub run HTTP, TCP and DNS checks from this device: the
 	// http, tcp and dns automation triggers with from: set to it.
 	Probe bool
+	// Logs are the log sources the hub may stream, as manager:pattern,
+	// where manager is systemd, systemd-user or docker and pattern a name or
+	// a glob such as *.
+	Logs []string
 }
 
 // Service managers a restart may name.
@@ -54,7 +58,7 @@ const (
 
 // proto is the ceiling as the agent reports it to the hub.
 func (c Ceiling) proto() *agentv1.Ceiling {
-	return &agentv1.Ceiling{Exec: slices.Clone(c.Exec), Restart: slices.Clone(c.Restart), Probe: c.Probe}
+	return &agentv1.Ceiling{Exec: slices.Clone(c.Exec), Restart: slices.Clone(c.Restart), Probe: c.Probe, Logs: slices.Clone(c.Logs)}
 }
 
 // command returns the program and arguments req runs, or an error wrapping

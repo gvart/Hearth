@@ -156,6 +156,7 @@ var expected = map[Action]struct {
 	ApprovalDeny:              {Safe, []string{ActorAdmin, ActorWeb, ActorApprovalLink}, true},
 	DeviceRead:                {Read, []string{ActorMCP}, false},
 	DeviceMetrics:             {Read, []string{ActorMCP}, false},
+	DeviceLogs:                {Read, []string{ActorWeb}, false},
 	KubeRead:                  {Read, []string{ActorMCP}, false},
 	DeviceRestart:             {Safe, []string{ActorMCP}, false},
 	DeviceExec:                {Dangerous, []string{ActorMCP}, false},

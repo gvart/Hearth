@@ -24,6 +24,7 @@ message AgentMessage {
     // Facts re-sent periodically by the agent; protocol_version and device_id are ignored.
     Hello facts = 5;
     ProbeResult probe_result = 6;
+    LogLines log_lines = 7;
   }
 }
 
@@ -34,6 +35,8 @@ message HubMessage {
     ExecRequest exec_request = 2;
     Ping ping = 3;
     ProbeRequest probe_request = 4;
+    LogRequest log_request = 5;
+    LogCancel log_cancel = 6;
   }
 }
 
@@ -78,6 +81,11 @@ message Ceiling {
   // probe allows ProbeRequests: the hub may run HTTP, TCP and DNS checks
   // from this device. Reported by agents of protocol minor 3 and later.
   bool probe = 3;
+  // logs are the log sources the hub may read, as manager:pattern, where
+  // manager is "systemd", "systemd-user" or "docker" and pattern a name or a
+  // glob (path.Match) such as "*". Reported by agents of protocol minor 4
+  // and later.
+  repeated string logs = 4;
 }
 
 // Disk is a mounted filesystem.
@@ -240,6 +248,58 @@ message ProbeResult {
   bool denied = 2;
   // error says why the check failed or was denied; empty when it passed.
   string error = 3;
+}
+
+// LogRequest asks the agent to stream a log source: its last lines, then
+// new lines as they are written, until the hub sends a LogCancel of the same
+// id or the stream ends. The agent streams only sources its ceiling allows
+// and answers with LogLines of the same id. Hubs send it only to agents of
+// protocol minor 4 and later.
+message LogRequest {
+  // id correlates the LogLines and a LogCancel; unique per stream.
+  string id = 1;
+  // source is what to read.
+  LogSource source = 2;
+  // tail is how many of the last lines to send first; the agent caps it.
+  uint32 tail = 3;
+}
+
+// LogSource names a log: a systemd unit, a user's systemd unit, or a Docker
+// container.
+message LogSource {
+  // manager is "systemd", "systemd-user" (journalctl --user) or "docker".
+  string manager = 1;
+  // name is the unit or container.
+  string name = 2;
+}
+
+// LogCancel ends the log stream of a LogRequest.
+message LogCancel {
+  string id = 1;
+}
+
+// LogLines carries lines of a log stream.
+message LogLines {
+  // id is the id of the LogRequest it answers.
+  string id = 1;
+  repeated LogLine lines = 2;
+  // end is set on the last message of a stream: the source ended or failed
+  // (error says why), or the agent refused it (denied).
+  bool end = 3;
+  // denied is set when the agent refused the request: the source is beyond
+  // its ceiling. Nothing ran.
+  bool denied = 4;
+  string error = 5;
+  // skipped counts lines dropped before these because the hub read too
+  // slowly.
+  uint64 skipped = 6;
+}
+
+// LogLine is one line of a log.
+message LogLine {
+  // ts is when the line was written, if the source says.
+  google.protobuf.Timestamp ts = 1;
+  string text = 2;
 }
 
 // Ping checks the stream is alive.

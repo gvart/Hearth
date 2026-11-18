@@ -64,6 +64,8 @@ type agentSession struct {
 	mu      sync.Mutex
 	pending map[string]chan *agentv1.ExecResult
 	probes  map[string]chan *agentv1.ProbeResult
+	// logs are the open log streams, by LogRequest id (see agentlogs.go).
+	logs map[string]chan *agentv1.LogLines
 	// ceiling is the capability ceiling the agent last reported.
 	ceiling *agentv1.Ceiling
 }
@@ -74,6 +76,7 @@ func (a *Agents) attach(deviceID string, hello *agentv1.Hello, send func(*agentv
 	s := &agentSession{
 		minor: hello.GetProtocolVersion().GetMinor(), send: send, done: make(chan struct{}),
 		pending: map[string]chan *agentv1.ExecResult{}, probes: map[string]chan *agentv1.ProbeResult{},
+		logs:    map[string]chan *agentv1.LogLines{},
 		ceiling: hello.GetCeiling(),
 	}
 	a.mu.Lock()

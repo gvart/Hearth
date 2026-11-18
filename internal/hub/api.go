@@ -87,6 +87,7 @@ func newAPI(cfg Config) *api {
 		leadership:    leadershipOf(cfg),
 		automations:   automation.Files{Dir: cfg.AutomationsDir, Kinds: cfg.AutomationKinds},
 		automationsMu: automationsLock(cfg.AutomationsLock),
+		agents:        cfg.Agents,
 		dryRuns:       newLoginLimiter(time.Now, dryRunBurst, dryRunEvery),
 		// Only a release tag is pinned: dev builds have no release to install.
 		installVersion: releaseVersion(cfg.Version),
@@ -117,6 +118,7 @@ func (a *api) routes() http.Handler {
 	a.notifyRoutes(mux)
 	a.automationRoutes(mux)
 	mux.Handle("GET /api/v1/cluster/config-drift", a.auth(a.configDrift))
+	a.logRoutes(mux)
 	mux.Handle("GET /api/v1/audit", a.auth(a.listAudit))
 	mux.Handle("GET /api/v1/approvals", a.auth(a.listApprovals))
 	mux.Handle("POST /api/v1/approvals/{id}/approve", a.auth(a.decideApproval(true)))
@@ -204,6 +206,8 @@ type api struct {
 	automationsMu sync.Locker
 	// dryRuns limits how often a client may ask for a dry run.
 	dryRuns *loginLimiter
+	// agents is Config.Agents; nil when device logs are not served.
+	agents *Agents
 	// installVersion is the --version install commands pin, or "" for none.
 	installVersion string
 	// telemetryOff is Config.TelemetryOff.

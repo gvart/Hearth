@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import type { Device } from '../api/client.ts';
 import { displayName, formatBytes, formatDateTime, osArch, primaryIP, statusLabel } from '../format.ts';
 import { DeviceCharts } from './DeviceCharts.tsx';
+import { DeviceLogSources } from './DeviceLogSources.tsx';
 import { Modal } from './Modal.tsx';
 import { StatusDot } from './StatusDot.tsx';
 
@@ -54,6 +55,10 @@ export function DeviceDrawer({ device, onClose }: { device: Device; onClose: () 
 
       <Section title="Metrics">
         <DeviceCharts deviceId={device.id} />
+      </Section>
+
+      <Section title="Logs">
+        <DeviceLogSources device={device} />
       </Section>
 
       <Section title="Hardware">

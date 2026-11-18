@@ -1,8 +1,9 @@
 import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   api,
   ApiError,
+  streamDeviceLogs,
   subscribeEvents,
   type AuditFilter,
   type Device,
@@ -16,6 +17,7 @@ import {
   type KubePod,
   type KubeSnapshot,
   type KubeWorkload,
+  type LogLine,
   type MetricsRange,
   type NetworkHostState,
 } from './client.ts';
@@ -478,4 +480,55 @@ export function handleUnauthenticated(qc: QueryClient, err: unknown) {
   if (err instanceof ApiError && err.status === 401) {
     qc.setQueryData(keys.session, null);
   }
+}
+
+/** How many lines a log view keeps; older ones are dropped. */
+export const maxLogLines = 5000;
+
+export interface DeviceLogs {
+  lines: LogLine[];
+  /** Lines received since the stream opened, dropped ones included. */
+  total: number;
+  /** Lines the device dropped because the stream read too slowly. */
+  skipped: number;
+  /** Whether the first answer (lines or an end) has arrived. */
+  open: boolean;
+  ended: boolean;
+  error?: string;
+}
+
+const noLogs: DeviceLogs = { lines: [], total: 0, skipped: 0, open: false, ended: false };
+
+/**
+ * Streams a device's log source while mounted, from its last tail lines.
+ * Changing an argument or epoch opens a new stream; unmounting closes it,
+ * which stops it on the device.
+ */
+export function useDeviceLogs(device: string, source: string, tail: number, epoch = 0): DeviceLogs {
+  const key = [device, source, String(tail), String(epoch)].join('\n');
+  const [state, setState] = useState<DeviceLogs & { key: string }>({ ...noLogs, key });
+  useEffect(() => {
+    // Updates of an older stream are dropped; the first of this one starts afresh.
+    const update = (fn: (s: DeviceLogs) => DeviceLogs) => {
+      setState((s) => ({ ...fn(s.key === key ? s : noLogs), key }));
+    };
+    return streamDeviceLogs(device, source, tail, {
+      onLines: (lines, skipped) => {
+        update((s) => {
+          const all = s.lines.concat(lines);
+          return {
+            ...s,
+            open: true,
+            lines: all.length > maxLogLines ? all.slice(-maxLogLines) : all,
+            total: s.total + lines.length,
+            skipped: s.skipped + skipped,
+          };
+        });
+      },
+      onEnd: (error) => {
+        update((s) => ({ ...s, open: true, ended: true, error }));
+      },
+    });
+  }, [device, source, tail, key]);
+  return state.key === key ? state : noLogs;
 }

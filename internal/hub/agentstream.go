@@ -150,6 +150,8 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 			sess.deliverProbe(p.ProbeResult)
 		case *agentv1.AgentMessage_MetricsBatch:
 			s.recordMetrics(ctx, log, deviceID, p.MetricsBatch)
+		case *agentv1.AgentMessage_LogLines:
+			sess.deliverLogs(p.LogLines)
 		case *agentv1.AgentMessage_Hello:
 			return connect.NewError(connect.CodeInvalidArgument, errors.New("duplicate Hello"))
 		}

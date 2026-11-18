@@ -298,9 +298,14 @@ func (r *runner) session(ctx context.Context, hub string) (welcomed bool, err er
 	results := make(chan *agentv1.AgentMessage)
 	g.Go(func() error {
 		defer close(received)
+		// Log streams run until canceled: end them as soon as receive returns.
+		rctx, cancel := context.WithCancel(gctx)
+		logs := newLogStreams(r.cfg.Ceiling, r.log)
+		defer logs.wait()
 		var execs sync.WaitGroup
 		defer execs.Wait()
-		return r.receive(gctx, stream, &execs, results)
+		defer cancel()
+		return r.receive(rctx, stream, &execs, logs, results)
 	})
 	g.Go(func() error {
 		err := r.sendLoop(gctx, stream, interval, results)
@@ -340,14 +345,17 @@ func (r *runner) hello(ctx context.Context) *agentv1.Hello {
 // request runs on its own goroutine in execs, within the capability
 // ceiling, and its result goes to results for sendLoop to send.
 func (r *runner) receive(ctx context.Context, stream *connect.BidiStreamForClient[agentv1.AgentMessage, agentv1.HubMessage],
-	execs *sync.WaitGroup, results chan<- *agentv1.AgentMessage,
+	execs *sync.WaitGroup, logs *logStreams, results chan<- *agentv1.AgentMessage,
 ) error {
-	reply := func(msg *agentv1.AgentMessage) {
+	send := func(ctx context.Context, msg *agentv1.AgentMessage) bool {
 		select {
 		case results <- msg:
+			return true
 		case <-ctx.Done():
+			return false
 		}
 	}
+	reply := func(msg *agentv1.AgentMessage) { send(ctx, msg) }
 	for {
 		msg, err := stream.Receive()
 		if err != nil {
@@ -372,6 +380,11 @@ func (r *runner) receive(ctx context.Context, stream *connect.BidiStreamForClien
 					"denied", res.GetDenied(), "failed", res.GetError() != "")
 				reply(&agentv1.AgentMessage{Payload: &agentv1.AgentMessage_ProbeResult{ProbeResult: res}})
 			})
+		case *agentv1.HubMessage_LogRequest:
+			req := p.LogRequest
+			execs.Go(func() { logs.stream(ctx, req, send) })
+		case *agentv1.HubMessage_LogCancel:
+			logs.cancel(p.LogCancel.GetId())
 		default:
 			// Ping needs no answer: any traffic keeps the stream alive.
 			r.log.DebugContext(ctx, "hub message ignored", "type", fmt.Sprintf("%T", msg.GetPayload()))
