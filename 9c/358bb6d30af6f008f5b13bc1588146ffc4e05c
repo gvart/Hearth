@@ -1,0 +1,83 @@
+internal/store/networkhoststate_test.go
+  s_344993999c180f::t_8df03c73073358 1-110
+internal/store/command.go
+  s_344993999c180f::t_f68a87040d86b6 697-698
+internal/automation/trigger.go
+  s_344993999c180f::t_7bf1201f3c5812 57-58,86,96
+internal/automation/trigger_network_test.go
+  s_344993999c180f::t_0297af22ec6dc1 1-10,12,14-19,25-26,31-34,36-37,54-75,77-78,80,84-95,97-99,102-121,124-134,136-158,164-166,175-182,184-188,193-197,201-218
+  s_344993999c180f::t_10254584fbf23d 11,13,20-24,27-30,35,38-53,76,79,81-83,96,100-101,122-123,135,159-163,183
+  s_344993999c180f::t_0617b202c45df9 167-174,189-192
+  s_344993999c180f::t_83bfa03b142ad5 198-200
+internal/store/migrations/00013_network_host_state.sql
+  s_344993999c180f::t_bf96a2d0b76d08 1-11
+internal/hub/api.go
+  s_344993999c180f::t_ed61bd84d9c964 94-96
+internal/hub/newdevice_test.go
+  s_344993999c180f::t_83bfa03b142ad5 71-73
+  s_344993999c180f::t_695b35cdae417b 1-5,7-65,67-70,74-100,102,106-107,111-123,125-152,154-179,184-185,187-207,211-228,230-238
+  s_344993999c180f::t_423529c7dd74c7 180-183
+  s_344993999c180f::t_06a41f7e80bc4e 6,66,101,124
+  s_344993999c180f::t_7948ce011fe5ba 153,186,208-210
+  s_344993999c180f::t_12ea849e35736f 229
+  s_344993999c180f::t_d24ecaf155e52b 103-105,108-110
+internal/policy/policy.go
+  s_344993999c180f::t_78c66ed468ca1c 125-128,266-267
+internal/automation/newdevice.go
+  s_344993999c180f::t_41f34f4dd18afd 1-43
+internal/automation/runtime.go
+  s_344993999c180f::t_87bfc76fdbc45c 61-63,116,127-138
+  s_344993999c180f::t_348247abff556f 139-140
+internal/store/networkhosts.go
+  s_344993999c180f::t_f68a87040d86b6 10,19-34,46-47,95,114-122,129,165-169,186,201-242
+internal/hub/network.go
+  s_344993999c180f::t_ed61bd84d9c964 6,8-9,14,30-31,37,89-128
+  s_344993999c180f::t_4d70b58a9c0e1b 129
+web/src/api/client.ts
+  s_344993999c180f::t_99234ccce52a48 116-117,120-121,394-399
+web/src/components/UnmanagedHosts.tsx
+  s_344993999c180f::t_2097e268ada31c 71-72
+  s_344993999c180f::t_8f4644b9d52834 2,32,62-66,80-122
+internal/store/command_test.go
+  s_344993999c180f::t_fd0f6ceafb9364 68,333-334
+web/src/api/hooks.ts
+  s_344993999c180f::t_99234ccce52a48 94-102
+  s_344993999c180f::t_3f35203359bbda 19
+docs/automations.md
+  s_344993999c180f::t_5c0e39928bdb6d 39,57-70,355-360
+internal/hub/networkmark_test.go
+  s_344993999c180f::t_ac629f6bbdeec9 1-109
+internal/policy/guardrails_test.go
+  s_344993999c180f::t_78c66ed468ca1c 138
+internal/hub/automation.go
+  s_344993999c180f::t_83119d5775ef59 60-61,65,73
+  s_344993999c180f::t_5677374a2d544e 11,55-59,62-64,66-72,74-85,93-95,99-100
+  s_344993999c180f::t_207e7e141696be 86-92,96
+  s_344993999c180f::t_8cf7fe195c9cd8 97-98,101
+cmd/hearth/hub.go
+  s_344993999c180f::t_c1e0bc9aa09653 69
+  s_344993999c180f::t_a00bd7d0e73244 66-68,91,133-134,240-242,352,359-369,371-377
+  s_344993999c180f::t_5c0e39928bdb6d 92,135
+web/src/index.css
+  s_344993999c180f::t_61e25ac4ff79c6 498-512
+internal/automation/trigger_network.go
+  s_344993999c180f::t_306036eaae4207 1-99
+docs/discovery.md
+  s_344993999c180f::t_5c0e39928bdb6d 67-107,142-153
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9c358bb6d30af6f008f5b13bc1588146ffc4e05c",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
