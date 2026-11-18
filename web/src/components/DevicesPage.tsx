@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react';
 import type { Device } from '../api/client.ts';
-import { useDeviceEvents, useDevices, useLogout } from '../api/hooks.ts';
+import { useDevices } from '../api/hooks.ts';
 import { displayName, formatUptime, osArch, primaryIP, relativeTime, statusLabel } from '../format.ts';
 import { AddDeviceDialog } from './AddDeviceDialog.tsx';
 import { DeviceDrawer } from './DeviceDrawer.tsx';
-import { Logo } from './Logo.tsx';
 import { StatusDot } from './StatusDot.tsx';
 
 const statusOrder = { online: 0, unknown: 1, offline: 2 } as const;
@@ -28,9 +27,7 @@ function useNow(intervalMs: number) {
 }
 
 export function DevicesPage() {
-  useDeviceEvents();
   const devices = useDevices();
-  const logout = useLogout();
   const now = useNow(1_000); // uptime ticks in seconds
   const [selectedId, setSelectedId] = useState<string>();
   const [adding, setAdding] = useState(false);
@@ -49,23 +46,7 @@ export function DevicesPage() {
   };
 
   return (
-    <div className="app">
-      <header className="topbar">
-        <div className="brand">
-          <Logo size={28} />
-          <span>Hearth</span>
-        </div>
-        <button
-          className="btn btn-ghost"
-          type="button"
-          onClick={() => {
-            logout.mutate();
-          }}
-        >
-          Sign out
-        </button>
-      </header>
-
+    <>
       <main className="content">
         <div className="page-head">
           <div>
@@ -167,6 +148,6 @@ export function DevicesPage() {
           }}
         />
       ) : null}
-    </div>
+    </>
   );
 }

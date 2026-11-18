@@ -100,6 +100,102 @@ export interface DeviceEvent {
   device: Device;
 }
 
+/** A Kubernetes cluster adopted through a kubeconfig; see /api/v1/kube. */
+export type KubeState = 'connecting' | 'connected' | 'error';
+
+export interface KubeCluster {
+  id: string;
+  name: string;
+  server: string;
+  context: string;
+  state: KubeState;
+  error: string;
+  created_at: string;
+  nodes: number;
+  pods: number;
+  /** Set on a kube.cluster event for a cluster that was removed. */
+  removed?: boolean;
+}
+
+export interface KubeNode {
+  name: string;
+  ready: boolean;
+  unschedulable: boolean;
+  roles: string[];
+  kubelet_version: string;
+  os_image: string;
+  arch: string;
+  hostname: string;
+  addresses: string[];
+  cpu: string;
+  memory: string;
+  created: string;
+  /** The Hearth device this node runs on, matched by IP or hostname; "" if none. */
+  device_id: string;
+}
+
+export interface KubeNamespace {
+  name: string;
+  phase: string;
+  created: string;
+}
+
+export interface KubeWorkload {
+  kind: 'Deployment' | 'StatefulSet' | 'DaemonSet';
+  namespace: string;
+  name: string;
+  desired: number;
+  ready: number;
+  created: string;
+}
+
+export interface KubePod {
+  namespace: string;
+  name: string;
+  /** What `kubectl get pods` shows: Running, Pending, CrashLoopBackOff, ... */
+  status: string;
+  phase: string;
+  ready: string;
+  restarts: number;
+  node: string;
+  ip: string;
+  owner: string;
+  containers: string[];
+  created: string;
+}
+
+export interface KubeEvent {
+  uid: string;
+  namespace: string;
+  type: string;
+  reason: string;
+  message: string;
+  object: string;
+  count: number;
+  last: string;
+}
+
+export interface KubeSnapshot {
+  cluster: KubeCluster;
+  nodes: KubeNode[];
+  namespaces: KubeNamespace[];
+  workloads: KubeWorkload[];
+  pods: KubePod[];
+  /** Newest first. */
+  events: KubeEvent[];
+}
+
+export type KubeKind = 'node' | 'namespace' | 'workload' | 'pod' | 'event';
+
+/** One entity added, changed or deleted in a cluster (a kube.object event). */
+export interface KubeChange {
+  cluster: string;
+  kind: KubeKind;
+  op: 'upsert' | 'delete';
+  key: string;
+  object?: KubeNode | KubeNamespace | KubeWorkload | KubePod | KubeEvent;
+}
+
 /** ApiError carries the hub's `{"error","code"}` body and the HTTP status. */
 export class ApiError extends Error {
   readonly status: number;
@@ -154,11 +250,24 @@ export const api = {
   tlsInfo: () => request<TlsInfo>('GET', '/tls'),
   createToken: (opts: { ttl?: string; labels?: Record<string, string> } = {}) =>
     request<CreatedToken>('POST', '/tokens', opts),
+  kubeClusters: async () => (await request<{ clusters: KubeCluster[] }>('GET', '/kube/clusters')).clusters,
+  kubeCluster: (id: string) => request<KubeSnapshot>('GET', `/kube/clusters/${encodeURIComponent(id)}`),
+  addKubeCluster: (opts: { name: string; kubeconfig: string }) => request<KubeCluster>('POST', '/kube/clusters', opts),
+  removeKubeCluster: (id: string) => request<undefined>('DELETE', `/kube/clusters/${encodeURIComponent(id)}`),
+  kubePodLogs: async (opts: { cluster: string; namespace: string; pod: string; container: string; tail: number }) => {
+    const e = encodeURIComponent;
+    const q = new URLSearchParams({ container: opts.container, tail: String(opts.tail) });
+    const path = `/kube/clusters/${e(opts.cluster)}/pods/${e(opts.namespace)}/${e(opts.pod)}/logs?${q.toString()}`;
+    return (await request<{ logs: string }>('GET', path)).logs;
+  },
 };
 
 export interface EventHandlers {
   onOpen: () => void;
   onEvent: (ev: DeviceEvent) => void;
+  /** A Kubernetes cluster's state changed, or it was added or removed. */
+  onKubeCluster: (c: KubeCluster) => void;
+  onKubeChange: (c: KubeChange) => void;
   /** The stream broke; the caller decides when to reconnect. */
   onError: () => void;
 }
@@ -185,6 +294,20 @@ export function subscribeEvents(h: EventHandlers): () => void {
   for (const t of eventTypes) {
     es.addEventListener(t, onMessage);
   }
+  es.addEventListener('kube.cluster', (msg: MessageEvent<string>) => {
+    try {
+      h.onKubeCluster(JSON.parse(msg.data) as KubeCluster);
+    } catch {
+      // As above.
+    }
+  });
+  es.addEventListener('kube.object', (msg: MessageEvent<string>) => {
+    try {
+      h.onKubeChange(JSON.parse(msg.data) as KubeChange);
+    } catch {
+      // As above.
+    }
+  });
   return () => {
     es.close();
   };
