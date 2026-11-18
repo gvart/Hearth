@@ -65,7 +65,7 @@ func (s *session) tools() []tool {
 			"Get one device with all its facts: CPU, memory, disks, network interfaces, agent version and capability ceiling (what it lets the hub restart or run).",
 			s.getDevice),
 		newTool(policy.Read, "device_metrics",
-			"Read a device's current CPU, memory and root disk usage, in percent, from Prometheus (node-exporter).",
+			"Read a device's current CPU, memory and root disk usage, in percent, from Prometheus (node-exporter) when the hub has one, else from the metrics the device's agent sends.",
 			s.deviceMetrics),
 		newTool(policy.Read, "plan_automation",
 			"Validate an automation (YAML) and describe what it would do: its triggers, conditions, and each action with its policy class. Nothing runs.",
@@ -215,7 +215,7 @@ func (s *session) deviceMetrics(ctx context.Context, in deviceIn) (any, error) {
 	out := map[string]any{}
 	err := s.do(ctx, policy.Request{Action: policy.DeviceMetrics, Target: in.Device}, func(ctx context.Context) error {
 		if s.cfg.Metrics == nil {
-			return errors.New("no Prometheus is configured on the hub (hearth hub --prometheus-url)")
+			return errors.New("the hub has no metrics source")
 		}
 		for _, m := range []string{"cpu", "memory", "disk"} {
 			v, err := s.cfg.Metrics.DeviceMetric(ctx, in.Device, m)

@@ -58,7 +58,7 @@ Over plain HTTP the token crosses the LAN in the clear, as the web session does.
 | ------------------- | ------------ | ------------------------------------------ |
 | `list_devices`      | read         | `device.read`                              |
 | `get_device`        | read         | `device.read`                              |
-| `device_metrics`    | read         | `device.metrics` (needs `--prometheus-url`) |
+| `device_metrics`    | read         | `device.metrics`                           |
 | `list_kube_objects` | read         | `kube.read`                                |
 | `pod_logs`          | read         | `kube.pod.logs`                            |
 | `plan_automation`   | read         | `automation.plan`                          |

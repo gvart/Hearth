@@ -291,8 +291,8 @@ func TestReadTools(t *testing.T) {
 	if text, isErr := call(t, cs, "get_device", map[string]any{"device": "nas"}); !isErr {
 		t.Errorf("get_device(nas) = %q, want an error", text)
 	}
-	if text, isErr := call(t, cs, "device_metrics", map[string]any{"device": "pi"}); !isErr || !strings.Contains(text, "Prometheus") {
-		t.Errorf("device_metrics without Prometheus = %q", text)
+	if text, isErr := call(t, cs, "device_metrics", map[string]any{"device": "pi"}); !isErr || !strings.Contains(text, "no metrics source") {
+		t.Errorf("device_metrics without a metrics source = %q", text)
 	}
 	// A read token is not offered actions, and cannot call them.
 	if _, isErr := call(t, cs, "restart_service", map[string]any{"device": "pi", "service": "docker:web"}); !isErr {

@@ -60,7 +60,7 @@ func (a *api) builtinCharts(ctx context.Context, out *MetricsJSON, deviceID stri
 	out.Status = metricsOK
 	if len(out.Charts) == 0 {
 		out.Status = metricsNoData
-		out.Message = "no metrics from this device in this range yet; agents send them from protocol 1.4 on"
+		out.Message = "no metrics from this device in this range yet; an older agent sends none"
 	}
 	return nil
 }
