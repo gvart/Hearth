@@ -74,9 +74,10 @@ type Config struct {
 	Log *slog.Logger
 	// OnFatal is called once, without blocking, when this node fails to
 	// apply a committed entry for a reason other than the command's own
-	// outcome (I/O, a full disk). The node stops applying entries; the
-	// caller must shut the hub down. After a restart the node restores its
-	// latest snapshot and replays the log, so nothing is lost or skipped.
+	// outcome (I/O, a full disk), or to restore a snapshot. The node stops
+	// applying entries; the caller must shut the hub down. After a restart
+	// the node restores its latest snapshot and replays the log, so nothing
+	// is lost or skipped.
 	OnFatal func(error)
 	// AgentURL is this hub's agent-facing URL (https://host:port), which
 	// Announce records in the replicated store. Agents are sent it to fail

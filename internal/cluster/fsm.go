@@ -130,9 +130,9 @@ func (f *fsm) halt(cause error) error {
 	err := f.halted
 	f.mu.Unlock()
 	if first {
-		f.log.Error("cluster state machine halted: this hub failed to apply a committed write and stops "+
-			"to avoid diverging from the cluster; fix the cause (disk full? permissions?) and restart it, "+
-			"the entry is applied again from the log", "err", cause)
+		f.log.Error("cluster state machine halted: this hub failed to apply a committed write or snapshot "+
+			"and stops to avoid diverging from the cluster; fix the cause (disk full? permissions?) and "+
+			"restart it, the state is applied again from the snapshot and log", "err", cause)
 		f.onFatal(err)
 	}
 	return err
@@ -164,12 +164,12 @@ func (f *fsm) Snapshot() (raft.FSMSnapshot, error) {
 
 // Restore replaces the whole database with a snapshot. It runs at start (the
 // latest local snapshot, before the log after it is replayed) and when the
-// leader sends a snapshot to a node that is too far behind or new.
+// leader sends a snapshot to a node that is too far behind or new. A failed
+// restore leaves the node behind the cluster, so it halts like a failed Apply.
 func (f *fsm) Restore(rc io.ReadCloser) error {
 	defer func() { _ = rc.Close() }()
 	if err := f.st.Restore(context.Background(), rc); err != nil {
-		f.log.Error("cluster snapshot restore failed", "err", err)
-		return err
+		return f.halt(fmt.Errorf("snapshot restore: %w", err))
 	}
 	// Raft restores the newest snapshot: at start, and when the leader sent
 	// one, which raft stored before it asked for the restore.

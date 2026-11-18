@@ -3,8 +3,12 @@
 package cluster
 
 import (
+	"bytes"
 	"errors"
+	"io"
+	"log/slog"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -90,6 +94,55 @@ func TestFSMHaltsOnNodeFailure(t *testing.T) {
 			}
 			if _, err := f.Snapshot(); !errors.Is(err, ErrHalted) {
 				t.Fatalf("snapshot err = %v, want ErrHalted", err)
+			}
+		})
+	}
+}
+
+func TestFSMHaltsOnFailedRestore(t *testing.T) {
+	cases := map[string]func(t *testing.T, st *store.Store) io.Reader{
+		"database gone": func(t *testing.T, st *store.Store) io.Reader {
+			var snap bytes.Buffer
+			if err := st.Snapshot(t.Context(), &snap); err != nil {
+				t.Fatal(err)
+			}
+			_ = st.Close()
+			return &snap
+		},
+		"corrupt snapshot": func(*testing.T, *store.Store) io.Reader {
+			return strings.NewReader("not a database")
+		},
+	}
+	for name, setup := range cases {
+		t.Run(name, func(t *testing.T) {
+			st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "hearth.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = st.Close() })
+			var logs bytes.Buffer
+			var fatal []error
+			f := newFSM(st, t.TempDir(), slog.New(slog.NewTextHandler(&logs, nil)),
+				func(err error) { fatal = append(fatal, err) }, nil)
+
+			if err := f.Restore(io.NopCloser(setup(t, st))); !errors.Is(err, ErrHalted) {
+				t.Fatalf("restore err = %v, want ErrHalted", err)
+			}
+			if len(fatal) != 1 || !errors.Is(fatal[0], ErrHalted) {
+				t.Fatalf("OnFatal calls = %v, want one ErrHalted", fatal)
+			}
+			if !strings.Contains(logs.String(), "cluster state machine halted") ||
+				!strings.Contains(logs.String(), "snapshot restore") {
+				t.Fatalf("log does not say the node halted on a snapshot restore:\n%s", logs.String())
+			}
+			// Halted for good: the node applies nothing more and OnFatal is
+			// not called again.
+			resp := f.Apply(entry(t, 2, store.MarkOffline{Cutoff: 1})).(applyResponse)
+			if !errors.Is(resp.err, ErrHalted) {
+				t.Fatalf("next apply err = %v, want ErrHalted", resp.err)
+			}
+			if len(fatal) != 1 {
+				t.Fatalf("OnFatal called %d times", len(fatal))
 			}
 		})
 	}
