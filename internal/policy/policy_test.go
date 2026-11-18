@@ -201,6 +201,48 @@ func TestEngineDo(t *testing.T) {
 			wantResult:   "anonymous actor",
 		},
 		{
+			name:         "automation can call a webhook",
+			req:          Request{ActorKind: ActorAutomation, ActorID: "hello", Action: AutomationWebhook},
+			wantRan:      true,
+			wantDecision: Allow,
+			wantResult:   "ok",
+		},
+		{
+			name:         "automation can restart a service",
+			req:          Request{ActorKind: ActorAutomation, ActorID: "hello", Action: AutomationRestart, Target: "pi"},
+			wantRan:      true,
+			wantDecision: Allow,
+			wantResult:   "ok",
+		},
+		{
+			name:         "automation without a grant cannot exec",
+			req:          Request{ActorKind: ActorAutomation, ActorID: "hello", Action: AutomationExec, Target: "pi"},
+			wantErr:      ErrDenied,
+			wantDecision: Deny,
+			wantResult:   "dangerous action not granted to this automation",
+		},
+		{
+			name:         "granted automation can exec",
+			req:          Request{ActorKind: ActorAutomation, ActorID: "trusted", Action: AutomationExec, Target: "pi"},
+			wantRan:      true,
+			wantDecision: Allow,
+			wantResult:   "ok",
+		},
+		{
+			name:         "a grant is not an actor kind: admin cannot exec through automations",
+			req:          Request{ActorKind: ActorAdmin, ActorID: "trusted", Action: AutomationExec, Target: "pi"},
+			wantErr:      ErrDenied,
+			wantDecision: Deny,
+			wantResult:   "actor kind not allowed",
+		},
+		{
+			name:         "web session cannot restart a service",
+			req:          Request{ActorKind: ActorWeb, ActorID: "192.0.2.1", Action: AutomationRestart},
+			wantErr:      ErrDenied,
+			wantDecision: Deny,
+			wantResult:   "actor kind not allowed",
+		},
+		{
 			name:         "anonymous actor denied",
 			req:          Request{ActorKind: ActorAdmin, Action: TokenCreate},
 			wantErr:      ErrDenied,
@@ -218,7 +260,8 @@ func TestEngineDo(t *testing.T) {
 			t.Cleanup(func() { _ = s.Close() })
 
 			ran := false
-			err = New(s.Audit()).Do(ctx, tt.req, func(context.Context) error {
+			pol := NewWithConfig(s.Audit(), Config{DangerousAutomations: []string{"trusted"}})
+			err = pol.Do(ctx, tt.req, func(context.Context) error {
 				ran = true
 				return tt.fnErr
 			})
@@ -284,6 +327,12 @@ func TestEngineDoAuditFailure(t *testing.T) {
 				t.Errorf("message = %q, want %q", err, tt.wantMsg)
 			}
 		})
+	}
+}
+
+func TestBeyondCeilingIsADenial(t *testing.T) {
+	if !errors.Is(fmt.Errorf("exec on pi: %w", ErrBeyondCeiling), ErrDenied) {
+		t.Error("ErrBeyondCeiling does not match ErrDenied")
 	}
 }
 

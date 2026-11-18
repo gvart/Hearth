@@ -93,8 +93,21 @@ message MetricSample {
   google.protobuf.Timestamp ts = 4;
 }
 
-// ExecResult is the outcome of an ExecRequest. Stub: fields arrive with exec support.
-message ExecResult {}
+// ExecResult is the outcome of an ExecRequest, sent by agents of protocol
+// minor 1 and later.
+message ExecResult {
+  // id is the id of the ExecRequest it answers.
+  string id = 1;
+  // denied is set when the agent refused the request: it is beyond the
+  // device's capability ceiling, the agent's own configuration. Nothing ran.
+  bool denied = 2;
+  // exit_code is the exit status of the process; -1 if it did not run or
+  // was killed.
+  int32 exit_code = 3;
+  // error says why the request failed or was denied; empty on success. It
+  // may end with the last bytes the process wrote to stderr.
+  string error = 4;
+}
 
 // Welcome acknowledges a Hello.
 message Welcome {
@@ -123,8 +136,34 @@ message NotLeader {
 // agent stops on it instead of retrying: the device must re-enroll.
 message CertificateRevoked {}
 
-// ExecRequest asks the agent to run an action. Stub: fields arrive with exec support.
-message ExecRequest {}
+// ExecRequest asks the agent to run an action. The agent runs it only if its
+// capability ceiling allows it, and answers with an ExecResult of the same id.
+// Hubs send it only to agents of protocol minor 1 and later.
+message ExecRequest {
+  // id correlates the ExecResult; unique per stream.
+  string id = 1;
+  // timeout bounds the run; the agent kills the process when it expires.
+  google.protobuf.Duration timeout = 2;
+  oneof action {
+    Command command = 3;
+    RestartService restart = 4;
+  }
+}
+
+// Command runs a program with arguments, never through a shell.
+message Command {
+  // argv is the program and its arguments; argv[0] is matched against the
+  // ceiling as written.
+  repeated string argv = 1;
+}
+
+// RestartService restarts a service the device runs.
+message RestartService {
+  // manager is "systemd", "systemd-user" (systemctl --user) or "docker".
+  string manager = 1;
+  // name is the systemd unit or Docker container.
+  string name = 2;
+}
 
 // Ping checks the stream is alive.
 message Ping {}

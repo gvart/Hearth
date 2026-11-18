@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"slices"
+	"sync"
 	"time"
 
 	"connectrpc.com/connect"
@@ -28,7 +29,7 @@ import (
 // Protocol version this agent speaks.
 const (
 	ProtocolMajor = 1
-	ProtocolMinor = 0
+	ProtocolMinor = 1 // 1: answers ExecRequest
 )
 
 const (
@@ -53,6 +54,9 @@ type Config struct {
 	Log     *slog.Logger // required
 	// FactsInterval is how often host facts are re-sent; 0 means every 10 min.
 	FactsInterval time.Duration
+	// Ceiling is what the hub may run on this device; the zero value allows
+	// nothing.
+	Ceiling Ceiling
 }
 
 type runner struct {
@@ -272,12 +276,15 @@ func (r *runner) session(ctx context.Context, hub string) (welcomed bool, err er
 
 	g, gctx := errgroup.WithContext(ctx)
 	received := make(chan struct{})
+	results := make(chan *agentv1.ExecResult)
 	g.Go(func() error {
 		defer close(received)
-		return r.receive(gctx, stream)
+		var execs sync.WaitGroup
+		defer execs.Wait()
+		return r.receive(gctx, stream, &execs, results)
 	})
 	g.Go(func() error {
-		err := r.sendLoop(gctx, stream, interval)
+		err := r.sendLoop(gctx, stream, interval, results)
 		_ = stream.CloseRequest()
 		t := time.NewTimer(closeGrace)
 		defer t.Stop()
@@ -309,22 +316,41 @@ func (r *runner) hello(ctx context.Context) *agentv1.Hello {
 	return h
 }
 
-// receive consumes hub messages until the stream fails.
-func (r *runner) receive(ctx context.Context, stream *connect.BidiStreamForClient[agentv1.AgentMessage, agentv1.HubMessage]) error {
+// receive consumes hub messages until the stream fails. Each exec request
+// runs on its own goroutine in execs, within the capability ceiling, and
+// its result goes to results for sendLoop to send.
+func (r *runner) receive(ctx context.Context, stream *connect.BidiStreamForClient[agentv1.AgentMessage, agentv1.HubMessage],
+	execs *sync.WaitGroup, results chan<- *agentv1.ExecResult,
+) error {
 	for {
 		msg, err := stream.Receive()
 		if err != nil {
 			return fmt.Errorf("receive: %w", err)
 		}
-		// Ping needs no answer: any traffic keeps the stream alive. Exec
-		// requests are not supported yet and are never run.
-		r.log.DebugContext(ctx, "hub message ignored", "type", fmt.Sprintf("%T", msg.GetPayload()))
+		req := msg.GetExecRequest()
+		if req == nil {
+			// Ping needs no answer: any traffic keeps the stream alive.
+			r.log.DebugContext(ctx, "hub message ignored", "type", fmt.Sprintf("%T", msg.GetPayload()))
+			continue
+		}
+		execs.Go(func() {
+			res := r.cfg.Ceiling.execute(ctx, req)
+			// Never log the arguments: they may carry secrets.
+			r.log.InfoContext(ctx, "exec request", "id", req.GetId(), "action", fmt.Sprintf("%T", req.GetAction()),
+				"denied", res.GetDenied(), "exit_code", res.GetExitCode())
+			select {
+			case results <- res:
+			case <-ctx.Done():
+			}
+		})
 	}
 }
 
-// sendLoop sends heartbeats and periodic facts until ctx is canceled or a
+// sendLoop sends heartbeats, periodic facts and exec results until ctx is canceled or a
 // send fails. It is the only sender after Hello.
-func (r *runner) sendLoop(ctx context.Context, stream *connect.BidiStreamForClient[agentv1.AgentMessage, agentv1.HubMessage], interval time.Duration) error {
+func (r *runner) sendLoop(ctx context.Context, stream *connect.BidiStreamForClient[agentv1.AgentMessage, agentv1.HubMessage],
+	interval time.Duration, results <-chan *agentv1.ExecResult,
+) error {
 	hb := time.NewTicker(interval)
 	defer hb.Stop()
 	facts := time.NewTicker(r.factsInterval)
@@ -338,6 +364,8 @@ func (r *runner) sendLoop(ctx context.Context, stream *connect.BidiStreamForClie
 			msg = &agentv1.AgentMessage{Payload: &agentv1.AgentMessage_Heartbeat{Heartbeat: r.heartbeat(now)}}
 		case <-facts.C:
 			msg = &agentv1.AgentMessage{Payload: &agentv1.AgentMessage_Facts{Facts: r.hello(ctx)}}
+		case res := <-results:
+			msg = &agentv1.AgentMessage{Payload: &agentv1.AgentMessage_ExecResult{ExecResult: res}}
 		}
 		if err := stream.Send(msg); err != nil {
 			if errors.Is(err, io.EOF) {

@@ -1,0 +1,129 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package agent
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"os/exec"
+	"slices"
+	"strings"
+	"time"
+	"unicode/utf8"
+
+	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
+)
+
+// Ceiling is what this device lets the hub run: its capability ceiling. The
+// hub can never grant more. The zero Ceiling allows nothing.
+type Ceiling struct {
+	// Exec are the programs the hub may run, matched exactly against argv[0]
+	// as the hub sends it, with any arguments.
+	Exec []string
+	// Restart are the services the hub may restart, as manager:name, where
+	// manager is systemd, systemd-user or docker.
+	Restart []string
+}
+
+// Service managers a restart may name.
+var restartManagers = []string{"systemd", "systemd-user", "docker"}
+
+// ParseRestart checks a Ceiling.Restart entry.
+func ParseRestart(entry string) error {
+	manager, name, ok := strings.Cut(entry, ":")
+	if !ok || name == "" || !slices.Contains(restartManagers, manager) {
+		return fmt.Errorf("restart entry %q: want manager:name with manager one of %s", entry, strings.Join(restartManagers, ", "))
+	}
+	return nil
+}
+
+const (
+	// defaultExecTimeout applies when a request sets none.
+	defaultExecTimeout = time.Minute
+	// maxExecTimeout caps what the hub may ask for.
+	maxExecTimeout = 10 * time.Minute
+	// stderrTail is how much of stderr a failure reports.
+	stderrTail = 256
+)
+
+// errBeyondCeiling marks a request the ceiling does not allow.
+var errBeyondCeiling = errors.New("not allowed by this device's capability ceiling")
+
+// command returns the program and arguments req runs, or errBeyondCeiling.
+// No shell is involved: argv goes to exec.Command as is.
+func (c Ceiling) command(req *agentv1.ExecRequest) ([]string, error) {
+	switch a := req.GetAction().(type) {
+	case *agentv1.ExecRequest_Command:
+		argv := a.Command.GetArgv()
+		if len(argv) == 0 || argv[0] == "" {
+			return nil, errors.New("empty command")
+		}
+		if !slices.Contains(c.Exec, argv[0]) {
+			return nil, fmt.Errorf("exec %s: %w", argv[0], errBeyondCeiling)
+		}
+		return argv, nil
+	case *agentv1.ExecRequest_Restart:
+		m, name := a.Restart.GetManager(), a.Restart.GetName()
+		if !slices.Contains(c.Restart, m+":"+name) {
+			return nil, fmt.Errorf("restart %s:%s: %w", m, name, errBeyondCeiling)
+		}
+		switch m {
+		case "systemd":
+			return []string{"systemctl", "restart", "--", name}, nil
+		case "systemd-user":
+			return []string{"systemctl", "--user", "restart", "--", name}, nil
+		case "docker":
+			return []string{"docker", "restart", "--", name}, nil
+		}
+		return nil, fmt.Errorf("unknown service manager %q", m)
+	}
+	return nil, errors.New("unknown action")
+}
+
+// execute runs req if the ceiling allows it and reports the outcome.
+func (c Ceiling) execute(ctx context.Context, req *agentv1.ExecRequest) *agentv1.ExecResult {
+	res := &agentv1.ExecResult{Id: req.GetId(), ExitCode: -1}
+	argv, err := c.command(req)
+	if err != nil {
+		res.Denied = errors.Is(err, errBeyondCeiling)
+		res.Error = err.Error()
+		return res
+	}
+	timeout := defaultExecTimeout
+	if d := req.GetTimeout().AsDuration(); d > 0 {
+		timeout = min(d, maxExecTimeout)
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...) //nolint:gosec // argv[0] is in the ceiling; no shell
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	err = cmd.Run()
+	if cmd.ProcessState != nil {
+		res.ExitCode = int32(cmd.ProcessState.ExitCode()) //nolint:gosec // exit statuses fit in int32
+	}
+	if err != nil {
+		if ctx.Err() != nil {
+			err = fmt.Errorf("%w after %s", ctx.Err(), timeout)
+		}
+		res.Error = err.Error()
+		if tail := lastBytes(stderr.Bytes(), stderrTail); tail != "" {
+			res.Error += ": " + tail
+		}
+	}
+	return res
+}
+
+// lastBytes is the trimmed end of b, at most n bytes, cut on a rune boundary.
+func lastBytes(b []byte, n int) string {
+	b = bytes.TrimSpace(b)
+	if len(b) > n {
+		b = b[len(b)-n:]
+		for len(b) > 0 && !utf8.RuneStart(b[0]) {
+			b = b[1:]
+		}
+	}
+	return string(b)
+}

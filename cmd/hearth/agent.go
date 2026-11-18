@@ -22,22 +22,39 @@ func newAgentCmd() *cobra.Command {
 }
 
 func newAgentRunCmd() *cobra.Command {
-	var dataDir string
+	var (
+		dataDir string
+		ceiling agent.Ceiling
+	)
 	cmd := &cobra.Command{
 		Use:   "run",
 		Short: "Connect to the hub and keep reporting this device",
 		Long: "Connect to the hub this device joined and keep the connection up: report host facts,\n" +
-			"send heartbeats and reconnect with backoff when the hub is unreachable. Stops on SIGINT/SIGTERM.",
+			"send heartbeats and reconnect with backoff when the hub is unreachable. Stops on SIGINT/SIGTERM.\n\n" +
+			"--allow-exec and --allow-restart are this device's capability ceiling: the only commands and\n" +
+			"services the hub (its automations) may run or restart here. Without them it may run nothing.",
+		Example: "  hearth agent run --allow-restart systemd:pihole-FTL.service --allow-restart docker:jellyfin \\\n" +
+			"    --allow-exec /usr/bin/df",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			for _, e := range ceiling.Restart {
+				if err := agent.ParseRestart(e); err != nil {
+					return fmt.Errorf("--allow-restart: %w", err)
+				}
+			}
 			return agent.Run(cmd.Context(), agent.Config{
 				DataDir: dataDir,
 				Version: cmd.Root().Version,
 				Log:     newLogger(cmd.ErrOrStderr()),
+				Ceiling: ceiling,
 			})
 		},
 	}
 	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir("agent"), "agent data directory (env HEARTH_DATA_DIR)")
+	cmd.Flags().StringArrayVar(&ceiling.Exec, "allow-exec", nil,
+		"program the hub may run here, matched exactly against the command's first word; repeatable")
+	cmd.Flags().StringArrayVar(&ceiling.Restart, "allow-restart", nil,
+		"service the hub may restart here, as systemd:UNIT, systemd-user:UNIT or docker:CONTAINER; repeatable")
 	return cmd
 }
 

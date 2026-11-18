@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/gvart/hearth/internal/store"
@@ -54,6 +55,14 @@ const (
 	// AutomationLog is an automation's log action: it writes a line to the
 	// hub log and touches no device.
 	AutomationLog Action = "automation.log"
+	// AutomationWebhook is an automation's webhook action: an HTTP request
+	// from the hub.
+	AutomationWebhook Action = "automation.webhook"
+	// AutomationRestart restarts a systemd unit or Docker container on a
+	// device, through its agent.
+	AutomationRestart Action = "automation.restart"
+	// AutomationExec runs a command on a device, through its agent.
+	AutomationExec Action = "automation.exec"
 )
 
 // Actor kinds.
@@ -110,6 +119,13 @@ var rules = map[Action]rule{
 	ClusterMigrate: {class: Dangerous, actors: []string{ActorAdmin}},
 	// Writing a log line changes nothing.
 	AutomationLog: {class: Read, actors: []string{ActorAutomation}},
+	// A webhook touches no device: it tells another system something.
+	AutomationWebhook: {class: Safe, actors: []string{ActorAutomation}},
+	// A restart is bounded and repeatable, the routine homelab fix, and
+	// the device's agent restarts only the services its ceiling names.
+	AutomationRestart: {class: Safe, actors: []string{ActorAutomation}},
+	// An arbitrary command can do anything the agent can.
+	AutomationExec: {class: Dangerous, actors: []string{ActorAutomation}},
 }
 
 // ClassOf returns the class of a known action.
@@ -120,6 +136,11 @@ func ClassOf(a Action) (Class, bool) {
 
 // ErrDenied is returned when policy denies an action.
 var ErrDenied = errors.New("denied by policy")
+
+// ErrBeyondCeiling is returned when a device's agent refuses an action
+// policy allowed: the action is beyond the device's capability ceiling, which
+// the hub can never raise. It matches ErrDenied.
+var ErrBeyondCeiling = fmt.Errorf("beyond the device's capability ceiling: %w", ErrDenied)
 
 // Auditor is where decisions are recorded.
 type Auditor interface {
@@ -140,16 +161,36 @@ type Request struct {
 type Engine struct {
 	audit Auditor
 	now   func() time.Time
+	// dangerous are the automations granted dangerous actions.
+	dangerous map[string]bool
+}
+
+// Config is the operator's policy configuration on top of the rule table.
+type Config struct {
+	// DangerousAutomations are the ids of the automations allowed to take
+	// dangerous actions. Every other automation is denied them: until
+	// actions can be approved one at a time, an explicit grant is the only
+	// way an automation may take one.
+	DangerousAutomations []string
 }
 
 // New returns an Engine that writes to audit.
-func New(audit Auditor) *Engine { return &Engine{audit: audit, now: time.Now} }
+func New(audit Auditor) *Engine { return NewWithConfig(audit, Config{}) }
+
+// NewWithConfig returns an Engine that writes to audit and applies cfg.
+func NewWithConfig(audit Auditor, cfg Config) *Engine {
+	e := &Engine{audit: audit, now: time.Now, dangerous: map[string]bool{}}
+	for _, id := range cfg.DangerousAutomations {
+		e.dangerous[id] = true
+	}
+	return e
+}
 
 // Do decides on req and, if allowed, runs fn. Exactly one audit entry is
 // written either way, carrying the decision and fn's outcome. A denied request
 // returns an error wrapping ErrDenied; an allowed one returns fn's error.
 func (e *Engine) Do(ctx context.Context, req Request, fn func(context.Context) error) error {
-	decision, reason := decide(req)
+	decision, reason := e.decide(req)
 	var runErr error
 	result := reason
 	if decision == Allow {
@@ -220,7 +261,7 @@ func orUnknown(s string) string {
 	return s
 }
 
-func decide(req Request) (decision, reason string) {
+func (e *Engine) decide(req Request) (decision, reason string) {
 	r, ok := rules[req.Action]
 	if !ok {
 		return Deny, "unknown action"
@@ -228,10 +269,11 @@ func decide(req Request) (decision, reason string) {
 	if req.ActorID == "" {
 		return Deny, "anonymous actor"
 	}
-	for _, a := range r.actors {
-		if a == req.ActorKind {
-			return Allow, ""
-		}
+	if !slices.Contains(r.actors, req.ActorKind) {
+		return Deny, "actor kind not allowed"
 	}
-	return Deny, "actor kind not allowed"
+	if r.class == Dangerous && req.ActorKind == ActorAutomation && !e.dangerous[req.ActorID] {
+		return Deny, "dangerous action not granted to this automation"
+	}
+	return Allow, ""
 }

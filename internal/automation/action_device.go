@@ -1,0 +1,169 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package automation
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+	"slices"
+	"strings"
+	"time"
+
+	"google.golang.org/protobuf/types/known/durationpb"
+
+	"github.com/gvart/hearth/internal/policy"
+	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
+)
+
+// Agents runs requests on devices through their agents: *hub.Agents. device
+// is a device id, name or hostname.
+type Agents interface {
+	Exec(ctx context.Context, device string, req *agentv1.ExecRequest) (*agentv1.ExecResult, error)
+}
+
+// ActionDeps are what the exec, restart and webhook actions use when they
+// run. Zero values are enough to load and plan automations.
+type ActionDeps struct {
+	Agents Agents
+	// HTTP sends webhooks; nil means a default client.
+	HTTP *http.Client
+}
+
+// Actions returns the exec, restart and webhook action kinds, to add to
+// Builtin's.
+func Actions(d ActionDeps) map[string]Builder[Action] {
+	if d.HTTP == nil {
+		d.HTTP = &http.Client{}
+	}
+	return map[string]Builder[Action]{
+		"exec":    func(p Params) (Action, error) { return buildExec(p, d.Agents) },
+		"restart": func(p Params) (Action, error) { return buildRestart(p, d.Agents) },
+		"webhook": func(p Params) (Action, error) { return buildWebhook(p, d.HTTP) },
+	}
+}
+
+const (
+	// defaultAgentTimeout bounds an exec or restart that sets no timeout.
+	defaultAgentTimeout = time.Minute
+	// maxAgentTimeout is the longest timeout an action may set; agents cap
+	// it the same way.
+	maxAgentTimeout = 10 * time.Minute
+	// answerGrace is how long the hub waits past the timeout for the
+	// agent's answer before giving up on it.
+	answerGrace = 15 * time.Second
+)
+
+// agentAction is an action a device's agent executes: exec or restart.
+type agentAction struct {
+	agents  Agents
+	device  string
+	timeout time.Duration
+	policy  policy.Action
+	desc    string
+	// what names the action in errors, never with its arguments.
+	what string
+	req  func() *agentv1.ExecRequest
+}
+
+func (a *agentAction) Describe() string      { return a.desc }
+func (a *agentAction) Policy() policy.Action { return a.policy }
+func (a *agentAction) Target() string        { return a.device }
+
+func (a *agentAction) Run(ctx context.Context, _ Event) error {
+	if a.agents == nil {
+		return errors.New("this hub does not run actions on devices")
+	}
+	req := a.req()
+	req.Timeout = durationpb.New(a.timeout)
+	ctx, cancel := context.WithTimeout(ctx, a.timeout+answerGrace)
+	defer cancel()
+	res, err := a.agents.Exec(ctx, a.device, req)
+	if err != nil {
+		return fmt.Errorf("%s: %w", a.what, err)
+	}
+	if res.GetDenied() {
+		return fmt.Errorf("%s on device %s: %w", a.what, a.device, policy.ErrBeyondCeiling)
+	}
+	if res.GetError() != "" {
+		return fmt.Errorf("%s on device %s: %s", a.what, a.device, res.GetError())
+	}
+	return nil
+}
+
+// agentTimeout checks a timeout field: 0 means the default.
+func agentTimeout(d time.Duration) (time.Duration, error) {
+	switch {
+	case d == 0:
+		return defaultAgentTimeout, nil
+	case d < 0 || d > maxAgentTimeout:
+		return 0, fmt.Errorf("timeout must be between 0 and %s", maxAgentTimeout)
+	}
+	return d, nil
+}
+
+func buildExec(p Params, agents Agents) (Action, error) {
+	var cfg struct {
+		Device  string        `yaml:"device"`
+		Command []string      `yaml:"command"`
+		Timeout time.Duration `yaml:"timeout"`
+	}
+	if err := p.Decode(&cfg); err != nil {
+		return nil, err
+	}
+	if cfg.Device == "" {
+		return nil, errors.New("device is required")
+	}
+	if len(cfg.Command) == 0 || cfg.Command[0] == "" {
+		return nil, errors.New("command is required: a list, program first, e.g. [/usr/bin/df, -h]")
+	}
+	timeout, err := agentTimeout(cfg.Timeout)
+	if err != nil {
+		return nil, err
+	}
+	argv := cfg.Command
+	return &agentAction{
+		agents: agents, device: cfg.Device, timeout: timeout, policy: policy.AutomationExec,
+		desc: fmt.Sprintf("run %q", argv), what: "exec " + argv[0],
+		req: func() *agentv1.ExecRequest {
+			return &agentv1.ExecRequest{Action: &agentv1.ExecRequest_Command{Command: &agentv1.Command{Argv: argv}}}
+		},
+	}, nil
+}
+
+// serviceManagers are the managers a restart may name, as the agent's
+// --allow-restart does.
+var serviceManagers = []string{"systemd", "systemd-user", "docker"}
+
+func buildRestart(p Params, agents Agents) (Action, error) {
+	var cfg struct {
+		Device  string        `yaml:"device"`
+		Service string        `yaml:"service"`
+		Timeout time.Duration `yaml:"timeout"`
+	}
+	if err := p.Decode(&cfg); err != nil {
+		return nil, err
+	}
+	if cfg.Device == "" {
+		return nil, errors.New("device is required")
+	}
+	manager, name, ok := strings.Cut(cfg.Service, ":")
+	if !ok || name == "" || !slices.Contains(serviceManagers, manager) {
+		return nil, fmt.Errorf("service must be manager:name with manager one of %s, e.g. systemd:pihole-FTL.service",
+			strings.Join(serviceManagers, ", "))
+	}
+	timeout, err := agentTimeout(cfg.Timeout)
+	if err != nil {
+		return nil, err
+	}
+	return &agentAction{
+		agents: agents, device: cfg.Device, timeout: timeout, policy: policy.AutomationRestart,
+		desc: "restart " + cfg.Service, what: "restart " + cfg.Service,
+		req: func() *agentv1.ExecRequest {
+			return &agentv1.ExecRequest{Action: &agentv1.ExecRequest_Restart{
+				Restart: &agentv1.RestartService{Manager: manager, Name: name},
+			}}
+		},
+	}, nil
+}
