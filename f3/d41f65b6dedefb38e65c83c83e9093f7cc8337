@@ -1,0 +1,144 @@
+internal/hub/agentexec_test.go
+  s_344993999c180f::t_ed4a3b9f297da9 17,44-48,57,79,98,129,155-273
+internal/store/schema_test.go
+  s_344993999c180f::t_6ba229caab19e6 88-90,96
+internal/agent/run.go
+  s_344993999c180f::t_4bf9bc99d6ae62 32,316
+internal/policy/policy_test.go
+  s_344993999c180f::t_527579481a5f12 326
+internal/hub/approvals_test.go
+  s_344993999c180f::t_f84a4d643cdc4e 1-114
+internal/store/migrations/00010_approvals.sql
+  s_344993999c180f::t_24015d59518a81 1-25
+internal/policy/ceiling.go
+  s_344993999c180f::t_c3214e598f53e6 1-36
+internal/policy/policy.go
+  s_344993999c180f::t_47a9aa8a58f7c9 8,90-93,120-122,125-128,132-136,143,145-148,150,153-154,192-203,215-218
+internal/hub/tokens.go
+  s_344993999c180f::t_bf8ab004098dbd 45-51,63-64,69,98,103-105,119-122
+cmd/hearth/approval_test.go
+  s_344993999c180f::t_7e93c5395add13 1-116
+internal/agent/exec_test.go
+  s_344993999c180f::t_10d3db1d9ca388 17,41-43,68-69,80,84,88,92,101-106,148-149,155,157-158,160-161
+internal/policy/config.go
+  s_344993999c180f::t_182f9d6046be6e 1-124
+internal/automation/action_test.go
+  s_344993999c180f::t_2e1483f6ad485f 62
+cmd/hearth/device.go
+  s_344993999c180f::t_b3d62f3dc653af 27-30,39,43,47,60-62,71
+internal/store/command_test.go
+  s_344993999c180f::t_5340204f260ae9 55-59,299-306
+cmd/hearth/hub.go
+  s_344993999c180f::t_6d7745d996c487 52-53,55-57,99-102,124-128,172,294
+internal/hub/facts.go
+  s_344993999c180f::t_029b73960899ea 27-35,67-69
+cmd/hearth/cluster_test.go
+  s_344993999c180f::t_be1dbce0d0a801 24,27,33
+cmd/hearth/cluster.go
+  s_344993999c180f::t_ca8c6ee95ddde0 31-34,44,48,52,63-65,67,71,81-84,96,100,104,116-118,122,194-200,202-205,210,286,306,332-334,338
+cmd/hearth/approval.go
+  s_344993999c180f::t_db7f8f0dc58dec 3-134
+  s_344993999c180f::t_8b8efa03501f8e 1-2
+internal/store/applier.go
+  s_344993999c180f::t_456854ec284a3e 76,83
+internal/hub/approvals.go
+  s_344993999c180f::t_68734be730a11c 1-89
+internal/policy/engine.go
+  s_344993999c180f::t_e2312edab279c8 1-357
+internal/cluster/control.go
+  s_344993999c180f::t_ce2377f3354e30 257
+internal/automation/runtime.go
+  s_344993999c180f::t_d211cd6559279f 66-68,393,399-401,403-409
+  s_344993999c180f::t_56863ce3f4a1e4 402,410
+internal/hub/agentstream.go
+  s_344993999c180f::t_e2c09c6aedb1b7 109,140
+internal/store/command.go
+  s_344993999c180f::t_b7776a0556ea1b 676-679
+internal/store/store_test.go
+  s_344993999c180f::t_a14848c6829edc 54
+internal/policy/guardrails_test.go
+  s_344993999c180f::t_7e8ddde76711a9 1-116,125-499
+  s_344993999c180f::t_d705929feef9c9 117-122
+internal/store/approvals.go
+  s_344993999c180f::t_f0197e5cc7f914 1-224
+internal/automation/action_device.go
+  s_344993999c180f::t_0ae970829be3a9 95
+  s_344993999c180f::t_005502290ffdcd 79-81,83-88,94
+  s_344993999c180f::t_56863ce3f4a1e4 82,89-93
+internal/store/approvals_test.go
+  s_344993999c180f::t_df9af8a1f9981c 1-118
+internal/proto/hearth/agent/v1/agent.pb.go
+  s_344993999c180f::t_d185dce0e00b1d 329-335,459-523,537,549,562,605,617,630,665,677,690,717,729,742,765,777,790,842,854,867,913,925,938,977,989,1002,1032,1044,1057,1080,1092,1105,1175,1187,1200,1223,1235,1248,1274,1286,1299,1323,1340-1344,1415,1421-1437,1441-1443,1445-1447,1449-1468,1488,1498
+docs/automations.md
+  s_344993999c180f::t_a04e99db2bd489 136-137,179-183,185-186
+internal/agent/ceiling_test.go
+  s_344993999c180f::t_b8fd1c0b9a58f5 1-73
+internal/agent/exec.go
+  s_344993999c180f::t_6f5234128bd9aa 16,52-55,57-60,62-64,67,88
+internal/hub/agentexec.go
+  s_344993999c180f::t_3d49e0115ec9d6 13,22-26,31-34,61-62,67-71,92-116,129-131,142-169
+proto/hearth/agent/v1/agent.proto
+  s_344993999c180f::t_0a523ee3687926 60-75
+cmd/hearth/common.go
+  s_344993999c180f::t_b413ebbe789a23 7,13,16,64-111
+internal/automation/guardrails_test.go
+  s_344993999c180f::t_da941162d3f08f 7-79,81
+  s_344993999c180f::t_ce44fd0ef7f1f9 1-6,80,82
+docs/guardrails.md
+  s_344993999c180f::t_ca47758438a1ef 1-71,74-75
+  s_344993999c180f::t_89196343ba7f2e 72-73
+  s_344993999c180f::t_1970b6d5264c2f 76-87
+cmd/hearth/token.go
+  s_344993999c180f::t_23f0eabc95e160 23,49,74-76,80
+cmd/hearth/root.go
+  s_344993999c180f::t_3d2f72993cb7aa 18
+internal/hub/api.go
+  s_344993999c180f::t_f0c3a6d572454f 90-92
+  s_344993999c180f::t_bf23cce4273c95 89
+internal/integrations/kubernetes/actions_test.go
+  s_344993999c180f::t_8c008ef970c1e8 161-177
+internal/integrations/kubernetes/actions.go
+  s_344993999c180f::t_6309ed059b7de7 112-113,133-138,147-150,153
+internal/hub/audit.go
+  s_344993999c180f::t_cce918697cef14 1-124,130-161
+  s_344993999c180f::t_9822f1aa6f709d 125-129
+web/src/index.css
+  s_344993999c180f::t_d809f07dd18d66 1085-1193,1214-1217,1225,1227,1236
+  s_344993999c180f::t_07fdb911431116 1226,1228-1235,1237-1240
+internal/store/auditquery_test.go
+  s_344993999c180f::t_74794288ad10bb 1-69
+internal/store/audit.go
+  s_344993999c180f::t_c669360563e307 59-75,78-82,86-100,103-113,138-144
+internal/hub/audit_test.go
+  s_344993999c180f::t_b09c7667fd3c68 1-88
+web/src/components/AuditPage.tsx
+  s_344993999c180f::t_a586132c380064 2-45,60-105,107-308
+  s_344993999c180f::t_6184a8b07ce088 1,46-59,106
+  s_344993999c180f::t_6a75c17d7e91b4 309
+web/src/api/hooks.ts
+  s_344993999c180f::t_49990167746ab2 1,7
+  s_344993999c180f::t_fe760c68770c25 29
+  s_344993999c180f::t_337b9085931b2c 63-72
+  s_344993999c180f::t_c7a0022048ddf1 57
+web/src/api/client.ts
+  s_344993999c180f::t_70d7d9d53e1bca 232-275
+  s_344993999c180f::t_8ab602b8bbb0e3 330-341
+web/src/components/Shell.tsx
+  s_344993999c180f::t_bf433576c50e6a 3,15,22-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f3d41f65b6dedefb38e65c83c83e9093f7cc8337",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
