@@ -1,0 +1,48 @@
+internal/automation/leader_test.go
+  s_344993999c180f::t_821ff11bc8d734 1-103
+internal/automation/load_test.go
+  s_344993999c180f::t_0d7525e9652e75 45,72-73,77-78
+  s_344993999c180f::t_8ea7211707818e 1-44,46-71,74-76,79-198
+internal/automation/plan_test.go
+  s_344993999c180f::t_d31160a9c9aaf1 1-62
+internal/automation/leader.go
+  s_344993999c180f::t_86b349ac8b88cb 1-64
+internal/automation/runtime.go
+  s_344993999c180f::t_44896f2e724818 1-34,37-378,381,383-389
+  s_344993999c180f::t_977bb61ab7f1ab 379-380,382
+  s_344993999c180f::t_70c8c3594e8af1 35-36
+internal/automation/load.go
+  s_344993999c180f::t_9fd27464aebccb 1-122,124-210,214-254,273-282
+  s_344993999c180f::t_bf5076d7b85aa2 123,211-213,255-272
+internal/automation/runtime_test.go
+  s_344993999c180f::t_73a3102bf12e54 1-256
+internal/automation/spec.go
+  s_344993999c180f::t_2b3007e11b4db2 128
+  s_344993999c180f::t_fedcc17660cb84 1-127,129-141
+internal/automation/plan.go
+  s_344993999c180f::t_d4c043ef84df14 1-54
+internal/automation/helpers_test.go
+  s_344993999c180f::t_9c06ef527d27fa 1-182
+internal/automation/builtin.go
+  s_344993999c180f::t_07c7bb1166f265 1-72
+internal/automation/doc.go
+  s_344993999c180f::t_69025373c7ad0f 1-15
+go.mod
+  s_344993999c180f::t_3a52718cef804c 13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "be40694cf9dec0c8be1591f377f96acea1fc89c4",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
