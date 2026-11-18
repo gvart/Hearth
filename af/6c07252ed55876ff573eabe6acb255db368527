@@ -1,0 +1,62 @@
+web/src/components/AddClusterDialog.tsx
+  s_344993999c180f::t_df69d48d682a7f 26-27
+web/src/components/KubernetesPage.tsx
+  s_344993999c180f::t_d81956547e85a0 2,7,73,98-99,157,246,249-257,276-297,300,323-325,355-363,383-385,426-441,471-473,490-513
+internal/integrations/kubernetes/client.go
+  s_344993999c180f::t_86ea8833d4ad4d 110-114,121-123
+  s_344993999c180f::t_a6b5033a6da00b 6,18-19,58-63,67-71,76-78,187-233
+internal/integrations/kubernetes/manager.go
+  s_344993999c180f::t_86ea8833d4ad4d 117-119,132-133,158
+internal/integrations/kubernetes/actions.go
+  s_344993999c180f::t_8d39c39ee94290 1-204,210-430,432-434,439-479,481-633
+  s_344993999c180f::t_86ea8833d4ad4d 205-209,431,435-438,480
+internal/hub/kube.go
+  s_344993999c180f::t_fe603b2f522b6c 110
+  s_344993999c180f::t_df2e8779852d27 33,101-109,111-120,128-130
+web/src/api/hooks.ts
+  s_344993999c180f::t_56ece0c98c2c06 9
+  s_344993999c180f::t_866d0da56405dc 166-185
+internal/integrations/kubernetes/actions_test.go
+  s_344993999c180f::t_46c5a682a6e2cd 1-321
+docs/kubernetes.md
+  s_344993999c180f::t_f33aba0a44507f 4-6
+  s_344993999c180f::t_61ac19fed7e34f 58-85
+  s_344993999c180f::t_288967058a8851 28-32
+web/src/api/client.ts
+  s_344993999c180f::t_835408ba6cbff9 290-291
+  s_344993999c180f::t_e656bf8ceff206 199-225
+internal/integrations/kubernetes/fakeapi_test.go
+  s_344993999c180f::t_bd990e08f11169 56
+  s_344993999c180f::t_a47f3b6999c0bd 213-217
+  s_344993999c180f::t_767759bd9976c7 38-43
+  s_344993999c180f::t_155929d36e5a10 154-161
+web/src/index.css
+  s_344993999c180f::t_6c88043caeb988 1001-1070
+internal/hub/kube_test.go
+  s_344993999c180f::t_8703ea5327a936 156-176
+internal/integrations/kubernetes/fakeapi_actions_test.go
+  s_344993999c180f::t_c0a093e0652975 1-125
+internal/policy/policy.go
+  s_344993999c180f::t_e34373dc267601 74-87,152-153,158-167
+internal/policy/policy_test.go
+  s_344993999c180f::t_914608611099a0 280-307
+web/src/components/KubeActionDialog.tsx
+  s_344993999c180f::t_b19876a9ce7869 1-42,44-96,98-176
+  s_344993999c180f::t_2a0a64c0a3f2e7 43,97
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "af6c07252ed55876ff573eabe6acb255db368527",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
