@@ -125,6 +125,7 @@ web/src/api/client.ts
   s_344993999c180f::t_8ab602b8bbb0e3 330-341
 web/src/components/Shell.tsx
   s_344993999c180f::t_bf433576c50e6a 3,15,22-24
+  s_344993999c180f::t_6767726d4c16ce 9,75-83
 ---
 {
   "schema_version": "authorship/3.0.0",
