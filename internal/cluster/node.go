@@ -330,7 +330,16 @@ func (n *Node) Apply(ctx context.Context, cmd store.Command) (store.Result, erro
 
 // apply is Apply that also returns the entry's log index once it was
 // committed and applied here (zero when it was not proposed or not applied).
+// It refuses store.MigrateSchema, which only MigrateSchema proposes.
 func (n *Node) apply(ctx context.Context, cmd store.Command) (store.Result, uint64, error) {
+	if _, ok := cmd.(store.MigrateSchema); ok {
+		return store.Result{}, 0, errMigrateViaLog
+	}
+	return n.propose(ctx, cmd)
+}
+
+// propose is apply for any command.
+func (n *Node) propose(ctx context.Context, cmd store.Command) (store.Result, uint64, error) {
 	if n.raft == nil {
 		return store.Result{}, 0, errors.New("cluster: node not started")
 	}
@@ -497,6 +506,10 @@ type Peer struct {
 	ID       string `json:"id"`
 	Address  string `json:"address"`
 	Suffrage string `json:"suffrage"`
+	// Schema is the hub's store schema, filled by StatusWithSchemas;
+	// SchemaError says why it could not be read.
+	Schema      *SchemaInfo `json:"schema,omitempty"`
+	SchemaError string      `json:"schema_error,omitempty"`
 }
 
 // Status is this node's view of the cluster.
@@ -534,6 +547,36 @@ func (n *Node) Status() (Status, error) {
 	}
 	for _, s := range cf.Configuration().Servers {
 		st.Peers = append(st.Peers, Peer{ID: string(s.ID), Address: string(s.Address), Suffrage: s.Suffrage.String()})
+	}
+	return st, nil
+}
+
+// StatusWithSchemas is Status with every peer's store schema (see
+// HubSchemas).
+func (n *Node) StatusWithSchemas(ctx context.Context) (Status, error) {
+	st, err := n.Status()
+	if err != nil {
+		return st, err
+	}
+	// A status is read in a polling loop; a hub that does not answer soon
+	// shows its error rather than slowing every poll down.
+	ctx, cancel := context.WithTimeout(ctx, statusSchemaTimeout)
+	defer cancel()
+	hubs, err := n.HubSchemas(ctx)
+	if err != nil {
+		return st, err
+	}
+	for i := range st.Peers {
+		for _, h := range hubs {
+			switch {
+			case h.ID != st.Peers[i].ID:
+			case h.Err != nil:
+				st.Peers[i].SchemaError = h.Err.Error()
+			default:
+				si := h.Schema
+				st.Peers[i].Schema = &si
+			}
+		}
 	}
 	return st, nil
 }

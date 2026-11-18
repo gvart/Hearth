@@ -284,7 +284,7 @@ func schemaSQL(t *testing.T, db *sql.DB) map[string]string {
 // gatedInsert is a command of a newer release: it writes testMigration's table.
 type gatedInsert struct{ ID string }
 
-func (gatedInsert) Op() string        { return "gated_insert" }
+func (gatedInsert) Op() string       { return "gated_insert" }
 func (gatedInsert) minSchema() int64 { return nextSchema }
 func (c gatedInsert) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
 	_, err := tx.ExecContext(ctx, `INSERT INTO rolling_test (device_id) VALUES (?)`, c.ID)

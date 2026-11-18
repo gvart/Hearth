@@ -71,6 +71,15 @@ func startNodeBound(t *testing.T, ca *pki.CA, id, dir, addr string, bootstrap bo
 	bind func(*Node, *store.Store) store.Applier, tune ...func(*Config),
 ) *testNode {
 	t.Helper()
+	return startNodeStore(t, ca, id, dir, addr, bootstrap, bind, nil, tune...)
+}
+
+// startNodeStore is startNodeBound with extra store options, e.g.
+// store.WithExtraMigration for a hub running a newer binary.
+func startNodeStore(t *testing.T, ca *pki.CA, id, dir, addr string, bootstrap bool,
+	bind func(*Node, *store.Store) store.Applier, storeOpts []store.Option, tune ...func(*Config),
+) *testNode {
+	t.Helper()
 	if dir == "" {
 		dir = t.TempDir()
 	}
@@ -93,8 +102,9 @@ func startNodeBound(t *testing.T, ca *pki.CA, id, dir, addr string, bootstrap bo
 	if err != nil {
 		t.Fatal(err)
 	}
-	st, err := store.Open(t.Context(), filepath.Join(dir, "hearth.db"), store.WithoutUpgrade(),
-		store.WithApplier(func(s *store.Store) store.Applier { return bind(n, s) }))
+	opts := append([]store.Option{store.WithoutUpgrade(),
+		store.WithApplier(func(s *store.Store) store.Applier { return bind(n, s) })}, storeOpts...)
+	st, err := store.Open(t.Context(), filepath.Join(dir, "hearth.db"), opts...)
 	if err != nil {
 		t.Fatal(err)
 	}

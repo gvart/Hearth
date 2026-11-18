@@ -430,15 +430,16 @@ func (s *JoinServer) TransferLeadership(ctx context.Context, req *connect.Reques
 	return connect.NewResponse(&clusterv1.TransferLeadershipResponse{}), nil
 }
 
-// memberError maps a RemoveMember or TransferLeadership failure on the
-// leader. Callers are authenticated members, so the message goes back as is.
+// memberError maps a RemoveMember, TransferLeadership or MigrateSchema
+// failure on the leader. Callers are authenticated members, so the message goes back as is.
 func (s *JoinServer) memberError(err error) error {
 	switch {
 	case errors.Is(err, raft.ErrNotLeader):
 		return s.notLeaderError()
 	case errors.Is(err, store.ErrNotFound):
 		return connect.NewError(connect.CodeNotFound, err)
-	case errors.Is(err, ErrRemoveLeader), errors.Is(err, ErrLastVoter), errors.Is(err, ErrQuorumAtRisk):
+	case errors.Is(err, ErrRemoveLeader), errors.Is(err, ErrLastVoter), errors.Is(err, ErrQuorumAtRisk),
+		errors.Is(err, ErrSchemaUnsupported), errors.Is(err, store.ErrSchemaNotNewer):
 		return connect.NewError(connect.CodeFailedPrecondition, err)
 	default:
 		return connect.NewError(connect.CodeInternal, err)

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gvart/hearth/internal/cluster"
 )
 
 func TestClusterCommandsNeedAMember(t *testing.T) {
@@ -24,6 +26,9 @@ func TestClusterCommandsNeedAMember(t *testing.T) {
 	}
 	if err := runClusterTransfer(t.Context(), dir, "", io.Discard); err == nil || !strings.Contains(err.Error(), "not a cluster member") {
 		t.Errorf("transfer-leadership: err = %v", err)
+	}
+	if err := runClusterMigrate(t.Context(), dir, 0, false, io.Discard); err == nil || !strings.Contains(err.Error(), "not a cluster member") {
+		t.Errorf("migrate: err = %v", err)
 	}
 	if err := runClusterRemove(t.Context(), dir, "Bad ID", io.Discard); err == nil || !strings.Contains(err.Error(), "invalid node ID") {
 		t.Errorf("remove with an invalid ID: err = %v", err)
@@ -67,5 +72,40 @@ func TestJoinNeedsAToken(t *testing.T) {
 	opts.cluster.form = true
 	if _, _, _, err := startClusterNode(t.Context(), opts, slog.New(slog.DiscardHandler), func(error) {}, "", ""); err == nil {
 		t.Fatal("accepted --cluster with --join")
+	}
+}
+
+func TestMigratePlan(t *testing.T) {
+	peer := func(id string, cur, maxV int64) cluster.Peer {
+		return cluster.Peer{ID: id, Schema: &cluster.SchemaInfo{Current: cur, Max: maxV}}
+	}
+	down := cluster.Peer{ID: "c", SchemaError: "connection refused"}
+	tests := []struct {
+		name       string
+		peers      []cluster.Peer
+		to         int64
+		from, want int64
+		err        string
+	}{
+		{name: "newest all support", peers: []cluster.Peer{peer("a", 6, 8), peer("b", 6, 7), peer("c", 6, 8)}, from: 6, want: 7},
+		{name: "nothing newer", peers: []cluster.Peer{peer("a", 6, 6), peer("b", 6, 7)}, from: 6, want: 6},
+		{name: "explicit target", peers: []cluster.Peer{peer("a", 6, 8), peer("b", 6, 7)}, to: 8, from: 6, want: 8},
+		{name: "unknown hub", peers: []cluster.Peer{peer("a", 6, 8), down}, err: "c (connection refused)"},
+		{name: "unknown hub, explicit target", peers: []cluster.Peer{peer("a", 6, 8), down}, to: 7, from: 6, want: 7},
+		{name: "own schema unknown", peers: []cluster.Peer{peer("b", 6, 7)}, to: 7, err: "this hub's schema"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			from, got, err := migratePlan(cluster.Status{NodeID: "a", Peers: tt.peers}, tt.to)
+			if tt.err != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.err) {
+					t.Fatalf("err = %v, want it to mention %q", err, tt.err)
+				}
+				return
+			}
+			if err != nil || from != tt.from || got != tt.want {
+				t.Fatalf("migratePlan = %d, %d, %v; want %d, %d", from, got, err, tt.from, tt.want)
+			}
+		})
 	}
 }

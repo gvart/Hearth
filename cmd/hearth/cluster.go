@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -21,7 +22,8 @@ import (
 
 func newClusterCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "cluster", Short: "Manage the hub's Raft cluster"}
-	cmd.AddCommand(newClusterTokenCmd(), newClusterStatusCmd(), newClusterRemoveCmd(), newClusterTransferCmd())
+	cmd.AddCommand(newClusterTokenCmd(), newClusterStatusCmd(), newClusterRemoveCmd(), newClusterTransferCmd(),
+		newClusterMigrateCmd())
 	return cmd
 }
 
@@ -125,6 +127,128 @@ func runClusterTransfer(ctx context.Context, dataDir, to string, out io.Writer) 
 	return nil
 }
 
+func newClusterMigrateCmd() *cobra.Command {
+	var (
+		dataDir string
+		to      int64
+		dryRun  bool
+	)
+	cmd := &cobra.Command{
+		Use:   "migrate",
+		Short: "Migrate the cluster's database schema after a rolling upgrade",
+		Long: "Migrate every hub's database to a newer schema through the Raft log, once every hub runs a hearth\n" +
+			"that supports it (see the upgrade procedure in docs/cluster.md). Without --to it migrates to the\n" +
+			"newest schema every hub supports. The leader refuses, naming the hubs, if any hub does not support\n" +
+			"the target or cannot be asked. Downgrades are not supported: a migrated hub needs that hearth\n" +
+			"version or a newer one from then on. Run it on any member's host while its hub runs.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runClusterMigrate(cmd.Context(), dataDir, to, dryRun, cmd.OutOrStdout())
+		},
+	}
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir("hub"), "hub data directory (env HEARTH_DATA_DIR)")
+	cmd.Flags().Int64Var(&to, "to", 0, "schema version to migrate to (default: the newest every hub supports)")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print what would be migrated and stop")
+	return cmd
+}
+
+func runClusterMigrate(ctx context.Context, dataDir string, to int64, dryRun bool, out io.Writer) error {
+	if to < 0 {
+		return errors.New("--to must be positive")
+	}
+	st, cc, err := openClusterControl(ctx, dataDir)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+	defer cc.Close()
+	status, err := cc.Status(ctx)
+	if err != nil {
+		return err
+	}
+	from, target, err := migratePlan(status, to)
+	if err != nil {
+		return err
+	}
+	tw := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "HUB\tSCHEMA (DATABASE/SUPPORTED)\t")
+	for _, p := range status.Peers {
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t\n", p.ID, schemaColumn(p))
+	}
+	if err := tw.Flush(); err != nil {
+		return fmt.Errorf("write plan: %w", err)
+	}
+	switch {
+	case target <= from && to == 0:
+		_, err = fmt.Fprintf(out, "\nThe cluster is at schema %d, the newest every hub supports: nothing to migrate.\n", from)
+		return err
+	case target <= from:
+		return fmt.Errorf("--to %d: the cluster is at schema %d already", to, from)
+	case dryRun:
+		_, err = fmt.Fprintf(out, "\nWould migrate the cluster from schema %d to %d (dry run).\n", from, target)
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "\nMigrating the cluster from schema %d to %d...\n", from, target); err != nil {
+		return fmt.Errorf("write plan: %w", err)
+	}
+	err = policy.New(st.Audit()).Do(ctx, policy.Request{
+		ActorKind: policy.ActorAdmin,
+		ActorID:   adminActor(),
+		Action:    policy.ClusterMigrate,
+		Target:    fmt.Sprintf("schema %d", target),
+		Detail:    map[string]any{"from": from, "to": target},
+	}, func(ctx context.Context) error {
+		_, err := cc.MigrateSchema(ctx, target)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "Migrated: the cluster is at schema %d.\n", target); err != nil {
+		return fmt.Errorf("write result: %w", err)
+	}
+	return nil
+}
+
+// migratePlan returns the cluster's schema, from this hub's database, and
+// the schema to migrate to: to, or when to is zero the newest schema every
+// hub supports, which needs every hub's schema.
+func migratePlan(st cluster.Status, to int64) (from, target int64, err error) {
+	var (
+		found   bool
+		unknown []string
+	)
+	target = to
+	for _, p := range st.Peers {
+		if p.Schema == nil {
+			unknown = append(unknown, fmt.Sprintf("%s (%s)", p.ID, p.SchemaError))
+			continue
+		}
+		if p.ID == st.NodeID {
+			from, found = p.Schema.Current, true
+		}
+		if to == 0 && (target == 0 || p.Schema.Max < target) {
+			target = p.Schema.Max
+		}
+	}
+	switch {
+	case !found:
+		return 0, 0, errors.New("cannot read this hub's schema version")
+	case to == 0 && len(unknown) > 0:
+		return 0, 0, fmt.Errorf("cannot read the schema of every hub: %s; bring them back or remove them first, "+
+			"or pass --to", strings.Join(unknown, ", "))
+	}
+	return from, target, nil
+}
+
+// schemaColumn is a peer's schema as "database/supported", or why it is unknown.
+func schemaColumn(p cluster.Peer) string {
+	if p.Schema == nil {
+		return "? (" + p.SchemaError + ")"
+	}
+	return fmt.Sprintf("%d/%d", p.Schema.Current, p.Schema.Max)
+}
+
 // openClusterControl opens the store of a cluster member's hub (for the
 // audit log) and a client of its control socket.
 func openClusterControl(ctx context.Context, dataDir string) (*store.Store, *cluster.ControlClient, error) {
@@ -225,8 +349,9 @@ func newClusterStatusCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Show this hub's view of the cluster",
-		Long:  "Show the node ID, Raft state, leader, peers and log indexes as the hub on this host sees them.",
-		Args:  cobra.NoArgs,
+		Long: "Show the node ID, Raft state, leader, peers and log indexes as the hub on this host sees them,\n" +
+			"and each hub's database schema version and the newest its hearth supports.",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runClusterStatus(cmd.Context(), dataDir, asJSON, cmd.OutOrStdout())
 		},
@@ -263,13 +388,13 @@ func runClusterStatus(ctx context.Context, dataDir string, asJSON bool, out io.W
 	tw := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintf(tw, "Node:\t%s\nState:\t%s\nLeader:\t%s\nTerm:\t%d\nLast index:\t%d\nCommit index:\t%d\nApplied index:\t%d\n\n",
 		st.NodeID, st.State, leader, st.Term, st.LastIndex, st.CommitIndex, st.AppliedIndex)
-	_, _ = fmt.Fprintln(tw, "PEER\tADDRESS\tSUFFRAGE\t")
+	_, _ = fmt.Fprintln(tw, "PEER\tADDRESS\tSUFFRAGE\tSCHEMA (DATABASE/SUPPORTED)\t")
 	for _, p := range st.Peers {
 		mark := ""
 		if p.ID == st.LeaderID {
 			mark = " (leader)"
 		}
-		_, _ = fmt.Fprintf(tw, "%s%s\t%s\t%s\t\n", p.ID, mark, p.Address, p.Suffrage)
+		_, _ = fmt.Fprintf(tw, "%s%s\t%s\t%s\t%s\t\n", p.ID, mark, p.Address, p.Suffrage, schemaColumn(p))
 	}
 	if err := tw.Flush(); err != nil {
 		return fmt.Errorf("write status: %w", err)

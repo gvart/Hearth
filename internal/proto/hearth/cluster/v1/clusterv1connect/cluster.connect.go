@@ -47,6 +47,12 @@ const (
 	// ClusterServiceTransferLeadershipProcedure is the fully-qualified name of the ClusterService's
 	// TransferLeadership RPC.
 	ClusterServiceTransferLeadershipProcedure = "/hearth.cluster.v1.ClusterService/TransferLeadership"
+	// ClusterServiceSchemaInfoProcedure is the fully-qualified name of the ClusterService's SchemaInfo
+	// RPC.
+	ClusterServiceSchemaInfoProcedure = "/hearth.cluster.v1.ClusterService/SchemaInfo"
+	// ClusterServiceMigrateSchemaProcedure is the fully-qualified name of the ClusterService's
+	// MigrateSchema RPC.
+	ClusterServiceMigrateSchemaProcedure = "/hearth.cluster.v1.ClusterService/MigrateSchema"
 )
 
 // ClusterServiceClient is a client for the hearth.cluster.v1.ClusterService service.
@@ -72,6 +78,15 @@ type ClusterServiceClient interface {
 	// TransferLeadership hands leadership to another voter, on behalf of a
 	// member hub, authenticated and decided like RemoveMember.
 	TransferLeadership(context.Context, *connect.Request[v1.TransferLeadershipRequest]) (*connect.Response[v1.TransferLeadershipResponse], error)
+	// SchemaInfo reports this hub's store schema: the version its database is
+	// at and the newest its binary supports. Every member serves it, to
+	// members presenting their hub node certificate. The leader asks every hub
+	// before it migrates the cluster's schema.
+	SchemaInfo(context.Context, *connect.Request[v1.SchemaInfoRequest]) (*connect.Response[v1.SchemaInfoResponse], error)
+	// MigrateSchema migrates the cluster's store schema on behalf of a member
+	// hub, authenticated and decided like RemoveMember. The leader proposes it
+	// to the Raft log only if every hub's binary supports the target version.
+	MigrateSchema(context.Context, *connect.Request[v1.MigrateSchemaRequest]) (*connect.Response[v1.MigrateSchemaResponse], error)
 }
 
 // NewClusterServiceClient constructs a client for the hearth.cluster.v1.ClusterService service. By
@@ -115,6 +130,18 @@ func NewClusterServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(clusterServiceMethods.ByName("TransferLeadership")),
 			connect.WithClientOptions(opts...),
 		),
+		schemaInfo: connect.NewClient[v1.SchemaInfoRequest, v1.SchemaInfoResponse](
+			httpClient,
+			baseURL+ClusterServiceSchemaInfoProcedure,
+			connect.WithSchema(clusterServiceMethods.ByName("SchemaInfo")),
+			connect.WithClientOptions(opts...),
+		),
+		migrateSchema: connect.NewClient[v1.MigrateSchemaRequest, v1.MigrateSchemaResponse](
+			httpClient,
+			baseURL+ClusterServiceMigrateSchemaProcedure,
+			connect.WithSchema(clusterServiceMethods.ByName("MigrateSchema")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -125,6 +152,8 @@ type clusterServiceClient struct {
 	forward            *connect.Client[v1.ForwardRequest, v1.ForwardResponse]
 	removeMember       *connect.Client[v1.RemoveMemberRequest, v1.RemoveMemberResponse]
 	transferLeadership *connect.Client[v1.TransferLeadershipRequest, v1.TransferLeadershipResponse]
+	schemaInfo         *connect.Client[v1.SchemaInfoRequest, v1.SchemaInfoResponse]
+	migrateSchema      *connect.Client[v1.MigrateSchemaRequest, v1.MigrateSchemaResponse]
 }
 
 // Join calls hearth.cluster.v1.ClusterService.Join.
@@ -152,6 +181,16 @@ func (c *clusterServiceClient) TransferLeadership(ctx context.Context, req *conn
 	return c.transferLeadership.CallUnary(ctx, req)
 }
 
+// SchemaInfo calls hearth.cluster.v1.ClusterService.SchemaInfo.
+func (c *clusterServiceClient) SchemaInfo(ctx context.Context, req *connect.Request[v1.SchemaInfoRequest]) (*connect.Response[v1.SchemaInfoResponse], error) {
+	return c.schemaInfo.CallUnary(ctx, req)
+}
+
+// MigrateSchema calls hearth.cluster.v1.ClusterService.MigrateSchema.
+func (c *clusterServiceClient) MigrateSchema(ctx context.Context, req *connect.Request[v1.MigrateSchemaRequest]) (*connect.Response[v1.MigrateSchemaResponse], error) {
+	return c.migrateSchema.CallUnary(ctx, req)
+}
+
 // ClusterServiceHandler is an implementation of the hearth.cluster.v1.ClusterService service.
 type ClusterServiceHandler interface {
 	// Join consumes a join token, signs the new hub's CSR and hands it the CA,
@@ -175,6 +214,15 @@ type ClusterServiceHandler interface {
 	// TransferLeadership hands leadership to another voter, on behalf of a
 	// member hub, authenticated and decided like RemoveMember.
 	TransferLeadership(context.Context, *connect.Request[v1.TransferLeadershipRequest]) (*connect.Response[v1.TransferLeadershipResponse], error)
+	// SchemaInfo reports this hub's store schema: the version its database is
+	// at and the newest its binary supports. Every member serves it, to
+	// members presenting their hub node certificate. The leader asks every hub
+	// before it migrates the cluster's schema.
+	SchemaInfo(context.Context, *connect.Request[v1.SchemaInfoRequest]) (*connect.Response[v1.SchemaInfoResponse], error)
+	// MigrateSchema migrates the cluster's store schema on behalf of a member
+	// hub, authenticated and decided like RemoveMember. The leader proposes it
+	// to the Raft log only if every hub's binary supports the target version.
+	MigrateSchema(context.Context, *connect.Request[v1.MigrateSchemaRequest]) (*connect.Response[v1.MigrateSchemaResponse], error)
 }
 
 // NewClusterServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -214,6 +262,18 @@ func NewClusterServiceHandler(svc ClusterServiceHandler, opts ...connect.Handler
 		connect.WithSchema(clusterServiceMethods.ByName("TransferLeadership")),
 		connect.WithHandlerOptions(opts...),
 	)
+	clusterServiceSchemaInfoHandler := connect.NewUnaryHandler(
+		ClusterServiceSchemaInfoProcedure,
+		svc.SchemaInfo,
+		connect.WithSchema(clusterServiceMethods.ByName("SchemaInfo")),
+		connect.WithHandlerOptions(opts...),
+	)
+	clusterServiceMigrateSchemaHandler := connect.NewUnaryHandler(
+		ClusterServiceMigrateSchemaProcedure,
+		svc.MigrateSchema,
+		connect.WithSchema(clusterServiceMethods.ByName("MigrateSchema")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/hearth.cluster.v1.ClusterService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ClusterServiceJoinProcedure:
@@ -226,6 +286,10 @@ func NewClusterServiceHandler(svc ClusterServiceHandler, opts ...connect.Handler
 			clusterServiceRemoveMemberHandler.ServeHTTP(w, r)
 		case ClusterServiceTransferLeadershipProcedure:
 			clusterServiceTransferLeadershipHandler.ServeHTTP(w, r)
+		case ClusterServiceSchemaInfoProcedure:
+			clusterServiceSchemaInfoHandler.ServeHTTP(w, r)
+		case ClusterServiceMigrateSchemaProcedure:
+			clusterServiceMigrateSchemaHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -253,4 +317,12 @@ func (UnimplementedClusterServiceHandler) RemoveMember(context.Context, *connect
 
 func (UnimplementedClusterServiceHandler) TransferLeadership(context.Context, *connect.Request[v1.TransferLeadershipRequest]) (*connect.Response[v1.TransferLeadershipResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hearth.cluster.v1.ClusterService.TransferLeadership is not implemented"))
+}
+
+func (UnimplementedClusterServiceHandler) SchemaInfo(context.Context, *connect.Request[v1.SchemaInfoRequest]) (*connect.Response[v1.SchemaInfoResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hearth.cluster.v1.ClusterService.SchemaInfo is not implemented"))
+}
+
+func (UnimplementedClusterServiceHandler) MigrateSchema(context.Context, *connect.Request[v1.MigrateSchemaRequest]) (*connect.Response[v1.MigrateSchemaResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hearth.cluster.v1.ClusterService.MigrateSchema is not implemented"))
 }
