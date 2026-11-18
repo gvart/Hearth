@@ -1,0 +1,26 @@
+docs/cluster.md
+  s_344993999c180f::t_c37f6de376fe96 220-223
+internal/hub/password.go
+  s_344993999c180f::t_d51c1a7640f798 37-41
+  s_344993999c180f::t_a8c5aeb173a55b 42
+internal/hub/password_test.go
+  s_344993999c180f::t_2262aa3d2294d1 32-36
+  s_344993999c180f::t_cee0e4132019ca 17-20
+  s_344993999c180f::t_e8290d980b2dbf 59-62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "790ac081766653a1119d4e98f4e8d02292157827",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
