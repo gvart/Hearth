@@ -161,20 +161,20 @@ func fakeLogsFreed(t *testing.T, ceiling Ceiling, script string) (*logStreams, *
 
 const loopScript = `i=0; while :; do echo "2024-05-01T10:00:00Z line $i"; i=$((i+1)); sleep 0.01; done`
 
-// collector receives what a stream sends.
-type collector struct {
+// logCollector receives what a stream sends.
+type logCollector struct {
 	mu   sync.Mutex
 	msgs []*agentv1.LogLines
 }
 
-func (c *collector) send(_ context.Context, m *agentv1.AgentMessage) bool {
+func (c *logCollector) send(_ context.Context, m *agentv1.AgentMessage) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.msgs = append(c.msgs, m.GetLogLines())
 	return true
 }
 
-func (c *collector) lines() (n int, last *agentv1.LogLines) {
+func (c *logCollector) lines() (n int, last *agentv1.LogLines) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for _, m := range c.msgs {
@@ -204,14 +204,14 @@ func TestLogStreamDeniedBeyondCeiling(t *testing.T) {
 		{Manager: "podman", Name: "web"},
 		{Manager: "docker", Name: ""},
 	} {
-		var c collector
+		var c logCollector
 		l.stream(t.Context(), &agentv1.LogRequest{Id: "1", Source: src}, c.send)
 		_, last := c.lines()
 		if last == nil || !last.GetEnd() || last.GetError() == "" {
 			t.Errorf("stream of %v sent %v, want an end with an error", src, last)
 		}
 	}
-	var c collector
+	var c logCollector
 	l.stream(t.Context(), &agentv1.LogRequest{Id: "2", Source: &agentv1.LogSource{Manager: "docker", Name: "db"}}, c.send)
 	if _, last := c.lines(); !last.GetDenied() {
 		t.Errorf("beyond the ceiling: %v, want denied", last)
@@ -221,7 +221,7 @@ func TestLogStreamDeniedBeyondCeiling(t *testing.T) {
 	}
 	// The zero ceiling allows nothing.
 	l, _ = fakeLogs(t, Ceiling{}, loopScript)
-	c = collector{}
+	c = logCollector{}
 	l.stream(t.Context(), &agentv1.LogRequest{Id: "3", Source: &agentv1.LogSource{Manager: "docker", Name: "web"}}, c.send)
 	if _, last := c.lines(); !last.GetDenied() {
 		t.Errorf("zero ceiling: %v, want denied", last)
@@ -236,7 +236,7 @@ func TestLogStreamsShareAndStop(t *testing.T) {
 	l, started, freed := fakeLogsFreed(t, Ceiling{Logs: []string{"docker:*"}}, loopScript)
 	src := &agentv1.LogSource{Manager: "docker", Name: "web"}
 	var streams sync.WaitGroup
-	var a, b collector
+	var a, b logCollector
 	streams.Go(func() { l.stream(t.Context(), &agentv1.LogRequest{Id: "a", Source: src}, a.send) })
 	eventually(t, "first lines", func() bool { n, _ := a.lines(); return n >= 10 })
 	streams.Go(func() { l.stream(t.Context(), &agentv1.LogRequest{Id: "b", Source: src, Tail: 5}, b.send) })
@@ -265,7 +265,7 @@ func TestLogStreamsShareAndStop(t *testing.T) {
 		t.Errorf("memory freed %d times once the source stopped, want 1", n)
 	}
 	// A new stream starts a new process.
-	var c collector
+	var c logCollector
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan struct{})
 	go func() { defer close(done); l.stream(ctx, &agentv1.LogRequest{Id: "c", Source: src}, c.send) }()
@@ -282,7 +282,7 @@ func TestLogStreamsShareAndStop(t *testing.T) {
 func TestLogStreamSourceEnds(t *testing.T) {
 	t.Parallel()
 	l, _ := fakeLogs(t, Ceiling{Logs: []string{"systemd:*"}}, `echo '{"MESSAGE":"bye"}'; echo 'No journal files were found.' >&2; exit 1`)
-	var c collector
+	var c logCollector
 	l.stream(t.Context(), &agentv1.LogRequest{Id: "1", Source: &agentv1.LogSource{Manager: "systemd", Name: "x.service"}}, c.send)
 	l.wait()
 	n, last := c.lines()
