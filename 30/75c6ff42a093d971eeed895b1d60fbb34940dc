@@ -1,0 +1,84 @@
+internal/cluster/drift.go
+  s_344993999c180f::t_0f125deca7d6c5 1-206
+proto/hearth/cluster/v1/cluster.proto
+  s_344993999c180f::t_96141befee6c6c 41-44,155-163
+  s_344993999c180f::t_5d928588cb782c 164
+web/src/api/hooks.ts
+  s_344993999c180f::t_f11c984fb6b622 28
+  s_344993999c180f::t_b32e04e50e4f82 117-121
+internal/cluster/configdigest_test.go
+  s_344993999c180f::t_ca3ac60979333e 1-122
+docs/cluster.md
+  s_344993999c180f::t_6851fc9aa171d6 111-113
+  s_344993999c180f::t_9b624ae9734747 78-110,114-118,122-138
+  s_344993999c180f::t_b80f61b8e0d65b 119-121
+  s_344993999c180f::t_55e587e817a9eb 73-74
+internal/hub/configdrift.go
+  s_344993999c180f::t_d237bb8597b39e 1-24
+internal/automation/load_test.go
+  s_344993999c180f::t_5ab266458c8d76 30-81
+web/src/components/Shell.tsx
+  s_344993999c180f::t_6115f15d637213 5
+  s_344993999c180f::t_373f391e0f36d8 100
+internal/hub/api.go
+  s_344993999c180f::t_c846807691ce2d 105
+  s_344993999c180f::t_3b9d607e07a5ce 80
+  s_344993999c180f::t_795a50f949b486 175-176
+internal/cluster/node.go
+  s_344993999c180f::t_95b6ca97679ac1 132-134
+  s_344993999c180f::t_8d31f3f6c264e7 572
+  s_344993999c180f::t_aec14bc598f9b5 582-587,589
+  s_344993999c180f::t_426cea0b13edbd 540-542
+internal/hub/server.go
+  s_344993999c180f::t_c1159e438082e0 80-83
+internal/proto/hearth/cluster/v1/cluster.pb.go
+  s_344993999c180f::t_b145702fc168e3 761-844,888-894,903-904,919,935-937,940-961,975
+internal/hub/configdrift_test.go
+  s_344993999c180f::t_fbdda26849a478 1-51
+cmd/hearth/hub.go
+  s_344993999c180f::t_9bb3085e64d464 328,330
+  s_344993999c180f::t_c42f1294f712cc 204
+  s_344993999c180f::t_5c36c1a96457a8 311
+  s_344993999c180f::t_d5141a799dd512 329
+  s_344993999c180f::t_94a6a70f1e561c 602-609,611-612
+  s_344993999c180f::t_57d193a192a0be 205
+  s_344993999c180f::t_04b7e9ae318cd6 272
+web/src/index.css
+  s_344993999c180f::t_044cfaae892bb9 314-341,343-344
+  s_344993999c180f::t_ecfe4611d02549 342
+internal/proto/hearth/cluster/v1/clusterv1connect/cluster.connect.go
+  s_344993999c180f::t_96141befee6c6c 56-58,93-96,152-157,170,208-212,245-248,300-305,322-323,360-362
+  s_344993999c180f::t_85b063e7fb7423 363
+internal/cluster/drift_test.go
+  s_344993999c180f::t_e130a400892d8f 1-333
+cmd/hearth/cluster.go
+  s_344993999c180f::t_122a2cac36dc78 405-410,416-427
+  s_344993999c180f::t_55f6b26f9c186a 428
+web/src/components/ConfigDriftBanner.tsx
+  s_344993999c180f::t_e665036d8ed0c0 1-74
+internal/automation/load.go
+  s_344993999c180f::t_6b8b4ceff0ed19 86-95,97-105
+  s_344993999c180f::t_456ec05ca3fbf6 7
+  s_344993999c180f::t_cace5f41943988 96
+web/src/api/client.ts
+  s_344993999c180f::t_91dfec247600fb 62-77
+  s_344993999c180f::t_755fe8c2e5fef9 403
+internal/cluster/configdigest.go
+  s_344993999c180f::t_096d4095ed828d 1-53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3075c6ff42a093d971eeed895b1d60fbb34940dc",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": null
+    }
+  }
+}
