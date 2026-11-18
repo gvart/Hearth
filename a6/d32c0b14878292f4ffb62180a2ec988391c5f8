@@ -1,0 +1,68 @@
+CLAUDE.md
+  s_344993999c180f::t_092b318acbd3ee 46
+internal/integrations/pihole/client.go
+  s_344993999c180f::t_c01208c201241d 239,250
+web/src/api/client.ts
+  s_344993999c180f::t_730b6a5cb77c3e 103-104
+  s_344993999c180f::t_b0d86e89cd91d0 110,112-115
+internal/store/command_test.go
+  s_344993999c180f::t_c01208c201241d 69-72
+internal/hub/network.go
+  s_344993999c180f::t_59658a0f453484 26-29,33-36,39
+docs/discovery.md
+  s_344993999c180f::t_fa77b94fdc93c5 104-106
+  s_344993999c180f::t_aff17dc6a09222 57-59
+cmd/hearth/hub_import.go
+  s_344993999c180f::t_5e133207d0149b 1-67
+cmd/hearth/hub_import_test.go
+  s_344993999c180f::t_86745af6622efd 1-63
+internal/store/networkhosts_test.go
+  s_344993999c180f::t_c01208c201241d 127-130,134-137
+internal/discovery/import_test.go
+  s_344993999c180f::t_c01208c201241d 100-107,149-152
+docs/pihole.md
+  s_344993999c180f::t_baff541d6ca669 1-128
+internal/integrations/pihole/pihole_test.go
+  s_344993999c180f::t_320de27369eeed 11,18-19
+  s_344993999c180f::t_c01208c201241d 127-130
+  s_344993999c180f::t_3aa50ebaf304da 185-228
+web/src/components/UnmanagedHosts.tsx
+  s_344993999c180f::t_9e1142a6376985 76-84
+  s_344993999c180f::t_c8fa068c0ef86f 21-26
+  s_344993999c180f::t_eeaae2a4f67499 1
+  s_344993999c180f::t_54d573c75dd63b 57
+cmd/hearth/hub.go
+  s_344993999c180f::t_a49b3734f3e64e 426,428
+  s_344993999c180f::t_dcf2085dee1b02 395-401
+  s_344993999c180f::t_1df8fab57a8723 444-448
+  s_344993999c180f::t_0b64c3939f5de5 139-147
+  s_344993999c180f::t_bebca3048525b5 103
+  s_344993999c180f::t_8b061e5f65bfb4 97-98
+  s_344993999c180f::t_aea07554b95fb8 67-75
+  s_344993999c180f::t_21c02b37920b23 367
+  s_344993999c180f::t_7eb8d63d6af1f4 410-412
+  s_344993999c180f::t_caf1313027a1ae 188-191
+site/src/pages.mjs
+  s_344993999c180f::t_3d293d9dec2339 11
+internal/hub/network_test.go
+  s_344993999c180f::t_6834fde49d998e 34-40
+  s_344993999c180f::t_1e1bb543f3e836 53,60-66,68-69
+internal/store/networkhosts.go
+  s_344993999c180f::t_c01208c201241d 102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a6d32c0b14878292f4ffb62180a2ec988391c5f8",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}

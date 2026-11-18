@@ -1,0 +1,49 @@
+internal/integrations/pihole/pihole_test.go
+  s_344993999c180f::t_e77b4e91dd925e 1-205
+internal/discovery/import_test.go
+  s_344993999c180f::t_2e380021e1a9f0 1-241
+internal/policy/policy.go
+  s_344993999c180f::t_498e8d684775ff 125-127
+  s_344993999c180f::t_8e30ea9d49919f 265-266
+internal/discovery/import.go
+  s_344993999c180f::t_5c2f0e5e691cd6 1-232,235-236,238-241
+  s_344993999c180f::t_ada56e1f9b7f7b 233-234,237
+internal/discovery/leasefile.go
+  s_344993999c180f::t_c530c5e20b31bb 1-181
+internal/store/networkhosts.go
+  s_344993999c180f::t_a6b988d28ed660 198-201,204,208
+  s_344993999c180f::t_6cbb99d0b2f32c 10-11,20-36,48-52,74,101-102,109,121-129,131,135,137-141,145,149-168,193-197,202-203,205-206,214-219,227-260,274-358
+  s_344993999c180f::t_0b05a2516cea2b 224-226
+internal/store/command.go
+  s_344993999c180f::t_f4beb8b6ffc8a1 697-698
+internal/store/command_test.go
+  s_344993999c180f::t_9e2a0ed59ee385 68-72
+  s_344993999c180f::t_2924e2cf5b5b19 337-340
+internal/store/networkhosts_test.go
+  s_344993999c180f::t_22ba08df695cbe 176-202
+  s_344993999c180f::t_57f27c80e9ee85 109-175,203-236
+  s_344993999c180f::t_3a322c500ea3f3 8
+internal/integrations/pihole/client.go
+  s_344993999c180f::t_7bea840673c867 1-231,234-281
+  s_344993999c180f::t_a132958e4e7990 232-233
+internal/store/migrations/00014_network_host_sources.sql
+  s_344993999c180f::t_1527d829b22ad9 1-14
+internal/policy/guardrails_test.go
+  s_344993999c180f::t_be1b6ab04eae3c 138
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "795da624d157f6cd5d664e47c47c1bd861e3c423",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
