@@ -24,6 +24,7 @@ import (
 	"github.com/gvart/hearth/internal/hub"
 	"github.com/gvart/hearth/internal/integrations/kubernetes"
 	"github.com/gvart/hearth/internal/integrations/prometheus"
+	"github.com/gvart/hearth/internal/mcpserver"
 	"github.com/gvart/hearth/internal/notify"
 	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/policy"
@@ -229,6 +230,14 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	uiMux := http.NewServeMux()
 	uiMux.Handle("/", webH)
 	uiMux.Handle("GET /api/v1/events", hub.EndOnStop(stopping, webH))
+	automationsDir := opts.automationsDir
+	if automationsDir == "" {
+		automationsDir = filepath.Join(opts.dataDir, "automations")
+	}
+	uiMux.Handle(mcpserver.Path, hub.EndOnStop(stopping, mcpserver.Handler(mcpserver.Config{
+		Devices: st.Devices(), Live: reg.Live, Tokens: st.MCPTokens(), Policy: pol, Agents: agents, Kube: kube,
+		Metrics: hub.AutomationMetrics(st, prom), AutomationsDir: automationsDir, Version: opts.version, Log: log,
+	})))
 	var tlsWeb http.Handler = uiMux
 	if node != nil {
 		// ClusterService is served over TLS only: Promote authenticates
@@ -281,10 +290,6 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	logAttrs = append(logAttrs, "prometheus", prom != nil)
 	log.InfoContext(ctx, "hub listening", logAttrs...)
 
-	automationsDir := opts.automationsDir
-	if automationsDir == "" {
-		automationsDir = filepath.Join(opts.dataDir, "automations")
-	}
 	kinds := automation.Builtin(log)
 	maps.Copy(kinds.Triggers, automation.Triggers(automation.TriggerDeps{
 		Devices: hub.AutomationDevices(reg),

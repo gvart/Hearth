@@ -59,6 +59,8 @@ func allCommands() []Command {
 		DecideApproval{ID: "ap1", Status: "approved", By: "admin/root", At: 19},
 		CreateApprovalLink{Hash: []byte{6, 7}, ApprovalID: "ap1", ExpiresAt: 20},
 		UseApprovalLink{Hash: []byte{6, 7}, Now: 19},
+		CreateMCPToken{Name: "claude", Hash: []byte{3, 3}, Scope: "safe", CreatedAt: 21},
+		RevokeMCPToken{Name: "claude", At: 22},
 	}
 }
 
@@ -313,6 +315,10 @@ func runScenario(t *testing.T, s *Store) {
 	must(err)
 	_, err = s.ApprovalLinks().Use(ctx, "link-1", at(time.Hour))
 	wantErr(err, ErrTokenUsed)
+	must(s.MCPTokens().Create(ctx, "claude", "mcp-secret", "safe", at(2*time.Hour)))
+	must(s.MCPTokens().Create(ctx, "old", "mcp-old", "read", at(2*time.Hour)))
+	must(s.MCPTokens().Revoke(ctx, "old", at(2*time.Hour+time.Minute)))
+	wantErr(s.MCPTokens().Revoke(ctx, "old", at(2*time.Hour+time.Minute)), ErrNotFound)
 }
 
 // dumpTables returns every row of every table (sqlite_sequence included,
@@ -405,7 +411,7 @@ func TestReplayIsDeterministic(t *testing.T) {
 		}
 	}
 	want, got := dumpTables(t, src.db), dumpTables(t, dst.db)
-	for _, table := range []string{"admin", "audit_log", "automation_runs", "certs", "cluster_hubs", "devices", "join_tokens", "sessions", "sqlite_sequence", "tokens"} {
+	for _, table := range []string{"admin", "audit_log", "automation_runs", "certs", "cluster_hubs", "devices", "join_tokens", "mcp_tokens", "sessions", "sqlite_sequence", "tokens"} {
 		if len(want[table]) == 0 {
 			t.Errorf("scenario left %s empty; the comparison would prove nothing", table)
 		}

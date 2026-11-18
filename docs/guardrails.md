@@ -3,7 +3,7 @@ title: Guardrails
 description: Allow, confirm or deny each class of action, approvals, device ceilings and dry runs.
 ---
 
-Every action, from the CLI, the web UI or an automation, goes through the hub's policy and lands in
+Every action, from the CLI, the web UI, an automation or an MCP client, goes through the hub's policy and lands in
 the audit log. Three guardrails sit on top of the built-in action table:
 
 - a per-class **policy file**: allow, hold for approval (`confirm`), or deny;
@@ -14,10 +14,11 @@ the audit log. Three guardrails sit on top of the built-in action table:
 
 `<data-dir>/policy.yaml` on the hub host. The hub reads it at start; CLI commands on the hub host
 read it on every run. Without it, every action the table allows is allowed, except dangerous actions
-of automations, which are denied unless granted.
+of automations, which are denied unless granted, and dangerous actions of MCP clients, which are held
+for approval ([mcp.md](mcp.md)).
 
 ```yaml
-classes:                 # for every operator client: admin (CLI), web (UI), automation
+classes:                 # for every operator client: admin (CLI), web (UI), automation, mcp
   read: allow
   safe: allow
   dangerous: confirm     # allow | confirm | deny
@@ -112,11 +113,12 @@ report no ceiling, and the hub sends them no actions until they are upgraded.
 
 ## Dry runs
 
-- CLI: `--dry-run` on `token create`, `device revoke` and the `cluster` commands that change
-  something. The decision is audited with the result `dry-run` and printed; nothing is done.
+- CLI: `--dry-run` on `token create`, `device revoke`, `mcp token create|revoke` and the `cluster`
+  commands that change something. The decision is audited with the result `dry-run` and printed; nothing is done.
 - API: `POST /api/v1/tokens` with `"dry_run": true` answers `{"dry_run": true, "decision": ...}`.
 - Kubernetes actions: `"dry_run": true` plans the action (see [kubernetes.md](kubernetes.md)) and
   audits the decision as a dry run.
+- MCP: every action tool takes `dry_run` ([mcp.md](mcp.md)).
 - Automations: `hearth hub --automations-dry-run` audits every action's decision and runs none
   (Kubernetes actions it would allow are planned, and the plan recorded in the run; triggers still
   watch, so checks `from` a device still run, as they change nothing);

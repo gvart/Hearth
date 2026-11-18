@@ -471,9 +471,9 @@ func (m *Manager) Remove(ctx context.Context, actorID, id string) error {
 }
 
 // Logs returns up to tail of the last lines of a pod container's log
-// (the pod's only container if container is empty), on behalf of a web
-// session from actorID. Reading logs is a policy action, audited.
-func (m *Manager) Logs(ctx context.Context, actorID, id, namespace, pod, container string, tail int) (string, error) {
+// (the pod's only container if container is empty), on behalf of
+// actorKind/actorID (a web session, or an MCP client). Reading logs is a policy action, audited.
+func (m *Manager) Logs(ctx context.Context, actorKind, actorID, id, namespace, pod, container string, tail int) (string, error) {
 	r, info, err := m.get(id)
 	if err != nil {
 		return "", err
@@ -489,7 +489,7 @@ func (m *Manager) Logs(ctx context.Context, actorID, id, namespace, pod, contain
 	tail = max(1, min(tail, MaxLogLines))
 	var out []byte
 	err = m.policy.Do(ctx, policy.Request{
-		ActorKind: policy.ActorWeb, ActorID: actorID, Action: policy.KubePodLogs,
+		ActorKind: actorKind, ActorID: actorID, Action: policy.KubePodLogs,
 		Target: info.Name + "/" + namespace + "/" + pod,
 		Detail: map[string]any{"container": container, "tail": tail},
 	}, func(ctx context.Context) error {
