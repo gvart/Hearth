@@ -285,11 +285,25 @@ func TestEngineDo(t *testing.T) {
 			wantResult:   "ok",
 		},
 		{
-			name:         "automation cannot drain a node",
-			req:          Request{ActorKind: ActorAutomation, ActorID: "trusted", Action: KubeNodeDrain, Target: "lab/pi-1"},
+			name:         "ungranted automation cannot drain a node",
+			req:          Request{ActorKind: ActorAutomation, ActorID: "nightly", Action: KubeNodeDrain, Target: "lab/pi-1"},
 			wantErr:      ErrDenied,
 			wantDecision: Deny,
-			wantResult:   "actor kind not allowed",
+			wantResult:   "dangerous action not granted to this automation",
+		},
+		{
+			name:         "granted automation can drain a node",
+			req:          Request{ActorKind: ActorAutomation, ActorID: "trusted", Action: KubeNodeDrain, Target: "lab/pi-1"},
+			wantRan:      true,
+			wantDecision: Allow,
+			wantResult:   "ok",
+		},
+		{
+			name:         "automation can restart a workload",
+			req:          Request{ActorKind: ActorAutomation, ActorID: "nightly", Action: KubeWorkloadRestart, Target: "lab/Deployment/default/web"},
+			wantRan:      true,
+			wantDecision: Allow,
+			wantResult:   "ok",
 		},
 		{
 			name:         "agent token cannot scale a workload",
@@ -396,6 +410,36 @@ func TestEngineDoAuditFailure(t *testing.T) {
 func TestBeyondCeilingIsADenial(t *testing.T) {
 	if !errors.Is(fmt.Errorf("exec on pi: %w", ErrBeyondCeiling), ErrDenied) {
 		t.Error("ErrBeyondCeiling does not match ErrDenied")
+	}
+}
+
+// Only the context Do passes to an allowed action is granted it, and only
+// that action; a denial grants nothing.
+func TestGranted(t *testing.T) {
+	if Granted(t.Context(), KubeNodeDrain) {
+		t.Fatal("a plain context is granted")
+	}
+	e := New(&memAudit{})
+	var got, other, carried bool
+	req := Request{ActorKind: ActorWeb, ActorID: "192.0.2.1", Action: KubeNodeDrain, Target: "lab/pi-1"}
+	if err := e.Do(t.Context(), req, func(ctx context.Context) error {
+		got, other = Granted(ctx, KubeNodeDrain), Granted(ctx, KubePodDelete)
+		carried = Granted(WithGrant(context.Background(), ctx), KubeNodeDrain)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !got || other || !carried {
+		t.Errorf("granted = %v, other action = %v, carried = %v; want true, false, true", got, other, carried)
+	}
+	if Granted(WithGrant(t.Context(), t.Context()), KubeNodeDrain) {
+		t.Error("WithGrant made a grant from nothing")
+	}
+
+	ran := false
+	denied := Request{ActorKind: ActorAutomation, ActorID: "nightly", Action: KubeNodeDrain, Target: "lab/pi-1"}
+	if err := e.Do(t.Context(), denied, func(context.Context) error { ran = true; return nil }); !errors.Is(err, ErrDenied) || ran {
+		t.Errorf("ungranted automation drain: err = %v, ran = %v", err, ran)
 	}
 }
 

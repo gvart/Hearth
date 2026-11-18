@@ -122,7 +122,7 @@ func (e *Engine) Do(ctx context.Context, req Request, fn func(context.Context) e
 	var runErr error
 	result := reason
 	if decision == Allow {
-		runErr = fn(ctx)
+		runErr = fn(context.WithValue(ctx, grantKey{}, req.Action))
 		result = "ok"
 		if runErr != nil {
 			result = "error: " + runErr.Error()
@@ -135,6 +135,28 @@ func (e *Engine) Do(ctx context.Context, req Request, fn func(context.Context) e
 		return denied(req, reason, precheckErr)
 	}
 	return runErr
+}
+
+// grantKey is the context key of the action Do allowed: the context it
+// passes to fn carries it.
+type grantKey struct{}
+
+// Granted reports whether ctx is the context Do passes to the function it
+// runs for action a, or derives from it. An entry point that carries out an
+// action without auditing it itself checks it, so that it cannot run
+// outside policy: only Do grants.
+func Granted(ctx context.Context, a Action) bool {
+	g, ok := ctx.Value(grantKey{}).(Action)
+	return ok && g == a
+}
+
+// WithGrant returns ctx carrying the grant of granted, if it has one: for a
+// function Do runs that goes on in a context of its own.
+func WithGrant(ctx, granted context.Context) context.Context {
+	if g, ok := granted.Value(grantKey{}).(Action); ok {
+		return context.WithValue(ctx, grantKey{}, g)
+	}
+	return ctx
 }
 
 func denied(req Request, reason string, precheckErr error) error {

@@ -288,7 +288,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		Metrics: hub.AutomationMetrics(st, prom),
 		Log:     log,
 	}))
-	maps.Copy(kinds.Actions, automation.Actions(automation.ActionDeps{Agents: agents, Notifier: notifier}))
+	maps.Copy(kinds.Actions, automation.Actions(automation.ActionDeps{Agents: agents, Notifier: notifier, Kube: kube}))
 	automations := automation.New(automation.Config{
 		Dir:    automationsDir,
 		Kinds:  kinds,

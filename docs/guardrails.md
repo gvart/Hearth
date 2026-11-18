@@ -74,7 +74,8 @@ report no ceiling, and the hub sends them no actions until they are upgraded.
 - API: `POST /api/v1/tokens` with `"dry_run": true` answers `{"dry_run": true, "decision": ...}`.
 - Kubernetes actions: `"dry_run": true` plans the action (see [kubernetes.md](kubernetes.md)) and
   audits the decision as a dry run.
-- Automations: `hearth hub --automations-dry-run` audits every action's decision and runs none;
+- Automations: `hearth hub --automations-dry-run` audits every action's decision and runs none
+  (Kubernetes actions it would allow are planned, and the plan recorded in the run);
   `hearth automation plan <file>` checks a file without touching policy.
 
 ## Audit log

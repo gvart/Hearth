@@ -62,7 +62,8 @@ On a hub cluster upgraded from an older version, run `hearth cluster migrate` be
 ## Actions
 
 Deploys stay with your GitOps tool (Argo CD, Flux); Hearth has the few day-two actions a homelab needs.
-They are buttons on the Kubernetes page and `POST /api/v1/kube/clusters/{id}/actions`:
+They are buttons on the Kubernetes page, `POST /api/v1/kube/clusters/{id}/actions`, and the
+`kube_*` [automation actions](automations.md#kubernetes-actions):
 
 | Action                                    | Policy action           | Class     | What it does                                                                |
 | ----------------------------------------- | ----------------------- | --------- | --------------------------------------------------------------------------- |
@@ -80,6 +81,11 @@ They are buttons on the Kubernetes page and `POST /api/v1/kube/clusters/{id}/act
 - **Decided, then audited.** Carrying an action out is a policy decision taken before anything is sent
   to the cluster: a denied action sends no request at all. The decision and the outcome are audited with
   the cluster, the object and, for a scale, the replica count.
+- **From automations** the actor is `automation/<id>`, and the same rules apply: the safe actions
+  run, and a drain is denied unless that automation is granted dangerous actions or an operator
+  approves it (see [automations.md](automations.md#kubernetes-actions)). The automation runtime
+  decides on and audits each action itself, once; the Kubernetes integration carries out an action
+  only inside a policy decision that allowed that very action.
 - **Drain** works like `kubectl drain`: it cordons the node, then evicts every pod on it through the
   Eviction API, so **PodDisruptionBudgets are honoured**. An eviction a budget refuses (HTTP 429) is
   retried every 5 seconds. DaemonSet pods and static (mirror) pods are skipped, as their controllers

@@ -106,6 +106,10 @@ type kubeAction struct {
 	plan    func(ctx context.Context) (*plan, error)
 }
 
+// ErrNotGranted is returned by RunAction outside a policy decision that
+// allowed the action.
+var ErrNotGranted = errors.New("not allowed by policy")
+
 // Act plans req on cluster id and, unless it is a dry run, carries it out on
 // behalf of a web session from actorID. Carrying it out is a policy action,
 // decided before anything is sent to the cluster and audited; a dry run only
@@ -116,59 +120,143 @@ func (m *Manager) Act(ctx context.Context, actorID, id string, req ActionRequest
 	if err != nil {
 		return ActionResult{}, err
 	}
-	a, err := m.action(r, req)
+	p, err := m.prepare(r, info, req)
 	if err != nil {
 		return ActionResult{}, err
 	}
-	if r.w == nil {
-		return ActionResult{}, fmt.Errorf("cluster %s: %s", info.Name, r.err)
-	}
-	class, _ := policy.ClassOf(a.policy)
-	res := ActionResult{Action: req.Action, Class: string(class), Target: a.target, DryRun: req.DryRun, Steps: []string{}, Warnings: []string{}}
-	fill := func(p *plan) {
-		res.Summary = p.summary
-		res.Steps = append(res.Steps, p.steps...)
-		res.Warnings = append(res.Warnings, p.warnings...)
-	}
 	detail := map[string]any{"cluster_id": id}
-	maps.Copy(detail, a.detail)
+	maps.Copy(detail, p.a.detail)
 	polReq := policy.Request{
-		ActorKind: policy.ActorWeb, ActorID: actorID, Action: a.policy,
-		Target: info.Name + "/" + a.target, Detail: detail, DryRun: req.DryRun,
+		ActorKind: policy.ActorWeb, ActorID: actorID, Action: p.a.policy,
+		Target: info.Name + "/" + p.a.target, Detail: detail, DryRun: req.DryRun,
 	}
 	if req.DryRun {
-		ctx, cancel := context.WithTimeout(ctx, actionTimeout)
-		defer cancel()
-		p, err := a.plan(ctx)
-		if err != nil {
+		if err := p.plan(ctx); err != nil {
 			return ActionResult{}, actionError(req, err)
 		}
-		fill(p)
 		// The engine decides and audits a dry run, and never runs it.
 		if err := m.policy.Do(ctx, polReq, func(context.Context) error { return nil }); err != nil {
 			return ActionResult{}, actionError(req, err)
 		}
-		return res, nil
+		return p.res, nil
 	}
-	err = m.policy.Do(ctx, polReq, func(ctx context.Context) error {
-		ctx, cancel := context.WithTimeout(ctx, a.timeout)
-		defer cancel()
-		p, err := a.plan(ctx)
-		if err != nil {
-			return err
-		}
-		fill(p)
-		if p.apply == nil {
-			res.Result = "Nothing to do."
-			return nil
-		}
-		res.Result, err = p.apply(ctx)
-		return err
-	})
-	if err != nil {
+	if err := m.policy.Do(ctx, polReq, p.apply); err != nil {
 		return ActionResult{}, actionError(req, err)
 	}
-	return res, nil
+	return p.res, nil
+}
+
+// PlanAction plans req on the cluster named cluster, as a dry run of Act
+// does, without deciding or auditing it: it only reads the objects
+// involved, as the snapshot does. It is for callers that decide on req
+// themselves, such as automations.
+func (m *Manager) PlanAction(ctx context.Context, cluster string, req ActionRequest) (ActionResult, error) {
+	p, err := m.prepareNamed(cluster, req)
+	if err != nil {
+		return ActionResult{}, err
+	}
+	p.res.DryRun = true
+	if err := p.plan(ctx); err != nil {
+		return ActionResult{}, actionError(req, err)
+	}
+	return p.res, nil
+}
+
+// RunAction carries out req on the cluster named cluster without auditing
+// it, for a caller that wraps it in policy.Engine.Do itself, as the
+// automation runtime does with its own actor. It runs only in a context
+// policy granted req's action (policy.Granted), and fails with
+// ErrNotGranted otherwise, before anything is sent to the cluster.
+func (m *Manager) RunAction(ctx context.Context, cluster string, req ActionRequest) (ActionResult, error) {
+	if req.DryRun {
+		return ActionResult{}, badAction("a dry run is PlanAction")
+	}
+	p, err := m.prepareNamed(cluster, req)
+	if err != nil {
+		return ActionResult{}, err
+	}
+	if err := p.apply(ctx); err != nil {
+		return ActionResult{}, actionError(req, err)
+	}
+	return p.res, nil
+}
+
+// RequestPolicy validates req as far as it can without a cluster, and
+// returns the policy action that carrying it out is.
+func RequestPolicy(req ActionRequest) (policy.Action, error) {
+	a, err := (&Manager{}).action(nil, req)
+	if err != nil {
+		return "", err
+	}
+	return a.policy, nil
+}
+
+// prepared is a validated request on a running cluster, and its result.
+type prepared struct {
+	a   *kubeAction
+	res ActionResult
+}
+
+func (m *Manager) prepareNamed(cluster string, req ActionRequest) (*prepared, error) {
+	r, info, err := m.getNamed(cluster)
+	if err != nil {
+		return nil, err
+	}
+	return m.prepare(r, info, req)
+}
+
+func (m *Manager) prepare(r *running, info ClusterInfo, req ActionRequest) (*prepared, error) {
+	a, err := m.action(r, req)
+	if err != nil {
+		return nil, err
+	}
+	if r.w == nil {
+		return nil, fmt.Errorf("cluster %s: %s", info.Name, r.err)
+	}
+	class, _ := policy.ClassOf(a.policy)
+	return &prepared{a: a, res: ActionResult{
+		Action: req.Action, Class: string(class), Target: a.target, DryRun: req.DryRun,
+		Steps: []string{}, Warnings: []string{},
+	}}, nil
+}
+
+func (p *prepared) fill(pl *plan) {
+	p.res.Summary = pl.summary
+	p.res.Steps = append(p.res.Steps, pl.steps...)
+	p.res.Warnings = append(p.res.Warnings, pl.warnings...)
+}
+
+// plan reads the objects involved and fills the result's plan.
+func (p *prepared) plan(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, actionTimeout)
+	defer cancel()
+	pl, err := p.a.plan(ctx)
+	if err != nil {
+		return err
+	}
+	p.fill(pl)
+	return nil
+}
+
+// apply plans the action and carries it out, only in a context policy
+// granted it.
+func (p *prepared) apply(ctx context.Context) error {
+	if !policy.Granted(ctx, p.a.policy) {
+		return fmt.Errorf("%s: %w", p.a.policy, ErrNotGranted)
+	}
+	ctx, cancel := context.WithTimeout(ctx, p.a.timeout)
+	defer cancel()
+	pl, err := p.a.plan(ctx)
+	if err != nil {
+		return err
+	}
+	p.fill(pl)
+	if pl.apply == nil {
+		p.res.Result = "Nothing to do."
+		return nil
+	}
+	p.res.Result, err = pl.apply(ctx)
+	return err
 }
 
 func actionError(req ActionRequest, err error) error {
