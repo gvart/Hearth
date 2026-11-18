@@ -1,0 +1,60 @@
+internal/agent/shell.go
+  s_344993999c180f::t_a97a3780438ec6 122
+  s_344993999c180f::t_86ac49ba98a9f4 280,286
+  s_344993999c180f::t_4e42e6aca957cc 46-48
+  s_344993999c180f::t_55976796efbf13 155-158
+internal/hub/shell.go
+  s_344993999c180f::t_baba323d8d995f 35-36
+  s_344993999c180f::t_7246c7a800b783 172-175,181-182,184
+internal/agent/shell_other.go
+  s_344993999c180f::t_86ac49ba98a9f4 24,26
+  s_344993999c180f::t_0b8581bdd2fdaa 20
+internal/agent/shell_unix.go
+  s_344993999c180f::t_ee4602d11d60fe 135-138,140-142,144-145,148-155
+  s_344993999c180f::t_c4e14e45a87a68 24-32
+  s_344993999c180f::t_86ac49ba98a9f4 45
+internal/agent/shell_test.go
+  s_344993999c180f::t_b188920114ef5b 206
+  s_344993999c180f::t_15c544c11657b6 182
+  s_344993999c180f::t_7f305e47e7a510 163-168,170-171,177,179-181,183-190,192
+  s_344993999c180f::t_f5d964a3e14cd4 39-41
+web/src/App.tsx
+  s_344993999c180f::t_823aa0e49b0462 40
+internal/agent/run.go
+  s_344993999c180f::t_83985fa180c31c 32
+docs/terminal.md
+  s_344993999c180f::t_5207bb28b7400f 21-22
+internal/agent/session_unix_other.go
+  s_344993999c180f::t_4e846b14753514 1-9
+internal/agent/session_darwin.go
+  s_344993999c180f::t_4e98e34949eadb 1-23
+internal/agent/session_linux.go
+  s_344993999c180f::t_a6de3c03685dba 1-23
+internal/hub/shell_test.go
+  s_344993999c180f::t_cfa132e3d153b6 313-318
+  s_344993999c180f::t_2c550c774cbd62 141-143
+proto/hearth/agent/v1/agent.proto
+  s_344993999c180f::t_0681337d787cfc 85,251
+internal/hub/agentshell.go
+  s_344993999c180f::t_83985fa180c31c 20
+web/src/components/DeviceDrawer.tsx
+  s_344993999c180f::t_cad92bc79a751d 159-165
+internal/proto/hearth/agent/v1/agent.pb.go
+  s_344993999c180f::t_04501bc18c28d1 545,1732
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d761fca178c659c99c23e9be031b36124e5f437d",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
