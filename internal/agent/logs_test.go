@@ -133,6 +133,12 @@ func TestLogSourceRing(t *testing.T) {
 // numbered docker-style line every few milliseconds, counting the
 // processes it starts.
 func fakeLogs(t *testing.T, ceiling Ceiling, script string) (*logStreams, *atomic.Int32) {
+	l, started, _ := fakeLogsFreed(t, ceiling, script)
+	return l, started
+}
+
+// fakeLogsFreed is fakeLogs that also counts how often memory is freed.
+func fakeLogsFreed(t *testing.T, ceiling Ceiling, script string) (*logStreams, *atomic.Int32, *atomic.Int32) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("needs /bin/sh")
@@ -143,7 +149,9 @@ func fakeLogs(t *testing.T, ceiling Ceiling, script string) (*logStreams, *atomi
 		started.Add(1)
 		return []string{"/bin/sh", "-c", script}
 	}
-	return l, &started
+	var freed atomic.Int32
+	l.freeMemory = func() { freed.Add(1) }
+	return l, &started, &freed
 }
 
 const loopScript = `i=0; while :; do echo "2024-05-01T10:00:00Z line $i"; i=$((i+1)); sleep 0.01; done`
@@ -220,7 +228,7 @@ func TestLogStreamDeniedBeyondCeiling(t *testing.T) {
 // canceled the process and every goroutine are gone.
 func TestLogStreamsShareAndStop(t *testing.T) {
 	before := runtime.NumGoroutine()
-	l, started := fakeLogs(t, Ceiling{Logs: []string{"docker:*"}}, loopScript)
+	l, started, freed := fakeLogsFreed(t, Ceiling{Logs: []string{"docker:*"}}, loopScript)
 	src := &agentv1.LogSource{Manager: "docker", Name: "web"}
 	var streams sync.WaitGroup
 	var a, b collector
@@ -247,6 +255,9 @@ func TestLogStreamsShareAndStop(t *testing.T) {
 	l.wait()
 	if len(l.sources) != 0 || len(l.cancels) != 0 {
 		t.Errorf("after cancel: %d sources, %d streams kept", len(l.sources), len(l.cancels))
+	}
+	if n := freed.Load(); n != 1 {
+		t.Errorf("memory freed %d times once the source stopped, want 1", n)
 	}
 	// A new stream starts a new process.
 	var c collector

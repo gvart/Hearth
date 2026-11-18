@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"runtime/debug"
 	"slices"
 	"strconv"
 	"strings"
@@ -88,6 +89,10 @@ type logStreams struct {
 	log     *slog.Logger
 	// argv builds the command of a source; logArgv, or a fake in tests.
 	argv func(src *agentv1.LogSource, tail int) []string
+	// freeMemory runs once the last active source is gone:
+	// debug.FreeOSMemory, so the agent idles as small after streaming as
+	// before, instead of keeping the heap a burst of lines grew.
+	freeMemory func()
 
 	// procs are the source goroutines; wait waits for them.
 	procs sync.WaitGroup
@@ -99,7 +104,7 @@ type logStreams struct {
 
 func newLogStreams(c Ceiling, log *slog.Logger) *logStreams {
 	return &logStreams{
-		ceiling: c, log: log, argv: logArgv,
+		ceiling: c, log: log, argv: logArgv, freeMemory: debug.FreeOSMemory,
 		sources: map[string]*logSource{}, cancels: map[string]context.CancelFunc{},
 	}
 }
@@ -192,9 +197,18 @@ func (l *logStreams) acquireLocked(src *agentv1.LogSource, tail int) (*logSource
 	s := &logSource{key: key, refs: 1, stop: stop, changed: make(chan struct{})}
 	l.sources[key] = s
 	argv := l.argv(src, tail)
+	manager := src.GetManager()
+	held := s // the goroutine's only reference, dropped before freeing memory
 	l.procs.Go(func() {
-		defer stop()
-		s.end(l.run(ctx, src.GetManager(), argv, s))
+		held.end(l.run(ctx, manager, argv, held))
+		stop()
+		held = nil
+		l.mu.Lock()
+		idle := len(l.sources) == 0
+		l.mu.Unlock()
+		if idle {
+			l.freeMemory()
+		}
 	})
 	return s, 0
 }
