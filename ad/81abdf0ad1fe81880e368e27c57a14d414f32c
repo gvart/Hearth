@@ -10,6 +10,7 @@ internal/hub/agentexec_test.go
   s_344993999c180f::t_991f1642cf25a0 48-51
 cmd/hearth/hub.go
   s_344993999c180f::t_869c50a6660143 11,46-48,87-88,154,161,178
+  s_344993999c180f::t_fcb7b3bcf96375 259
 proto/hearth/agent/v1/agent.proto
   s_344993999c180f::t_8c9364d3eac731 96-110,139-166
 internal/hub/agentstream.go
@@ -46,6 +47,8 @@ internal/agent/exec_test.go
   s_344993999c180f::t_6f709ddf76c3c5 89
 internal/proto/hearth/agent/v1/agent.pb.go
   s_344993999c180f::t_bd68be031e3dcf 751-752,754-765,800-827,990-992,994-1003,1038-1194,1204,1216,1229,1295,1297-1301,1311-1322,1341,1357-1362,1372,1376-1377,1379-1392,1412-1415,1422
+cmd/hearth/automation.go
+  s_344993999c180f::t_fcb7b3bcf96375 41
 ---
 {
   "schema_version": "authorship/3.0.0",
