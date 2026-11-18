@@ -49,21 +49,25 @@ func TestDecideLink(t *testing.T) {
 	e := NewWithConfig(s.Audit(), s.Approvals(), confirmAll(time.Minute))
 	e.poll = 5 * time.Millisecond
 	links := s.ApprovalLinks()
+	// The link exists once OnHeld has created it; OnHold fires before that.
+	held := make(chan string, 1)
 	e.OnHeld(func(ctx context.Context, ap store.Approval) {
 		if err := links.Create(ctx, "secret-"+ap.ID, ap.ID, ap.ExpiresAt); err != nil {
 			t.Error(err)
 		}
+		held <- ap.ID
 	})
 	use := func(secret string) func(context.Context) (string, error) {
 		return func(ctx context.Context) (string, error) { return links.Use(ctx, secret, time.Now()) }
 	}
-	held := make(chan string, 1)
 	runs := 0
 	done := make(chan error, 1)
+	stopped := make(chan struct{})
+	t.Cleanup(func() { <-stopped }) // a failed test must not leave Do running
 	go func() {
+		defer close(stopped)
 		done <- e.Do(t.Context(), Request{
 			ActorKind: ActorAutomation, ActorID: "a", Action: AutomationExec, Target: "pi",
-			OnHold: func(id string, _ time.Time) { held <- id },
 		}, func(context.Context) error { runs++; return nil })
 	}()
 	id := <-held
