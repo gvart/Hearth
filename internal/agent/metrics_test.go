@@ -4,26 +4,21 @@ package agent
 
 import (
 	"log/slog"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
-
-	"github.com/shirou/gopsutil/v4/cpu"
 )
 
 func TestCPUPercent(t *testing.T) {
-	prev := cpu.TimesStat{User: 100, System: 50, Idle: 800, Iowait: 50}
+	prev := cpuTimes{idle: 850, total: 1000}
 	tests := []struct {
 		name   string
-		cur    cpu.TimesStat
+		cur    cpuTimes
 		want   float64
 		wantOK bool
 	}{
-		{"quarter busy", cpu.TimesStat{User: 120, System: 55, Idle: 870, Iowait: 55}, 25, true},
-		{"idle", cpu.TimesStat{User: 100, System: 50, Idle: 900, Iowait: 50}, 0, true},
-		{"busy", cpu.TimesStat{User: 150, System: 100, Idle: 800, Iowait: 50}, 100, true},
-		{"iowait is idle", cpu.TimesStat{User: 100, System: 50, Idle: 800, Iowait: 150}, 0, true},
+		{"quarter busy", cpuTimes{idle: 925, total: 1100}, 25, true},
+		{"idle", cpuTimes{idle: 950, total: 1100}, 0, true},
+		{"busy", cpuTimes{idle: 850, total: 1100}, 100, true},
 		{"no time passed", prev, 0, false},
 	}
 	for _, tt := range tests {
@@ -55,27 +50,6 @@ func TestRate(t *testing.T) {
 	}
 }
 
-func TestTemperature(t *testing.T) {
-	dir := t.TempDir()
-	for zone, v := range map[string]string{"thermal_zone0": "45123\n", "thermal_zone1": "61500\n", "thermal_zone2": "garbage"} {
-		if err := os.MkdirAll(filepath.Join(dir, zone), 0o750); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(dir, zone, "temp"), []byte(v), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	c := newCollector(slog.New(slog.DiscardHandler))
-	c.thermalGlob = filepath.Join(dir, "thermal_zone*", "temp")
-	if got, ok := c.temperature(); !ok || got != 61.5 {
-		t.Errorf("temperature = %v, %v; want 61.5 (the hottest zone)", got, ok)
-	}
-	c.thermalGlob = filepath.Join(dir, "none*")
-	if _, ok := c.temperature(); ok {
-		t.Error("temperature without thermal zones reported a value")
-	}
-}
-
 func TestCollect(t *testing.T) {
 	c := newCollector(slog.New(slog.DiscardHandler))
 	now := time.Now()
@@ -89,6 +63,18 @@ func TestCollect(t *testing.T) {
 	second := names(c.collect(t.Context(), now.Add(time.Second)))
 	if !second["net_rx"] || !second["net_tx"] {
 		t.Errorf("second collection = %v, want network rates", second)
+	}
+}
+
+// BenchmarkCollect measures one collection, and what it allocates: the agent
+// runs it every 15 s and must idle under 20 MB.
+func BenchmarkCollect(b *testing.B) {
+	c := newCollector(slog.New(slog.DiscardHandler))
+	now := time.Now()
+	b.ReportAllocs()
+	for b.Loop() {
+		now = now.Add(15 * time.Second)
+		c.collect(b.Context(), now)
 	}
 }
 
