@@ -4,6 +4,7 @@ package automation
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"maps"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gvart/hearth/internal/policy"
 )
@@ -20,11 +22,11 @@ import (
 // fakeNetwork hands every event to every watcher, as the hub's bus does.
 type fakeNetwork struct {
 	mu   sync.Mutex
-	subs []chan NetworkEvent
+	subs []chan []NetworkEvent
 }
 
-func (f *fakeNetwork) WatchNetwork(ctx context.Context, fn func(NetworkEvent)) error {
-	ch := make(chan NetworkEvent)
+func (f *fakeNetwork) WatchNetwork(ctx context.Context, fn func([]NetworkEvent)) error {
+	ch := make(chan []NetworkEvent)
 	f.mu.Lock()
 	f.subs = append(f.subs, ch)
 	f.mu.Unlock()
@@ -38,11 +40,18 @@ func (f *fakeNetwork) WatchNetwork(ctx context.Context, fn func(NetworkEvent)) e
 	}
 }
 
-// send waits for watchers watching, then hands e to each, unbuffered: when
-// it returns, every watcher is done with the events before e.
+// send is sendScan of a scan that found only e.
 func (f *fakeNetwork) send(t *testing.T, watchers int, e NetworkEvent) {
 	t.Helper()
-	var subs []chan NetworkEvent
+	f.sendScan(t, watchers, e)
+}
+
+// sendScan waits for watchers watching, then hands the hosts of one scan to
+// each, unbuffered: when it returns, every watcher is done with the scans
+// before this one.
+func (f *fakeNetwork) sendScan(t *testing.T, watchers int, hosts ...NetworkEvent) {
+	t.Helper()
+	var subs []chan []NetworkEvent
 	eventually(t, "the watchers", func() bool {
 		f.mu.Lock()
 		defer f.mu.Unlock()
@@ -50,7 +59,7 @@ func (f *fakeNetwork) send(t *testing.T, watchers int, e NetworkEvent) {
 		return len(subs) >= watchers
 	})
 	for _, ch := range subs {
-		ch <- e
+		ch <- hosts
 	}
 }
 
@@ -110,6 +119,113 @@ func TestNetworkTriggerData(t *testing.T) {
 		if _, ok := got[0][k]; !ok {
 			t.Errorf("a firing lacks the sample's field %s", k)
 		}
+	}
+}
+
+func TestNetworkTriggerScan(t *testing.T) {
+	a := NetworkEvent{MAC: "00:11:32:00:00:01", IP: "192.168.2.1"}
+	b := NetworkEvent{MAC: "00:11:32:00:00:02", IP: "192.168.2.2"}
+	quiet := NetworkEvent{MAC: "00:11:32:00:00:03", IP: "192.168.2.3", Silenced: true}
+	for _, tc := range []struct {
+		name  string
+		src   string
+		hosts []NetworkEvent
+		want  []int // the Count of each firing; 0 for a firing about one host
+	}{
+		{"without batch, one firing per host", "", []NetworkEvent{a, b}, []int{0, 0}},
+		{"batch, one firing per scan", "batch: true", []NetworkEvent{a, b}, []int{2}},
+		{"batch counts no silenced host", "batch: true", []NetworkEvent{a, quiet, b}, []int{2}},
+		{"batch of silenced hosts", "batch: true", []NetworkEvent{quiet}, nil},
+		{"batch of another event", "batch: true\nevent: returned", []NetworkEvent{a, b}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			net := &fakeNetwork{}
+			w := watch(t, mustBuildTrigger(t, TriggerDeps{Network: net}, "type: network\n"+tc.src))
+			net.sendScan(t, 1, tc.hosts...)
+			net.send(t, 1, quiet) // handled after the scan, and never fires
+			var got []int
+			for _, d := range w.fired() {
+				n, _ := d["Count"].(int)
+				got = append(got, n)
+			}
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("fired %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// worstHosts are n hosts whose lines in a list are as long as they can be.
+func worstHosts(n int) []NetworkEvent {
+	hosts := make([]NetworkEvent, n)
+	for i := range hosts {
+		hosts[i] = NetworkEvent{
+			MAC: fmt.Sprintf("00:11:32:10:%02x:%02x", i>>8, i&0xff), IP: fmt.Sprintf("192.168.%03d.%03d", 100+i/100, 100+i%100),
+			Name: strings.Repeat("\u00e9", 200), Vendor: strings.Repeat("\u00e9", 200),
+		}
+	}
+	return hosts
+}
+
+// 50 hosts always fit, however long their names, and the text stays valid.
+func TestHostListFitsFiftyHosts(t *testing.T) {
+	hosts := worstHosts(50)
+	got := hostList(hosts)
+	if len(got) > maxHostList || !utf8.ValidString(got) {
+		t.Errorf("list is %d bytes (valid UTF-8: %v)", len(got), utf8.ValidString(got))
+	}
+	for _, e := range hosts {
+		if !strings.Contains(got, e.MAC) {
+			t.Errorf("%s is not listed", e.MAC)
+		}
+	}
+	if strings.Contains(got, "more") {
+		t.Errorf("list says hosts are left out: %q", got)
+	}
+}
+
+// The most hosts that fit are all listed; one more is counted instead.
+func TestHostListLimit(t *testing.T) {
+	fit := 1
+	for !strings.Contains(hostList(worstHosts(fit+1)), "more") {
+		fit++
+	}
+	over := hostList(worstHosts(fit + 1))
+	if strings.Count(over, "00:11:32:10:") != fit || !strings.HasSuffix(over, "\nand 1 more") {
+		t.Errorf("%d hosts fit, but %d give %q", fit, fit+1, over)
+	}
+	if got := hostList(worstHosts(maxScanHosts)); len(got) > maxHostList || !strings.HasSuffix(got, fmt.Sprintf("\nand %d more", maxScanHosts-fit)) {
+		t.Errorf("%d bytes, ending %q", len(got), got[len(got)-20:])
+	}
+}
+
+// maxScanHosts is discovery.MaxHosts, the most hosts one scan can find.
+const maxScanHosts = 1024
+
+// The built-in's notification stays within what ntfy and Telegram accept.
+func TestNewDeviceAlertsSummarySize(t *testing.T) {
+	a, err := NewDeviceAlerts("phone", networkKinds(&fakeNotifier{has: []string{"phone"}}, &fakeNetwork{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := a.Actions[0].Impl.(*notifyAction)
+	ev := Event{TriggerID: "new", TriggerType: "network", Data: batchData(worstHosts(maxScanHosts))}
+	title, err := n.title.Render(ev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg, err := n.message.Render(ev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if title != "1024 new devices on your network" {
+		t.Errorf("title = %q", title)
+	}
+	if size := len(title) + 1 + len(msg); size > 4096 {
+		t.Errorf("notification is %d bytes", size)
+	}
+	if !strings.HasSuffix(msg, "more\nMark them known or ignored on the Devices page to silence them.") {
+		t.Errorf("message ends %q", msg[len(msg)-90:])
 	}
 }
 

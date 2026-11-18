@@ -421,16 +421,24 @@ func (a *api) events(w http.ResponseWriter, r *http.Request) {
 			if !ok {
 				return
 			}
-			var body any = EventJSON{Type: ev.Type, Device: deviceJSON(ev.Device)}
-			if ev.Host != nil {
-				body = NetworkEventJSON{Type: ev.Type, Host: networkHostJSON(*ev.Host, "")}
+			// Clients get one message per host of a network discovery event.
+			bodies := []any{EventJSON{Type: ev.Type, Device: deviceJSON(ev.Device)}}
+			if ev.Hosts != nil {
+				bodies = bodies[:0]
+				for _, h := range ev.Hosts {
+					bodies = append(bodies, NetworkEventJSON{Type: ev.Type, Host: networkHostJSON(h, "")})
+				}
 			}
-			data, mErr := json.Marshal(body)
-			if mErr != nil {
-				a.log.ErrorContext(ctx, "encode event", "err", mErr)
-				continue
+			for _, body := range bodies {
+				data, mErr := json.Marshal(body)
+				if mErr != nil {
+					a.log.ErrorContext(ctx, "encode event", "err", mErr)
+					continue
+				}
+				if _, err = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", ev.Type, data); err != nil {
+					break
+				}
 			}
-			_, err = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", ev.Type, data)
 		case n, ok := <-kubeCh:
 			if !ok {
 				return

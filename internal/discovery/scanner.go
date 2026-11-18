@@ -49,9 +49,10 @@ type Policy interface {
 	Do(ctx context.Context, req policy.Request, fn func(context.Context) error) error
 }
 
-// Events receives the new and returned hosts of each scan.
+// Events receives the new and returned hosts of each scan, all the hosts of
+// one type at once.
 type Events interface {
-	NetworkHost(typ string, h store.NetworkHost)
+	NetworkHosts(typ string, hosts []store.NetworkHost)
 }
 
 // Config holds the scanner's dependencies and settings.
@@ -177,12 +178,8 @@ func (s *Scanner) Scan(ctx context.Context) error {
 		return fmt.Errorf("network scan: %w", err)
 	}
 	if s.cfg.Events != nil {
-		for _, h := range res.New {
-			s.cfg.Events.NetworkHost(EventNew, h)
-		}
-		for _, h := range res.Returned {
-			s.cfg.Events.NetworkHost(EventReturned, h)
-		}
+		s.cfg.Events.NetworkHosts(EventNew, res.New)
+		s.cfg.Events.NetworkHosts(EventReturned, res.Returned)
 	}
 	return nil
 }

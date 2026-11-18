@@ -230,8 +230,10 @@ type recordedEvent struct {
 
 type events []recordedEvent
 
-func (e *events) NetworkHost(typ string, h store.NetworkHost) {
-	*e = append(*e, recordedEvent{typ, h.MAC})
+func (e *events) NetworkHosts(typ string, hosts []store.NetworkHost) {
+	for _, h := range hosts {
+		*e = append(*e, recordedEvent{typ, h.MAC})
+	}
 }
 
 // fakeScanner is a scanner whose network steps return neigh, as the OS

@@ -60,13 +60,19 @@ A device goes offline when the hub has not heard from its agent for 30 s.
 triggers:
   - type: network
     event: new         # new or returned; leave out for both
+    batch: true        # optional: one firing per scan instead of one per host
 ```
 
 Fires once for each host a [network discovery](discovery.md) scan finds for the first time (`new`),
 or finds again after an hour or more unseen (`returned`). Hosts marked known or ignored on the
 Devices page, and hosts that are an enrolled device's interface, never fire it. Use `mode: queued`
-so that several hosts found by one scan each get their run. The hub's built-in
-[new-device alerts](discovery.md#new-device-alerts) automation is made of this trigger.
+so that several hosts found by one scan each get their run, up to 11 at a time: the rest are dropped.
+
+With `batch: true` a scan fires once for its new hosts and once for its returned hosts, however many
+it found, so none are dropped. `.Trigger.Count` is how many hosts it found and `.Trigger.Hosts` lists
+them, one per line. The list fits in one notification: it always holds at least 50 hosts, and ends
+with `and N more` when there are too many. The other fields are those of the first host. The hub's
+built-in [new-device alerts](discovery.md#new-device-alerts) automation is made of this trigger.
 
 ### Metric threshold
 
@@ -359,6 +365,8 @@ The webhook `url`, `command` and `service` are not templates.
 | `.Trigger.Vendor`      | network                    | from the MAC, or empty                             |
 | `.Trigger.Name`        | network                    | its mDNS or reverse DNS name, or empty             |
 | `.Trigger.Private`     | network                    | `true` for a randomized ("private") MAC            |
+| `.Trigger.Count`       | network with `batch: true` | how many hosts the scan found                      |
+| `.Trigger.Hosts`       | network with `batch: true` | those hosts, one per line, then `and N more` if cut |
 | `.Trigger.Device`      | metric with `device`       | the device as the trigger names it                 |
 | `.Trigger.Value`       | metric                     | the value past the threshold (a number)            |
 | `.Trigger.Target`      | http, dns, tcp             | the URL (password and query values hidden), name or address checked |

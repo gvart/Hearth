@@ -63,12 +63,8 @@ func (r *Registry) Applied(cmd store.Command, res store.Result, local bool) {
 			r.bus.publish(Event{Type: EventDeviceUpdated, Device: d})
 		}
 	case store.RecordNetworkScan:
-		for _, h := range res.NewHosts {
-			r.NetworkHost(discovery.EventNew, h)
-		}
-		for _, h := range res.ReturnedHosts {
-			r.NetworkHost(discovery.EventReturned, h)
-		}
+		r.NetworkHosts(discovery.EventNew, res.NewHosts)
+		r.NetworkHosts(discovery.EventReturned, res.ReturnedHosts)
 	}
 }
 

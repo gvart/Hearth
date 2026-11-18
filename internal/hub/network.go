@@ -47,10 +47,13 @@ func networkHostJSON(h store.NetworkHost, deviceID string) NetworkHostJSON {
 	}
 }
 
-// NetworkHost publishes a discovery event (discovery.EventNew or
-// discovery.EventReturned) about h. It implements discovery.Events.
-func (r *Registry) NetworkHost(typ string, h store.NetworkHost) {
-	r.bus.publish(Event{Type: typ, Host: &h})
+// NetworkHosts publishes a discovery event (discovery.EventNew or
+// discovery.EventReturned) about the hosts of one scan, if there are any. It
+// implements discovery.Events.
+func (r *Registry) NetworkHosts(typ string, hosts []store.NetworkHost) {
+	if len(hosts) > 0 {
+		r.bus.publish(Event{Type: typ, Hosts: hosts})
+	}
 }
 
 // listNetworkHosts serves GET /api/v1/network/hosts: every host discovery
