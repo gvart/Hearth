@@ -12,6 +12,7 @@ DATA=/var/lib/hearth/agent
 UNIT=/etc/systemd/system/hearth-agent.service
 export HEARTH_RELEASE_BASE_URL=http://127.0.0.1:8000/releases
 export HEARTH_LATEST_URL=http://127.0.0.1:8000/latest.json
+export HEARTH_RELEASES_URL=http://127.0.0.1:8000/releases.json
 export HEARTH_SKIP_SERVICE=1 # no systemd in the container; the test runs ExecStart itself
 
 ms() { date +%s%3N; }
@@ -146,7 +147,14 @@ grep -q "enrollment failed" <<<"$out" || fail "--token over HEARTH_TOKEN: enroll
 ! grep -qF -- "$TOKEN2" <<<"$out" || fail "--token over HEARTH_TOKEN: token echoed"
 [ ! -e /tmp/both/var/lib/hearth/agent/agent.crt ] || fail "--token over HEARTH_TOKEN: enrolled"
 
-log "install as a sudo user: curl $WEB/install.sh | HEARTH_TOKEN=<token> sh -s -- --hub $HUB"
+log "install as a sudo user with the Add device dialog's command"
+# The command exactly as POST /api/v1/tokens gives it to the UI. The hub runs
+# release-like version v0.0.0-e2e, so the command pins the agent to it.
+curl -fsS -b /tmp/cookies -H 'Content-Type: application/json' -d '{}' "$WEB/api/v1/tokens" >/tmp/token.json
+TOKEN=$(sed -n 's/.*"token":"\([^"]*\)".*/\1/p' /tmp/token.json)
+UI_CMD=$(sed -n 's/.*"install_command":"\([^"]*\)".*/\1/p' /tmp/token.json)
+want_cmd="curl -fsSL $WEB/install.sh | HEARTH_TOKEN=$TOKEN sh -s -- --hub $HUB --version v0.0.0-e2e"
+[ -n "$TOKEN" ] && [ "$UI_CMD" = "$want_cmd" ] || fail "install_command $(cat /tmp/token.json) is not the one-liner pinned to the hub version"
 # Record every process holding the token in its argv or its environment while
 # the installer runs. grep reads the token from a file so its own argv stays clean.
 printf '%s\n' "$TOKEN" >/tmp/token.pat
@@ -166,13 +174,9 @@ printf '%s\n' "$TOKEN" >/tmp/token.pat
 ) &
 scan_pid=$!
 t0=$(ms)
-# The token reaches alice's shell through its environment; the shell moves it
-# into a plain variable so that curl does not inherit it, and then runs the
-# UI's one-liner, which puts it in the environment of the installer's own sh.
-# shellcheck disable=SC2016 # expanded by alice's shell
-HEARTH_E2E_TOKEN=$TOKEN runuser -u alice -- sh -c \
-  't=$HEARTH_E2E_TOKEN; unset HEARTH_E2E_TOKEN; curl -fsSL "$0/install.sh" | HEARTH_TOKEN=$t sh -s -- --hub "$1"' \
-  "$WEB" "$HUB" 2>&1 | tee /tmp/install1.log
+# alice's shell reads the UI's one-liner on stdin, as if pasted, so the token
+# is in no argv; the one-liner puts it in the environment of the installer's sh.
+printf '%s\n' "$UI_CMD" | runuser -u alice -- sh 2>&1 | tee /tmp/install1.log
 t_installed=$(ms)
 touch /tmp/scan.stop
 wait "$scan_pid"
@@ -192,7 +196,8 @@ grep -q '^sh -s -- ' /tmp/env-hits.log || fail "environment scan never saw the i
 pass "token in no process's argv, in no child's environment, not in sudo's log ($(grep -c . /tmp/env-hits.log) env samples)"
 grep -q "cosign is not installed: the release signature was not checked, only SHA-256 (install cosign" /tmp/install1.log ||
   fail "installer did not say the signature was not checked"
-grep -q "installed hearth v0.0.0-e2e" /tmp/install1.log || fail "latest release not resolved"
+grep -q "installed hearth v0.0.0-e2e" /tmp/install1.log || fail "hub version not installed"
+! grep -q "looking up the latest release" /tmp/install1.log || fail "pinned install looked up the latest release"
 [ -x /usr/local/bin/hearth ] || fail "binary not installed"
 [ -f "$DATA/agent.crt" ] || fail "join did not write agent.crt"
 [ "$(stat -c %a "$DATA")" = 700 ] || fail "data dir mode is $(stat -c %a "$DATA"), want 700"
@@ -224,16 +229,20 @@ wait_for 10 device_online || fail "device not online after upgrade"
 [ "$(devices | grep -o '"id":' | wc -l)" = 1 ] || fail "re-run created another device: $(devices)"
 pass "identity kept, one device, online again"
 
-log "upgrade to a signed prerelease with --version v0.0.1-rc.1, cosign verifying"
+log "upgrade while only pre-releases exist: the newest, a signed prerelease, cosign verifying"
 stop_agent
-PATH="/tmp/cosign-bin:$PATH" sh /deploy/install.sh --version v0.0.1-rc.1 | tee /tmp/install3.log
+# Like GitHub while every release is a pre-release: /releases/latest is 404.
+PATH="/tmp/cosign-bin:$PATH" HEARTH_LATEST_URL=http://127.0.0.1:8000/no-stable-release.json \
+  sh /deploy/install.sh | tee /tmp/install3.log
+grep -q "found no stable release; looking up the newest release, pre-releases included" /tmp/install3.log ||
+  fail "no fallback to the newest pre-release"
 grep -q "downloading hearth_0.0.1-rc.1_linux_" /tmp/install3.log || fail "prerelease asset not used"
 grep -q "signature OK" /tmp/install3.log || fail "signature not reported as checked"
 check_cosign_args "good signature"
 [ "$cert_sum" = "$(sha256sum "$DATA/agent.crt")" ] || fail "identity changed on prerelease upgrade"
 start_agent
 wait_for 10 device_online || fail "device not online after prerelease upgrade"
-pass "prerelease installed by tag after cosign verify-blob with the expected args, identity kept"
+pass "newest prerelease installed after cosign verify-blob with the expected args, identity kept"
 
 log "--uninstall keeps data"
 stop_agent

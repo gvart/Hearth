@@ -73,24 +73,21 @@ Sign in with the admin password, then click **Add device**. The dialog shows a c
 curl -fsSL http://192.168.1.10:7080/install.sh | HEARTH_TOKEN=hearth1.… sh -s -- --hub https://192.168.1.10:7443
 ```
 
-It holds a single-use enrollment token that expires after 15 minutes. Keep the dialog open: it tells
-you when the device joins.
+It holds a single-use enrollment token that expires after 15 minutes. From v0.0.1-rc.6 on, the hub
+also ends the command with `--version` and its own version, so the device gets the same release as
+the hub. Keep the dialog open: it tells you when the device joins.
 
 The UI also offers to switch to HTTPS. You don't need it to get started;
 [HTTPS for the web UI](https.md) explains how when you want it.
 
 ## 4. Run the command on the device
 
-On the device (over SSH, say), paste the command and **add `--version v0.0.1-rc.5` at the end**:
+On the device (over SSH, say), paste the command as it is.
 
-```sh
-curl -fsSL http://192.168.1.10:7080/install.sh | HEARTH_TOKEN=hearth1.… sh -s -- --hub https://192.168.1.10:7443 --version v0.0.1-rc.5
-```
-
-Without `--version` the installer looks for the latest *stable* release, and while every release is
-a pre-release it stops with `could not look up the latest release ... pass --version vX.Y.Z`.
-Nothing is installed and the token is not used, so you can simply run it again with `--version`.
-([#115](https://github.com/gvart/hearth/issues/115) will make this step unnecessary.)
+A v0.0.1-rc.5 hub leaves `--version` out, and its installer then stops with
+`could not look up the latest release`, because every release is a pre-release. Add
+`--version v0.0.1-rc.5` at the end of the command and run it again: nothing was installed and the
+token is still unused. Later hubs need neither.
 
 The installer downloads the agent for the device's platform from GitHub releases, checks its
 SHA-256, installs it to `/usr/local/bin/hearth`, enrolls the device and starts the agent as a service
@@ -141,7 +138,7 @@ facts. Stop the agent and it turns offline after 30 seconds; start it again and 
 | Symptom on the device                                   | Cause and fix                                                                                     |
 | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | `curl: (7) Failed to connect ... port 7080`             | The hub is not reachable: wrong address, hub not running, or a firewall (step 2).                |
-| `could not look up the latest release`                  | Add `--version v0.0.1-rc.5` (step 4).                                                             |
+| `could not look up the latest release`                  | A v0.0.1-rc.5 hub: add `--version v0.0.1-rc.5` to the command (step 4).                          |
 | `enrollment token already used` or `expired`            | Tokens are single use and expire after 15 minutes. Click **Add device** again for a new one.      |
 | `verify hub certificate: x509: certificate is not valid for ...` | The address in `--hub` is not one of the hub's `--host` names. Restart the hub with it added. |
 | joined, but stays offline                               | The agent is not running (no systemd: start it yourself), or port 7443 is blocked.                |

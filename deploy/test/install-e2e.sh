@@ -49,6 +49,10 @@ sed "s/$asset/hearth_${rc}_linux_${goarch}.tar.gz/" "$work/srv/releases/v$versio
 # test puts a stub cosign on PATH, as a real Sigstore signature needs the
 # release workflow's OIDC identity.
 echo '{"stub": "sigstore bundle"}' >"$work/srv/releases/v$rc/checksums.txt.sigstore.json"
+# GitHub's release list, newest first and pre-releases included, as the
+# installer reads it when /releases/latest is 404 (no stable release yet).
+printf '[\n  {\n    "tag_name": "v%s",\n    "prerelease": true\n  },\n  {\n    "tag_name": "v%s",\n    "prerelease": false\n  }\n]\n' \
+  "$rc" "$version" >"$work/srv/releases.json"
 
 bad=hearth_0.0.0-bad_linux_${goarch}.tar.gz
 cp "$work/srv/releases/v$version/$asset" "$work/srv/releases/v0.0.0-bad/$bad"

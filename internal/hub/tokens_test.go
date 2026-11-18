@@ -13,6 +13,53 @@ import (
 	"github.com/gvart/hearth/internal/policy"
 )
 
+// TestAPICreateTokenPinsHubVersion: a release hub pins the agent it installs
+// to its own version, so the installer never has to look up a "latest"
+// release (GitHub reports none while every release is a pre-release).
+func TestAPICreateTokenPinsHubVersion(t *testing.T) {
+	for _, tc := range []struct{ version, wantSuffix string }{
+		{"v0.0.1-rc.5", " --hub https://127.0.0.1:7443 --version v0.0.1-rc.5"},
+		{"v1.2.3", " --hub https://127.0.0.1:7443 --version v1.2.3"},
+		{"dev", " --hub https://127.0.0.1:7443"},
+	} {
+		t.Run(tc.version, func(t *testing.T) {
+			f := newAPIFixture(t, true, func(c *Config) { c.Version = tc.version })
+			c := sessionCookie(t, f.login(t, testPassword))
+			resp := f.do(t, http.MethodPost, "/api/v1/tokens", `{}`, c)
+			if resp.StatusCode != http.StatusCreated {
+				t.Fatalf("status = %d, body %s", resp.StatusCode, resp.body)
+			}
+			got := decode[TokenJSON](t, resp)
+			if !strings.HasSuffix(got.InstallCommand, tc.wantSuffix) {
+				t.Errorf("install_command = %q, want suffix %q", got.InstallCommand, tc.wantSuffix)
+			}
+		})
+	}
+}
+
+func TestReleaseVersion(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"v0.0.1-rc.5", "v0.0.1-rc.5"},
+		{"v1.2.3", "v1.2.3"},
+		{"v10.0.0-beta.2.x", "v10.0.0-beta.2.x"},
+		{"v0.0.0-e2e", "v0.0.0-e2e"},
+		{"", ""},
+		{"dev", ""},
+		{"0.0.1", ""},                                // goreleaser links in the v prefix
+		{"v0.0.2-snapshot", ""},                      // `task release:snapshot`: never released
+		{"v0.0.0-20250101000000-abcdef123456", ""},   // Go pseudo-version
+		{"v1.2.4-0.20250101000000-abcdef123456", ""}, // Go pseudo-version after a tag
+		{"v1.2.3+dirty", ""},                         // build metadata
+		{"v1.2.3; rm -rf /", ""},                     // never anything a shell interprets
+		{"v1.2.3\n", ""},                             // trailing newline
+		{"v01.2.3", ""},                              // leading zero
+	} {
+		if got := releaseVersion(tc.in); got != tc.want {
+			t.Errorf("releaseVersion(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 func TestAPICreateToken(t *testing.T) {
 	f := newAPIFixture(t, true)
 	c := sessionCookie(t, f.login(t, testPassword))

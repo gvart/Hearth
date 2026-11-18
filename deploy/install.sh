@@ -22,6 +22,9 @@
 #                            (default https://github.com/gvart/hearth/releases/download)
 #   HEARTH_LATEST_URL        JSON with "tag_name" naming the latest release
 #                            (default: the GitHub releases API)
+#   HEARTH_RELEASES_URL      JSON whose first "tag_name" names the newest release,
+#                            pre-releases included, used when HEARTH_LATEST_URL
+#                            fails (default: the GitHub releases API)
 #   HEARTH_SKIP_SERVICE=1    write the service file but do not call systemctl/launchctl
 set -eu
 # Never trace, even under `sh -x`: variables and arguments hold the enrollment token.
@@ -38,6 +41,8 @@ LAUNCHD_LABEL=dev.hearth.agent
 PREFIX=${HEARTH_INSTALL_PREFIX:-}
 RELEASE_BASE_URL=${HEARTH_RELEASE_BASE_URL:-https://github.com/$REPO/releases/download}
 LATEST_URL=${HEARTH_LATEST_URL:-https://api.github.com/repos/$REPO/releases/latest}
+# GitHub lists releases newest first; /releases/latest skips pre-releases.
+RELEASES_URL=${HEARTH_RELEASES_URL:-https://api.github.com/repos/$REPO/releases?per_page=1}
 SKIP_SERVICE=${HEARTH_SKIP_SERVICE:-0}
 
 BIN_PATH=$PREFIX/usr/local/bin/hearth
@@ -70,7 +75,8 @@ Options:
                      users can read it with ps. Overrides HEARTH_TOKEN.
   --from-hub         download the binary from the hub (http://<hub>:7080/download/)
                      instead of GitHub releases
-  --version vX.Y.Z   release to install (default: the latest release)
+  --version vX.Y.Z   release to install (default: the latest release, or the
+                     newest pre-release while there is no stable one)
   --uninstall        stop and remove the service and binary; keep the data dir
   --purge            with --uninstall: also delete the data dir (device identity)
   -h, --help         show this help
@@ -244,9 +250,21 @@ resolve_version() {
 		return
 	fi
 	say "looking up the latest release"
-	fetch "$LATEST_URL" "$TMP/latest.json" || die "could not look up the latest release at $LATEST_URL; pass --version vX.Y.Z"
-	VERSION=$(sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$TMP/latest.json" | head -n 1)
-	[ -n "$VERSION" ] || die "could not find the latest release tag; pass --version vX.Y.Z"
+	# GitHub answers 404 here while every release is a pre-release.
+	if fetch "$LATEST_URL" "$TMP/latest.json" 2>/dev/null; then
+		VERSION=$(tag_name "$TMP/latest.json")
+	fi
+	if [ -z "$VERSION" ]; then
+		say "found no stable release; looking up the newest release, pre-releases included"
+		fetch "$RELEASES_URL" "$TMP/latest.json" || die "could not look up the releases at $RELEASES_URL; pass --version vX.Y.Z"
+		VERSION=$(tag_name "$TMP/latest.json")
+		[ -n "$VERSION" ] || die "found no release at $RELEASES_URL; pass --version vX.Y.Z"
+	fi
+}
+
+# tag_name FILE prints the first "tag_name" in the JSON in FILE.
+tag_name() {
+	sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$1" | head -n 1
 }
 
 # verify_signature BASE checks the keyless Sigstore signature of

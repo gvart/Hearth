@@ -52,6 +52,8 @@ type hubOptions struct {
 	// dangerousAutomations are the automations granted dangerous actions.
 	dangerousAutomations []string
 	cluster              clusterOptions
+	// version is the binary's version, which install commands pin agents to.
+	version string
 }
 
 func newHubCmd() *cobra.Command {
@@ -74,6 +76,7 @@ func newHubCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			opts.adminPassword = os.Getenv("HEARTH_ADMIN_PASSWORD")
 			opts.joinTokenEnv = os.Getenv("HEARTH_JOIN_TOKEN")
+			opts.version = cmd.Root().Version
 			return runHub(cmd.Context(), opts, newLogger(cmd.ErrOrStderr()))
 		},
 	}
@@ -194,6 +197,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		Agents:            agents,
 		Kube:              kube,
 		Notify:            notifier,
+		Version:           opts.version,
 	}
 	// ready is closed once a clustered hub has caught up with the cluster.
 	ready := make(chan struct{})

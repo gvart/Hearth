@@ -69,6 +69,8 @@ func newAPI(cfg Config) *api {
 		prom:   cfg.Prometheus,
 		kube:   cfg.Kube,
 		notify: cfg.Notify,
+		// Only a release tag is pinned: dev builds have no release to install.
+		installVersion: releaseVersion(cfg.Version),
 	}
 }
 
@@ -144,6 +146,8 @@ type api struct {
 	kube *kubernetes.Manager
 	// notify is Config.Notify; nil when notification channels are not served.
 	notify *notify.Notifier
+	// installVersion is the --version install commands pin, or "" for none.
+	installVersion string
 }
 
 // DeviceJSON is the API representation of a device.
