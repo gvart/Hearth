@@ -428,13 +428,21 @@ func TestPresenceBatchingFlushesAndReplicates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	live := leader.reg.Live(d)
 	if age := time.Since(d.LastSeen); age > time.Second {
 		t.Errorf("stored last_seen is %v old with a 300ms flush", age)
 	}
-	if age := time.Since(live.LastSeen); age > 200*time.Millisecond {
-		t.Errorf("live last_seen is %v old with heartbeats every %v", age, every)
-	}
+	// Wait for a new heartbeat rather than bound the live value's age: a
+	// heartbeat waits for the registry lock, which a flush holds across its
+	// Raft commit, so under load live last_seen stalls for that long.
+	mark := time.Now()
+	eventually(t, "a heartbeat live ahead of the stored last_seen", func() bool {
+		d, err := leader.st.Devices().Get(t.Context(), "pi")
+		if err != nil {
+			t.Fatal(err)
+		}
+		live := leader.reg.Live(d).LastSeen
+		return live.After(mark) && live.After(d.LastSeen)
+	})
 
 	// Every hub applied the same batches: identical device rows.
 	time.Sleep(100 * time.Millisecond)
@@ -456,16 +464,23 @@ func TestPresenceBatchingFlushesAndReplicates(t *testing.T) {
 		})
 	}
 	// Stop the agent's heartbeats from moving last_seen, then compare exactly.
-	leader.srv.CloseClientConnections()
-	eventually(t, "the agent to drop", func() bool { return agent.url() == "" })
-	if err := leader.reg.Flush(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	want, _ = leader.st.Devices().List(t.Context())
+	// The leader is read on every try: a heartbeat still in flight when the
+	// agent stopped can move its row once more.
+	agent.stop()
 	for _, h := range followers(hubs, leader) {
 		eventually(t, h.ID()+" to match the leader", func() bool {
-			got, _ := h.st.Devices().List(t.Context())
-			return reflect.DeepEqual(got, want)
+			if err := leader.reg.Flush(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			rows, err := leader.st.Devices().List(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := h.st.Devices().List(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			return reflect.DeepEqual(got, rows)
 		})
 	}
 }

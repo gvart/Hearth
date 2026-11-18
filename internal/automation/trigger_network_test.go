@@ -173,7 +173,8 @@ func TestNewDeviceAlerts(t *testing.T) {
 			"192.168.2.31 (3e:00:00:00:00:04, private address). Mark it known or ignored on the Devices page to silence it.",
 		},
 	}
-	if len(n.sent) != 2 || n.sent[0] != want[0] || n.sent[1] != want[1] {
+	// The triggers watch independently, so either run may go first.
+	if len(n.sent) != 2 || !slices.Contains(n.sent, want[0]) || !slices.Contains(n.sent, want[1]) {
 		t.Errorf("sent %+v\nwant %+v", n.sent, want)
 	}
 }
