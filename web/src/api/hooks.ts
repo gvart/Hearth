@@ -27,7 +27,12 @@ export const keys = {
   kubeCluster: (id: string) => ['kube', 'cluster', id] as const,
   notifyChannels: ['notify', 'channels'] as const,
   audit: (filter: AuditFilter) => ['audit', filter] as const,
+  approvals: (status: 'pending' | 'all') => ['approvals', status] as const,
+  approvalLink: (token: string) => ['approval-link', token] as const,
 };
+
+/** Approvals change on other hubs and in automations, so they are polled. */
+const approvalsRefreshMs = 5000;
 
 const metricsRefreshMs = 30_000;
 
@@ -55,6 +60,7 @@ export function useLogout() {
       qc.removeQueries({ queryKey: keys.devices });
       qc.removeQueries({ queryKey: ['kube'] });
       qc.removeQueries({ queryKey: ['audit'] });
+      qc.removeQueries({ queryKey: ['approvals'] });
       qc.setQueryData(keys.session, null);
     },
   });
@@ -225,6 +231,37 @@ export function useNotifyChannels() {
 
 export function useTestNotifyChannel() {
   return useMutation({ mutationFn: api.testNotifyChannel });
+}
+
+/** Pending approvals, or all of them, polled while mounted. */
+export function useApprovals(status: 'pending' | 'all') {
+  return useQuery({
+    queryKey: keys.approvals(status),
+    queryFn: () => api.approvals(status),
+    refetchInterval: approvalsRefreshMs,
+  });
+}
+
+export function useDecideApproval() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, approve }: { id: string; approve: boolean }) => api.decideApproval(id, approve),
+    onSettled: () => qc.invalidateQueries({ queryKey: ['approvals'] }),
+  });
+}
+
+/** The approval an approval link is for, read once. */
+export function useApprovalLink(token: string) {
+  return useQuery({
+    queryKey: keys.approvalLink(token),
+    queryFn: () => api.approvalLink(token),
+    retry: false,
+    staleTime: Infinity,
+  });
+}
+
+export function useDecideApprovalLink(token: string) {
+  return useMutation({ mutationFn: (approve: boolean) => api.decideApprovalLink(token, approve) });
 }
 
 /** Applies a kube.cluster event (or a just-added cluster) to the cache. */

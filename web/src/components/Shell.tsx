@@ -1,21 +1,26 @@
 import { useEffect, useState } from 'react';
-import { useDeviceEvents, useLogout } from '../api/hooks.ts';
+import { useApprovals, useDeviceEvents, useLogout } from '../api/hooks.ts';
+import { ApprovalsPage } from './ApprovalsPage.tsx';
 import { AuditPage } from './AuditPage.tsx';
 import { DevicesPage } from './DevicesPage.tsx';
 import { KubernetesPage } from './KubernetesPage.tsx';
 import { Logo } from './Logo.tsx';
 import { NotificationsPage } from './NotificationsPage.tsx';
 
-type Page = 'devices' | 'kubernetes' | 'notifications' | 'audit';
+type Page = 'devices' | 'kubernetes' | 'notifications' | 'audit' | 'approvals';
 
 const pages: { id: Page; label: string; hash: string }[] = [
   { id: 'devices', label: 'Devices', hash: '#/' },
   { id: 'kubernetes', label: 'Kubernetes', hash: '#/kubernetes' },
   { id: 'notifications', label: 'Notifications', hash: '#/notifications' },
   { id: 'audit', label: 'Audit', hash: '#/audit' },
+  { id: 'approvals', label: 'Approvals', hash: '#/approvals' },
 ];
 
 function pageOf(hash: string): Page {
+  if (hash.startsWith('#/approvals')) {
+    return 'approvals';
+  }
   if (hash.startsWith('#/notifications')) {
     return 'notifications';
   }
@@ -45,6 +50,7 @@ export function Shell() {
   useDeviceEvents();
   const logout = useLogout();
   const page = usePage();
+  const waiting = useApprovals('pending').data?.length ?? 0;
 
   return (
     <div className="app">
@@ -58,6 +64,11 @@ export function Shell() {
             {pages.map((p) => (
               <a key={p.id} href={p.hash} className="nav-link" aria-current={page === p.id ? 'page' : undefined}>
                 {p.label}
+                {p.id === 'approvals' && waiting > 0 ? (
+                  <span className="badge nav-badge" aria-label={`${String(waiting)} waiting`}>
+                    {waiting}
+                  </span>
+                ) : null}
               </a>
             ))}
           </nav>
@@ -72,7 +83,9 @@ export function Shell() {
           Sign out
         </button>
       </header>
-      {page === 'kubernetes' ? (
+      {page === 'approvals' ? (
+        <ApprovalsPage />
+      ) : page === 'kubernetes' ? (
         <KubernetesPage />
       ) : page === 'notifications' ? (
         <NotificationsPage />

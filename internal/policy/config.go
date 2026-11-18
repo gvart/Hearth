@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"slices"
 	"strings"
@@ -50,6 +51,21 @@ type Config struct {
 	// ApprovalTimeout is how long a held action waits for approval before
 	// it is denied. Default DefaultApprovalTimeout.
 	ApprovalTimeout time.Duration `yaml:"approval_timeout"`
+	// ApprovalNotify sends every held action to a notification channel,
+	// with a single-use link that approves or denies it.
+	ApprovalNotify ApprovalNotify `yaml:"approval_notify"`
+}
+
+// ApprovalNotify is where the hub tells someone an action waits for
+// approval.
+type ApprovalNotify struct {
+	// Channel names a channel of the hub's notification channels file;
+	// empty sends nothing. The hub checks that it exists.
+	Channel string `yaml:"channel"`
+	// URL is the hub's web UI as the phone reaches it, as
+	// https://hearth.lan:8443, the base of approval links. Empty means the
+	// hub's HTTPS address for its first --host.
+	URL string `yaml:"url"`
 }
 
 // mode returns the mode for an action of class by kind/id, and whether the
@@ -97,6 +113,16 @@ func (c Config) Validate() error {
 	}
 	if c.ApprovalTimeout < 0 {
 		errs = append(errs, errors.New("approval_timeout must not be negative"))
+	}
+	if raw := c.ApprovalNotify.URL; raw != "" {
+		u, err := url.Parse(raw)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil ||
+			u.RawQuery != "" || u.Fragment != "" {
+			errs = append(errs, errors.New("approval_notify.url must be the hub's http:// or https:// address, as https://hearth.lan:8443"))
+		}
+		if c.ApprovalNotify.Channel == "" {
+			errs = append(errs, errors.New("approval_notify.url needs approval_notify.channel"))
+		}
 	}
 	return errors.Join(errs...)
 }

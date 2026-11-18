@@ -114,6 +114,10 @@ const (
 	// ActorAutomation is an automation run on the cluster leader, identified
 	// by the automation's id.
 	ActorAutomation = "automation"
+	// ActorApprovalLink is the holder of an approval link sent to a
+	// notification channel, identified by its remote address. The link
+	// itself is the credential, for one approval only.
+	ActorApprovalLink = "approval_link"
 )
 
 // Decisions recorded in the audit log.
@@ -200,8 +204,9 @@ var rules = map[Action]rule{
 	// Approving releases an action of any class, so it counts as the worst.
 	// Deciding is the operator's answer to a hold: holding it in turn would
 	// never end.
-	ApprovalApprove: {class: Dangerous, actors: []string{ActorAdmin, ActorWeb}, fixed: true},
-	ApprovalDeny:    {class: Safe, actors: []string{ActorAdmin, ActorWeb}, fixed: true},
+	// An approval link decides the one approval it was sent for.
+	ApprovalApprove: {class: Dangerous, actors: []string{ActorAdmin, ActorWeb, ActorApprovalLink}, fixed: true},
+	ApprovalDeny:    {class: Safe, actors: []string{ActorAdmin, ActorWeb, ActorApprovalLink}, fixed: true},
 }
 
 // Actions returns every known action, sorted.

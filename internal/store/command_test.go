@@ -57,6 +57,8 @@ func allCommands() []Command {
 			Action: "automation.exec", Class: "dangerous", Target: "pi", Detail: `{"run":"r1"}`,
 		},
 		DecideApproval{ID: "ap1", Status: "approved", By: "admin/root", At: 19},
+		CreateApprovalLink{Hash: []byte{6, 7}, ApprovalID: "ap1", ExpiresAt: 20},
+		UseApprovalLink{Hash: []byte{6, 7}, Now: 19},
 	}
 }
 
@@ -304,6 +306,13 @@ func runScenario(t *testing.T, s *Store) {
 	}))
 	must(s.Approvals().Decide(ctx, "ap-1", ApprovalApproved, "admin/root", at(time.Hour+time.Minute)))
 	wantErr(s.Approvals().Decide(ctx, "ap-1", ApprovalDenied, "admin/root", at(time.Hour+time.Minute)), ErrApprovalClosed)
+
+	// An approval link made, used once, and refused the second time.
+	must(s.ApprovalLinks().Create(ctx, "link-1", "ap-1", at(2*time.Hour)))
+	_, err = s.ApprovalLinks().Use(ctx, "link-1", at(time.Hour))
+	must(err)
+	_, err = s.ApprovalLinks().Use(ctx, "link-1", at(time.Hour))
+	wantErr(err, ErrTokenUsed)
 }
 
 // dumpTables returns every row of every table (sqlite_sequence included,
