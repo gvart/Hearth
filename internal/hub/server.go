@@ -13,6 +13,7 @@ import (
 
 	"connectrpc.com/connect"
 
+	"github.com/gvart/hearth/internal/integrations/prometheus"
 	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/policy"
 	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
@@ -52,6 +53,9 @@ type Config struct {
 	// catching_up rather than serve state older than what the hub already
 	// acknowledged. Nil, as on a standalone hub, means always ready.
 	Ready <-chan struct{}
+	// Prometheus reads device chart series from an existing Prometheus
+	// server. Nil means none is configured: charts report not_configured.
+	Prometheus *prometheus.Reader
 }
 
 // NewHandler serves EnrollService to anyone (the token is the credential) and
