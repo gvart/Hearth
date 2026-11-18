@@ -88,6 +88,7 @@ func (a *api) routes() http.Handler {
 	mux.Handle("POST /api/v1/tokens", a.auth(a.createToken))
 	a.kubeRoutes(mux)
 	a.notifyRoutes(mux)
+	mux.Handle("GET /api/v1/audit", a.auth(a.listAudit))
 	mux.Handle("GET /api/v1/approvals", a.auth(a.listApprovals))
 	mux.Handle("POST /api/v1/approvals/{id}/approve", a.auth(a.decideApproval(true)))
 	mux.Handle("POST /api/v1/approvals/{id}/deny", a.auth(a.decideApproval(false)))

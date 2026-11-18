@@ -56,14 +56,61 @@ func (r Audit) Append(ctx context.Context, e AuditEntry) (int64, error) {
 	return res.ID, nil
 }
 
+// AuditFilter selects audit entries. Zero fields match everything.
+type AuditFilter struct {
+	ActorKind string
+	// ActorID matches actor IDs that contain it.
+	ActorID string
+	// Actions match any of these actions.
+	Actions []string
+	// Targets match any of these targets.
+	Targets  []string
+	Decision string
+	// Since and Until bound the timestamp: Since <= ts < Until.
+	Since, Until time.Time
+	// Before returns only entries older than the entry with this ID: the
+	// cursor for the next page.
+	Before int64
+}
+
 // List returns up to limit entries, newest first.
 func (r Audit) List(ctx context.Context, limit int) ([]AuditEntry, error) {
+	return r.Query(ctx, AuditFilter{}, limit)
+}
+
+// Query returns up to limit entries matching f, newest first.
+func (r Audit) Query(ctx context.Context, f AuditFilter, limit int) ([]AuditEntry, error) {
 	if limit <= 0 {
 		return nil, errors.New("list audit: limit must be positive")
 	}
+	actions, err := json.Marshal(nonNilStrings(f.Actions))
+	if err != nil {
+		return nil, fmt.Errorf("list audit: %w", err)
+	}
+	targets, err := json.Marshal(nonNilStrings(f.Targets))
+	if err != nil {
+		return nil, fmt.Errorf("list audit: %w", err)
+	}
+	var since, until int64
+	if !f.Since.IsZero() {
+		since = toMillis(f.Since)
+	}
+	if !f.Until.IsZero() {
+		until = toMillis(f.Until)
+	}
 	rows, err := r.s.db.QueryContext(ctx, `
 		SELECT id, ts, actor_kind, actor_id, action, target, decision, result, detail
-		FROM audit_log ORDER BY id DESC LIMIT ?`, limit)
+		FROM audit_log
+		WHERE (?1 = '' OR actor_kind = ?1)
+		  AND (?2 = '' OR instr(actor_id, ?2) > 0)
+		  AND (?3 = '[]' OR action IN (SELECT value FROM json_each(?3)))
+		  AND (?4 = '[]' OR target IN (SELECT value FROM json_each(?4)))
+		  AND (?5 = '' OR decision = ?5)
+		  AND (?6 = 0 OR ts >= ?6)
+		  AND (?7 = 0 OR ts < ?7)
+		  AND (?8 = 0 OR id < ?8)
+		ORDER BY id DESC LIMIT ?9`,
+		f.ActorKind, f.ActorID, string(actions), string(targets), f.Decision, since, until, f.Before, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list audit: %w", err)
 	}
@@ -87,4 +134,11 @@ func (r Audit) List(ctx context.Context, limit int) ([]AuditEntry, error) {
 		return nil, fmt.Errorf("list audit: %w", err)
 	}
 	return out, nil
+}
+
+func nonNilStrings(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
 }

@@ -1,21 +1,26 @@
 import { useEffect, useState } from 'react';
 import { useDeviceEvents, useLogout } from '../api/hooks.ts';
+import { AuditPage } from './AuditPage.tsx';
 import { DevicesPage } from './DevicesPage.tsx';
 import { KubernetesPage } from './KubernetesPage.tsx';
 import { Logo } from './Logo.tsx';
 import { NotificationsPage } from './NotificationsPage.tsx';
 
-type Page = 'devices' | 'kubernetes' | 'notifications';
+type Page = 'devices' | 'kubernetes' | 'notifications' | 'audit';
 
 const pages: { id: Page; label: string; hash: string }[] = [
   { id: 'devices', label: 'Devices', hash: '#/' },
   { id: 'kubernetes', label: 'Kubernetes', hash: '#/kubernetes' },
   { id: 'notifications', label: 'Notifications', hash: '#/notifications' },
+  { id: 'audit', label: 'Audit', hash: '#/audit' },
 ];
 
 function pageOf(hash: string): Page {
   if (hash.startsWith('#/notifications')) {
     return 'notifications';
+  }
+  if (hash.startsWith('#/audit')) {
+    return 'audit';
   }
   return hash.startsWith('#/kubernetes') ? 'kubernetes' : 'devices';
 }
@@ -67,7 +72,15 @@ export function Shell() {
           Sign out
         </button>
       </header>
-      {page === 'kubernetes' ? <KubernetesPage /> : page === 'notifications' ? <NotificationsPage /> : <DevicesPage />}
+      {page === 'kubernetes' ? (
+        <KubernetesPage />
+      ) : page === 'notifications' ? (
+        <NotificationsPage />
+      ) : page === 'audit' ? (
+        <AuditPage />
+      ) : (
+        <DevicesPage />
+      )}
     </div>
   );
 }
