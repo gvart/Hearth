@@ -59,6 +59,7 @@ internal/store/store_test.go
 internal/policy/guardrails_test.go
   s_344993999c180f::t_7e8ddde76711a9 1-116,125-499
   s_344993999c180f::t_d705929feef9c9 117-122
+  s_344993999c180f::t_70883dc74faea1 123-124
 internal/store/approvals.go
   s_344993999c180f::t_f0197e5cc7f914 1-224
 internal/automation/action_device.go
@@ -97,6 +98,8 @@ internal/integrations/kubernetes/actions_test.go
   s_344993999c180f::t_8c008ef970c1e8 161-177
 internal/integrations/kubernetes/actions.go
   s_344993999c180f::t_6309ed059b7de7 112-113,133-138,147-150,153
+docs/kubernetes.md
+  s_344993999c180f::t_a0f4d24d0d3cde 75-76
 ---
 {
   "schema_version": "authorship/3.0.0",
