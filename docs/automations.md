@@ -22,8 +22,95 @@ actions:                   # run in order; the first failure or policy denial en
 `mode` says what happens when a trigger fires while a run is in progress: `single` ignores it,
 `queued` runs it afterwards (at most 10 waiting), `restart` cancels the current run and starts again.
 
-Built in so far: the `manual` trigger and the `log` action. More triggers and actions come with
-their own issues.
+Built in so far: the triggers below and the `log` action. More actions come with their own issues.
+
+## Triggers
+
+| type       | fires when                                                    |
+|------------|---------------------------------------------------------------|
+| `manual`   | run by hand                                                   |
+| `device`   | a device goes online or offline                               |
+| `metric`   | a metric has been above or below a threshold for a duration   |
+| `http`     | an HTTP GET fails or returns the wrong status                 |
+| `dns`      | a DNS server does not resolve a name                          |
+| `tcp`      | a TCP port does not accept connections                        |
+| `schedule` | a cron schedule comes due                                     |
+
+### Device online/offline
+
+```yaml
+triggers:
+  - type: device
+    device: nas        # device id, name or hostname; leave out for any device
+    to: offline        # online or offline
+```
+
+A device goes offline when the hub has not heard from its agent for 30 s.
+
+### Metric threshold
+
+`cpu > 90 for 5m`:
+
+```yaml
+triggers:
+  - type: metric
+    device: nas        # id, name or hostname
+    metric: cpu        # cpu, memory or disk (root filesystem), in percent
+    above: 90          # or below:
+    for: 5m            # optional: how long it must stay past the threshold
+    every: 30s         # optional: how often to read it (default 30s)
+```
+
+or any PromQL query, which fires when any of its series is past the threshold:
+
+```yaml
+triggers:
+  - type: metric
+    query: 'up{job="pihole"}'
+    below: 1
+    for: 1m
+```
+
+Metrics come from Prometheus, so the metric trigger needs `hearth hub --prometheus-url` (see
+[prometheus.md](prometheus.md)); devices map to node-exporter targets as for charts. Without it the
+automation loads, but its metric trigger stops with an error in the hub log. A value that cannot be
+read does not count as past the threshold, and starts the `for` duration over. A metric trigger
+fires once per spell past the threshold: again only after the value has come back.
+
+### Synthetic checks: HTTP, DNS, TCP
+
+```yaml
+triggers:
+  - type: http
+    url: http://grafana.lan:3000/api/health
+    status: 200          # optional: the status to expect; default any 2xx or 3xx
+  - type: dns
+    name: example.com    # asks for its A record
+    server: 192.168.1.2  # the DNS server to ask (e.g. Pi-hole): host or host:port, default port 53
+  - type: tcp
+    address: nas.lan:22
+```
+
+Every check also takes `every` (how often; default 10s), `timeout` (per check; default 5s, or
+`every` if shorter) and `for` (how long it must keep failing; default 0: the first failure fires).
+A check fires once per outage: again only after it has passed. The DNS check asks the server
+directly over UDP, so the hub's own resolver and `/etc/hosts` play no part. With the defaults, a
+stopped Pi-hole is noticed within about 15 s.
+
+Checks run from the hub (the leader, in a cluster). Running them from an agent is tracked in
+[#105](https://github.com/gvart/Hearth/issues/105).
+
+### Schedule
+
+```yaml
+triggers:
+  - type: schedule
+    cron: "0 3 * * *"    # minute hour day-of-month month day-of-week
+```
+
+Standard five-field cron, or `@hourly`, `@daily`, `@weekly`, `@monthly`, `@every 15m`. It runs in
+the hub's local time unless the spec starts with a zone: `CRON_TZ=Europe/Berlin 0 3 * * *`. Times
+missed while no hub was leading are not made up.
 
 ## Checking a file
 

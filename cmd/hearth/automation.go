@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
 	"text/tabwriter"
@@ -35,7 +36,9 @@ func newAutomationPlanCmd() *cobra.Command {
 		Short: "Validate an automation file and print what it would do, without running anything",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			a, err := automation.LoadFile(args[0], automation.Builtin(slog.New(slog.DiscardHandler)))
+			kinds := automation.Builtin(slog.New(slog.DiscardHandler))
+			maps.Copy(kinds.Triggers, automation.Triggers(automation.TriggerDeps{}))
+			a, err := automation.LoadFile(args[0], kinds)
 			if err != nil {
 				return err
 			}
