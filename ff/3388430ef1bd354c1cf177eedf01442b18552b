@@ -1,0 +1,20 @@
+internal/cluster/leader_test.go
+  s_815aef767535ea::t_13943665448f41 472-482
+  s_815aef767535ea::t_66b48a31dde35d 490-492
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ff3388430ef1bd354c1cf177eedf01442b18552b",
+  "prompts": {},
+  "sessions": {
+    "s_815aef767535ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1866255a-7d59-4f07-869c-b29b78c7a98d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
