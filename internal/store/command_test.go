@@ -44,6 +44,7 @@ func allCommands() []Command {
 		SetPasswordHash{Hash: "$argon2id$..."},
 		CreateSession{Hash: []byte{4, 5}, Now: 10, ExpiresAt: 11},
 		DeleteSession{Hash: []byte{4, 5}},
+		MigrateSchema{To: 7},
 	}
 }
 
@@ -336,6 +337,10 @@ func TestReplayIsDeterministic(t *testing.T) {
 		}
 	}
 	for _, cmd := range allCommands() {
+		// No repository writes it; see TestReplayWithMigrateIsDeterministic.
+		if _, ok := cmd.(MigrateSchema); ok {
+			continue
+		}
 		if !slices.Contains(ops, cmd.Op()) {
 			t.Errorf("scenario never applied %s", cmd.Op())
 		}
