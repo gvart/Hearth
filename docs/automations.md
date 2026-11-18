@@ -202,7 +202,7 @@ is in the audit log with actor `automation/<id>`. A failed action (non-zero exit
 an offline device) stops it with status `failed`.
 
 A `notify` action sends to a channel configured on the hub, by name: see
-[notifications.md](notifications.md).
+[Notifications](notifications.md).
 
 Webhook URLs and headers often carry secrets: errors, logs and the audit log name only the URL's
 scheme and host. Command arguments are never logged either; a failed command's error ends with up

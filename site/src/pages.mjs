@@ -7,7 +7,7 @@
 /** @type {{ label: string, pages: string[] }[]} */
 export const sections = [
 	{ label: 'Start here', pages: ['getting-started', 'concepts'] },
-	{ label: 'Automations', pages: ['automations'] },
+	{ label: 'Automations', pages: ['automations', 'notifications'] },
 	{ label: 'Integrations', pages: ['prometheus', 'kubernetes'] },
 	{ label: 'Operating', pages: ['https', 'cluster', 'security'] },
 ];

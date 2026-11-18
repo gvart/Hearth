@@ -86,5 +86,7 @@ running it.
   as they would run programs or read files on the hub. Each Kubernetes action is a policy decision;
   draining a node is dangerous. See [Kubernetes](kubernetes.md).
 - **Prometheus**: read only. Hearth never writes to Prometheus.
+- **Notifications**: channel credentials (ntfy tokens, Telegram bot tokens) stay in the channels
+  file on the hub; automations, the UI, run history and the audit log name a channel only.
 - **Webhooks**: errors and the audit log name only a webhook URL's scheme and host, as URLs and
   headers often carry secrets.
