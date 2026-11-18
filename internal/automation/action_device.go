@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"slices"
 	"strings"
@@ -32,20 +33,24 @@ type ActionDeps struct {
 	// Notifier sends notify actions; nil (as in a dry run) skips checking
 	// that their channels exist.
 	Notifier Notifier
+	// Kube carries out the kube_* actions; nil fails them when they run.
+	Kube Kube
 }
 
-// Actions returns the exec, restart, webhook and notify action kinds, to add to
-// Builtin's.
+// Actions returns the exec, restart, webhook, notify and kube_* action kinds,
+// to add to Builtin's.
 func Actions(d ActionDeps) map[string]Builder[Action] {
 	if d.HTTP == nil {
 		d.HTTP = &http.Client{}
 	}
-	return map[string]Builder[Action]{
+	out := map[string]Builder[Action]{
 		"exec":    func(p Params) (Action, error) { return buildExec(p, d.Agents) },
 		"restart": func(p Params) (Action, error) { return buildRestart(p, d.Agents) },
 		"webhook": func(p Params) (Action, error) { return buildWebhook(p, d.HTTP) },
 		"notify":  func(p Params) (Action, error) { return buildNotify(p, d.Notifier) },
 	}
+	maps.Copy(out, kubeActions(d.Kube))
+	return out
 }
 
 const (

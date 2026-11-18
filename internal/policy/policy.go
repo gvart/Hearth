@@ -177,14 +177,16 @@ var rules = map[Action]rule{
 	KubePodLogs: {class: Read, actors: []string{ActorWeb}},
 	// A rolling restart, a scale, a pod deletion and a cordon are bounded and
 	// undone by the next one: the controllers keep the workload running.
-	KubeWorkloadRestart: {class: Safe, actors: []string{ActorWeb}},
-	KubeWorkloadScale:   {class: Safe, actors: []string{ActorWeb}},
-	KubePodDelete:       {class: Safe, actors: []string{ActorWeb}},
-	KubeNodeCordon:      {class: Safe, actors: []string{ActorWeb}},
-	KubeNodeUncordon:    {class: Safe, actors: []string{ActorWeb}},
+	// Automations may take them too (internal/automation's kube.* actions).
+	KubeWorkloadRestart: {class: Safe, actors: []string{ActorWeb, ActorAutomation}},
+	KubeWorkloadScale:   {class: Safe, actors: []string{ActorWeb, ActorAutomation}},
+	KubePodDelete:       {class: Safe, actors: []string{ActorWeb, ActorAutomation}},
+	KubeNodeCordon:      {class: Safe, actors: []string{ActorWeb, ActorAutomation}},
+	KubeNodeUncordon:    {class: Safe, actors: []string{ActorWeb, ActorAutomation}},
 	// A drain takes every workload off a node: on a small homelab cluster
-	// that can be most of the capacity.
-	KubeNodeDrain: {class: Dangerous, actors: []string{ActorWeb}},
+	// that can be most of the capacity. Being dangerous, an automation's
+	// drain is denied unless it is granted or approved.
+	KubeNodeDrain: {class: Dangerous, actors: []string{ActorWeb, ActorAutomation}},
 	// A notification touches no device: it tells a person something, on a
 	// channel the operator configured.
 	AutomationNotify: {class: Safe, actors: []string{ActorAutomation}},

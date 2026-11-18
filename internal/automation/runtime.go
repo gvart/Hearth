@@ -289,6 +289,9 @@ type StepResult struct {
 	Status string         `json:"status"`
 	Error  string         `json:"error,omitempty"`
 	Data   map[string]any `json:"data,omitempty"`
+	// Plan is what an action that can tell (a kube_* action) would have
+	// done, in a dry run.
+	Plan string `json:"plan,omitempty"`
 }
 
 // Step statuses.
@@ -348,7 +351,8 @@ func (r *Runtime) execute(ctx context.Context, a *Automation, ev Event) string {
 			if cancelled(step) {
 				break
 			}
-			err := r.act(ctx, a, s, run.ID, ev)
+			plan, err := r.act(ctx, a, s, run.ID, ev)
+			step.Plan = plan
 			switch {
 			case err == nil:
 				step.Status = stepOK
@@ -384,11 +388,13 @@ func (r *Runtime) execute(ctx context.Context, a *Automation, ev Event) string {
 
 // act executes one action through policy, as the automation. The audit entry
 // is written even when the run is cancelled while the action executes (the
-// store bounds the write itself), so only the action sees ctx.
-func (r *Runtime) act(ctx context.Context, a *Automation, s Step[Action], runID string, ev Event) error {
+// store bounds the write itself), so only the action sees ctx, with the
+// grant policy gave it. In a dry run, an action policy would allow that can
+// plan says what it would do.
+func (r *Runtime) act(ctx context.Context, a *Automation, s Step[Action], runID string, ev Event) (string, error) {
 	target, err := s.Impl.Target().Render(ev)
 	if err != nil {
-		return err
+		return "", err
 	}
 	req := policy.Request{
 		ActorKind: policy.ActorAutomation,
@@ -401,7 +407,25 @@ func (r *Runtime) act(ctx context.Context, a *Automation, s Step[Action], runID 
 	if p, ok := s.Impl.(prechecker); ok {
 		req.Precheck = func(ctx context.Context) error { return p.Precheck(ctx, ev) }
 	}
-	return r.cfg.Policy.Do(context.WithoutCancel(ctx), req, func(context.Context) error { return s.Impl.Run(ctx, ev) })
+	err = r.cfg.Policy.Do(context.WithoutCancel(ctx), req, func(granted context.Context) error {
+		return s.Impl.Run(policy.WithGrant(ctx, granted), ev)
+	})
+	p, ok := s.Impl.(planner)
+	if err != nil || !r.cfg.DryRun || !ok {
+		return "", err
+	}
+	plan, err := p.Plan(ctx, ev)
+	if err != nil {
+		return "", fmt.Errorf("dry run: %w", err)
+	}
+	r.cfg.Log.InfoContext(ctx, "automation dry run", "automation", a.ID, "run", runID, "step", s.ID, "plan", plan)
+	return plan, nil
+}
+
+// planner is an action that can tell what it would do now without doing
+// it, reading only, for a dry run.
+type planner interface {
+	Plan(ctx context.Context, ev Event) (string, error)
 }
 
 // prechecker is an action that can tell, before policy decides, that it

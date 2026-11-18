@@ -25,7 +25,8 @@ actions:                   # run in order; the first failure or policy denial en
 `mode` says what happens when a trigger fires while a run is in progress: `single` ignores it,
 `queued` runs it afterwards (at most 10 waiting), `restart` cancels the current run and starts again.
 
-Built in: the triggers below and the actions in [Actions on devices and webhooks](#actions-on-devices-and-webhooks).
+Built in: the triggers below and the actions in [Actions on devices and webhooks](#actions-on-devices-and-webhooks)
+and [Kubernetes actions](#kubernetes-actions).
 No condition types are built in yet: `conditions` must be left out or empty, and a condition of any
 type is rejected when the file is loaded.
 
@@ -140,7 +141,8 @@ reported with their line, as `file:line: message`.
   directory, so keep it the same on every hub.
 - Every action goes through policy with actor `automation/<id>`, and is in the audit log.
   `hearth hub --automations-dry-run` sends every action to policy as a dry run: the decisions are
-  audited (result `dry-run`) and nothing runs.
+  audited (result `dry-run`) and nothing runs. Kubernetes actions are also planned (see
+  [Kubernetes actions](#kubernetes-actions)).
 - Runs are kept in the run history (the newest 100 per automation):
 
   ```sh
@@ -208,6 +210,66 @@ an offline device) stops it with status `failed`.
 A `notify` action sends to a channel configured on the hub, by name: see
 [Notifications](notifications.md).
 
+## Kubernetes actions
+
+The [Kubernetes actions](kubernetes.md#actions) of the web UI, on a cluster the hub has adopted,
+named by its name in Hearth:
+
+| type              | does                                                         | policy action           | class     |
+|-------------------|--------------------------------------------------------------|-------------------------|-----------|
+| `kube_restart`    | rolling restart of a Deployment, StatefulSet or DaemonSet    | `kube.workload.restart` | safe      |
+| `kube_scale`      | sets the replicas of a Deployment or StatefulSet             | `kube.workload.scale`   | safe      |
+| `kube_delete_pod` | deletes a pod; its controller, if any, recreates it          | `kube.pod.delete`       | safe      |
+| `kube_cordon`     | marks a node unschedulable                                   | `kube.node.cordon`      | safe      |
+| `kube_uncordon`   | marks a node schedulable again                               | `kube.node.uncordon`    | safe      |
+| `kube_drain`      | cordons a node and evicts its pods, honouring PodDisruptionBudgets | `kube.node.drain` | dangerous |
+
+```yaml
+id: nightly-web
+triggers:
+  - type: schedule
+    cron: "0 4 * * *"
+actions:
+  - id: restart-web
+    type: kube_restart
+    cluster: homelab             # the cluster's name on the Kubernetes page
+    kind: Deployment             # Deployment, StatefulSet or DaemonSet (scale: not DaemonSet)
+    namespace: default
+    name: web
+  - type: kube_scale
+    cluster: homelab
+    kind: Deployment
+    namespace: media
+    name: jellyfin
+    replicas: 0
+  - type: kube_delete_pod
+    cluster: homelab
+    namespace: default
+    name: web-7d9f8-abcde
+  - type: kube_cordon            # and kube_uncordon
+    cluster: homelab
+    node: pi-2
+  - type: kube_drain
+    cluster: homelab
+    node: pi-2
+    timeout: 5m                  # optional, default 2m, at most 10m
+```
+
+- Policy decides on each one before anything is sent to the cluster, with actor `automation/<id>`
+  and the target `<cluster>/<object>` the web UI's actions are audited with. A denied action sends no
+  request at all, not even the reads of its plan.
+- `kube_drain` is dangerous: like `exec`, an automation may take it only when the hub grants it by
+  id (`hearth hub --allow-dangerous-automation <id>` or `dangerous_automations` in the policy file),
+  or when the policy file says `confirm` and an operator approves it (see [guardrails.md](guardrails.md)).
+  Without either, it is denied.
+- A drain that runs out of time stops, leaves the node cordoned and fails the run, naming the pods
+  still there.
+- With `hearth hub --automations-dry-run`, a Kubernetes action policy would allow is planned
+  instead: the hub reads the objects involved, as the web UI's dry run does, and records the plan
+  (summary, steps, warnings) in the run's step and the hub log. Nothing is changed.
+
+`cluster`, `namespace`, `name` and `node` may be templates; `kind`, `replicas` and `timeout` may not.
+
 Webhook URLs and headers often carry secrets: errors, logs and the audit log name only the URL's
 scheme and host. Command arguments are never logged either; a failed command's error ends with up
 to 256 bytes of its stderr.
@@ -234,7 +296,7 @@ actions:
 ```
 
 Templated fields: `device` (exec, restart), `body` and header values (webhook), `message` (log),
-`title` and `message` (notify).
+`title` and `message` (notify), `cluster`, `namespace`, `name` and `node` (kube_*).
 The webhook `url`, `command` and `service` are not templates.
 
 | field                  | trigger types              | value                                              |

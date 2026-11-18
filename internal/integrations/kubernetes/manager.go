@@ -342,6 +342,18 @@ func (m *Manager) get(id string) (*running, ClusterInfo, error) {
 	return r, m.infoLocked(r), nil
 }
 
+// getNamed is get by the cluster's name.
+func (m *Manager) getNamed(name string) (*running, ClusterInfo, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, r := range m.watchers {
+		if r.info.Name == name {
+			return r, m.infoLocked(r), nil
+		}
+	}
+	return nil, ClusterInfo{}, fmt.Errorf("%w named %q", ErrNotFound, name)
+}
+
 // Snapshot returns the current state of cluster id.
 func (m *Manager) Snapshot(ctx context.Context, id string) (Snapshot, error) {
 	r, info, err := m.get(id)
