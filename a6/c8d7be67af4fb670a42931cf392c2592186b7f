@@ -1,0 +1,75 @@
+internal/automation/action_notify.go
+  s_344993999c180f::t_02b13318272841 1-81
+web/src/components/Shell.tsx
+  s_344993999c180f::t_cf2bb948a68fef 6,13,17-19,70
+  s_344993999c180f::t_be264ced2e03af 8
+internal/notify/notify.go
+  s_344993999c180f::t_fea4ec87b8de55 1-58,60-69,73-160,163-225
+  s_344993999c180f::t_6ee1b21e52624a 70-72
+  s_344993999c180f::t_83343c32dfef57 161-162
+  s_344993999c180f::t_a9cedd823091bd 59
+internal/automation/action_device.go
+  s_344993999c180f::t_ab617bcacfc688 32-34,37,47
+  s_344993999c180f::t_bc900d8674fade 26
+internal/policy/policy.go
+  s_344993999c180f::t_b29c0ff3b4de27 149-152
+  s_344993999c180f::t_dc53b09c9facc2 74-79
+docs/notifications.md
+  s_344993999c180f::t_31dd5e7ae91bbf 1-5,8-54,56-79
+  s_344993999c180f::t_54a3e5a9236abc 55
+  s_344993999c180f::t_83343c32dfef57 6-7
+docs/automations.md
+  s_344993999c180f::t_54a3e5a9236abc 151,197-199,225-226
+internal/policy/notify_test.go
+  s_344993999c180f::t_7a87cbc390107b 1-27,33,39-64
+  s_344993999c180f::t_a9cedd823091bd 28-32,34-38
+web/src/api/hooks.ts
+  s_344993999c180f::t_71565880427c43 26,187-194
+  s_344993999c180f::t_66b3f768758540 195
+internal/hub/notify_test.go
+  s_344993999c180f::t_9fe842a7358dcf 1-100
+internal/automation/action_notify_test.go
+  s_344993999c180f::t_a9cedd823091bd 61-64,92-95,98-105
+  s_344993999c180f::t_e8e0aa496d2440 1-60,65-91,96-97,106-132
+internal/notify/notify_test.go
+  s_344993999c180f::t_a9cedd823091bd 68-75,139-154,254
+  s_344993999c180f::t_c710121e170077 1-67,76-138,155-253,255-260
+web/src/components/NotificationsPage.tsx
+  s_344993999c180f::t_8aa7c745776b75 90-92
+  s_344993999c180f::t_2ea4bb021994ad 1-69,83-89,93-96
+  s_344993999c180f::t_5221880a0b25dc 70-82
+cmd/hearth/hub.go
+  s_344993999c180f::t_18d733e418390e 10,27,49-51,93-94,174-177,196,277
+  s_344993999c180f::t_829f8e2ec3d02c 406-431
+web/src/index.css
+  s_344993999c180f::t_4a5a4e77ec65c7 1059-1065
+web/src/api/client.ts
+  s_344993999c180f::t_dd50862bd839de 199-204,269-271
+internal/hub/notify.go
+  s_344993999c180f::t_bbbfbaa3b5f933 1-5,7-55
+  s_344993999c180f::t_6cb5208f530115 6
+internal/notify/providers.go
+  s_344993999c180f::t_40ed6753c0bac5 1-64
+internal/hub/api.go
+  s_344993999c180f::t_a80414b1851084 69-70
+  s_344993999c180f::t_926436501ad260 23,71,88,145-146
+internal/hub/server.go
+  s_344993999c180f::t_a80414b1851084 18
+  s_344993999c180f::t_926436501ad260 67-69
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a6c8d7be67af4fb670a42931cf392c2592186b7f",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
