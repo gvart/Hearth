@@ -13,6 +13,7 @@ import (
 	"syscall"
 
 	"github.com/gvart/hearth/internal/agent"
+	"github.com/gvart/hearth/internal/hub"
 )
 
 // Set at link time via -ldflags "-X main.version=... -X main.commit=... -X main.date=...".
@@ -23,6 +24,9 @@ var (
 )
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == hub.VerifyChildArg {
+		os.Exit(hub.RunVerifyChild(os.Stdin, os.Stderr))
+	}
 	os.Exit(run())
 }
 

@@ -20,6 +20,7 @@ import (
 const testPassword = "hunter2-but-longer"
 
 type apiFixture struct {
+	api  *api
 	srv  *httptest.Server
 	st   *store.Store
 	logs *syncBuffer
@@ -50,7 +51,7 @@ func newAPIFixture(t *testing.T, withPassword bool, opts ...func(*Config)) *apiF
 	a := newAPI(cfg)
 	srv := httptest.NewServer(a.routes())
 	t.Cleanup(srv.Close)
-	return &apiFixture{srv: srv, st: st, logs: logs}
+	return &apiFixture{api: a, srv: srv, st: st, logs: logs}
 }
 
 // apiResp is a fully read response, so tests never leak bodies.

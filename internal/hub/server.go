@@ -58,6 +58,9 @@ type Config struct {
 	// catching_up rather than serve state older than what the hub already
 	// acknowledged. Nil, as on a standalone hub, means always ready.
 	Ready <-chan struct{}
+	// VerifyPassword checks login passwords, one at a time. If nil, they are
+	// checked in this process; the hub binary passes ChildVerifier.
+	VerifyPassword PasswordVerifier
 	// Prometheus reads device chart series from an existing Prometheus
 	// server. Nil means none is configured: charts report not_configured.
 	Prometheus *prometheus.Reader
