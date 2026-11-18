@@ -11,6 +11,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -111,7 +112,8 @@ func startHub(t *testing.T, n *testNode, ca *pki.CA, o hubOpts) *testHub {
 	h := &testHub{testNode: n, ca: ca, logs: &lockedBuffer{}, rsDone: make(chan struct{})}
 	log := slog.New(slog.NewTextHandler(h.logs, nil))
 	if os.Getenv("HEARTH_TEST_RAFT_LOG") != "" {
-		log = slog.New(slog.NewTextHandler(os.Stderr, nil)).With("hub", n.ID())
+		// Also into logs, which tests read (sweptOffline).
+		log = slog.New(slog.NewTextHandler(io.MultiWriter(h.logs, os.Stderr), nil)).With("hub", n.ID())
 	}
 	h.reg = hub.NewRegistry(hub.RegistryConfig{
 		Store: n.st, Log: log, OfflineAfter: o.offlineAfter, SeenFlushInterval: o.flushEvery, Replicated: true,

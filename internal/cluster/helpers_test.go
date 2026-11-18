@@ -47,13 +47,6 @@ type testNode struct {
 	t     *testing.T
 }
 
-// fastTimeouts keeps elections in tests well under a second or two.
-func fastTimeouts(c *Config) {
-	c.HeartbeatTimeout = 400 * time.Millisecond
-	c.ElectionTimeout = 400 * time.Millisecond
-	c.LeaderLeaseTimeout = 200 * time.Millisecond
-}
-
 // freeAddr returns a loopback address with a port that was free a moment ago.
 func freeAddr(t *testing.T) string {
 	t.Helper()
@@ -89,7 +82,10 @@ func startNodeBound(t *testing.T, ca *pki.CA, id, dir, addr string, bootstrap bo
 		DataDir: dir, NodeID: id, Listen: addr, CA: ca, Bootstrap: bootstrap,
 		Log: testLogger(t), OnFatal: func(err error) { tn.fatal <- err },
 	}
-	fastTimeouts(&cfg)
+	// Raft's default timeouts. Tests once used 400 ms ones with a 200 ms
+	// lease: under -race on one CPU (argon2 password hashing on the same P)
+	// the leader missed its lease and leadership flapped, which tests that
+	// assume a stable leader cannot tell from a bug.
 	for _, f := range tune {
 		f(&cfg)
 	}

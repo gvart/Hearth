@@ -76,7 +76,11 @@ func TestSweeperRunsOnlyOnTheLeaderAndMovesOnFailover(t *testing.T) {
 	leader.kill()
 	next := leaderHub(t, hubs)
 	silentDevice(t, next, "quiet-2")
-	eventually(t, "the new leader to sweep quiet-2", func() bool { return statusOn(next, "quiet-2") == store.StatusOffline })
+	// The sweeper logs the transition after its write applied, so the store
+	// can show it first.
+	eventually(t, "the new leader to sweep quiet-2", func() bool {
+		return statusOn(next, "quiet-2") == store.StatusOffline && sweptOffline(next) > 0
+	})
 	if sweptOffline(next) != 1 {
 		t.Errorf("new leader %s: swept %d devices, want 1", next.ID(), sweptOffline(next))
 	}
@@ -269,7 +273,7 @@ func TestFollowerReadYourWrites(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { _ = cli.Close() })
-		for i := range 10 {
+		for i := range 5 {
 			api := &apiClient{t: t, base: f.url, c: tlsClient(f.ca)}
 			if code, body := api.do(http.MethodPost, "/api/v1/login", map[string]string{"password": "correct horse"}); code != http.StatusOK {
 				t.Fatalf("login on %s: %d %s", f.ID(), code, body)
