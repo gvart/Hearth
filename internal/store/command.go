@@ -47,8 +47,13 @@ type Result struct {
 	// ID is the audit_log ID assigned by AppendAudit.
 	ID int64
 	// Count is the number of certificates revoked by RevokeDevice or
-	// RevokeHubCerts, or of devices updated by MarkSeenBatch.
+	// RevokeHubCerts, of devices updated by MarkSeenBatch, or of hosts
+	// recorded by RecordNetworkScan.
 	Count int
+	// NewHosts and ReturnedHosts are the hosts RecordNetworkScan found for
+	// the first time, and back after an absence.
+	NewHosts      []NetworkHost
+	ReturnedHosts []NetworkHost
 }
 
 // UpsertDevice inserts a device or replaces every field but first_seen.
@@ -687,6 +692,8 @@ func DecodeCommand(b []byte) (Command, error) {
 		cmd, err = decodeAs[CreateMCPToken](env.Cmd)
 	case RevokeMCPToken{}.Op():
 		cmd, err = decodeAs[RevokeMCPToken](env.Cmd)
+	case RecordNetworkScan{}.Op():
+		cmd, err = decodeAs[RecordNetworkScan](env.Cmd)
 	default:
 		return nil, fmt.Errorf("decode command: unknown op %q", env.Op)
 	}

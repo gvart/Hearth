@@ -100,6 +100,21 @@ export interface DeviceEvent {
   device: Device;
 }
 
+/** A host network discovery found on the LAN; see /api/v1/network/hosts. */
+export interface NetworkHost {
+  /** Lower-case, colon-separated; the host's identity across IP changes. */
+  mac: string;
+  ip: string;
+  /** From mDNS or LAN reverse DNS; empty when unknown. */
+  hostname: string;
+  /** From the MAC's OUI; empty when unknown or the MAC is randomized. */
+  vendor: string;
+  /** The enrolled device with this MAC; empty for an unmanaged host. */
+  device_id: string;
+  first_seen: string;
+  last_seen: string;
+}
+
 /** A Kubernetes cluster adopted through a kubeconfig; see /api/v1/kube. */
 export type KubeState = 'connecting' | 'connected' | 'error';
 
@@ -342,6 +357,7 @@ export const api = {
     }
   },
   devices: async () => (await request<{ devices: Device[] }>('GET', '/devices')).devices,
+  networkHosts: async () => (await request<{ hosts: NetworkHost[] }>('GET', '/network/hosts')).hosts,
   deviceMetrics: (id: string, range = '1h') =>
     request<DeviceMetrics>('GET', `/devices/${encodeURIComponent(id)}/metrics?range=${encodeURIComponent(range)}`),
   tlsInfo: () => request<TlsInfo>('GET', '/tls'),
@@ -391,6 +407,8 @@ export interface EventHandlers {
   /** A Kubernetes cluster's state changed, or it was added or removed. */
   onKubeCluster: (c: KubeCluster) => void;
   onKubeChange: (c: KubeChange) => void;
+  /** Network discovery found a new host, or one came back. */
+  onNetworkHost: () => void;
   /** The stream broke; the caller decides when to reconnect. */
   onError: () => void;
 }
@@ -424,6 +442,11 @@ export function subscribeEvents(h: EventHandlers): () => void {
       // As above.
     }
   });
+  for (const t of ['network.device.new', 'network.device.returned']) {
+    es.addEventListener(t, () => {
+      h.onNetworkHost();
+    });
+  }
   es.addEventListener('kube.object', (msg: MessageEvent<string>) => {
     try {
       h.onKubeChange(JSON.parse(msg.data) as KubeChange);

@@ -5,6 +5,7 @@ package hub
 import (
 	"context"
 
+	"github.com/gvart/hearth/internal/discovery"
 	"github.com/gvart/hearth/internal/store"
 )
 
@@ -27,6 +28,8 @@ import (
 //   - MarkOffline, MarkDevicesOffline: device.offline for each device changed.
 //   - MarkSeenBatch: device.updated for each device whose last_seen it moved,
 //     so a follower's last_seen trails the leader's by at most one batch.
+//   - RecordNetworkScan: network.device.new and network.device.returned for
+//     each host the scan found for the first time or back.
 //
 // Other commands (UpsertDevice at enrollment, RevokeDevice, tokens,
 // sessions) publish nothing, as on the leader.
@@ -58,6 +61,13 @@ func (r *Registry) Applied(cmd store.Command, res store.Result, local bool) {
 				continue // unknown device, or the batch did not move it
 			}
 			r.bus.publish(Event{Type: EventDeviceUpdated, Device: d})
+		}
+	case store.RecordNetworkScan:
+		for _, h := range res.NewHosts {
+			r.NetworkHost(discovery.EventNew, h)
+		}
+		for _, h := range res.ReturnedHosts {
+			r.NetworkHost(discovery.EventReturned, h)
 		}
 	}
 }

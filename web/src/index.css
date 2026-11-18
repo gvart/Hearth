@@ -465,6 +465,36 @@ table {
   border: 2px solid var(--offline);
 }
 
+.dot-unmanaged {
+  border: 2px dashed var(--offline);
+}
+
+/* Unmanaged hosts from network discovery */
+.unmanaged {
+  margin-top: 2rem;
+}
+
+.section-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.section-head h2,
+.section-head p {
+  margin: 0;
+}
+
+.devices.network tbody tr {
+  cursor: default;
+}
+
+.devices .row-end {
+  text-align: right;
+}
+
 .empty {
   display: flex;
   flex-direction: column;

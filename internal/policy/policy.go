@@ -119,6 +119,9 @@ const (
 	MCPTokenCreate Action = "mcp.token.create" //nolint:gosec // an action name
 	// MCPTokenRevoke revokes an MCP client's token.
 	MCPTokenRevoke Action = "mcp.token.revoke" //nolint:gosec // an action name
+	// NetworkScan is one network discovery scan by the hub: an ARP sweep
+	// and an mDNS browse of the configured subnets.
+	NetworkScan Action = "network.scan"
 )
 
 // Actor kinds.
@@ -134,7 +137,8 @@ const (
 	// ActorJoinToken is a hub joining the cluster with a join token. It is not
 	// ActorToken, so an enrollment path can never be taken for a join.
 	ActorJoinToken = "join_token"
-	// ActorHub is a cluster member identified by its hub node certificate.
+	// ActorHub is a cluster member identified by its hub node certificate,
+	// or the hub itself for its own scheduled work (network discovery).
 	ActorHub = "hub"
 	// ActorAutomation is an automation run on the cluster leader, identified
 	// by the automation's id.
@@ -252,6 +256,9 @@ var rules = map[Action]rule{
 	// away.
 	MCPTokenCreate: {class: Dangerous, actors: []string{ActorAdmin}},
 	MCPTokenRevoke: {class: Safe, actors: []string{ActorAdmin}},
+	// A scan only asks who is there (one datagram per address, one mDNS
+	// query) and changes nothing on any host.
+	NetworkScan: {class: Read, actors: []string{ActorHub}},
 }
 
 // Actions returns every known action, sorted.

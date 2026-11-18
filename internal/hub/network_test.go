@@ -1,0 +1,141 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package hub
+
+import (
+	"bufio"
+	"encoding/json"
+	"net/http"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/gvart/hearth/internal/discovery"
+	"github.com/gvart/hearth/internal/store"
+)
+
+func TestAPINetworkHosts(t *testing.T) {
+	f := newAPIFixture(t, true)
+	ctx := t.Context()
+	now := time.UnixMilli(1_700_000_000_000).UTC()
+	// The Pi has an agent: its interface MAC links its host to the device.
+	if err := f.st.Devices().Upsert(ctx, store.Device{
+		ID: "pi", Name: "pi", Hostname: "pi5", FirstSeen: now, LastSeen: now, Status: store.StatusOnline,
+		Facts: json.RawMessage(`{"interfaces":[{"name":"eth0","mac":"2C:CF:67:00:00:01","ips":["192.168.2.171/24"]}]}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.st.NetworkHosts().RecordScan(ctx, now, time.Hour, []store.NetworkHost{
+		{MAC: "2c:cf:67:00:00:01", IP: "192.168.2.171", Hostname: "pi5.local", Vendor: "Raspberry Pi"},
+		{MAC: "00:11:32:00:00:02", IP: "192.168.2.20", Vendor: "Synology"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if resp := f.do(t, http.MethodGet, "/api/v1/network/hosts", "", nil); resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("without a session: %d, want 401", resp.StatusCode)
+	}
+	cookie := sessionCookie(t, f.login(t, testPassword))
+	resp := f.do(t, http.MethodGet, "/api/v1/network/hosts", "", cookie)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	got := decode[struct {
+		Hosts []NetworkHostJSON `json:"hosts"`
+	}](t, resp).Hosts
+	if len(got) != 2 {
+		t.Fatalf("hosts = %+v", got)
+	}
+	byMAC := map[string]NetworkHostJSON{}
+	for _, h := range got {
+		byMAC[h.MAC] = h
+	}
+	if h := byMAC["2c:cf:67:00:00:01"]; h.DeviceID != "pi" || h.Hostname != "pi5.local" || !h.LastSeen.Equal(now) {
+		t.Errorf("Pi = %+v; want it linked to device pi", h)
+	}
+	if h := byMAC["00:11:32:00:00:02"]; h.DeviceID != "" || h.Vendor != "Synology" || h.IP != "192.168.2.20" {
+		t.Errorf("NAS = %+v; want it unmanaged", h)
+	}
+}
+
+func TestSSENetworkHostEvent(t *testing.T) {
+	st := newTestStore(t)
+	reg := NewRegistry(RegistryConfig{Store: st})
+	f := newAPIFixture(t, true, func(c *Config) { c.Registry = reg })
+	cookie := sessionCookie(t, f.login(t, testPassword))
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, f.srv.URL+"/api/v1/events", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.AddCookie(cookie)
+	resp, err := f.srv.Client().Do(req) //nolint:bodyclose // closed by the defer below
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	lines := make(chan string, 16)
+	go func() {
+		defer close(lines)
+		sc := bufio.NewScanner(resp.Body)
+		for sc.Scan() {
+			lines <- sc.Text()
+		}
+	}()
+	waitLine := func(prefix string) string {
+		t.Helper()
+		timeout := time.After(2 * time.Second)
+		for {
+			select {
+			case l, ok := <-lines:
+				if !ok {
+					t.Fatalf("stream closed waiting for %q", prefix)
+				}
+				if strings.HasPrefix(l, prefix) {
+					return strings.TrimPrefix(l, prefix)
+				}
+			case <-timeout:
+				t.Fatalf("no %q line", prefix)
+			}
+		}
+	}
+	waitLine(": subscribed")
+
+	reg.NetworkHost(discovery.EventNew, store.NetworkHost{MAC: "3e:00:00:00:00:03", IP: "192.168.2.30"})
+	if name := waitLine("event: "); name != discovery.EventNew {
+		t.Fatalf("event %q, want %s", name, discovery.EventNew)
+	}
+	var ev NetworkEventJSON
+	if err := json.Unmarshal([]byte(waitLine("data: ")), &ev); err != nil {
+		t.Fatal(err)
+	}
+	if ev.Type != discovery.EventNew || ev.Host.MAC != "3e:00:00:00:00:03" || ev.Host.IP != "192.168.2.30" {
+		t.Errorf("event = %+v", ev)
+	}
+}
+
+// A follower publishes the network events of a scan it applies from the log.
+func TestAppliedNetworkScan(t *testing.T) {
+	st := newTestStore(t)
+	reg := NewRegistry(RegistryConfig{Store: st, Replicated: true})
+	ch, unsubscribe := reg.Subscribe()
+	defer unsubscribe()
+	h := store.NetworkHost{MAC: "3e:00:00:00:00:03", IP: "192.168.2.30"}
+	reg.Applied(store.RecordNetworkScan{}, store.Result{NewHosts: []store.NetworkHost{h}, ReturnedHosts: []store.NetworkHost{h}}, false)
+	reg.Applied(store.RecordNetworkScan{}, store.Result{NewHosts: []store.NetworkHost{h}}, true) // the leader's own: already published
+	for _, want := range []string{discovery.EventNew, discovery.EventReturned} {
+		select {
+		case ev := <-ch:
+			if ev.Type != want || ev.Host == nil || ev.Host.MAC != h.MAC {
+				t.Fatalf("event = %+v, want %s", ev, want)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("no %s event", want)
+		}
+	}
+	select {
+	case ev := <-ch:
+		t.Fatalf("unexpected event %+v", ev)
+	default:
+	}
+}

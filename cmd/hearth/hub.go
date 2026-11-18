@@ -12,8 +12,10 @@ import (
 	"maps"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -21,6 +23,7 @@ import (
 
 	"github.com/gvart/hearth/internal/automation"
 	"github.com/gvart/hearth/internal/cluster"
+	"github.com/gvart/hearth/internal/discovery"
 	"github.com/gvart/hearth/internal/hub"
 	"github.com/gvart/hearth/internal/integrations/kubernetes"
 	"github.com/gvart/hearth/internal/integrations/prometheus"
@@ -55,7 +58,12 @@ type hubOptions struct {
 	dangerousAutomations []string
 	// automationsDryRun sends every automation action to policy as a dry run.
 	automationsDryRun bool
-	cluster           clusterOptions
+	// discoverSubnets are the subnets network discovery sweeps (or
+	// "auto"); none turns discovery off.
+	discoverSubnets []string
+	// discoverInterval is the time between discovery scans.
+	discoverInterval time.Duration
+	cluster          clusterOptions
 	// version is the binary's version, which install commands pin agents to.
 	version string
 }
@@ -75,12 +83,21 @@ func newHubCmd() *cobra.Command {
 			"Without cluster flags the hub runs standalone. --cluster forms a Raft cluster from this hub;\n" +
 			"--join adds this hub to an existing one (see docs/design/ha-hub.md).\n\n" +
 			"--prometheus-url points the hub at an existing Prometheus; device charts then show its\n" +
-			"node-exporter data (see docs/prometheus.md).",
+			"node-exporter data (see docs/prometheus.md).\n\n" +
+			"--discover-subnet turns on network discovery: hosts without an agent show up as\n" +
+			"unmanaged devices (see docs/discovery.md).",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			opts.adminPassword = os.Getenv("HEARTH_ADMIN_PASSWORD")
 			opts.joinTokenEnv = os.Getenv("HEARTH_JOIN_TOKEN")
 			opts.version = cmd.Root().Version
+			if v := os.Getenv("HEARTH_DISCOVER_INTERVAL"); v != "" && !cmd.Flags().Changed("discover-interval") {
+				d, err := time.ParseDuration(v)
+				if err != nil {
+					return fmt.Errorf("HEARTH_DISCOVER_INTERVAL: %w", err)
+				}
+				opts.discoverInterval = d
+			}
 			return runHub(cmd.Context(), opts, newLogger(cmd.ErrOrStderr()))
 		},
 	}
@@ -104,8 +121,24 @@ func newHubCmd() *cobra.Command {
 			"added to dangerous_automations of <data-dir>/policy.yaml (default: none)")
 	cmd.Flags().BoolVar(&opts.automationsDryRun, "automations-dry-run", false,
 		"run automations as dry runs: each action's policy decision is audited, and no action runs")
+	cmd.Flags().StringSliceVar(&opts.discoverSubnets, "discover-subnet", splitList(os.Getenv("HEARTH_DISCOVER_SUBNETS")),
+		"IPv4 subnet to discover hosts on with an ARP sweep and mDNS, e.g. 192.168.1.0/24, or \"auto\" for the hub's own LANs; "+
+			"repeatable (env HEARTH_DISCOVER_SUBNETS, comma-separated; default: off; see docs/discovery.md)")
+	cmd.Flags().DurationVar(&opts.discoverInterval, "discover-interval", discovery.DefaultInterval,
+		"time between network discovery scans (env HEARTH_DISCOVER_INTERVAL)")
 	addClusterFlags(cmd, &opts.cluster)
 	return cmd
+}
+
+// splitList splits a comma-separated environment value.
+func splitList(v string) []string {
+	var out []string
+	for _, s := range strings.Split(v, ",") {
+		if s = strings.TrimSpace(s); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
@@ -124,6 +157,14 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	}
 	if err := os.MkdirAll(opts.dataDir, 0o700); err != nil {
 		return fmt.Errorf("create data dir: %w", err)
+	}
+	var subnets []netip.Prefix
+	var autoSubnets bool
+	if len(opts.discoverSubnets) > 0 {
+		var err error
+		if subnets, autoSubnets, err = discovery.ParseSubnets(opts.discoverSubnets); err != nil {
+			return fmt.Errorf("--discover-subnet: %w", err)
+		}
 	}
 	polCfg, err := loadPolicyConfig(opts.dataDir)
 	if err != nil {
@@ -313,10 +354,21 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		DryRun: opts.automationsDryRun,
 	})
 
+	var scanner *discovery.Scanner
+	if len(subnets) > 0 || autoSubnets {
+		scanner = discovery.New(discovery.Config{
+			Subnets: subnets, Auto: autoSubnets, Interval: opts.discoverInterval,
+			Hosts: st.NetworkHosts(), Policy: pol, Events: reg, Log: log.With("component", "discovery"),
+		})
+	}
+
 	g, gctx := errgroup.WithContext(ctx)
 	if node == nil {
 		g.Go(func() error { return reg.Run(gctx) })
 		g.Go(func() error { return automations.Run(gctx) })
+		if scanner != nil {
+			g.Go(func() error { return scanner.Run(gctx) })
+		}
 	}
 	// Every hub of a cluster watches the Kubernetes clusters itself.
 	g.Go(func() error { return kube.Run(gctx) })
@@ -325,11 +377,11 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if node != nil {
 		// Followers publish device events from the entries they apply.
 		node.ObserveApplies(reg)
-		// Presence and automations run on the leader only and follow
-		// leadership.
-		changed, automationsChanged := make(chan struct{}, 1), make(chan struct{}, 1)
+		// Presence, automations and network discovery run on the leader
+		// only and follow leadership.
+		changed, automationsChanged, discoveryChanged := make(chan struct{}, 1), make(chan struct{}, 1), make(chan struct{}, 1)
 		node.OnLeaderChange(func(cluster.LeaderInfo) {
-			for _, c := range []chan struct{}{changed, automationsChanged} {
+			for _, c := range []chan struct{}{changed, automationsChanged, discoveryChanged} {
 				select {
 				case c <- struct{}{}:
 				default:
@@ -340,6 +392,11 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		g.Go(func() error {
 			return automation.RunWhileLeading(gctx, node, automationsChanged, log, automations.Run)
 		})
+		if scanner != nil {
+			g.Go(func() error {
+				return automation.RunWhileLeading(gctx, node, discoveryChanged, log.With("component", "discovery"), scanner.Run)
+			})
+		}
 		g.Go(func() error {
 			if node.WaitReady(gctx) != nil {
 				return nil

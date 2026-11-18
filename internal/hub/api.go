@@ -90,6 +90,7 @@ func (a *api) routes() http.Handler {
 	mux.Handle("GET /api/v1/devices", a.auth(a.listDevices))
 	mux.Handle("GET /api/v1/devices/{id}", a.auth(a.getDevice))
 	mux.Handle("GET /api/v1/devices/{id}/metrics", a.auth(a.deviceMetrics))
+	mux.Handle("GET /api/v1/network/hosts", a.auth(a.listNetworkHosts))
 	mux.Handle("GET /api/v1/events", a.auth(a.events))
 	mux.Handle("POST /api/v1/tokens", a.auth(a.createToken))
 	a.kubeRoutes(mux)
@@ -370,6 +371,12 @@ type EventJSON struct {
 	Device DeviceJSON `json:"device"`
 }
 
+// NetworkEventJSON is the data of a network discovery event.
+type NetworkEventJSON struct {
+	Type string          `json:"type"`
+	Host NetworkHostJSON `json:"host"`
+}
+
 // events streams registry events, and Kubernetes notices when a.kube is
 // set, as server-sent events until the client goes away, its session ends,
 // or it falls too far behind (it should then refetch /devices and the
@@ -406,7 +413,11 @@ func (a *api) events(w http.ResponseWriter, r *http.Request) {
 			if !ok {
 				return
 			}
-			data, mErr := json.Marshal(EventJSON{Type: ev.Type, Device: deviceJSON(ev.Device)})
+			var body any = EventJSON{Type: ev.Type, Device: deviceJSON(ev.Device)}
+			if ev.Host != nil {
+				body = NetworkEventJSON{Type: ev.Type, Host: networkHostJSON(*ev.Host, "")}
+			}
+			data, mErr := json.Marshal(body)
 			if mErr != nil {
 				a.log.ErrorContext(ctx, "encode event", "err", mErr)
 				continue
