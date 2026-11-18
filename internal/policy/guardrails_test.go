@@ -136,6 +136,7 @@ var expected = map[Action]struct {
 	MCPTokenRevoke:            {Safe, []string{ActorAdmin}, false},
 	NetworkScan:               {Read, []string{ActorHub}, false},
 	NetworkHostMark:           {Safe, []string{ActorWeb}, false},
+	NetworkImport:             {Read, []string{ActorHub}, false},
 }
 
 func TestExpectedCoversEveryAction(t *testing.T) {

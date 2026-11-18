@@ -212,6 +212,86 @@ func TestNewDeviceAlertSkipsEnrolledDevices(t *testing.T) {
 	}
 }
 
+// imported records what Pi-hole knows, as discovery.Importer does, at t0
+// plus at. Imports publish nothing.
+func (h *alertHarness) imported(t *testing.T, at time.Duration, hosts ...store.ImportedHost) {
+	t.Helper()
+	if err := h.st.NetworkHosts().RecordImport(t.Context(), h.t0.Add(at), hosts); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// piholeKnows is host as Pi-hole reports it, seen at t.
+func piholeKnows(host store.NetworkHost, name string, t time.Time) store.ImportedHost {
+	return store.ImportedHost{
+		MAC: host.MAC, IP: host.IP, Hostname: name, HostnameSource: store.SourcePihole,
+		Sources: []string{store.SourcePihole}, Seen: t.UnixMilli(),
+	}
+}
+
+// A host Pi-hole knew first alerts once, at the first scan that finds it and
+// with its Pi-hole name; a host only an import knows never alerts.
+func TestNewDeviceAlertImportedHosts(t *testing.T) {
+	h := newAlertHarness(t)
+	vlanTV := store.NetworkHost{MAC: "aa:bb:cc:00:00:04", IP: "192.168.20.5"}
+	h.scan(t, 0, router)
+	h.imported(t, time.Minute, piholeKnows(phone, "iphone", h.t0.Add(time.Minute)), piholeKnows(vlanTV, "tv", h.t0.Add(time.Minute)))
+	h.scan(t, 5*time.Minute, router)
+	h.scan(t, 10*time.Minute, router, phone)
+	h.imported(t, 11*time.Minute, piholeKnows(phone, "iphone", h.t0.Add(11*time.Minute)), piholeKnows(vlanTV, "tv", h.t0.Add(11*time.Minute)))
+	h.scan(t, 15*time.Minute, router, phone)
+	got := h.settle(t, 20*time.Minute, router, phone)
+	if len(got) != 1 {
+		t.Fatalf("notifications = %v, want one, for the phone", got)
+	}
+	if got[0]["title"] != "New device on your network" || !strings.HasPrefix(got[0]["message"], "iphone 192.168.2.30 (3c:2e:f9:00:00:03") {
+		t.Errorf("notification = %v; want the phone, by its Pi-hole name", got[0])
+	}
+}
+
+// An import before the first scan does not end the baseline: turning
+// discovery on next to a Pi-hole does not report the whole LAN.
+func TestNewDeviceAlertImportBeforeBaseline(t *testing.T) {
+	h := newAlertHarness(t)
+	h.imported(t, 0, piholeKnows(phone, "iphone", h.t0))
+	h.scan(t, time.Minute, router, phone)
+	if got := h.settle(t, 5*time.Minute, router, phone); len(got) != 0 {
+		t.Fatalf("notifications = %v, want none from the baseline", got)
+	}
+}
+
+// A host marked while only an import knew it stays silent when a scan finds
+// it.
+func TestNewDeviceAlertImportedHostMarkedBeforeScan(t *testing.T) {
+	h := newAlertHarness(t)
+	h.scan(t, 0, router)
+	h.imported(t, time.Minute, piholeKnows(phone, "iphone", h.t0.Add(time.Minute)))
+	if err := h.st.NetworkHosts().SetState(t.Context(), phone.MAC, store.HostKnown); err != nil {
+		t.Fatal(err)
+	}
+	h.scan(t, 5*time.Minute, router, phone)
+	if got := h.settle(t, 10*time.Minute, router, phone); len(got) != 0 {
+		t.Fatalf("notifications = %v, want none for a known host", got)
+	}
+}
+
+// Pi-hole seeing a host moves its last seen, but only a scan decides it was
+// away: the phone still alerts when it comes back.
+func TestNewDeviceAlertReturnedDespiteImport(t *testing.T) {
+	h := newAlertHarness(t)
+	h.scan(t, 0, router, phone)
+	for at := 30 * time.Minute; at < 3*time.Hour; at += 30 * time.Minute {
+		h.scan(t, at, router)
+	}
+	// Its first DNS query back home reaches Pi-hole just before the scan.
+	h.imported(t, 3*time.Hour-time.Minute, piholeKnows(phone, "iphone", h.t0.Add(3*time.Hour-time.Minute)))
+	h.scan(t, 3*time.Hour, router, phone)
+	got := h.settle(t, 3*time.Hour+5*time.Minute, router, phone)
+	if len(got) != 1 || got[0]["title"] != "Device back on your network" {
+		t.Fatalf("notifications = %v, want one: the phone is back", got)
+	}
+}
+
 // A phone that rotates its randomized ("private") MAC is a new host to
 // discovery each time: one alert per address, each saying it is private.
 // Ignoring one address does not silence the next.

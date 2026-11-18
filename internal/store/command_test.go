@@ -66,6 +66,13 @@ func allCommands() []Command {
 			{MAC: "aa:bb:cc:dd:ee:ff", IP: "192.168.2.50"},
 		}},
 		SetNetworkHostState{MAC: "aa:bb:cc:dd:ee:ff", State: HostIgnored},
+		RecordNetworkImport{At: 24, Hosts: []ImportedHost{
+			{
+				MAC: "2c:cf:67:00:00:01", IP: "192.168.2.171", Hostname: "pi5", HostnameSource: SourcePihole,
+				Sources: []string{SourceDHCP, SourcePihole}, Seen: 24,
+			},
+			{MAC: "aa:bb:cc:dd:ee:01", IP: "192.168.20.5", Sources: []string{SourceDHCP}},
+		}},
 	}
 }
 
@@ -332,6 +339,10 @@ func runScenario(t *testing.T, s *Store) {
 	must(err)
 	must(s.NetworkHosts().SetState(ctx, "aa:bb:cc:dd:ee:ff", HostKnown))
 	wantErr(s.NetworkHosts().SetState(ctx, "00:00:00:00:00:01", HostIgnored), ErrNotFound)
+	must(s.NetworkHosts().RecordImport(ctx, at(6*time.Hour), []ImportedHost{
+		{MAC: pi.MAC, IP: pi.IP, Hostname: "pi5", HostnameSource: SourcePihole, Sources: []string{SourcePihole}, Seen: at(6 * time.Hour).UnixMilli()},
+		{MAC: "aa:bb:cc:dd:ee:01", IP: "192.168.20.5", Hostname: "tv", HostnameSource: SourceDHCP, Sources: []string{SourceDHCP}},
+	}))
 }
 
 // dumpTables returns every row of every table (sqlite_sequence included,

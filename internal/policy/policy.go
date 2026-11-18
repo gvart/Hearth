@@ -126,6 +126,9 @@ const (
 	// ignored, or neither again, which silences or restores its new-device
 	// alerts.
 	NetworkHostMark Action = "network.host.mark"
+	// NetworkImport is one import of the hosts a Pi-hole and DHCP lease
+	// files know, by the hub.
+	NetworkImport Action = "network.import"
 )
 
 // Actor kinds.
@@ -265,6 +268,8 @@ var rules = map[Action]rule{
 	NetworkScan: {class: Read, actors: []string{ActorHub}},
 	// Marking a host changes only which alerts the operator gets about it.
 	NetworkHostMark: {class: Safe, actors: []string{ActorWeb}},
+	// An import reads Pi-hole's API and lease files; it changes nothing.
+	NetworkImport: {class: Read, actors: []string{ActorHub}},
 }
 
 // Actions returns every known action, sorted.

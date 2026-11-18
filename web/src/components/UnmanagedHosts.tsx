@@ -1,4 +1,4 @@
-import type { NetworkHost } from '../api/client.ts';
+import type { NetworkHost, NetworkHostSource } from '../api/client.ts';
 import { useMarkNetworkHost, useNetworkHosts } from '../api/hooks.ts';
 import { relativeTime } from '../format.ts';
 
@@ -17,6 +17,12 @@ function vendorLabel(h: NetworkHost) {
   }
   return isRandomized(h.mac) ? 'Private address' : '—';
 }
+
+const sourceLabels: Record<NetworkHostSource, { label: string; title: string }> = {
+  scan: { label: 'Scan', title: 'Found by the ARP sweep' },
+  pihole: { label: 'Pi-hole', title: 'Known to Pi-hole' },
+  dhcp: { label: 'DHCP', title: 'In a DHCP lease file' },
+};
 
 function byIP(a: NetworkHost, b: NetworkHost) {
   const n = (ip: string) => ip.split('.').reduce((acc, o) => acc * 256 + Number(o), 0);
@@ -49,6 +55,7 @@ export function UnmanagedHosts({ now, onAdd }: { now: number; onAdd: () => void 
             <tr>
               <th>Name</th>
               <th>Vendor</th>
+              <th>Source</th>
               <th>IP</th>
               <th>Last seen</th>
               <th>MAC</th>
@@ -73,6 +80,15 @@ export function UnmanagedHosts({ now, onAdd }: { now: number; onAdd: () => void 
                   </span>
                 </td>
                 <td className="muted">{vendorLabel(h)}</td>
+                <td>
+                  <span className="chips">
+                    {h.sources.map((s) => (
+                      <span className="pill pill-muted" key={s} title={sourceLabels[s].title}>
+                        {sourceLabels[s].label}
+                      </span>
+                    ))}
+                  </span>
+                </td>
                 <td className="mono">{h.ip}</td>
                 <td className="muted">{relativeTime(h.last_seen, now)}</td>
                 <td className="mono muted">{h.mac}</td>

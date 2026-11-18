@@ -67,7 +67,15 @@ type hubOptions struct {
 	// newDeviceAlerts is the notification channel the built-in new-device
 	// alert automation sends to; empty leaves it off.
 	newDeviceAlerts string
-	cluster         clusterOptions
+	// piholeURL is a Pi-hole v6 whose network table and DHCP leases are
+	// imported; empty means none. Its password is HEARTH_PIHOLE_PASSWORD
+	// (piholePassword) or the file piholePasswordFile.
+	piholeURL          string
+	piholePassword     string
+	piholePasswordFile string
+	// dhcpLeases are DHCP lease files (dnsmasq, ISC dhcpd) to import.
+	dhcpLeases []string
+	cluster    clusterOptions
 	// version is the binary's version, which install commands pin agents to.
 	version string
 }
@@ -90,11 +98,13 @@ func newHubCmd() *cobra.Command {
 			"node-exporter data (see docs/prometheus.md).\n\n" +
 			"--discover-subnet turns on network discovery: hosts without an agent show up as\n" +
 			"unmanaged devices (see docs/discovery.md). --new-device-alerts CHANNEL then sends a\n" +
-			"notification for every new host (see docs/discovery.md).",
+			"notification for every new host (see docs/discovery.md). --pihole-url and --dhcp-leases add\n" +
+			"the hosts a Pi-hole or a DHCP server knows, with their names, on every VLAN (see docs/pihole.md).",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			opts.adminPassword = os.Getenv("HEARTH_ADMIN_PASSWORD")
 			opts.joinTokenEnv = os.Getenv("HEARTH_JOIN_TOKEN")
+			opts.piholePassword = os.Getenv("HEARTH_PIHOLE_PASSWORD")
 			opts.version = cmd.Root().Version
 			if v := os.Getenv("HEARTH_DISCOVER_INTERVAL"); v != "" && !cmd.Flags().Changed("discover-interval") {
 				d, err := time.ParseDuration(v)
@@ -130,10 +140,18 @@ func newHubCmd() *cobra.Command {
 		"IPv4 subnet to discover hosts on with an ARP sweep and mDNS, e.g. 192.168.1.0/24, or \"auto\" for the hub's own LANs; "+
 			"repeatable (env HEARTH_DISCOVER_SUBNETS, comma-separated; default: off; see docs/discovery.md)")
 	cmd.Flags().DurationVar(&opts.discoverInterval, "discover-interval", discovery.DefaultInterval,
-		"time between network discovery scans (env HEARTH_DISCOVER_INTERVAL)")
+		"time between network discovery scans and Pi-hole/DHCP lease imports (env HEARTH_DISCOVER_INTERVAL)")
 	cmd.Flags().StringVar(&opts.newDeviceAlerts, "new-device-alerts", os.Getenv("HEARTH_NEW_DEVICE_ALERTS"),
 		"notification channel to tell about every new host network discovery finds (env HEARTH_NEW_DEVICE_ALERTS; "+
 			"default: off; see docs/discovery.md)")
+	cmd.Flags().StringVar(&opts.piholeURL, "pihole-url", os.Getenv("HEARTH_PIHOLE_URL"),
+		"Pi-hole v6 to import network clients and DHCP leases from, e.g. http://pi.hole (env HEARTH_PIHOLE_URL; "+
+			"password from env HEARTH_PIHOLE_PASSWORD or --pihole-password-file; see docs/pihole.md)")
+	cmd.Flags().StringVar(&opts.piholePasswordFile, "pihole-password-file", os.Getenv("HEARTH_PIHOLE_PASSWORD_FILE"),
+		"file holding the Pi-hole app password, mode 0600 (env HEARTH_PIHOLE_PASSWORD_FILE)")
+	cmd.Flags().StringArrayVar(&opts.dhcpLeases, "dhcp-leases", splitList(os.Getenv("HEARTH_DHCP_LEASES")),
+		"DHCP lease file to import hosts from, dnsmasq (/var/lib/misc/dnsmasq.leases) or ISC dhcpd (dhcpd.leases); "+
+			"repeatable (env HEARTH_DHCP_LEASES, comma-separated)")
 	addClusterFlags(cmd, &opts.cluster)
 	return cmd
 }
@@ -173,6 +191,10 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		if subnets, autoSubnets, err = discovery.ParseSubnets(opts.discoverSubnets); err != nil {
 			return fmt.Errorf("--discover-subnet: %w", err)
 		}
+	}
+	importSources, err := leaseSources(opts)
+	if err != nil {
+		return err
 	}
 	polCfg, err := loadPolicyConfig(opts.dataDir)
 	if err != nil {
@@ -352,7 +374,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if node != nil {
 		logAttrs = append(logAttrs, "node_id", node.ID(), "raft_addr", node.Addr())
 	}
-	logAttrs = append(logAttrs, "prometheus", prom != nil)
+	logAttrs = append(logAttrs, "prometheus", prom != nil, "pihole", opts.piholeURL != "", "dhcp_lease_files", len(opts.dhcpLeases))
 	log.InfoContext(ctx, "hub listening", logAttrs...)
 
 	kinds := automation.Builtin(log)
@@ -393,6 +415,13 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 			Hosts: st.NetworkHosts(), Policy: pol, Events: reg, Log: log.With("component", "discovery"),
 		})
 	}
+	var importer *discovery.Importer
+	if len(importSources) > 0 {
+		importer = discovery.NewImporter(discovery.ImportConfig{
+			Sources: importSources, Interval: opts.discoverInterval,
+			Hosts: st.NetworkHosts(), Policy: pol, Log: log.With("component", "network-import"),
+		})
+	}
 
 	g, gctx := errgroup.WithContext(ctx)
 	if node == nil {
@@ -400,6 +429,9 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		g.Go(func() error { return automations.Run(gctx) })
 		if scanner != nil {
 			g.Go(func() error { return scanner.Run(gctx) })
+		}
+		if importer != nil {
+			g.Go(func() error { return importer.Run(gctx) })
 		}
 	}
 	// Every hub of a cluster watches the Kubernetes clusters itself.
@@ -414,8 +446,9 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		// Presence, automations and network discovery run on the leader
 		// only and follow leadership.
 		changed, automationsChanged, discoveryChanged := make(chan struct{}, 1), make(chan struct{}, 1), make(chan struct{}, 1)
+		importChanged := make(chan struct{}, 1)
 		node.OnLeaderChange(func(cluster.LeaderInfo) {
-			for _, c := range []chan struct{}{changed, automationsChanged, discoveryChanged} {
+			for _, c := range []chan struct{}{changed, automationsChanged, discoveryChanged, importChanged} {
 				select {
 				case c <- struct{}{}:
 				default:
@@ -429,6 +462,11 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		if scanner != nil {
 			g.Go(func() error {
 				return automation.RunWhileLeading(gctx, node, discoveryChanged, log.With("component", "discovery"), scanner.Run)
+			})
+		}
+		if importer != nil {
+			g.Go(func() error {
+				return automation.RunWhileLeading(gctx, node, importChanged, log.With("component", "network-import"), importer.Run)
 			})
 		}
 		g.Go(func() error {

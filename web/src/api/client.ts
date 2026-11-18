@@ -100,13 +100,19 @@ export interface DeviceEvent {
   device: Device;
 }
 
+export type NetworkHostSource = 'scan' | 'pihole' | 'dhcp';
+
 /** A host network discovery found on the LAN; see /api/v1/network/hosts. */
 export interface NetworkHost {
   /** Lower-case, colon-separated; the host's identity across IP changes. */
   mac: string;
   ip: string;
-  /** From mDNS or LAN reverse DNS; empty when unknown. */
+  /** From Pi-hole, a DHCP lease, mDNS or LAN reverse DNS; empty when unknown. */
   hostname: string;
+  /** Where the host was learned: the network scan, Pi-hole, DHCP lease files. */
+  sources: NetworkHostSource[];
+  /** The source that gave `hostname`; empty when none did. */
+  hostname_source: NetworkHostSource | '';
   /** From the MAC's OUI; empty when unknown or the MAC is randomized. */
   vendor: string;
   /** The enrolled device with this MAC; empty for an unmanaged host. */

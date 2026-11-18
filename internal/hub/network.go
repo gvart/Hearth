@@ -29,12 +29,21 @@ type NetworkHostJSON struct {
 	LastSeen  time.Time `json:"last_seen"`
 	// State is "" (not reviewed), "known" or "ignored".
 	State string `json:"state"`
+	// Sources are where the host was learned: "scan", "pihole", "dhcp".
+	Sources []string `json:"sources"`
+	// HostnameSource is the source that gave Hostname; "" if none did.
+	HostnameSource string `json:"hostname_source"`
 }
 
 func networkHostJSON(h store.NetworkHost, deviceID string) NetworkHostJSON {
+	sources := h.Sources
+	if sources == nil {
+		sources = []string{}
+	}
 	return NetworkHostJSON{
 		MAC: h.MAC, IP: h.IP, Hostname: h.Hostname, Vendor: h.Vendor, DeviceID: deviceID,
 		FirstSeen: h.FirstSeen, LastSeen: h.LastSeen, State: h.State,
+		Sources: sources, HostnameSource: h.HostnameSource,
 	}
 }
 
