@@ -24,6 +24,15 @@ type Facts struct {
 	Interfaces    []Interface `json:"interfaces"`
 	AgentVersion  string      `json:"agent_version"`
 	Capabilities  []string    `json:"capabilities"`
+	// Ceiling is the capability ceiling the agent reports; nil for an agent
+	// too old to report one, to which the hub sends no action.
+	Ceiling *Ceiling `json:"ceiling,omitempty"`
+}
+
+// Ceiling is what the device's agent lets the hub run.
+type Ceiling struct {
+	Exec    []string `json:"exec"`
+	Restart []string `json:"restart"`
 }
 
 // Disk is a mounted filesystem.
@@ -54,6 +63,9 @@ func factsFromHello(h *agentv1.Hello) (store.DeviceFacts, error) {
 		Interfaces:    []Interface{},
 		AgentVersion:  h.GetAgentVersion(),
 		Capabilities:  nonNil(h.GetCapabilities()),
+	}
+	if c := h.GetCeiling(); c != nil {
+		f.Ceiling = &Ceiling{Exec: nonNil(c.GetExec()), Restart: nonNil(c.GetRestart())}
 	}
 	for _, d := range h.GetDisks() {
 		f.Disks = append(f.Disks, Disk{

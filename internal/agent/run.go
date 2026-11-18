@@ -29,7 +29,7 @@ import (
 // Protocol version this agent speaks.
 const (
 	ProtocolMajor = 1
-	ProtocolMinor = 1 // 1: answers ExecRequest
+	ProtocolMinor = 2 // 1: answers ExecRequest; 2: reports its capability ceiling
 )
 
 const (
@@ -313,6 +313,7 @@ func (r *runner) hello(ctx context.Context) *agentv1.Hello {
 	h.ProtocolVersion = &agentv1.ProtocolVersion{Major: ProtocolMajor, Minor: ProtocolMinor}
 	h.DeviceId = r.id.deviceID // informational; the hub uses the certificate
 	h.AgentVersion = r.cfg.Version
+	h.Ceiling = r.cfg.Ceiling.proto()
 	return h
 }
 

@@ -49,9 +49,12 @@ type hubOptions struct {
 	// notifyConfig is the notification channels file; default
 	// <dataDir>/notify.yaml if it exists.
 	notifyConfig string
-	// dangerousAutomations are the automations granted dangerous actions.
+	// dangerousAutomations are the automations granted dangerous actions,
+	// on top of those the policy file grants.
 	dangerousAutomations []string
-	cluster              clusterOptions
+	// automationsDryRun sends every automation action to policy as a dry run.
+	automationsDryRun bool
+	cluster           clusterOptions
 	// version is the binary's version, which install commands pin agents to.
 	version string
 }
@@ -96,7 +99,10 @@ func newHubCmd() *cobra.Command {
 	cmd.Flags().StringVar(&opts.notifyConfig, "notify-config", os.Getenv("HEARTH_NOTIFY_CONFIG"),
 		"file of notification channels (ntfy, Telegram) for notify actions (env HEARTH_NOTIFY_CONFIG; default <data-dir>/notify.yaml if it exists; see docs/notifications.md)")
 	cmd.Flags().StringArrayVar(&opts.dangerousAutomations, "allow-dangerous-automation", nil,
-		"id of an automation allowed to take dangerous actions, such as exec; repeatable (default: none)")
+		"id of an automation allowed to take dangerous actions, such as exec, without approval; repeatable, "+
+			"added to dangerous_automations of <data-dir>/policy.yaml (default: none)")
+	cmd.Flags().BoolVar(&opts.automationsDryRun, "automations-dry-run", false,
+		"run automations as dry runs: each action's policy decision is audited, and no action runs")
 	addClusterFlags(cmd, &opts.cluster)
 	return cmd
 }
@@ -118,6 +124,11 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if err := os.MkdirAll(opts.dataDir, 0o700); err != nil {
 		return fmt.Errorf("create data dir: %w", err)
 	}
+	polCfg, err := loadPolicyConfig(opts.dataDir)
+	if err != nil {
+		return err
+	}
+	polCfg.DangerousAutomations = append(polCfg.DangerousAutomations, opts.dangerousAutomations...)
 	hosts := opts.hosts
 	if len(hosts) == 0 {
 		hosts = []string{hostnameOr("localhost"), "localhost", "127.0.0.1", "::1"}
@@ -132,7 +143,6 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		st   *store.Store
 		ca   *pki.CA
 		node *cluster.Node
-		err  error
 	)
 	if opts.cluster.clustered(opts.dataDir) {
 		// Agents and other hubs reach this hub by its first --host name.
@@ -162,7 +172,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		return err
 	}
 
-	pol := policy.NewWithConfig(st.Audit(), policy.Config{DangerousAutomations: opts.dangerousAutomations})
+	pol := policy.NewWithConfig(st.Audit(), st.Approvals(), polCfg)
 	if node == nil {
 		if err := ensureAdminPassword(ctx, st, pol, opts, log); err != nil {
 			return err
@@ -285,6 +295,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		Policy: pol,
 		Runs:   st.AutomationRuns(),
 		Log:    log,
+		DryRun: opts.automationsDryRun,
 	})
 
 	g, gctx := errgroup.WithContext(ctx)

@@ -326,8 +326,13 @@ type Hello struct {
 	Interfaces      []*NetworkInterface    `protobuf:"bytes,11,rep,name=interfaces,proto3" json:"interfaces,omitempty"`
 	AgentVersion    string                 `protobuf:"bytes,12,opt,name=agent_version,json=agentVersion,proto3" json:"agent_version,omitempty"`
 	Capabilities    []string               `protobuf:"bytes,13,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// ceiling is the device's capability ceiling, sent by agents of protocol
+	// minor 2 and later, in every Hello and Facts. The hub refuses to send an
+	// ExecRequest beyond it, and to send any to an agent that does not report
+	// it; the agent refuses again what is beyond it.
+	Ceiling       *Ceiling `protobuf:"bytes,14,opt,name=ceiling,proto3" json:"ceiling,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Hello) Reset() {
@@ -451,6 +456,71 @@ func (x *Hello) GetCapabilities() []string {
 	return nil
 }
 
+func (x *Hello) GetCeiling() *Ceiling {
+	if x != nil {
+		return x.Ceiling
+	}
+	return nil
+}
+
+// Ceiling is what a device's agent lets the hub run: its own configuration,
+// which the hub can never raise. An empty Ceiling allows nothing.
+type Ceiling struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// exec are the programs the hub may run, matched exactly against
+	// Command.argv[0], with any arguments.
+	Exec []string `protobuf:"bytes,1,rep,name=exec,proto3" json:"exec,omitempty"`
+	// restart are the services the hub may restart, as manager:name (see
+	// RestartService).
+	Restart       []string `protobuf:"bytes,2,rep,name=restart,proto3" json:"restart,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Ceiling) Reset() {
+	*x = Ceiling{}
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Ceiling) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Ceiling) ProtoMessage() {}
+
+func (x *Ceiling) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Ceiling.ProtoReflect.Descriptor instead.
+func (*Ceiling) Descriptor() ([]byte, []int) {
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *Ceiling) GetExec() []string {
+	if x != nil {
+		return x.Exec
+	}
+	return nil
+}
+
+func (x *Ceiling) GetRestart() []string {
+	if x != nil {
+		return x.Restart
+	}
+	return nil
+}
+
 // Disk is a mounted filesystem.
 type Disk struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -464,7 +534,7 @@ type Disk struct {
 
 func (x *Disk) Reset() {
 	*x = Disk{}
-	mi := &file_hearth_agent_v1_agent_proto_msgTypes[4]
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -476,7 +546,7 @@ func (x *Disk) String() string {
 func (*Disk) ProtoMessage() {}
 
 func (x *Disk) ProtoReflect() protoreflect.Message {
-	mi := &file_hearth_agent_v1_agent_proto_msgTypes[4]
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -489,7 +559,7 @@ func (x *Disk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Disk.ProtoReflect.Descriptor instead.
 func (*Disk) Descriptor() ([]byte, []int) {
-	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{4}
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *Disk) GetDevice() string {
@@ -532,7 +602,7 @@ type NetworkInterface struct {
 
 func (x *NetworkInterface) Reset() {
 	*x = NetworkInterface{}
-	mi := &file_hearth_agent_v1_agent_proto_msgTypes[5]
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -544,7 +614,7 @@ func (x *NetworkInterface) String() string {
 func (*NetworkInterface) ProtoMessage() {}
 
 func (x *NetworkInterface) ProtoReflect() protoreflect.Message {
-	mi := &file_hearth_agent_v1_agent_proto_msgTypes[5]
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -557,7 +627,7 @@ func (x *NetworkInterface) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NetworkInterface.ProtoReflect.Descriptor instead.
 func (*NetworkInterface) Descriptor() ([]byte, []int) {
-	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{5}
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *NetworkInterface) GetName() string {
@@ -592,7 +662,7 @@ type Heartbeat struct {
 
 func (x *Heartbeat) Reset() {
 	*x = Heartbeat{}
-	mi := &file_hearth_agent_v1_agent_proto_msgTypes[6]
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -604,7 +674,7 @@ func (x *Heartbeat) String() string {
 func (*Heartbeat) ProtoMessage() {}
 
 func (x *Heartbeat) ProtoReflect() protoreflect.Message {
-	mi := &file_hearth_agent_v1_agent_proto_msgTypes[6]
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -617,7 +687,7 @@ func (x *Heartbeat) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Heartbeat.ProtoReflect.Descriptor instead.
 func (*Heartbeat) Descriptor() ([]byte, []int) {
-	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{6}
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *Heartbeat) GetTs() *timestamppb.Timestamp {
@@ -644,7 +714,7 @@ type MetricsBatch struct {
 
 func (x *MetricsBatch) Reset() {
 	*x = MetricsBatch{}
-	mi := &file_hearth_agent_v1_agent_proto_msgTypes[7]
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -656,7 +726,7 @@ func (x *MetricsBatch) String() string {
 func (*MetricsBatch) ProtoMessage() {}
 
 func (x *MetricsBatch) ProtoReflect() protoreflect.Message {
-	mi := &file_hearth_agent_v1_agent_proto_msgTypes[7]
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -669,7 +739,7 @@ func (x *MetricsBatch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MetricsBatch.ProtoReflect.Descriptor instead.
 func (*MetricsBatch) Descriptor() ([]byte, []int) {
-	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{7}
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *MetricsBatch) GetSamples() []*MetricSample {
@@ -692,7 +762,7 @@ type MetricSample struct {
 
 func (x *MetricSample) Reset() {
 	*x = MetricSample{}
-	mi := &file_hearth_agent_v1_agent_proto_msgTypes[8]
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -704,7 +774,7 @@ func (x *MetricSample) String() string {
 func (*MetricSample) ProtoMessage() {}
 
 func (x *MetricSample) ProtoReflect() protoreflect.Message {
-	mi := &file_hearth_agent_v1_agent_proto_msgTypes[8]
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -717,7 +787,7 @@ func (x *MetricSample) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MetricSample.ProtoReflect.Descriptor instead.
 func (*MetricSample) Descriptor() ([]byte, []int) {
-	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{8}
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *MetricSample) GetName() string {
@@ -769,7 +839,7 @@ type ExecResult struct {
 
 func (x *ExecResult) Reset() {
 	*x = ExecResult{}
-	mi := &file_hearth_agent_v1_agent_proto_msgTypes[9]
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -781,7 +851,7 @@ func (x *ExecResult) String() string {
 func (*ExecResult) ProtoMessage() {}
 
 func (x *ExecResult) ProtoReflect() protoreflect.Message {
-	mi := &file_hearth_agent_v1_agent_proto_msgTypes[9]
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -794,7 +864,7 @@ func (x *ExecResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecResult.ProtoReflect.Descriptor instead.
 func (*ExecResult) Descriptor() ([]byte, []int) {
-	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{9}
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ExecResult) GetId() string {
@@ -840,7 +910,7 @@ type Welcome struct {
 
 func (x *Welcome) Reset() {
 	*x = Welcome{}
-	mi := &file_hearth_agent_v1_agent_proto_msgTypes[10]
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -852,7 +922,7 @@ func (x *Welcome) String() string {
 func (*Welcome) ProtoMessage() {}
 
 func (x *Welcome) ProtoReflect() protoreflect.Message {
-	mi := &file_hearth_agent_v1_agent_proto_msgTypes[10]
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -865,7 +935,7 @@ func (x *Welcome) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Welcome.ProtoReflect.Descriptor instead.
 func (*Welcome) Descriptor() ([]byte, []int) {
-	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{10}
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *Welcome) GetServerTime() *timestamppb.Timestamp {
@@ -904,7 +974,7 @@ type NotLeader struct {
 
 func (x *NotLeader) Reset() {
 	*x = NotLeader{}
-	mi := &file_hearth_agent_v1_agent_proto_msgTypes[11]
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -916,7 +986,7 @@ func (x *NotLeader) String() string {
 func (*NotLeader) ProtoMessage() {}
 
 func (x *NotLeader) ProtoReflect() protoreflect.Message {
-	mi := &file_hearth_agent_v1_agent_proto_msgTypes[11]
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -929,7 +999,7 @@ func (x *NotLeader) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NotLeader.ProtoReflect.Descriptor instead.
 func (*NotLeader) Descriptor() ([]byte, []int) {
-	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{11}
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *NotLeader) GetLeaderUrl() string {
@@ -959,7 +1029,7 @@ type CertificateRevoked struct {
 
 func (x *CertificateRevoked) Reset() {
 	*x = CertificateRevoked{}
-	mi := &file_hearth_agent_v1_agent_proto_msgTypes[12]
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -971,7 +1041,7 @@ func (x *CertificateRevoked) String() string {
 func (*CertificateRevoked) ProtoMessage() {}
 
 func (x *CertificateRevoked) ProtoReflect() protoreflect.Message {
-	mi := &file_hearth_agent_v1_agent_proto_msgTypes[12]
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -984,7 +1054,7 @@ func (x *CertificateRevoked) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CertificateRevoked.ProtoReflect.Descriptor instead.
 func (*CertificateRevoked) Descriptor() ([]byte, []int) {
-	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{12}
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{13}
 }
 
 // ExecRequest asks the agent to run an action. The agent runs it only if its
@@ -1007,7 +1077,7 @@ type ExecRequest struct {
 
 func (x *ExecRequest) Reset() {
 	*x = ExecRequest{}
-	mi := &file_hearth_agent_v1_agent_proto_msgTypes[13]
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1019,7 +1089,7 @@ func (x *ExecRequest) String() string {
 func (*ExecRequest) ProtoMessage() {}
 
 func (x *ExecRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hearth_agent_v1_agent_proto_msgTypes[13]
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1032,7 +1102,7 @@ func (x *ExecRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecRequest.ProtoReflect.Descriptor instead.
 func (*ExecRequest) Descriptor() ([]byte, []int) {
-	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{13}
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ExecRequest) GetId() string {
@@ -1102,7 +1172,7 @@ type Command struct {
 
 func (x *Command) Reset() {
 	*x = Command{}
-	mi := &file_hearth_agent_v1_agent_proto_msgTypes[14]
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1114,7 +1184,7 @@ func (x *Command) String() string {
 func (*Command) ProtoMessage() {}
 
 func (x *Command) ProtoReflect() protoreflect.Message {
-	mi := &file_hearth_agent_v1_agent_proto_msgTypes[14]
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1127,7 +1197,7 @@ func (x *Command) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Command.ProtoReflect.Descriptor instead.
 func (*Command) Descriptor() ([]byte, []int) {
-	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{14}
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *Command) GetArgv() []string {
@@ -1150,7 +1220,7 @@ type RestartService struct {
 
 func (x *RestartService) Reset() {
 	*x = RestartService{}
-	mi := &file_hearth_agent_v1_agent_proto_msgTypes[15]
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1162,7 +1232,7 @@ func (x *RestartService) String() string {
 func (*RestartService) ProtoMessage() {}
 
 func (x *RestartService) ProtoReflect() protoreflect.Message {
-	mi := &file_hearth_agent_v1_agent_proto_msgTypes[15]
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1175,7 +1245,7 @@ func (x *RestartService) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RestartService.ProtoReflect.Descriptor instead.
 func (*RestartService) Descriptor() ([]byte, []int) {
-	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{15}
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *RestartService) GetManager() string {
@@ -1201,7 +1271,7 @@ type Ping struct {
 
 func (x *Ping) Reset() {
 	*x = Ping{}
-	mi := &file_hearth_agent_v1_agent_proto_msgTypes[16]
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1213,7 +1283,7 @@ func (x *Ping) String() string {
 func (*Ping) ProtoMessage() {}
 
 func (x *Ping) ProtoReflect() protoreflect.Message {
-	mi := &file_hearth_agent_v1_agent_proto_msgTypes[16]
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1226,7 +1296,7 @@ func (x *Ping) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Ping.ProtoReflect.Descriptor instead.
 func (*Ping) Descriptor() ([]byte, []int) {
-	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{16}
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{17}
 }
 
 var File_hearth_agent_v1_agent_proto protoreflect.FileDescriptor
@@ -1250,7 +1320,7 @@ const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"\apayload\"=\n" +
 	"\x0fProtocolVersion\x12\x14\n" +
 	"\x05major\x18\x01 \x01(\rR\x05major\x12\x14\n" +
-	"\x05minor\x18\x02 \x01(\rR\x05minor\"\xe4\x03\n" +
+	"\x05minor\x18\x02 \x01(\rR\x05minor\"\x98\x04\n" +
 	"\x05Hello\x12K\n" +
 	"\x10protocol_version\x18\x01 \x01(\v2 .hearth.agent.v1.ProtocolVersionR\x0fprotocolVersion\x12\x1b\n" +
 	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\x12\x1a\n" +
@@ -1267,7 +1337,11 @@ const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"interfaces\x18\v \x03(\v2!.hearth.agent.v1.NetworkInterfaceR\n" +
 	"interfaces\x12#\n" +
 	"\ragent_version\x18\f \x01(\tR\fagentVersion\x12\"\n" +
-	"\fcapabilities\x18\r \x03(\tR\fcapabilities\"w\n" +
+	"\fcapabilities\x18\r \x03(\tR\fcapabilities\x122\n" +
+	"\aceiling\x18\x0e \x01(\v2\x18.hearth.agent.v1.CeilingR\aceiling\"7\n" +
+	"\aCeiling\x12\x12\n" +
+	"\x04exec\x18\x01 \x03(\tR\x04exec\x12\x18\n" +
+	"\arestart\x18\x02 \x03(\tR\arestart\"w\n" +
 	"\x04Disk\x12\x16\n" +
 	"\x06device\x18\x01 \x01(\tR\x06device\x12\x1e\n" +
 	"\n" +
@@ -1338,58 +1412,60 @@ func file_hearth_agent_v1_agent_proto_rawDescGZIP() []byte {
 	return file_hearth_agent_v1_agent_proto_rawDescData
 }
 
-var file_hearth_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
+var file_hearth_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_hearth_agent_v1_agent_proto_goTypes = []any{
 	(*AgentMessage)(nil),          // 0: hearth.agent.v1.AgentMessage
 	(*HubMessage)(nil),            // 1: hearth.agent.v1.HubMessage
 	(*ProtocolVersion)(nil),       // 2: hearth.agent.v1.ProtocolVersion
 	(*Hello)(nil),                 // 3: hearth.agent.v1.Hello
-	(*Disk)(nil),                  // 4: hearth.agent.v1.Disk
-	(*NetworkInterface)(nil),      // 5: hearth.agent.v1.NetworkInterface
-	(*Heartbeat)(nil),             // 6: hearth.agent.v1.Heartbeat
-	(*MetricsBatch)(nil),          // 7: hearth.agent.v1.MetricsBatch
-	(*MetricSample)(nil),          // 8: hearth.agent.v1.MetricSample
-	(*ExecResult)(nil),            // 9: hearth.agent.v1.ExecResult
-	(*Welcome)(nil),               // 10: hearth.agent.v1.Welcome
-	(*NotLeader)(nil),             // 11: hearth.agent.v1.NotLeader
-	(*CertificateRevoked)(nil),    // 12: hearth.agent.v1.CertificateRevoked
-	(*ExecRequest)(nil),           // 13: hearth.agent.v1.ExecRequest
-	(*Command)(nil),               // 14: hearth.agent.v1.Command
-	(*RestartService)(nil),        // 15: hearth.agent.v1.RestartService
-	(*Ping)(nil),                  // 16: hearth.agent.v1.Ping
-	nil,                           // 17: hearth.agent.v1.MetricSample.LabelsEntry
-	(*timestamppb.Timestamp)(nil), // 18: google.protobuf.Timestamp
-	(*durationpb.Duration)(nil),   // 19: google.protobuf.Duration
+	(*Ceiling)(nil),               // 4: hearth.agent.v1.Ceiling
+	(*Disk)(nil),                  // 5: hearth.agent.v1.Disk
+	(*NetworkInterface)(nil),      // 6: hearth.agent.v1.NetworkInterface
+	(*Heartbeat)(nil),             // 7: hearth.agent.v1.Heartbeat
+	(*MetricsBatch)(nil),          // 8: hearth.agent.v1.MetricsBatch
+	(*MetricSample)(nil),          // 9: hearth.agent.v1.MetricSample
+	(*ExecResult)(nil),            // 10: hearth.agent.v1.ExecResult
+	(*Welcome)(nil),               // 11: hearth.agent.v1.Welcome
+	(*NotLeader)(nil),             // 12: hearth.agent.v1.NotLeader
+	(*CertificateRevoked)(nil),    // 13: hearth.agent.v1.CertificateRevoked
+	(*ExecRequest)(nil),           // 14: hearth.agent.v1.ExecRequest
+	(*Command)(nil),               // 15: hearth.agent.v1.Command
+	(*RestartService)(nil),        // 16: hearth.agent.v1.RestartService
+	(*Ping)(nil),                  // 17: hearth.agent.v1.Ping
+	nil,                           // 18: hearth.agent.v1.MetricSample.LabelsEntry
+	(*timestamppb.Timestamp)(nil), // 19: google.protobuf.Timestamp
+	(*durationpb.Duration)(nil),   // 20: google.protobuf.Duration
 }
 var file_hearth_agent_v1_agent_proto_depIdxs = []int32{
 	3,  // 0: hearth.agent.v1.AgentMessage.hello:type_name -> hearth.agent.v1.Hello
-	6,  // 1: hearth.agent.v1.AgentMessage.heartbeat:type_name -> hearth.agent.v1.Heartbeat
-	7,  // 2: hearth.agent.v1.AgentMessage.metrics_batch:type_name -> hearth.agent.v1.MetricsBatch
-	9,  // 3: hearth.agent.v1.AgentMessage.exec_result:type_name -> hearth.agent.v1.ExecResult
+	7,  // 1: hearth.agent.v1.AgentMessage.heartbeat:type_name -> hearth.agent.v1.Heartbeat
+	8,  // 2: hearth.agent.v1.AgentMessage.metrics_batch:type_name -> hearth.agent.v1.MetricsBatch
+	10, // 3: hearth.agent.v1.AgentMessage.exec_result:type_name -> hearth.agent.v1.ExecResult
 	3,  // 4: hearth.agent.v1.AgentMessage.facts:type_name -> hearth.agent.v1.Hello
-	10, // 5: hearth.agent.v1.HubMessage.welcome:type_name -> hearth.agent.v1.Welcome
-	13, // 6: hearth.agent.v1.HubMessage.exec_request:type_name -> hearth.agent.v1.ExecRequest
-	16, // 7: hearth.agent.v1.HubMessage.ping:type_name -> hearth.agent.v1.Ping
+	11, // 5: hearth.agent.v1.HubMessage.welcome:type_name -> hearth.agent.v1.Welcome
+	14, // 6: hearth.agent.v1.HubMessage.exec_request:type_name -> hearth.agent.v1.ExecRequest
+	17, // 7: hearth.agent.v1.HubMessage.ping:type_name -> hearth.agent.v1.Ping
 	2,  // 8: hearth.agent.v1.Hello.protocol_version:type_name -> hearth.agent.v1.ProtocolVersion
-	4,  // 9: hearth.agent.v1.Hello.disks:type_name -> hearth.agent.v1.Disk
-	5,  // 10: hearth.agent.v1.Hello.interfaces:type_name -> hearth.agent.v1.NetworkInterface
-	18, // 11: hearth.agent.v1.Heartbeat.ts:type_name -> google.protobuf.Timestamp
-	19, // 12: hearth.agent.v1.Heartbeat.uptime:type_name -> google.protobuf.Duration
-	8,  // 13: hearth.agent.v1.MetricsBatch.samples:type_name -> hearth.agent.v1.MetricSample
-	17, // 14: hearth.agent.v1.MetricSample.labels:type_name -> hearth.agent.v1.MetricSample.LabelsEntry
-	18, // 15: hearth.agent.v1.MetricSample.ts:type_name -> google.protobuf.Timestamp
-	18, // 16: hearth.agent.v1.Welcome.server_time:type_name -> google.protobuf.Timestamp
-	19, // 17: hearth.agent.v1.Welcome.heartbeat_interval:type_name -> google.protobuf.Duration
-	19, // 18: hearth.agent.v1.ExecRequest.timeout:type_name -> google.protobuf.Duration
-	14, // 19: hearth.agent.v1.ExecRequest.command:type_name -> hearth.agent.v1.Command
-	15, // 20: hearth.agent.v1.ExecRequest.restart:type_name -> hearth.agent.v1.RestartService
-	0,  // 21: hearth.agent.v1.AgentService.Connect:input_type -> hearth.agent.v1.AgentMessage
-	1,  // 22: hearth.agent.v1.AgentService.Connect:output_type -> hearth.agent.v1.HubMessage
-	22, // [22:23] is the sub-list for method output_type
-	21, // [21:22] is the sub-list for method input_type
-	21, // [21:21] is the sub-list for extension type_name
-	21, // [21:21] is the sub-list for extension extendee
-	0,  // [0:21] is the sub-list for field type_name
+	5,  // 9: hearth.agent.v1.Hello.disks:type_name -> hearth.agent.v1.Disk
+	6,  // 10: hearth.agent.v1.Hello.interfaces:type_name -> hearth.agent.v1.NetworkInterface
+	4,  // 11: hearth.agent.v1.Hello.ceiling:type_name -> hearth.agent.v1.Ceiling
+	19, // 12: hearth.agent.v1.Heartbeat.ts:type_name -> google.protobuf.Timestamp
+	20, // 13: hearth.agent.v1.Heartbeat.uptime:type_name -> google.protobuf.Duration
+	9,  // 14: hearth.agent.v1.MetricsBatch.samples:type_name -> hearth.agent.v1.MetricSample
+	18, // 15: hearth.agent.v1.MetricSample.labels:type_name -> hearth.agent.v1.MetricSample.LabelsEntry
+	19, // 16: hearth.agent.v1.MetricSample.ts:type_name -> google.protobuf.Timestamp
+	19, // 17: hearth.agent.v1.Welcome.server_time:type_name -> google.protobuf.Timestamp
+	20, // 18: hearth.agent.v1.Welcome.heartbeat_interval:type_name -> google.protobuf.Duration
+	20, // 19: hearth.agent.v1.ExecRequest.timeout:type_name -> google.protobuf.Duration
+	15, // 20: hearth.agent.v1.ExecRequest.command:type_name -> hearth.agent.v1.Command
+	16, // 21: hearth.agent.v1.ExecRequest.restart:type_name -> hearth.agent.v1.RestartService
+	0,  // 22: hearth.agent.v1.AgentService.Connect:input_type -> hearth.agent.v1.AgentMessage
+	1,  // 23: hearth.agent.v1.AgentService.Connect:output_type -> hearth.agent.v1.HubMessage
+	23, // [23:24] is the sub-list for method output_type
+	22, // [22:23] is the sub-list for method input_type
+	22, // [22:22] is the sub-list for extension type_name
+	22, // [22:22] is the sub-list for extension extendee
+	0,  // [0:22] is the sub-list for field type_name
 }
 
 func init() { file_hearth_agent_v1_agent_proto_init() }
@@ -1409,7 +1485,7 @@ func file_hearth_agent_v1_agent_proto_init() {
 		(*HubMessage_ExecRequest)(nil),
 		(*HubMessage_Ping)(nil),
 	}
-	file_hearth_agent_v1_agent_proto_msgTypes[13].OneofWrappers = []any{
+	file_hearth_agent_v1_agent_proto_msgTypes[14].OneofWrappers = []any{
 		(*ExecRequest_Command)(nil),
 		(*ExecRequest_Restart)(nil),
 	}
@@ -1419,7 +1495,7 @@ func file_hearth_agent_v1_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_hearth_agent_v1_agent_proto_rawDesc), len(file_hearth_agent_v1_agent_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   18,
+			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

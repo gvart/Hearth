@@ -43,6 +43,13 @@ type TokenJSON struct {
 	JoinCommand    string    `json:"join_command"`
 }
 
+// DryRunJSON answers a dry run: the decision policy made and audited, allow
+// or confirm (a denial is an error). Nothing was done.
+type DryRunJSON struct {
+	DryRun   bool   `json:"dry_run"`
+	Decision string `json:"decision"`
+}
+
 // createToken mints a single-use enrollment token for the web UI's "Add
 // device" dialog, with the commands that use it.
 func (a *api) createToken(w http.ResponseWriter, r *http.Request) {
@@ -54,11 +61,13 @@ func (a *api) createToken(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		TTL    string            `json:"ttl"`
 		Labels map[string]string `json:"labels"`
+		// DryRun decides and audits the request without creating a token.
+		DryRun bool `json:"dry_run"`
 	}
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxTokenBody))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", `body must be {"ttl"?: "15m", "labels"?: {"k": "v"}}`)
+		writeError(w, http.StatusBadRequest, "bad_request", `body must be {"ttl"?: "15m", "labels"?: {"k": "v"}, "dry_run"?: false}`)
 		return
 	}
 	ttl := defaultTokenTTL
@@ -87,12 +96,14 @@ func (a *api) createToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	expires := a.now().Add(ttl).UTC().Truncate(time.Millisecond)
-	err = a.policy.Do(ctx, policy.Request{
+	req := policy.Request{
 		ActorKind: policy.ActorWeb,
 		ActorID:   remoteHost(r),
 		Action:    policy.TokenCreate,
 		Detail:    map[string]any{"ttl": ttl.String(), "labels": body.Labels},
-	}, func(ctx context.Context) error {
+		DryRun:    body.DryRun,
+	}
+	err = a.policy.Do(ctx, req, func(ctx context.Context) error {
 		return a.store.Tokens().Create(ctx, tok.Secret, body.Labels, expires)
 	})
 	switch {
@@ -105,6 +116,10 @@ func (a *api) createToken(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		a.log.ErrorContext(ctx, "create token", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal", "cannot create token")
+		return
+	case body.DryRun:
+		decision, _ := a.policy.Check(req)
+		writeJSON(w, http.StatusOK, DryRunJSON{DryRun: true, Decision: decision})
 		return
 	}
 

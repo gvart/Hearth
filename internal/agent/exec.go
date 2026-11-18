@@ -13,6 +13,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/gvart/hearth/internal/policy"
 	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
 )
 
@@ -48,27 +49,24 @@ const (
 	stderrTail = 256
 )
 
-// errBeyondCeiling marks a request the ceiling does not allow.
-var errBeyondCeiling = errors.New("not allowed by this device's capability ceiling")
+// proto is the ceiling as the agent reports it to the hub.
+func (c Ceiling) proto() *agentv1.Ceiling {
+	return &agentv1.Ceiling{Exec: slices.Clone(c.Exec), Restart: slices.Clone(c.Restart)}
+}
 
-// command returns the program and arguments req runs, or errBeyondCeiling.
-// No shell is involved: argv goes to exec.Command as is.
+// command returns the program and arguments req runs, or an error wrapping
+// policy.ErrBeyondCeiling. The hub checks the same before it sends req; the
+// agent never relies on that. No shell is involved: argv goes to
+// exec.Command as is.
 func (c Ceiling) command(req *agentv1.ExecRequest) ([]string, error) {
+	if err := policy.WithinCeiling(c.proto(), req); err != nil {
+		return nil, err
+	}
 	switch a := req.GetAction().(type) {
 	case *agentv1.ExecRequest_Command:
-		argv := a.Command.GetArgv()
-		if len(argv) == 0 || argv[0] == "" {
-			return nil, errors.New("empty command")
-		}
-		if !slices.Contains(c.Exec, argv[0]) {
-			return nil, fmt.Errorf("exec %s: %w", argv[0], errBeyondCeiling)
-		}
-		return argv, nil
+		return a.Command.GetArgv(), nil
 	case *agentv1.ExecRequest_Restart:
 		m, name := a.Restart.GetManager(), a.Restart.GetName()
-		if !slices.Contains(c.Restart, m+":"+name) {
-			return nil, fmt.Errorf("restart %s:%s: %w", m, name, errBeyondCeiling)
-		}
 		switch m {
 		case "systemd":
 			return []string{"systemctl", "restart", "--", name}, nil
@@ -87,7 +85,7 @@ func (c Ceiling) execute(ctx context.Context, req *agentv1.ExecRequest) *agentv1
 	res := &agentv1.ExecResult{Id: req.GetId(), ExitCode: -1}
 	argv, err := c.command(req)
 	if err != nil {
-		res.Denied = errors.Is(err, errBeyondCeiling)
+		res.Denied = errors.Is(err, policy.ErrBeyondCeiling)
 		res.Error = err.Error()
 		return res
 	}

@@ -20,6 +20,7 @@ type tokenCreateOptions struct {
 	ttl     time.Duration
 	labels  map[string]string
 	hubURL  string
+	dryRun  bool
 }
 
 func newTokenCmd() *cobra.Command {
@@ -45,6 +46,7 @@ func newTokenCreateCmd() *cobra.Command {
 	cmd.Flags().StringToStringVar(&opts.labels, "labels", nil, "labels for the enrolled device, k=v[,k=v]")
 	cmd.Flags().StringVar(&opts.hubURL, "hub-url", "https://"+hostnameOr("localhost")+":"+defaultPort,
 		"hub URL to put in the join command")
+	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false, "decide and audit the action without creating a token")
 	return cmd
 }
 
@@ -69,15 +71,13 @@ func runTokenCreate(ctx context.Context, opts tokenCreateOptions, out io.Writer)
 		return err
 	}
 	expires := time.Now().Add(opts.ttl)
-	err = policy.New(st.Audit()).Do(ctx, policy.Request{
-		ActorKind: policy.ActorAdmin,
-		ActorID:   adminActor(),
-		Action:    policy.TokenCreate,
-		Detail:    map[string]any{"ttl": opts.ttl.String(), "labels": opts.labels},
+	done, err := adminDo(ctx, opts.dataDir, st, out, opts.dryRun, policy.Request{
+		Action: policy.TokenCreate,
+		Detail: map[string]any{"ttl": opts.ttl.String(), "labels": opts.labels},
 	}, func(ctx context.Context) error {
 		return st.Tokens().Create(ctx, tok.Secret, opts.labels, expires)
 	})
-	if err != nil {
+	if err != nil || !done {
 		return err
 	}
 

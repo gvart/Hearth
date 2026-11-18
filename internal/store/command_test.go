@@ -52,6 +52,11 @@ func allCommands() []Command {
 		},
 		AddKubeCluster{ID: "k1", Name: "lab", Sealed: []byte{9, 9}, CreatedAt: 17},
 		RemoveKubeCluster{ID: "k1"},
+		CreateApproval{
+			ID: "ap1", CreatedAt: 19, ExpiresAt: 20, ActorKind: "automation", ActorID: "a",
+			Action: "automation.exec", Class: "dangerous", Target: "pi", Detail: `{"run":"r1"}`,
+		},
+		DecideApproval{ID: "ap1", Status: "approved", By: "admin/root", At: 19},
 	}
 }
 
@@ -291,6 +296,14 @@ func runScenario(t *testing.T, s *Store) {
 	}
 	must(s.KubeClusters().Remove(ctx, "k2"))
 	wantErr(s.KubeClusters().Remove(ctx, "k2"), ErrNotFound)
+
+	// An approval held, then decided; deciding it again is refused.
+	must(s.Approvals().Create(ctx, Approval{
+		ID: "ap-1", CreatedAt: at(time.Hour), ExpiresAt: at(2 * time.Hour), ActorKind: "automation",
+		ActorID: "a", Action: "automation.exec", Class: "dangerous", Target: "pi",
+	}))
+	must(s.Approvals().Decide(ctx, "ap-1", ApprovalApproved, "admin/root", at(time.Hour+time.Minute)))
+	wantErr(s.Approvals().Decide(ctx, "ap-1", ApprovalDenied, "admin/root", at(time.Hour+time.Minute)), ErrApprovalClosed)
 }
 
 // dumpTables returns every row of every table (sqlite_sequence included,

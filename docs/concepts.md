@@ -79,14 +79,16 @@ Each action has a **class**:
 
 and a list of **actors** allowed to take it: the local admin on the CLI, a logged-in web session, an
 automation, an agent with an enrollment token, another hub. An automation can take a dangerous action
-only when the hub grants it by name (`--allow-dangerous-automation <id>`).
+only when the hub grants it by name (`--allow-dangerous-automation <id>`). On top of that table, the
+hub's `policy.yaml` can allow, deny or hold for approval (`confirm`) each class, per actor kind, and
+every action can be dry-run: see [Guardrails](guardrails.md).
 
 ### The device's ceiling
 
 Policy is decided on the hub, but a device has the last word on what runs on it. An agent runs only
 the commands and services its own `--allow-exec` and `--allow-restart` flags name, and nothing by
-default. The hub can never raise that ceiling: a restart policy allowed is still refused by an agent
-that does not list the service.
+default. The hub can never raise that ceiling: the agent reports it, the hub refuses anything beyond
+it before sending, and the agent checks again before running.
 
 ## Audit log
 

@@ -24,7 +24,10 @@ func newDeviceCmd() *cobra.Command {
 }
 
 func newDeviceRevokeCmd() *cobra.Command {
-	var dataDir string
+	var (
+		dataDir string
+		dryRun  bool
+	)
 	cmd := &cobra.Command{
 		Use:   "revoke <device-id>",
 		Short: "Revoke a device's certificates so it can no longer connect",
@@ -33,14 +36,15 @@ func newDeviceRevokeCmd() *cobra.Command {
 			"then exits instead of reconnecting. To bring the device back, re-enroll it with `hearth agent join`.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runDeviceRevoke(cmd.Context(), dataDir, args[0], cmd.OutOrStdout())
+			return runDeviceRevoke(cmd.Context(), dataDir, args[0], dryRun, cmd.OutOrStdout())
 		},
 	}
 	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir("hub"), "hub data directory (env HEARTH_DATA_DIR)")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "decide and audit the action without doing it")
 	return cmd
 }
 
-func runDeviceRevoke(ctx context.Context, dataDir, deviceID string, out io.Writer) error {
+func runDeviceRevoke(ctx context.Context, dataDir, deviceID string, dryRun bool, out io.Writer) error {
 	dbPath := filepath.Join(dataDir, dbFile)
 	// Fail on a wrong data dir instead of creating an empty database there.
 	if _, err := os.Stat(dbPath); err != nil {
@@ -53,11 +57,9 @@ func runDeviceRevoke(ctx context.Context, dataDir, deviceID string, out io.Write
 	defer st.Close()
 
 	var n int
-	err = policy.New(st.Audit()).Do(ctx, policy.Request{
-		ActorKind: policy.ActorAdmin,
-		ActorID:   adminActor(),
-		Action:    policy.DeviceRevoke,
-		Target:    deviceID,
+	done, err := adminDo(ctx, dataDir, st, out, dryRun, policy.Request{
+		Action: policy.DeviceRevoke,
+		Target: deviceID,
 	}, func(ctx context.Context) error {
 		var err error
 		n, err = st.Certs().RevokeDevice(ctx, deviceID, time.Now())
@@ -66,7 +68,7 @@ func runDeviceRevoke(ctx context.Context, dataDir, deviceID string, out io.Write
 	if errors.Is(err, store.ErrNotFound) {
 		return fmt.Errorf("device %s has no certificates", deviceID)
 	}
-	if err != nil {
+	if err != nil || !done {
 		return err
 	}
 	if _, err := fmt.Fprintf(out, "Revoked %d certificate(s) of device %s.\n", n, deviceID); err != nil {

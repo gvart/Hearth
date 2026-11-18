@@ -63,6 +63,9 @@ type Config struct {
 	ReloadEvery time.Duration
 	// Now is the clock; default time.Now.
 	Now func() time.Time
+	// DryRun sends every action to policy as a dry run: each decision is
+	// audited, and no action runs.
+	DryRun bool
 }
 
 // Runtime runs the automations in a directory.
@@ -387,11 +390,22 @@ func (r *Runtime) act(ctx context.Context, a *Automation, s Step[Action], runID 
 	if err != nil {
 		return err
 	}
-	return r.cfg.Policy.Do(context.WithoutCancel(ctx), policy.Request{
+	req := policy.Request{
 		ActorKind: policy.ActorAutomation,
 		ActorID:   a.ID,
 		Action:    s.Impl.Policy(),
 		Target:    target,
 		Detail:    map[string]any{"run": runID, "step": s.ID, "trigger": ev.TriggerID},
-	}, func(context.Context) error { return s.Impl.Run(ctx, ev) })
+		DryRun:    r.cfg.DryRun,
+	}
+	if p, ok := s.Impl.(prechecker); ok {
+		req.Precheck = func(ctx context.Context) error { return p.Precheck(ctx, ev) }
+	}
+	return r.cfg.Policy.Do(context.WithoutCancel(ctx), req, func(context.Context) error { return s.Impl.Run(ctx, ev) })
+}
+
+// prechecker is an action that can tell, before policy decides, that it
+// would be refused: policy.Request.Precheck.
+type prechecker interface {
+	Precheck(ctx context.Context, ev Event) error
 }

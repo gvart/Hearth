@@ -673,6 +673,10 @@ func DecodeCommand(b []byte) (Command, error) {
 		cmd, err = decodeAs[AddKubeCluster](env.Cmd)
 	case RemoveKubeCluster{}.Op():
 		cmd, err = decodeAs[RemoveKubeCluster](env.Cmd)
+	case CreateApproval{}.Op():
+		cmd, err = decodeAs[CreateApproval](env.Cmd)
+	case DecideApproval{}.Op():
+		cmd, err = decodeAs[DecideApproval](env.Cmd)
 	default:
 		return nil, fmt.Errorf("decode command: unknown op %q", env.Op)
 	}

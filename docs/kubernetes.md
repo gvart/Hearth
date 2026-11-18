@@ -75,7 +75,8 @@ They are buttons on the Kubernetes page and `POST /api/v1/kube/clusters/{id}/act
 - **Dry run first.** Every action can be planned with `"dry_run": true`: Hearth reads the objects
   involved and says what the action would do, with warnings (a pod no controller recreates, a
   `Recreate` strategy, scaling to zero, ...). The UI always shows the dry run and asks to confirm. A dry
-  run changes nothing and is not audited.
+  run changes nothing; policy decides on it and audits it with the result `dry-run`, and a dry run
+  of an action policy would deny fails with that denial.
 - **Decided, then audited.** Carrying an action out is a policy decision taken before anything is sent
   to the cluster: a denied action sends no request at all. The decision and the outcome are audited with
   the cluster, the object and, for a scale, the replica count.

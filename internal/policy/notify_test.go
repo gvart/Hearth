@@ -6,16 +6,7 @@ import (
 	"context"
 	"errors"
 	"testing"
-
-	"github.com/gvart/hearth/internal/store"
 )
-
-type memAudit struct{ entries []store.AuditEntry }
-
-func (m *memAudit) Append(_ context.Context, e store.AuditEntry) (int64, error) {
-	m.entries = append(m.entries, e)
-	return int64(len(m.entries)), nil
-}
 
 func TestNotifyActions(t *testing.T) {
 	tests := []struct {

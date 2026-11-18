@@ -158,10 +158,23 @@ func TestActionDryRun(t *testing.T) {
 		!slices.Contains(drain.Steps, "Evict default/web-1") || slices.Contains(drain.Steps, "Evict default/web-3") {
 		t.Errorf("drain steps = %q", drain.Steps)
 	}
-	if es, _ := f.st.Audit().List(t.Context(), 100); slices.ContainsFunc(es, func(e store.AuditEntry) bool {
-		return strings.HasPrefix(e.Action, "kube.workload") || strings.HasPrefix(e.Action, "kube.node")
-	}) {
-		t.Errorf("a dry run was audited: %+v", es)
+	// Every dry run is decided and audited as one, and none as anything else.
+	es, err := f.st.Audit().List(t.Context(), 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var dry int
+	for _, e := range es {
+		if e.Action == string(policy.KubeClusterAdd) {
+			continue
+		}
+		if e.Result != policy.DryRun || e.ActorKind != policy.ActorWeb {
+			t.Errorf("audit entry = %+v, want a dry run", e)
+		}
+		dry++
+	}
+	if dry != len(everyAction)+1 {
+		t.Errorf("%d dry runs audited, want %d", dry, len(everyAction)+1)
 	}
 }
 

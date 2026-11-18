@@ -88,6 +88,9 @@ func (a *api) routes() http.Handler {
 	mux.Handle("POST /api/v1/tokens", a.auth(a.createToken))
 	a.kubeRoutes(mux)
 	a.notifyRoutes(mux)
+	mux.Handle("GET /api/v1/approvals", a.auth(a.listApprovals))
+	mux.Handle("POST /api/v1/approvals/{id}/approve", a.auth(a.decideApproval(true)))
+	mux.Handle("POST /api/v1/approvals/{id}/deny", a.auth(a.decideApproval(false)))
 	mux.Handle("/api/v1/", a.auth(func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "no such endpoint")
 	}))
