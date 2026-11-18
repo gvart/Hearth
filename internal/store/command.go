@@ -287,6 +287,8 @@ type RecordHubCert struct {
 // Op implements Command.
 func (RecordHubCert) Op() string { return "record_hub_cert" }
 
+func (RecordHubCert) minSchema() int64 { return hubCertsSchema }
+
 func (c RecordHubCert) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
 	_, err := tx.ExecContext(ctx,
 		`INSERT INTO hub_certs (serial, node_id) VALUES (?, ?) ON CONFLICT (serial) DO NOTHING`, c.Serial, c.NodeID)
@@ -302,6 +304,8 @@ type RevokeHubCerts struct {
 
 // Op implements Command.
 func (RevokeHubCerts) Op() string { return "revoke_hub_certs" }
+
+func (RevokeHubCerts) minSchema() int64 { return hubCertsSchema }
 
 func (c RevokeHubCerts) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
 	res, err := tx.ExecContext(ctx,

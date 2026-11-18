@@ -470,3 +470,153 @@ func TestJoinWithNewerBinary(t *testing.T) {
 		t.Fatal("joiner has the newer schema's table before the cluster migrated")
 	}
 }
+
+// hubCertsSchema is the schema whose migration (00006) added hub_certs, the
+// first one past what v0.0.1-rc.3 shipped.
+const hubCertsSchema = 6
+
+// schema5Dir returns a data dir whose database is at schema 5, as a cluster
+// formed by v0.0.1-rc.3 left it: before hub_certs. It runs migration
+// 00006's down step by hand.
+func schema5Dir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hearth.db")
+	st, err := store.Open(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = st.Close()
+	db, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	if _, err := db.ExecContext(t.Context(), `DROP TABLE hub_certs;
+		DELETE FROM goose_db_version WHERE version_id >= 6`); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// TestRollingUpgradeFromSchema5 (#95): every hub runs this binary, but the
+// cluster's database is still at schema 5, before hub_certs, as after
+// replacing rc.3 binaries one at a time. Hub-to-hub RPCs (Forward,
+// SchemaInfo) work, a removal is refused with a clear error without halting
+// any hub, and `hearth cluster migrate` moves the cluster to 6, after which
+// each hub records its node certificate.
+func TestRollingUpgradeFromSchema5(t *testing.T) {
+	if store.SchemaVersion() < hubCertsSchema {
+		t.Fatalf("binary at schema %d", store.SchemaVersion())
+	}
+	ctx := t.Context()
+	c := &migCluster{t: t, ca: newTestCA(t)}
+	h1 := startMigHub(t, c.ca, "n1", schema5Dir(t), "", true, false)
+	leaderOf(t, h1.testNode)
+	h2 := startMigHub(t, c.ca, "n2", schema5Dir(t), "", false, false)
+	h3 := startMigHub(t, c.ca, "n3", schema5Dir(t), "", false, false)
+	addVoter(t, h1.testNode, h2.testNode)
+	addVoter(t, h1.testNode, h3.testNode)
+	waitReady(t, h2.testNode, h3.testNode)
+	c.hubs = []*migHub{h1, h2, h3}
+	at5 := SchemaInfo{Current: hubCertsSchema - 1, Max: store.SchemaVersion()}
+	for _, h := range c.hubs {
+		if got := schemaOf(t, h.testNode); got != at5 {
+			t.Fatalf("%s: schema %+v, want %+v", h.ID(), got, at5)
+		}
+		c.announce(h) // forwarded to the leader from a follower
+	}
+
+	// Each hub waits to record its node certificate until the migrate.
+	var wg sync.WaitGroup
+	recCtx, stopRec := context.WithCancel(ctx)
+	t.Cleanup(func() { stopRec(); wg.Wait() })
+	for _, h := range c.hubs {
+		wg.Go(func() { h.RecordNodeCert(recCtx) })
+	}
+
+	w := c.startWriter()
+	w.progress(t, "on schema 5")
+
+	// Removing a hub needs hub_certs: refused, with the way out, and the
+	// hub stays a member. Through a follower, forwarded to the leader.
+	f := c.followers()
+	cc := serveControl(t, f[0].testNode)
+	if _, err := cc.RemoveMember(ctx, f[1].ID()); err == nil || !strings.Contains(err.Error(), "hearth cluster migrate") {
+		t.Fatalf("remove on schema 5: err = %v, want it to say to migrate first", err)
+	}
+	if got := voters(t, c.leader().testNode); len(got) != 3 {
+		t.Fatalf("voters after the refused removal = %v", got)
+	}
+	// A revoke that reaches the log is refused on every node alike: no
+	// state machine halts.
+	if _, err := f[0].st.Hubs().RevokeCerts(ctx, f[1].ID(), time.Now()); err == nil ||
+		!strings.Contains(err.Error(), "hearth cluster migrate") {
+		t.Fatalf("revoke on schema 5: err = %v, want it to say to migrate first", err)
+	}
+	for _, h := range c.hubs {
+		if err := h.fsm.haltedErr(); err != nil {
+			t.Fatalf("%s halted: %v", h.ID(), err)
+		}
+		if certs, err := h.st.Hubs().Certs(ctx, h.ID()); err != nil || len(certs) != 0 {
+			t.Fatalf("%s certs on schema 5 = %v, %v", h.ID(), certs, err)
+		}
+	}
+	w.progress(t, "after the refused removal")
+
+	// Every hub's schema is readable, and the migrate goes through.
+	st, err := cc.Status(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range st.Peers {
+		if p.Schema == nil || *p.Schema != at5 {
+			t.Fatalf("status before the migrate: %s schema %+v (%s)", p.ID, p.Schema, p.SchemaError)
+		}
+	}
+	from, err := cc.MigrateSchema(ctx, hubCertsSchema)
+	if err != nil || from != hubCertsSchema-1 {
+		t.Fatalf("migrate = %d, %v", from, err)
+	}
+	w.progress(t, "after the migrate")
+	w.halt()
+	if len(w.failed) > 0 {
+		t.Fatalf("writes failed for %v on schema 5: %v", writeBudget, w.failed)
+	}
+
+	// Each hub's certificate gets recorded, on every hub.
+	for _, h := range c.hubs {
+		eventually(t, h.ID()+" at schema 6", func() bool { return schemaOf(t, h.testNode).Current == hubCertsSchema })
+		for _, o := range c.hubs {
+			eventually(t, o.ID()+"'s certificate recorded on "+h.ID(), func() bool {
+				certs, err := h.st.Hubs().Certs(ctx, o.ID())
+				return err == nil && len(certs) == 1 && certs[0].Serial == pki.SerialString(o.cert)
+			})
+		}
+	}
+	for _, h := range c.hubs {
+		if err := h.fsm.haltedErr(); err != nil {
+			t.Fatalf("%s halted: %v", h.ID(), err)
+		}
+	}
+}
+
+// TestJoinOnSchema5 (#95): a hub joins a cluster still at schema 5, before
+// hub_certs. The leader cannot record the joiner's certificate yet; the
+// join, and the promotion over the joiner's hub certificate, still work.
+func TestJoinOnSchema5(t *testing.T) {
+	ca := newTestCA(t)
+	n1 := startNode(t, ca, "n1", schema5Dir(t), "", true)
+	leaderOf(t, n1)
+	srv := joinServer(t, n1, ca)
+	n2 := joinAndStart(t, srv.URL, joinToken(t, n1, ca, time.Now().Add(time.Hour)), "n2")
+	if got := voters(t, n1); len(got) != 2 {
+		t.Fatalf("voters = %v", got)
+	}
+	if v := schemaOf(t, n2).Current; v != hubCertsSchema-1 {
+		t.Fatalf("joiner at schema %d", v)
+	}
+	if err := n2.st.Hubs().CheckCert(t.Context(), pki.SerialString(n2.cert)); err != nil {
+		t.Fatalf("CheckCert on schema 5 = %v", err)
+	}
+}

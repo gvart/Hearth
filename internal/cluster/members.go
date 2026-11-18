@@ -163,8 +163,28 @@ func (n *Node) RecordNodeCert(ctx context.Context) {
 		return
 	}
 	serial := pki.SerialString(n.cert)
+	waiting := false
 	for {
-		certs, err := n.store.Hubs().Certs(ctx, n.cfg.NodeID)
+		err := n.store.Hubs().RequireCerts(ctx)
+		if errors.Is(err, store.ErrSchemaTooOld) {
+			// A newer binary on an older schema: record it once the
+			// cluster migrates.
+			if !waiting {
+				n.log.InfoContext(ctx, "this hub's node certificate is recorded once the cluster migrates its schema",
+					"reason", err)
+				waiting = true
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(announceRetry):
+			}
+			continue
+		}
+		var certs []store.HubCert
+		if err == nil {
+			certs, err = n.store.Hubs().Certs(ctx, n.cfg.NodeID)
+		}
 		if err == nil {
 			i := slices.IndexFunc(certs, func(c store.HubCert) bool { return c.Serial == serial })
 			switch {
@@ -230,6 +250,11 @@ func (n *Node) removeLocal(ctx context.Context, id string) (int, error) {
 	cf := n.raft.GetConfiguration()
 	if err := cf.Error(); err != nil {
 		return 0, fmt.Errorf("read the cluster configuration: %w", err)
+	}
+	// Checked before the configuration change, so a removal on an older
+	// schema does not leave a hub out of the cluster with live certificates.
+	if err := n.store.Hubs().RequireCerts(ctx); err != nil {
+		return 0, fmt.Errorf("remove %s: %w", id, err)
 	}
 	servers := cf.Configuration().Servers
 	i := slices.IndexFunc(servers, func(s raft.Server) bool { return string(s.ID) == id })
@@ -439,7 +464,7 @@ func (s *JoinServer) memberError(err error) error {
 	case errors.Is(err, store.ErrNotFound):
 		return connect.NewError(connect.CodeNotFound, err)
 	case errors.Is(err, ErrRemoveLeader), errors.Is(err, ErrLastVoter), errors.Is(err, ErrQuorumAtRisk),
-		errors.Is(err, ErrSchemaUnsupported), errors.Is(err, store.ErrSchemaNotNewer):
+		errors.Is(err, ErrSchemaUnsupported), errors.Is(err, store.ErrSchemaNotNewer), errors.Is(err, store.ErrSchemaTooOld):
 		return connect.NewError(connect.CodeFailedPrecondition, err)
 	default:
 		return connect.NewError(connect.CodeInternal, err)
