@@ -377,6 +377,7 @@ func TestConfirmNegative(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			var id string
+			var deciding sync.WaitGroup
 			ran := false
 			err := e.Do(ctx, Request{
 				ActorKind: ActorAutomation, ActorID: "a", Action: AutomationExec, Target: "pi",
@@ -386,10 +387,11 @@ func TestConfirmNegative(t *testing.T) {
 					case tt.cancel:
 						cancel()
 					case tt.decide != nil:
-						go tt.decide(t, e, held)
+						deciding.Go(func() { tt.decide(t, e, held) })
 					}
 				},
 			}, func(context.Context) error { ran = true; return nil })
+			deciding.Wait()
 			if !errors.Is(err, ErrDenied) || ran {
 				t.Fatalf("Do = %v, ran %v; want denied, not run", err, ran)
 			}
@@ -407,6 +409,93 @@ func TestConfirmNegative(t *testing.T) {
 				t.Errorf("late approval = %v, want ErrApprovalClosed", err)
 			}
 		})
+	}
+}
+
+// decisionLog is an approvals store that records the audit trail as it stood
+// when each decision took effect, which is when a held request can see it.
+type decisionLog struct {
+	autoApprovals
+	audit     *memAudit
+	decideErr error
+	atDecide  []store.AuditEntry
+}
+
+func (d *decisionLog) Decide(ctx context.Context, id, status, by string, at time.Time) error {
+	d.atDecide = d.audit.all()
+	if d.decideErr != nil {
+		return d.decideErr
+	}
+	return d.autoApprovals.Decide(ctx, id, status, by, at)
+}
+
+// heldApproval stores one pending approval in d and returns its id.
+func heldApproval(t *testing.T, d *decisionLog) string {
+	t.Helper()
+	ap := store.Approval{ID: "ap", ActorKind: ActorAutomation, ActorID: "a", Action: string(AutomationExec), ExpiresAt: time.Now().Add(time.Minute)}
+	if err := d.Create(t.Context(), ap); err != nil {
+		t.Fatal(err)
+	}
+	return ap.ID
+}
+
+// TestDecisionAuditedBeforeItTakesEffect: a held request runs as soon as it
+// can read its approval's decision, so the decision must be in the audit log
+// by then. Otherwise the log shows the action before the approval allowing it.
+func TestDecisionAuditedBeforeItTakesEffect(t *testing.T) {
+	for name, tt := range map[string]struct {
+		approve bool
+		action  Action
+	}{
+		"approve": {true, ApprovalApprove},
+		"deny":    {false, ApprovalDeny},
+	} {
+		t.Run(name, func(t *testing.T) {
+			audit := &memAudit{}
+			approvals := &decisionLog{audit: audit}
+			id := heldApproval(t, approvals)
+			e := NewWithConfig(audit, approvals, Config{})
+			if err := e.Decide(t.Context(), ActorWeb, "192.0.2.1", id, tt.approve); err != nil {
+				t.Fatal(err)
+			}
+			if got := approvals.atDecide; len(got) != 1 || got[0].Action != string(tt.action) || got[0].Decision != Allow || got[0].Result != "ok" {
+				t.Errorf("audit when the decision took effect = %+v, want the %s entry", got, tt.action)
+			}
+			if got := audit.all(); len(got) != 1 {
+				t.Errorf("audit = %+v, want one entry", got)
+			}
+		})
+	}
+}
+
+// TestDecisionNotAuditedDoesNotTakeEffect: deny by default, a decision that
+// cannot be audited is not made.
+func TestDecisionNotAuditedDoesNotTakeEffect(t *testing.T) {
+	approvals := &decisionLog{audit: &memAudit{}}
+	id := heldApproval(t, approvals)
+	e := NewWithConfig(failingAudit{errors.New("audit log unavailable")}, approvals, Config{})
+	if err := e.Decide(t.Context(), ActorWeb, "192.0.2.1", id, true); err == nil {
+		t.Fatal("Decide succeeded without an audit entry")
+	}
+	ap, err := approvals.Get(t.Context(), id)
+	if err != nil || ap.Status != store.ApprovalPending {
+		t.Errorf("approval = %+v, %v; want it still pending", ap, err)
+	}
+}
+
+// TestDecisionLostRaceIsAudited: a decision that loses to another one after
+// it was audited is followed by an entry saying it failed.
+func TestDecisionLostRaceIsAudited(t *testing.T) {
+	audit := &memAudit{}
+	approvals := &decisionLog{audit: audit, decideErr: store.ErrApprovalClosed}
+	id := heldApproval(t, approvals)
+	e := NewWithConfig(audit, approvals, Config{})
+	if err := e.Decide(t.Context(), ActorWeb, "192.0.2.1", id, true); !errors.Is(err, store.ErrApprovalClosed) {
+		t.Fatalf("Decide = %v, want ErrApprovalClosed", err)
+	}
+	got := audit.all()
+	if len(got) != 2 || got[0].Result != "ok" || !strings.HasPrefix(got[1].Result, "error: ") {
+		t.Errorf("audit = %+v, want the decision and then its failure", got)
 	}
 }
 
