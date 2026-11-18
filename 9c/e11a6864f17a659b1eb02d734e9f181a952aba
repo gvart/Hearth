@@ -1,0 +1,48 @@
+docs/automations.md
+  s_344993999c180f::t_09abb8658b18b7 63,69-75,368-369
+internal/hub/network_test.go
+  s_344993999c180f::t_09abb8658b18b7 116-134,150
+internal/hub/automation.go
+  s_344993999c180f::t_242acb9aed4bd1 63,74,83,86-90,92-101
+docs/discovery.md
+  s_344993999c180f::t_09abb8658b18b7 87-91,110-114
+internal/automation/trigger_network_test.go
+  s_344993999c180f::t_27a352af9154fc 197,202-203,212
+  s_344993999c180f::t_09abb8658b18b7 7,17,25,28-29,43,46-54,62,125-196,198-201,204-211,213-230
+  s_344993999c180f::t_960bd5ad62f962 231
+internal/hub/newdevice_test.go
+  s_344993999c180f::t_b470ff203936cc 510
+  s_344993999c180f::t_09abb8658b18b7 16,37-38,48,51-54,105-106,392-403,407-509,511-526
+internal/automation/trigger_network.go
+  s_344993999c180f::t_09abb8658b18b7 10-21,41-43,50-52,59,69,73,76,78-80,82-85,92-103,110,112-116,135-192
+internal/automation/newdevice.go
+  s_344993999c180f::t_9614f3d325fbdc 14-15,23,27,32-33
+internal/discovery/discovery_test.go
+  s_344993999c180f::t_ada84c028c7c34 233-236
+internal/discovery/scanner.go
+  s_344993999c180f::t_4ef876ac5ae4e3 52-53,55,181-182
+internal/hub/api.go
+  s_344993999c180f::t_3d974f82229b06 424-430,432-440
+internal/hub/applied.go
+  s_344993999c180f::t_dd7dc52a9bdc7b 66-67
+internal/hub/network.go
+  s_344993999c180f::t_0807b1a57045a4 50-56
+internal/hub/registry.go
+  s_344993999c180f::t_a13b49d14788bb 29-30,34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9ce11a6864f17a659b1eb02d734e9f181a952aba",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
