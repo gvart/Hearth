@@ -109,10 +109,12 @@ func (s *JoinServer) Join(ctx context.Context, req *connect.Request[clusterv1.Jo
 		if err != nil {
 			return err
 		}
-		if msg.GetSchemaVersion() != have {
-			schemaErr = fmt.Sprintf("this hub's binary has store schema %d but the cluster is at %d; "+
-				"run the same hearth version as the cluster", msg.GetSchemaVersion(), have)
-			return fmt.Errorf("%w: joining %d, cluster %d", errSchema, msg.GetSchemaVersion(), have)
+		// A newer binary joins at the cluster's schema and waits for the
+		// cluster to migrate; an older one could not apply it.
+		if msg.GetSchemaVersion() < have {
+			schemaErr = fmt.Sprintf("this hub's binary supports store schema up to %d but the cluster is at %d; "+
+				"run the cluster's hearth version or a newer one", msg.GetSchemaVersion(), have)
+			return fmt.Errorf("%w: joining binary supports %d, cluster at %d", errSchema, msg.GetSchemaVersion(), have)
 		}
 		if _, taken, err := s.node.server(msg.GetNodeId()); err != nil {
 			return err
@@ -259,6 +261,10 @@ type JoinParams struct {
 	// NodeID and RaftAddress identify the joining hub to its peers.
 	NodeID      string
 	RaftAddress string
+	// MaxSchema is the newest store schema the joining binary supports;
+	// zero means store.SchemaVersion(). Tests set it to stand in for
+	// another binary.
+	MaxSchema int64
 }
 
 // maxRedirects bounds how often Join and Promote follow a follower to the leader.
@@ -288,12 +294,15 @@ func Join(ctx context.Context, p JoinParams) error {
 	if err != nil {
 		return err
 	}
+	if p.MaxSchema == 0 {
+		p.MaxSchema = store.SchemaVersion()
+	}
 	req := &clusterv1.JoinRequest{
 		TokenSecret:   tok.Secret,
 		NodeId:        p.NodeID,
 		RaftAddress:   p.RaftAddress,
 		Csr:           csr,
-		SchemaVersion: store.SchemaVersion(),
+		SchemaVersion: p.MaxSchema,
 	}
 	var resp *connect.Response[clusterv1.JoinResponse]
 	target := p.URL

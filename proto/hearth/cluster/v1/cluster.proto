@@ -29,6 +29,15 @@ service ClusterService {
   // TransferLeadership hands leadership to another voter, on behalf of a
   // member hub, authenticated and decided like RemoveMember.
   rpc TransferLeadership(TransferLeadershipRequest) returns (TransferLeadershipResponse);
+  // SchemaInfo reports this hub's store schema: the version its database is
+  // at and the newest its binary supports. Every member serves it, to
+  // members presenting their hub node certificate. The leader asks every hub
+  // before it migrates the cluster's schema.
+  rpc SchemaInfo(SchemaInfoRequest) returns (SchemaInfoResponse);
+  // MigrateSchema migrates the cluster's store schema on behalf of a member
+  // hub, authenticated and decided like RemoveMember. The leader proposes it
+  // to the Raft log only if every hub's binary supports the target version.
+  rpc MigrateSchema(MigrateSchemaRequest) returns (MigrateSchemaResponse);
 }
 
 // JoinRequest describes the hub that wants to join.
@@ -41,8 +50,8 @@ message JoinRequest {
   string raft_address = 3;
   // csr is a DER-encoded PKCS#10 certificate request. Its subject is ignored.
   bytes csr = 4;
-  // schema_version is the store schema version of the joining binary. It
-  // must equal the cluster's.
+  // schema_version is the newest store schema version the joining binary
+  // supports. It must be at least the cluster's current schema version.
   int64 schema_version = 5;
 }
 
@@ -115,3 +124,27 @@ message TransferLeadershipRequest {
 // TransferLeadershipResponse is empty: success means the leader handed
 // leadership over.
 message TransferLeadershipResponse {}
+
+// SchemaInfoRequest is empty.
+message SchemaInfoRequest {}
+
+// SchemaInfoResponse is a hub's store schema.
+message SchemaInfoResponse {
+  // current is the schema version the hub's database is at.
+  int64 current = 1;
+  // max is the newest schema version the hub's binary supports.
+  int64 max = 2;
+}
+
+// MigrateSchemaRequest names the target schema version.
+message MigrateSchemaRequest {
+  // to is the schema version to migrate to. It must be newer than the
+  // cluster's and supported by every hub.
+  int64 to = 1;
+}
+
+// MigrateSchemaResponse is the outcome of a migration.
+message MigrateSchemaResponse {
+  // from is the schema version the cluster was at.
+  int64 from = 1;
+}

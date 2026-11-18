@@ -53,6 +53,11 @@ func TestFSMHaltsOnNodeFailure(t *testing.T) {
 			_ = st.Close()
 			return entry(t, 1, store.MarkSeen{ID: "pi", Now: 1})
 		},
+		// A hub whose binary is older than the schema the cluster migrates
+		// to (the leader checks first; this is the backstop).
+		"migrate past the binary": func(t *testing.T, _ *store.Store) *raft.Log {
+			return entry(t, 1, store.MigrateSchema{To: store.SchemaVersion() + 1})
+		},
 		"undecodable entry": func(*testing.T, *store.Store) *raft.Log {
 			return &raft.Log{Index: 1, Type: raft.LogCommand, Data: []byte(`{"v":9,"op":"from_the_future","cmd":{}}`)}
 		},

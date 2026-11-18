@@ -56,7 +56,7 @@ func TestMigrationsUpDownUp(t *testing.T) {
 		t.Fatalf("after up: tables = %v, want %v", got, want)
 	}
 
-	p, err := newMigrator(s.db)
+	p, err := s.newMigrator()
 	if err != nil {
 		t.Fatal(err)
 	}

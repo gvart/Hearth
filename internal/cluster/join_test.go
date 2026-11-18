@@ -214,31 +214,26 @@ func TestJoinRejects(t *testing.T) {
 		_, err := join(joinToken(t, n1, ca, time.Now().Add(time.Hour)), "n1")
 		wantCode(t, err, connect.CodeAlreadyExists)
 	})
-	t.Run("schema mismatch", func(t *testing.T) {
+	t.Run("older binary", func(t *testing.T) {
 		token := joinToken(t, n1, ca, time.Now().Add(time.Hour))
-		tok, err := pki.ParseJoinToken(token)
-		if err != nil {
-			t.Fatal(err)
-		}
-		key, err := pki.NewKey()
-		if err != nil {
-			t.Fatal(err)
-		}
-		csr, err := pki.NewCSR(key, "newer")
-		if err != nil {
-			t.Fatal(err)
-		}
-		transport := &http.Transport{TLSClientConfig: pki.PinnedTLSConfig(tok.CAFingerprint, "127.0.0.1")}
-		defer transport.CloseIdleConnections()
-		client := clusterv1connect.NewClusterServiceClient(&http.Client{Transport: transport}, srv.URL)
-		_, err = client.Join(t.Context(), connect.NewRequest(&clusterv1.JoinRequest{
-			TokenSecret: tok.Secret, NodeId: "newer", RaftAddress: freeAddr(t), Csr: csr,
-			SchemaVersion: store.SchemaVersion() + 1,
-		}))
+		dir := t.TempDir()
+		err := Join(t.Context(), JoinParams{
+			URL: srv.URL, Token: token, DataDir: dir, NodeID: "older", RaftAddress: freeAddr(t),
+			MaxSchema: store.SchemaVersion() - 1,
+		})
 		wantCode(t, err, connect.CodeFailedPrecondition)
-		// The rejection did not burn the token: a matching binary still joins.
-		if _, err := join(token, "matching"); err != nil {
-			t.Fatalf("join after a schema rejection: %v", err)
+		if !strings.Contains(err.Error(), "supports store schema up to") {
+			t.Errorf("unclear refusal: %v", err)
+		}
+		noSecrets(t, dir)
+		// The rejection did not burn the token: a newer binary joins with it
+		// (see TestJoinWithNewerBinary for one that then runs).
+		err = Join(t.Context(), JoinParams{
+			URL: srv.URL, Token: token, DataDir: t.TempDir(), NodeID: "newer", RaftAddress: freeAddr(t),
+			MaxSchema: store.SchemaVersion() + 1,
+		})
+		if err != nil {
+			t.Fatalf("newer binary after an older one's rejection: %v", err)
 		}
 	})
 	t.Run("promote needs the node's certificate", func(t *testing.T) {

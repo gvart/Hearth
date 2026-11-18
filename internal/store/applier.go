@@ -4,9 +4,11 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 
+	"github.com/pressly/goose/v3"
 	"modernc.org/sqlite"
 	sqlite3 "modernc.org/sqlite/lib"
 )
@@ -33,6 +35,7 @@ type Option func(*openConfig)
 type openConfig struct {
 	newApplier func(s *Store) Applier
 	noUpgrade  bool
+	extra      []*goose.Migration
 }
 
 // WithApplier makes the store route every write through the Applier returned
@@ -42,13 +45,30 @@ func WithApplier(newApplier func(s *Store) Applier) Option {
 	return func(c *openConfig) { c.newApplier = newApplier }
 }
 
-// WithoutUpgrade stops Open from migrating an existing database: it fails
-// with ErrSchemaMismatch unless the database is already at SchemaVersion. A
-// new, empty database is still initialized. A Raft cluster member opens its
-// store this way, because the schema is part of the replicated state and one
-// node must never migrate on its own.
+// WithoutUpgrade stops Open from migrating an existing database: it stays at
+// its schema version, which must be one this binary supports (at most
+// MaxSchemaVersion), or Open fails with ErrSchemaMismatch. A new, empty
+// database is still initialized to the newest schema. A Raft cluster member
+// opens its store this way, because the schema is part of the replicated
+// state: it moves only by a MigrateSchema command in the log, on every node
+// at the same point.
 func WithoutUpgrade() Option {
 	return func(c *openConfig) { c.noUpgrade = true }
+}
+
+// WithExtraMigration adds a migration to version, running the SQL in up, on
+// top of the embedded ones. Tests use it to stand in for a newer hearth
+// binary whose release adds a migration; version must be newer than
+// SchemaVersion.
+func WithExtraMigration(version int64, up string) Option {
+	return func(c *openConfig) {
+		c.extra = append(c.extra, goose.NewGoMigration(version, &goose.GoFunc{
+			RunTx: func(ctx context.Context, tx *sql.Tx) error {
+				_, err := tx.ExecContext(ctx, up)
+				return err
+			},
+		}, nil))
+	}
 }
 
 // IsDomainError reports whether err, returned by ApplyLocal, is an outcome of
@@ -59,7 +79,8 @@ func WithoutUpgrade() Option {
 // (I/O, a full disk, a closed database) means this node failed to apply a
 // write the others applied.
 func IsDomainError(err error) bool {
-	if errors.Is(err, ErrNotFound) || errors.Is(err, ErrTokenUsed) || errors.Is(err, ErrTokenExpired) {
+	if errors.Is(err, ErrNotFound) || errors.Is(err, ErrTokenUsed) || errors.Is(err, ErrTokenExpired) ||
+		errors.Is(err, ErrSchemaNotNewer) || errors.Is(err, ErrSchemaTooOld) {
 		return true
 	}
 	var se *sqlite.Error
@@ -71,6 +92,10 @@ func IsDomainError(err error) bool {
 // order. Other callers go through the repositories instead, so their writes
 // reach the configured Applier.
 func (s *Store) ApplyLocal(ctx context.Context, cmd Command) (res Result, err error) {
+	if m, ok := cmd.(MigrateSchema); ok {
+		// goose runs each migration in a transaction of its own.
+		return Result{}, s.migrateTo(ctx, m.To)
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return Result{}, fmt.Errorf("apply %s: %w", cmd.Op(), err)
@@ -80,6 +105,9 @@ func (s *Store) ApplyLocal(ctx context.Context, cmd Command) (res Result, err er
 			_ = tx.Rollback()
 		}
 	}()
+	if err = checkSchema(ctx, tx, cmd); err != nil {
+		return Result{}, err
+	}
 	if res, err = cmd.apply(ctx, tx); err != nil {
 		return Result{}, err
 	}

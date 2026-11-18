@@ -73,12 +73,14 @@ func privateSocketDir(dir string) error {
 
 const maxCommandSize = 1 << 20
 
-// ControlHandler serves the control API: GET /v1/status and POST /v1/apply
-// (an encoded store command, proposed through node or forwarded to the leader).
+// ControlHandler serves the control API: GET /v1/status (with every hub's
+// schema), POST /v1/apply (an encoded store command, proposed through node
+// or forwarded to the leader), and the member operations /v1/remove,
+// /v1/transfer-leadership and /v1/migrate.
 func ControlHandler(node *Node, log *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /v1/status", func(w http.ResponseWriter, _ *http.Request) {
-		st, err := node.Status()
+	mux.HandleFunc("GET /v1/status", func(w http.ResponseWriter, r *http.Request) {
+		st, err := node.StatusWithSchemas(r.Context())
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
 			return
@@ -122,7 +124,24 @@ func ControlHandler(node *Node, log *slog.Logger) http.Handler {
 		err := node.TransferLeadership(r.Context(), req.NodeID)
 		writeJSON(w, memberReply{Error: wireErr(err)})
 	})
+	mux.HandleFunc("POST /v1/migrate", func(w http.ResponseWriter, r *http.Request) {
+		var req migrateRequest
+		if !readJSON(w, r, &req) {
+			return
+		}
+		from, err := node.MigrateSchema(r.Context(), req.To)
+		writeJSON(w, migrateReply{From: from, Error: wireErr(err)})
+	})
 	return mux
+}
+
+type migrateRequest struct {
+	To int64 `json:"to"`
+}
+
+type migrateReply struct {
+	From  int64      `json:"from"`
+	Error *wireError `json:"error,omitempty"`
 }
 
 // memberRequest names a hub for /v1/remove and /v1/transfer-leadership.
@@ -320,6 +339,19 @@ func (c *ControlClient) TransferLeadership(ctx context.Context, id string) error
 		return reply.Error.toError()
 	}
 	return nil
+}
+
+// MigrateSchema migrates the cluster's schema to version to through the
+// hub's node (see Node.MigrateSchema) and returns the version it was at.
+func (c *ControlClient) MigrateSchema(ctx context.Context, to int64) (int64, error) {
+	var reply migrateReply
+	if err := c.post(ctx, "/v1/migrate", migrateRequest{To: to}, &reply); err != nil {
+		return 0, err
+	}
+	if reply.Error != nil {
+		return 0, reply.Error.toError()
+	}
+	return reply.From, nil
 }
 
 func (c *ControlClient) post(ctx context.Context, path string, body, out any) error {

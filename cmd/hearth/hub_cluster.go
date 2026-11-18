@@ -74,7 +74,8 @@ func (o clusterOptions) advertiseAddr() (string, error) {
 // node. First, if asked to join and not joined yet, it runs the join: the
 // node certificate and the cluster's CA, key included, land in the data dir.
 // A member never migrates its database on its own: once it holds Raft state,
-// the store must already be at this binary's schema version. The store's
+// its store stays at the cluster's schema, which this binary must support;
+// the schema moves only by `hearth cluster migrate`. The store's
 // writes go through the node: proposed on the leader, forwarded to it on a
 // follower. agentURL is this hub's agent-facing URL and agentPort its port.
 func startClusterNode(ctx context.Context, opts hubOptions, log *slog.Logger, onFatal func(error), agentURL, agentPort string) (
@@ -131,11 +132,15 @@ func startClusterNode(ctx context.Context, opts hubOptions, log *slog.Logger, on
 	}
 	st, err := store.Open(ctx, filepath.Join(opts.dataDir, dbFile), storeOpts...)
 	if errors.Is(err, store.ErrSchemaMismatch) {
-		return nil, nil, nil, fmt.Errorf("%w: a cluster member never migrates its database on its own; "+
-			"run the hearth version the cluster runs (rolling upgrades: see docs/design/ha-hub.md)", err)
+		return nil, nil, nil, fmt.Errorf("%w: this hearth is older than the cluster's schema and downgrades are "+
+			"not supported; run the cluster's hearth version or a newer one (rolling upgrades: see docs/cluster.md)", err)
 	}
 	if err != nil {
 		return nil, nil, nil, err
+	}
+	if v, err := st.SchemaVersion(ctx); err == nil && v < st.MaxSchemaVersion() {
+		log.InfoContext(ctx, "this hearth supports a newer schema than the database is at; once every hub "+
+			"runs a hearth that supports it, run `hearth cluster migrate`", "schema", v, "supported", st.MaxSchemaVersion())
 	}
 	if err := node.Start(ctx); err != nil {
 		_ = st.Close()

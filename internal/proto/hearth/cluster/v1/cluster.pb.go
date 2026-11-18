@@ -34,8 +34,8 @@ type JoinRequest struct {
 	RaftAddress string `protobuf:"bytes,3,opt,name=raft_address,json=raftAddress,proto3" json:"raft_address,omitempty"`
 	// csr is a DER-encoded PKCS#10 certificate request. Its subject is ignored.
 	Csr []byte `protobuf:"bytes,4,opt,name=csr,proto3" json:"csr,omitempty"`
-	// schema_version is the store schema version of the joining binary. It
-	// must equal the cluster's.
+	// schema_version is the newest store schema version the joining binary
+	// supports. It must be at least the cluster's current schema version.
 	SchemaVersion int64 `protobuf:"varint,5,opt,name=schema_version,json=schemaVersion,proto3" json:"schema_version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -573,6 +573,191 @@ func (*TransferLeadershipResponse) Descriptor() ([]byte, []int) {
 	return file_hearth_cluster_v1_cluster_proto_rawDescGZIP(), []int{9}
 }
 
+// SchemaInfoRequest is empty.
+type SchemaInfoRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SchemaInfoRequest) Reset() {
+	*x = SchemaInfoRequest{}
+	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SchemaInfoRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SchemaInfoRequest) ProtoMessage() {}
+
+func (x *SchemaInfoRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SchemaInfoRequest.ProtoReflect.Descriptor instead.
+func (*SchemaInfoRequest) Descriptor() ([]byte, []int) {
+	return file_hearth_cluster_v1_cluster_proto_rawDescGZIP(), []int{10}
+}
+
+// SchemaInfoResponse is a hub's store schema.
+type SchemaInfoResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// current is the schema version the hub's database is at.
+	Current int64 `protobuf:"varint,1,opt,name=current,proto3" json:"current,omitempty"`
+	// max is the newest schema version the hub's binary supports.
+	Max           int64 `protobuf:"varint,2,opt,name=max,proto3" json:"max,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SchemaInfoResponse) Reset() {
+	*x = SchemaInfoResponse{}
+	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SchemaInfoResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SchemaInfoResponse) ProtoMessage() {}
+
+func (x *SchemaInfoResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SchemaInfoResponse.ProtoReflect.Descriptor instead.
+func (*SchemaInfoResponse) Descriptor() ([]byte, []int) {
+	return file_hearth_cluster_v1_cluster_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *SchemaInfoResponse) GetCurrent() int64 {
+	if x != nil {
+		return x.Current
+	}
+	return 0
+}
+
+func (x *SchemaInfoResponse) GetMax() int64 {
+	if x != nil {
+		return x.Max
+	}
+	return 0
+}
+
+// MigrateSchemaRequest names the target schema version.
+type MigrateSchemaRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// to is the schema version to migrate to. It must be newer than the
+	// cluster's and supported by every hub.
+	To            int64 `protobuf:"varint,1,opt,name=to,proto3" json:"to,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MigrateSchemaRequest) Reset() {
+	*x = MigrateSchemaRequest{}
+	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MigrateSchemaRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MigrateSchemaRequest) ProtoMessage() {}
+
+func (x *MigrateSchemaRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MigrateSchemaRequest.ProtoReflect.Descriptor instead.
+func (*MigrateSchemaRequest) Descriptor() ([]byte, []int) {
+	return file_hearth_cluster_v1_cluster_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *MigrateSchemaRequest) GetTo() int64 {
+	if x != nil {
+		return x.To
+	}
+	return 0
+}
+
+// MigrateSchemaResponse is the outcome of a migration.
+type MigrateSchemaResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// from is the schema version the cluster was at.
+	From          int64 `protobuf:"varint,1,opt,name=from,proto3" json:"from,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MigrateSchemaResponse) Reset() {
+	*x = MigrateSchemaResponse{}
+	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MigrateSchemaResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MigrateSchemaResponse) ProtoMessage() {}
+
+func (x *MigrateSchemaResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MigrateSchemaResponse.ProtoReflect.Descriptor instead.
+func (*MigrateSchemaResponse) Descriptor() ([]byte, []int) {
+	return file_hearth_cluster_v1_cluster_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *MigrateSchemaResponse) GetFrom() int64 {
+	if x != nil {
+		return x.From
+	}
+	return 0
+}
+
 var File_hearth_cluster_v1_cluster_proto protoreflect.FileDescriptor
 
 const file_hearth_cluster_v1_cluster_proto_rawDesc = "" +
@@ -608,13 +793,24 @@ const file_hearth_cluster_v1_cluster_proto_rawDesc = "" +
 	"\arevoked\x18\x01 \x01(\x05R\arevoked\"4\n" +
 	"\x19TransferLeadershipRequest\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"\x1c\n" +
-	"\x1aTransferLeadershipResponse2\xd1\x03\n" +
+	"\x1aTransferLeadershipResponse\"\x13\n" +
+	"\x11SchemaInfoRequest\"@\n" +
+	"\x12SchemaInfoResponse\x12\x18\n" +
+	"\acurrent\x18\x01 \x01(\x03R\acurrent\x12\x10\n" +
+	"\x03max\x18\x02 \x01(\x03R\x03max\"&\n" +
+	"\x14MigrateSchemaRequest\x12\x0e\n" +
+	"\x02to\x18\x01 \x01(\x03R\x02to\"+\n" +
+	"\x15MigrateSchemaResponse\x12\x12\n" +
+	"\x04from\x18\x01 \x01(\x03R\x04from2\x90\x05\n" +
 	"\x0eClusterService\x12G\n" +
 	"\x04Join\x12\x1e.hearth.cluster.v1.JoinRequest\x1a\x1f.hearth.cluster.v1.JoinResponse\x12P\n" +
 	"\aPromote\x12!.hearth.cluster.v1.PromoteRequest\x1a\".hearth.cluster.v1.PromoteResponse\x12P\n" +
 	"\aForward\x12!.hearth.cluster.v1.ForwardRequest\x1a\".hearth.cluster.v1.ForwardResponse\x12_\n" +
 	"\fRemoveMember\x12&.hearth.cluster.v1.RemoveMemberRequest\x1a'.hearth.cluster.v1.RemoveMemberResponse\x12q\n" +
-	"\x12TransferLeadership\x12,.hearth.cluster.v1.TransferLeadershipRequest\x1a-.hearth.cluster.v1.TransferLeadershipResponseB\xcf\x01\n" +
+	"\x12TransferLeadership\x12,.hearth.cluster.v1.TransferLeadershipRequest\x1a-.hearth.cluster.v1.TransferLeadershipResponse\x12Y\n" +
+	"\n" +
+	"SchemaInfo\x12$.hearth.cluster.v1.SchemaInfoRequest\x1a%.hearth.cluster.v1.SchemaInfoResponse\x12b\n" +
+	"\rMigrateSchema\x12'.hearth.cluster.v1.MigrateSchemaRequest\x1a(.hearth.cluster.v1.MigrateSchemaResponseB\xcf\x01\n" +
 	"\x15com.hearth.cluster.v1B\fClusterProtoP\x01ZBgithub.com/gvart/hearth/internal/proto/hearth/cluster/v1;clusterv1\xa2\x02\x03HCX\xaa\x02\x11Hearth.Cluster.V1\xca\x02\x11Hearth\\Cluster\\V1\xe2\x02\x1dHearth\\Cluster\\V1\\GPBMetadata\xea\x02\x13Hearth::Cluster::V1b\x06proto3"
 
 var (
@@ -629,7 +825,7 @@ func file_hearth_cluster_v1_cluster_proto_rawDescGZIP() []byte {
 	return file_hearth_cluster_v1_cluster_proto_rawDescData
 }
 
-var file_hearth_cluster_v1_cluster_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_hearth_cluster_v1_cluster_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_hearth_cluster_v1_cluster_proto_goTypes = []any{
 	(*JoinRequest)(nil),                // 0: hearth.cluster.v1.JoinRequest
 	(*JoinResponse)(nil),               // 1: hearth.cluster.v1.JoinResponse
@@ -641,23 +837,31 @@ var file_hearth_cluster_v1_cluster_proto_goTypes = []any{
 	(*RemoveMemberResponse)(nil),       // 7: hearth.cluster.v1.RemoveMemberResponse
 	(*TransferLeadershipRequest)(nil),  // 8: hearth.cluster.v1.TransferLeadershipRequest
 	(*TransferLeadershipResponse)(nil), // 9: hearth.cluster.v1.TransferLeadershipResponse
+	(*SchemaInfoRequest)(nil),          // 10: hearth.cluster.v1.SchemaInfoRequest
+	(*SchemaInfoResponse)(nil),         // 11: hearth.cluster.v1.SchemaInfoResponse
+	(*MigrateSchemaRequest)(nil),       // 12: hearth.cluster.v1.MigrateSchemaRequest
+	(*MigrateSchemaResponse)(nil),      // 13: hearth.cluster.v1.MigrateSchemaResponse
 }
 var file_hearth_cluster_v1_cluster_proto_depIdxs = []int32{
-	0, // 0: hearth.cluster.v1.ClusterService.Join:input_type -> hearth.cluster.v1.JoinRequest
-	2, // 1: hearth.cluster.v1.ClusterService.Promote:input_type -> hearth.cluster.v1.PromoteRequest
-	4, // 2: hearth.cluster.v1.ClusterService.Forward:input_type -> hearth.cluster.v1.ForwardRequest
-	6, // 3: hearth.cluster.v1.ClusterService.RemoveMember:input_type -> hearth.cluster.v1.RemoveMemberRequest
-	8, // 4: hearth.cluster.v1.ClusterService.TransferLeadership:input_type -> hearth.cluster.v1.TransferLeadershipRequest
-	1, // 5: hearth.cluster.v1.ClusterService.Join:output_type -> hearth.cluster.v1.JoinResponse
-	3, // 6: hearth.cluster.v1.ClusterService.Promote:output_type -> hearth.cluster.v1.PromoteResponse
-	5, // 7: hearth.cluster.v1.ClusterService.Forward:output_type -> hearth.cluster.v1.ForwardResponse
-	7, // 8: hearth.cluster.v1.ClusterService.RemoveMember:output_type -> hearth.cluster.v1.RemoveMemberResponse
-	9, // 9: hearth.cluster.v1.ClusterService.TransferLeadership:output_type -> hearth.cluster.v1.TransferLeadershipResponse
-	5, // [5:10] is the sub-list for method output_type
-	0, // [0:5] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	0,  // 0: hearth.cluster.v1.ClusterService.Join:input_type -> hearth.cluster.v1.JoinRequest
+	2,  // 1: hearth.cluster.v1.ClusterService.Promote:input_type -> hearth.cluster.v1.PromoteRequest
+	4,  // 2: hearth.cluster.v1.ClusterService.Forward:input_type -> hearth.cluster.v1.ForwardRequest
+	6,  // 3: hearth.cluster.v1.ClusterService.RemoveMember:input_type -> hearth.cluster.v1.RemoveMemberRequest
+	8,  // 4: hearth.cluster.v1.ClusterService.TransferLeadership:input_type -> hearth.cluster.v1.TransferLeadershipRequest
+	10, // 5: hearth.cluster.v1.ClusterService.SchemaInfo:input_type -> hearth.cluster.v1.SchemaInfoRequest
+	12, // 6: hearth.cluster.v1.ClusterService.MigrateSchema:input_type -> hearth.cluster.v1.MigrateSchemaRequest
+	1,  // 7: hearth.cluster.v1.ClusterService.Join:output_type -> hearth.cluster.v1.JoinResponse
+	3,  // 8: hearth.cluster.v1.ClusterService.Promote:output_type -> hearth.cluster.v1.PromoteResponse
+	5,  // 9: hearth.cluster.v1.ClusterService.Forward:output_type -> hearth.cluster.v1.ForwardResponse
+	7,  // 10: hearth.cluster.v1.ClusterService.RemoveMember:output_type -> hearth.cluster.v1.RemoveMemberResponse
+	9,  // 11: hearth.cluster.v1.ClusterService.TransferLeadership:output_type -> hearth.cluster.v1.TransferLeadershipResponse
+	11, // 12: hearth.cluster.v1.ClusterService.SchemaInfo:output_type -> hearth.cluster.v1.SchemaInfoResponse
+	13, // 13: hearth.cluster.v1.ClusterService.MigrateSchema:output_type -> hearth.cluster.v1.MigrateSchemaResponse
+	7,  // [7:14] is the sub-list for method output_type
+	0,  // [0:7] is the sub-list for method input_type
+	0,  // [0:0] is the sub-list for extension type_name
+	0,  // [0:0] is the sub-list for extension extendee
+	0,  // [0:0] is the sub-list for field type_name
 }
 
 func init() { file_hearth_cluster_v1_cluster_proto_init() }
@@ -671,7 +875,7 @@ func file_hearth_cluster_v1_cluster_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_hearth_cluster_v1_cluster_proto_rawDesc), len(file_hearth_cluster_v1_cluster_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   10,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

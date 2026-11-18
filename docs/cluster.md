@@ -54,8 +54,8 @@ HEARTH_JOIN_TOKEN=hearthj1.… hearth hub --join https://hub-a.lan:7443 \
 ```
 
 The new hub pins the CA by the fingerprint in the token, joins as a non-voter, receives a copy of the
-database, and promotes itself to a voter once it runs. Use the same Hearth version on every hub: a
-hub with a different database schema is refused.
+database, and promotes itself to a voter once it runs. The new hub's Hearth must support the
+cluster's database schema: the same version as the cluster or a newer one. An older one is refused.
 
 ## Checking on it
 
@@ -64,8 +64,10 @@ hearth cluster status          # on any member's host
 hearth cluster status --json
 ```
 
-It shows this hub's state, the leader, the Raft term and indexes, and every peer with its suffrage.
-All peers should be `Voter`. In the hub logs, `leading the cluster` and `no longer leading the
+It shows this hub's state, the leader, the Raft term and indexes, and every peer with its suffrage
+and its database schema as `DATABASE/SUPPORTED`: the schema version its database is at and the
+newest its Hearth supports (`?` and the reason when the hub does not answer). All peers should be
+`Voter`, and every DATABASE column shows the same version. In the hub logs, `leading the cluster` and `no longer leading the
 cluster` mark leadership changes, and `caught up with the cluster` marks a hub that is ready after a
 start.
 
@@ -151,10 +153,44 @@ Nothing to configure. An agent joins through any hub (a follower sends it to the
 the list of every hub's URL, keeps it in `hubs` in its data dir, and refreshes it on every connection.
 When its hub goes away it tries the others in turn.
 
+## Upgrading Hearth
+
+A cluster upgrades one hub at a time, without downtime. A hub never migrates its database on its own:
+a newer Hearth runs at the cluster's schema until you migrate the whole cluster, in step, through the
+Raft log.
+
+1. **Upgrade the followers, one at a time.** Install the new version and restart the hub; wait until
+   `hearth cluster status` shows it as `Voter` again (and `caught up with the cluster` is in its log)
+   before the next one. Each upgraded follower shows its new SUPPORTED version and the old DATABASE
+   version.
+2. **Transfer leadership** to an upgraded hub: `hearth cluster transfer-leadership` on any member's
+   host.
+3. **Upgrade the old leader** the same way.
+4. **Migrate:**
+
+   ```sh
+   hearth cluster migrate --dry-run   # what it would do
+   hearth cluster migrate             # to the newest schema every hub supports
+   ```
+
+   It prints every hub's schema and the target, and the leader then asks every hub again: if one runs
+   a Hearth that does not support the target, or does not answer, it refuses and names it. On success
+   every hub runs the migration at the same point of the log, and `hearth cluster status` shows the
+   new DATABASE version everywhere. `--to N` picks another target.
+
+A release without a new migration needs only steps 1 to 3 (`hearth cluster migrate` then says there is
+nothing to migrate). Writes keep working throughout, apart from the usual election pause during the
+leadership transfer. Do not migrate before every hub is upgraded: the leader refuses anyway.
+
+Downgrades are not supported. Before the migration, a hub can go back to the previous version. After
+it, an older Hearth refuses to start on the migrated database ("the database is at schema N, this
+binary supports up to M"), and a hub joining the cluster needs the new version.
+
 ## CLI on a member's host
 
 `hearth token create`, `hearth device revoke`, `hearth admin set-password`,
-`hearth cluster token create`, `hearth cluster remove` and `hearth cluster transfer-leadership` work on any member while its hub runs: they go through the hub's local
+`hearth cluster token create`, `hearth cluster remove`, `hearth cluster transfer-leadership` and
+`hearth cluster migrate` work on any member while its hub runs: they go through the hub's local
 control socket and, on a follower, on to the leader. With the hub stopped they refuse, since writing
 the local database directly would diverge from the cluster.
 
@@ -172,7 +208,7 @@ the replicated log in order with the action.
   key when it joins, and removal cannot take it back: whoever has that data dir can still mint
   certificates the cluster trusts. Wipe the data dir of every removed hub. Rotating the CA is out of
   scope for now ([#84](https://github.com/gvart/hearth/issues/84)).
-- **No rolling schema upgrades yet** ([#25](https://github.com/gvart/hearth/issues/25)): upgrade all
-  hubs to the same version together.
+- **Schema migrations are manual and one way:** run `hearth cluster migrate` after upgrading every
+  hub (see [Upgrading Hearth](#upgrading-hearth)); there is no automatic migration and no downgrade.
 - All hubs share one CA, and every voter holds its key. Protect each hub's data dir accordingly.
 - Clusters of 3 or 5 voters only; no read-only replicas.

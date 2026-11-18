@@ -53,7 +53,7 @@ func (s *Store) Restore(ctx context.Context, r io.Reader) error {
 	if err := writeFile(path, r); err != nil {
 		return fmt.Errorf("restore: %w", err)
 	}
-	if err := checkSnapshot(ctx, path); err != nil {
+	if err := checkSnapshot(ctx, path, s.maxSchema); err != nil {
 		return fmt.Errorf("restore: %w", err)
 	}
 	conn, err := s.db.Conn(ctx)
@@ -101,9 +101,10 @@ func writeFile(path string, r io.Reader) error {
 }
 
 // checkSnapshot opens the staged snapshot read-only and verifies it is an
-// intact SQLite database at this binary's schema version, before it touches
-// the live database.
-func checkSnapshot(ctx context.Context, path string) error {
+// intact SQLite database at a schema version this binary supports (at most
+// maxSchema), before it touches the live database. An older schema is
+// restored as it is: in a cluster, the schema moves only by MigrateSchema.
+func checkSnapshot(ctx context.Context, path string, maxSchema int64) error {
 	db, err := sql.Open("sqlite", "file:"+path+"?mode=ro")
 	if err != nil {
 		return err
@@ -116,16 +117,16 @@ func checkSnapshot(ctx context.Context, path string) error {
 	if result != "ok" {
 		return fmt.Errorf("check snapshot: %s", result)
 	}
-	var version int64
-	if err := db.QueryRowContext(ctx,
-		`SELECT COALESCE(MAX(version_id), 0) FROM goose_db_version WHERE is_applied`).Scan(&version); err != nil {
-		return fmt.Errorf("check snapshot: schema version: %w", err)
+	version, err := schemaVersion(ctx, db)
+	if err != nil {
+		return fmt.Errorf("check snapshot: %w", err)
 	}
 	if version == 0 {
 		return errors.New("check snapshot: no schema version")
 	}
-	if version != SchemaVersion() {
-		return fmt.Errorf("check snapshot: %w: snapshot has %d, binary has %d", ErrSchemaMismatch, version, SchemaVersion())
+	if version > maxSchema {
+		return fmt.Errorf("check snapshot: %w: the snapshot is at schema %d, this binary supports up to %d",
+			ErrSchemaMismatch, version, maxSchema)
 	}
 	return nil
 }

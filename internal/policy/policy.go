@@ -48,6 +48,9 @@ const (
 	// ClusterTransferLeadership asks the leader to hand leadership to
 	// another voter.
 	ClusterTransferLeadership Action = "cluster.transfer_leadership"
+	// ClusterMigrate migrates the cluster's store schema to a newer version
+	// on every hub, through the Raft log.
+	ClusterMigrate Action = "cluster.migrate"
 )
 
 // Actor kinds.
@@ -97,6 +100,8 @@ var rules = map[Action]rule{
 	// A transfer changes no state: the cluster elects the chosen voter, with
 	// a write pause no longer than an ordinary election.
 	ClusterTransferLeadership: {class: Safe, actors: []string{ActorAdmin}},
+	// A schema migration cannot be undone: downgrades are unsupported.
+	ClusterMigrate: {class: Dangerous, actors: []string{ActorAdmin}},
 }
 
 // ClassOf returns the class of a known action.

@@ -130,7 +130,7 @@ node refuses to join if it cannot apply the cluster's schema version; the leader
 to N" as a log command only after every voter reports support for N; old log entries stay
 replayable (versioned commands). Rolling upgrade order: followers first, then the leader by
 transferring leadership. Under (a) the standby holds a byte copy and runs migrations only when
-promoted; downgrades are unsupported.
+promoted; downgrades are unsupported. Implemented in #25: see "Rolling schema migrations (#25)" below.
 
 ## 4. Recommendation
 
@@ -243,8 +243,8 @@ on a joined hub, `join-url`.
   `ClusterService.Promote` with its node certificate (policy `cluster.promote`, dangerous, actor `hub`)
   and the leader makes it a voter.
 - **Schema guard.** A member opens its store with `store.WithoutUpgrade()`: a new database is
-  initialized, an existing one must already be at the binary's schema. Join refuses a binary whose schema
-  differs from the cluster's, and restore refuses a snapshot of another schema. Rolling migrations: #25.
+  initialized, an existing one is never migrated by the hub itself. Since #25 the rule is "the binary
+  supports the schema" rather than "the schema equals the binary's"; see "Rolling schema migrations".
 - **Local CLI.** A member serves a control socket (`<data-dir>/hearth.sock`, or a private 0700 dir under
   the temp dir when that path is too long for a unix socket): `GET /v1/status` for
   `hearth cluster status`, and `POST /v1/apply` so CLI writes (`token create`, `device revoke`,
@@ -453,3 +453,69 @@ publishing from its own calls, so its behaviour, and a standalone hub's, is unch
   `TestWaitAppliedIsBounded`. The in-process cluster tests now wait for joiners to install the
   leader's snapshot before they subscribe to events (a restore ends every subscription) and use
   raft's default timeouts: the 400 ms ones made leadership flap under `-race` on one CPU.
+
+### Rolling schema migrations (#25)
+
+A cluster moves to a release with a new migration without downtime: the binary is upgraded hub by hub,
+and the schema moves later, on every hub at the same point of the Raft log.
+
+- **Supported, not equal.** A member opens its store with `store.WithoutUpgrade()`, which now accepts
+  any database at a schema the binary supports (at most its newest migration) and leaves it there. A
+  newer binary on an older database starts and runs at that schema; an older binary on a newer
+  database refuses with `ErrSchemaMismatch` ("the database is at schema N, this binary supports up to
+  M") and the hub says downgrades are not supported. Snapshot restore applies the same rule, so a
+  newer joiner installs the cluster's older snapshot as it is. `ClusterService.Join`'s
+  `schema_version` is now the newest schema the joining binary supports; the leader admits it if that
+  is at least the cluster's current schema, and refuses an older binary before it consumes the token.
+  A standalone hub is unchanged: it migrates on open, as always.
+- **Advertisement: asked live, not replicated.** Each hub reports `{current, max}` through a new
+  `ClusterService.SchemaInfo`, served by every member to members presenting their hub node
+  certificate. The leader asks every hub in the Raft configuration in parallel (3 s each) before it
+  migrates, and `hearth cluster status` shows the answers (1 s each). Replicated hub metadata (a
+  column in `cluster_hubs`) was the alternative; it was rejected because adding it would itself be a
+  schema migration that the cluster could not yet coordinate, and because a value replicated at start
+  can be stale, while a live answer always reflects the binary running now, so a restart with a new
+  binary is seen at once. The cost is that every hub must answer: one that is down blocks the
+  migration, which is the safe outcome (it would halt on the migrate entry if its binary were old).
+- **`MigrateSchema{To}`** (`migrate_schema`) is a log command. `Node.MigrateSchema` (on the leader, or
+  forwarded to it through `ClusterService.MigrateSchema` like `RemoveMember`) refuses unless `To` is
+  newer than the cluster's schema (`store.ErrSchemaNotNewer`) and every hub in the configuration,
+  voters and non-voters, reports a binary that supports `To` (`ErrSchemaUnsupported`, naming each hub
+  and why: "n1 (supports up to 6), n3 (cannot read its schema: ...)"). Only then does it propose. The
+  generic write paths (`Apply`, `ApplyOrForward`, `Forward`, the control socket's `/v1/apply`) refuse
+  `migrate_schema`, so the check cannot be bypassed. In the state machine `ApplyLocal` runs goose up
+  to `To` (goose runs each migration in its own transaction). `To` not newer than the database is a
+  domain error, the same on every node. `To` past this binary's newest migration is a failure of this
+  node, so the state machine halts as designed: the leader's check makes that a backstop for a hub
+  that was downgraded after the check. On restart the node restores its snapshot (at the old schema)
+  and replays the log, migrate included.
+- **Commands needing a newer schema.** Commands stay versioned (the envelope's `v`), and migrations
+  stay additive within a release so old entries replay. A command that writes a table or column added
+  by a migration must not apply before the migrate: it implements the store's `schemaGated`
+  (`minSchema()`), and `ApplyLocal` refuses it with `store.ErrSchemaTooOld`, a domain error, while
+  the database is below that version. Every node is at the same schema at the same log position, so
+  the refusal is deterministic. Code that reads such a table must likewise check
+  `Store.SchemaVersion` first, or tolerate its absence, until the migrate. No command needs it yet.
+- **CLI.** `hearth cluster migrate [--to N] [--dry-run]` (policy `cluster.migrate`, dangerous,
+  actor `admin`, audited on the hub where it runs; through the control socket and on to the leader)
+  reads every hub's schema, defaults to the newest schema every hub supports, prints the hubs and the
+  plan, and migrates. `--dry-run` stops after the plan; there is no interactive prompt, like the other
+  cluster commands. `hearth cluster status` gains a `SCHEMA (DATABASE/SUPPORTED)` column (`schema` and
+  `schema_error` per peer in `--json`).
+- **Upgrade procedure** (docs/cluster.md): upgrade followers one at a time, transfer leadership,
+  upgrade the old leader, run `hearth cluster migrate`.
+- **Not done.** No automatic migration once every hub supports a newer schema (a possible follow-up:
+  the leader could propose it itself after the last voter reports support). No e2e step: it needs two
+  image versions; the in-process tests below cover it.
+- **Tests.** `internal/cluster/migrate_test.go` stands in for the new binary with
+  `store.WithExtraMigration` (a test migration one past the binary's, whose trigger makes the existing
+  `UpsertDevice` write the new table): `TestRollingUpgradeWithMigration` (followers upgraded one at a
+  time, migrate refused while the old leader runs, leadership transfer, old leader upgraded, migrate
+  through a follower's control socket; a writer keeps writing through the hubs and no write fails for
+  10 s; afterwards the new table exists and is written on all three; a restarted hub replays the
+  migrate to the same rows; the old binary refuses the migrated database), `TestMigrateNeedsEveryHub`
+  (an old binary and an unreachable hub each block it by name; nothing is proposed; the generic write
+  paths refuse it) and `TestJoinWithNewerBinary`; `TestJoinRejects` refuses an older binary without
+  burning the token; `TestFSMHaltsOnNodeFailure` halts on a migrate past the binary. In
+  `internal/store`: `TestWithoutUpgrade`, `TestRestoreAcrossSchemas`, `TestMigrateSchema`,
+  `TestReplayWithMigrateIsDeterministic` and `TestSchemaGatedCommand`.
