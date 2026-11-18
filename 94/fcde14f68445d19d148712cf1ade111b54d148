@@ -1,0 +1,32 @@
+internal/hub/logs_test.go
+  s_344993999c180f::t_5ffcf128a23377 9,357-400,404,408-415,417-418,420-422,424-429,431-500
+  s_344993999c180f::t_0824846b2120e3 280-356
+  s_344993999c180f::t_3632cfd9d079dd 14,24
+  s_344993999c180f::t_0ca387c9ae8576 69
+  s_344993999c180f::t_56a944b588a2fe 70-74,80
+internal/hub/agentlogs.go
+  s_344993999c180f::t_5ffcf128a23377 20-67,69-98,115-116,120-121,125-126,144,148-154,198,200
+internal/hub/agentexec.go
+  s_344993999c180f::t_5ffcf128a23377 67,78
+internal/agent/logs_stream_test.go
+  s_344993999c180f::t_3291cd724d26ac 86-87
+  s_344993999c180f::t_726b7e47285638 108
+internal/hub/logs.go
+  s_344993999c180f::t_5ffcf128a23377 44,88-90,105-123,132-133,135-137,140
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "94fcde14f68445d19d148712cf1ade111b54d148",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": null
+    }
+  }
+}
