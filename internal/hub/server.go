@@ -41,6 +41,9 @@ type Config struct {
 	// HTTPPort is the plain-HTTP listener's port, which serves install.sh.
 	// Install commands made over HTTPS point there. Default DefaultHTTPPort.
 	HTTPPort string
+	// Version is the hub's own version. When it is a release tag (vX.Y.Z or
+	// vX.Y.Z-rc.N), install commands pin the agent to it with --version.
+	Version string
 	// Stopping is cancelled when the hub begins shutting down. Agent streams
 	// then end at once, so a graceful shutdown need not wait them out. If nil,
 	// they end only when the agent hangs up or the server closes.

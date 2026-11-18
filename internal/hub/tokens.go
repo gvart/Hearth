@@ -9,6 +9,7 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -120,9 +121,36 @@ func (a *api) createToken(w http.ResponseWriter, r *http.Request) {
 		// the join command: sudo drops HEARTH_TOKEN, and putting it after
 		// sudo would put it in sudo's argv. Run as root, join uses the
 		// installed service's data dir.
-		InstallCommand: "curl -fsSL http://" + httpHost + "/install.sh | HEARTH_TOKEN=" + enc + " sh -s -- --hub " + agentURL,
+		InstallCommand: "curl -fsSL http://" + httpHost + "/install.sh | HEARTH_TOKEN=" + enc + " sh -s -- --hub " + agentURL + a.versionArg(),
 		JoinCommand:    "HEARTH_TOKEN=" + enc + " hearth agent join " + agentURL,
 	})
+}
+
+// releaseTag matches the release tags goreleaser builds from: vX.Y.Z with an
+// optional dot-separated pre-release (v0.0.1-rc.5). It refuses a hyphen inside
+// the pre-release, which leaves out Go pseudo-versions
+// (v0.0.0-20250101000000-abcdef123456), and anything a shell would interpret.
+var releaseTag = regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$`)
+
+// releaseVersion returns version if it names a release the installer can
+// download, and "" for dev, snapshot (vX.Y.Z-snapshot, see .goreleaser.yaml)
+// and pseudo-version builds.
+func releaseVersion(version string) string {
+	if !releaseTag.MatchString(version) || strings.HasSuffix(version, "-snapshot") {
+		return ""
+	}
+	return version
+}
+
+// versionArg pins the installed agent to the hub's own release, so agent and
+// hub match and the installer need not look up the latest release (which
+// GitHub does not report while every release is a pre-release). A dev hub
+// pins nothing and the installer picks the newest release.
+func (a *api) versionArg() string {
+	if a.installVersion == "" {
+		return ""
+	}
+	return " --version " + a.installVersion
 }
 
 // commandHosts derives the hosts for the install and join commands from the
