@@ -359,6 +359,8 @@ pre,
 
 /* Devices table */
 .table-wrap {
+  /* Contains absolutely positioned cells (.sr-only) so they scroll with the table, not the page. */
+  position: relative;
   overflow-x: auto;
   background: var(--surface);
   border: 1px solid var(--border);
