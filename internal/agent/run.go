@@ -29,8 +29,8 @@ import (
 // Protocol version this agent speaks.
 const (
 	ProtocolMajor = 1
-	// 1: answers ExecRequest; 2: reports its capability ceiling; 3: answers ProbeRequest; 4: sends MetricsBatch; 5: streams logs (LogRequest)
-	ProtocolMinor = 5
+	// 1: answers ExecRequest; 2: reports its capability ceiling; 3: answers ProbeRequest; 4: sends MetricsBatch; 5: streams logs (LogRequest); 6: answers ShellRequest
+	ProtocolMinor = 6
 )
 
 const (
@@ -352,15 +352,24 @@ func (r *runner) hello(ctx context.Context) *agentv1.Hello {
 func (r *runner) receive(ctx context.Context, stream *connect.BidiStreamForClient[agentv1.AgentMessage, agentv1.HubMessage],
 	execs *sync.WaitGroup, logs **logStreams, results chan<- *agentv1.AgentMessage,
 ) error {
+	// Once the stream failed nothing can be sent: replies are dropped, so
+	// the goroutines in execs end without waiting for ctx.
+	gone := make(chan struct{})
+	defer close(gone)
 	send := func(ctx context.Context, msg *agentv1.AgentMessage) bool {
 		select {
 		case results <- msg:
 			return true
 		case <-ctx.Done():
 			return false
+		case <-gone:
+			return false
 		}
 	}
 	reply := func(msg *agentv1.AgentMessage) { send(ctx, msg) }
+	// Every shell of the stream ends with it.
+	shells := newShellHost(r.cfg.Ceiling, r.log, execs, reply)
+	defer shells.closeAll()
 	for {
 		msg, err := stream.Receive()
 		if err != nil {
@@ -396,6 +405,8 @@ func (r *runner) receive(ctx context.Context, stream *connect.BidiStreamForClien
 			if *logs != nil {
 				(*logs).cancel(p.LogCancel.GetId())
 			}
+		case *agentv1.HubMessage_ShellRequest:
+			shells.handle(ctx, p.ShellRequest)
 		default:
 			// Ping needs no answer: any traffic keeps the stream alive.
 			r.log.DebugContext(ctx, "hub message ignored", "type", fmt.Sprintf("%T", msg.GetPayload()))

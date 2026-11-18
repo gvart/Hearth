@@ -183,6 +183,9 @@ const (
 	// TelemetrySet stores the admin's answer to "Share anonymous usage
 	// stats?": opting in or out of the hub's weekly anonymous telemetry.
 	TelemetrySet Action = "telemetry.set"
+	// DeviceShell opens an interactive shell on a device, on a terminal in
+	// the web UI, through its agent.
+	DeviceShell Action = "device.shell"
 )
 
 // Actor kinds.
@@ -373,6 +376,10 @@ var rules = map[Action]rule{
 	// week (docs/telemetry.md); it touches no device. Only a signed-in admin
 	// answers.
 	TelemetrySet: {class: Safe, actors: []string{ActorWeb}},
+	// A shell can do anything the agent's user can. Only a person at the
+	// web UI, behind an admin session, may open one: never an automation
+	// or an MCP client.
+	DeviceShell: {class: Dangerous, actors: []string{ActorWeb}},
 }
 
 // Actions returns every known action, sorted.

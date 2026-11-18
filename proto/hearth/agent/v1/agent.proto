@@ -25,6 +25,7 @@ message AgentMessage {
     Hello facts = 5;
     ProbeResult probe_result = 6;
     LogLines log_lines = 7;
+    ShellEvent shell_event = 8;
   }
 }
 
@@ -37,6 +38,7 @@ message HubMessage {
     ProbeRequest probe_request = 4;
     LogRequest log_request = 5;
     LogCancel log_cancel = 6;
+    ShellRequest shell_request = 7;
   }
 }
 
@@ -86,6 +88,10 @@ message Ceiling {
   // glob (path.Match) such as "*". Reported by agents of protocol minor 5
   // and later.
   repeated string logs = 4;
+  // shell allows ShellRequests: the hub may open an interactive shell, on a
+  // pseudo-terminal, as the agent's user. Reported by agents of protocol
+  // minor 6 and later.
+  bool shell = 5;
 }
 
 // Disk is a mounted filesystem.
@@ -304,3 +310,71 @@ message LogLine {
 
 // Ping checks the stream is alive.
 message Ping {}
+
+// ShellRequest drives an interactive shell session on the device, one PTY
+// per id. The agent opens it only if its ceiling allows shells, and answers
+// with ShellEvents of the same id. Hubs send it only to agents of protocol
+// minor 6 and later.
+message ShellRequest {
+  // id names the session; unique per stream. The hub picks it on open.
+  string id = 1;
+  oneof op {
+    // open starts the shell. The agent answers ShellStarted, or ShellExited
+    // when it refuses or fails.
+    ShellOpen open = 2;
+    // input is written to the PTY as is.
+    bytes input = 3;
+    // resize changes the PTY's window size.
+    TerminalSize resize = 4;
+    // ack tells the agent the hub delivered this many more output bytes.
+    // The agent stops reading the PTY while too many are unacknowledged.
+    uint32 ack = 5;
+    // close ends the session: the agent kills the shell's process group.
+    ShellClose close = 6;
+  }
+}
+
+// ShellOpen starts a shell session.
+message ShellOpen {
+  TerminalSize size = 1;
+}
+
+// TerminalSize is a terminal's size in character cells.
+message TerminalSize {
+  uint32 rows = 1;
+  uint32 cols = 2;
+}
+
+// ShellClose ends a shell session.
+message ShellClose {}
+
+// ShellEvent is what happens in a shell session.
+message ShellEvent {
+  // id is the id of the session's ShellRequests.
+  string id = 1;
+  oneof event {
+    ShellStarted started = 2;
+    // output is what the PTY wrote, in order.
+    bytes output = 3;
+    // exited is always the session's last event.
+    ShellExited exited = 4;
+  }
+}
+
+// ShellStarted says the shell runs.
+message ShellStarted {
+  // shell is the program the agent started, as /bin/bash.
+  string shell = 1;
+}
+
+// ShellExited ends a shell session.
+message ShellExited {
+  // denied is set when the agent refused the session: its ceiling does not
+  // allow shells. Nothing ran.
+  bool denied = 1;
+  // exit_code is the shell's exit status; -1 if it did not run or was killed.
+  int32 exit_code = 2;
+  // error says why the session failed or was denied; empty when the shell
+  // exited by itself.
+  string error = 3;
+}

@@ -37,6 +37,8 @@ type Ceiling struct {
 	Probe bool `json:"probe"`
 	// Logs are the log sources the hub may stream, as manager:pattern.
 	Logs []string `json:"logs"`
+	// Shell is whether an admin may open a terminal on the device.
+	Shell bool `json:"shell"`
 }
 
 // Disk is a mounted filesystem.
@@ -69,7 +71,7 @@ func factsFromHello(h *agentv1.Hello) (store.DeviceFacts, error) {
 		Capabilities:  nonNil(h.GetCapabilities()),
 	}
 	if c := h.GetCeiling(); c != nil {
-		f.Ceiling = &Ceiling{Exec: nonNil(c.GetExec()), Restart: nonNil(c.GetRestart()), Probe: c.GetProbe(), Logs: nonNil(c.GetLogs())}
+		f.Ceiling = &Ceiling{Exec: nonNil(c.GetExec()), Restart: nonNil(c.GetRestart()), Probe: c.GetProbe(), Logs: nonNil(c.GetLogs()), Shell: c.GetShell()}
 	}
 	for _, d := range h.GetDisks() {
 		f.Disks = append(f.Disks, Disk{

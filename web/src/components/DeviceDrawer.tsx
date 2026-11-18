@@ -23,9 +23,12 @@ export function DeviceDrawer({ device, onClose }: { device: Device; onClose: () 
             {primaryIP(device) ? <span className="mono"> · {primaryIP(device)}</span> : null}
           </p>
         </div>
-        <button className="btn btn-ghost icon-btn" type="button" aria-label="Close" onClick={onClose}>
-          ✕
-        </button>
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <TerminalButton device={device} />
+          <button className="btn btn-ghost icon-btn" type="button" aria-label="Close" onClick={onClose}>
+            ✕
+          </button>
+        </div>
       </header>
 
       <Section title="Device">
@@ -139,6 +142,34 @@ export function DeviceDrawer({ device, onClose }: { device: Device; onClose: () 
         )}
       </Section>
     </Modal>
+  );
+}
+
+/** Opens the device's web terminal in a new tab, if its agent allows shells. */
+function TerminalButton({ device }: { device: Device }) {
+  const why =
+    device.status !== 'online'
+      ? 'The device is not online'
+      : !device.facts.ceiling?.shell
+        ? 'Its agent does not allow shells: start it with --allow-shell'
+        : '';
+  if (why) {
+    return (
+      <button className="btn" type="button" disabled title={why}>
+        Terminal
+      </button>
+    );
+  }
+  return (
+    <a
+      className="btn"
+      style={{ textDecoration: 'none' }}
+      href={`#/terminal/${encodeURIComponent(device.id)}`}
+      target="_blank"
+      rel="noopener"
+    >
+      Terminal
+    </a>
   );
 }
 

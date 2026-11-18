@@ -65,7 +65,8 @@ type agentSession struct {
 	pending map[string]chan *agentv1.ExecResult
 	probes  map[string]chan *agentv1.ProbeResult
 	// logs are the open log streams, by LogRequest id (see agentlogs.go).
-	logs map[string]*logQueue
+	logs   map[string]*logQueue
+	shells map[string]*Shell
 	// ceiling is the capability ceiling the agent last reported.
 	ceiling *agentv1.Ceiling
 }
@@ -76,8 +77,7 @@ func (a *Agents) attach(deviceID string, hello *agentv1.Hello, send func(*agentv
 	s := &agentSession{
 		minor: hello.GetProtocolVersion().GetMinor(), send: send, done: make(chan struct{}),
 		pending: map[string]chan *agentv1.ExecResult{}, probes: map[string]chan *agentv1.ProbeResult{},
-		logs:    map[string]*logQueue{},
-		ceiling: hello.GetCeiling(),
+		logs: map[string]*logQueue{}, shells: map[string]*Shell{}, ceiling: hello.GetCeiling(),
 	}
 	a.mu.Lock()
 	a.sessions[deviceID] = s
@@ -97,6 +97,7 @@ func (a *Agents) detach(deviceID string, s *agentSession) {
 	s.closed = true
 	s.sendMu.Unlock()
 	close(s.done)
+	s.endShells()
 }
 
 // setCeiling records the ceiling an agent reported in its facts.

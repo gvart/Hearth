@@ -69,3 +69,14 @@ func LogsWithinCeiling(c *agentv1.Ceiling, src *agentv1.LogSource) error {
 	}
 	return fmt.Errorf("logs %s:%s: %w", src.GetManager(), src.GetName(), ErrBeyondCeiling)
 }
+
+// ShellWithinCeiling checks a shell session against a device's capability
+// ceiling c, as the hub does before it opens one and the agent does again
+// before it starts the shell. It returns an error wrapping ErrBeyondCeiling
+// unless c allows shells; a nil c allows nothing.
+func ShellWithinCeiling(c *agentv1.Ceiling) error {
+	if !c.GetShell() {
+		return fmt.Errorf("shell: %w", ErrBeyondCeiling)
+	}
+	return nil
+}

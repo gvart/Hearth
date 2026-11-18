@@ -345,6 +345,14 @@ func denied(req Request, reason string, precheckErr error) error {
 	return fmt.Errorf("%s by %s/%s: %s: %w", req.Action, req.ActorKind, req.ActorID, reason, ErrDenied)
 }
 
+// RecordEnd audits the end of what an allowed req started and outlives Do,
+// such as a shell session: an entry with the decision Allow, the result,
+// and req's detail merged with extra. It decides and runs nothing; call it
+// only after Do allowed req.
+func (e *Engine) RecordEnd(ctx context.Context, req Request, result string, extra map[string]any) error {
+	return e.record(ctx, req, Allow, result, extra)
+}
+
 // record writes one audit entry for req, its detail merged with extra.
 func (e *Engine) record(ctx context.Context, req Request, decision, result string, extra map[string]any) error {
 	entry, err := e.entry(req, decision, result, extra)

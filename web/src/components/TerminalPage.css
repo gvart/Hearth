@@ -1,0 +1,62 @@
+/* The web terminal page, loaded with it. */
+
+.terminal-page {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  background: #151413;
+  color: #edebe8;
+}
+
+.terminal-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid #33302d;
+  background: #1d1c1a;
+}
+
+.terminal-brand {
+  color: inherit;
+}
+
+.terminal-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.terminal-title h1 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 650;
+}
+
+.terminal-title p {
+  margin: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.terminal-title .muted {
+  color: #9c978f;
+}
+
+.terminal-title .warn-text {
+  color: #ffa94d;
+}
+
+.terminal-title .danger-text {
+  color: #ff6b6b;
+}
+
+.terminal-host {
+  flex: 1;
+  min-height: 0;
+  padding: 0.5rem 0 0 0.75rem;
+}
+
+.terminal-host .xterm {
+  height: 100%;
+}

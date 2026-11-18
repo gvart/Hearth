@@ -37,6 +37,7 @@ type AgentMessage struct {
 	//	*AgentMessage_Facts
 	//	*AgentMessage_ProbeResult
 	//	*AgentMessage_LogLines
+	//	*AgentMessage_ShellEvent
 	Payload       isAgentMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -142,6 +143,15 @@ func (x *AgentMessage) GetLogLines() *LogLines {
 	return nil
 }
 
+func (x *AgentMessage) GetShellEvent() *ShellEvent {
+	if x != nil {
+		if x, ok := x.Payload.(*AgentMessage_ShellEvent); ok {
+			return x.ShellEvent
+		}
+	}
+	return nil
+}
+
 type isAgentMessage_Payload interface {
 	isAgentMessage_Payload()
 }
@@ -175,6 +185,10 @@ type AgentMessage_LogLines struct {
 	LogLines *LogLines `protobuf:"bytes,7,opt,name=log_lines,json=logLines,proto3,oneof"`
 }
 
+type AgentMessage_ShellEvent struct {
+	ShellEvent *ShellEvent `protobuf:"bytes,8,opt,name=shell_event,json=shellEvent,proto3,oneof"`
+}
+
 func (*AgentMessage_Hello) isAgentMessage_Payload() {}
 
 func (*AgentMessage_Heartbeat) isAgentMessage_Payload() {}
@@ -189,6 +203,8 @@ func (*AgentMessage_ProbeResult) isAgentMessage_Payload() {}
 
 func (*AgentMessage_LogLines) isAgentMessage_Payload() {}
 
+func (*AgentMessage_ShellEvent) isAgentMessage_Payload() {}
+
 // HubMessage is anything the hub sends to an agent.
 type HubMessage struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -200,6 +216,7 @@ type HubMessage struct {
 	//	*HubMessage_ProbeRequest
 	//	*HubMessage_LogRequest
 	//	*HubMessage_LogCancel
+	//	*HubMessage_ShellRequest
 	Payload       isHubMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -296,6 +313,15 @@ func (x *HubMessage) GetLogCancel() *LogCancel {
 	return nil
 }
 
+func (x *HubMessage) GetShellRequest() *ShellRequest {
+	if x != nil {
+		if x, ok := x.Payload.(*HubMessage_ShellRequest); ok {
+			return x.ShellRequest
+		}
+	}
+	return nil
+}
+
 type isHubMessage_Payload interface {
 	isHubMessage_Payload()
 }
@@ -324,6 +350,10 @@ type HubMessage_LogCancel struct {
 	LogCancel *LogCancel `protobuf:"bytes,6,opt,name=log_cancel,json=logCancel,proto3,oneof"`
 }
 
+type HubMessage_ShellRequest struct {
+	ShellRequest *ShellRequest `protobuf:"bytes,7,opt,name=shell_request,json=shellRequest,proto3,oneof"`
+}
+
 func (*HubMessage_Welcome) isHubMessage_Payload() {}
 
 func (*HubMessage_ExecRequest) isHubMessage_Payload() {}
@@ -335,6 +365,8 @@ func (*HubMessage_ProbeRequest) isHubMessage_Payload() {}
 func (*HubMessage_LogRequest) isHubMessage_Payload() {}
 
 func (*HubMessage_LogCancel) isHubMessage_Payload() {}
+
+func (*HubMessage_ShellRequest) isHubMessage_Payload() {}
 
 // ProtocolVersion is the agent<->hub protocol version. A major bump is incompatible;
 // the hub rejects majors it does not know.
@@ -560,7 +592,11 @@ type Ceiling struct {
 	// manager is "systemd", "systemd-user" or "docker" and pattern a name or a
 	// glob (path.Match) such as "*". Reported by agents of protocol minor 5
 	// and later.
-	Logs          []string `protobuf:"bytes,4,rep,name=logs,proto3" json:"logs,omitempty"`
+	Logs []string `protobuf:"bytes,4,rep,name=logs,proto3" json:"logs,omitempty"`
+	// shell allows ShellRequests: the hub may open an interactive shell, on a
+	// pseudo-terminal, as the agent's user. Reported by agents of protocol
+	// minor 6 and later.
+	Shell         bool `protobuf:"varint,5,opt,name=shell,proto3" json:"shell,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -621,6 +657,13 @@ func (x *Ceiling) GetLogs() []string {
 		return x.Logs
 	}
 	return nil
+}
+
+func (x *Ceiling) GetShell() bool {
+	if x != nil {
+		return x.Shell
+	}
+	return false
 }
 
 // Disk is a mounted filesystem.
@@ -2064,11 +2107,518 @@ func (*Ping) Descriptor() ([]byte, []int) {
 	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{27}
 }
 
+// ShellRequest drives an interactive shell session on the device, one PTY
+// per id. The agent opens it only if its ceiling allows shells, and answers
+// with ShellEvents of the same id. Hubs send it only to agents of protocol
+// minor 6 and later.
+type ShellRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// id names the session; unique per stream. The hub picks it on open.
+	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// Types that are valid to be assigned to Op:
+	//
+	//	*ShellRequest_Open
+	//	*ShellRequest_Input
+	//	*ShellRequest_Resize
+	//	*ShellRequest_Ack
+	//	*ShellRequest_Close
+	Op            isShellRequest_Op `protobuf_oneof:"op"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ShellRequest) Reset() {
+	*x = ShellRequest{}
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ShellRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ShellRequest) ProtoMessage() {}
+
+func (x *ShellRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ShellRequest.ProtoReflect.Descriptor instead.
+func (*ShellRequest) Descriptor() ([]byte, []int) {
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *ShellRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ShellRequest) GetOp() isShellRequest_Op {
+	if x != nil {
+		return x.Op
+	}
+	return nil
+}
+
+func (x *ShellRequest) GetOpen() *ShellOpen {
+	if x != nil {
+		if x, ok := x.Op.(*ShellRequest_Open); ok {
+			return x.Open
+		}
+	}
+	return nil
+}
+
+func (x *ShellRequest) GetInput() []byte {
+	if x != nil {
+		if x, ok := x.Op.(*ShellRequest_Input); ok {
+			return x.Input
+		}
+	}
+	return nil
+}
+
+func (x *ShellRequest) GetResize() *TerminalSize {
+	if x != nil {
+		if x, ok := x.Op.(*ShellRequest_Resize); ok {
+			return x.Resize
+		}
+	}
+	return nil
+}
+
+func (x *ShellRequest) GetAck() uint32 {
+	if x != nil {
+		if x, ok := x.Op.(*ShellRequest_Ack); ok {
+			return x.Ack
+		}
+	}
+	return 0
+}
+
+func (x *ShellRequest) GetClose() *ShellClose {
+	if x != nil {
+		if x, ok := x.Op.(*ShellRequest_Close); ok {
+			return x.Close
+		}
+	}
+	return nil
+}
+
+type isShellRequest_Op interface {
+	isShellRequest_Op()
+}
+
+type ShellRequest_Open struct {
+	// open starts the shell. The agent answers ShellStarted, or ShellExited
+	// when it refuses or fails.
+	Open *ShellOpen `protobuf:"bytes,2,opt,name=open,proto3,oneof"`
+}
+
+type ShellRequest_Input struct {
+	// input is written to the PTY as is.
+	Input []byte `protobuf:"bytes,3,opt,name=input,proto3,oneof"`
+}
+
+type ShellRequest_Resize struct {
+	// resize changes the PTY's window size.
+	Resize *TerminalSize `protobuf:"bytes,4,opt,name=resize,proto3,oneof"`
+}
+
+type ShellRequest_Ack struct {
+	// ack tells the agent the hub delivered this many more output bytes.
+	// The agent stops reading the PTY while too many are unacknowledged.
+	Ack uint32 `protobuf:"varint,5,opt,name=ack,proto3,oneof"`
+}
+
+type ShellRequest_Close struct {
+	// close ends the session: the agent kills the shell's process group.
+	Close *ShellClose `protobuf:"bytes,6,opt,name=close,proto3,oneof"`
+}
+
+func (*ShellRequest_Open) isShellRequest_Op() {}
+
+func (*ShellRequest_Input) isShellRequest_Op() {}
+
+func (*ShellRequest_Resize) isShellRequest_Op() {}
+
+func (*ShellRequest_Ack) isShellRequest_Op() {}
+
+func (*ShellRequest_Close) isShellRequest_Op() {}
+
+// ShellOpen starts a shell session.
+type ShellOpen struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Size          *TerminalSize          `protobuf:"bytes,1,opt,name=size,proto3" json:"size,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ShellOpen) Reset() {
+	*x = ShellOpen{}
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ShellOpen) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ShellOpen) ProtoMessage() {}
+
+func (x *ShellOpen) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ShellOpen.ProtoReflect.Descriptor instead.
+func (*ShellOpen) Descriptor() ([]byte, []int) {
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *ShellOpen) GetSize() *TerminalSize {
+	if x != nil {
+		return x.Size
+	}
+	return nil
+}
+
+// TerminalSize is a terminal's size in character cells.
+type TerminalSize struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Rows          uint32                 `protobuf:"varint,1,opt,name=rows,proto3" json:"rows,omitempty"`
+	Cols          uint32                 `protobuf:"varint,2,opt,name=cols,proto3" json:"cols,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TerminalSize) Reset() {
+	*x = TerminalSize{}
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TerminalSize) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TerminalSize) ProtoMessage() {}
+
+func (x *TerminalSize) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TerminalSize.ProtoReflect.Descriptor instead.
+func (*TerminalSize) Descriptor() ([]byte, []int) {
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *TerminalSize) GetRows() uint32 {
+	if x != nil {
+		return x.Rows
+	}
+	return 0
+}
+
+func (x *TerminalSize) GetCols() uint32 {
+	if x != nil {
+		return x.Cols
+	}
+	return 0
+}
+
+// ShellClose ends a shell session.
+type ShellClose struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ShellClose) Reset() {
+	*x = ShellClose{}
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ShellClose) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ShellClose) ProtoMessage() {}
+
+func (x *ShellClose) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ShellClose.ProtoReflect.Descriptor instead.
+func (*ShellClose) Descriptor() ([]byte, []int) {
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{31}
+}
+
+// ShellEvent is what happens in a shell session.
+type ShellEvent struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// id is the id of the session's ShellRequests.
+	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// Types that are valid to be assigned to Event:
+	//
+	//	*ShellEvent_Started
+	//	*ShellEvent_Output
+	//	*ShellEvent_Exited
+	Event         isShellEvent_Event `protobuf_oneof:"event"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ShellEvent) Reset() {
+	*x = ShellEvent{}
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ShellEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ShellEvent) ProtoMessage() {}
+
+func (x *ShellEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ShellEvent.ProtoReflect.Descriptor instead.
+func (*ShellEvent) Descriptor() ([]byte, []int) {
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *ShellEvent) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ShellEvent) GetEvent() isShellEvent_Event {
+	if x != nil {
+		return x.Event
+	}
+	return nil
+}
+
+func (x *ShellEvent) GetStarted() *ShellStarted {
+	if x != nil {
+		if x, ok := x.Event.(*ShellEvent_Started); ok {
+			return x.Started
+		}
+	}
+	return nil
+}
+
+func (x *ShellEvent) GetOutput() []byte {
+	if x != nil {
+		if x, ok := x.Event.(*ShellEvent_Output); ok {
+			return x.Output
+		}
+	}
+	return nil
+}
+
+func (x *ShellEvent) GetExited() *ShellExited {
+	if x != nil {
+		if x, ok := x.Event.(*ShellEvent_Exited); ok {
+			return x.Exited
+		}
+	}
+	return nil
+}
+
+type isShellEvent_Event interface {
+	isShellEvent_Event()
+}
+
+type ShellEvent_Started struct {
+	Started *ShellStarted `protobuf:"bytes,2,opt,name=started,proto3,oneof"`
+}
+
+type ShellEvent_Output struct {
+	// output is what the PTY wrote, in order.
+	Output []byte `protobuf:"bytes,3,opt,name=output,proto3,oneof"`
+}
+
+type ShellEvent_Exited struct {
+	// exited is always the session's last event.
+	Exited *ShellExited `protobuf:"bytes,4,opt,name=exited,proto3,oneof"`
+}
+
+func (*ShellEvent_Started) isShellEvent_Event() {}
+
+func (*ShellEvent_Output) isShellEvent_Event() {}
+
+func (*ShellEvent_Exited) isShellEvent_Event() {}
+
+// ShellStarted says the shell runs.
+type ShellStarted struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// shell is the program the agent started, as /bin/bash.
+	Shell         string `protobuf:"bytes,1,opt,name=shell,proto3" json:"shell,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ShellStarted) Reset() {
+	*x = ShellStarted{}
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ShellStarted) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ShellStarted) ProtoMessage() {}
+
+func (x *ShellStarted) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ShellStarted.ProtoReflect.Descriptor instead.
+func (*ShellStarted) Descriptor() ([]byte, []int) {
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *ShellStarted) GetShell() string {
+	if x != nil {
+		return x.Shell
+	}
+	return ""
+}
+
+// ShellExited ends a shell session.
+type ShellExited struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// denied is set when the agent refused the session: its ceiling does not
+	// allow shells. Nothing ran.
+	Denied bool `protobuf:"varint,1,opt,name=denied,proto3" json:"denied,omitempty"`
+	// exit_code is the shell's exit status; -1 if it did not run or was killed.
+	ExitCode int32 `protobuf:"varint,2,opt,name=exit_code,json=exitCode,proto3" json:"exit_code,omitempty"`
+	// error says why the session failed or was denied; empty when the shell
+	// exited by itself.
+	Error         string `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ShellExited) Reset() {
+	*x = ShellExited{}
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ShellExited) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ShellExited) ProtoMessage() {}
+
+func (x *ShellExited) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ShellExited.ProtoReflect.Descriptor instead.
+func (*ShellExited) Descriptor() ([]byte, []int) {
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *ShellExited) GetDenied() bool {
+	if x != nil {
+		return x.Denied
+	}
+	return false
+}
+
+func (x *ShellExited) GetExitCode() int32 {
+	if x != nil {
+		return x.ExitCode
+	}
+	return 0
+}
+
+func (x *ShellExited) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
 var File_hearth_agent_v1_agent_proto protoreflect.FileDescriptor
 
 const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"\n" +
-	"\x1bhearth/agent/v1/agent.proto\x12\x0fhearth.agent.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb8\x03\n" +
+	"\x1bhearth/agent/v1/agent.proto\x12\x0fhearth.agent.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xf8\x03\n" +
 	"\fAgentMessage\x12.\n" +
 	"\x05hello\x18\x01 \x01(\v2\x16.hearth.agent.v1.HelloH\x00R\x05hello\x12:\n" +
 	"\theartbeat\x18\x02 \x01(\v2\x1a.hearth.agent.v1.HeartbeatH\x00R\theartbeat\x12D\n" +
@@ -2077,8 +2627,10 @@ const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"execResult\x12.\n" +
 	"\x05facts\x18\x05 \x01(\v2\x16.hearth.agent.v1.HelloH\x00R\x05facts\x12A\n" +
 	"\fprobe_result\x18\x06 \x01(\v2\x1c.hearth.agent.v1.ProbeResultH\x00R\vprobeResult\x128\n" +
-	"\tlog_lines\x18\a \x01(\v2\x19.hearth.agent.v1.LogLinesH\x00R\blogLinesB\t\n" +
-	"\apayload\"\x80\x03\n" +
+	"\tlog_lines\x18\a \x01(\v2\x19.hearth.agent.v1.LogLinesH\x00R\blogLines\x12>\n" +
+	"\vshell_event\x18\b \x01(\v2\x1b.hearth.agent.v1.ShellEventH\x00R\n" +
+	"shellEventB\t\n" +
+	"\apayload\"\xc6\x03\n" +
 	"\n" +
 	"HubMessage\x124\n" +
 	"\awelcome\x18\x01 \x01(\v2\x18.hearth.agent.v1.WelcomeH\x00R\awelcome\x12A\n" +
@@ -2088,7 +2640,8 @@ const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"\vlog_request\x18\x05 \x01(\v2\x1b.hearth.agent.v1.LogRequestH\x00R\n" +
 	"logRequest\x12;\n" +
 	"\n" +
-	"log_cancel\x18\x06 \x01(\v2\x1a.hearth.agent.v1.LogCancelH\x00R\tlogCancelB\t\n" +
+	"log_cancel\x18\x06 \x01(\v2\x1a.hearth.agent.v1.LogCancelH\x00R\tlogCancel\x12D\n" +
+	"\rshell_request\x18\a \x01(\v2\x1d.hearth.agent.v1.ShellRequestH\x00R\fshellRequestB\t\n" +
 	"\apayload\"=\n" +
 	"\x0fProtocolVersion\x12\x14\n" +
 	"\x05major\x18\x01 \x01(\rR\x05major\x12\x14\n" +
@@ -2110,12 +2663,13 @@ const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"interfaces\x12#\n" +
 	"\ragent_version\x18\f \x01(\tR\fagentVersion\x12\"\n" +
 	"\fcapabilities\x18\r \x03(\tR\fcapabilities\x122\n" +
-	"\aceiling\x18\x0e \x01(\v2\x18.hearth.agent.v1.CeilingR\aceiling\"a\n" +
+	"\aceiling\x18\x0e \x01(\v2\x18.hearth.agent.v1.CeilingR\aceiling\"w\n" +
 	"\aCeiling\x12\x12\n" +
 	"\x04exec\x18\x01 \x03(\tR\x04exec\x12\x18\n" +
 	"\arestart\x18\x02 \x03(\tR\arestart\x12\x14\n" +
 	"\x05probe\x18\x03 \x01(\bR\x05probe\x12\x12\n" +
-	"\x04logs\x18\x04 \x03(\tR\x04logs\"w\n" +
+	"\x04logs\x18\x04 \x03(\tR\x04logs\x12\x14\n" +
+	"\x05shell\x18\x05 \x01(\bR\x05shell\"w\n" +
 	"\x04Disk\x12\x16\n" +
 	"\x06device\x18\x01 \x01(\tR\x06device\x12\x1e\n" +
 	"\n" +
@@ -2207,7 +2761,35 @@ const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"\aLogLine\x12*\n" +
 	"\x02ts\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x02ts\x12\x12\n" +
 	"\x04text\x18\x02 \x01(\tR\x04text\"\x06\n" +
-	"\x04Ping2Y\n" +
+	"\x04Ping\"\xf0\x01\n" +
+	"\fShellRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x120\n" +
+	"\x04open\x18\x02 \x01(\v2\x1a.hearth.agent.v1.ShellOpenH\x00R\x04open\x12\x16\n" +
+	"\x05input\x18\x03 \x01(\fH\x00R\x05input\x127\n" +
+	"\x06resize\x18\x04 \x01(\v2\x1d.hearth.agent.v1.TerminalSizeH\x00R\x06resize\x12\x12\n" +
+	"\x03ack\x18\x05 \x01(\rH\x00R\x03ack\x123\n" +
+	"\x05close\x18\x06 \x01(\v2\x1b.hearth.agent.v1.ShellCloseH\x00R\x05closeB\x04\n" +
+	"\x02op\">\n" +
+	"\tShellOpen\x121\n" +
+	"\x04size\x18\x01 \x01(\v2\x1d.hearth.agent.v1.TerminalSizeR\x04size\"6\n" +
+	"\fTerminalSize\x12\x12\n" +
+	"\x04rows\x18\x01 \x01(\rR\x04rows\x12\x12\n" +
+	"\x04cols\x18\x02 \x01(\rR\x04cols\"\f\n" +
+	"\n" +
+	"ShellClose\"\xb2\x01\n" +
+	"\n" +
+	"ShellEvent\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x129\n" +
+	"\astarted\x18\x02 \x01(\v2\x1d.hearth.agent.v1.ShellStartedH\x00R\astarted\x12\x18\n" +
+	"\x06output\x18\x03 \x01(\fH\x00R\x06output\x126\n" +
+	"\x06exited\x18\x04 \x01(\v2\x1c.hearth.agent.v1.ShellExitedH\x00R\x06exitedB\a\n" +
+	"\x05event\"$\n" +
+	"\fShellStarted\x12\x14\n" +
+	"\x05shell\x18\x01 \x01(\tR\x05shell\"X\n" +
+	"\vShellExited\x12\x16\n" +
+	"\x06denied\x18\x01 \x01(\bR\x06denied\x12\x1b\n" +
+	"\texit_code\x18\x02 \x01(\x05R\bexitCode\x12\x14\n" +
+	"\x05error\x18\x03 \x01(\tR\x05error2Y\n" +
 	"\fAgentService\x12I\n" +
 	"\aConnect\x12\x1d.hearth.agent.v1.AgentMessage\x1a\x1b.hearth.agent.v1.HubMessage(\x010\x01B\xbf\x01\n" +
 	"\x13com.hearth.agent.v1B\n" +
@@ -2225,7 +2807,7 @@ func file_hearth_agent_v1_agent_proto_rawDescGZIP() []byte {
 	return file_hearth_agent_v1_agent_proto_rawDescData
 }
 
-var file_hearth_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 29)
+var file_hearth_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 36)
 var file_hearth_agent_v1_agent_proto_goTypes = []any{
 	(*AgentMessage)(nil),          // 0: hearth.agent.v1.AgentMessage
 	(*HubMessage)(nil),            // 1: hearth.agent.v1.HubMessage
@@ -2255,9 +2837,16 @@ var file_hearth_agent_v1_agent_proto_goTypes = []any{
 	(*LogLines)(nil),              // 25: hearth.agent.v1.LogLines
 	(*LogLine)(nil),               // 26: hearth.agent.v1.LogLine
 	(*Ping)(nil),                  // 27: hearth.agent.v1.Ping
-	nil,                           // 28: hearth.agent.v1.MetricSample.LabelsEntry
-	(*timestamppb.Timestamp)(nil), // 29: google.protobuf.Timestamp
-	(*durationpb.Duration)(nil),   // 30: google.protobuf.Duration
+	(*ShellRequest)(nil),          // 28: hearth.agent.v1.ShellRequest
+	(*ShellOpen)(nil),             // 29: hearth.agent.v1.ShellOpen
+	(*TerminalSize)(nil),          // 30: hearth.agent.v1.TerminalSize
+	(*ShellClose)(nil),            // 31: hearth.agent.v1.ShellClose
+	(*ShellEvent)(nil),            // 32: hearth.agent.v1.ShellEvent
+	(*ShellStarted)(nil),          // 33: hearth.agent.v1.ShellStarted
+	(*ShellExited)(nil),           // 34: hearth.agent.v1.ShellExited
+	nil,                           // 35: hearth.agent.v1.MetricSample.LabelsEntry
+	(*timestamppb.Timestamp)(nil), // 36: google.protobuf.Timestamp
+	(*durationpb.Duration)(nil),   // 37: google.protobuf.Duration
 }
 var file_hearth_agent_v1_agent_proto_depIdxs = []int32{
 	3,  // 0: hearth.agent.v1.AgentMessage.hello:type_name -> hearth.agent.v1.Hello
@@ -2267,40 +2856,48 @@ var file_hearth_agent_v1_agent_proto_depIdxs = []int32{
 	3,  // 4: hearth.agent.v1.AgentMessage.facts:type_name -> hearth.agent.v1.Hello
 	21, // 5: hearth.agent.v1.AgentMessage.probe_result:type_name -> hearth.agent.v1.ProbeResult
 	25, // 6: hearth.agent.v1.AgentMessage.log_lines:type_name -> hearth.agent.v1.LogLines
-	11, // 7: hearth.agent.v1.HubMessage.welcome:type_name -> hearth.agent.v1.Welcome
-	14, // 8: hearth.agent.v1.HubMessage.exec_request:type_name -> hearth.agent.v1.ExecRequest
-	27, // 9: hearth.agent.v1.HubMessage.ping:type_name -> hearth.agent.v1.Ping
-	17, // 10: hearth.agent.v1.HubMessage.probe_request:type_name -> hearth.agent.v1.ProbeRequest
-	22, // 11: hearth.agent.v1.HubMessage.log_request:type_name -> hearth.agent.v1.LogRequest
-	24, // 12: hearth.agent.v1.HubMessage.log_cancel:type_name -> hearth.agent.v1.LogCancel
-	2,  // 13: hearth.agent.v1.Hello.protocol_version:type_name -> hearth.agent.v1.ProtocolVersion
-	5,  // 14: hearth.agent.v1.Hello.disks:type_name -> hearth.agent.v1.Disk
-	6,  // 15: hearth.agent.v1.Hello.interfaces:type_name -> hearth.agent.v1.NetworkInterface
-	4,  // 16: hearth.agent.v1.Hello.ceiling:type_name -> hearth.agent.v1.Ceiling
-	29, // 17: hearth.agent.v1.Heartbeat.ts:type_name -> google.protobuf.Timestamp
-	30, // 18: hearth.agent.v1.Heartbeat.uptime:type_name -> google.protobuf.Duration
-	9,  // 19: hearth.agent.v1.MetricsBatch.samples:type_name -> hearth.agent.v1.MetricSample
-	28, // 20: hearth.agent.v1.MetricSample.labels:type_name -> hearth.agent.v1.MetricSample.LabelsEntry
-	29, // 21: hearth.agent.v1.MetricSample.ts:type_name -> google.protobuf.Timestamp
-	29, // 22: hearth.agent.v1.Welcome.server_time:type_name -> google.protobuf.Timestamp
-	30, // 23: hearth.agent.v1.Welcome.heartbeat_interval:type_name -> google.protobuf.Duration
-	30, // 24: hearth.agent.v1.ExecRequest.timeout:type_name -> google.protobuf.Duration
-	15, // 25: hearth.agent.v1.ExecRequest.command:type_name -> hearth.agent.v1.Command
-	16, // 26: hearth.agent.v1.ExecRequest.restart:type_name -> hearth.agent.v1.RestartService
-	30, // 27: hearth.agent.v1.ProbeRequest.timeout:type_name -> google.protobuf.Duration
-	18, // 28: hearth.agent.v1.ProbeRequest.http:type_name -> hearth.agent.v1.HTTPProbe
-	19, // 29: hearth.agent.v1.ProbeRequest.tcp:type_name -> hearth.agent.v1.TCPProbe
-	20, // 30: hearth.agent.v1.ProbeRequest.dns:type_name -> hearth.agent.v1.DNSProbe
-	23, // 31: hearth.agent.v1.LogRequest.source:type_name -> hearth.agent.v1.LogSource
-	26, // 32: hearth.agent.v1.LogLines.lines:type_name -> hearth.agent.v1.LogLine
-	29, // 33: hearth.agent.v1.LogLine.ts:type_name -> google.protobuf.Timestamp
-	0,  // 34: hearth.agent.v1.AgentService.Connect:input_type -> hearth.agent.v1.AgentMessage
-	1,  // 35: hearth.agent.v1.AgentService.Connect:output_type -> hearth.agent.v1.HubMessage
-	35, // [35:36] is the sub-list for method output_type
-	34, // [34:35] is the sub-list for method input_type
-	34, // [34:34] is the sub-list for extension type_name
-	34, // [34:34] is the sub-list for extension extendee
-	0,  // [0:34] is the sub-list for field type_name
+	32, // 7: hearth.agent.v1.AgentMessage.shell_event:type_name -> hearth.agent.v1.ShellEvent
+	11, // 8: hearth.agent.v1.HubMessage.welcome:type_name -> hearth.agent.v1.Welcome
+	14, // 9: hearth.agent.v1.HubMessage.exec_request:type_name -> hearth.agent.v1.ExecRequest
+	27, // 10: hearth.agent.v1.HubMessage.ping:type_name -> hearth.agent.v1.Ping
+	17, // 11: hearth.agent.v1.HubMessage.probe_request:type_name -> hearth.agent.v1.ProbeRequest
+	22, // 12: hearth.agent.v1.HubMessage.log_request:type_name -> hearth.agent.v1.LogRequest
+	24, // 13: hearth.agent.v1.HubMessage.log_cancel:type_name -> hearth.agent.v1.LogCancel
+	28, // 14: hearth.agent.v1.HubMessage.shell_request:type_name -> hearth.agent.v1.ShellRequest
+	2,  // 15: hearth.agent.v1.Hello.protocol_version:type_name -> hearth.agent.v1.ProtocolVersion
+	5,  // 16: hearth.agent.v1.Hello.disks:type_name -> hearth.agent.v1.Disk
+	6,  // 17: hearth.agent.v1.Hello.interfaces:type_name -> hearth.agent.v1.NetworkInterface
+	4,  // 18: hearth.agent.v1.Hello.ceiling:type_name -> hearth.agent.v1.Ceiling
+	36, // 19: hearth.agent.v1.Heartbeat.ts:type_name -> google.protobuf.Timestamp
+	37, // 20: hearth.agent.v1.Heartbeat.uptime:type_name -> google.protobuf.Duration
+	9,  // 21: hearth.agent.v1.MetricsBatch.samples:type_name -> hearth.agent.v1.MetricSample
+	35, // 22: hearth.agent.v1.MetricSample.labels:type_name -> hearth.agent.v1.MetricSample.LabelsEntry
+	36, // 23: hearth.agent.v1.MetricSample.ts:type_name -> google.protobuf.Timestamp
+	36, // 24: hearth.agent.v1.Welcome.server_time:type_name -> google.protobuf.Timestamp
+	37, // 25: hearth.agent.v1.Welcome.heartbeat_interval:type_name -> google.protobuf.Duration
+	37, // 26: hearth.agent.v1.ExecRequest.timeout:type_name -> google.protobuf.Duration
+	15, // 27: hearth.agent.v1.ExecRequest.command:type_name -> hearth.agent.v1.Command
+	16, // 28: hearth.agent.v1.ExecRequest.restart:type_name -> hearth.agent.v1.RestartService
+	37, // 29: hearth.agent.v1.ProbeRequest.timeout:type_name -> google.protobuf.Duration
+	18, // 30: hearth.agent.v1.ProbeRequest.http:type_name -> hearth.agent.v1.HTTPProbe
+	19, // 31: hearth.agent.v1.ProbeRequest.tcp:type_name -> hearth.agent.v1.TCPProbe
+	20, // 32: hearth.agent.v1.ProbeRequest.dns:type_name -> hearth.agent.v1.DNSProbe
+	23, // 33: hearth.agent.v1.LogRequest.source:type_name -> hearth.agent.v1.LogSource
+	26, // 34: hearth.agent.v1.LogLines.lines:type_name -> hearth.agent.v1.LogLine
+	36, // 35: hearth.agent.v1.LogLine.ts:type_name -> google.protobuf.Timestamp
+	29, // 36: hearth.agent.v1.ShellRequest.open:type_name -> hearth.agent.v1.ShellOpen
+	30, // 37: hearth.agent.v1.ShellRequest.resize:type_name -> hearth.agent.v1.TerminalSize
+	31, // 38: hearth.agent.v1.ShellRequest.close:type_name -> hearth.agent.v1.ShellClose
+	30, // 39: hearth.agent.v1.ShellOpen.size:type_name -> hearth.agent.v1.TerminalSize
+	33, // 40: hearth.agent.v1.ShellEvent.started:type_name -> hearth.agent.v1.ShellStarted
+	34, // 41: hearth.agent.v1.ShellEvent.exited:type_name -> hearth.agent.v1.ShellExited
+	0,  // 42: hearth.agent.v1.AgentService.Connect:input_type -> hearth.agent.v1.AgentMessage
+	1,  // 43: hearth.agent.v1.AgentService.Connect:output_type -> hearth.agent.v1.HubMessage
+	43, // [43:44] is the sub-list for method output_type
+	42, // [42:43] is the sub-list for method input_type
+	42, // [42:42] is the sub-list for extension type_name
+	42, // [42:42] is the sub-list for extension extendee
+	0,  // [0:42] is the sub-list for field type_name
 }
 
 func init() { file_hearth_agent_v1_agent_proto_init() }
@@ -2316,6 +2913,7 @@ func file_hearth_agent_v1_agent_proto_init() {
 		(*AgentMessage_Facts)(nil),
 		(*AgentMessage_ProbeResult)(nil),
 		(*AgentMessage_LogLines)(nil),
+		(*AgentMessage_ShellEvent)(nil),
 	}
 	file_hearth_agent_v1_agent_proto_msgTypes[1].OneofWrappers = []any{
 		(*HubMessage_Welcome)(nil),
@@ -2324,6 +2922,7 @@ func file_hearth_agent_v1_agent_proto_init() {
 		(*HubMessage_ProbeRequest)(nil),
 		(*HubMessage_LogRequest)(nil),
 		(*HubMessage_LogCancel)(nil),
+		(*HubMessage_ShellRequest)(nil),
 	}
 	file_hearth_agent_v1_agent_proto_msgTypes[14].OneofWrappers = []any{
 		(*ExecRequest_Command)(nil),
@@ -2334,13 +2933,25 @@ func file_hearth_agent_v1_agent_proto_init() {
 		(*ProbeRequest_Tcp)(nil),
 		(*ProbeRequest_Dns)(nil),
 	}
+	file_hearth_agent_v1_agent_proto_msgTypes[28].OneofWrappers = []any{
+		(*ShellRequest_Open)(nil),
+		(*ShellRequest_Input)(nil),
+		(*ShellRequest_Resize)(nil),
+		(*ShellRequest_Ack)(nil),
+		(*ShellRequest_Close)(nil),
+	}
+	file_hearth_agent_v1_agent_proto_msgTypes[32].OneofWrappers = []any{
+		(*ShellEvent_Started)(nil),
+		(*ShellEvent_Output)(nil),
+		(*ShellEvent_Exited)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_hearth_agent_v1_agent_proto_rawDesc), len(file_hearth_agent_v1_agent_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   29,
+			NumMessages:   36,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

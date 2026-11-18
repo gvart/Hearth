@@ -106,6 +106,12 @@ type Config struct {
 	// TelemetryOff is HEARTH_TELEMETRY=off: the web UI does not ask about
 	// telemetry, and the answer cannot be changed.
 	TelemetryOff bool
+	// ShellIdleTimeout ends a web terminal session without input for this
+	// long; ShellMaxDuration ends any this long after it opened. Zero means
+	// DefaultShellIdleTimeout and DefaultShellMaxDuration. Terminals are
+	// served only with Agents set.
+	ShellIdleTimeout time.Duration
+	ShellMaxDuration time.Duration
 }
 
 // NewHandler serves EnrollService to anyone (the token is the credential) and

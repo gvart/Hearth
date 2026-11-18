@@ -92,6 +92,8 @@ func newAPI(cfg Config) *api {
 		// Only a release tag is pinned: dev builds have no release to install.
 		installVersion: releaseVersion(cfg.Version),
 		telemetryOff:   cfg.TelemetryOff,
+		shellIdle:      orDefault(cfg.ShellIdleTimeout, DefaultShellIdleTimeout),
+		shellMax:       orDefault(cfg.ShellMaxDuration, DefaultShellMaxDuration),
 	}
 }
 
@@ -119,6 +121,7 @@ func (a *api) routes() http.Handler {
 	a.automationRoutes(mux)
 	mux.Handle("GET /api/v1/cluster/config-drift", a.auth(a.configDrift))
 	a.logRoutes(mux)
+	a.shellRoutes(mux)
 	mux.Handle("GET /api/v1/audit", a.auth(a.listAudit))
 	mux.Handle("GET /api/v1/approvals", a.auth(a.listApprovals))
 	mux.Handle("POST /api/v1/approvals/{id}/approve", a.auth(a.decideApproval(true)))
@@ -206,12 +209,22 @@ type api struct {
 	automationsMu sync.Locker
 	// dryRuns limits how often a client may ask for a dry run.
 	dryRuns *loginLimiter
-	// agents is Config.Agents; nil when device logs are not served.
+	// agents is Config.Agents; nil when device logs and terminals are not served.
 	agents *Agents
 	// installVersion is the --version install commands pin, or "" for none.
 	installVersion string
 	// telemetryOff is Config.TelemetryOff.
 	telemetryOff bool
+	// shellIdle and shellMax limit terminal sessions.
+	shellIdle, shellMax time.Duration
+}
+
+// orDefault is d, or def when d is not positive.
+func orDefault(d, def time.Duration) time.Duration {
+	if d <= 0 {
+		return def
+	}
+	return d
 }
 
 // DeviceJSON is the API representation of a device.

@@ -40,6 +40,8 @@ export interface Ceiling {
   probe: boolean;
   /** Log sources the hub may stream, as manager:pattern (systemd:*, docker:web). */
   logs?: string[];
+  /** Whether an admin may open a terminal (the agent runs with --allow-shell). */
+  shell?: boolean;
 }
 
 export interface Device {
