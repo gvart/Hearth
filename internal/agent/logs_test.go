@@ -120,9 +120,14 @@ func TestLogSourceRing(t *testing.T) {
 		s.append(&agentv1.LogLine{Text: strings.Repeat("x", i%3)})
 	}
 	lines, next, skipped, _, ended, _ := s.since(0)
-	if len(lines) != logRing || next != logRing+10 || skipped != 10 || ended {
+	if len(lines) != logBatch || next != 10+logBatch || skipped != 10 || ended {
 		t.Errorf("since(0) = %d lines, next %d, skipped %d, ended %v", len(lines), next, skipped, ended)
 	}
+	s.end(nil)
+	if _, _, _, _, ended, _ := s.since(next); ended {
+		t.Error("since reports the end before the last lines")
+	}
+	next = s.head()
 	lines, _, skipped, _, _, _ = s.since(next - 3)
 	if len(lines) != 3 || skipped != 0 {
 		t.Errorf("since(next-3) = %d lines, skipped %d", len(lines), skipped)

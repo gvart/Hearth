@@ -31,6 +31,9 @@ const (
 	// logRing is how many of its last lines an active log source keeps, for
 	// a stream that joins it later or reads too slowly.
 	logRing = 500
+	// logBatch caps the lines of one message, so that opening a stream with
+	// a long tail never builds one large message.
+	logBatch = 64
 	// defaultLogTail is how many of the last lines a stream starts with
 	// when the request sets none.
 	defaultLogTail = 100
@@ -397,7 +400,7 @@ func (s *logSource) head() uint64 {
 	return s.next
 }
 
-// since returns the lines from cursor on, the cursor after them, how many
+// since returns the lines from cursor on, at most logBatch of them, the cursor after them, how many
 // lines before them the ring no longer holds, a channel closed on the next
 // change, and whether (and why) the source ended.
 func (s *logSource) since(cursor uint64) (lines []*agentv1.LogLine, next, skipped uint64, changed <-chan struct{}, ended bool, err string) {
@@ -407,11 +410,16 @@ func (s *logSource) since(cursor uint64) (lines []*agentv1.LogLine, next, skippe
 		skipped = s.next - logRing - cursor
 		cursor = s.next - logRing
 	}
-	for n := cursor; n < s.next; n++ {
+	end := min(s.next, cursor+logBatch)
+	lines = make([]*agentv1.LogLine, 0, end-cursor)
+	for n := cursor; n < end; n++ {
 		lines = append(lines, s.ring[n%logRing])
 	}
+	if end < s.next {
+		return lines, end, skipped, s.changed, false, ""
+	}
 	// Report the end only with the last lines.
-	return lines, s.next, skipped, s.changed, s.ended, s.err
+	return lines, end, skipped, s.changed, s.ended, s.err
 }
 
 // limitedBuffer keeps the first max bytes written to it and drops the rest.
