@@ -208,10 +208,14 @@ func (m *Manager) action(r *running, req ActionRequest) (*kubeAction, error) {
 		case !ok || req.Kind == "DaemonSet":
 			return nil, badAction("scale: kind must be Deployment or StatefulSet")
 		}
-		w := workloadRef{kind: req.Kind, path: "/apis/apps/v1/namespaces/" + req.Namespace + "/" + res + "/" + req.Name,
-			name: req.Kind + " " + req.Namespace + "/" + req.Name}
-		a := &kubeAction{target: req.Kind + "/" + req.Namespace + "/" + req.Name, timeout: actionTimeout,
-			detail: map[string]any{}}
+		w := workloadRef{
+			kind: req.Kind, path: "/apis/apps/v1/namespaces/" + req.Namespace + "/" + res + "/" + req.Name,
+			name: req.Kind + " " + req.Namespace + "/" + req.Name,
+		}
+		a := &kubeAction{
+			target: req.Kind + "/" + req.Namespace + "/" + req.Name, timeout: actionTimeout,
+			detail: map[string]any{},
+		}
 		if req.Action == ActionRestart {
 			a.policy = policy.KubeWorkloadRestart
 			a.plan = func(ctx context.Context) (*plan, error) { return m.planRestart(ctx, c(), w) }
@@ -597,6 +601,9 @@ func (m *Manager) evict(ctx context.Context, c *apiClient, p pod, note func(key,
 				return ctx.Err()
 			case <-t.C:
 			}
+		case ctx.Err() != nil:
+			// Keep the last reason, such as a budget's refusal.
+			return ctx.Err()
 		default:
 			note(key, err.Error())
 			return fmt.Errorf("evict %s: %w", key, err)

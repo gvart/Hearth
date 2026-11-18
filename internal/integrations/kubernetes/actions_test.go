@@ -104,8 +104,10 @@ func TestActionDeniedHasNoSideEffect(t *testing.T) {
 	if f.api.object("/api/v1/pods", "default/web-1") == nil {
 		t.Error("a denied delete deleted the pod")
 	}
-	for _, a := range []policy.Action{policy.KubeWorkloadRestart, policy.KubeWorkloadScale, policy.KubePodDelete,
-		policy.KubeNodeCordon, policy.KubeNodeUncordon, policy.KubeNodeDrain} {
+	for _, a := range []policy.Action{
+		policy.KubeWorkloadRestart, policy.KubeWorkloadScale, policy.KubePodDelete,
+		policy.KubeNodeCordon, policy.KubeNodeUncordon, policy.KubeNodeDrain,
+	} {
 		es := auditOf(t, f.st, a)
 		if len(es) != 1 || es[0].Decision != policy.Deny || !strings.HasPrefix(es[0].Target, "lab/") {
 			t.Errorf("audit of %s = %+v, want one denial", a, es)
