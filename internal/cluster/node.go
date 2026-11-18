@@ -213,6 +213,7 @@ func (n *Node) Start(ctx context.Context) error {
 		return fmt.Errorf("cluster: open snapshots: %w", err)
 	}
 	n.fsm = newFSM(n.store, n.dir, n.log, n.cfg.OnFatal, &n.applyObs)
+	n.fsm.snaps = snaps
 
 	conf := raft.DefaultConfig()
 	conf.LocalID = raft.ServerID(n.cfg.NodeID)
@@ -323,18 +324,25 @@ func (e *ErrNotLeader) Error() string {
 // returns the leader's own state machine result for exactly those bytes. On
 // any other node it returns *ErrNotLeader without proposing anything.
 func (n *Node) Apply(ctx context.Context, cmd store.Command) (store.Result, error) {
+	res, _, err := n.apply(ctx, cmd)
+	return res, err
+}
+
+// apply is Apply that also returns the entry's log index once it was
+// committed and applied here (zero when it was not proposed or not applied).
+func (n *Node) apply(ctx context.Context, cmd store.Command) (store.Result, uint64, error) {
 	if n.raft == nil {
-		return store.Result{}, errors.New("cluster: node not started")
+		return store.Result{}, 0, errors.New("cluster: node not started")
 	}
 	if n.raft.State() != raft.Leader {
-		return store.Result{}, n.notLeader()
+		return store.Result{}, 0, n.notLeader()
 	}
 	b, err := store.EncodeCommand(cmd)
 	if err != nil {
-		return store.Result{}, err
+		return store.Result{}, 0, err
 	}
 	if err := ctx.Err(); err != nil {
-		return store.Result{}, err
+		return store.Result{}, 0, err
 	}
 	timeout := applyTimeout
 	if dl, ok := ctx.Deadline(); ok {
@@ -343,17 +351,17 @@ func (n *Node) Apply(ctx context.Context, cmd store.Command) (store.Result, erro
 	f := n.raft.Apply(b, timeout)
 	if err := f.Error(); err != nil {
 		if errors.Is(err, raft.ErrNotLeader) {
-			return store.Result{}, n.notLeader()
+			return store.Result{}, 0, n.notLeader()
 		}
 		// ErrLeadershipLost and timeouts are not ErrNotLeader: the entry may
 		// still commit, so the caller must not assume it did not happen.
-		return store.Result{}, fmt.Errorf("cluster: apply %s: %w", cmd.Op(), err)
+		return store.Result{}, 0, fmt.Errorf("cluster: apply %s: %w", cmd.Op(), err)
 	}
 	resp, ok := f.Response().(applyResponse)
 	if !ok {
-		return store.Result{}, fmt.Errorf("cluster: apply %s: unexpected response %T", cmd.Op(), f.Response())
+		return store.Result{}, 0, fmt.Errorf("cluster: apply %s: unexpected response %T", cmd.Op(), f.Response())
 	}
-	return resp.res, resp.err
+	return resp.res, f.Index(), resp.err
 }
 
 func (n *Node) notLeader() *ErrNotLeader {
@@ -472,7 +480,7 @@ func (n *Node) WaitReady(ctx context.Context) error {
 			}
 		} else if n.raft != nil && n.Leader().ID != "" {
 			commit := n.raft.CommitIndex()
-			if commit > 0 && n.raft.AppliedIndex() >= commit {
+			if commit > 0 && n.appliedThrough(commit) {
 				return nil
 			}
 		}

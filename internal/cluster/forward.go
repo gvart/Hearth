@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/hashicorp/raft"
 
 	"github.com/gvart/hearth/internal/pki"
 	clusterv1 "github.com/gvart/hearth/internal/proto/hearth/cluster/v1"
@@ -26,6 +27,10 @@ const (
 	// it can reach before it gives up with store.ErrUnavailable.
 	defaultForwardWait = 5 * time.Second
 	forwardRetry       = 100 * time.Millisecond
+	// appliedWait bounds how long a follower waits, after the leader applied
+	// a forwarded write, to apply it itself (see ApplyOrForward).
+	appliedWait = 2 * time.Second
+	appliedPoll = 5 * time.Millisecond
 )
 
 // BindForwarding is Bind for a hub that serves users: the store's writes go
@@ -42,6 +47,13 @@ func (n *Node) BindForwarding(s *store.Store) store.Applier {
 // or reachable it retries for a few seconds, then fails with
 // store.ErrUnavailable; the command was then not applied.
 //
+// A forwarded write is read-your-writes: once the leader answered, the
+// follower waits, for at most two seconds or until ctx is done, until it has
+// applied the entry to its own store, so the caller's next local read sees
+// it (a session the user just logged in with, a token just created). If that
+// wait runs out, the leader's result is returned anyway: the write is
+// committed and the follower applies it shortly.
+//
 // Forwarding is replication, not a new decision: the caller made the policy
 // decision and wrote (or will write) its audit entry through this same path,
 // on the hub that received the user's request.
@@ -54,8 +66,9 @@ func (n *Node) ApplyOrForward(ctx context.Context, cmd store.Command) (store.Res
 			return res, err
 		}
 		if nl.LeaderID != "" && nl.LeaderID != n.cfg.NodeID {
-			res, retry, err := n.forward(ctx, nl.LeaderID, nl.LeaderAddr, cmd)
+			res, index, retry, err := n.forward(ctx, nl.LeaderID, nl.LeaderAddr, cmd)
 			if !retry {
+				n.waitApplied(ctx, cmd, index)
 				return res, err
 			}
 		}
@@ -71,18 +84,70 @@ func (n *Node) ApplyOrForward(ctx context.Context, cmd store.Command) (store.Res
 	}
 }
 
-// forward sends cmd to the leader. retry is true only when the leader did
-// not apply the command: it was not the leader (anymore) or could not be
+// waitApplied waits, bounded by appliedWait and ctx, until this node's
+// store has applied the log entry at index. Zero means there is nothing to
+// wait for: the leader did not apply the command, or predates the field.
+func (n *Node) waitApplied(ctx context.Context, cmd store.Command, index uint64) {
+	if index == 0 || n.appliedThrough(index) {
+		return
+	}
+	timer := time.NewTimer(appliedWait)
+	defer timer.Stop()
+	tick := time.NewTicker(appliedPoll)
+	defer tick.Stop()
+	for !n.appliedThrough(index) {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+			n.log.WarnContext(ctx, "forwarded write not applied locally in time; a read right after it may not see it yet",
+				"op", cmd.Op(), "index", index, "applied", n.fsm.applied.Load(), "waited", appliedWait)
+			return
+		case <-tick.C:
+		}
+	}
+}
+
+// appliedThrough reports whether this node's store reflects every log entry
+// up to index. Raft's AppliedIndex alone does not say so: it moves when
+// entries are handed to the state machine, before they are applied. Entries
+// that are not commands (no-ops, barriers, configuration changes) never
+// reach the store, so the state machine's own index may stay below index
+// for good; only command entries after it are waited for.
+func (n *Node) appliedThrough(index uint64) bool {
+	if n.raft.AppliedIndex() < index {
+		return false
+	}
+	for i := index; i > n.fsm.applied.Load(); i-- {
+		var l raft.Log
+		err := n.bolt.GetLog(i, &l)
+		switch {
+		case errors.Is(err, raft.ErrLogNotFound):
+			// Compacted into a snapshot this node took or installed, so
+			// at or before what its state machine applied.
+			return true
+		case err != nil:
+			return false
+		case l.Type == raft.LogCommand:
+			return false
+		}
+	}
+	return true
+}
+
+// forward sends cmd to the leader and returns its result and the log index
+// it applied the command at. retry is true only when the leader did not
+// apply the command: it was not the leader (anymore) or could not be
 // dialed. Any other failure may have happened after the command was
 // committed, so it is returned and never retried.
-func (n *Node) forward(ctx context.Context, leaderID, leaderAddr string, cmd store.Command) (store.Result, bool, error) {
+func (n *Node) forward(ctx context.Context, leaderID, leaderAddr string, cmd store.Command) (store.Result, uint64, bool, error) {
 	base := n.agentURL(n.hubURLs(ctx), leaderID, leaderAddr)
 	if base == "" {
-		return store.Result{}, true, nil
+		return store.Result{}, 0, true, nil
 	}
 	b, err := store.EncodeCommand(cmd)
 	if err != nil {
-		return store.Result{}, false, err
+		return store.Result{}, 0, false, err
 	}
 	client := clusterv1connect.NewClusterServiceClient(n.fwdHTTP, base)
 	resp, err := client.Forward(ctx, connect.NewRequest(&clusterv1.ForwardRequest{Command: b}))
@@ -94,18 +159,19 @@ func (n *Node) forward(ctx context.Context, leaderID, leaderAddr string, cmd sto
 		if (errors.As(err, &ce) && ce.Code() == connect.CodeFailedPrecondition) ||
 			(errors.As(err, &oe) && oe.Op == "dial") {
 			n.log.DebugContext(ctx, "forward to the leader failed; retrying", "op", cmd.Op(), "leader_id", leaderID, "err", err)
-			return store.Result{}, true, nil
+			return store.Result{}, 0, true, nil
 		}
-		return store.Result{}, false, fmt.Errorf("cluster: forward %s to the leader %s: %w", cmd.Op(), leaderID, err)
+		return store.Result{}, 0, false, fmt.Errorf("cluster: forward %s to the leader %s: %w", cmd.Op(), leaderID, err)
 	}
+	index := resp.Msg.GetIndex()
 	if msg := resp.Msg.GetErrorMessage(); msg != "" {
-		return store.Result{}, false, (&wireError{Kind: resp.Msg.GetErrorKind(), Message: msg}).toError()
+		return store.Result{}, index, false, (&wireError{Kind: resp.Msg.GetErrorKind(), Message: msg}).toError()
 	}
 	var res store.Result
 	if err := json.Unmarshal(resp.Msg.GetResult(), &res); err != nil {
-		return store.Result{}, false, fmt.Errorf("cluster: forward %s: decode result: %w", cmd.Op(), err)
+		return store.Result{}, index, false, fmt.Errorf("cluster: forward %s: decode result: %w", cmd.Op(), err)
 	}
-	return res, false, nil
+	return res, index, false, nil
 }
 
 // newForwardClient is the HTTP client a follower forwards writes with: TLS
@@ -140,12 +206,12 @@ func (s *JoinServer) Forward(ctx context.Context, req *connect.Request[clusterv1
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
-	res, err := s.node.Apply(ctx, cmd)
+	res, index, err := s.node.apply(ctx, cmd)
 	var nl *ErrNotLeader
 	if errors.As(err, &nl) {
 		return nil, s.notLeaderError()
 	}
-	out := &clusterv1.ForwardResponse{}
+	out := &clusterv1.ForwardResponse{Index: index}
 	if err != nil {
 		we := toWireError(err)
 		if we.Kind == "" {

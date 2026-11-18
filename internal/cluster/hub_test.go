@@ -11,6 +11,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -90,6 +91,10 @@ func startHubs(t *testing.T, o hubOpts) []*testHub {
 	n3 := startNodeBound(t, ca, "n3", "", "", false, bind, tune)
 	addVoter(t, n1, n2)
 	addVoter(t, n1, n3)
+	// A restore ends every event subscription (Registry.Restored). The hub's
+	// API waits for WaitReady, so no subscriber exists then; startHub
+	// subscribes its event recorder at once, so it must wait too.
+	waitReady(t, n2, n3)
 	hubs := []*testHub{startHub(t, n1, ca, o), startHub(t, n2, ca, o), startHub(t, n3, ca, o)}
 	for _, h := range hubs {
 		if err := n1.st.Hubs().SetAgentURL(t.Context(), h.ID(), h.url); err != nil {
@@ -107,7 +112,8 @@ func startHub(t *testing.T, n *testNode, ca *pki.CA, o hubOpts) *testHub {
 	h := &testHub{testNode: n, ca: ca, logs: &lockedBuffer{}, rsDone: make(chan struct{})}
 	log := slog.New(slog.NewTextHandler(h.logs, nil))
 	if os.Getenv("HEARTH_TEST_RAFT_LOG") != "" {
-		log = slog.New(slog.NewTextHandler(os.Stderr, nil)).With("hub", n.ID())
+		// Also into logs, which tests read (sweptOffline).
+		log = slog.New(slog.NewTextHandler(io.MultiWriter(h.logs, os.Stderr), nil)).With("hub", n.ID())
 	}
 	h.reg = hub.NewRegistry(hub.RegistryConfig{
 		Store: n.st, Log: log, OfflineAfter: o.offlineAfter, SeenFlushInterval: o.flushEvery, Replicated: true,

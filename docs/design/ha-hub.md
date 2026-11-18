@@ -427,3 +427,29 @@ publishing from its own calls, so its behaviour, and a standalone hub's, is unch
   and offline over HTTPS SSE on a follower, in order, within bounds, payload equal to the list item,
   exactly once on the leader), `TestSlowSubscriberDoesNotBlockApplies` and
   `TestLeadershipChangeMidStream`.
+
+### Read-your-writes on followers and readiness (#87)
+
+- **Read-your-writes.** `ForwardResponse.index` carries the Raft log index the leader applied a
+  forwarded command at (also for a known store error, which is applied too). Before `ApplyOrForward`
+  returns on a follower, it waits until its own store has applied that index, for at most 2 s or
+  until the caller's context ends. So a login on a follower is followed by working API calls there,
+  and a CLI write through a follower's control socket (same path) by reads that see it. If the wait
+  runs out, the leader's result is returned anyway with a warning: the write is committed. A leader
+  that predates the field answers 0, and the follower then does not wait (the old behaviour).
+- **What "applied" means.** Raft's `AppliedIndex` moves when entries are handed to the state
+  machine, before the store has them, and no-op, barrier and configuration entries never reach the
+  store at all. The FSM therefore records the index of the last command it applied (or of the
+  snapshot it restored), and `Node.appliedThrough(i)` holds once raft is past `i` and no command
+  entry between the FSM's index and `i` is still pending.
+- **Fix found by the cluster e2e: `WaitReady` on a restarted follower.** It compared raft's
+  `AppliedIndex` with the commit index, so it could return while the store was still rolled back
+  to the snapshot. The hub then found no admin password, set it again from `HEARTH_ADMIN_PASSWORD`,
+  and `SetPasswordHash` ended every session in the cluster: the e2e's later API calls got 401. It
+  would also have replaced a password changed since with the environment's. `WaitReady` now uses
+  `appliedThrough(commit)` (test `TestWaitReadyWaitsForTheStore`, which slows the FSM down).
+- **Tests.** `TestFollowerReadYourWrites` (log in on each follower, then an authenticated call at
+  once; a token created through the control socket, then consumed from the store at once) and
+  `TestWaitAppliedIsBounded`. The in-process cluster tests now wait for joiners to install the
+  leader's snapshot before they subscribe to events (a restore ends every subscription) and use
+  raft's default timeouts: the 400 ms ones made leadership flap under `-race` on one CPU.

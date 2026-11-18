@@ -328,7 +328,12 @@ type ForwardResponse struct {
 	// token_expired); empty for any other error.
 	ErrorKind string `protobuf:"bytes,2,opt,name=error_kind,json=errorKind,proto3" json:"error_kind,omitempty"`
 	// error_message is set when applying the command failed.
-	ErrorMessage  string `protobuf:"bytes,3,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	ErrorMessage string `protobuf:"bytes,3,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	// index is the Raft log index of the applied entry, also when the command
+	// failed with a known error. The follower waits until it has applied this
+	// index itself before it answers its caller (read-your-writes). Zero from
+	// a leader that predates the field.
+	Index         uint64 `protobuf:"varint,4,opt,name=index,proto3" json:"index,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -382,6 +387,13 @@ func (x *ForwardResponse) GetErrorMessage() string {
 		return x.ErrorMessage
 	}
 	return ""
+}
+
+func (x *ForwardResponse) GetIndex() uint64 {
+	if x != nil {
+		return x.Index
+	}
+	return 0
 }
 
 // RemoveMemberRequest names the hub to remove.
@@ -583,12 +595,13 @@ const file_hearth_cluster_v1_cluster_proto_rawDesc = "" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"\x11\n" +
 	"\x0fPromoteResponse\"*\n" +
 	"\x0eForwardRequest\x12\x18\n" +
-	"\acommand\x18\x01 \x01(\fR\acommand\"m\n" +
+	"\acommand\x18\x01 \x01(\fR\acommand\"\x83\x01\n" +
 	"\x0fForwardResponse\x12\x16\n" +
 	"\x06result\x18\x01 \x01(\fR\x06result\x12\x1d\n" +
 	"\n" +
 	"error_kind\x18\x02 \x01(\tR\terrorKind\x12#\n" +
-	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage\".\n" +
+	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage\x12\x14\n" +
+	"\x05index\x18\x04 \x01(\x04R\x05index\".\n" +
 	"\x13RemoveMemberRequest\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"0\n" +
 	"\x14RemoveMemberResponse\x12\x18\n" +

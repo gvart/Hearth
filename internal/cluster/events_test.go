@@ -114,11 +114,10 @@ func subscribe(t *testing.T, h *testHub) (*sseStream, *apiClient) {
 	if code, body := api.do(http.MethodPost, "/api/v1/login", map[string]string{"password": "correct horse"}); code != http.StatusOK {
 		t.Fatalf("login on %s: %d %s", h.ID(), code, body)
 	}
-	// A follower forwards the session write; wait until it applied it.
-	eventually(t, "the session on "+h.ID(), func() bool {
-		code, _ := api.do(http.MethodGet, "/api/v1/session", nil)
-		return code == http.StatusOK
-	})
+	// A follower applied the forwarded session write before it answered (#87).
+	if code, body := api.do(http.MethodGet, "/api/v1/session", nil); code != http.StatusOK {
+		t.Fatalf("session on %s right after login: %d %s", h.ID(), code, body)
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, h.url+"/api/v1/events", nil)
 	if err != nil {

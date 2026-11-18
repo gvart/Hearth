@@ -3,6 +3,7 @@
 package cluster
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
@@ -228,5 +229,43 @@ func TestRestartReplaysWithoutDuplicates(t *testing.T) {
 	}
 	if len(entries) != 3 {
 		t.Fatalf("after restart: %d audit entries, want 3 (log replayed onto the old state?)", len(entries))
+	}
+}
+
+// slowApplies makes every apply on a node take a while, so its state
+// machine lags behind what raft has handed to it.
+type slowApplies struct{}
+
+func (slowApplies) Applied(store.Command, store.Result, bool) { time.Sleep(2 * time.Millisecond) }
+func (slowApplies) Restored()                                 {}
+
+// TestWaitReadyWaitsForTheStore: a restarted follower is ready only once its
+// store has replayed the log, not when raft has merely handed the entries to
+// the state machine. A hub that read its store earlier saw it rolled back to
+// the snapshot: with no admin password yet, it set the one from
+// HEARTH_ADMIN_PASSWORD again and ended every session in the cluster.
+func TestWaitReadyWaitsForTheStore(t *testing.T) {
+	ca := newTestCA(t)
+	nodes := threeNodes(t, ca)
+	n1, n3 := nodes[0], nodes[2]
+	const writes = 300
+	for i := range writes {
+		upsert(t, n1, fmt.Sprintf("d%03d", i))
+	}
+	last := fmt.Sprintf("d%03d", writes-1)
+	eventually(t, "every write on n3", func() bool { return hasDevice(n3, last) })
+	dir, addr := n3.dir, n3.Addr()
+	n3.stop()
+
+	n3 = startNode(t, ca, "n3", dir, addr, false)
+	n3.ObserveApplies(slowApplies{})
+	ctx, cancel := context.WithTimeout(t.Context(), waitFor)
+	defer cancel()
+	if err := n3.WaitReady(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if !hasDevice(n3, last) {
+		t.Fatalf("WaitReady returned before the store replayed the log (applied %d, raft applied %d, commit %d)",
+			n3.fsm.applied.Load(), n3.raft.AppliedIndex(), n3.raft.CommitIndex())
 	}
 }
