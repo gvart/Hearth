@@ -469,7 +469,17 @@ func TestPresenceBatchingFlushesAndReplicates(t *testing.T) {
 }
 
 func TestNoFlapOnLeaderChange(t *testing.T) {
-	const offlineAfter = 1500 * time.Millisecond
+	// An agent that lost its hub tries the next one every agentRetry, so
+	// after the new leader's term starts it may need a whole round of the
+	// three hubs (the dead one included) to reach it: up to 3*agentRetry.
+	// offlineAfter, the new leader's grace period, is a few times that, as
+	// in production (30 s against a failover of a few seconds). With 1.5 s
+	// against a 750 ms retry, agents arrived up to 1.35 s into the term and,
+	// under load, after the first sweep past the grace period.
+	const (
+		agentRetry   = 750 * time.Millisecond
+		offlineAfter = 4 * time.Second
+	)
 	// last_seen is never flushed during the test, so the stored value is
 	// stale by more than offlineAfter when the leader dies.
 	hubs := startHubs(t, hubOpts{offlineAfter: offlineAfter, flushEvery: time.Hour})
@@ -477,9 +487,9 @@ func TestNoFlapOnLeaderChange(t *testing.T) {
 	ids := []string{"pi", "nas", "router"}
 	var agents []*testAgent
 	for _, id := range ids {
-		// Agents come back after half an offlineAfter: after the new
-		// leader's first sweeps, well within its grace period.
-		agents = append(agents, runTestAgent(t, hubs, id, enrollTestDevice(t, leader, id), 100*time.Millisecond, offlineAfter/2))
+		// Agents mostly come back after the new leader's first sweeps
+		// (every offlineAfter/6), always well within its grace period.
+		agents = append(agents, runTestAgent(t, hubs, id, enrollTestDevice(t, leader, id), 100*time.Millisecond, agentRetry))
 	}
 	eventually(t, "every agent on the leader", func() bool {
 		for _, a := range agents {
