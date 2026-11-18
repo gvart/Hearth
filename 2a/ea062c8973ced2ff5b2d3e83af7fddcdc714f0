@@ -1,0 +1,21 @@
+internal/hub/newdevice_test.go
+  s_344993999c180f::t_7d74e99e3cfde0 527-551
+docs/discovery.md
+  s_344993999c180f::t_7d74e99e3cfde0 110-112
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2aea062c8973ced2ff5b2d3e83af7fddcdc714f0",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
