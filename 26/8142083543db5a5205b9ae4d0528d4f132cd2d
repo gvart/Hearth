@@ -1,0 +1,91 @@
+web/src/components/ApproveLinkPage.tsx
+  s_344993999c180f::t_3795c977e16e67 1-102
+  s_344993999c180f::t_b3801b1414f64c 103-118
+docs/guardrails.md
+  s_344993999c180f::t_e806f7edd9fbb4 61-67,71-103
+  s_344993999c180f::t_746ac2cb37e6ec 32-33
+  s_344993999c180f::t_73b8fb9464d540 104
+internal/policy/guardrails_test.go
+  s_344993999c180f::t_8775be00d1a77d 90
+  s_344993999c180f::t_83296d367188d8 125-126,475,481-482,496-501
+internal/notify/notify_test.go
+  s_344993999c180f::t_23117743feb4e9 19-56
+web/src/components/Shell.tsx
+  s_344993999c180f::t_c7560d96280ef4 2-3,9,15,19-21,48,62-66,81-89
+cmd/hearth/hub_approvals_test.go
+  s_344993999c180f::t_edc2eaf4d8941a 1-41
+internal/hub/api.go
+  s_344993999c180f::t_b259bf779d9b04 94
+web/src/components/ApprovalsPage.tsx
+  s_344993999c180f::t_1907e1e2dcdf9b 1-192
+internal/policy/config.go
+  s_344993999c180f::t_6a73ae6175bcec 10,54-68,117-125
+  s_344993999c180f::t_35985de620063d 126
+internal/notify/notify.go
+  s_344993999c180f::t_71b79b8c33559c 54-66,176-180,190
+internal/notify/providers.go
+  s_344993999c180f::t_71b79b8c33559c 34,37-47,63-69
+web/src/index.css
+  s_344993999c180f::t_c7560d96280ef4 1136-1214
+internal/store/command.go
+  s_344993999c180f::t_37b465ac950683 45-46,682-685
+internal/policy/approvallink_test.go
+  s_344993999c180f::t_bd9b4176184b7d 1-149
+docs/notifications.md
+  s_344993999c180f::t_adaf17713d6711 71-76
+internal/store/store_test.go
+  s_344993999c180f::t_d4ec9dbb1691b3 54
+web/src/api/client.ts
+  s_344993999c180f::t_f554558d553113 232-251,321-329
+internal/policy/policy.go
+  s_344993999c180f::t_6a73ae6175bcec 114-117,199-201
+internal/policy/engine.go
+  s_344993999c180f::t_71ba942b15c4f6 61-62,65-71,220-222,301-321
+  s_344993999c180f::t_009ac623abc1a2 322-323
+web/src/api/hooks.ts
+  s_344993999c180f::t_f554558d553113 28-29,32-34,60,223-252
+  s_344993999c180f::t_0dbe85388d3c0e 253
+internal/store/approvallinks.go
+  s_344993999c180f::t_37b465ac950683 1-12,14,16-25,27-137
+  s_344993999c180f::t_6266760576c2ca 13,15,26
+internal/store/command_test.go
+  s_344993999c180f::t_37b465ac950683 60-61
+  s_344993999c180f::t_d4ec9dbb1691b3 309-315
+internal/hub/approvallinks_test.go
+  s_344993999c180f::t_85b4a7967de25a 1-207,211-256
+  s_344993999c180f::t_179a8823acc6bd 208-210
+internal/hub/approvallinks.go
+  s_344993999c180f::t_0cd33d4410a612 1-186
+cmd/hearth/hub.go
+  s_344993999c180f::t_13c95e9c4c5427 428-453
+  s_344993999c180f::t_00d79ad848b405 191-193
+web/src/App.tsx
+  s_344993999c180f::t_42536187045092 1
+  s_344993999c180f::t_c7560d96280ef4 3,8-10,28,31
+  s_344993999c180f::t_18601e432d51ac 11-25,27,29-30
+internal/hub/approvals.go
+  s_344993999c180f::t_b259bf779d9b04 56
+internal/store/approvallinks_test.go
+  s_344993999c180f::t_a9719c3f558af5 1-109,111-139
+  s_344993999c180f::t_6266760576c2ca 110
+internal/store/migrations/00010_approval_links.sql
+  s_344993999c180f::t_24586912bb699c 1-15
+web/src/format.ts
+  s_344993999c180f::t_8ce45905ac72e0 102-111
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "268142083543db5a5205b9ae4d0528d4f132cd2d",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
