@@ -50,6 +50,25 @@ type Request struct {
 	OnHold func(id string, expires time.Time)
 }
 
+type scopeKey struct{}
+
+// WithScope returns ctx with the highest class its requester's credential
+// allows, such as an MCP token's scope. Do denies, and audits as denied, any
+// request on ctx of a higher class, whatever the configuration says.
+func WithScope(ctx context.Context, scope Class) context.Context {
+	return context.WithValue(ctx, scopeKey{}, scope)
+}
+
+// classRank orders the classes; an unknown class ranks nowhere.
+var classRank = map[Class]int{Read: 1, Safe: 2, Dangerous: 3}
+
+// Within reports whether class is at most scope. An unknown class or scope
+// is never within.
+func Within(class, scope Class) bool {
+	c, s := classRank[class], classRank[scope]
+	return c > 0 && s > 0 && c <= s
+}
+
 // Engine decides on actions and audits every decision.
 type Engine struct {
 	audit     Auditor
@@ -96,6 +115,11 @@ func NewWithConfig(audit Auditor, approvals Approvals, cfg Config) *Engine {
 // error wrapping ErrDenied; an allowed one returns fn's error.
 func (e *Engine) Do(ctx context.Context, req Request, fn func(context.Context) error) error {
 	decision, reason, class := e.decide(req)
+	if decision != Deny {
+		if scope, ok := ctx.Value(scopeKey{}).(Class); ok && !Within(class, scope) {
+			decision, reason = Deny, fmt.Sprintf("%s action beyond the credential's scope (%s)", class, scope)
+		}
+	}
 	var precheckErr error
 	if decision != Deny && req.Precheck != nil {
 		if err := req.Precheck(ctx); errors.Is(err, ErrDenied) {

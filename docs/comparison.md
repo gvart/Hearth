@@ -159,14 +159,15 @@ On `main`, Hearth has:
 - device charts and metric triggers from an existing Prometheus, read-only ([Prometheus](prometheus.md));
 - Kubernetes adopted through a kubeconfig, with nothing installed in the cluster: nodes, workloads,
   pods, events, pod logs, and day-two actions ([Kubernetes](kubernetes.md));
-- a three-hub cluster that survives the loss of one ([Cluster mode](cluster.md)).
+- a three-hub cluster that survives the loss of one ([Cluster mode](cluster.md));
+- an MCP server, so Claude Code and other AI assistants can see and operate the lab with scoped
+  tokens, through the same policy, approvals and audit log ([MCP](mcp.md)).
 
 **Planned** for v0 and not on `main` yet: network discovery
 ([#35](https://github.com/gvart/hearth/issues/35)), Pi-hole and DHCP lease import
 ([#36](https://github.com/gvart/hearth/issues/36)), log tail
 ([#33](https://github.com/gvart/hearth/issues/33)), a web terminal
-([#34](https://github.com/gvart/hearth/issues/34)), an MCP server
-([#47](https://github.com/gvart/hearth/issues/47)), built-in Tailscale
+([#34](https://github.com/gvart/hearth/issues/34)), built-in Tailscale
 ([#48](https://github.com/gvart/hearth/issues/48)) and runbooks
 ([#61](https://github.com/gvart/hearth/issues/61)).
 

@@ -87,7 +87,7 @@ func (a *autoApprovals) Decide(_ context.Context, id, status, by string, _ time.
 }
 
 // actorKinds are every actor kind there is.
-var actorKinds = []string{ActorAdmin, ActorToken, ActorWeb, ActorJoinToken, ActorHub, ActorAutomation, ActorApprovalLink}
+var actorKinds = []string{ActorAdmin, ActorToken, ActorWeb, ActorJoinToken, ActorHub, ActorAutomation, ActorApprovalLink, ActorMCP}
 
 // expected is the action table written out independently of rules: its
 // class, the actor kinds it admits, and whether the configuration applies.
@@ -114,17 +114,26 @@ var expected = map[Action]struct {
 	AutomationProbe:           {Read, []string{ActorAutomation}, false},
 	KubeClusterAdd:            {Safe, []string{ActorWeb}, false},
 	KubeClusterRemove:         {Safe, []string{ActorWeb}, false},
-	KubePodLogs:               {Read, []string{ActorWeb}, false},
-	KubeWorkloadRestart:       {Safe, []string{ActorWeb, ActorAutomation}, false},
-	KubeWorkloadScale:         {Safe, []string{ActorWeb, ActorAutomation}, false},
-	KubePodDelete:             {Safe, []string{ActorWeb, ActorAutomation}, false},
-	KubeNodeCordon:            {Safe, []string{ActorWeb, ActorAutomation}, false},
-	KubeNodeUncordon:          {Safe, []string{ActorWeb, ActorAutomation}, false},
-	KubeNodeDrain:             {Dangerous, []string{ActorWeb, ActorAutomation}, false},
+	KubePodLogs:               {Read, []string{ActorWeb, ActorMCP}, false},
+	KubeWorkloadRestart:       {Safe, []string{ActorWeb, ActorAutomation, ActorMCP}, false},
+	KubeWorkloadScale:         {Safe, []string{ActorWeb, ActorAutomation, ActorMCP}, false},
+	KubePodDelete:             {Safe, []string{ActorWeb, ActorAutomation, ActorMCP}, false},
+	KubeNodeCordon:            {Safe, []string{ActorWeb, ActorAutomation, ActorMCP}, false},
+	KubeNodeUncordon:          {Safe, []string{ActorWeb, ActorAutomation, ActorMCP}, false},
+	KubeNodeDrain:             {Dangerous, []string{ActorWeb, ActorAutomation, ActorMCP}, false},
 	AutomationNotify:          {Safe, []string{ActorAutomation}, false},
 	NotifyTest:                {Safe, []string{ActorWeb}, false},
 	ApprovalApprove:           {Dangerous, []string{ActorAdmin, ActorWeb, ActorApprovalLink}, true},
 	ApprovalDeny:              {Safe, []string{ActorAdmin, ActorWeb, ActorApprovalLink}, true},
+	DeviceRead:                {Read, []string{ActorMCP}, false},
+	DeviceMetrics:             {Read, []string{ActorMCP}, false},
+	KubeRead:                  {Read, []string{ActorMCP}, false},
+	DeviceRestart:             {Safe, []string{ActorMCP}, false},
+	DeviceExec:                {Dangerous, []string{ActorMCP}, false},
+	AutomationPlan:            {Read, []string{ActorMCP}, false},
+	AutomationApply:           {Dangerous, []string{ActorMCP}, false},
+	MCPTokenCreate:            {Dangerous, []string{ActorAdmin}, false},
+	MCPTokenRevoke:            {Safe, []string{ActorAdmin}, false},
 }
 
 func TestExpectedCoversEveryAction(t *testing.T) {
@@ -183,6 +192,8 @@ func checkDecision(t *testing.T, action Action, kind, cfgName string, cfg Config
 		want = Deny
 	case cfgName == "defaults" && exp.class == Dangerous && kind == ActorAutomation:
 		want = Deny
+	case cfgName == "defaults" && exp.class == Dangerous && kind == ActorMCP:
+		want = Confirm
 	}
 
 	audit, approvals := &memAudit{}, &autoApprovals{decision: store.ApprovalApproved}
@@ -491,7 +502,7 @@ approval_notify: {channel: phone, url: "https://hearth.lan:8443"}
 		"unknown class":         "classes: {risky: allow}",
 		"unknown mode":          "classes: {safe: maybe}",
 		"machine actor kind":    "actors: {token: {safe: deny}}",
-		"unknown actor kind":    "actors: {mcp: {safe: deny}}",
+		"unknown actor kind":    "actors: {robot: {safe: deny}}",
 		"actor with a bad mode": "actors: {web: {safe: ask}}",
 		"negative timeout":      "approval_timeout: -1m",
 		"notify url scheme":     "approval_notify: {channel: phone, url: ftp://hub}",

@@ -275,7 +275,7 @@ func TestManagerLogs(t *testing.T) {
 	f.api.logs["default/web-1/app"] = "line 1\nline 2\n"
 	info := f.addCluster(t)
 
-	logs, err := f.m.Logs(ctx, "192.0.2.1", info.ID, "default", "web-1", "app", 100)
+	logs, err := f.m.Logs(ctx, policy.ActorWeb, "192.0.2.1", info.ID, "default", "web-1", "app", 100)
 	if err != nil || logs != "line 1\nline 2\n" {
 		t.Fatalf("Logs = %q, %v", logs, err)
 	}
@@ -284,14 +284,14 @@ func TestManagerLogs(t *testing.T) {
 		"path in namespace": {"default/../../x", "web-1", "app"},
 		"bad container":     {"default", "web-1", "App?x=1"},
 	} {
-		if _, err := f.m.Logs(ctx, "192.0.2.1", info.ID, args[0], args[1], args[2], 100); !errors.Is(err, ErrPodNotFound) {
+		if _, err := f.m.Logs(ctx, policy.ActorWeb, "192.0.2.1", info.ID, args[0], args[1], args[2], 100); !errors.Is(err, ErrPodNotFound) {
 			t.Errorf("Logs of %s = %v, want ErrPodNotFound", name, err)
 		}
 	}
-	if _, err := f.m.Logs(ctx, "192.0.2.1", "nope", "default", "web-1", "app", 100); !errors.Is(err, ErrNotFound) {
+	if _, err := f.m.Logs(ctx, policy.ActorWeb, "192.0.2.1", "nope", "default", "web-1", "app", 100); !errors.Is(err, ErrNotFound) {
 		t.Errorf("Logs of an unknown cluster = %v, want ErrNotFound", err)
 	}
-	if _, err := f.m.Logs(ctx, "", info.ID, "default", "web-1", "app", 100); !errors.Is(err, policy.ErrDenied) {
+	if _, err := f.m.Logs(ctx, policy.ActorWeb, "", info.ID, "default", "web-1", "app", 100); !errors.Is(err, policy.ErrDenied) {
 		t.Errorf("Logs by an anonymous actor = %v, want ErrDenied", err)
 	}
 	entries, err := f.st.Audit().List(ctx, 100)

@@ -34,11 +34,12 @@ const ConfigFile = "policy.yaml"
 // ConfigurableActors are the actor kinds the configuration applies to: the
 // operator's clients. The other kinds (agents, joining hubs, cluster members)
 // prove themselves with a credential, and their actions are fixed.
-var ConfigurableActors = []string{ActorAdmin, ActorWeb, ActorAutomation}
+var ConfigurableActors = []string{ActorAdmin, ActorWeb, ActorAutomation, ActorMCP}
 
 // Config is the operator's policy configuration on top of the rule table.
 // The zero Config allows every action the table allows, except dangerous
-// actions of automations, which it denies.
+// actions of automations, which it denies, and dangerous actions of MCP
+// clients, which it holds for approval.
 type Config struct {
 	// Classes is the mode of each class for every configurable actor kind.
 	Classes map[Class]Mode `yaml:"classes"`
@@ -82,6 +83,9 @@ func (c Config) mode(class Class, kind, id string) (Mode, bool) {
 	}
 	if class == Dangerous && kind == ActorAutomation {
 		return ModeDeny, false
+	}
+	if class == Dangerous && kind == ActorMCP {
+		return ModeConfirm, false
 	}
 	return ModeAllow, false
 }

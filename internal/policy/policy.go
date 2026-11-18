@@ -94,6 +94,31 @@ const (
 	ApprovalApprove Action = "approval.approve"
 	// ApprovalDeny refuses an action policy held for confirmation.
 	ApprovalDeny Action = "approval.deny"
+	// DeviceRead lists, searches or reads the facts of devices, for an MCP
+	// client.
+	DeviceRead Action = "device.read"
+	// DeviceMetrics reads a device's current metrics from Prometheus, for an
+	// MCP client.
+	DeviceMetrics Action = "device.metrics"
+	// DeviceRestart restarts a systemd unit or Docker container on a device,
+	// through its agent, for an MCP client.
+	DeviceRestart Action = "device.restart"
+	// DeviceExec runs a command on a device, through its agent, for an MCP
+	// client.
+	DeviceExec Action = "device.exec"
+	// KubeRead lists the clusters or objects of adopted Kubernetes
+	// clusters, for an MCP client.
+	KubeRead Action = "kube.read"
+	// AutomationPlan checks an automation file and describes what it would
+	// do, for an MCP client. Nothing runs.
+	AutomationPlan Action = "automation.plan"
+	// AutomationApply writes an automation file to the hub's automations
+	// directory, for an MCP client; the hub then loads and runs it.
+	AutomationApply Action = "automation.apply"
+	// MCPTokenCreate creates a bearer token for an MCP client.
+	MCPTokenCreate Action = "mcp.token.create" //nolint:gosec // an action name
+	// MCPTokenRevoke revokes an MCP client's token.
+	MCPTokenRevoke Action = "mcp.token.revoke" //nolint:gosec // an action name
 )
 
 // Actor kinds.
@@ -118,6 +143,10 @@ const (
 	// notification channel, identified by its remote address. The link
 	// itself is the credential, for one approval only.
 	ActorApprovalLink = "approval_link"
+	// ActorMCP is an MCP client (an AI assistant such as Claude Code),
+	// identified by the name of its MCP token. The token's scope caps the
+	// classes it may request (see WithScope).
+	ActorMCP = "mcp"
 )
 
 // Decisions recorded in the audit log.
@@ -184,19 +213,19 @@ var rules = map[Action]rule{
 	KubeClusterAdd:    {class: Safe, actors: []string{ActorWeb}},
 	KubeClusterRemove: {class: Safe, actors: []string{ActorWeb}},
 	// Logs may carry secrets, so reading them is audited.
-	KubePodLogs: {class: Read, actors: []string{ActorWeb}},
+	KubePodLogs: {class: Read, actors: []string{ActorWeb, ActorMCP}},
 	// A rolling restart, a scale, a pod deletion and a cordon are bounded and
 	// undone by the next one: the controllers keep the workload running.
 	// Automations may take them too (internal/automation's kube.* actions).
-	KubeWorkloadRestart: {class: Safe, actors: []string{ActorWeb, ActorAutomation}},
-	KubeWorkloadScale:   {class: Safe, actors: []string{ActorWeb, ActorAutomation}},
-	KubePodDelete:       {class: Safe, actors: []string{ActorWeb, ActorAutomation}},
-	KubeNodeCordon:      {class: Safe, actors: []string{ActorWeb, ActorAutomation}},
-	KubeNodeUncordon:    {class: Safe, actors: []string{ActorWeb, ActorAutomation}},
+	KubeWorkloadRestart: {class: Safe, actors: []string{ActorWeb, ActorAutomation, ActorMCP}},
+	KubeWorkloadScale:   {class: Safe, actors: []string{ActorWeb, ActorAutomation, ActorMCP}},
+	KubePodDelete:       {class: Safe, actors: []string{ActorWeb, ActorAutomation, ActorMCP}},
+	KubeNodeCordon:      {class: Safe, actors: []string{ActorWeb, ActorAutomation, ActorMCP}},
+	KubeNodeUncordon:    {class: Safe, actors: []string{ActorWeb, ActorAutomation, ActorMCP}},
 	// A drain takes every workload off a node: on a small homelab cluster
 	// that can be most of the capacity. Being dangerous, an automation's
 	// drain is denied unless it is granted or approved.
-	KubeNodeDrain: {class: Dangerous, actors: []string{ActorWeb, ActorAutomation}},
+	KubeNodeDrain: {class: Dangerous, actors: []string{ActorWeb, ActorAutomation, ActorMCP}},
 	// A notification touches no device: it tells a person something, on a
 	// channel the operator configured.
 	AutomationNotify: {class: Safe, actors: []string{ActorAutomation}},
@@ -207,6 +236,22 @@ var rules = map[Action]rule{
 	// An approval link decides the one approval it was sent for.
 	ApprovalApprove: {class: Dangerous, actors: []string{ActorAdmin, ActorWeb, ActorApprovalLink}, fixed: true},
 	ApprovalDeny:    {class: Safe, actors: []string{ActorAdmin, ActorWeb, ActorApprovalLink}, fixed: true},
+	// What an MCP client reads is what the web UI shows.
+	DeviceRead:    {class: Read, actors: []string{ActorMCP}},
+	DeviceMetrics: {class: Read, actors: []string{ActorMCP}},
+	KubeRead:      {class: Read, actors: []string{ActorMCP}},
+	// As automation.restart and automation.exec, for an MCP client.
+	DeviceRestart: {class: Safe, actors: []string{ActorMCP}},
+	DeviceExec:    {class: Dangerous, actors: []string{ActorMCP}},
+	// A plan only parses the file.
+	AutomationPlan: {class: Read, actors: []string{ActorMCP}},
+	// An applied automation runs on its own, again and again, long after the
+	// request: as dangerous as anything it may do.
+	AutomationApply: {class: Dangerous, actors: []string{ActorMCP}},
+	// A token may carry the dangerous scope; revoking one only takes access
+	// away.
+	MCPTokenCreate: {class: Dangerous, actors: []string{ActorAdmin}},
+	MCPTokenRevoke: {class: Safe, actors: []string{ActorAdmin}},
 }
 
 // Actions returns every known action, sorted.

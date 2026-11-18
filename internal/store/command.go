@@ -683,6 +683,10 @@ func DecodeCommand(b []byte) (Command, error) {
 		cmd, err = decodeAs[CreateApprovalLink](env.Cmd)
 	case UseApprovalLink{}.Op():
 		cmd, err = decodeAs[UseApprovalLink](env.Cmd)
+	case CreateMCPToken{}.Op():
+		cmd, err = decodeAs[CreateMCPToken](env.Cmd)
+	case RevokeMCPToken{}.Op():
+		cmd, err = decodeAs[RevokeMCPToken](env.Cmd)
 	default:
 		return nil, fmt.Errorf("decode command: unknown op %q", env.Op)
 	}

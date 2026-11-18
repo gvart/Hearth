@@ -111,11 +111,11 @@ type kubeAction struct {
 var ErrNotGranted = errors.New("not allowed by policy")
 
 // Act plans req on cluster id and, unless it is a dry run, carries it out on
-// behalf of a web session from actorID. Carrying it out is a policy action,
-// decided before anything is sent to the cluster and audited; a dry run only
-// reads the objects involved, as the snapshot does, and is decided and
-// audited as a dry run.
-func (m *Manager) Act(ctx context.Context, actorID, id string, req ActionRequest) (ActionResult, error) {
+// behalf of actorKind/actorID (a web session, or an MCP client). Carrying it
+// out is a policy action, decided before anything is sent to the cluster and
+// audited; a dry run only reads the objects involved, as the snapshot does,
+// and is decided and audited as a dry run.
+func (m *Manager) Act(ctx context.Context, actorKind, actorID, id string, req ActionRequest) (ActionResult, error) {
 	r, info, err := m.get(id)
 	if err != nil {
 		return ActionResult{}, err
@@ -127,7 +127,7 @@ func (m *Manager) Act(ctx context.Context, actorID, id string, req ActionRequest
 	detail := map[string]any{"cluster_id": id}
 	maps.Copy(detail, p.a.detail)
 	polReq := policy.Request{
-		ActorKind: policy.ActorWeb, ActorID: actorID, Action: p.a.policy,
+		ActorKind: actorKind, ActorID: actorID, Action: p.a.policy,
 		Target: info.Name + "/" + p.a.target, Detail: detail, DryRun: req.DryRun,
 	}
 	if req.DryRun {

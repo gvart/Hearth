@@ -7,6 +7,7 @@ require (
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/raft v1.8.0
 	github.com/hashicorp/raft-boltdb/v2 v2.4.2
+	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/pressly/goose/v3 v3.30.1
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/shirou/gopsutil/v4 v4.26.10
@@ -26,6 +27,7 @@ require (
 	github.com/ebitengine/purego v0.11.2 // indirect
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
+	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/hashicorp/go-immutable-radix v1.3.1 // indirect
 	github.com/hashicorp/go-metrics v0.7.0 // indirect
@@ -39,14 +41,19 @@ require (
 	github.com/ncruces/go-strftime v1.1.0 // indirect
 	github.com/power-devops/perfstat v0.0.0-20260805114148-88456608a4f6 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
+	github.com/segmentio/asm v1.2.1 // indirect
+	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/sethvargo/go-retry v0.5.0 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/tklauser/go-sysconf v0.4.0 // indirect
 	github.com/tklauser/numcpus v0.12.0 // indirect
+	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	go.etcd.io/bbolt v1.4.1 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
+	golang.org/x/oauth2 v0.35.0 // indirect
 	golang.org/x/sys v0.50.0 // indirect
+	golang.org/x/time v0.15.0 // indirect
 	modernc.org/libc v1.80.2 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect

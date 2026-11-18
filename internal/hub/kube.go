@@ -87,7 +87,7 @@ func (a *api) kubePodLogs(w http.ResponseWriter, r *http.Request) {
 		}
 		tail = n
 	}
-	logs, err := a.kube.Logs(r.Context(), remoteHost(r), r.PathValue("id"),
+	logs, err := a.kube.Logs(r.Context(), policy.ActorWeb, remoteHost(r), r.PathValue("id"),
 		r.PathValue("namespace"), r.PathValue("pod"), r.URL.Query().Get("container"), tail)
 	if err != nil {
 		a.writeKubeError(w, r, "pod logs", err)
@@ -110,7 +110,7 @@ func (a *api) kubeAction(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", `body must be an action: {"action": "...", "name": "...", ...}`)
 		return
 	}
-	res, err := a.kube.Act(r.Context(), remoteHost(r), r.PathValue("id"), req)
+	res, err := a.kube.Act(r.Context(), policy.ActorWeb, remoteHost(r), r.PathValue("id"), req)
 	if err != nil {
 		a.writeKubeError(w, r, "kube action", err)
 		return

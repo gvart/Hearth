@@ -89,7 +89,7 @@ func TestActionDeniedHasNoSideEffect(t *testing.T) {
 	before := f.api.object("/api/v1/nodes", "/pi-1")
 	for _, req := range everyAction {
 		t.Run(req.Action, func(t *testing.T) {
-			_, err := f.m.Act(t.Context(), "", info.ID, req) // an anonymous actor
+			_, err := f.m.Act(t.Context(), policy.ActorWeb, "", info.ID, req) // an anonymous actor
 			if !errors.Is(err, policy.ErrDenied) {
 				t.Fatalf("Act = %v, want ErrDenied", err)
 			}
@@ -132,7 +132,7 @@ func TestActionDryRun(t *testing.T) {
 	for _, req := range everyAction {
 		t.Run(req.Action, func(t *testing.T) {
 			req.DryRun = true
-			res, err := f.m.Act(t.Context(), webActor, info.ID, req)
+			res, err := f.m.Act(t.Context(), policy.ActorWeb, webActor, info.ID, req)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -153,7 +153,7 @@ func TestActionDryRun(t *testing.T) {
 			t.Errorf("a dry run sent %s", r)
 		}
 	}
-	drain, _ := f.m.Act(t.Context(), webActor, info.ID, ActionRequest{Action: ActionDrain, Name: "pi-1", DryRun: true})
+	drain, _ := f.m.Act(t.Context(), policy.ActorWeb, webActor, info.ID, ActionRequest{Action: ActionDrain, Name: "pi-1", DryRun: true})
 	if !slices.Contains(drain.Steps, "Skip static (mirror) pods: kube-system/etcd-pi-1") ||
 		!slices.Contains(drain.Steps, "Evict default/web-1") || slices.Contains(drain.Steps, "Evict default/web-3") {
 		t.Errorf("drain steps = %q", drain.Steps)
@@ -182,7 +182,7 @@ func TestActionsApply(t *testing.T) {
 	f, info := actionCluster(t)
 	act := func(req ActionRequest) ActionResult {
 		t.Helper()
-		res, err := f.m.Act(t.Context(), webActor, info.ID, req)
+		res, err := f.m.Act(t.Context(), policy.ActorWeb, webActor, info.ID, req)
 		if err != nil {
 			t.Fatalf("%s: %v", req.Action, err)
 		}
@@ -243,7 +243,7 @@ func TestDrainHonoursDisruptionBudgets(t *testing.T) {
 	f.api.refuse["default/web-2"] = 3
 	f.api.mu.Unlock()
 
-	res, err := f.m.Act(t.Context(), webActor, info.ID, ActionRequest{Action: ActionDrain, Name: "pi-1"})
+	res, err := f.m.Act(t.Context(), policy.ActorWeb, webActor, info.ID, ActionRequest{Action: ActionDrain, Name: "pi-1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -287,7 +287,7 @@ func TestDrainTimeout(t *testing.T) {
 	f.api.mu.Unlock()
 
 	start := time.Now()
-	_, err := f.m.Act(t.Context(), webActor, info.ID, ActionRequest{Action: ActionDrain, Name: "pi-1", TimeoutSeconds: 1})
+	_, err := f.m.Act(t.Context(), policy.ActorWeb, webActor, info.ID, ActionRequest{Action: ActionDrain, Name: "pi-1", TimeoutSeconds: 1})
 	if err == nil || !strings.Contains(err.Error(), "default/web-2 (refused: Cannot evict pod as it would violate the pod's disruption budget.)") ||
 		!strings.Contains(err.Error(), "timed out after 1s") {
 		t.Fatalf("Act = %v, want a timeout naming the refused pod", err)
@@ -319,15 +319,15 @@ func TestActionInvalid(t *testing.T) {
 		{Action: ActionDrain, Name: "pi-1", TimeoutSeconds: 3600},
 		{Action: ActionDrain, Name: "pi-1", TimeoutSeconds: -1},
 	} {
-		if _, err := f.m.Act(t.Context(), webActor, info.ID, req); !errors.Is(err, ErrBadAction) {
+		if _, err := f.m.Act(t.Context(), policy.ActorWeb, webActor, info.ID, req); !errors.Is(err, ErrBadAction) {
 			t.Errorf("Act(%+v) = %v, want ErrBadAction", req, err)
 		}
 	}
-	_, err := f.m.Act(t.Context(), webActor, info.ID, ActionRequest{Action: ActionCordon, Name: "pi-9", DryRun: true})
+	_, err := f.m.Act(t.Context(), policy.ActorWeb, webActor, info.ID, ActionRequest{Action: ActionCordon, Name: "pi-9", DryRun: true})
 	if !errors.Is(err, ErrObjectNotFound) {
 		t.Errorf("cordon of an unknown node = %v, want ErrObjectNotFound", err)
 	}
-	if _, err := f.m.Act(t.Context(), webActor, "nope", everyAction[0]); !errors.Is(err, ErrNotFound) {
+	if _, err := f.m.Act(t.Context(), policy.ActorWeb, webActor, "nope", everyAction[0]); !errors.Is(err, ErrNotFound) {
 		t.Errorf("unknown cluster = %v", err)
 	}
 	if got := f.api.actionRequests(); len(got) != 1 {
