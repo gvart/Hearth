@@ -10,13 +10,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 	"unicode"
-
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"github.com/gvart/hearth/internal/policy"
 	"github.com/gvart/hearth/internal/store"
@@ -128,7 +127,7 @@ type Manager struct {
 	log     *slog.Logger
 	every   time.Duration
 	now     func() time.Time
-	connect func(*kubeconfig) (clients, error)
+	connect func(*kubeconfig) (*apiClient, error)
 
 	kick chan struct{}
 	bus  bus
@@ -152,7 +151,7 @@ type running struct {
 func NewManager(cfg Config) *Manager {
 	m := &Manager{
 		store: cfg.Store, sealer: cfg.Sealer, policy: cfg.Policy, log: cfg.Log,
-		every: cfg.SyncInterval, now: cfg.Now, connect: newClients,
+		every: cfg.SyncInterval, now: cfg.Now, connect: newAPIClient,
 		kick: make(chan struct{}, 1), watchers: map[string]*running{},
 	}
 	if m.every <= 0 {
@@ -466,6 +465,11 @@ func (m *Manager) Logs(ctx context.Context, actorID, id, namespace, pod, contain
 	if r.w == nil {
 		return "", fmt.Errorf("cluster %s: %s", info.Name, r.err)
 	}
+	for _, n := range []string{namespace, pod, container} {
+		if n != "" && !validObjectName(n) {
+			return "", ErrPodNotFound
+		}
+	}
 	tail = max(1, min(tail, MaxLogLines))
 	var out []byte
 	err = m.policy.Do(ctx, policy.Request{
@@ -481,12 +485,26 @@ func (m *Manager) Logs(ctx context.Context, actorID, id, namespace, pod, contain
 		return err
 	})
 	if err != nil {
-		if apierrors.IsNotFound(err) {
+		if hasCode(err, http.StatusNotFound) {
 			return "", ErrPodNotFound
 		}
 		return "", fmt.Errorf("logs of %s/%s: %w", namespace, pod, err)
 	}
 	return string(out), nil
+}
+
+// validObjectName reports whether s can be a Kubernetes namespace, pod or
+// container name (a DNS subdomain or label): it is put in a URL path as is.
+func validObjectName(s string) bool {
+	if s == "" || len(s) > 253 || s[0] == '-' || s[0] == '.' || s[len(s)-1] == '-' || s[len(s)-1] == '.' {
+		return false
+	}
+	for _, r := range s {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' && r != '.' {
+			return false
+		}
+	}
+	return !strings.Contains(s, "..")
 }
 
 func validName(s string) bool {

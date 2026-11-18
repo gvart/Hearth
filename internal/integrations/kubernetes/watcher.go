@@ -4,16 +4,15 @@ package kubernetes
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
 	"reflect"
 	"sync"
 	"time"
-
-	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/tools/cache"
 )
 
 // Cluster states.
@@ -23,44 +22,92 @@ const (
 	StateError      = "error"
 )
 
-// errorWindow is how long after its last list or watch failure a cluster
-// shows as in error. The reflectors retry with a backoff well under it, so a
-// cluster that stays unreachable stays in error.
-const errorWindow = time.Minute
+const (
+	// errorWindow is how long after its last list or watch failure a
+	// cluster shows as in error. Retries back off to at most maxBackoff,
+	// well under it, so a cluster that stays unreachable stays in error.
+	errorWindow = time.Minute
+	minBackoff  = time.Second
+	maxBackoff  = 30 * time.Second
+)
 
-// source is one informer and how to turn its objects into API entities.
-type source struct {
-	kind     string
-	informer cache.SharedIndexInformer
-	// entity converts a cached object; key is its stable key within kind.
-	entity func(obj any) (key string, v any, ok bool)
-}
+// decoder parses one API object into its key, resource version and entity.
+type decoder func(raw json.RawMessage) (key, rv string, v any, err error)
 
-// typed adapts conv to the informer's untyped objects.
-func typed[T any](conv func(*T) (string, any)) func(any) (string, any, bool) {
-	return func(obj any) (string, any, bool) {
-		t, ok := obj.(*T)
-		if !ok {
-			return "", nil, false
+// decodeAs adapts conv to raw JSON objects of type T.
+func decodeAs[T any](meta func(*T) *objectMeta, key func(*T) string, conv func(*T) any) decoder {
+	return func(raw json.RawMessage) (string, string, any, error) {
+		var t T
+		if err := json.Unmarshal(raw, &t); err != nil {
+			return "", "", nil, err
 		}
-		k, v := conv(t)
-		return k, v, true
+		return key(&t), meta(&t).ResourceVersion, conv(&t), nil
 	}
 }
 
-// watcher keeps an informer cache of one cluster's nodes, namespaces,
-// workloads, pods and events, and reports every change through publish.
+func nsName(m *objectMeta) string { return m.Namespace + "/" + m.Name }
+
+// resource is one list-and-watch of the API server and its cache of
+// converted entities.
+type resource struct {
+	kind   string
+	path   string
+	decode decoder
+
+	mu     sync.Mutex
+	items  map[string]any
+	synced bool
+}
+
+func resources() []*resource {
+	return []*resource{
+		{kind: KindNode, path: "/api/v1/nodes", decode: decodeAs(
+			func(n *node) *objectMeta { return &n.Metadata },
+			func(n *node) string { return n.Metadata.Name },
+			func(n *node) any { return nodeOf(n) })},
+		{kind: KindNamespace, path: "/api/v1/namespaces", decode: decodeAs(
+			func(n *namespace) *objectMeta { return &n.Metadata },
+			func(n *namespace) string { return n.Metadata.Name },
+			func(n *namespace) any { return namespaceOf(n) })},
+		{kind: KindPod, path: "/api/v1/pods", decode: decodeAs(
+			func(p *pod) *objectMeta { return &p.Metadata },
+			func(p *pod) string { return nsName(&p.Metadata) },
+			func(p *pod) any { return podOf(p) })},
+		{kind: KindEvent, path: "/api/v1/events", decode: decodeAs(
+			func(e *event) *objectMeta { return &e.Metadata },
+			func(e *event) string { return e.Metadata.UID },
+			func(e *event) any { return eventOf(e) })},
+		{kind: KindWorkload, path: "/apis/apps/v1/deployments", decode: decodeAs(
+			func(r *replicated) *objectMeta { return &r.Metadata },
+			func(r *replicated) string { return "Deployment/" + nsName(&r.Metadata) },
+			func(r *replicated) any { return replicatedOf("Deployment", r) })},
+		{kind: KindWorkload, path: "/apis/apps/v1/statefulsets", decode: decodeAs(
+			func(r *replicated) *objectMeta { return &r.Metadata },
+			func(r *replicated) string { return "StatefulSet/" + nsName(&r.Metadata) },
+			func(r *replicated) any { return replicatedOf("StatefulSet", r) })},
+		{kind: KindWorkload, path: "/apis/apps/v1/daemonsets", decode: decodeAs(
+			func(d *daemonSet) *objectMeta { return &d.Metadata },
+			func(d *daemonSet) string { return "DaemonSet/" + nsName(&d.Metadata) },
+			func(d *daemonSet) any { return daemonSetOf(d) })},
+	}
+}
+
+func workloadKey(wl Workload) string { return wl.Kind + "/" + wl.Namespace + "/" + wl.Name }
+
+// watcher keeps a cache of one cluster's nodes, namespaces, workloads, pods
+// and events, kept current by list and watch, and reports every change
+// through publish.
 type watcher struct {
 	clusterID string
-	c         clients
+	c         *apiClient
 	log       *slog.Logger
 	now       func() time.Time
-	sources   []source
-	// publish is called on informer goroutines for every change after the
-	// initial list; link fills the DeviceID of a node it publishes.
+	res       []*resource
+	// publish is called for every change after a resource's first list;
+	// link fills the DeviceID of a node it publishes.
 	publish func(Change)
 	link    func(Node) Node
-	// synced is called once every informer has listed.
+	// synced is called once every resource has been listed.
 	synced func()
 
 	mu        sync.Mutex
@@ -69,107 +116,227 @@ type watcher struct {
 	lastErrAt time.Time
 }
 
-func newWatcher(clusterID string, c clients, log *slog.Logger, now func() time.Time,
+func newWatcher(clusterID string, c *apiClient, log *slog.Logger, now func() time.Time,
 	publish func(Change), link func(Node) Node, synced func(),
 ) *watcher {
-	w := &watcher{clusterID: clusterID, c: c, log: log, now: now, publish: publish, link: link, synced: synced}
-	w.sources = []source{
-		w.source(KindNode, &corev1.Node{}, c.lw[resNodes],
-			typed(func(n *corev1.Node) (string, any) { return n.Name, nodeOf(n) })),
-		w.source(KindNamespace, &corev1.Namespace{}, c.lw[resNamespaces],
-			typed(func(n *corev1.Namespace) (string, any) { return n.Name, namespaceOf(n) })),
-		w.source(KindPod, &corev1.Pod{}, c.lw[resPods],
-			typed(func(p *corev1.Pod) (string, any) { return p.Namespace + "/" + p.Name, podOf(p) })),
-		w.source(KindEvent, &corev1.Event{}, c.lw[resEvents],
-			typed(func(e *corev1.Event) (string, any) { return string(e.UID), eventOf(e) })),
-		w.source(KindWorkload, &appsv1.Deployment{}, c.lw[resDeployments],
-			typed(func(d *appsv1.Deployment) (string, any) { wl := deploymentOf(d); return workloadKey(wl), wl })),
-		w.source(KindWorkload, &appsv1.StatefulSet{}, c.lw[resStatefulSets],
-			typed(func(s *appsv1.StatefulSet) (string, any) { wl := statefulSetOf(s); return workloadKey(wl), wl })),
-		w.source(KindWorkload, &appsv1.DaemonSet{}, c.lw[resDaemonSets],
-			typed(func(d *appsv1.DaemonSet) (string, any) { wl := daemonSetOf(d); return workloadKey(wl), wl })),
+	return &watcher{
+		clusterID: clusterID, c: c, log: log, now: now, res: resources(),
+		publish: publish, link: link, synced: synced,
 	}
-	return w
 }
 
-func workloadKey(wl Workload) string { return wl.Kind + "/" + wl.Namespace + "/" + wl.Name }
+// run lists and watches every resource until ctx is done.
+func (w *watcher) run(ctx context.Context) {
+	var wg sync.WaitGroup
+	for _, r := range w.res {
+		wg.Go(func() { w.reflect(ctx, r) })
+	}
+	wg.Wait()
+}
 
-// source builds an informer for one resource. Its cache drops managed
-// fields and annotations, which the hub never shows and which are most of
-// an object's size.
-func (w *watcher) source(kind string, example runtime.Object, lw cache.ListerWatcher,
-	entity func(obj any) (string, any, bool),
-) source {
-	inf := cache.NewSharedIndexInformer(lw, example, 0, cache.Indexers{})
-	_ = inf.SetTransform(func(obj any) (any, error) {
-		if m, ok := obj.(metav1.Object); ok {
-			m.SetManagedFields(nil)
-			m.SetAnnotations(nil)
+// errGone is a watch whose resource version is too old: relist.
+var errGone = errors.New("resource version too old")
+
+// reflect keeps r current: it lists, then watches from the list's resource
+// version, watching again when a watch ends and listing again when the
+// server has compacted past it. Failures back off up to maxBackoff.
+func (w *watcher) reflect(ctx context.Context, r *resource) {
+	backoff := minBackoff
+	wait := func() bool {
+		t := time.NewTimer(backoff)
+		defer t.Stop()
+		backoff = min(2*backoff, maxBackoff)
+		select {
+		case <-ctx.Done():
+			return false
+		case <-t.C:
+			return true
 		}
-		return obj, nil
-	})
-	_ = inf.SetWatchErrorHandlerWithContext(func(_ context.Context, _ *cache.Reflector, err error) {
-		w.mu.Lock()
-		w.lastErr, w.lastErrAt = err.Error(), w.now()
-		w.mu.Unlock()
-		w.log.Debug("kubernetes watch failed", "cluster", w.clusterID, "kind", kind, "err", err)
-	})
-	s := source{kind: kind, informer: inf, entity: entity}
-	_, _ = inf.AddEventHandler(cache.ResourceEventHandlerDetailedFuncs{
-		AddFunc: func(obj any, initial bool) {
-			if !initial {
-				w.upsert(s, obj)
+	}
+	for ctx.Err() == nil {
+		rv, err := w.relist(ctx, r)
+		if err != nil {
+			w.fail(ctx, r, "list", err)
+			if !wait() {
+				return
 			}
-		},
-		UpdateFunc: func(oldObj, newObj any) {
-			_, before, ok1 := s.entity(oldObj)
-			_, after, ok2 := s.entity(newObj)
-			if ok1 && ok2 && reflect.DeepEqual(before, after) {
-				return // nothing the hub shows changed
+			continue
+		}
+		backoff = minBackoff
+		for ctx.Err() == nil {
+			var delivered bool
+			rv, delivered, err = w.watchOnce(ctx, r, rv)
+			if delivered {
+				backoff = minBackoff
 			}
-			w.upsert(s, newObj)
-		},
-		DeleteFunc: func(obj any) {
-			if d, ok := obj.(cache.DeletedFinalStateUnknown); ok {
-				obj = d.Obj
+			if errors.Is(err, errGone) {
+				break
 			}
-			if key, _, ok := s.entity(obj); ok {
-				w.publish(Change{Cluster: w.clusterID, Kind: s.kind, Op: OpDelete, Key: key})
+			if err != nil {
+				w.fail(ctx, r, "watch", err)
+				if !wait() {
+					return
+				}
 			}
-		},
-	})
-	return s
+		}
+	}
 }
 
-func (w *watcher) upsert(s source, obj any) {
-	key, v, ok := s.entity(obj)
-	if !ok {
-		return
+// relist replaces r's cache with a fresh list and publishes the
+// differences (nothing on the first list).
+func (w *watcher) relist(ctx context.Context, r *resource) (string, error) {
+	raw, rv, err := w.c.list(ctx, r.path)
+	if err != nil {
+		return "", err
 	}
-	w.mu.Lock()
-	w.lastErr = "" // the watch delivers again
-	w.mu.Unlock()
+	items := make(map[string]any, len(raw))
+	for _, b := range raw {
+		key, _, v, err := r.decode(b)
+		if err != nil {
+			return "", fmt.Errorf("decode %s: %w", r.path, err)
+		}
+		items[key] = v
+	}
+	r.mu.Lock()
+	old, wasSynced := r.items, r.synced
+	r.items, r.synced = items, true
+	r.mu.Unlock()
+	if wasSynced {
+		for key := range old {
+			if _, ok := items[key]; !ok {
+				w.publish(Change{Cluster: w.clusterID, Kind: r.kind, Op: OpDelete, Key: key})
+			}
+		}
+		for key, v := range items {
+			if !reflect.DeepEqual(old[key], v) {
+				w.upserted(r, key, v)
+			}
+		}
+	}
+	w.ok()
+	w.checkSynced()
+	return rv, nil
+}
+
+// watchEvent is one line of a watch stream.
+type watchEvent struct {
+	Type   string          `json:"type"`
+	Object json.RawMessage `json:"object"`
+}
+
+// watchOnce applies one watch request's events to r until it ends. It
+// returns the newest resource version seen and whether the watch was
+// established.
+func (w *watcher) watchOnce(ctx context.Context, r *resource, rv string) (string, bool, error) {
+	body, err := w.c.watch(ctx, r.path, rv)
+	if hasCode(err, http.StatusGone) {
+		return rv, false, errGone
+	}
+	if err != nil {
+		return rv, false, err
+	}
+	defer body.Close()
+	w.ok()
+	dec := json.NewDecoder(body)
+	for {
+		var ev watchEvent
+		if err := dec.Decode(&ev); err != nil {
+			if ctx.Err() != nil || errors.Is(err, context.Canceled) {
+				return rv, true, nil
+			}
+			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+				return rv, true, nil // the server ended the watch (timeoutSeconds)
+			}
+			return rv, true, fmt.Errorf("watch %s: %w", r.path, err)
+		}
+		switch ev.Type {
+		case "ADDED", "MODIFIED", "DELETED":
+			key, objRV, v, err := r.decode(ev.Object)
+			if err != nil {
+				return rv, true, fmt.Errorf("decode %s: %w", r.path, err)
+			}
+			rv = objRV
+			w.apply(r, ev.Type, key, v)
+		case "BOOKMARK":
+			var b struct {
+				Metadata listMeta `json:"metadata"`
+			}
+			if json.Unmarshal(ev.Object, &b) == nil && b.Metadata.ResourceVersion != "" {
+				rv = b.Metadata.ResourceVersion
+			}
+		case "ERROR":
+			var st status
+			_ = json.Unmarshal(ev.Object, &st)
+			if st.Code == http.StatusGone {
+				return rv, true, errGone
+			}
+			return rv, true, &apiError{Code: st.Code, Message: st.Message}
+		}
+	}
+}
+
+// apply applies one watch event to r's cache and publishes it if it
+// changed anything the hub shows.
+func (w *watcher) apply(r *resource, typ, key string, v any) {
+	r.mu.Lock()
+	old, had := r.items[key]
+	if typ == "DELETED" {
+		delete(r.items, key)
+	} else {
+		r.items[key] = v
+	}
+	r.mu.Unlock()
+	switch {
+	case typ == "DELETED":
+		if had {
+			w.publish(Change{Cluster: w.clusterID, Kind: r.kind, Op: OpDelete, Key: key})
+		}
+	case !had || !reflect.DeepEqual(old, v):
+		w.upserted(r, key, v)
+	}
+}
+
+func (w *watcher) upserted(r *resource, key string, v any) {
 	if n, ok := v.(Node); ok {
 		v = w.link(n)
 	}
-	w.publish(Change{Cluster: w.clusterID, Kind: s.kind, Op: OpUpsert, Key: key, Object: v})
+	w.publish(Change{Cluster: w.clusterID, Kind: r.kind, Op: OpUpsert, Key: key, Object: v})
 }
 
-// run runs the informers until ctx is done.
-func (w *watcher) run(ctx context.Context) {
-	var wg sync.WaitGroup
-	synced := make([]cache.InformerSynced, 0, len(w.sources))
-	for _, s := range w.sources {
-		wg.Go(func() { s.informer.RunWithContext(ctx) })
-		synced = append(synced, s.informer.HasSynced)
+func (w *watcher) fail(ctx context.Context, r *resource, op string, err error) {
+	if ctx.Err() != nil {
+		return
 	}
-	if cache.WaitForCacheSync(ctx.Done(), synced...) {
-		w.mu.Lock()
-		w.isSynced, w.lastErr = true, ""
-		w.mu.Unlock()
+	w.mu.Lock()
+	w.lastErr, w.lastErrAt = err.Error(), w.now()
+	w.mu.Unlock()
+	w.log.DebugContext(ctx, "kubernetes "+op+" failed", "cluster", w.clusterID, "path", r.path, "err", err)
+}
+
+// ok clears the last error: the API server answers again.
+func (w *watcher) ok() {
+	w.mu.Lock()
+	w.lastErr = ""
+	w.mu.Unlock()
+}
+
+// checkSynced calls synced the first time every resource has been listed.
+func (w *watcher) checkSynced() {
+	for _, r := range w.res {
+		r.mu.Lock()
+		s := r.synced
+		r.mu.Unlock()
+		if !s {
+			return
+		}
+	}
+	w.mu.Lock()
+	first := !w.isSynced
+	w.isSynced = true
+	w.mu.Unlock()
+	if first {
 		w.synced()
 	}
-	wg.Wait()
 }
 
 // state is the cluster's connection state and its last error, if recent.
@@ -185,12 +352,14 @@ func (w *watcher) state() (string, string) {
 	return StateConnecting, ""
 }
 
-// count is the number of cached objects of kind.
+// count is the number of cached entities of kind.
 func (w *watcher) count(kind string) int {
 	n := 0
-	for _, s := range w.sources {
-		if s.kind == kind {
-			n += len(s.informer.GetStore().ListKeys())
+	for _, r := range w.res {
+		if r.kind == kind {
+			r.mu.Lock()
+			n += len(r.items)
+			r.mu.Unlock()
 		}
 	}
 	return n
@@ -199,15 +368,15 @@ func (w *watcher) count(kind string) int {
 // entities lists the cached entities of kind.
 func (w *watcher) entities(kind string) []any {
 	var out []any
-	for _, s := range w.sources {
-		if s.kind != kind {
+	for _, r := range w.res {
+		if r.kind != kind {
 			continue
 		}
-		for _, obj := range s.informer.GetStore().List() {
-			if _, v, ok := s.entity(obj); ok {
-				out = append(out, v)
-			}
+		r.mu.Lock()
+		for _, v := range r.items {
+			out = append(out, v)
 		}
+		r.mu.Unlock()
 	}
 	return out
 }

@@ -17,7 +17,6 @@ import (
 
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
-	"k8s.io/klog/v2"
 
 	"github.com/gvart/hearth/internal/automation"
 	"github.com/gvart/hearth/internal/cluster"
@@ -334,7 +333,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 
 // newKubeManager returns the manager of adopted Kubernetes clusters. Their
 // kubeconfigs are sealed with a key derived from the hub CA key, which every
-// hub of a cluster holds. client-go logs through log.
+// hub of a cluster holds.
 func newKubeManager(st *store.Store, ca *pki.CA, pol *policy.Engine, log *slog.Logger) (*kubernetes.Manager, error) {
 	secret, err := ca.KeyDER()
 	if err != nil {
@@ -344,7 +343,6 @@ func newKubeManager(st *store.Store, ca *pki.CA, pol *policy.Engine, log *slog.L
 	if err != nil {
 		return nil, err
 	}
-	klog.SetSlogLogger(log.With("component", "client-go"))
 	return kubernetes.NewManager(kubernetes.Config{Store: st, Sealer: sealer, Policy: pol, Log: log}), nil
 }
 
