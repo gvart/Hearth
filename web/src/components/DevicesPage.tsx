@@ -5,6 +5,7 @@ import { displayName, formatUptime, osArch, primaryIP, relativeTime, statusLabel
 import { AddDeviceDialog } from './AddDeviceDialog.tsx';
 import { DeviceDrawer } from './DeviceDrawer.tsx';
 import { StatusDot } from './StatusDot.tsx';
+import { UnmanagedHosts } from './UnmanagedHosts.tsx';
 
 const statusOrder = { online: 0, unknown: 1, offline: 2 } as const;
 
@@ -126,6 +127,7 @@ export function DevicesPage() {
             </table>
           </div>
         )}
+        <UnmanagedHosts now={now} onAdd={openAdd} />
       </main>
 
       {adding ? (

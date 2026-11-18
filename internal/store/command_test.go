@@ -61,6 +61,10 @@ func allCommands() []Command {
 		UseApprovalLink{Hash: []byte{6, 7}, Now: 19},
 		CreateMCPToken{Name: "claude", Hash: []byte{3, 3}, Scope: "safe", CreatedAt: 21},
 		RevokeMCPToken{Name: "claude", At: 22},
+		RecordNetworkScan{At: 23, AbsentAfter: 3_600_000, Hosts: []ScannedHost{
+			{MAC: "2c:cf:67:00:00:01", IP: "192.168.2.171", Hostname: "pi5.local", Vendor: "Raspberry Pi"},
+			{MAC: "aa:bb:cc:dd:ee:ff", IP: "192.168.2.50"},
+		}},
 	}
 }
 
@@ -319,6 +323,12 @@ func runScenario(t *testing.T, s *Store) {
 	must(s.MCPTokens().Create(ctx, "old", "mcp-old", "read", at(2*time.Hour)))
 	must(s.MCPTokens().Revoke(ctx, "old", at(2*time.Hour+time.Minute)))
 	wantErr(s.MCPTokens().Revoke(ctx, "old", at(2*time.Hour+time.Minute)), ErrNotFound)
+	pi := NetworkHost{MAC: "2c:cf:67:00:00:01", IP: "192.168.2.171", Hostname: "pi5.local", Vendor: "Raspberry Pi"}
+	_, err = s.NetworkHosts().RecordScan(ctx, at(3*time.Hour), time.Hour, []NetworkHost{pi})
+	must(err)
+	pi.IP = "192.168.2.172"
+	_, err = s.NetworkHosts().RecordScan(ctx, at(5*time.Hour), time.Hour, []NetworkHost{pi, {MAC: "aa:bb:cc:dd:ee:ff", IP: "192.168.2.50"}})
+	must(err)
 }
 
 // dumpTables returns every row of every table (sqlite_sequence included,
@@ -411,7 +421,7 @@ func TestReplayIsDeterministic(t *testing.T) {
 		}
 	}
 	want, got := dumpTables(t, src.db), dumpTables(t, dst.db)
-	for _, table := range []string{"admin", "audit_log", "automation_runs", "certs", "cluster_hubs", "devices", "join_tokens", "mcp_tokens", "sessions", "sqlite_sequence", "tokens"} {
+	for _, table := range []string{"admin", "audit_log", "automation_runs", "certs", "cluster_hubs", "devices", "join_tokens", "mcp_tokens", "network_hosts", "sessions", "sqlite_sequence", "tokens"} {
 		if len(want[table]) == 0 {
 			t.Errorf("scenario left %s empty; the comparison would prove nothing", table)
 		}

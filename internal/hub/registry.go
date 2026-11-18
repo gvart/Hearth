@@ -24,10 +24,13 @@ const (
 	EventDeviceUpdated = "device.updated"
 )
 
-// Event is a change to a device. Device is its state after the change.
+// Event is a change to a device. Device is its state after the change. A
+// network discovery event (discovery.EventNew, discovery.EventReturned)
+// carries Host instead.
 type Event struct {
 	Type   string
 	Device store.Device
+	Host   *store.NetworkHost
 }
 
 // RegistryConfig holds the registry's dependencies. Zero values of the

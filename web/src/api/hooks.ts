@@ -21,6 +21,7 @@ import {
 export const keys = {
   session: ['session'] as const,
   devices: ['devices'] as const,
+  networkHosts: ['network', 'hosts'] as const,
   tls: ['tls'] as const,
   metrics: (id: string) => ['metrics', id] as const,
   kubeClusters: ['kube', 'clusters'] as const,
@@ -35,6 +36,8 @@ export const keys = {
 const approvalsRefreshMs = 5000;
 
 const metricsRefreshMs = 30_000;
+
+const networkHostsRefreshMs = 60_000;
 
 const reconnectDelayMs = 2000;
 
@@ -58,6 +61,7 @@ export function useLogout() {
     mutationFn: api.logout,
     onSettled: () => {
       qc.removeQueries({ queryKey: keys.devices });
+      qc.removeQueries({ queryKey: ['network'] });
       qc.removeQueries({ queryKey: ['kube'] });
       qc.removeQueries({ queryKey: ['audit'] });
       qc.removeQueries({ queryKey: ['approvals'] });
@@ -79,6 +83,11 @@ export function useAudit(filter: AuditFilter) {
 /** The device list, kept current by the event stream rather than polling. */
 export function useDevices() {
   return useQuery({ queryKey: keys.devices, queryFn: api.devices, staleTime: Infinity });
+}
+
+/** Hosts network discovery found; refetched on network events and now and then, as scans run on their own schedule. */
+export function useNetworkHosts() {
+  return useQuery({ queryKey: keys.networkHosts, queryFn: api.networkHosts, refetchInterval: networkHostsRefreshMs });
 }
 
 /** The hub's HTTPS address details, fetched only when enabled. */
@@ -132,6 +141,10 @@ export function useDeviceEvents(onEvent?: (ev: DeviceEvent) => void) {
         onOpen: () => {
           void qc.invalidateQueries({ queryKey: keys.devices });
           void qc.invalidateQueries({ queryKey: ['kube'] });
+          void qc.invalidateQueries({ queryKey: keys.networkHosts });
+        },
+        onNetworkHost: () => {
+          void qc.invalidateQueries({ queryKey: keys.networkHosts });
         },
         onKubeCluster: (c) => {
           applyKubeCluster(qc, c);
