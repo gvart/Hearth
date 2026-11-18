@@ -1,0 +1,76 @@
+internal/agent/metrics.go
+  s_344993999c180f::t_4ca9ce5115c029 56-58,87-90,131
+  s_344993999c180f::t_dbe745f426ec81 1-55,59-86,91-130,132-138,140-160
+  s_344993999c180f::t_2db0a29288fc07 139
+internal/agent/run.go
+  s_344993999c180f::t_7a1fdc9cc0a75b 71-73,129,131
+  s_344993999c180f::t_4ca9ce5115c029 32,57-58,74,130,372-373,381-382,392-397
+docs/prometheus.md
+  s_344993999c180f::t_c2e1b1de4c3699 3,6-25
+  s_344993999c180f::t_d3b7e242470aec 26
+internal/hub/automation.go
+  s_344993999c180f::t_d1a1c377dce49b 12,55-63,65,75,92-93
+internal/agent/run_test.go
+  s_344993999c180f::t_fa5d871d509fe5 27,49-50,87-91,93-95,98,349-361
+  s_344993999c180f::t_282a78a7281949 362-363
+internal/metrics/store_test.go
+  s_344993999c180f::t_d3bf6e84c66b0f 64,138
+  s_344993999c180f::t_9417e355122ab7 82-92
+  s_344993999c180f::t_809aad82b59abd 1-8,10-63,65-81,93-108,110-137,139-199,201,207-242
+  s_344993999c180f::t_2db0a29288fc07 9,109
+  s_344993999c180f::t_90d52b2a847289 200,202-206
+internal/hub/api.go
+  s_344993999c180f::t_abc024355fe9e8 23,79,163-164
+internal/hub/automation_test.go
+  s_344993999c180f::t_6face966f46e27 91,116
+docs/automations.md
+  s_344993999c180f::t_c2e1b1de4c3699 81-84
+cmd/hearth/common.go
+  s_344993999c180f::t_aef74c639b1b64 24-25
+internal/hub/hostmetrics.go
+  s_344993999c180f::t_019414c8a32467 1-92
+internal/agent/metrics_test.go
+  s_344993999c180f::t_28166e0b1f25dd 1-101
+internal/hub/server.go
+  s_344993999c180f::t_abc024355fe9e8 18,68-70,98
+cmd/hearth/hub.go
+  s_344993999c180f::t_917040d0c3d7d1 31
+  s_344993999c180f::t_23883887f1ac00 212-218,260,294,351,384-385
+internal/metrics/store.go
+  s_344993999c180f::t_a6d73885468dca 9-11,29,37-39,95,97,100,102,167,180,187-193,203-206,208-216,223-225,231-232,234-245,248-250,252,255-260,265,267-282,311
+  s_344993999c180f::t_2db0a29288fc07 218
+  s_344993999c180f::t_a9355eacee12c2 1-8,12-28,30-36,40-94,96,98-99,101,103-166,168-179,181-186,194-202,207,217,219-222,226-230,233,246-247,251,253-254,261-264,266,283-310,312-335
+internal/hub/metrics.go
+  s_344993999c180f::t_5ef7add390bbc2 92-94
+  s_344993999c180f::t_3b089ac2badd03 89-91
+  s_344993999c180f::t_47a25d58aca8bc 95-97
+internal/hub/hostmetrics_test.go
+  s_344993999c180f::t_a194b04c5618b0 11,104
+  s_344993999c180f::t_0c5b8b178e80a6 1-10,12-103,105-140
+web/src/api/client.ts
+  s_344993999c180f::t_0f3869a0bc2522 73,83,85
+web/src/components/DeviceCharts.tsx
+  s_344993999c180f::t_0f3869a0bc2522 8,11,33-39,82-101
+proto/hearth/agent/v1/agent.proto
+  s_344993999c180f::t_5f2cfe0adcada5 104-110
+internal/hub/agentstream.go
+  s_344993999c180f::t_abc024355fe9e8 17,44-45,151-152
+internal/proto/hearth/agent/v1/agent.pb.go
+  s_344993999c180f::t_609caf89a5ef81 749-755
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b69d8a50f093d17961a4009c267e3f74f3a7cea2",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
