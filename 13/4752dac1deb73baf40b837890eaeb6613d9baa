@@ -1,0 +1,34 @@
+internal/agent/metrics_linux.go
+  s_344993999c180f::t_a7adf41f166eb8 66-69,83,86
+  s_344993999c180f::t_2f077edf7968f6 1-14,30-32,34-61,63-65,70-82,84-85,87-94,96-161,163-209
+  s_344993999c180f::t_4eecb53a0792d7 15-29
+  s_344993999c180f::t_18ea90838ccb23 33,62,95
+  s_344993999c180f::t_525b65802c4875 162
+internal/agent/metrics_linux_test.go
+  s_344993999c180f::t_f94ddb8ceec6a5 1-78
+internal/agent/metrics_test.go
+  s_344993999c180f::t_23e88d36443479 12,15,19-21
+  s_344993999c180f::t_f200c57031af51 69-80
+internal/agent/metrics.go
+  s_344993999c180f::t_fa7a11384a1186 25-28,31,36-38,51-52,54,60,64,68,70,73,83,88-89,91-92,95,102-103,107
+  s_344993999c180f::t_4eecb53a0792d7 33,45
+internal/agent/metrics_other.go
+  s_344993999c180f::t_4eecb53a0792d7 17-21
+  s_344993999c180f::t_faf48b869ecea9 1-16,22-66
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "134752dac1deb73baf40b837890eaeb6613d9baa",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
