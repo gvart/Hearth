@@ -13,8 +13,8 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/gvart/hearth/internal/hub/webui"
@@ -63,12 +63,18 @@ func newAPI(cfg Config) *api {
 	if httpPort == "" {
 		httpPort = DefaultHTTPPort
 	}
+	verifier := cfg.VerifyPassword
+	if verifier == nil {
+		verifier = verifyInProcess
+	}
 	return &api{
 		store: cfg.Store, policy: cfg.Policy, registry: reg, log: cfg.Log, now: time.Now, keepalive: sseKeepalive,
 		ca: cfg.CA, agentHosts: cfg.AgentHosts, agentPort: agentPort, httpPort: httpPort, ready: cfg.Ready, readyWait: readyWait,
 		prom:   cfg.Prometheus,
 		kube:   cfg.Kube,
 		notify: cfg.Notify,
+		verify: newVerifyGate(), verifyWait: verifyWait, verifyPassword: verifier,
+		logins: newLoginLimiter(time.Now, loginBurst, loginEvery),
 		// Only a release tag is pinned: dev builds have no release to install.
 		installVersion: releaseVersion(cfg.Version),
 	}
@@ -142,9 +148,13 @@ type api struct {
 	// ready is Config.Ready; requests wait for it up to readyWait.
 	ready     <-chan struct{}
 	readyWait time.Duration
-	// verifyMu runs one argon2 verification at a time, so a flood of login
-	// attempts cannot exhaust a small hub's memory.
-	verifyMu sync.Mutex
+	// verify runs one argon2 verification at a time, so a flood of login
+	// attempts can neither exhaust a small hub's memory nor starve Raft.
+	verify         verifyGate
+	verifyWait     time.Duration
+	verifyPassword PasswordVerifier
+	// logins rate-limits login attempts per client address.
+	logins *loginLimiter
 	// prom is Config.Prometheus; nil when no Prometheus is configured.
 	prom *prometheus.Reader
 	// kube is Config.Kube; nil when Kubernetes clusters are not served.
@@ -221,6 +231,10 @@ func (a *api) login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", "body must be {\"password\": \"...\"}")
 		return
 	}
+	if ok, wait := a.logins.allow(remoteHost(r)); !ok {
+		writeRetry(w, http.StatusTooManyRequests, wait, "rate_limited", "too many login attempts; try again later")
+		return
+	}
 
 	secret, err := newSessionSecret()
 	if err != nil {
@@ -243,11 +257,13 @@ func (a *api) login(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return err
 		}
-		a.verifyMu.Lock()
-		ok, err := verifyPassword(hash, body.Password)
-		a.verifyMu.Unlock()
-		if err != nil {
+		var ok bool
+		var verr error
+		if err := a.verify.do(ctx, a.verifyWait, func() { ok, verr = a.verifyPassword(ctx, hash, body.Password) }); err != nil {
 			return err
+		}
+		if verr != nil {
+			return verr
 		}
 		if !ok {
 			return errWrongPassword
@@ -266,6 +282,11 @@ func (a *api) login(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, policy.ErrDenied):
 		writeError(w, http.StatusForbidden, "forbidden", "login denied by policy")
 		return
+	case errors.Is(err, errVerifyBusy):
+		writeRetry(w, http.StatusServiceUnavailable, a.verifyWait, "busy", "the hub is busy with other logins; try again shortly")
+		return
+	case ctx.Err() != nil:
+		return // the client went away
 	case errors.Is(err, store.ErrUnavailable):
 		writeUnavailable(w)
 		return
@@ -472,6 +493,12 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// writeRetry is writeError with a Retry-After of after, rounded up to a second.
+func writeRetry(w http.ResponseWriter, status int, after time.Duration, code, msg string) {
+	w.Header().Set("Retry-After", strconv.Itoa(int((after+time.Second-1)/time.Second)))
+	writeError(w, status, code, msg)
 }
 
 func writeError(w http.ResponseWriter, status int, code, msg string) {

@@ -58,6 +58,12 @@ CA. Trust the CA once per device to use HTTPS; see [HTTPS for the web UI](https.
 cookie is `Secure` and separate from the HTTP one. Over plain HTTP on a shared network, the password
 and session cookie travel unencrypted: prefer HTTPS, or your own reverse proxy with TLS.
 
+Logins are limited to 5 attempts in a row per client address, then one every 12 seconds (answered
+`429` with `Retry-After`). The hub checks one password at a time, in a child process at the lowest
+CPU priority so a login cannot starve the hub (or a cluster leader's heartbeats) of CPU; a login that
+waits more than 10 seconds for its turn is answered `503 busy` with `Retry-After`. Behind a reverse
+proxy every login comes from the proxy's address and shares one limit.
+
 ## The installer and releases
 
 `install.sh` checks the SHA-256 of the archive it downloads against the release's `checksums.txt`.

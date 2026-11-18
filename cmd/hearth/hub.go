@@ -213,6 +213,11 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		Notify:            notifier,
 		Version:           opts.version,
 	}
+	if exe, err := os.Executable(); err == nil {
+		cfg.VerifyPassword = hub.ChildVerifier(exe)
+	} else {
+		log.WarnContext(ctx, "cannot find own binary: verifying login passwords in-process", "err", err)
+	}
 	// ready is closed once a clustered hub has caught up with the cluster.
 	ready := make(chan struct{})
 	if node != nil {
