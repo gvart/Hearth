@@ -1,0 +1,52 @@
+web/src/components/DevicesPage.tsx
+  s_344993999c180f::t_0ace9fd229655e 3,7,33,94,127-133
+internal/hub/hostmetrics_test.go
+  s_344993999c180f::t_7ae1654e4cbd5e 119-148,150,152,154-177,179
+  s_344993999c180f::t_a3fedaca300069 149,151,153
+  s_344993999c180f::t_b506161d4795b8 8
+  s_344993999c180f::t_bf2802792408c3 178,180-181
+internal/hub/hostmetrics.go
+  s_344993999c180f::t_830211db70b252 10
+  s_344993999c180f::t_d6d6a6c200cead 55,57,59-62,72,74-103,105-122
+  s_344993999c180f::t_e72ca7ef77b82f 49
+  s_344993999c180f::t_274bfa1d67a136 50-54,56,58
+web/src/index.css
+  s_344993999c180f::t_6ac83bb941fbf7 735-736
+  s_344993999c180f::t_e3ee21ee9cf33e 959-965
+  s_344993999c180f::t_0ace9fd229655e 732-734,737-824,827-832,835-842,852-862,866-957,966
+  s_344993999c180f::t_4d3a278a7c5f76 958
+  s_344993999c180f::t_ba445566adb4e0 967
+internal/hub/api.go
+  s_344993999c180f::t_0f294af6f0e304 95
+web/src/components/DeviceSparklines.tsx
+  s_344993999c180f::t_79701e2ad7933e 1-67
+web/src/api/client.ts
+  s_344993999c180f::t_0ace9fd229655e 96-107,373,375
+web/src/api/hooks.ts
+  s_344993999c180f::t_0ace9fd229655e 1,19,27-28,40-45,105-106,108-109,111-122
+web/src/components/DeviceCharts.tsx
+  s_344993999c180f::t_a0a371cccb1137 1,3-4,10,13-18,21-22,25-59,65-90,94,97-110,112-160,162
+docs/prometheus.md
+  s_344993999c180f::t_a6fd1335febb8c 21-27
+  s_344993999c180f::t_e7f793bf96ebc9 10-12
+  s_344993999c180f::t_75e9adcad9f075 35
+web/src/metrics.ts
+  s_344993999c180f::t_eaed9924c871a6 12
+  s_344993999c180f::t_d18afb2470d812 1-11,13-123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "87cc0be3bd7356d6ab0f0aef78711b836ee36864",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
