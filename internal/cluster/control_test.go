@@ -117,3 +117,38 @@ func TestDialControlWithoutHub(t *testing.T) {
 		t.Fatal("DialControl succeeded with no hub running")
 	}
 }
+
+// TestControlSocketNeverLoose watches the socket path while ServeControl
+// starts: no observer may ever see it with a mode other than 0600 (#103).
+func TestControlSocketNeverLoose(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix permissions")
+	}
+	for range 30 {
+		dir := t.TempDir()
+		path := ControlSocketPath(dir)
+		ctx, cancel := context.WithCancel(t.Context())
+		done := make(chan error, 1)
+		go func() { done <- ServeControl(ctx, dir, nil, testLogger(t)) }()
+		for {
+			info, err := os.Lstat(path)
+			if err != nil {
+				continue
+			}
+			if perm := info.Mode().Perm(); perm != 0o600 {
+				t.Errorf("control socket seen with mode %o, want 600", perm)
+			}
+			break
+		}
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatalf("ServeControl: %v", err)
+		}
+		if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("socket left behind after shutdown: %v", err)
+		}
+		if t.Failed() {
+			return
+		}
+	}
+}
