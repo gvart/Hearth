@@ -25,6 +25,7 @@ export const keys = {
   devices: ['devices'] as const,
   networkHosts: ['network', 'hosts'] as const,
   tls: ['tls'] as const,
+  configDrift: ['cluster', 'config-drift'] as const,
   metrics: (id: string, range: MetricsRange) => ['metrics', id, range] as const,
   metricsSparklines: ['metrics-sparklines'] as const,
   kubeClusters: ['kube', 'clusters'] as const,
@@ -111,6 +112,11 @@ export function useMarkNetworkHost() {
 /** The hub's HTTPS address details, fetched only when enabled. */
 export function useTlsInfo(enabled: boolean) {
   return useQuery({ queryKey: keys.tls, queryFn: api.tlsInfo, staleTime: Infinity, enabled });
+}
+
+/** Whether the cluster's hubs run the same per-hub configuration, polled while signed in. */
+export function useConfigDrift() {
+  return useQuery({ queryKey: keys.configDrift, queryFn: api.configDrift, refetchInterval: 30_000 });
 }
 
 /** A device's chart series over range, refreshed while mounted; the last range stays up while the next loads. */

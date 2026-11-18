@@ -311,6 +311,37 @@ pre,
   overflow-wrap: anywhere;
 }
 
+.drift-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.75rem max(1rem, calc((100% - 70rem) / 2));
+  background: var(--warn-soft);
+  border-bottom: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.drift-banner p,
+.drift-banner ul {
+  margin: 0;
+}
+
+.drift-banner ul {
+  padding-left: 1.25rem;
+}
+
+.drift-banner a {
+  color: var(--warn);
+  font-weight: 550;
+}
+
+.drift-banner-quiet {
+  padding-block: 0.4rem;
+  background: transparent;
+  border-bottom-color: var(--border);
+}
+
 /* Shell */
 .topbar {
   position: sticky;

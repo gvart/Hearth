@@ -402,8 +402,27 @@ func runClusterStatus(ctx context.Context, dataDir string, asJSON bool, out io.W
 		}
 		_, _ = fmt.Fprintf(tw, "%s%s\t%s\t%s\t%s\t\n", p.ID, mark, p.Address, p.Suffrage, schemaColumn(p))
 	}
+	if st.ConfigDrift != nil {
+		_, _ = fmt.Fprintln(tw, "\nCONFIG\tSTATE\tHUBS\t")
+		for _, it := range st.ConfigDrift.Items {
+			_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t\n", it.Item, it.Status, driftHubsColumn(it))
+		}
+	}
 	if err := tw.Flush(); err != nil {
 		return fmt.Errorf("write status: %w", err)
 	}
 	return nil
+}
+
+// driftHubsColumn lists the hubs of a configuration item: those with the same
+// content together, groups apart, then the hubs that did not report.
+func driftHubsColumn(it cluster.DriftItem) string {
+	parts := make([]string, 0, len(it.Groups)+1)
+	for _, g := range it.Groups {
+		parts = append(parts, strings.Join(g, ", "))
+	}
+	if len(it.Unknown) > 0 {
+		parts = append(parts, "unknown: "+strings.Join(it.Unknown, ", "))
+	}
+	return strings.Join(parts, " | ")
 }

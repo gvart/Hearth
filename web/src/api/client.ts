@@ -59,6 +59,22 @@ export interface CreatedToken {
   join_command: string;
 }
 
+/** One per-hub configuration item compared across the cluster's hubs. */
+export interface ConfigDriftItem {
+  item: string;
+  status: 'in_sync' | 'differs' | 'unknown';
+  /** Hubs with the same content, one group per distinct content. */
+  groups: string[][];
+  /** Hubs that did not report this item. */
+  unknown: string[];
+}
+
+/** See GET /api/v1/cluster/config-drift. Empty on a standalone hub. */
+export interface ConfigDrift {
+  hubs: { id: string; reported: boolean; reason?: string }[];
+  items: ConfigDriftItem[];
+}
+
 /** How to reach the hub over HTTPS; see GET /api/v1/tls. */
 export interface TlsInfo {
   /** The HTTPS port. */
@@ -384,6 +400,7 @@ export const api = {
     request<DeviceMetrics>('GET', `/devices/${encodeURIComponent(id)}/metrics?range=${encodeURIComponent(range)}`),
   metricsSparklines: () => request<MetricsSparklines>('GET', '/metrics/sparklines'),
   tlsInfo: () => request<TlsInfo>('GET', '/tls'),
+  configDrift: () => request<ConfigDrift>('GET', '/cluster/config-drift'),
   createToken: (opts: { ttl?: string; labels?: Record<string, string> } = {}) =>
     request<CreatedToken>('POST', '/tokens', opts),
   audit: (filter: AuditFilter, before?: number) => {

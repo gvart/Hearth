@@ -201,6 +201,8 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		return err
 	}
 	polCfg.DangerousAutomations = append(polCfg.DangerousAutomations, opts.dangerousAutomations...)
+	// Digested as loaded: the hub applies these two files only when it starts.
+	policyDigest := cluster.ConfigFileDigest(filepath.Join(opts.dataDir, policy.ConfigFile), opts.dangerousAutomations...)
 	hosts := opts.hosts
 	if len(hosts) == 0 {
 		hosts = []string{hostnameOr("localhost"), "localhost", "127.0.0.1", "::1"}
@@ -267,6 +269,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	notifyDigest := cluster.ConfigFileDigest(notifyConfigPath(opts))
 	if opts.newDeviceAlerts != "" && !notifier.Has(opts.newDeviceAlerts) {
 		return fmt.Errorf("--new-device-alerts: no notification channel %q (see --notify-config)", opts.newDeviceAlerts)
 	}
@@ -305,6 +308,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if node != nil {
 		cfg.Leadership = node
 		cfg.Ready = ready
+		cfg.ConfigDrift = func(ctx context.Context) (any, error) { return node.ConfigDrift(ctx) }
 	}
 	if _, port, err := net.SplitHostPort(opts.httpListen); err == nil && port != "0" {
 		cfg.HTTPPort = port
@@ -320,6 +324,9 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	automationsDir := opts.automationsDir
 	if automationsDir == "" {
 		automationsDir = filepath.Join(opts.dataDir, "automations")
+	}
+	if node != nil {
+		node.SetConfigSource(cluster.FileConfigSource(policyDigest, notifyDigest, automationsDir))
 	}
 	uiMux.Handle(mcpserver.Path, hub.EndOnStop(stopping, mcpserver.Handler(mcpserver.Config{
 		Devices: st.Devices(), Live: reg.Live, Tokens: st.MCPTokens(), Policy: pol, Agents: agents, Kube: kube,
@@ -592,10 +599,17 @@ func notifyApprovals(pol *policy.Engine, cfg policy.ApprovalNotify, st *store.St
 	return nil
 }
 
+// notifyConfigPath is the notification channels file the hub reads.
+func notifyConfigPath(opts hubOptions) string {
+	if opts.notifyConfig != "" {
+		return opts.notifyConfig
+	}
+	return filepath.Join(opts.dataDir, "notify.yaml")
+}
+
 func loadNotifier(opts hubOptions, log *slog.Logger) (*notify.Notifier, error) {
-	path := opts.notifyConfig
-	if path == "" {
-		path = filepath.Join(opts.dataDir, "notify.yaml")
+	path := notifyConfigPath(opts)
+	if opts.notifyConfig == "" {
 		if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
 			return &notify.Notifier{}, nil
 		}

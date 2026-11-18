@@ -53,6 +53,9 @@ const (
 	// ClusterServiceMigrateSchemaProcedure is the fully-qualified name of the ClusterService's
 	// MigrateSchema RPC.
 	ClusterServiceMigrateSchemaProcedure = "/hearth.cluster.v1.ClusterService/MigrateSchema"
+	// ClusterServiceConfigDigestsProcedure is the fully-qualified name of the ClusterService's
+	// ConfigDigests RPC.
+	ClusterServiceConfigDigestsProcedure = "/hearth.cluster.v1.ClusterService/ConfigDigests"
 )
 
 // ClusterServiceClient is a client for the hearth.cluster.v1.ClusterService service.
@@ -87,6 +90,10 @@ type ClusterServiceClient interface {
 	// hub, authenticated and decided like RemoveMember. The leader proposes it
 	// to the Raft log only if every hub's binary supports the target version.
 	MigrateSchema(context.Context, *connect.Request[v1.MigrateSchemaRequest]) (*connect.Response[v1.MigrateSchemaResponse], error)
+	// ConfigDigests reports a digest of each per-hub configuration item, so
+	// hubs can notice that they disagree. Every member serves it, to members
+	// presenting their hub node certificate. Digests never leave this channel.
+	ConfigDigests(context.Context, *connect.Request[v1.ConfigDigestsRequest]) (*connect.Response[v1.ConfigDigestsResponse], error)
 }
 
 // NewClusterServiceClient constructs a client for the hearth.cluster.v1.ClusterService service. By
@@ -142,6 +149,12 @@ func NewClusterServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(clusterServiceMethods.ByName("MigrateSchema")),
 			connect.WithClientOptions(opts...),
 		),
+		configDigests: connect.NewClient[v1.ConfigDigestsRequest, v1.ConfigDigestsResponse](
+			httpClient,
+			baseURL+ClusterServiceConfigDigestsProcedure,
+			connect.WithSchema(clusterServiceMethods.ByName("ConfigDigests")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -154,6 +167,7 @@ type clusterServiceClient struct {
 	transferLeadership *connect.Client[v1.TransferLeadershipRequest, v1.TransferLeadershipResponse]
 	schemaInfo         *connect.Client[v1.SchemaInfoRequest, v1.SchemaInfoResponse]
 	migrateSchema      *connect.Client[v1.MigrateSchemaRequest, v1.MigrateSchemaResponse]
+	configDigests      *connect.Client[v1.ConfigDigestsRequest, v1.ConfigDigestsResponse]
 }
 
 // Join calls hearth.cluster.v1.ClusterService.Join.
@@ -191,6 +205,11 @@ func (c *clusterServiceClient) MigrateSchema(ctx context.Context, req *connect.R
 	return c.migrateSchema.CallUnary(ctx, req)
 }
 
+// ConfigDigests calls hearth.cluster.v1.ClusterService.ConfigDigests.
+func (c *clusterServiceClient) ConfigDigests(ctx context.Context, req *connect.Request[v1.ConfigDigestsRequest]) (*connect.Response[v1.ConfigDigestsResponse], error) {
+	return c.configDigests.CallUnary(ctx, req)
+}
+
 // ClusterServiceHandler is an implementation of the hearth.cluster.v1.ClusterService service.
 type ClusterServiceHandler interface {
 	// Join consumes a join token, signs the new hub's CSR and hands it the CA,
@@ -223,6 +242,10 @@ type ClusterServiceHandler interface {
 	// hub, authenticated and decided like RemoveMember. The leader proposes it
 	// to the Raft log only if every hub's binary supports the target version.
 	MigrateSchema(context.Context, *connect.Request[v1.MigrateSchemaRequest]) (*connect.Response[v1.MigrateSchemaResponse], error)
+	// ConfigDigests reports a digest of each per-hub configuration item, so
+	// hubs can notice that they disagree. Every member serves it, to members
+	// presenting their hub node certificate. Digests never leave this channel.
+	ConfigDigests(context.Context, *connect.Request[v1.ConfigDigestsRequest]) (*connect.Response[v1.ConfigDigestsResponse], error)
 }
 
 // NewClusterServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -274,6 +297,12 @@ func NewClusterServiceHandler(svc ClusterServiceHandler, opts ...connect.Handler
 		connect.WithSchema(clusterServiceMethods.ByName("MigrateSchema")),
 		connect.WithHandlerOptions(opts...),
 	)
+	clusterServiceConfigDigestsHandler := connect.NewUnaryHandler(
+		ClusterServiceConfigDigestsProcedure,
+		svc.ConfigDigests,
+		connect.WithSchema(clusterServiceMethods.ByName("ConfigDigests")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/hearth.cluster.v1.ClusterService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ClusterServiceJoinProcedure:
@@ -290,6 +319,8 @@ func NewClusterServiceHandler(svc ClusterServiceHandler, opts ...connect.Handler
 			clusterServiceSchemaInfoHandler.ServeHTTP(w, r)
 		case ClusterServiceMigrateSchemaProcedure:
 			clusterServiceMigrateSchemaHandler.ServeHTTP(w, r)
+		case ClusterServiceConfigDigestsProcedure:
+			clusterServiceConfigDigestsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -325,4 +356,8 @@ func (UnimplementedClusterServiceHandler) SchemaInfo(context.Context, *connect.R
 
 func (UnimplementedClusterServiceHandler) MigrateSchema(context.Context, *connect.Request[v1.MigrateSchemaRequest]) (*connect.Response[v1.MigrateSchemaResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hearth.cluster.v1.ClusterService.MigrateSchema is not implemented"))
+}
+
+func (UnimplementedClusterServiceHandler) ConfigDigests(context.Context, *connect.Request[v1.ConfigDigestsRequest]) (*connect.Response[v1.ConfigDigestsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hearth.cluster.v1.ClusterService.ConfigDigests is not implemented"))
 }

@@ -4,6 +4,7 @@ package automation
 
 import (
 	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -80,6 +81,26 @@ func LoadDir(dir string, kinds Kinds) ([]*Automation, error) {
 		return nil, errors.Join(errs...)
 	}
 	return out, nil
+}
+
+// DirDigest returns a SHA-256 digest, in hex, of the automation files in dir:
+// their names and contents, so it does not depend on where dir is or on file
+// times. A missing directory digests like an empty one.
+func DirDigest(dir string) (string, error) {
+	files, err := automationFiles(dir)
+	if err != nil {
+		return "", err
+	}
+	h := sha256.New()
+	for _, f := range files {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			return "", fmt.Errorf("read automation file: %w", err)
+		}
+		_, _ = fmt.Fprintf(h, "%s\x00%d\x00", filepath.Base(f), len(b))
+		_, _ = h.Write(b)
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // automationFiles lists the automation files in dir, sorted.
