@@ -116,6 +116,13 @@ message NotLeader {
   repeated string hubs = 2;
 }
 
+// CertificateRevoked is the error detail a hub attaches, with code
+// UNAUTHENTICATED, when it refuses or ends AgentService.Connect because the
+// device's certificate is revoked. Only a hub that can vouch for its store
+// (a standalone hub, or the cluster leader within its term) sends it. The
+// agent stops on it instead of retrying: the device must re-enroll.
+message CertificateRevoked {}
+
 // ExecRequest asks the agent to run an action. Stub: fields arrive with exec support.
 message ExecRequest {}
 

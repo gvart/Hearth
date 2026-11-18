@@ -340,6 +340,8 @@ Type=simple
 ExecStart=/usr/local/bin/hearth agent run --data-dir /var/lib/hearth/agent
 Restart=always
 RestartSec=5
+# 78: the device certificate was revoked; restarting cannot help, re-enroll.
+RestartPreventExitStatus=78
 UMask=0077
 # Hardening that keeps host fact collection (/proc, /sys, mounts) working.
 NoNewPrivileges=yes

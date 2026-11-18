@@ -43,6 +43,11 @@ const (
 	// soon as it shuts down and agents retry within 250 ms, so this is mostly
 	// the container restart (about 1.3 s locally); the rest is CI headroom.
 	HubReconnectWithin = 10 * time.Second
+	// RevokedWithin bounds how long after `hearth device revoke` (the CLI, a
+	// separate process writing the hub database) the device is offline: the
+	// hub re-checks the certificate on every heartbeat (10 s), then ends the
+	// stream and marks the device offline at once. The rest is CI headroom.
+	RevokedWithin = 15 * time.Second
 )
 
 const (
@@ -109,6 +114,27 @@ func TestHeadlineDemo(t *testing.T) {
 		}
 	}
 	t.Logf("hub restart → both agents reconnected in %v", time.Since(restartAt).Round(time.Millisecond))
+
+	// 7. Revoke agent-2 with the CLI on the hub host. Its live stream must
+	// end and the device go offline within RevokedWithin; the agent must log
+	// the revocation and exit rather than reconnect. agent-1 stays online.
+	before := api.waitDevice(ctx, "agent-1", time.Now(), "online", func(d device) bool { return d.Status == "online" })
+	revokeAt := time.Now()
+	s.compose(ctx, "exec", "-T", "hub", "hearth", "device", "revoke", ids["agent-2"], "--data-dir", "/var/lib/hearth/hub")
+	api.waitDevice(ctx, "agent-2", revokeAt.Add(RevokedWithin), "offline after revoke", func(d device) bool {
+		return d.Status == "offline"
+	})
+	t.Logf("agent-2: revoke → offline in %v", time.Since(revokeAt).Round(time.Millisecond))
+	s.waitAgentExited(ctx, "agent-2", 5*time.Second)
+	if logs := s.compose(ctx, "logs", "--no-color", "agent-2"); !strings.Contains(logs, "this device's certificate was revoked; re-enroll with hearth agent join") {
+		t.Errorf("agent-2 log has no revocation message:\n%s", logs)
+	}
+	// agent-1 keeps heartbeating (last_seen moves on, by the hub's clock) and
+	// agent-2 stays offline.
+	api.waitDevice(ctx, "agent-1", time.Now().Add(RevokedWithin), "still heartbeating", func(d device) bool {
+		return d.Status == "online" && d.LastSeen.After(before.LastSeen)
+	})
+	api.waitDevice(ctx, "agent-2", time.Now(), "still offline", func(d device) bool { return d.Status == "offline" })
 }
 
 // stack is one compose project, torn down (with its volumes) when the test ends.
@@ -171,6 +197,26 @@ func (s *stack) startAgent(ctx context.Context, name string) {
 	s.t.Helper()
 	s.compose(ctx, "exec", "--detach", name, "sh", "-c",
 		"exec hearth agent run --data-dir "+agentDataDir+" >/proc/1/fd/1 2>&1")
+}
+
+// waitAgentExited waits until no `hearth agent run` runs in the service's
+// container, and fails the test if one still does after timeout.
+func (s *stack) waitAgentExited(ctx context.Context, name string, timeout time.Duration) {
+	s.t.Helper()
+	deadline := time.Now().Add(timeout)
+	for {
+		// pgrep exits 1 when nothing matches.
+		_, err := s.run(ctx, "exec", "-T", name, "pgrep", "-f", "hearth agent run")
+		if err != nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			s.t.Fatalf("%s: hearth agent run still running %v after the revoke", name, timeout)
+		}
+		if err := sleep(ctx, 200*time.Millisecond); err != nil {
+			s.t.Fatal(err)
+		}
+	}
 }
 
 // startedAt is when the service's container last started, by the docker

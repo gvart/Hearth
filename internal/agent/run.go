@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"slices"
 	"time"
 
@@ -67,6 +68,16 @@ type runner struct {
 	cur  int
 }
 
+// ErrRevoked is returned by Run when a hub that can vouch for it says this
+// device's certificate is revoked. Retrying cannot help: the device must
+// re-enroll. `hearth agent run` exits with ExitRevoked on it.
+var ErrRevoked = errors.New("this device's certificate was revoked; re-enroll with hearth agent join")
+
+// ExitRevoked is the exit status of `hearth agent run` on ErrRevoked
+// (EX_CONFIG from sysexits.h). The systemd unit lists it in
+// RestartPreventExitStatus=, so a revoked agent stays stopped.
+const ExitRevoked = 78
+
 // Run keeps the agent connected to the cluster leader until ctx is canceled:
 // it loads the identity from cfg.DataDir, opens the mTLS stream, sends Hello
 // with host facts, then heartbeats at the interval the hub asks for.
@@ -77,7 +88,9 @@ type runner struct {
 // backoff. A follower's NotLeader refusal sends it straight to the leader it
 // names. When an established session ends, the first retry goes to the same
 // hub almost at once, as it is likely restarting. Run only returns early when
-// the data dir holds no usable identity. Cancellation returns nil.
+// the data dir holds no usable identity, or with ErrRevoked once a hub says
+// the certificate is revoked; a NotLeader or Unavailable answer never stops
+// it. Cancellation returns nil.
 func Run(ctx context.Context, cfg Config) error {
 	id, err := loadIdentity(cfg.DataDir)
 	if err != nil {
@@ -116,6 +129,12 @@ func Run(ctx context.Context, cfg Config) error {
 		if ctx.Err() != nil {
 			log.InfoContext(ctx, "agent stopped")
 			return nil
+		}
+		if revoked(err) {
+			// Join refuses a data dir that holds an identity; say what to remove.
+			cert := filepath.Join(cfg.DataDir, CertFile)
+			log.ErrorContext(ctx, ErrRevoked.Error(), "hub", hostOf(hub), "remove_before_join", cert)
+			return fmt.Errorf("%w (remove %s first)", ErrRevoked, cert)
 		}
 		leader := r.redirect(ctx, hub, err)
 		if welcomed {
@@ -163,6 +182,25 @@ func (r *runner) redirect(ctx context.Context, hub string, err error) int {
 	}
 	r.log.InfoContext(ctx, "hub is not the leader; redirecting", "hub", hostOf(hub), "leader", hostOf(leader[0]))
 	return slices.Index(r.hubs, leader[0])
+}
+
+// revoked reports whether err is a hub's refusal carrying the
+// CertificateRevoked detail. Only that detail counts: a bare Unauthenticated
+// (say, an unknown certificate) or a NotLeader or Unavailable answer from a
+// hub that cannot vouch for its store is retried as usual.
+func revoked(err error) bool {
+	var cerr *connect.Error
+	if !errors.As(err, &cerr) || cerr.Code() != connect.CodeUnauthenticated {
+		return false
+	}
+	for _, d := range cerr.Details() {
+		if v, err := d.Value(); err == nil {
+			if _, ok := v.(*agentv1.CertificateRevoked); ok {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // learnHubs makes the hubs a Welcome from hub listed the new hub list: hub
