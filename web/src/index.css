@@ -756,15 +756,117 @@ dialog::backdrop {
   overflow-wrap: anywhere;
 }
 
-/* Device charts (Prometheus) */
-.metric-chart .kv {
-  grid-template-columns: minmax(0, 1fr) auto;
+/* Device charts */
+.range-picker {
+  display: inline-flex;
+  align-self: flex-start;
+  width: fit-content;
+  gap: 0.15rem;
+  padding: 0.15rem;
+  margin-bottom: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
 }
 
-.metric-chart svg {
+.range-option {
+  min-width: 3rem;
+  min-height: 2rem;
+  padding: 0.2rem 0.6rem;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.range-option:hover {
+  color: var(--text);
+}
+
+.range-option[aria-pressed='true'] {
+  background: var(--accent-soft);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.metric-charts {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  transition: opacity 0.12s;
+}
+
+.metric-charts-stale {
+  opacity: 0.55;
+}
+
+.metric-chart {
+  margin: 0;
+}
+
+.metric-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.35rem;
+}
+
+.metric-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.metric-read {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.metric-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.metric-body {
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr);
+  grid-template-rows: 6rem 1.1rem;
+}
+
+.metric-y {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding-right: 0.4rem;
+  color: var(--muted);
+  font-size: 0.7rem;
+  line-height: 1;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.metric-plot {
+  position: relative;
+  touch-action: pan-y;
+}
+
+.metric-plot svg {
   display: block;
   width: 100%;
-  height: 3rem;
+  height: 100%;
+  overflow: visible;
+}
+
+.metric-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
 }
 
 .metric-area {
@@ -774,8 +876,120 @@ dialog::backdrop {
 .metric-line {
   fill: none;
   stroke: var(--accent);
-  stroke-width: 1.5;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
   vector-effect: non-scaling-stroke;
+}
+
+.metric-dots {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 5;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.metric-cross {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--muted);
+  pointer-events: none;
+}
+
+.metric-marker {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--surface);
+  pointer-events: none;
+}
+
+.metric-x {
+  position: relative;
+  grid-column: 2;
+  color: var(--muted);
+  font-size: 0.7rem;
+  line-height: 1.1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.metric-x span {
+  position: absolute;
+  white-space: nowrap;
+}
+
+.metric-x span:nth-child(2) {
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.metric-x span:last-child {
+  right: 0;
+}
+
+/* Device list sparklines */
+.sparks {
+  display: inline-flex;
+  gap: 0.6rem;
+  vertical-align: middle;
+}
+
+.spark {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  width: 3rem;
+}
+
+.spark-cap {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.2rem;
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1;
+}
+
+.spark-value {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.spark svg {
+  display: block;
+  width: 100%;
+  height: 1rem;
+  overflow: visible;
+}
+
+.spark .metric-line {
+  stroke-width: 1.5;
+}
+
+.spark .metric-dots {
+  stroke-width: 3;
+}
+
+/* The list keeps its essentials as the page narrows. */
+@media (max-width: 1180px) {
+  .spark:is([data-metric='disk'], [data-metric='temperature'], [data-metric='net_rx'], [data-metric='net_tx']) {
+    display: none;
+  }
+}
+
+/* On phones the CPU trend takes the place of last seen, which the drawer shows. */
+@media (max-width: 640px) {
+  .spark[data-metric='memory'],
+  .devices:has(.spark-col) th:nth-child(4),
+  .devices:has(.spark-col) td:nth-child(4) {
+    display: none;
+  }
 }
 
 .chips {

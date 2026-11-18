@@ -5,6 +5,7 @@ package hub
 import (
 	"errors"
 	"log/slog"
+	"maps"
 	"math"
 	"net/http"
 	"path/filepath"
@@ -110,6 +111,69 @@ func TestDeviceMetricsBuiltin(t *testing.T) {
 						t.Errorf("chart %s last value = %v", c.Key, v)
 					}
 				}
+			}
+		})
+	}
+}
+
+func TestMetricsSparklines(t *testing.T) {
+	tests := []struct {
+		name        string
+		noStore     bool
+		anonymous   bool
+		wantHTTP    int
+		wantDevices []string
+	}{
+		{name: "devices with recent metrics", wantHTTP: http.StatusOK, wantDevices: []string{"pi"}},
+		{name: "hub keeps no metrics", noStore: true, wantHTTP: http.StatusOK},
+		{name: "needs a session", anonymous: true, wantHTTP: http.StatusUnauthorized},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var opts []func(*Config)
+			ms := newMetricsStore(t)
+			if !tt.noStore {
+				opts = append(opts, func(c *Config) { c.Metrics = ms })
+			}
+			f := newAPIFixture(t, true, opts...)
+			addDevice(t, f.st, "pi", "raspberrypi", "192.168.2.131/24")
+			addDevice(t, f.st, "stale", "nas", "192.168.2.132/24")
+			addDevice(t, f.st, "silent", "router", "192.168.2.1/24")
+			now := time.Now()
+			if err := ms.Write(t.Context(), "pi", now.Add(-time.Minute), []metrics.Sample{{Name: "cpu", Value: 10}, {Name: "memory", Value: 40}}); err != nil {
+				t.Fatal(err)
+			}
+			if err := ms.Write(t.Context(), "stale", now.Add(-2*sparklineWindow), []metrics.Sample{{Name: "cpu", Value: 99}}); err != nil {
+				t.Fatal(err)
+			}
+			var cookie *http.Cookie
+			if !tt.anonymous {
+				cookie = sessionCookie(t, f.login(t, testPassword))
+			}
+			resp := f.do(t, http.MethodGet, "/api/v1/metrics/sparklines", "", cookie)
+			if resp.StatusCode != tt.wantHTTP {
+				t.Fatalf("HTTP status = %d, want %d: %s", resp.StatusCode, tt.wantHTTP, resp.body)
+			}
+			if tt.wantHTTP != http.StatusOK {
+				return
+			}
+			got := decode[SparklinesJSON](t, resp)
+			ids := slices.Sorted(maps.Keys(got.Devices))
+			if !slices.Equal(ids, tt.wantDevices) {
+				t.Fatalf("devices = %v, want %v", ids, tt.wantDevices)
+			}
+			if got.End-got.Start != sparklineWindow.Milliseconds() {
+				t.Errorf("window = %d ms, want %d", got.End-got.Start, sparklineWindow.Milliseconds())
+			}
+			if len(tt.wantDevices) == 0 {
+				return
+			}
+			var keys []string
+			for _, c := range got.Devices["pi"] {
+				keys = append(keys, c.Key)
+			}
+			if want := []string{"cpu", "memory"}; !slices.Equal(keys, want) {
+				t.Errorf("charts = %v, want %v", keys, want)
 			}
 		})
 	}

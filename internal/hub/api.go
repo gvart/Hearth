@@ -92,6 +92,7 @@ func (a *api) routes() http.Handler {
 	mux.Handle("GET /api/v1/devices", a.auth(a.listDevices))
 	mux.Handle("GET /api/v1/devices/{id}", a.auth(a.getDevice))
 	mux.Handle("GET /api/v1/devices/{id}/metrics", a.auth(a.deviceMetrics))
+	mux.Handle("GET /api/v1/metrics/sparklines", a.auth(a.metricsSparklines))
 	mux.Handle("GET /api/v1/network/hosts", a.auth(a.listNetworkHosts))
 	mux.Handle("POST /api/v1/network/hosts/{mac}/known", a.auth(a.markNetworkHost(store.HostKnown)))
 	mux.Handle("POST /api/v1/network/hosts/{mac}/ignore", a.auth(a.markNetworkHost(store.HostIgnored)))
