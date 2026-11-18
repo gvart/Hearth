@@ -182,14 +182,11 @@ func ServeControl(ctx context.Context, dataDir string, node *Node, log *slog.Log
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("control socket: %w", err)
 	}
-	ln, err := (&net.ListenConfig{}).Listen(ctx, "unix", path)
+	ln, err := listenPrivate(ctx, path)
 	if err != nil {
 		return fmt.Errorf("control socket: %w", err)
 	}
-	if err := os.Chmod(path, 0o600); err != nil {
-		_ = ln.Close()
-		return fmt.Errorf("control socket: %w", err)
-	}
+	defer func() { _ = os.Remove(path) }()
 	srv := &http.Server{Handler: ControlHandler(node, log), ReadHeaderTimeout: 10 * time.Second}
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Serve(ln) }()
@@ -205,6 +202,37 @@ func ServeControl(ctx context.Context, dataDir string, node *Node, log *slog.Log
 		return fmt.Errorf("control socket: %w", err)
 	}
 	return nil
+}
+
+// listenPrivate listens on the unix socket path with mode 0600. Binding
+// creates the socket file with the process umask (often 0755), so the socket
+// is bound and chmodded inside a fresh 0700 directory next to path and only
+// then renamed into place: path never names a socket with looser permissions.
+// The temp name stays short so it fits the socket path limit whenever path
+// does. The caller removes path once the listener is closed.
+func listenPrivate(ctx context.Context, path string) (net.Listener, error) {
+	tmpDir, err := os.MkdirTemp(filepath.Dir(path), "")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+	tmp := filepath.Join(tmpDir, "s")
+	ln, err := (&net.ListenConfig{}).Listen(ctx, "unix", tmp)
+	if err != nil {
+		return nil, err
+	}
+	// The bound name is renamed away; closing must not unlink whatever
+	// later takes its place.
+	ln.(*net.UnixListener).SetUnlinkOnClose(false)
+	if err := os.Chmod(tmp, 0o600); err != nil {
+		_ = ln.Close()
+		return nil, err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = ln.Close()
+		return nil, err
+	}
+	return ln, nil
 }
 
 type applyReply struct {
