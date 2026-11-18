@@ -94,13 +94,22 @@ function Chart({ chart, start, end }: { chart: MetricChart; start: number; end: 
   const [hover, setHover] = useState<MetricPoint>();
   const pts = chart.points;
   const last = pts.at(-1);
+  if (last === undefined) {
+    return (
+      <figure className="metric-chart">
+        <figcaption className="metric-head">
+          <span className="metric-name">{chart.name}</span>
+        </figcaption>
+        <p className="muted small">No data.</p>
+      </figure>
+    );
+  }
   const span = end - start;
   const domain = yDomain(pts, chart.unit);
   const shapes = plotShapes(pts, start, end, domain, W, H);
   const values = pts.map((p) => p[1]);
   const avg = values.reduce((a, b) => a + b, 0) / (values.length || 1);
-  const shown = hover ?? last;
-  const label = shown === undefined ? '—' : formatMetric(shown[1], chart.unit);
+  const label = formatMetric((hover ?? last)[1], chart.unit);
   const at = hover ? plotPosition(hover, start, end, domain) : undefined;
 
   const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {

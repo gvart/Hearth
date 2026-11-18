@@ -40,8 +40,9 @@ const approvalsRefreshMs = 5000;
 
 /**
  * How often metrics are refetched, and how long a fetched answer counts as
- * fresh so that a remount or window focus cannot refetch sooner: agents send a
- * sample every 15 s, so polling faster would show nothing new.
+ * fresh so that a remount cannot refetch sooner; the metrics hooks also skip
+ * the refetch on window focus and reconnect. Agents send a sample every 15 s,
+ * so polling faster would show nothing new.
  */
 const metricsRefreshMs = 15_000;
 
@@ -119,6 +120,8 @@ export function useDeviceMetrics(id: string, range: MetricsRange) {
     queryFn: () => api.deviceMetrics(id, range),
     refetchInterval: metricsRefreshMs,
     staleTime: metricsRefreshMs,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
     placeholderData: keepPreviousData,
   });
 }
@@ -130,6 +133,8 @@ export function useMetricsSparklines() {
     queryFn: api.metricsSparklines,
     refetchInterval: metricsRefreshMs,
     staleTime: metricsRefreshMs,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 }
 
