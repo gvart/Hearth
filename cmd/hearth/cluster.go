@@ -28,7 +28,10 @@ func newClusterCmd() *cobra.Command {
 }
 
 func newClusterRemoveCmd() *cobra.Command {
-	var dataDir string
+	var (
+		dataDir string
+		dryRun  bool
+	)
 	cmd := &cobra.Command{
 		Use:   "remove <node-id>",
 		Short: "Remove a hub from the cluster and revoke its certificates",
@@ -38,14 +41,15 @@ func newClusterRemoveCmd() *cobra.Command {
 			"`hearth cluster transfer-leadership` first. The node ID can join again later with a new join token.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runClusterRemove(cmd.Context(), dataDir, args[0], cmd.OutOrStdout())
+			return runClusterRemove(cmd.Context(), dataDir, args[0], dryRun, cmd.OutOrStdout())
 		},
 	}
 	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir("hub"), "hub data directory (env HEARTH_DATA_DIR)")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "decide and audit the action without doing it")
 	return cmd
 }
 
-func runClusterRemove(ctx context.Context, dataDir, nodeID string, out io.Writer) error {
+func runClusterRemove(ctx context.Context, dataDir, nodeID string, dryRun bool, out io.Writer) error {
 	if err := cluster.ValidNodeID(nodeID); err != nil {
 		return err
 	}
@@ -56,16 +60,15 @@ func runClusterRemove(ctx context.Context, dataDir, nodeID string, out io.Writer
 	defer st.Close()
 	defer cc.Close()
 	var revoked int
-	err = policy.New(st.Audit()).Do(ctx, policy.Request{
-		ActorKind: policy.ActorAdmin,
-		ActorID:   adminActor(),
-		Action:    policy.ClusterRemove,
-		Target:    nodeID,
+	done, err := adminDo(ctx, dataDir, st, out, dryRun, policy.Request{
+		Action: policy.ClusterRemove,
+		Target: nodeID,
 	}, func(ctx context.Context) error {
+		var err error
 		revoked, err = cc.RemoveMember(ctx, nodeID)
 		return err
 	})
-	if err != nil {
+	if err != nil || !done {
 		return err
 	}
 	if _, err := fmt.Fprintf(out, "Removed hub %s from the cluster and revoked %d hub certificate(s).\n", nodeID, revoked); err != nil {
@@ -75,7 +78,10 @@ func runClusterRemove(ctx context.Context, dataDir, nodeID string, out io.Writer
 }
 
 func newClusterTransferCmd() *cobra.Command {
-	var dataDir string
+	var (
+		dataDir string
+		dryRun  bool
+	)
 	cmd := &cobra.Command{
 		Use:   "transfer-leadership [<node-id>]",
 		Short: "Hand cluster leadership to another voter",
@@ -87,14 +93,15 @@ func newClusterTransferCmd() *cobra.Command {
 			if len(args) == 1 {
 				to = args[0]
 			}
-			return runClusterTransfer(cmd.Context(), dataDir, to, cmd.OutOrStdout())
+			return runClusterTransfer(cmd.Context(), dataDir, to, dryRun, cmd.OutOrStdout())
 		},
 	}
 	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir("hub"), "hub data directory (env HEARTH_DATA_DIR)")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "decide and audit the action without doing it")
 	return cmd
 }
 
-func runClusterTransfer(ctx context.Context, dataDir, to string, out io.Writer) error {
+func runClusterTransfer(ctx context.Context, dataDir, to string, dryRun bool, out io.Writer) error {
 	if to != "" {
 		if err := cluster.ValidNodeID(to); err != nil {
 			return err
@@ -106,15 +113,13 @@ func runClusterTransfer(ctx context.Context, dataDir, to string, out io.Writer) 
 	}
 	defer st.Close()
 	defer cc.Close()
-	err = policy.New(st.Audit()).Do(ctx, policy.Request{
-		ActorKind: policy.ActorAdmin,
-		ActorID:   adminActor(),
-		Action:    policy.ClusterTransferLeadership,
-		Target:    to,
+	done, err := adminDo(ctx, dataDir, st, out, dryRun, policy.Request{
+		Action: policy.ClusterTransferLeadership,
+		Target: to,
 	}, func(ctx context.Context) error {
 		return cc.TransferLeadership(ctx, to)
 	})
-	if err != nil {
+	if err != nil || !done {
 		return err
 	}
 	msg := "Leadership transferred."
@@ -186,22 +191,23 @@ func runClusterMigrate(ctx context.Context, dataDir string, to int64, dryRun boo
 		return fmt.Errorf("--to %d: the cluster is at schema %d already", to, from)
 	case dryRun:
 		_, err = fmt.Fprintf(out, "\nWould migrate the cluster from schema %d to %d (dry run).\n", from, target)
-		return err
+		if err != nil {
+			return err
+		}
+	default:
+		if _, err := fmt.Fprintf(out, "\nMigrating the cluster from schema %d to %d...\n", from, target); err != nil {
+			return fmt.Errorf("write plan: %w", err)
+		}
 	}
-	if _, err := fmt.Fprintf(out, "\nMigrating the cluster from schema %d to %d...\n", from, target); err != nil {
-		return fmt.Errorf("write plan: %w", err)
-	}
-	err = policy.New(st.Audit()).Do(ctx, policy.Request{
-		ActorKind: policy.ActorAdmin,
-		ActorID:   adminActor(),
-		Action:    policy.ClusterMigrate,
-		Target:    fmt.Sprintf("schema %d", target),
-		Detail:    map[string]any{"from": from, "to": target},
+	done, err := adminDo(ctx, dataDir, st, out, dryRun, policy.Request{
+		Action: policy.ClusterMigrate,
+		Target: fmt.Sprintf("schema %d", target),
+		Detail: map[string]any{"from": from, "to": target},
 	}, func(ctx context.Context) error {
 		_, err := cc.MigrateSchema(ctx, target)
 		return err
 	})
-	if err != nil {
+	if err != nil || !done {
 		return err
 	}
 	if _, err := fmt.Fprintf(out, "Migrated: the cluster is at schema %d.\n", target); err != nil {
@@ -277,6 +283,7 @@ type clusterTokenOptions struct {
 	dataDir string
 	ttl     time.Duration
 	hubURL  string
+	dryRun  bool
 }
 
 func newClusterTokenCreateCmd() *cobra.Command {
@@ -296,6 +303,7 @@ func newClusterTokenCreateCmd() *cobra.Command {
 	cmd.Flags().DurationVar(&opts.ttl, "ttl", 15*time.Minute, "how long the token stays valid")
 	cmd.Flags().StringVar(&opts.hubURL, "hub-url", "https://"+hostnameOr("localhost")+":"+defaultPort,
 		"this hub's URL to put in the join command")
+	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false, "decide and audit the action without creating a token")
 	return cmd
 }
 
@@ -321,15 +329,13 @@ func runClusterTokenCreate(ctx context.Context, opts clusterTokenOptions, out io
 		return err
 	}
 	expires := time.Now().Add(opts.ttl)
-	err = policy.New(st.Audit()).Do(ctx, policy.Request{
-		ActorKind: policy.ActorAdmin,
-		ActorID:   adminActor(),
-		Action:    policy.ClusterTokenCreate,
-		Detail:    map[string]any{"ttl": opts.ttl.String()},
+	done, err := adminDo(ctx, opts.dataDir, st, out, opts.dryRun, policy.Request{
+		Action: policy.ClusterTokenCreate,
+		Detail: map[string]any{"ttl": opts.ttl.String()},
 	}, func(ctx context.Context) error {
 		return st.JoinTokens().Create(ctx, tok.Secret, expires)
 	})
-	if err != nil {
+	if err != nil || !done {
 		return err
 	}
 	_, err = fmt.Fprintf(out, "Cluster join token (single use, expires %s):\n  %s\n\n"+

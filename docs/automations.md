@@ -139,6 +139,8 @@ reported with their line, as `file:line: message`.
 - In a cluster, automations run on the leader only, and move with leadership. Each hub reads its own
   directory, so keep it the same on every hub.
 - Every action goes through policy with actor `automation/<id>`, and is in the audit log.
+  `hearth hub --automations-dry-run` sends every action to policy as a dry run: the decisions are
+  audited (result `dry-run`) and nothing runs.
 - Runs are kept in the run history (the newest 100 per automation):
 
   ```sh
@@ -181,12 +183,14 @@ actions:
 
 Two gates stand before anything runs on a device, and both must agree:
 
-- **Hub policy.** `exec` is dangerous: an automation may take it only when the hub grants it by id,
-  `hearth hub --allow-dangerous-automation disk-report` (repeatable; in a cluster, give every hub
-  the same flags). Without the grant the action is denied. Approving dangerous actions one at a time
-  comes later.
+- **Hub policy.** `exec` is dangerous: by default an automation may take it only when the hub
+  grants it by id, `hearth hub --allow-dangerous-automation disk-report` (repeatable; or
+  `dangerous_automations` in the policy file; in a cluster, give every hub the same). Without the
+  grant the action is denied, or held for approval if the policy file says `confirm` (see
+  [guardrails.md](guardrails.md)).
 - **The device's capability ceiling.** An agent runs only what its own flags allow, and nothing by
-  default. The hub can never raise it:
+  default. It reports its ceiling to the hub, which refuses anything beyond it before sending it
+  (and denies it in policy), and the agent refuses it again. The hub can never raise it:
 
   ```sh
   hearth agent run --allow-restart systemd:pihole-FTL.service --allow-restart docker:jellyfin \

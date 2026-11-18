@@ -3,14 +3,10 @@
 package policy
 
 import (
-	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
-	"time"
-
-	"github.com/gvart/hearth/internal/store"
 )
 
 // Class is the risk class of an action.
@@ -91,6 +87,10 @@ const (
 	// NotifyTest sends a test message to a notification channel from the
 	// web UI.
 	NotifyTest Action = "notify.test"
+	// ApprovalApprove releases an action policy held for confirmation.
+	ApprovalApprove Action = "approval.approve"
+	// ApprovalDeny refuses an action policy held for confirmation.
+	ApprovalDeny Action = "approval.deny"
 )
 
 // Actor kinds.
@@ -117,27 +117,41 @@ const (
 const (
 	Allow = "allow"
 	Deny  = "deny"
+	// Confirm is the decision to hold an action until an operator approves
+	// it. The entry that ends the hold is an Allow or a Deny.
+	Confirm = "confirm"
 )
+
+// DryRun is the result of an audit entry for a dry run: the decision was
+// made and recorded, and nothing ran.
+const DryRun = "dry-run"
 
 type rule struct {
 	class  Class
 	actors []string
+	// fixed rules ignore the class modes of Config: their actor proves
+	// itself with a credential (a token, a certificate, a password) as part
+	// of a protocol no operator could stop to approve, or they are the
+	// operator's own approval and recovery paths.
+	fixed bool
 }
 
 // rules is the action table. Anything not listed here is denied.
 var rules = map[Action]rule{
 	// The web UI's "Add device" creates tokens behind an admin session.
 	TokenCreate:  {class: Safe, actors: []string{ActorAdmin, ActorWeb}},
-	DeviceEnroll: {class: Safe, actors: []string{ActorToken}},
+	DeviceEnroll: {class: Safe, actors: []string{ActorToken}, fixed: true},
 	DeviceRevoke: {class: Dangerous, actors: []string{ActorAdmin}},
-	// Changing the credential that guards everything else is dangerous.
-	AdminSetPassword: {class: Dangerous, actors: []string{ActorAdmin}},
+	// Changing the credential that guards everything else is dangerous. It
+	// is also how a hub gets its first password, and the way back in when
+	// it is lost, so it is never held for approval.
+	AdminSetPassword: {class: Dangerous, actors: []string{ActorAdmin}, fixed: true},
 	// Anyone on the network may try to log in; the password decides.
-	AdminLogin: {class: Safe, actors: []string{ActorWeb}},
+	AdminLogin: {class: Safe, actors: []string{ActorWeb}, fixed: true},
 	// Joining hands out the CA key: every step of it is dangerous.
 	ClusterTokenCreate: {class: Dangerous, actors: []string{ActorAdmin}},
-	ClusterJoin:        {class: Dangerous, actors: []string{ActorJoinToken}},
-	ClusterPromote:     {class: Dangerous, actors: []string{ActorHub}},
+	ClusterJoin:        {class: Dangerous, actors: []string{ActorJoinToken}, fixed: true},
+	ClusterPromote:     {class: Dangerous, actors: []string{ActorHub}, fixed: true},
 	// Removal changes the quorum and locks a hub out for good.
 	ClusterRemove: {class: Dangerous, actors: []string{ActorAdmin}},
 	// A transfer changes no state: the cluster elects the chosen voter, with
@@ -175,6 +189,18 @@ var rules = map[Action]rule{
 	// channel the operator configured.
 	AutomationNotify: {class: Safe, actors: []string{ActorAutomation}},
 	NotifyTest:       {class: Safe, actors: []string{ActorWeb}},
+	// Approving releases an action of any class, so it counts as the worst.
+	// Deciding is the operator's answer to a hold: holding it in turn would
+	// never end.
+	ApprovalApprove: {class: Dangerous, actors: []string{ActorAdmin, ActorWeb}, fixed: true},
+	ApprovalDeny:    {class: Safe, actors: []string{ActorAdmin, ActorWeb}, fixed: true},
+}
+
+// Actions returns every known action, sorted.
+func Actions() []Action {
+	out := slices.Collect(maps.Keys(rules))
+	slices.Sort(out)
+	return out
 }
 
 // ClassOf returns the class of a known action.
@@ -186,143 +212,8 @@ func ClassOf(a Action) (Class, bool) {
 // ErrDenied is returned when policy denies an action.
 var ErrDenied = errors.New("denied by policy")
 
-// ErrBeyondCeiling is returned when a device's agent refuses an action
-// policy allowed: the action is beyond the device's capability ceiling, which
-// the hub can never raise. It matches ErrDenied.
+// ErrBeyondCeiling is returned when an action is beyond a device's
+// capability ceiling, which the hub can never raise: the hub refuses it
+// before sending it, and the device's agent refuses it again if it gets it.
+// It matches ErrDenied.
 var ErrBeyondCeiling = fmt.Errorf("beyond the device's capability ceiling: %w", ErrDenied)
-
-// Auditor is where decisions are recorded.
-type Auditor interface {
-	Append(ctx context.Context, e store.AuditEntry) (int64, error)
-}
-
-// Request describes an action someone wants to perform.
-type Request struct {
-	ActorKind string
-	ActorID   string
-	Action    Action
-	Target    string
-	// Detail is marshalled into the audit entry. It must never contain secrets.
-	Detail map[string]any
-}
-
-// Engine decides on actions and audits every decision.
-type Engine struct {
-	audit Auditor
-	now   func() time.Time
-	// dangerous are the automations granted dangerous actions.
-	dangerous map[string]bool
-}
-
-// Config is the operator's policy configuration on top of the rule table.
-type Config struct {
-	// DangerousAutomations are the ids of the automations allowed to take
-	// dangerous actions. Every other automation is denied them: until
-	// actions can be approved one at a time, an explicit grant is the only
-	// way an automation may take one.
-	DangerousAutomations []string
-}
-
-// New returns an Engine that writes to audit.
-func New(audit Auditor) *Engine { return NewWithConfig(audit, Config{}) }
-
-// NewWithConfig returns an Engine that writes to audit and applies cfg.
-func NewWithConfig(audit Auditor, cfg Config) *Engine {
-	e := &Engine{audit: audit, now: time.Now, dangerous: map[string]bool{}}
-	for _, id := range cfg.DangerousAutomations {
-		e.dangerous[id] = true
-	}
-	return e
-}
-
-// Do decides on req and, if allowed, runs fn. Exactly one audit entry is
-// written either way, carrying the decision and fn's outcome. A denied request
-// returns an error wrapping ErrDenied; an allowed one returns fn's error.
-func (e *Engine) Do(ctx context.Context, req Request, fn func(context.Context) error) error {
-	decision, reason := e.decide(req)
-	var runErr error
-	result := reason
-	if decision == Allow {
-		runErr = fn(ctx)
-		result = "ok"
-		if runErr != nil {
-			result = "error: " + runErr.Error()
-		}
-	}
-
-	detail, err := json.Marshal(req.Detail)
-	if err != nil {
-		return errors.Join(runErr, fmt.Errorf("audit %s: encode detail: %w", req.Action, err))
-	}
-	if req.Detail == nil {
-		detail = nil
-	}
-	if _, err := e.audit.Append(ctx, store.AuditEntry{
-		TS:        e.now(),
-		ActorKind: orUnknown(req.ActorKind),
-		ActorID:   orUnknown(req.ActorID),
-		Action:    string(req.Action),
-		Target:    req.Target,
-		Decision:  decision,
-		Result:    result,
-		Detail:    detail,
-	}); err != nil {
-		return withAuditErr(runErr, fmt.Errorf("audit %s: %w", req.Action, err))
-	}
-
-	if decision == Deny {
-		return fmt.Errorf("%s by %s/%s: %s: %w", req.Action, req.ActorKind, req.ActorID, reason, ErrDenied)
-	}
-	return runErr
-}
-
-// withAuditErr combines a failed action with its failed audit append. When
-// both failed for the same root cause (typically the store or the cluster
-// being unavailable, which fails every write the same way), the cause is
-// reported once instead of twice. The result still matches both errors with
-// errors.Is when they differ.
-func withAuditErr(runErr, auditErr error) error {
-	if runErr == nil {
-		return auditErr
-	}
-	if rootCause(runErr).Error() == rootCause(auditErr).Error() {
-		return fmt.Errorf("%w (the audit entry was not written either)", runErr)
-	}
-	return errors.Join(runErr, auditErr)
-}
-
-// rootCause follows a chain of single wrapped errors to its end.
-func rootCause(err error) error {
-	for {
-		next := errors.Unwrap(err)
-		if next == nil {
-			return err
-		}
-		err = next
-	}
-}
-
-// orUnknown keeps denied anonymous requests auditable.
-func orUnknown(s string) string {
-	if s == "" {
-		return "unknown"
-	}
-	return s
-}
-
-func (e *Engine) decide(req Request) (decision, reason string) {
-	r, ok := rules[req.Action]
-	if !ok {
-		return Deny, "unknown action"
-	}
-	if req.ActorID == "" {
-		return Deny, "anonymous actor"
-	}
-	if !slices.Contains(r.actors, req.ActorKind) {
-		return Deny, "actor kind not allowed"
-	}
-	if r.class == Dangerous && req.ActorKind == ActorAutomation && !e.dangerous[req.ActorID] {
-		return Deny, "dangerous action not granted to this automation"
-	}
-	return Allow, ""
-}

@@ -59,7 +59,7 @@ func runOnce(t *testing.T, yaml string, deps ActionDeps, granted ...string) (*re
 		t.Fatal(err)
 	}
 	rec, audit := &recorder{}, &auditLog{}
-	rt := New(Config{Kinds: kinds, Policy: policy.NewWithConfig(audit, policy.Config{DangerousAutomations: granted}), Runs: rec})
+	rt := New(Config{Kinds: kinds, Policy: policy.NewWithConfig(audit, nil, policy.Config{DangerousAutomations: granted}), Runs: rec})
 	ctx, cancel := context.WithCancel(context.Background())
 	rt.reconcile(ctx, []*Automation{a})
 	t.Cleanup(func() {

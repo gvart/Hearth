@@ -323,7 +323,7 @@ func TestEngineDo(t *testing.T) {
 			t.Cleanup(func() { _ = s.Close() })
 
 			ran := false
-			pol := NewWithConfig(s.Audit(), Config{DangerousAutomations: []string{"trusted"}})
+			pol := NewWithConfig(s.Audit(), s.Approvals(), Config{DangerousAutomations: []string{"trusted"}})
 			err = pol.Do(ctx, tt.req, func(context.Context) error {
 				ran = true
 				return tt.fnErr

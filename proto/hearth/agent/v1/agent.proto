@@ -57,6 +57,22 @@ message Hello {
   repeated NetworkInterface interfaces = 11;
   string agent_version = 12;
   repeated string capabilities = 13;
+  // ceiling is the device's capability ceiling, sent by agents of protocol
+  // minor 2 and later, in every Hello and Facts. The hub refuses to send an
+  // ExecRequest beyond it, and to send any to an agent that does not report
+  // it; the agent refuses again what is beyond it.
+  Ceiling ceiling = 14;
+}
+
+// Ceiling is what a device's agent lets the hub run: its own configuration,
+// which the hub can never raise. An empty Ceiling allows nothing.
+message Ceiling {
+  // exec are the programs the hub may run, matched exactly against
+  // Command.argv[0], with any arguments.
+  repeated string exec = 1;
+  // restart are the services the hub may restart, as manager:name (see
+  // RestartService).
+  repeated string restart = 2;
 }
 
 // Disk is a mounted filesystem.

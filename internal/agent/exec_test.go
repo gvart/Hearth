@@ -14,6 +14,7 @@ import (
 
 	"github.com/gvart/hearth/internal/agent"
 	"github.com/gvart/hearth/internal/hub"
+	"github.com/gvart/hearth/internal/policy"
 	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
 )
 
@@ -37,7 +38,9 @@ func lookPath(t *testing.T, name string) string {
 }
 
 // TestExecOverStream sends exec requests from the hub to a real agent and
-// checks the agent runs exactly what its ceiling allows.
+// checks the agent runs exactly what its ceiling allows. The hub refuses a
+// request beyond the ceiling the agent reported before sending it;
+// TestCeilingCommand covers the agent refusing it again.
 func TestExecOverStream(t *testing.T) {
 	truePath, falsePath, sh := lookPath(t, "true"), lookPath(t, "false"), lookPath(t, "sh")
 	sleep := lookPath(t, "sleep")
@@ -62,6 +65,8 @@ func TestExecOverStream(t *testing.T) {
 		// failed only checks the request failed, without being denied: how
 		// depends on whether the host has docker.
 		failed bool
+		// hubRefuses is a request beyond the ceiling: the hub never sends it.
+		hubRefuses bool
 	}{
 		{name: "allowed command runs", device: id, req: command(truePath), wantExit: 0},
 		{name: "device by hostname", device: "pi", req: command(truePath), wantExit: 0},
@@ -72,19 +77,19 @@ func TestExecOverStream(t *testing.T) {
 		},
 		{
 			name: "program outside the ceiling is denied", device: id, req: command("/bin/echo", "hi"),
-			wantDenied: true, wantExit: -1, wantErr: "capability ceiling",
+			hubRefuses: true,
 		},
 		{
 			name: "same program by another path is denied", device: id, req: command("true"),
-			wantDenied: true, wantExit: -1, wantErr: "capability ceiling",
+			hubRefuses: true,
 		},
 		{
 			name: "restart outside the ceiling is denied", device: id, req: restart("systemd", "ssh.service"),
-			wantDenied: true, wantExit: -1, wantErr: "capability ceiling",
+			hubRefuses: true,
 		},
 		{
 			name: "restart under another manager is denied", device: id, req: restart("systemd", "hearth-test-no-such-container"),
-			wantDenied: true, wantExit: -1, wantErr: "capability ceiling",
+			hubRefuses: true,
 		},
 		{name: "allowed restart runs and fails on a missing container", device: id, req: restart("docker", "hearth-test-no-such-container"), failed: true},
 	}
@@ -93,6 +98,12 @@ func TestExecOverStream(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 			defer cancel()
 			res, err := h.agents.Exec(ctx, tt.device, tt.req)
+			if tt.hubRefuses {
+				if !errors.Is(err, policy.ErrBeyondCeiling) {
+					t.Fatalf("Exec = %v, %v; want the hub to refuse it: ErrBeyondCeiling", res, err)
+				}
+				return
+			}
 			if err != nil {
 				t.Fatalf("Exec: %v", err)
 			}
@@ -134,20 +145,20 @@ func TestExecOverStream(t *testing.T) {
 	})
 }
 
-// TestExecZeroCeiling checks an agent started without a ceiling runs nothing.
+// TestExecZeroCeiling checks an agent started without a ceiling reports an
+// empty one, so the hub sends it nothing.
 func TestExecZeroCeiling(t *testing.T) {
 	truePath := lookPath(t, "true")
 	h := startRestartableHub(t, time.Second)
 	id, dataDir := h.join(t)
 	startAgent(t, dataDir)
-	var res *agentv1.ExecResult
+	var err error
 	waitFor(t, 5*time.Second, "agent connected", func() bool {
-		var err error
-		res, err = h.agents.Exec(t.Context(), id, command(truePath))
-		return err == nil
+		_, err = h.agents.Exec(t.Context(), id, command(truePath))
+		return !errors.Is(err, hub.ErrAgentNotConnected)
 	})
-	if !res.GetDenied() {
-		t.Errorf("result = %+v, want denied", res)
+	if !errors.Is(err, policy.ErrBeyondCeiling) {
+		t.Errorf("Exec = %v, want ErrBeyondCeiling", err)
 	}
 }
 

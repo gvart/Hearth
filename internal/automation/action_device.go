@@ -76,6 +76,23 @@ func (a *agentAction) Policy() policy.Action { return a.policy }
 func (a *agentAction) Target() Text          { return a.device }
 func (a *agentAction) texts() []Text         { return []Text{a.device} }
 
+// Precheck refuses an action beyond the capability ceiling the device's
+// agent reported, when agents can tell (*hub.Agents can), so policy denies
+// it instead of holding it for approval or running it.
+func (a *agentAction) Precheck(ctx context.Context, ev Event) error {
+	c, ok := a.agents.(interface {
+		Check(ctx context.Context, device string, req *agentv1.ExecRequest) error
+	})
+	if !ok {
+		return nil
+	}
+	device, err := renderDevice(a.device, ev)
+	if err != nil {
+		return nil // Run reports it
+	}
+	return c.Check(ctx, device, a.req())
+}
+
 func (a *agentAction) Run(ctx context.Context, ev Event) error {
 	if a.agents == nil {
 		return errors.New("this hub does not run actions on devices")

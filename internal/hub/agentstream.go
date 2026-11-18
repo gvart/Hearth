@@ -106,7 +106,7 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 		return fmt.Errorf("send welcome to %s: %w", deviceID, err)
 	}
 	// From here on only Agents.Exec sends on the stream.
-	sess := s.agents.attach(deviceID, hello.GetProtocolVersion().GetMinor(), stream.Send)
+	sess := s.agents.attach(deviceID, hello, stream.Send)
 	defer s.agents.detach(deviceID, sess)
 
 	for {
@@ -137,6 +137,7 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 			}
 		case *agentv1.AgentMessage_Facts:
 			log.DebugContext(ctx, "facts")
+			sess.setCeiling(p.Facts.GetCeiling())
 			if err := s.registry.ReportFacts(ctx, deviceID, p.Facts); err != nil {
 				log.WarnContext(ctx, "record facts", "err", err)
 			}

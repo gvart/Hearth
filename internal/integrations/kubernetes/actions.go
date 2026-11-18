@@ -109,7 +109,8 @@ type kubeAction struct {
 // Act plans req on cluster id and, unless it is a dry run, carries it out on
 // behalf of a web session from actorID. Carrying it out is a policy action,
 // decided before anything is sent to the cluster and audited; a dry run only
-// reads the objects involved, as the snapshot does, and is not audited.
+// reads the objects involved, as the snapshot does, and is decided and
+// audited as a dry run.
 func (m *Manager) Act(ctx context.Context, actorID, id string, req ActionRequest) (ActionResult, error) {
 	r, info, err := m.get(id)
 	if err != nil {
@@ -129,6 +130,12 @@ func (m *Manager) Act(ctx context.Context, actorID, id string, req ActionRequest
 		res.Steps = append(res.Steps, p.steps...)
 		res.Warnings = append(res.Warnings, p.warnings...)
 	}
+	detail := map[string]any{"cluster_id": id}
+	maps.Copy(detail, a.detail)
+	polReq := policy.Request{
+		ActorKind: policy.ActorWeb, ActorID: actorID, Action: a.policy,
+		Target: info.Name + "/" + a.target, Detail: detail, DryRun: req.DryRun,
+	}
 	if req.DryRun {
 		ctx, cancel := context.WithTimeout(ctx, actionTimeout)
 		defer cancel()
@@ -137,14 +144,13 @@ func (m *Manager) Act(ctx context.Context, actorID, id string, req ActionRequest
 			return ActionResult{}, actionError(req, err)
 		}
 		fill(p)
+		// The engine decides and audits a dry run, and never runs it.
+		if err := m.policy.Do(ctx, polReq, func(context.Context) error { return nil }); err != nil {
+			return ActionResult{}, actionError(req, err)
+		}
 		return res, nil
 	}
-	detail := map[string]any{"cluster_id": id}
-	maps.Copy(detail, a.detail)
-	err = m.policy.Do(ctx, policy.Request{
-		ActorKind: policy.ActorWeb, ActorID: actorID, Action: a.policy,
-		Target: info.Name + "/" + a.target, Detail: detail,
-	}, func(ctx context.Context) error {
+	err = m.policy.Do(ctx, polReq, func(ctx context.Context) error {
 		ctx, cancel := context.WithTimeout(ctx, a.timeout)
 		defer cancel()
 		p, err := a.plan(ctx)

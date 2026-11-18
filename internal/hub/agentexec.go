@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/gvart/hearth/internal/policy"
 	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
 	"github.com/gvart/hearth/internal/store"
 )
@@ -18,13 +19,19 @@ import (
 // ExecRequest. Older agents ignore it, so the hub never sends it to them.
 const minExecMinor = 1
 
+// minCeilingMinor is the first agent protocol minor version that reports
+// its capability ceiling. The hub sends no ExecRequest to an older agent:
+// it cannot check one against a ceiling it does not know.
+const minCeilingMinor = 2
+
 // ErrAgentNotConnected is returned by Agents.Exec for a device whose agent has
 // no open stream to this hub.
 var ErrAgentNotConnected = errors.New("agent not connected")
 
-// Agents tracks the open agent streams and runs exec requests over them. It is
-// a transport only: callers decide through policy first, and the agent
-// enforces its own capability ceiling.
+// Agents tracks the open agent streams and runs exec requests over them.
+// Callers decide through policy first. Agents then refuses any request
+// beyond the capability ceiling the device's agent reported, before sending
+// it, and the agent enforces its ceiling again.
 type Agents struct {
 	devices store.Devices
 
@@ -51,12 +58,17 @@ type agentSession struct {
 
 	mu      sync.Mutex
 	pending map[string]chan *agentv1.ExecResult
+	// ceiling is the capability ceiling the agent last reported.
+	ceiling *agentv1.Ceiling
 }
 
 // attach records the stream of deviceID. A newer stream of the same device
 // replaces an older one. Call detach when the stream ends.
-func (a *Agents) attach(deviceID string, minor uint32, send func(*agentv1.HubMessage) error) *agentSession {
-	s := &agentSession{minor: minor, send: send, done: make(chan struct{}), pending: map[string]chan *agentv1.ExecResult{}}
+func (a *Agents) attach(deviceID string, hello *agentv1.Hello, send func(*agentv1.HubMessage) error) *agentSession {
+	s := &agentSession{
+		minor: hello.GetProtocolVersion().GetMinor(), send: send, done: make(chan struct{}),
+		pending: map[string]chan *agentv1.ExecResult{}, ceiling: hello.GetCeiling(),
+	}
 	a.mu.Lock()
 	a.sessions[deviceID] = s
 	a.mu.Unlock()
@@ -77,6 +89,31 @@ func (a *Agents) detach(deviceID string, s *agentSession) {
 	close(s.done)
 }
 
+// setCeiling records the ceiling an agent reported in its facts.
+func (s *agentSession) setCeiling(c *agentv1.Ceiling) {
+	s.mu.Lock()
+	s.ceiling = c
+	s.mu.Unlock()
+}
+
+// check refuses req unless the agent reported a ceiling that allows it.
+func (s *agentSession) check(device string, req *agentv1.ExecRequest) error {
+	if s.minor < minExecMinor {
+		return fmt.Errorf("device %s: agent is too old to run actions; upgrade it", device)
+	}
+	if s.minor < minCeilingMinor {
+		return fmt.Errorf("device %s: agent is too old to report its capability ceiling; upgrade it: %w",
+			device, policy.ErrBeyondCeiling)
+	}
+	s.mu.Lock()
+	c := s.ceiling
+	s.mu.Unlock()
+	if err := policy.WithinCeiling(c, req); err != nil {
+		return fmt.Errorf("device %s: %w", device, err)
+	}
+	return nil
+}
+
 // deliver hands a result to the request waiting for it; a result nobody
 // waits for (its request timed out) is dropped.
 func (s *agentSession) deliver(r *agentv1.ExecResult) {
@@ -89,11 +126,9 @@ func (s *agentSession) deliver(r *agentv1.ExecResult) {
 	}
 }
 
-// Exec sends req to the agent of device (a device id, name or hostname) and
-// waits for its result, until ctx is done or the stream ends. It sets req's
-// id. The result may be a refusal (Denied) or a failure (Error): Exec only
-// fails when the request could not be delivered or answered.
-func (a *Agents) Exec(ctx context.Context, device string, req *agentv1.ExecRequest) (*agentv1.ExecResult, error) {
+// session returns the open stream of device (a device id, name or
+// hostname).
+func (a *Agents) session(ctx context.Context, device string) (*agentSession, error) {
 	id, err := a.resolve(ctx, device)
 	if err != nil {
 		return nil, err
@@ -104,8 +139,34 @@ func (a *Agents) Exec(ctx context.Context, device string, req *agentv1.ExecReque
 	if s == nil {
 		return nil, fmt.Errorf("device %s: %w", device, ErrAgentNotConnected)
 	}
-	if s.minor < minExecMinor {
-		return nil, fmt.Errorf("device %s: agent is too old to run actions; upgrade it", device)
+	return s, nil
+}
+
+// Check reports whether req would be sent to the agent of device: it fails
+// with an error wrapping policy.ErrBeyondCeiling when req is beyond the
+// ceiling the agent reported, and with ErrAgentNotConnected when the agent
+// has no open stream to this hub.
+func (a *Agents) Check(ctx context.Context, device string, req *agentv1.ExecRequest) error {
+	s, err := a.session(ctx, device)
+	if err != nil {
+		return err
+	}
+	return s.check(device, req)
+}
+
+// Exec sends req to the agent of device (a device id, name or hostname) and
+// waits for its result, until ctx is done or the stream ends. It sets req's
+// id. A request beyond the ceiling the agent reported is never sent: Exec
+// fails with an error wrapping policy.ErrBeyondCeiling. The result may still
+// be a refusal (Denied) or a failure (Error); otherwise Exec only fails when
+// the request could not be delivered or answered.
+func (a *Agents) Exec(ctx context.Context, device string, req *agentv1.ExecRequest) (*agentv1.ExecResult, error) {
+	s, err := a.session(ctx, device)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.check(device, req); err != nil {
+		return nil, err
 	}
 
 	req.Id = strings.ToLower(rand.Text())
