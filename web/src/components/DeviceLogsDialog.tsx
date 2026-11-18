@@ -40,7 +40,7 @@ export function DeviceLogsDialog({ device, source, onClose }: { device: Device; 
         key={`${source}/${String(tail)}/${String(epoch)}`}
         lines={logs.lines}
         total={logs.total}
-        live
+        live={!logs.ended}
         label={`Logs of ${source}`}
         status={
           <>
