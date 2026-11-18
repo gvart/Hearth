@@ -300,6 +300,20 @@ func TestRunReconnectsAfterHubRestart(t *testing.T) {
 	}
 }
 
+// TestRunCallsConnectedOnEachWelcome checks Config.Connected runs for the first
+// connection and again after the hub restarts.
+func TestRunCallsConnectedOnEachWelcome(t *testing.T) {
+	h := startRestartableHub(t, time.Second)
+	_, dataDir := h.join(t)
+	var calls atomic.Int32
+	startAgentWith(t, agent.Config{DataDir: dataDir, Connected: func() { calls.Add(1) }})
+
+	waitFor(t, 10*time.Second, "first connection", func() bool { return calls.Load() == 1 })
+	h.stop()
+	h.start()
+	waitFor(t, 10*time.Second, "reconnection", func() bool { return calls.Load() == 2 })
+}
+
 // TestRunNoQuickRetryForBriefSession covers a hub that welcomes the agent and
 // drops it at once: the agent must back off normally, not loop quickly.
 func TestRunNoQuickRetryForBriefSession(t *testing.T) {

@@ -30,6 +30,16 @@ builds:
       - CGO_ENABLED=0
     flags:
       - -trimpath
+      # Keep in step with go:build in Taskfile.yml. Inlining stays on for the
+      # Go runtime and SQLite, the hot paths; off elsewhere it shrinks the
+      # binary, and so the idle agent's RSS (issue #145).
+      - -gcflags=all=-l
+      - -gcflags=modernc.org/...=
+      - -gcflags=runtime=
+      - -gcflags=runtime/...=
+      - -gcflags=sync=
+      - -gcflags=sync/...=
+      - -gcflags=internal/...=
     ldflags:
       - -s -w
       - -X main.version=v{{ .Version }}

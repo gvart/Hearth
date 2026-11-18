@@ -34,7 +34,10 @@ func TestAgentIdleRSS(t *testing.T) {
 	t.Parallel()
 
 	bin := filepath.Join(t.TempDir(), "hearth")
-	build := exec.CommandContext(t.Context(), "go", "build", "-trimpath", "-ldflags", "-s -w", "-o", bin, "github.com/gvart/hearth/cmd/hearth")
+	build := exec.CommandContext(t.Context(), "go", "build", "-trimpath", // the flags of .goreleaser.yaml
+		"-gcflags=all=-l", "-gcflags=modernc.org/...=", "-gcflags=runtime=", "-gcflags=runtime/...=",
+		"-gcflags=sync=", "-gcflags=sync/...=", "-gcflags=internal/...=",
+		"-ldflags", "-s -w", "-o", bin, "github.com/gvart/hearth/cmd/hearth")
 	build.Env = append(os.Environ(), "CGO_ENABLED=0")
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build: %v\n%s", err, out)

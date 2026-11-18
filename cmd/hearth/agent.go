@@ -43,11 +43,14 @@ func newAgentRunCmd() *cobra.Command {
 					return fmt.Errorf("--allow-restart: %w", err)
 				}
 			}
+			connected, stop := agent.TuneRuntime()
+			defer stop()
 			return agent.Run(cmd.Context(), agent.Config{
-				DataDir: dataDir,
-				Version: cmd.Root().Version,
-				Log:     newLogger(cmd.ErrOrStderr()),
-				Ceiling: ceiling,
+				DataDir:   dataDir,
+				Version:   cmd.Root().Version,
+				Log:       newLogger(cmd.ErrOrStderr()),
+				Ceiling:   ceiling,
+				Connected: connected,
 			})
 		},
 	}
