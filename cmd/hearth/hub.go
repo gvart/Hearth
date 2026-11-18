@@ -21,6 +21,7 @@ import (
 	"github.com/gvart/hearth/internal/automation"
 	"github.com/gvart/hearth/internal/cluster"
 	"github.com/gvart/hearth/internal/hub"
+	"github.com/gvart/hearth/internal/integrations/kubernetes"
 	"github.com/gvart/hearth/internal/integrations/prometheus"
 	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/policy"
@@ -159,6 +160,10 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	}
 	reg := hub.NewRegistry(hub.RegistryConfig{Store: st, Log: log, Replicated: node != nil})
 	agents := hub.NewAgents(st.Devices())
+	kube, err := newKubeManager(st, ca, pol, log)
+	if err != nil {
+		return err
+	}
 	// stopping ends agent streams and /events subscriptions as soon as either
 	// server begins shutting down, so Shutdown waits only on ordinary requests
 	// and agents see a clean end of stream and reconnect at once.
@@ -176,6 +181,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		Stopping:          stopping,
 		Prometheus:        prom,
 		Agents:            agents,
+		Kube:              kube,
 	}
 	// ready is closed once a clustered hub has caught up with the cluster.
 	ready := make(chan struct{})
@@ -270,6 +276,8 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		g.Go(func() error { return reg.Run(gctx) })
 		g.Go(func() error { return automations.Run(gctx) })
 	}
+	// Every hub of a cluster watches the Kubernetes clusters itself.
+	g.Go(func() error { return kube.Run(gctx) })
 	g.Go(func() error { return serve(gctx, agentSrv, func() error { return agentSrv.ServeTLS(agentLn, "", "") }) })
 	g.Go(func() error { return serve(gctx, webSrv, func() error { return webSrv.Serve(webLn) }) })
 	if node != nil {
@@ -321,6 +329,21 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	err = g.Wait()
 	log.InfoContext(ctx, "hub stopped")
 	return err
+}
+
+// newKubeManager returns the manager of adopted Kubernetes clusters. Their
+// kubeconfigs are sealed with a key derived from the hub CA key, which every
+// hub of a cluster holds.
+func newKubeManager(st *store.Store, ca *pki.CA, pol *policy.Engine, log *slog.Logger) (*kubernetes.Manager, error) {
+	secret, err := ca.KeyDER()
+	if err != nil {
+		return nil, err
+	}
+	sealer, err := kubernetes.NewSealer(secret)
+	if err != nil {
+		return nil, err
+	}
+	return kubernetes.NewManager(kubernetes.Config{Store: st, Sealer: sealer, Policy: pol, Log: log}), nil
 }
 
 // serve runs srv until ctx is done, then shuts it down gracefully (forcibly

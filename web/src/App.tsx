@@ -1,5 +1,5 @@
 import { useSession } from './api/hooks.ts';
-import { DevicesPage } from './components/DevicesPage.tsx';
+import { Shell } from './components/Shell.tsx';
 import { Login } from './components/Login.tsx';
 import { SecureBanner } from './components/SecureBanner.tsx';
 
@@ -27,5 +27,5 @@ function Main() {
       </main>
     );
   }
-  return session.data ? <DevicesPage /> : <Login />;
+  return session.data ? <Shell /> : <Login />;
 }
