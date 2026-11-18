@@ -1,0 +1,43 @@
+web/src/components/AddClusterDialog.tsx
+  s_344993999c180f::t_c265c184829a74 1-95
+web/src/App.tsx
+  s_344993999c180f::t_b932e6aa124d46 2,30
+web/src/components/PodLogsDialog.tsx
+  s_344993999c180f::t_b0128989be1ce2 1-87
+web/src/components/DevicesPage.tsx
+  s_344993999c180f::t_b932e6aa124d46 3,49,151
+web/src/api/hooks.ts
+  s_344993999c180f::t_ab63ed4696cd46 154-164
+  s_344993999c180f::t_b932e6aa124d46 52
+  s_344993999c180f::t_303237b05f2641 3-17,24-25,113-119,139-153,165-260
+  s_344993999c180f::t_b55b2fe4b6225e 261
+web/src/api/client.ts
+  s_344993999c180f::t_943fc3ebb2d8ad 297,299,303-310
+  s_344993999c180f::t_6cd7bcedf3b3f0 258,260-261
+  s_344993999c180f::t_8a63b4b7887e20 103-198,253-257,259,262,268-270,298,300-302
+web/src/components/KubernetesPage.tsx
+  s_344993999c180f::t_60fd42e55aa19a 24-27
+  s_344993999c180f::t_73787ac0c79088 29-32,34,36-37
+  s_344993999c180f::t_b9b7a9df308b5a 1-23,28,33,35,38-454
+web/src/index.css
+  s_344993999c180f::t_943fc3ebb2d8ad 1035-1038
+  s_344993999c180f::t_26858e61557198 18-20,48-50,739-1014,1039-1046
+web/src/components/Shell.tsx
+  s_344993999c180f::t_1e0400687daae7 1-68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d91166dbe6cf861f284b6c7bc0fb36e45bf063de",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
