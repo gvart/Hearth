@@ -64,6 +64,47 @@ Each scan publishes, on the hub's event stream (`/api/v1/events`):
 The first scan on an empty database is the baseline: it records every host and publishes nothing,
 so turning discovery on does not report the whole LAN as new.
 
+## New-device alerts
+
+"Something new joined my network" as a phone notification. Configure a
+[notification channel](notifications.md), then name it:
+
+```sh
+hearth hub --discover-subnet auto --new-device-alerts phone
+# or HEARTH_NEW_DEVICE_ALERTS=phone
+```
+
+The hub then runs a built-in automation, `new-device-alerts`, that sends to that channel:
+
+- **New device on your network** for every `network.device.new`: once per MAC address, at the
+  first scan that finds it. A phone that joins the Wi-Fi and stays gets exactly one notification.
+- **Device back on your network** for every `network.device.returned` of a host nobody has marked:
+  one that no scan had found for an hour or more.
+
+Without the flag the automation is off. The hub refuses to start if the channel is not in the
+channels file, and warns if discovery is off. Hosts that are one of an enrolled device's interfaces
+never alert: they are that device.
+
+**Silencing a host.** On the Devices page, **On your network** has a **Known** and an **Ignore**
+button on each host. Both stop its alerts: *known* is a host you recognise as yours, *ignored* one
+you do not care about (a neighbour's TV), shown dimmed. **Unmark** turns its alerts back on. A host
+nobody has marked notifies again each time it comes back after an hour or more away, so a phone
+that leaves the house every day should be marked known after its first alert.
+
+**Randomized ("private") MACs.** A phone with a private Wi-Fi address shows as *private address* in
+the notification. iOS and Android keep one such address per network by default, so a phone still
+alerts once. A phone set to rotate its address (iOS "Rotating", Android "non-persistent") is a new
+host to discovery after every rotation, and alerts again each time: discovery knows hosts only by
+MAC, and a mark on one address does not carry over to the next.
+
+**Changing it.** To change the message, the channel, or to alert on new hosts only, write your own
+automation with the id `new-device-alerts` in the automations directory: it replaces the built-in.
+The `network` trigger is in the [automation reference](automations.md#network-hosts). Notifications
+are sent one after another (the automation is `queued`), so a scan that finds several hosts sends
+one notification for each, up to 11 at a time.
+
+In a cluster, the automation runs on the leader: give every hub the same `--new-device-alerts`.
+
 ## Policy and audit
 
 A scan is the hub action `network.scan` (class `read`, actor `hub/discovery`). Each scan is one
@@ -98,4 +139,15 @@ dropped. In Kubernetes, the same applies: `hostNetwork: true` on the hub's pod.
   "vendor": "Raspberry Pi", "device_id": "", "first_seen": "...", "last_seen": "..."}]}
 ```
 
-`device_id` is the enrolled device with that MAC, or empty for an unmanaged host.
+`device_id` is the enrolled device with that MAC, or empty for an unmanaged host. `state` is `""`,
+`"known"` or `"ignored"`.
+
+```
+POST /api/v1/network/hosts/{mac}/known    204, or 404 no such host
+POST /api/v1/network/hosts/{mac}/ignore
+POST /api/v1/network/hosts/{mac}/unmark
+```
+
+Each one is the action `network.host.mark` (class `safe`, actor `web`), audited with the MAC as
+target and the new state as detail. In a cluster marking needs schema 13: run
+`hearth cluster migrate` after upgrading every hub (until then it answers 409).

@@ -16,6 +16,7 @@ import {
   type KubePod,
   type KubeSnapshot,
   type KubeWorkload,
+  type NetworkHostState,
 } from './client.ts';
 
 export const keys = {
@@ -88,6 +89,15 @@ export function useDevices() {
 /** Hosts network discovery found; refetched on network events and now and then, as scans run on their own schedule. */
 export function useNetworkHosts() {
   return useQuery({ queryKey: keys.networkHosts, queryFn: api.networkHosts, refetchInterval: networkHostsRefreshMs });
+}
+
+/** Marks a host known, ignored or neither, then refetches the hosts. */
+export function useMarkNetworkHost() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ mac, state }: { mac: string; state: NetworkHostState }) => api.markNetworkHost(mac, state),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.networkHosts }),
+  });
 }
 
 /** The hub's HTTPS address details, fetched only when enabled. */

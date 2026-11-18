@@ -65,6 +65,7 @@ func allCommands() []Command {
 			{MAC: "2c:cf:67:00:00:01", IP: "192.168.2.171", Hostname: "pi5.local", Vendor: "Raspberry Pi"},
 			{MAC: "aa:bb:cc:dd:ee:ff", IP: "192.168.2.50"},
 		}},
+		SetNetworkHostState{MAC: "aa:bb:cc:dd:ee:ff", State: HostIgnored},
 	}
 }
 
@@ -329,6 +330,8 @@ func runScenario(t *testing.T, s *Store) {
 	pi.IP = "192.168.2.172"
 	_, err = s.NetworkHosts().RecordScan(ctx, at(5*time.Hour), time.Hour, []NetworkHost{pi, {MAC: "aa:bb:cc:dd:ee:ff", IP: "192.168.2.50"}})
 	must(err)
+	must(s.NetworkHosts().SetState(ctx, "aa:bb:cc:dd:ee:ff", HostKnown))
+	wantErr(s.NetworkHosts().SetState(ctx, "00:00:00:00:00:01", HostIgnored), ErrNotFound)
 }
 
 // dumpTables returns every row of every table (sqlite_sequence included,

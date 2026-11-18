@@ -122,6 +122,10 @@ const (
 	// NetworkScan is one network discovery scan by the hub: an ARP sweep
 	// and an mDNS browse of the configured subnets.
 	NetworkScan Action = "network.scan"
+	// NetworkHostMark marks a host network discovery found known or
+	// ignored, or neither again, which silences or restores its new-device
+	// alerts.
+	NetworkHostMark Action = "network.host.mark"
 )
 
 // Actor kinds.
@@ -259,6 +263,8 @@ var rules = map[Action]rule{
 	// A scan only asks who is there (one datagram per address, one mDNS
 	// query) and changes nothing on any host.
 	NetworkScan: {class: Read, actors: []string{ActorHub}},
+	// Marking a host changes only which alerts the operator gets about it.
+	NetworkHostMark: {class: Safe, actors: []string{ActorWeb}},
 }
 
 // Actions returns every known action, sorted.

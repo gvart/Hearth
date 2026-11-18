@@ -36,6 +36,7 @@ type is rejected when the file is loaded.
 |------------|---------------------------------------------------------------|
 | `manual`   | run by hand (there is no command or button for it yet)        |
 | `device`   | a device goes online or offline                               |
+| `network`  | network discovery finds a new host, or one back after an hour |
 | `metric`   | a metric has been above or below a threshold for a duration   |
 | `http`     | an HTTP GET fails or returns the wrong status                 |
 | `dns`      | a DNS server does not resolve a name                          |
@@ -52,6 +53,20 @@ triggers:
 ```
 
 A device goes offline when the hub has not heard from its agent for 30 s.
+
+### Network hosts
+
+```yaml
+triggers:
+  - type: network
+    event: new         # new or returned; leave out for both
+```
+
+Fires once for each host a [network discovery](discovery.md) scan finds for the first time (`new`),
+or finds again after an hour or more unseen (`returned`). Hosts marked known or ignored on the
+Devices page, and hosts that are an enrolled device's interface, never fire it. Use `mode: queued`
+so that several hosts found by one scan each get their run. The hub's built-in
+[new-device alerts](discovery.md#new-device-alerts) automation is made of this trigger.
 
 ### Metric threshold
 
@@ -338,6 +353,12 @@ The webhook `url`, `command` and `service` are not templates.
 | `.Trigger.Name`        | device                     | the device's name                                  |
 | `.Trigger.Hostname`    | device                     | the device's hostname                              |
 | `.Trigger.State`       | device                     | `online` or `offline`                              |
+| `.Trigger.Event`       | network                    | `new` or `returned`                                |
+| `.Trigger.MAC`         | network                    | the host's MAC address, lower-case                 |
+| `.Trigger.IP`          | network                    | the address it answered on                         |
+| `.Trigger.Vendor`      | network                    | from the MAC, or empty                             |
+| `.Trigger.Name`        | network                    | its mDNS or reverse DNS name, or empty             |
+| `.Trigger.Private`     | network                    | `true` for a randomized ("private") MAC            |
 | `.Trigger.Device`      | metric with `device`       | the device as the trigger names it                 |
 | `.Trigger.Value`       | metric                     | the value past the threshold (a number)            |
 | `.Trigger.Target`      | http, dns, tcp             | the URL (password and query values hidden), name or address checked |
