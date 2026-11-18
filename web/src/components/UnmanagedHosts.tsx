@@ -1,5 +1,5 @@
 import type { NetworkHost } from '../api/client.ts';
-import { useNetworkHosts } from '../api/hooks.ts';
+import { useMarkNetworkHost, useNetworkHosts } from '../api/hooks.ts';
 import { relativeTime } from '../format.ts';
 
 /** A MAC whose locally administered bit is set: a randomized ("private") address. */
@@ -29,6 +29,7 @@ function byIP(a: NetworkHost, b: NetworkHost) {
  */
 export function UnmanagedHosts({ now, onAdd }: { now: number; onAdd: () => void }) {
   const hosts = useNetworkHosts();
+  const mark = useMarkNetworkHost();
   const list = (hosts.data ?? []).filter((h) => h.device_id === '').sort(byIP);
   if (list.length === 0) {
     return null;
@@ -58,11 +59,17 @@ export function UnmanagedHosts({ now, onAdd }: { now: number; onAdd: () => void 
           </thead>
           <tbody>
             {list.map((h) => (
-              <tr key={h.mac} aria-label={`${hostName(h)}, unmanaged`}>
+              <tr
+                key={h.mac}
+                className={h.state === 'ignored' ? 'host-ignored' : undefined}
+                aria-label={`${hostName(h)}, unmanaged${h.state ? `, ${h.state}` : ''}`}
+              >
                 <td>
                   <span className="name-cell">
                     <span className="dot dot-unmanaged" role="img" aria-label="Unmanaged" title="Unmanaged: no agent" />
                     <span className="name">{hostName(h)}</span>
+                    {h.state === 'known' ? <span className="badge badge-quiet">Known</span> : null}
+                    {h.state === 'ignored' ? <span className="badge badge-quiet">Ignored</span> : null}
                   </span>
                 </td>
                 <td className="muted">{vendorLabel(h)}</td>
@@ -70,9 +77,49 @@ export function UnmanagedHosts({ now, onAdd }: { now: number; onAdd: () => void 
                 <td className="muted">{relativeTime(h.last_seen, now)}</td>
                 <td className="mono muted">{h.mac}</td>
                 <td className="row-end">
-                  <button className="btn btn-ghost btn-small" type="button" onClick={onAdd}>
-                    Add device
-                  </button>
+                  <span className="host-actions">
+                    {h.state === '' ? (
+                      <>
+                        <button
+                          className="btn btn-ghost btn-small"
+                          type="button"
+                          disabled={mark.isPending}
+                          title="Yours: no more new-device alerts for it"
+                          onClick={() => {
+                            mark.mutate({ mac: h.mac, state: 'known' });
+                          }}
+                        >
+                          Known
+                        </button>
+                        <button
+                          className="btn btn-ghost btn-small"
+                          type="button"
+                          disabled={mark.isPending}
+                          title="Not worth hearing about: no more new-device alerts for it"
+                          onClick={() => {
+                            mark.mutate({ mac: h.mac, state: 'ignored' });
+                          }}
+                        >
+                          Ignore
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        className="btn btn-ghost btn-small"
+                        type="button"
+                        disabled={mark.isPending}
+                        title="Alert again when it comes back after an hour away"
+                        onClick={() => {
+                          mark.mutate({ mac: h.mac, state: '' });
+                        }}
+                      >
+                        Unmark
+                      </button>
+                    )}
+                    <button className="btn btn-ghost btn-small" type="button" onClick={onAdd}>
+                      Add device
+                    </button>
+                  </span>
                 </td>
               </tr>
             ))}

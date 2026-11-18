@@ -58,6 +58,9 @@ type Config struct {
 	Policy Policy
 	Runs   RunRecorder
 	Log    *slog.Logger
+	// Builtin are automations the hub runs without a file, such as
+	// NewDeviceAlerts. A file in Dir with the same id replaces one.
+	Builtin []*Automation
 	// ReloadEvery is how often Dir is checked for changes. Default
 	// DefaultReloadEvery.
 	ReloadEvery time.Duration
@@ -110,7 +113,7 @@ func (r *Runtime) Run(ctx context.Context) error {
 			if err != nil {
 				r.cfg.Log.ErrorContext(ctx, "automations not reloaded: invalid files", "dir", r.cfg.Dir, "err", err)
 			} else {
-				r.reconcile(ctx, set)
+				r.reconcile(ctx, withBuiltin(set, r.cfg.Builtin))
 			}
 		}
 		select {
@@ -119,6 +122,20 @@ func (r *Runtime) Run(ctx context.Context) error {
 		case <-tick.C:
 		}
 	}
+}
+
+// withBuiltin adds to set each built-in automation no file in it replaces.
+func withBuiltin(set, builtin []*Automation) []*Automation {
+	ids := map[string]bool{}
+	for _, a := range set {
+		ids[a.ID] = true
+	}
+	for _, a := range builtin {
+		if !ids[a.ID] {
+			set = append(set, a)
+		}
+	}
+	return set
 }
 
 // fingerprint changes whenever an automation file in dir is added, removed

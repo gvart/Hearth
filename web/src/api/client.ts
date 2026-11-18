@@ -113,7 +113,11 @@ export interface NetworkHost {
   device_id: string;
   first_seen: string;
   last_seen: string;
+  /** What the operator marked it: known and ignored hosts fire no new-device alerts. */
+  state: NetworkHostState;
 }
+
+export type NetworkHostState = '' | 'known' | 'ignored';
 
 /** A Kubernetes cluster adopted through a kubeconfig; see /api/v1/kube. */
 export type KubeState = 'connecting' | 'connected' | 'error';
@@ -387,6 +391,12 @@ export const api = {
   },
   kubeAction: (cluster: string, req: KubeActionRequest) =>
     request<KubeActionResult>('POST', `/kube/clusters/${encodeURIComponent(cluster)}/actions`, req),
+  /** Marks a host known or ignored, or neither again (''). */
+  markNetworkHost: (mac: string, state: NetworkHostState) =>
+    request<undefined>(
+      'POST',
+      `/network/hosts/${encodeURIComponent(mac)}/${state === 'known' ? 'known' : state === 'ignored' ? 'ignore' : 'unmark'}`,
+    ),
   notifyChannels: async () => (await request<{ channels: NotifyChannel[] }>('GET', '/notify/channels')).channels,
   testNotifyChannel: (name: string) =>
     request<undefined>('POST', `/notify/channels/${encodeURIComponent(name)}/test`),

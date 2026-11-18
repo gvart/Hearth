@@ -64,7 +64,10 @@ type hubOptions struct {
 	discoverSubnets []string
 	// discoverInterval is the time between discovery scans.
 	discoverInterval time.Duration
-	cluster          clusterOptions
+	// newDeviceAlerts is the notification channel the built-in new-device
+	// alert automation sends to; empty leaves it off.
+	newDeviceAlerts string
+	cluster         clusterOptions
 	// version is the binary's version, which install commands pin agents to.
 	version string
 }
@@ -86,7 +89,8 @@ func newHubCmd() *cobra.Command {
 			"--prometheus-url points the hub at an existing Prometheus; device charts then show its\n" +
 			"node-exporter data (see docs/prometheus.md).\n\n" +
 			"--discover-subnet turns on network discovery: hosts without an agent show up as\n" +
-			"unmanaged devices (see docs/discovery.md).",
+			"unmanaged devices (see docs/discovery.md). --new-device-alerts CHANNEL then sends a\n" +
+			"notification for every new host (see docs/discovery.md).",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			opts.adminPassword = os.Getenv("HEARTH_ADMIN_PASSWORD")
@@ -127,6 +131,9 @@ func newHubCmd() *cobra.Command {
 			"repeatable (env HEARTH_DISCOVER_SUBNETS, comma-separated; default: off; see docs/discovery.md)")
 	cmd.Flags().DurationVar(&opts.discoverInterval, "discover-interval", discovery.DefaultInterval,
 		"time between network discovery scans (env HEARTH_DISCOVER_INTERVAL)")
+	cmd.Flags().StringVar(&opts.newDeviceAlerts, "new-device-alerts", os.Getenv("HEARTH_NEW_DEVICE_ALERTS"),
+		"notification channel to tell about every new host network discovery finds (env HEARTH_NEW_DEVICE_ALERTS; "+
+			"default: off; see docs/discovery.md)")
 	addClusterFlags(cmd, &opts.cluster)
 	return cmd
 }
@@ -238,6 +245,9 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	if opts.newDeviceAlerts != "" && !notifier.Has(opts.newDeviceAlerts) {
+		return fmt.Errorf("--new-device-alerts: no notification channel %q (see --notify-config)", opts.newDeviceAlerts)
+	}
 	if err := notifyApprovals(pol, polCfg.ApprovalNotify, st, notifier, hosts[0], agentPort, log); err != nil {
 		return err
 	}
@@ -348,19 +358,32 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	kinds := automation.Builtin(log)
 	maps.Copy(kinds.Triggers, automation.Triggers(automation.TriggerDeps{
 		Devices: hub.AutomationDevices(reg),
+		Network: hub.AutomationNetwork(reg),
 		Metrics: hub.AutomationMetrics(st, prom, ms),
 		Probers: agents,
 		Policy:  pol,
 		Log:     log,
 	}))
 	maps.Copy(kinds.Actions, automation.Actions(automation.ActionDeps{Agents: agents, Notifier: notifier, Kube: kube}))
+	var builtin []*automation.Automation
+	if opts.newDeviceAlerts != "" {
+		a, err := automation.NewDeviceAlerts(opts.newDeviceAlerts, kinds)
+		if err != nil {
+			return fmt.Errorf("--new-device-alerts: %w", err)
+		}
+		builtin = append(builtin, a)
+		if len(subnets) == 0 && !autoSubnets {
+			log.WarnContext(ctx, "new-device alerts are on but network discovery is off: set --discover-subnet")
+		}
+	}
 	automations := automation.New(automation.Config{
-		Dir:    automationsDir,
-		Kinds:  kinds,
-		Policy: pol,
-		Runs:   st.AutomationRuns(),
-		Log:    log,
-		DryRun: opts.automationsDryRun,
+		Dir:     automationsDir,
+		Builtin: builtin,
+		Kinds:   kinds,
+		Policy:  pol,
+		Runs:    st.AutomationRuns(),
+		Log:     log,
+		DryRun:  opts.automationsDryRun,
 	})
 
 	var scanner *discovery.Scanner

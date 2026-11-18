@@ -54,6 +54,8 @@ type TriggerDeps struct {
 	// Clock defaults to real time.
 	Clock   Clock
 	Devices DeviceEvents
+	// Network tells the network trigger about the hosts discovery finds.
+	Network NetworkEvents
 	Metrics Metrics
 	// Probers run the http, tcp and dns checks that name a device in from:
 	// *hub.Agents. Policy decides on them. With either nil those triggers
@@ -81,7 +83,7 @@ func triggerFrom(ctx context.Context) triggerOf {
 }
 
 // Triggers returns the trigger types that watch the lab, to add to Builtin's:
-// device, metric, http, dns, tcp and schedule.
+// device, network, metric, http, dns, tcp and schedule.
 func Triggers(deps TriggerDeps) map[string]Builder[Trigger] {
 	if deps.Clock == nil {
 		deps.Clock = realClock{}
@@ -91,6 +93,7 @@ func Triggers(deps TriggerDeps) map[string]Builder[Trigger] {
 	}
 	return map[string]Builder[Trigger]{
 		"device":   func(p Params) (Trigger, error) { return buildDevice(p, deps) },
+		"network":  func(p Params) (Trigger, error) { return buildNetwork(p, deps) },
 		"metric":   func(p Params) (Trigger, error) { return buildMetric(p, deps) },
 		"http":     func(p Params) (Trigger, error) { return buildHTTPCheck(p, deps) },
 		"dns":      func(p Params) (Trigger, error) { return buildDNSCheck(p, deps) },

@@ -495,6 +495,21 @@ table {
   text-align: right;
 }
 
+.host-actions {
+  display: inline-flex;
+  gap: 0.25rem;
+  white-space: nowrap;
+}
+
+.badge-quiet {
+  background: color-mix(in srgb, var(--offline) 25%, transparent);
+  color: inherit;
+}
+
+.host-ignored td {
+  opacity: 0.6;
+}
+
 .empty {
   display: flex;
   flex-direction: column;

@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -14,6 +15,22 @@ import (
 // network_hosts table. Until a cluster migrates to it, scans are not
 // recorded and no host is listed.
 const networkHostsSchema = 12
+
+// networkHostStateSchema is the schema version whose migration (00013) added
+// network_hosts.state. Before it every host is unreviewed and none can be
+// marked.
+const networkHostStateSchema = 13
+
+// What the operator said about a host (NetworkHost.State). Known and ignored
+// hosts never fire new-device alerts.
+const (
+	// HostUnreviewed is a host nobody has marked yet.
+	HostUnreviewed = ""
+	// HostKnown is a host the operator recognises as theirs.
+	HostKnown = "known"
+	// HostIgnored is a host the operator does not want to hear about.
+	HostIgnored = "ignored"
+)
 
 // NetworkHost is a host network discovery found, keyed by its MAC address.
 type NetworkHost struct {
@@ -26,6 +43,8 @@ type NetworkHost struct {
 	// FirstSeen is the first scan that found it, LastSeen the latest.
 	FirstSeen time.Time
 	LastSeen  time.Time
+	// State is HostUnreviewed, HostKnown or HostIgnored.
+	State string
 }
 
 // NetworkHosts is the repository for hosts found by network discovery.
@@ -73,7 +92,7 @@ func (r NetworkHosts) List(ctx context.Context) ([]NetworkHost, error) {
 	if v < networkHostsSchema {
 		return nil, nil
 	}
-	rows, err := r.s.db.QueryContext(ctx, networkHostSelect+` ORDER BY ip, mac`)
+	rows, err := r.s.db.QueryContext(ctx, networkHostSelect(v)+` FROM network_hosts ORDER BY ip, mac`)
 	if err != nil {
 		return nil, fmt.Errorf("list network hosts: %w", err)
 	}
@@ -92,14 +111,22 @@ func (r NetworkHosts) List(ctx context.Context) ([]NetworkHost, error) {
 	return out, nil
 }
 
-const networkHostSelect = `SELECT mac, ip, hostname, vendor, first_seen, last_seen FROM network_hosts`
+// networkHostSelect is the SELECT list of a host at schema v, for
+// scanNetworkHost: before schema 13 there is no state, and every host reads
+// as unreviewed.
+func networkHostSelect(v int64) string {
+	if v < networkHostStateSchema {
+		return `SELECT mac, ip, hostname, vendor, first_seen, last_seen, ''`
+	}
+	return `SELECT mac, ip, hostname, vendor, first_seen, last_seen, state`
+}
 
 func scanNetworkHost(row interface{ Scan(...any) error }) (NetworkHost, error) {
 	var (
 		h           NetworkHost
 		first, last int64
 	)
-	if err := row.Scan(&h.MAC, &h.IP, &h.Hostname, &h.Vendor, &first, &last); err != nil {
+	if err := row.Scan(&h.MAC, &h.IP, &h.Hostname, &h.Vendor, &first, &last, &h.State); err != nil {
 		return NetworkHost{}, err
 	}
 	h.FirstSeen, h.LastSeen = fromMillis(first), fromMillis(last)
@@ -135,6 +162,11 @@ func (c RecordNetworkScan) apply(ctx context.Context, tx *sql.Tx) (Result, error
 		return Result{}, err
 	}
 	baseline := known == 0
+	v, err := schemaVersion(ctx, tx)
+	if err != nil {
+		return Result{}, err
+	}
+	returning := "RETURNING" + strings.TrimPrefix(networkHostSelect(v), "SELECT")
 	var res Result
 	for _, h := range c.Hosts {
 		var last int64
@@ -151,7 +183,7 @@ func (c RecordNetworkScan) apply(ctx context.Context, tx *sql.Tx) (Result, error
 				hostname = COALESCE(NULLIF(excluded.hostname, ''), hostname),
 				vendor = COALESCE(NULLIF(excluded.vendor, ''), vendor),
 				last_seen = MAX(last_seen, excluded.last_seen)
-			RETURNING mac, ip, hostname, vendor, first_seen, last_seen`,
+			`+returning,
 			h.MAC, h.IP, h.Hostname, h.Vendor, c.At, c.At))
 		if err != nil {
 			return Result{}, err
@@ -165,4 +197,46 @@ func (c RecordNetworkScan) apply(ctx context.Context, tx *sql.Tx) (Result, error
 	}
 	res.Count = len(c.Hosts)
 	return res, nil
+}
+
+// SetState marks the host with this MAC known, ignored or, with
+// HostUnreviewed, neither. It fails with ErrNotFound if discovery never found
+// that MAC, and before schema 13 with ErrSchemaTooOld.
+func (r NetworkHosts) SetState(ctx context.Context, mac, state string) error {
+	switch state {
+	case HostUnreviewed, HostKnown, HostIgnored:
+	default:
+		return fmt.Errorf("set network host %s state: unknown state %q", mac, state)
+	}
+	if _, err := r.s.apply(ctx, SetNetworkHostState{MAC: mac, State: state}); err != nil {
+		return fmt.Errorf("set network host %s state: %w", mac, err)
+	}
+	return nil
+}
+
+// SetNetworkHostState sets a host's state (HostUnreviewed, HostKnown or
+// HostIgnored). It fails with ErrNotFound if there is no host with MAC.
+type SetNetworkHostState struct {
+	MAC   string `json:"mac"`
+	State string `json:"state"`
+}
+
+// Op implements Command.
+func (SetNetworkHostState) Op() string { return "set_network_host_state" }
+
+func (SetNetworkHostState) minSchema() int64 { return networkHostStateSchema }
+
+func (c SetNetworkHostState) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
+	res, err := tx.ExecContext(ctx, `UPDATE network_hosts SET state = ? WHERE mac = ?`, c.State, c.MAC)
+	if err != nil {
+		return Result{}, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return Result{}, err
+	}
+	if n == 0 {
+		return Result{}, ErrNotFound
+	}
+	return Result{Count: int(n)}, nil
 }

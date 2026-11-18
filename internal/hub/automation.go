@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/gvart/hearth/internal/automation"
+	"github.com/gvart/hearth/internal/discovery"
 	"github.com/gvart/hearth/internal/integrations/prometheus"
 	"github.com/gvart/hearth/internal/metrics"
 	"github.com/gvart/hearth/internal/store"
@@ -47,6 +48,53 @@ func watchDevices(ctx context.Context, ch <-chan Event, fn func(automation.Devic
 			fn(automation.DeviceEvent{
 				ID: ev.Device.ID, Name: ev.Device.Name, Hostname: ev.Device.Hostname,
 				Online: ev.Type == EventDeviceOnline,
+			})
+		}
+	}
+}
+
+// AutomationNetwork feeds the registry's network discovery events to the
+// automations' network trigger.
+func AutomationNetwork(reg *Registry) automation.NetworkEvents { return registryEvents{reg} }
+
+// WatchNetwork implements automation.NetworkEvents, renewing a subscription
+// the bus ends as WatchDevices does. A host marked known or ignored, or one
+// of an enrolled device's interfaces, is silenced.
+func (e registryEvents) WatchNetwork(ctx context.Context, fn func(automation.NetworkEvent)) error {
+	for ctx.Err() == nil {
+		ch, unsubscribe := e.reg.Subscribe()
+		e.watchNetwork(ctx, ch, fn)
+		unsubscribe()
+	}
+	return nil
+}
+
+// watchNetwork passes on new and returned hosts from ch until ch is closed
+// or ctx is done.
+func (e registryEvents) watchNetwork(ctx context.Context, ch <-chan Event, fn func(automation.NetworkEvent)) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case ev, ok := <-ch:
+			if !ok {
+				return
+			}
+			if ev.Host == nil || (ev.Type != discovery.EventNew && ev.Type != discovery.EventReturned) {
+				continue
+			}
+			h := ev.Host
+			silenced := h.State != store.HostUnreviewed
+			if !silenced {
+				// A read of the local store; a failure only leaves the host
+				// unsilenced.
+				devs, err := e.reg.devices.List(ctx)
+				silenced = err == nil && deviceMACs(devs)[h.MAC] != ""
+			}
+			fn(automation.NetworkEvent{
+				Returned: ev.Type == discovery.EventReturned,
+				MAC:      h.MAC, IP: h.IP, Vendor: h.Vendor, Name: h.Hostname,
+				Silenced: silenced,
 			})
 		}
 	}
