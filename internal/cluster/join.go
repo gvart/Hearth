@@ -135,8 +135,14 @@ func (s *JoinServer) Join(ctx context.Context, req *connect.Request[clusterv1.Jo
 			return err
 		}
 		// Recorded before the hub can use it, so removing the hub later
-		// revokes it.
-		if err := s.store.Hubs().RecordCert(ctx, pki.SerialString(c), msg.GetNodeId()); err != nil {
+		// revokes it. Before the schema that records hub certificates
+		// nothing is revoked; the hub records its own once the cluster
+		// migrates (RecordNodeCert).
+		if err := s.store.Hubs().RequireCerts(ctx); err == nil {
+			if err := s.store.Hubs().RecordCert(ctx, pki.SerialString(c), msg.GetNodeId()); err != nil {
+				return err
+			}
+		} else if !errors.Is(err, store.ErrSchemaTooOld) {
 			return err
 		}
 		// A non-voter does not count towards quorum, so a hub that never

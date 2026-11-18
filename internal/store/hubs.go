@@ -72,10 +72,36 @@ func (r Hubs) RevokeCerts(ctx context.Context, nodeID string, now time.Time) (in
 	return res.Count, nil
 }
 
+// hubCertsSchema is the schema version whose migration (00006) added the
+// hub_certs table. A newer binary runs on an older cluster database until
+// `hearth cluster migrate`; before this version there is no deny list.
+const hubCertsSchema = 6
+
+// RequireCerts returns ErrSchemaTooOld if the database is at a schema before
+// hub certificates were recorded: nothing can be recorded or revoked until
+// the cluster migrates.
+func (r Hubs) RequireCerts(ctx context.Context) error {
+	v, err := schemaVersion(ctx, r.s.db)
+	if err != nil {
+		return fmt.Errorf("hub certs: %w", err)
+	}
+	if v < hubCertsSchema {
+		return fmt.Errorf("hub certs: %w: they need %d, the database is at %d; run `hearth cluster migrate` first",
+			ErrSchemaTooOld, hubCertsSchema, v)
+	}
+	return nil
+}
+
 // CheckCert returns ErrCertRevoked if the hub certificate with serial was
 // revoked. A serial that was never recorded is not an error: hub
-// certificates are refused by revocation, not admitted by a list.
+// certificates are refused by revocation, not admitted by a list. Before
+// the schema that records them, no hub certificate is revoked.
 func (r Hubs) CheckCert(ctx context.Context, serial string) error {
+	if err := r.RequireCerts(ctx); errors.Is(err, ErrSchemaTooOld) {
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("check hub cert %s: %w", serial, err)
+	}
 	var revoked bool
 	err := r.s.db.QueryRowContext(ctx,
 		`SELECT revoked_at IS NOT NULL FROM hub_certs WHERE serial = ?`, serial).Scan(&revoked)
@@ -97,8 +123,14 @@ type HubCert struct {
 	Revoked bool
 }
 
-// Certs returns the certificates recorded for hub nodeID, ordered by serial.
+// Certs returns the certificates recorded for hub nodeID, ordered by serial:
+// none before the schema that records them.
 func (r Hubs) Certs(ctx context.Context, nodeID string) ([]HubCert, error) {
+	if err := r.RequireCerts(ctx); errors.Is(err, ErrSchemaTooOld) {
+		return nil, nil
+	} else if err != nil {
+		return nil, fmt.Errorf("list certs of hub %s: %w", nodeID, err)
+	}
 	rows, err := r.s.db.QueryContext(ctx,
 		`SELECT serial, node_id, revoked_at IS NOT NULL FROM hub_certs WHERE node_id = ? ORDER BY serial`, nodeID)
 	if err != nil {

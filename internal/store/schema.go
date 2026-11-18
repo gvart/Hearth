@@ -88,7 +88,8 @@ func checkSchema(ctx context.Context, tx *sql.Tx, cmd Command) error {
 		return fmt.Errorf("apply %s: %w", cmd.Op(), err)
 	}
 	if v < g.minSchema() {
-		return fmt.Errorf("apply %s: %w: it needs %d, the database is at %d", cmd.Op(), ErrSchemaTooOld, g.minSchema(), v)
+		return fmt.Errorf("apply %s: %w: it needs %d, the database is at %d; run `hearth cluster migrate` first",
+			cmd.Op(), ErrSchemaTooOld, g.minSchema(), v)
 	}
 	return nil
 }

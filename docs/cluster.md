@@ -125,6 +125,9 @@ It refuses to:
   majority of the voters that remain. With one hub dead, remove the dead one, not a live one.
 - **remove an unknown ID.** Running a removal again after it was interrupted (the hub left the
   configuration but its certificates were not revoked yet) finishes it.
+- **remove on a schema before 6.** Hub certificates are recorded from schema 6 on: after upgrading
+  from v0.0.1-rc.3 or older, run `hearth cluster migrate` first. Until then no hub certificate is
+  revoked, and each hub records its own once the cluster migrates.
 
 Both commands are policy actions run by the local admin: `cluster.remove` (dangerous) and
 `cluster.transfer_leadership` (safe), audited like any other.
