@@ -1,0 +1,22 @@
+web/src/components/UnmanagedHosts.tsx
+  s_344993999c180f::t_d84300dad68a73 61
+  s_344993999c180f::t_8e670229b9bad1 82-87
+web/src/index.css
+  s_344993999c180f::t_dfb0fb5a319793 494-505
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "25c62d16d8cc98d185314334b844de7c210a4154",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
