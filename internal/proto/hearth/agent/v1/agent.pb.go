@@ -558,7 +558,7 @@ type Ceiling struct {
 	Probe bool `protobuf:"varint,3,opt,name=probe,proto3" json:"probe,omitempty"`
 	// logs are the log sources the hub may read, as manager:pattern, where
 	// manager is "systemd", "systemd-user" or "docker" and pattern a name or a
-	// glob (path.Match) such as "*". Reported by agents of protocol minor 4
+	// glob (path.Match) such as "*". Reported by agents of protocol minor 5
 	// and later.
 	Logs          []string `protobuf:"bytes,4,rep,name=logs,proto3" json:"logs,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -1716,7 +1716,7 @@ func (x *ProbeResult) GetError() string {
 // new lines as they are written, until the hub sends a LogCancel of the same
 // id or the stream ends. The agent streams only sources its ceiling allows
 // and answers with LogLines of the same id. Hubs send it only to agents of
-// protocol minor 4 and later.
+// protocol minor 5 and later.
 type LogRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// id correlates the LogLines and a LogCancel; unique per stream.

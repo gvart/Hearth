@@ -83,7 +83,7 @@ message Ceiling {
   bool probe = 3;
   // logs are the log sources the hub may read, as manager:pattern, where
   // manager is "systemd", "systemd-user" or "docker" and pattern a name or a
-  // glob (path.Match) such as "*". Reported by agents of protocol minor 4
+  // glob (path.Match) such as "*". Reported by agents of protocol minor 5
   // and later.
   repeated string logs = 4;
 }
@@ -254,7 +254,7 @@ message ProbeResult {
 // new lines as they are written, until the hub sends a LogCancel of the same
 // id or the stream ends. The agent streams only sources its ceiling allows
 // and answers with LogLines of the same id. Hubs send it only to agents of
-// protocol minor 4 and later.
+// protocol minor 5 and later.
 message LogRequest {
   // id correlates the LogLines and a LogCancel; unique per stream.
   string id = 1;

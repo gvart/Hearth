@@ -29,7 +29,8 @@ import (
 // Protocol version this agent speaks.
 const (
 	ProtocolMajor = 1
-	ProtocolMinor = 4 // 1: answers ExecRequest; 2: reports its capability ceiling; 3: answers ProbeRequest; 4: sends MetricsBatch
+	// 1: answers ExecRequest; 2: reports its capability ceiling; 3: answers ProbeRequest; 4: sends MetricsBatch; 5: streams logs (LogRequest)
+	ProtocolMinor = 5
 )
 
 const (

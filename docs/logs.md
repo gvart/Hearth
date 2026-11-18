@@ -57,7 +57,7 @@ before asking, and the agent checks again before it starts `journalctl` or `dock
 ## How it works
 
 - The hub sends a `LogRequest` over the agent's existing stream; the agent answers with batches of
-  lines. Agents older than protocol 1.4 cannot stream logs: the UI says the agent is too old.
+  lines. Agents older than protocol 1.5 cannot stream logs: the UI says the agent is too old.
 - Streams of the same source on a device share one `journalctl` or `docker logs` process and a ring
   of its last 500 lines, so a second viewer starts at once. When the last viewer closes, the process
   is stopped and the ring dropped: nothing is kept for a source nobody reads.

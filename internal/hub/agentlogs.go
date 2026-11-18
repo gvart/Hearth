@@ -16,7 +16,7 @@ import (
 
 // minLogsMinor is the first agent protocol minor version that streams logs
 // and reports which sources its ceiling allows.
-const minLogsMinor = 4
+const minLogsMinor = 5
 
 // logBuffer is how many LogLines messages of one stream the hub holds for a
 // slow reader before it ends the stream.
