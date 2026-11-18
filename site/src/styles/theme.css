@@ -1,0 +1,12 @@
+/* Hearth's accent colour, as in the web UI (web/src/index.css). */
+:root {
+	--sl-color-accent-low: #3d1a06;
+	--sl-color-accent: #f76707;
+	--sl-color-accent-high: #ffd8bf;
+}
+
+:root[data-theme='light'] {
+	--sl-color-accent-low: #ffe3d1;
+	--sl-color-accent: #c94d08;
+	--sl-color-accent-high: #6b2804;
+}

@@ -1,4 +1,7 @@
-# Prometheus
+---
+title: Prometheus
+description: Device charts and metric triggers from an existing Prometheus.
+---
 
 If you already run Prometheus with node-exporter, the hub can read from it and draw device charts
 (CPU, memory, root disk usage over the last hour) in the device drawer. Hearth only reads; it never

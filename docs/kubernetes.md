@@ -1,4 +1,7 @@
-# Kubernetes clusters
+---
+title: Kubernetes
+description: Adopt a Kubernetes cluster through a kubeconfig, watch it and take day-two actions.
+---
 
 Hearth adopts an existing Kubernetes cluster (Talos, k3s, kind, ...) through a kubeconfig. Nothing is
 installed in the cluster. Hearth reads nodes, namespaces, workloads (Deployments, StatefulSets,

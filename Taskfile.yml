@@ -69,6 +69,20 @@ tasks:
     cmds:
       - npm run dev
 
+  docs:
+    desc: Run the docs site (site/, Astro Starlight over docs/*.md) dev server with hot reload
+    deps: [docs:deps]
+    dir: site
+    cmds:
+      - npm run dev
+
+  docs:build:
+    desc: Build the static docs site into site/dist
+    deps: [docs:deps]
+    dir: site
+    cmds:
+      - npm run build
+
   release:snapshot:
     desc: Build all release archives and the image locally with goreleaser, without publishing (pass `-- --skip=docker` without Docker buildx)
     cmds:
@@ -83,6 +97,14 @@ tasks:
   web:deps:
     internal: true
     dir: web
+    sources: [package.json, package-lock.json]
+    generates: [node_modules/.package-lock.json]
+    cmds:
+      - npm ci --no-audit --no-fund
+
+  docs:deps:
+    internal: true
+    dir: site
     sources: [package.json, package-lock.json]
     generates: [node_modules/.package-lock.json]
     cmds:

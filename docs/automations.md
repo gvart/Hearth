@@ -1,4 +1,7 @@
-# Automations
+---
+title: Automation reference
+description: Triggers, conditions, actions and templates of automation YAML files.
+---
 
 An automation is a YAML file in the hub's automations directory: `<data-dir>/automations` by default,
 or `hearth hub --automations-dir DIR`. Every `*.yaml` and `*.yml` file in it (not in subdirectories)
@@ -23,12 +26,14 @@ actions:                   # run in order; the first failure or policy denial en
 `queued` runs it afterwards (at most 10 waiting), `restart` cancels the current run and starts again.
 
 Built in: the triggers below and the actions in [Actions on devices and webhooks](#actions-on-devices-and-webhooks).
+No condition types are built in yet: `conditions` must be left out or empty, and a condition of any
+type is rejected when the file is loaded.
 
 ## Triggers
 
 | type       | fires when                                                    |
 |------------|---------------------------------------------------------------|
-| `manual`   | run by hand                                                   |
+| `manual`   | run by hand (there is no command or button for it yet)        |
 | `device`   | a device goes online or offline                               |
 | `metric`   | a metric has been above or below a threshold for a duration   |
 | `http`     | an HTTP GET fails or returns the wrong status                 |
@@ -59,6 +64,7 @@ triggers:
     above: 90          # or below:
     for: 5m            # optional: how long it must stay past the threshold
     every: 30s         # optional: how often to read it (default 30s)
+    timeout: 5s        # optional: per read (default 5s, or every if shorter)
 ```
 
 or any PromQL query, which fires when any of its series is past the threshold:
@@ -72,7 +78,7 @@ triggers:
 ```
 
 Metrics come from Prometheus, so the metric trigger needs `hearth hub --prometheus-url` (see
-[prometheus.md](prometheus.md)); devices map to node-exporter targets as for charts. Without it the
+[Prometheus](prometheus.md)); devices map to node-exporter targets as for charts. Without it the
 automation loads, but its metric trigger stops with an error in the hub log. A value that cannot be
 read does not count as past the threshold, and starts the `for` duration over. A metric trigger
 fires once per spell past the threshold: again only after the value has come back.
@@ -163,6 +169,7 @@ actions:
     type: exec
     device: pi4
     command: [/usr/bin/df, -h]   # a list: program, then arguments; never a shell
+    timeout: 1m                  # optional, default 1m, at most 10m
   - id: notify
     type: webhook
     url: https://ntfy.sh/my-lab

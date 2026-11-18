@@ -48,7 +48,8 @@ pkg/sdk/               public agent/plugin SDK — Apache-2.0 licensed
 proto/                 .proto sources
 web/                   Vite + React + TypeScript UI, embedded via embed.FS
 deploy/                install.sh, systemd/launchd units
-docs/                  design notes, task specs (docs/tasks/)
+docs/                  user docs (*.md, rendered by site/), design notes, task specs (docs/tasks/)
+site/                  docs site: Astro Starlight; publishes the docs/*.md listed in site/src/pages.mjs
 test/e2e/              end-to-end tests (compose: hub + agents)
 ```
 
@@ -73,6 +74,8 @@ task e2e          # compose-based end-to-end test of the headline demo
 task e2e:cluster  # compose-based end-to-end test of 3-hub cluster failover
 task e2e:install  # install.sh end to end in a Debian 12 container (Docker)
 task dev          # web UI dev server with hot reload (Vite)
+task docs         # docs site dev server with hot reload (site/, Astro Starlight)
+task docs:build   # build the static docs site into site/dist
 task release:snapshot  # goreleaser snapshot: all archives + image into dist/, no publish
 ```
 

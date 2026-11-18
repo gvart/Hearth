@@ -8,7 +8,10 @@ Every device in your lab — Talos/k8s nodes, Raspberry Pis, old phones, a NAS, 
 becomes an entity you can see, control and automate from one place. Local-first, self-hosted,
 one Go binary.
 
-> 🚧 Pre-alpha, built in public. Nothing to install yet. Follow along via the devlog at [gvart.dev](https://gvart.dev).
+> 🚧 Pre-alpha, built in public. Try it with [Getting started](docs/getting-started.md); follow along via the devlog at [gvart.dev](https://gvart.dev).
+
+Documentation lives in [`docs/`](docs/) and is published as a site built from [`site/`](site/)
+(`task docs` to preview it).
 
 ## Why
 
