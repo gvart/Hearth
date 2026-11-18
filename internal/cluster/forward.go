@@ -66,9 +66,8 @@ func (n *Node) ApplyOrForward(ctx context.Context, cmd store.Command) (store.Res
 			return res, err
 		}
 		if nl.LeaderID != "" && nl.LeaderID != n.cfg.NodeID {
-			res, index, retry, err := n.forward(ctx, nl.LeaderID, nl.LeaderAddr, cmd)
+			res, retry, err := n.forwardWrite(ctx, nl.LeaderID, nl.LeaderAddr, cmd)
 			if !retry {
-				n.waitApplied(ctx, cmd, index)
 				return res, err
 			}
 		}
@@ -82,6 +81,28 @@ func (n *Node) ApplyOrForward(ctx context.Context, cmd store.Command) (store.Res
 		case <-time.After(forwardRetry):
 		}
 	}
+}
+
+// forwardWrite forwards cmd and waits to apply it here. While it waits the
+// entry counts as this node's own write, so observers do not react to it a
+// second time when the caller reacts to the returned result.
+func (n *Node) forwardWrite(ctx context.Context, leaderID, leaderAddr string, cmd store.Command) (store.Result, bool, error) {
+	b, err := store.EncodeCommand(cmd)
+	if err != nil {
+		return store.Result{}, false, err
+	}
+	n.fsm.writes.begin(b)
+	res, index, retry, err := n.forward(ctx, leaderID, leaderAddr, cmd)
+	if !retry {
+		n.waitApplied(ctx, cmd, index)
+	}
+	claimed, wasClaimed := n.fsm.writes.end(b)
+	if err != nil && wasClaimed {
+		// The answer was lost, but the entry was applied here and observers
+		// were told it is this caller's.
+		return claimed, false, nil
+	}
+	return res, retry, err
 }
 
 // waitApplied waits, bounded by appliedWait and ctx, until this node's

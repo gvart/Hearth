@@ -33,9 +33,9 @@ type applyResponse struct {
 // unbounded I/O): a slow observer stalls replication on this node.
 type ApplyObserver interface {
 	// Applied is called after cmd was applied successfully (a domain error
-	// is not reported). local is true when this node proposed the entry: it
-	// was the leader of the entry's Raft term when it applied it. A leader
-	// that already reacted to its own writes uses it to skip them.
+	// is not reported). local is true when a write on this node is waiting
+	// for this entry, proposed here or forwarded to the leader, and so gets
+	// its result. A hub that reacts to its own writes uses it to skip them.
 	Applied(cmd store.Command, res store.Result, local bool)
 	// Restored is called after a snapshot replaced the whole store. No
 	// Applied calls are made for what the snapshot contains, so anything
@@ -62,6 +62,8 @@ type fsm struct {
 	// snaps is the node's snapshot store, read by Restore for the index of
 	// the snapshot it installs; nil in unit tests.
 	snaps raft.SnapshotStore
+	// writes are the writes on this node waiting for their entry.
+	writes localWrites
 
 	mu     sync.Mutex
 	halted error
@@ -69,17 +71,77 @@ type fsm struct {
 
 var _ raft.FSM = (*fsm)(nil)
 
-func newFSM(st *store.Store, dir string, log *slog.Logger, onFatal func(error), obs *atomic.Pointer[ApplyObserver]) *fsm {
-	return &fsm{st: st, dir: dir, log: log, onFatal: onFatal, obs: obs}
+// localWrites tracks the commands this node's callers are writing, by their
+// encoded bytes. An entry is local exactly when a caller is waiting for it:
+// whether this node leads when it applies the entry says nothing about that,
+// because a leader can step down between committing an entry and applying it,
+// and a write that was forwarded is applied here as a follower.
+type localWrites struct {
+	mu      sync.Mutex
+	waiting map[string]*localWrite
 }
 
-// ledTerm reports whether this node is the leader of term now. Only the
-// leader of a term appends entries of that term, so an entry of that term
-// applied while this holds was proposed here. A leader that stepped down
-// before applying its entry answers false; its proposer got an error.
-func (f *fsm) ledTerm(term uint64) bool {
-	r := f.raft.Load()
-	return r != nil && r.State() == raft.Leader && r.CurrentTerm() == term
+type localWrite struct {
+	callers int
+	// applied holds the results of entries claimed for these callers.
+	applied []store.Result
+}
+
+// begin registers a caller waiting for the entry with these bytes.
+func (w *localWrites) begin(data []byte) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.waiting == nil {
+		w.waiting = map[string]*localWrite{}
+	}
+	p := w.waiting[string(data)]
+	if p == nil {
+		p = &localWrite{}
+		w.waiting[string(data)] = p
+	}
+	p.callers++
+}
+
+// claim reports whether a caller is waiting for the entry with these bytes,
+// and hands it res.
+func (w *localWrites) claim(data []byte, res store.Result) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	p := w.waiting[string(data)]
+	if p == nil || len(p.applied) >= p.callers {
+		return false
+	}
+	p.applied = append(p.applied, res)
+	return true
+}
+
+// end removes a caller. It returns the result of the entry claimed for it, if
+// any: the entry was reported as local, so the caller must treat the write as
+// done even if its own wait for it failed.
+func (w *localWrites) end(data []byte) (store.Result, bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	p := w.waiting[string(data)]
+	if p == nil {
+		return store.Result{}, false
+	}
+	p.callers--
+	var (
+		res     store.Result
+		claimed bool
+	)
+	if len(p.applied) > 0 {
+		res, claimed = p.applied[0], true
+		p.applied = p.applied[1:]
+	}
+	if p.callers == 0 {
+		delete(w.waiting, string(data))
+	}
+	return res, claimed
+}
+
+func newFSM(st *store.Store, dir string, log *slog.Logger, onFatal func(error), obs *atomic.Pointer[ApplyObserver]) *fsm {
+	return &fsm{st: st, dir: dir, log: log, onFatal: onFatal, obs: obs}
 }
 
 func (f *fsm) observer() ApplyObserver {
@@ -109,8 +171,11 @@ func (f *fsm) Apply(l *raft.Log) any {
 		return applyResponse{err: f.halt(fmt.Errorf("log entry %d (%s): %w", l.Index, cmd.Op(), err))}
 	}
 	f.applied.Store(l.Index)
-	if o := f.observer(); err == nil && o != nil {
-		o.Applied(cmd, res, f.ledTerm(l.Term))
+	if err == nil {
+		local := f.writes.claim(l.Data, res)
+		if o := f.observer(); o != nil {
+			o.Applied(cmd, res, local)
+		}
 	}
 	return applyResponse{res: res, err: err}
 }
