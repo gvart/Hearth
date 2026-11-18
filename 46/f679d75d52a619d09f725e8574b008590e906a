@@ -1,0 +1,77 @@
+site/src/pages.mjs
+  s_344993999c180f::t_4c67fc0e7e7180 1-17
+Taskfile.yml
+  s_344993999c180f::t_cf0a0702116727 72-85
+  s_344993999c180f::t_61b361aae24fe7 105-112
+site/astro.config.mjs
+  s_344993999c180f::t_85b471f8ba36ef 1-4,6-33,35-39,41-45
+  s_344993999c180f::t_039fba81c277f1 5,34
+  s_344993999c180f::t_649decf3e8eae0 40
+docs/automations.md
+  s_344993999c180f::t_ca049328f17f5b 81
+  s_344993999c180f::t_52005dc3bfeb1c 36
+  s_344993999c180f::t_5bd71878ac64b6 1-4
+  s_344993999c180f::t_d899eb10f2a005 67
+  s_344993999c180f::t_a0135ded02d5ac 171
+  s_344993999c180f::t_0e50b4702127a9 29-30
+site/.gitignore
+  s_344993999c180f::t_ac5dcdfb4f15ed 1-3
+docs/concepts.md
+  s_344993999c180f::t_121be4a87151cd 1-106
+site/tsconfig.json
+  s_344993999c180f::t_ad4a6b5b33d65a 1-5
+site/src/content.config.ts
+  s_344993999c180f::t_b20fe7864339b3 1-24
+docs/security.md
+  s_344993999c180f::t_ec1524dbceb7c0 1-90
+CLAUDE.md
+  s_344993999c180f::t_1ac7a6f28ec8ac 77-78
+  s_344993999c180f::t_093f3cc8b49346 51-52
+README.md
+  s_344993999c180f::t_efd87d56a7ffab 11-14
+site/src/content/docs/index.mdx
+  s_344993999c180f::t_ae7e9e78ea37de 2,6
+  s_344993999c180f::t_94b45d6db8dfb7 1,3-5,7-39
+site/package.json
+  s_344993999c180f::t_2a12470cbf35f7 1-13,15-18
+  s_344993999c180f::t_180a075d6fcd54 14
+docs/cluster.md
+  s_344993999c180f::t_5bd71878ac64b6 1-4
+docs/prometheus.md
+  s_344993999c180f::t_5bd71878ac64b6 1-4
+site/src/styles/theme.css
+  s_344993999c180f::t_0400eb1642dd7e 1-12
+.github/workflows/ci.yml
+  s_344993999c180f::t_8832ebc638a328 106-120
+docs/getting-started.md
+  s_344993999c180f::t_789484110e5cad 93
+  s_344993999c180f::t_c0ef1d49cf87ea 145-146
+  s_344993999c180f::t_5946ed62d5710a 1-92,94-144,147-157
+CONTRIBUTING.md
+  s_344993999c180f::t_7bf6daebe650c5 24
+docs/https.md
+  s_344993999c180f::t_5bd71878ac64b6 1-4
+site/public/favicon.svg
+  s_344993999c180f::t_9a699b82305448 1
+docs/kubernetes.md
+  s_344993999c180f::t_5bd71878ac64b6 1-2,4
+  s_344993999c180f::t_bd7845c61191d1 3
+site/package-lock.json
+  s_344993999c180f::t_85fb5176e8ef8d 1-6616
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "46f679d75d52a619d09f725e8574b008590e906a",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
