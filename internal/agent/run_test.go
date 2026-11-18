@@ -43,6 +43,8 @@ type restartableHub struct {
 	logs    *syncBuffer
 	srv     *http.Server
 	done    chan struct{}
+	// agents sends exec requests over the hub's agent streams.
+	agents *hub.Agents
 }
 
 func startRestartableHub(t *testing.T, heartbeat time.Duration) *restartableHub {
@@ -78,11 +80,13 @@ func startClusterHub(t *testing.T, heartbeat time.Duration, peer *restartableHub
 	}
 	logs := &syncBuffer{}
 	log := slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	agents := hub.NewAgents(st.Devices())
 	h := &restartableHub{
-		t: t,
+		t:      t,
+		agents: agents,
 		handler: hub.NewHandler(hub.Config{
 			Store: st, CA: ca, Policy: policy.New(st.Audit()), Log: log, HeartbeatInterval: heartbeat,
-			Leadership: lead,
+			Leadership: lead, Agents: agents,
 		}),
 		tls:  hub.TLSConfig(ca, cert),
 		st:   st,

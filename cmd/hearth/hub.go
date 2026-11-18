@@ -43,7 +43,9 @@ type hubOptions struct {
 	// prometheusURL is an existing Prometheus server to read device charts
 	// from; empty means none.
 	prometheusURL string
-	cluster       clusterOptions
+	// dangerousAutomations are the automations granted dangerous actions.
+	dangerousAutomations []string
+	cluster              clusterOptions
 }
 
 func newHubCmd() *cobra.Command {
@@ -82,6 +84,8 @@ func newHubCmd() *cobra.Command {
 		"Prometheus server to read device charts from, e.g. http://prometheus.lan:9090 (env HEARTH_PROMETHEUS_URL)")
 	cmd.Flags().StringVar(&opts.automationsDir, "automations-dir", "",
 		"directory of automation YAML files, reloaded when they change (default <data-dir>/automations)")
+	cmd.Flags().StringArrayVar(&opts.dangerousAutomations, "allow-dangerous-automation", nil,
+		"id of an automation allowed to take dangerous actions, such as exec; repeatable (default: none)")
 	addClusterFlags(cmd, &opts.cluster)
 	return cmd
 }
@@ -147,13 +151,14 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		return err
 	}
 
-	pol := policy.New(st.Audit())
+	pol := policy.NewWithConfig(st.Audit(), policy.Config{DangerousAutomations: opts.dangerousAutomations})
 	if node == nil {
 		if err := ensureAdminPassword(ctx, st, pol, opts, log); err != nil {
 			return err
 		}
 	}
 	reg := hub.NewRegistry(hub.RegistryConfig{Store: st, Log: log, Replicated: node != nil})
+	agents := hub.NewAgents(st.Devices())
 	// stopping ends agent streams and /events subscriptions as soon as either
 	// server begins shutting down, so Shutdown waits only on ordinary requests
 	// and agents see a clean end of stream and reconnect at once.
@@ -170,6 +175,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		AgentPort:         agentPort,
 		Stopping:          stopping,
 		Prometheus:        prom,
+		Agents:            agents,
 	}
 	// ready is closed once a clustered hub has caught up with the cluster.
 	ready := make(chan struct{})
@@ -250,6 +256,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		Metrics: hub.AutomationMetrics(st, prom),
 		Log:     log,
 	}))
+	maps.Copy(kinds.Actions, automation.Actions(automation.ActionDeps{Agents: agents}))
 	automations := automation.New(automation.Config{
 		Dir:    automationsDir,
 		Kinds:  kinds,

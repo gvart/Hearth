@@ -56,6 +56,9 @@ type Config struct {
 	// Prometheus reads device chart series from an existing Prometheus
 	// server. Nil means none is configured: charts report not_configured.
 	Prometheus *prometheus.Reader
+	// Agents runs exec requests over the open agent streams. Share one with
+	// whatever sends them (the automations). If nil, NewHandler creates one.
+	Agents *Agents
 }
 
 // NewHandler serves EnrollService to anyone (the token is the credential) and
@@ -74,6 +77,9 @@ func NewHandler(cfg Config) http.Handler {
 	stream := NewAgentStream(cfg.Log, cfg.HeartbeatInterval, reg)
 	stream.leadership = lead
 	stream.certs, stream.authority = cfg.Store.Certs(), authority
+	if cfg.Agents != nil {
+		stream.agents = cfg.Agents
+	}
 	path, h := agentv1connect.NewAgentServiceHandler(stream)
 	mux.Handle(path, requireClientCert(cfg.Store.Certs(), cfg.Log, authority,
 		EndOnStop(cfg.Stopping, reg.endOnStepDown(h))))

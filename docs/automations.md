@@ -22,7 +22,7 @@ actions:                   # run in order; the first failure or policy denial en
 `mode` says what happens when a trigger fires while a run is in progress: `single` ignores it,
 `queued` runs it afterwards (at most 10 waiting), `restart` cancels the current run and starts again.
 
-Built in so far: the triggers below and the `log` action. More actions come with their own issues.
+Built in: the triggers below and the actions in [Actions on devices and webhooks](#actions-on-devices-and-webhooks).
 
 ## Triggers
 
@@ -138,3 +138,58 @@ reported with their line, as `file:line: message`.
 
   After a rolling upgrade, runs are recorded once `hearth cluster migrate` brings the cluster to
   schema 7.
+
+## Actions on devices and webhooks
+
+| type      | does                                              | policy class | runs on |
+|-----------|---------------------------------------------------|--------------|---------|
+| `log`     | writes a line to the hub log                      | read         | hub     |
+| `webhook` | sends one HTTP request                            | safe         | hub     |
+| `restart` | restarts a systemd unit or Docker container       | safe         | device  |
+| `exec`    | runs a command                                    | dangerous    | device  |
+
+```yaml
+actions:
+  - id: restart-dns
+    type: restart
+    device: pi4                  # device id, name or hostname
+    service: systemd:pihole-FTL.service   # or systemd-user:UNIT (systemctl --user), docker:CONTAINER
+    timeout: 1m                  # optional, default 1m, at most 10m
+  - id: disk-report
+    type: exec
+    device: pi4
+    command: [/usr/bin/df, -h]   # a list: program, then arguments; never a shell
+  - id: notify
+    type: webhook
+    url: https://ntfy.sh/my-lab
+    method: POST                 # default POST
+    headers: {Title: DNS restarted}
+    body: pi4 restarted pihole-FTL
+    timeout: 10s                 # optional, default 10s, at most 1m
+```
+
+Two gates stand before anything runs on a device, and both must agree:
+
+- **Hub policy.** `exec` is dangerous: an automation may take it only when the hub grants it by id,
+  `hearth hub --allow-dangerous-automation disk-report` (repeatable; in a cluster, give every hub
+  the same flags). Without the grant the action is denied. Approving dangerous actions one at a time
+  comes later.
+- **The device's capability ceiling.** An agent runs only what its own flags allow, and nothing by
+  default. The hub can never raise it:
+
+  ```sh
+  hearth agent run --allow-restart systemd:pihole-FTL.service --allow-restart docker:jellyfin \
+    --allow-exec /usr/bin/df
+  ```
+
+  `--allow-exec` matches the command's first word exactly as the automation writes it, with any
+  arguments. `--allow-restart` takes `systemd:UNIT`, `systemd-user:UNIT` or `docker:CONTAINER`. On
+  a systemd install, add the flags to `ExecStart=` with `systemctl edit hearth-agent`.
+
+A denial by either gate stops the run with status `denied`, shown in `hearth automation runs`, and
+is in the audit log with actor `automation/<id>`. A failed action (non-zero exit, a non-2xx answer,
+an offline device) stops it with status `failed`.
+
+Webhook URLs and headers often carry secrets: errors, logs and the audit log name only the URL's
+scheme and host. Command arguments are never logged either; a failed command's error ends with up
+to 256 bytes of its stderr.

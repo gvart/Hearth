@@ -38,6 +38,7 @@ func newAutomationPlanCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			kinds := automation.Builtin(slog.New(slog.DiscardHandler))
 			maps.Copy(kinds.Triggers, automation.Triggers(automation.TriggerDeps{}))
+			maps.Copy(kinds.Actions, automation.Actions(automation.ActionDeps{}))
 			a, err := automation.LoadFile(args[0], kinds)
 			if err != nil {
 				return err

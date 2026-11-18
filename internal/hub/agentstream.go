@@ -38,6 +38,8 @@ type AgentStream struct {
 	// gates that judgement exactly as in requireClientCert.
 	certs     certChecker
 	authority func() error
+	// agents tracks open streams so exec requests can be sent over them.
+	agents *Agents
 }
 
 var _ agentv1connect.AgentServiceHandler = (*AgentStream)(nil)
@@ -46,7 +48,7 @@ var _ agentv1connect.AgentServiceHandler = (*AgentStream)(nil)
 func NewAgentStream(log *slog.Logger, heartbeatInterval time.Duration, reg *Registry) *AgentStream {
 	return &AgentStream{
 		log: log, heartbeatInterval: heartbeatInterval, registry: reg, leadership: soloLeadership{}, now: time.Now,
-		authority: func() error { return nil },
+		authority: func() error { return nil }, agents: NewAgents(reg.devices),
 	}
 }
 
@@ -103,6 +105,9 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 	if err := stream.Send(welcome); err != nil {
 		return fmt.Errorf("send welcome to %s: %w", deviceID, err)
 	}
+	// From here on only Agents.Exec sends on the stream.
+	sess := s.agents.attach(deviceID, hello.GetProtocolVersion().GetMinor(), stream.Send)
+	defer s.agents.detach(deviceID, sess)
 
 	for {
 		msg, err := stream.Receive()
@@ -135,10 +140,12 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 			if err := s.registry.ReportFacts(ctx, deviceID, p.Facts); err != nil {
 				log.WarnContext(ctx, "record facts", "err", err)
 			}
+		case *agentv1.AgentMessage_ExecResult:
+			sess.deliver(p.ExecResult)
 		case *agentv1.AgentMessage_Hello:
 			return connect.NewError(connect.CodeInvalidArgument, errors.New("duplicate Hello"))
 		default:
-			// Metrics and exec results are handled by later tasks.
+			// Metrics are handled by a later task.
 		}
 	}
 }
