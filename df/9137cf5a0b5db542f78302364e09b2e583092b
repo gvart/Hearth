@@ -1,0 +1,102 @@
+internal/agent/ceiling_test.go
+  s_344993999c180f::t_59f7a6030999ed 1-70
+cmd/hearth/device.go
+  s_344993999c180f::t_0d7d35b53f3360 27-30,39,43,47,60-62,71
+internal/store/applier.go
+  s_344993999c180f::t_319fb96925a2bd 76,83
+proto/hearth/agent/v1/agent.proto
+  s_344993999c180f::t_a3fec0d8f95c70 60-75
+internal/store/command_test.go
+  s_344993999c180f::t_84f390b1662e12 289-296
+  s_344993999c180f::t_319fb96925a2bd 53-57
+internal/hub/facts.go
+  s_344993999c180f::t_ff85a8b604b412 27-35,67-68
+  s_344993999c180f::t_ef059bbacd0d32 69
+cmd/hearth/cluster_test.go
+  s_344993999c180f::t_056672249d47f4 24,27,33
+cmd/hearth/common.go
+  s_344993999c180f::t_430025d0aaaef5 80-92,94-98,103,105-107,109
+  s_344993999c180f::t_e876df5654ff77 99-102,104
+  s_344993999c180f::t_eaba384c8cb51d 64-79,93,108,110-111
+  s_344993999c180f::t_452017d3f4432c 7,13,16
+internal/policy/config.go
+  s_344993999c180f::t_a71b6005f00496 1-124
+internal/store/approvals_test.go
+  s_344993999c180f::t_68070278abdc5d 1-80,82-118
+  s_344993999c180f::t_f3405aab2cb74a 81
+internal/hub/api.go
+  s_344993999c180f::t_f06fbf318ad2d8 83-85
+internal/hub/agentstream.go
+  s_344993999c180f::t_af1b7fdb7a9464 109,140
+internal/hub/agentexec.go
+  s_344993999c180f::t_af1b7fdb7a9464 13,22-26,31-34,61-62,67-71,92-116,129-131,142-169
+cmd/hearth/token.go
+  s_344993999c180f::t_0d7d35b53f3360 23,49,74-76,80
+internal/policy/policy.go
+  s_344993999c180f::t_36ef31bc3866d1 8,62-65,92-94,97-100,104-108,115,117-120,122,125-126,143-154
+  s_344993999c180f::t_41ce5d82e9d15a 166-169
+internal/policy/policy_test.go
+  s_344993999c180f::t_0ee0d5c93b1a28 263
+internal/policy/engine.go
+  s_344993999c180f::t_166f68d6f6a592 309-316
+  s_344993999c180f::t_ffc277627bbbeb 1-308,317-343
+internal/cluster/control.go
+  s_344993999c180f::t_319fb96925a2bd 229
+internal/agent/exec_test.go
+  s_344993999c180f::t_dbeb6412dbe730 17,41-43,68-69,80,84,88,92,101-106,148-149,155,157-158,160-161
+internal/agent/exec.go
+  s_344993999c180f::t_7e047936e94e7d 16,52-55,57-60,62-64,67,88
+internal/store/approvals.go
+  s_344993999c180f::t_f3405aab2cb74a 14,17,55,110,123
+  s_344993999c180f::t_d203a26b906ffb 1-13,15-16,18-54,56-109,111-122,124-223
+internal/hub/tokens.go
+  s_344993999c180f::t_f06fbf318ad2d8 45-51,63-64,69,98,103-105,119-121
+  s_344993999c180f::t_a7d6785488a340 122
+internal/policy/ceiling.go
+  s_344993999c180f::t_5ee4e32582d612 1-36
+internal/hub/approvals.go
+  s_344993999c180f::t_e95cd436bfb4fe 1-89
+internal/store/store_test.go
+  s_344993999c180f::t_f3405aab2cb74a 54
+cmd/hearth/cluster.go
+  s_344993999c180f::t_056672249d47f4 286,306
+  s_344993999c180f::t_0d7d35b53f3360 31-34,44,48,52,63-65,67,71,81-84,96,100,104,116-118,122,194-200,202-205,210,332-334,338
+cmd/hearth/approval.go
+  s_344993999c180f::t_54e58e307178fa 1-134
+internal/store/command.go
+  s_344993999c180f::t_319fb96925a2bd 672-675
+internal/hub/agentexec_test.go
+  s_344993999c180f::t_d38416930a41b7 17,44-48,57,79,98,129,155-273
+internal/automation/action_test.go
+  s_344993999c180f::t_1b44e411f66226 62
+internal/agent/run.go
+  s_344993999c180f::t_7e047936e94e7d 32,316
+cmd/hearth/hub.go
+  s_344993999c180f::t_00c1a390583b8f 46-47,49-51,91-94,116-120,164,276
+cmd/hearth/root.go
+  s_344993999c180f::t_3a103e0848f0d7 18
+internal/automation/action_device.go
+  s_344993999c180f::t_0ae970829be3a9 74-86
+internal/automation/runtime.go
+  s_344993999c180f::t_3b2e7e02b207ad 66-68,385,391-402
+internal/proto/hearth/agent/v1/agent.pb.go
+  s_344993999c180f::t_5001006cfffabc 329-335,459-523,537,549,562,605,617,630,665,677,690,717,729,742,765,777,790,842,854,867,913,925,938,977,989,1002,1032,1044,1057,1080,1092,1105,1175,1187,1200,1223,1235,1248,1274,1286,1299,1323,1340-1344,1415,1421-1437,1441-1443,1445-1447,1449-1468,1488,1498
+internal/store/migrations/00008_approvals.sql
+  s_344993999c180f::t_571452bb6f7a86 1-25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "df9137cf5a0b5db542f78302364e09b2e583092b",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
