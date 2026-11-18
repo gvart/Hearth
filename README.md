@@ -25,6 +25,9 @@ network mappers discover. Nothing **acts**. Hearth adds the missing layer:
 - **Agent-native** — a built-in MCP server lets Claude Code and other agents operate your lab, safely.
 - **Deny by default** — every action from the UI, automations, AI or MCP passes one policy engine with an audit log.
 
+How it fits next to Beszel, Komodo, NetAlertX and Homepage, and when to use those instead:
+[Hearth and other tools](docs/comparison.md).
+
 ## Demo
 
 Join a new device and it shows up online in the hub in **under 10 seconds**. CI holds the project to
