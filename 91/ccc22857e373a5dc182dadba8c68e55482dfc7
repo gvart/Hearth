@@ -1,0 +1,55 @@
+docs/guardrails.md
+  s_344993999c180f::t_14ee3e7888191a 77-78
+internal/policy/policy_test.go
+  s_344993999c180f::t_0a985dfc6d0905 416-445
+  s_344993999c180f::t_3640c308f5bdff 288-289,292-306
+internal/automation/action_kube_test.go
+  s_344993999c180f::t_d9e66cdcbcaebb 1-113,115-136,138-192,197,201-276
+  s_344993999c180f::t_212d145ade1340 114,137,193-196,198-200
+docs/kubernetes.md
+  s_344993999c180f::t_ebc1e8f63e0301 65-66
+  s_344993999c180f::t_aadbab6aa27a5a 84-88
+internal/integrations/kubernetes/actions_inner_test.go
+  s_344993999c180f::t_4e9825a0f7fadb 1-80,82-129
+  s_344993999c180f::t_85f36c4b13f942 81
+internal/policy/policy.go
+  s_344993999c180f::t_28e6351c075116 180-185,187-189
+internal/automation/action_kube.go
+  s_344993999c180f::t_6a459709fb3a3a 1-258
+internal/policy/guardrails_test.go
+  s_344993999c180f::t_0b668ebfb7073a 117-122
+internal/integrations/kubernetes/manager.go
+  s_344993999c180f::t_247bde39969324 345-356
+internal/integrations/kubernetes/actions.go
+  s_344993999c180f::t_247bde39969324 109-112,123,128,130-131,134,141-154,156-178,181-259
+internal/automation/action_device.go
+  s_344993999c180f::t_352b33df3a9ff1 9,36-37,40-41,46,52-53
+internal/automation/runtime.go
+  s_344993999c180f::t_352b33df3a9ff1 292-294,354-355,391-394,397,410-428
+cmd/hearth/hub.go
+  s_344993999c180f::t_e8cf92ffe629ae 291
+internal/policy/engine.go
+  s_344993999c180f::t_28e6351c075116 125,140-160
+  s_344993999c180f::t_134bc12987f3ed 161
+docs/automations.md
+  s_344993999c180f::t_e0832d60d93857 213-272
+  s_344993999c180f::t_82fd0464980af2 28-29
+  s_344993999c180f::t_3abd212ad5efaa 144-145
+  s_344993999c180f::t_1563cbd1646817 299
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "91ccc22857e373a5dc182dadba8c68e55482dfc7",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
