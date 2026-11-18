@@ -7,6 +7,7 @@ internal/store/store_test.go
   s_344993999c180f::t_9ffaf0a9889a27 54
 internal/integrations/kubernetes/actions.go
   s_344993999c180f::t_d5aa6b7741f423 119
+  s_344993999c180f::t_ea1dc9bf1ba5ab 114
 internal/integrations/kubernetes/actions_test.go
   s_344993999c180f::t_ef6e4c55d12bf2 92,135,156,185,246,290,322,326,330
 internal/mcpserver/bridge.go
@@ -36,12 +37,14 @@ go.mod
 internal/policy/guardrails_test.go
   s_344993999c180f::t_c4edb677fc67de 502
   s_344993999c180f::t_8f08c090487986 90,116,127-135,194-195
+  s_344993999c180f::t_ac457a924e6c0a 117-122
 internal/mcpserver/tools.go
   s_344993999c180f::t_2d78db094f6037 131-134,144-147,470-473
   s_344993999c180f::t_0529b853db46b0 1-130,135-143,148-469,474-600
 internal/policy/policy.go
   s_344993999c180f::t_0cc686e3f4e375 94-115,117,139-142,206,228-243
   s_344993999c180f::t_9912f65d7d4c4e 116,118
+  s_344993999c180f::t_ac457a924e6c0a 210-214,218
 docs/security.md
   s_344993999c180f::t_0a2a1de39aafd9 89-91
 internal/store/mcptokens_test.go
