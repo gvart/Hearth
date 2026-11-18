@@ -667,6 +667,8 @@ func DecodeCommand(b []byte) (Command, error) {
 		cmd, err = decodeAs[DeleteSession](env.Cmd)
 	case MigrateSchema{}.Op():
 		cmd, err = decodeAs[MigrateSchema](env.Cmd)
+	case RecordAutomationRun{}.Op():
+		cmd, err = decodeAs[RecordAutomationRun](env.Cmd)
 	default:
 		return nil, fmt.Errorf("decode command: unknown op %q", env.Op)
 	}
