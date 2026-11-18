@@ -61,7 +61,7 @@ schema 9: until then `confirm` actions are denied.
 
 ## Device capability ceiling
 
-An agent runs only what its own flags allow (`--allow-exec`, `--allow-restart`, see
+An agent runs only what its own flags allow (`--allow-exec`, `--allow-restart`, `--allow-probe`, see
 [automations.md](automations.md)) and reports that ceiling to the hub with its facts. The hub
 denies an action beyond the reported ceiling in policy, before it could be held for approval, and
 never sends it; the agent checks again before running anything. Agents older than this release
@@ -75,7 +75,8 @@ report no ceiling, and the hub sends them no actions until they are upgraded.
 - Kubernetes actions: `"dry_run": true` plans the action (see [kubernetes.md](kubernetes.md)) and
   audits the decision as a dry run.
 - Automations: `hearth hub --automations-dry-run` audits every action's decision and runs none
-  (Kubernetes actions it would allow are planned, and the plan recorded in the run);
+  (Kubernetes actions it would allow are planned, and the plan recorded in the run; triggers still
+  watch, so checks `from` a device still run, as they change nothing);
   `hearth automation plan <file>` checks a file without touching policy.
 
 ## Audit log

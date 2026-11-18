@@ -59,6 +59,9 @@ const (
 	AutomationRestart Action = "automation.restart"
 	// AutomationExec runs a command on a device, through its agent.
 	AutomationExec Action = "automation.exec"
+	// AutomationProbe is an http, tcp or dns trigger checking from a
+	// device: the device's agent runs the check for the hub.
+	AutomationProbe Action = "automation.probe"
 	// KubeClusterAdd adopts a Kubernetes cluster: the hub stores its
 	// kubeconfig, sealed, and starts watching it read-only.
 	KubeClusterAdd Action = "kube.cluster.add"
@@ -168,6 +171,9 @@ var rules = map[Action]rule{
 	AutomationRestart: {class: Safe, actors: []string{ActorAutomation}},
 	// An arbitrary command can do anything the agent can.
 	AutomationExec: {class: Dangerous, actors: []string{ActorAutomation}},
+	// A check from a device only connects and reads: it changes nothing,
+	// and the device's agent runs it only if its ceiling allows probes.
+	AutomationProbe: {class: Read, actors: []string{ActorAutomation}},
 	// Adding a cluster hands the hub a credential to it; the hub only ever
 	// reads with it, except for the kube.workload, kube.pod and kube.node
 	// write actions below, each decided and audited on its own.

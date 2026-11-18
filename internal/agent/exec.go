@@ -26,6 +26,9 @@ type Ceiling struct {
 	// Restart are the services the hub may restart, as manager:name, where
 	// manager is systemd, systemd-user or docker.
 	Restart []string
+	// Probe lets the hub run HTTP, TCP and DNS checks from this device: the
+	// http, tcp and dns automation triggers with from: set to it.
+	Probe bool
 }
 
 // Service managers a restart may name.
@@ -51,7 +54,7 @@ const (
 
 // proto is the ceiling as the agent reports it to the hub.
 func (c Ceiling) proto() *agentv1.Ceiling {
-	return &agentv1.Ceiling{Exec: slices.Clone(c.Exec), Restart: slices.Clone(c.Restart)}
+	return &agentv1.Ceiling{Exec: slices.Clone(c.Exec), Restart: slices.Clone(c.Restart), Probe: c.Probe}
 }
 
 // command returns the program and arguments req runs, or an error wrapping

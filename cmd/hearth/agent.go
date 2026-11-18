@@ -32,7 +32,8 @@ func newAgentRunCmd() *cobra.Command {
 		Long: "Connect to the hub this device joined and keep the connection up: report host facts,\n" +
 			"send heartbeats and reconnect with backoff when the hub is unreachable. Stops on SIGINT/SIGTERM.\n\n" +
 			"--allow-exec and --allow-restart are this device's capability ceiling: the only commands and\n" +
-			"services the hub (its automations) may run or restart here. Without them it may run nothing.",
+			"services the hub (its automations) may run or restart here. Without them it may run nothing.\n" +
+			"--allow-probe lets the hub's http, tcp and dns checks run from here (from: <device>).",
 		Example: "  hearth agent run --allow-restart systemd:pihole-FTL.service --allow-restart docker:jellyfin \\\n" +
 			"    --allow-exec /usr/bin/df",
 		Args: cobra.NoArgs,
@@ -55,6 +56,8 @@ func newAgentRunCmd() *cobra.Command {
 		"program the hub may run here, matched exactly against the command's first word; repeatable")
 	cmd.Flags().StringArrayVar(&ceiling.Restart, "allow-restart", nil,
 		"service the hub may restart here, as systemd:UNIT, systemd-user:UNIT or docker:CONTAINER; repeatable")
+	cmd.Flags().BoolVar(&ceiling.Probe, "allow-probe", false,
+		"let the hub run HTTP, TCP and DNS checks from this device, against anything it can reach")
 	return cmd
 }
 

@@ -107,8 +107,36 @@ stopped Pi-hole is noticed within about 15 s.
 An HTTP check's URL is shown (in plans, logs, run history and templates) with its password and
 query values replaced by `REDACTED`, as health-check URLs often carry a token.
 
-Checks run from the hub (the leader, in a cluster). Running them from an agent is tracked in
-[#105](https://github.com/gvart/Hearth/issues/105).
+Checks run from the hub (the leader, in a cluster), unless they set `from`: a device (id, name or
+hostname) whose agent runs the check instead, to test a service from inside a VLAN, or one bound
+to the device's localhost, that the hub cannot reach:
+
+```yaml
+triggers:
+  - type: http
+    url: http://127.0.0.1:8080/health   # as the device sees it
+    from: pi5
+    for: 20s
+```
+
+A check from a device:
+
+- needs the device's agent to allow it: `hearth agent run --allow-probe`. It is off by default:
+  the check only connects and reads, but it lets the hub use the device as a vantage point into
+  any network the device can reach. The agent reports the setting with its ceiling; the hub
+  refuses to send a check to an agent without it, and the agent refuses it again. Agents older
+  than this release cannot run checks.
+- goes through policy as `automation.probe` (class `read`), once when the trigger starts (at hub
+  start, on gaining leadership, when its file changes), with one audit entry; the checks then run
+  under that decision. A denial (by policy, or because the device's reported ceiling does not
+  allow probes) stops the trigger, logged as `automation trigger stopped`.
+- takes a `timeout` of at most 1m.
+- does not fire while it cannot run (the agent is offline, too old, or refuses the check): that is
+  neither a failure nor a recovery, so an outage in progress neither fires again nor ends. The hub
+  logs a warning once when the check stops running and again when it runs once more. Pair it with
+  a `device` trigger (`to: offline`) to hear about the agent itself.
+
+The agent never logs the URL it checks.
 
 ### Schedule
 
@@ -200,7 +228,8 @@ Two gates stand before anything runs on a device, and both must agree:
   ```
 
   `--allow-exec` matches the command's first word exactly as the automation writes it, with any
-  arguments. `--allow-restart` takes `systemd:UNIT`, `systemd-user:UNIT` or `docker:CONTAINER`. On
+  arguments. `--allow-restart` takes `systemd:UNIT`, `systemd-user:UNIT` or `docker:CONTAINER`.
+  `--allow-probe` lets checks run from the device (see above). On
   a systemd install, add the flags to `ExecStart=` with `systemctl edit hearth-agent`.
 
 A denial by either gate stops the run with status `denied`, shown in `hearth automation runs`, and

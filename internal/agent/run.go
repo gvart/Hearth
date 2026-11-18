@@ -29,7 +29,7 @@ import (
 // Protocol version this agent speaks.
 const (
 	ProtocolMajor = 1
-	ProtocolMinor = 2 // 1: answers ExecRequest; 2: reports its capability ceiling
+	ProtocolMinor = 3 // 1: answers ExecRequest; 2: reports its capability ceiling; 3: answers ProbeRequest
 )
 
 const (
@@ -276,7 +276,7 @@ func (r *runner) session(ctx context.Context, hub string) (welcomed bool, err er
 
 	g, gctx := errgroup.WithContext(ctx)
 	received := make(chan struct{})
-	results := make(chan *agentv1.ExecResult)
+	results := make(chan *agentv1.AgentMessage)
 	g.Go(func() error {
 		defer close(received)
 		var execs sync.WaitGroup
@@ -317,40 +317,53 @@ func (r *runner) hello(ctx context.Context) *agentv1.Hello {
 	return h
 }
 
-// receive consumes hub messages until the stream fails. Each exec request
-// runs on its own goroutine in execs, within the capability ceiling, and
-// its result goes to results for sendLoop to send.
+// receive consumes hub messages until the stream fails. Each exec or probe
+// request runs on its own goroutine in execs, within the capability
+// ceiling, and its result goes to results for sendLoop to send.
 func (r *runner) receive(ctx context.Context, stream *connect.BidiStreamForClient[agentv1.AgentMessage, agentv1.HubMessage],
-	execs *sync.WaitGroup, results chan<- *agentv1.ExecResult,
+	execs *sync.WaitGroup, results chan<- *agentv1.AgentMessage,
 ) error {
+	reply := func(msg *agentv1.AgentMessage) {
+		select {
+		case results <- msg:
+		case <-ctx.Done():
+		}
+	}
 	for {
 		msg, err := stream.Receive()
 		if err != nil {
 			return fmt.Errorf("receive: %w", err)
 		}
-		req := msg.GetExecRequest()
-		if req == nil {
+		switch p := msg.GetPayload().(type) {
+		case *agentv1.HubMessage_ExecRequest:
+			req := p.ExecRequest
+			execs.Go(func() {
+				res := r.cfg.Ceiling.execute(ctx, req)
+				// Never log the arguments: they may carry secrets.
+				r.log.InfoContext(ctx, "exec request", "id", req.GetId(), "action", fmt.Sprintf("%T", req.GetAction()),
+					"denied", res.GetDenied(), "exit_code", res.GetExitCode())
+				reply(&agentv1.AgentMessage{Payload: &agentv1.AgentMessage_ExecResult{ExecResult: res}})
+			})
+		case *agentv1.HubMessage_ProbeRequest:
+			req := p.ProbeRequest
+			execs.Go(func() {
+				res := r.cfg.Ceiling.probe(ctx, req)
+				// Never log the target: a URL may carry credentials.
+				r.log.DebugContext(ctx, "probe request", "id", req.GetId(), "probe", fmt.Sprintf("%T", req.GetProbe()),
+					"denied", res.GetDenied(), "failed", res.GetError() != "")
+				reply(&agentv1.AgentMessage{Payload: &agentv1.AgentMessage_ProbeResult{ProbeResult: res}})
+			})
+		default:
 			// Ping needs no answer: any traffic keeps the stream alive.
 			r.log.DebugContext(ctx, "hub message ignored", "type", fmt.Sprintf("%T", msg.GetPayload()))
-			continue
 		}
-		execs.Go(func() {
-			res := r.cfg.Ceiling.execute(ctx, req)
-			// Never log the arguments: they may carry secrets.
-			r.log.InfoContext(ctx, "exec request", "id", req.GetId(), "action", fmt.Sprintf("%T", req.GetAction()),
-				"denied", res.GetDenied(), "exit_code", res.GetExitCode())
-			select {
-			case results <- res:
-			case <-ctx.Done():
-			}
-		})
 	}
 }
 
-// sendLoop sends heartbeats, periodic facts and exec results until ctx is canceled or a
+// sendLoop sends heartbeats, periodic facts and exec and probe results until ctx is canceled or a
 // send fails. It is the only sender after Hello.
 func (r *runner) sendLoop(ctx context.Context, stream *connect.BidiStreamForClient[agentv1.AgentMessage, agentv1.HubMessage],
-	interval time.Duration, results <-chan *agentv1.ExecResult,
+	interval time.Duration, results <-chan *agentv1.AgentMessage,
 ) error {
 	hb := time.NewTicker(interval)
 	defer hb.Stop()
@@ -365,8 +378,7 @@ func (r *runner) sendLoop(ctx context.Context, stream *connect.BidiStreamForClie
 			msg = &agentv1.AgentMessage{Payload: &agentv1.AgentMessage_Heartbeat{Heartbeat: r.heartbeat(now)}}
 		case <-facts.C:
 			msg = &agentv1.AgentMessage{Payload: &agentv1.AgentMessage_Facts{Facts: r.hello(ctx)}}
-		case res := <-results:
-			msg = &agentv1.AgentMessage{Payload: &agentv1.AgentMessage_ExecResult{ExecResult: res}}
+		case msg = <-results:
 		}
 		if err := stream.Send(msg); err != nil {
 			if errors.Is(err, io.EOF) {
