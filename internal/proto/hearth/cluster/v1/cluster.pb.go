@@ -758,6 +758,90 @@ func (x *MigrateSchemaResponse) GetFrom() int64 {
 	return 0
 }
 
+// ConfigDigestsRequest is empty.
+type ConfigDigestsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConfigDigestsRequest) Reset() {
+	*x = ConfigDigestsRequest{}
+	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConfigDigestsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConfigDigestsRequest) ProtoMessage() {}
+
+func (x *ConfigDigestsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConfigDigestsRequest.ProtoReflect.Descriptor instead.
+func (*ConfigDigestsRequest) Descriptor() ([]byte, []int) {
+	return file_hearth_cluster_v1_cluster_proto_rawDescGZIP(), []int{14}
+}
+
+// ConfigDigestsResponse holds a hub's configuration digests.
+type ConfigDigestsResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// digests maps a configuration item to its SHA-256 digest, in hex. An item
+	// the hub could not read is left out.
+	Digests       map[string]string `protobuf:"bytes,1,rep,name=digests,proto3" json:"digests,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConfigDigestsResponse) Reset() {
+	*x = ConfigDigestsResponse{}
+	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConfigDigestsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConfigDigestsResponse) ProtoMessage() {}
+
+func (x *ConfigDigestsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConfigDigestsResponse.ProtoReflect.Descriptor instead.
+func (*ConfigDigestsResponse) Descriptor() ([]byte, []int) {
+	return file_hearth_cluster_v1_cluster_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ConfigDigestsResponse) GetDigests() map[string]string {
+	if x != nil {
+		return x.Digests
+	}
+	return nil
+}
+
 var File_hearth_cluster_v1_cluster_proto protoreflect.FileDescriptor
 
 const file_hearth_cluster_v1_cluster_proto_rawDesc = "" +
@@ -801,7 +885,13 @@ const file_hearth_cluster_v1_cluster_proto_rawDesc = "" +
 	"\x14MigrateSchemaRequest\x12\x0e\n" +
 	"\x02to\x18\x01 \x01(\x03R\x02to\"+\n" +
 	"\x15MigrateSchemaResponse\x12\x12\n" +
-	"\x04from\x18\x01 \x01(\x03R\x04from2\x90\x05\n" +
+	"\x04from\x18\x01 \x01(\x03R\x04from\"\x16\n" +
+	"\x14ConfigDigestsRequest\"\xa4\x01\n" +
+	"\x15ConfigDigestsResponse\x12O\n" +
+	"\adigests\x18\x01 \x03(\v25.hearth.cluster.v1.ConfigDigestsResponse.DigestsEntryR\adigests\x1a:\n" +
+	"\fDigestsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x012\xf4\x05\n" +
 	"\x0eClusterService\x12G\n" +
 	"\x04Join\x12\x1e.hearth.cluster.v1.JoinRequest\x1a\x1f.hearth.cluster.v1.JoinResponse\x12P\n" +
 	"\aPromote\x12!.hearth.cluster.v1.PromoteRequest\x1a\".hearth.cluster.v1.PromoteResponse\x12P\n" +
@@ -810,7 +900,8 @@ const file_hearth_cluster_v1_cluster_proto_rawDesc = "" +
 	"\x12TransferLeadership\x12,.hearth.cluster.v1.TransferLeadershipRequest\x1a-.hearth.cluster.v1.TransferLeadershipResponse\x12Y\n" +
 	"\n" +
 	"SchemaInfo\x12$.hearth.cluster.v1.SchemaInfoRequest\x1a%.hearth.cluster.v1.SchemaInfoResponse\x12b\n" +
-	"\rMigrateSchema\x12'.hearth.cluster.v1.MigrateSchemaRequest\x1a(.hearth.cluster.v1.MigrateSchemaResponseB\xcf\x01\n" +
+	"\rMigrateSchema\x12'.hearth.cluster.v1.MigrateSchemaRequest\x1a(.hearth.cluster.v1.MigrateSchemaResponse\x12b\n" +
+	"\rConfigDigests\x12'.hearth.cluster.v1.ConfigDigestsRequest\x1a(.hearth.cluster.v1.ConfigDigestsResponseB\xcf\x01\n" +
 	"\x15com.hearth.cluster.v1B\fClusterProtoP\x01ZBgithub.com/gvart/hearth/internal/proto/hearth/cluster/v1;clusterv1\xa2\x02\x03HCX\xaa\x02\x11Hearth.Cluster.V1\xca\x02\x11Hearth\\Cluster\\V1\xe2\x02\x1dHearth\\Cluster\\V1\\GPBMetadata\xea\x02\x13Hearth::Cluster::V1b\x06proto3"
 
 var (
@@ -825,7 +916,7 @@ func file_hearth_cluster_v1_cluster_proto_rawDescGZIP() []byte {
 	return file_hearth_cluster_v1_cluster_proto_rawDescData
 }
 
-var file_hearth_cluster_v1_cluster_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_hearth_cluster_v1_cluster_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_hearth_cluster_v1_cluster_proto_goTypes = []any{
 	(*JoinRequest)(nil),                // 0: hearth.cluster.v1.JoinRequest
 	(*JoinResponse)(nil),               // 1: hearth.cluster.v1.JoinResponse
@@ -841,27 +932,33 @@ var file_hearth_cluster_v1_cluster_proto_goTypes = []any{
 	(*SchemaInfoResponse)(nil),         // 11: hearth.cluster.v1.SchemaInfoResponse
 	(*MigrateSchemaRequest)(nil),       // 12: hearth.cluster.v1.MigrateSchemaRequest
 	(*MigrateSchemaResponse)(nil),      // 13: hearth.cluster.v1.MigrateSchemaResponse
+	(*ConfigDigestsRequest)(nil),       // 14: hearth.cluster.v1.ConfigDigestsRequest
+	(*ConfigDigestsResponse)(nil),      // 15: hearth.cluster.v1.ConfigDigestsResponse
+	nil,                                // 16: hearth.cluster.v1.ConfigDigestsResponse.DigestsEntry
 }
 var file_hearth_cluster_v1_cluster_proto_depIdxs = []int32{
-	0,  // 0: hearth.cluster.v1.ClusterService.Join:input_type -> hearth.cluster.v1.JoinRequest
-	2,  // 1: hearth.cluster.v1.ClusterService.Promote:input_type -> hearth.cluster.v1.PromoteRequest
-	4,  // 2: hearth.cluster.v1.ClusterService.Forward:input_type -> hearth.cluster.v1.ForwardRequest
-	6,  // 3: hearth.cluster.v1.ClusterService.RemoveMember:input_type -> hearth.cluster.v1.RemoveMemberRequest
-	8,  // 4: hearth.cluster.v1.ClusterService.TransferLeadership:input_type -> hearth.cluster.v1.TransferLeadershipRequest
-	10, // 5: hearth.cluster.v1.ClusterService.SchemaInfo:input_type -> hearth.cluster.v1.SchemaInfoRequest
-	12, // 6: hearth.cluster.v1.ClusterService.MigrateSchema:input_type -> hearth.cluster.v1.MigrateSchemaRequest
-	1,  // 7: hearth.cluster.v1.ClusterService.Join:output_type -> hearth.cluster.v1.JoinResponse
-	3,  // 8: hearth.cluster.v1.ClusterService.Promote:output_type -> hearth.cluster.v1.PromoteResponse
-	5,  // 9: hearth.cluster.v1.ClusterService.Forward:output_type -> hearth.cluster.v1.ForwardResponse
-	7,  // 10: hearth.cluster.v1.ClusterService.RemoveMember:output_type -> hearth.cluster.v1.RemoveMemberResponse
-	9,  // 11: hearth.cluster.v1.ClusterService.TransferLeadership:output_type -> hearth.cluster.v1.TransferLeadershipResponse
-	11, // 12: hearth.cluster.v1.ClusterService.SchemaInfo:output_type -> hearth.cluster.v1.SchemaInfoResponse
-	13, // 13: hearth.cluster.v1.ClusterService.MigrateSchema:output_type -> hearth.cluster.v1.MigrateSchemaResponse
-	7,  // [7:14] is the sub-list for method output_type
-	0,  // [0:7] is the sub-list for method input_type
-	0,  // [0:0] is the sub-list for extension type_name
-	0,  // [0:0] is the sub-list for extension extendee
-	0,  // [0:0] is the sub-list for field type_name
+	16, // 0: hearth.cluster.v1.ConfigDigestsResponse.digests:type_name -> hearth.cluster.v1.ConfigDigestsResponse.DigestsEntry
+	0,  // 1: hearth.cluster.v1.ClusterService.Join:input_type -> hearth.cluster.v1.JoinRequest
+	2,  // 2: hearth.cluster.v1.ClusterService.Promote:input_type -> hearth.cluster.v1.PromoteRequest
+	4,  // 3: hearth.cluster.v1.ClusterService.Forward:input_type -> hearth.cluster.v1.ForwardRequest
+	6,  // 4: hearth.cluster.v1.ClusterService.RemoveMember:input_type -> hearth.cluster.v1.RemoveMemberRequest
+	8,  // 5: hearth.cluster.v1.ClusterService.TransferLeadership:input_type -> hearth.cluster.v1.TransferLeadershipRequest
+	10, // 6: hearth.cluster.v1.ClusterService.SchemaInfo:input_type -> hearth.cluster.v1.SchemaInfoRequest
+	12, // 7: hearth.cluster.v1.ClusterService.MigrateSchema:input_type -> hearth.cluster.v1.MigrateSchemaRequest
+	14, // 8: hearth.cluster.v1.ClusterService.ConfigDigests:input_type -> hearth.cluster.v1.ConfigDigestsRequest
+	1,  // 9: hearth.cluster.v1.ClusterService.Join:output_type -> hearth.cluster.v1.JoinResponse
+	3,  // 10: hearth.cluster.v1.ClusterService.Promote:output_type -> hearth.cluster.v1.PromoteResponse
+	5,  // 11: hearth.cluster.v1.ClusterService.Forward:output_type -> hearth.cluster.v1.ForwardResponse
+	7,  // 12: hearth.cluster.v1.ClusterService.RemoveMember:output_type -> hearth.cluster.v1.RemoveMemberResponse
+	9,  // 13: hearth.cluster.v1.ClusterService.TransferLeadership:output_type -> hearth.cluster.v1.TransferLeadershipResponse
+	11, // 14: hearth.cluster.v1.ClusterService.SchemaInfo:output_type -> hearth.cluster.v1.SchemaInfoResponse
+	13, // 15: hearth.cluster.v1.ClusterService.MigrateSchema:output_type -> hearth.cluster.v1.MigrateSchemaResponse
+	15, // 16: hearth.cluster.v1.ClusterService.ConfigDigests:output_type -> hearth.cluster.v1.ConfigDigestsResponse
+	9,  // [9:17] is the sub-list for method output_type
+	1,  // [1:9] is the sub-list for method input_type
+	1,  // [1:1] is the sub-list for extension type_name
+	1,  // [1:1] is the sub-list for extension extendee
+	0,  // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_hearth_cluster_v1_cluster_proto_init() }
@@ -875,7 +972,7 @@ func file_hearth_cluster_v1_cluster_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_hearth_cluster_v1_cluster_proto_rawDesc), len(file_hearth_cluster_v1_cluster_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   14,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

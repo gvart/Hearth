@@ -129,6 +129,9 @@ type Node struct {
 	stream  *tlsStream
 	cert    *x509.Certificate
 	members memberWatch
+
+	// configSource digests this hub's configuration; see SetConfigSource.
+	configSource atomic.Pointer[ConfigSource]
 }
 
 var _ store.Applier = (*Node)(nil)
@@ -534,6 +537,9 @@ type Status struct {
 	CommitIndex  uint64 `json:"commit_index"`
 	AppliedIndex uint64 `json:"applied_index"`
 	Peers        []Peer `json:"peers"`
+	// ConfigDrift compares the hubs' configuration, filled by
+	// StatusWithSchemas; nil when it could not be read.
+	ConfigDrift *DriftReport `json:"config_drift,omitempty"`
 }
 
 // Status returns this node's view of the cluster.
@@ -563,7 +569,7 @@ func (n *Node) Status() (Status, error) {
 }
 
 // StatusWithSchemas is Status with every peer's store schema (see
-// HubSchemas).
+// HubSchemas) and the comparison of the hubs' configuration (see ConfigDrift).
 func (n *Node) StatusWithSchemas(ctx context.Context) (Status, error) {
 	st, err := n.Status()
 	if err != nil {
@@ -573,7 +579,14 @@ func (n *Node) StatusWithSchemas(ctx context.Context) (Status, error) {
 	// shows its error rather than slowing every poll down.
 	ctx, cancel := context.WithTimeout(ctx, statusSchemaTimeout)
 	defer cancel()
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		if d, err := n.ConfigDrift(ctx); err == nil {
+			st.ConfigDrift = &d
+		}
+	})
 	hubs, err := n.HubSchemas(ctx)
+	wg.Wait()
 	if err != nil {
 		return st, err
 	}

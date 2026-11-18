@@ -27,6 +27,58 @@ actions:
     message: again
 `
 
+func TestDirDigest(t *testing.T) {
+	write := func(t *testing.T, dir, name, content string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	digest := func(t *testing.T, dir string) string {
+		t.Helper()
+		d, err := DirDigest(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return d
+	}
+	base := t.TempDir()
+	write(t, base, "a.yaml", "id: a\n")
+	want := digest(t, base)
+
+	tests := []struct {
+		name  string
+		setup func(t *testing.T, dir string)
+		same  bool
+	}{
+		{"same files elsewhere", func(t *testing.T, dir string) { write(t, dir, "a.yaml", "id: a\n") }, true},
+		{"files automations ignore", func(t *testing.T, dir string) {
+			write(t, dir, "a.yaml", "id: a\n")
+			write(t, dir, ".apply-123", "partial")
+			write(t, dir, "notes.txt", "notes")
+		}, true},
+		{"edited file", func(t *testing.T, dir string) { write(t, dir, "a.yaml", "id: b\n") }, false},
+		{"renamed file", func(t *testing.T, dir string) { write(t, dir, "b.yaml", "id: a\n") }, false},
+		{"extra file", func(t *testing.T, dir string) {
+			write(t, dir, "a.yaml", "id: a\n")
+			write(t, dir, "b.yml", "id: b\n")
+		}, false},
+		{"no files", func(*testing.T, string) {}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			tt.setup(t, dir)
+			if got := digest(t, dir) == want; got != tt.same {
+				t.Errorf("same digest = %v, want %v", got, tt.same)
+			}
+		})
+	}
+	if digest(t, filepath.Join(base, "missing")) != digest(t, t.TempDir()) {
+		t.Error("a missing directory digests unlike an empty one")
+	}
+}
+
 func TestParseValid(t *testing.T) {
 	a, err := Parse("hello.yaml", []byte(validYAML), builtinKinds())
 	if err != nil {

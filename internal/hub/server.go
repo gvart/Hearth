@@ -77,6 +77,10 @@ type Config struct {
 	// Notify serves the notification channels under /api/v1/notify. Nil
 	// disables it.
 	Notify *notify.Notifier
+	// ConfigDrift compares the configuration of a cluster's hubs for
+	// GET /api/v1/cluster/config-drift; nil on a standalone hub. Its result is
+	// served as is, so it must hold no digests or file contents.
+	ConfigDrift func(context.Context) (any, error)
 }
 
 // NewHandler serves EnrollService to anyone (the token is the credential) and

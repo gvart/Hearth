@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useApprovals, useDeviceEvents, useLogout } from '../api/hooks.ts';
 import { ApprovalsPage } from './ApprovalsPage.tsx';
 import { AuditPage } from './AuditPage.tsx';
+import { ConfigDriftBanner } from './ConfigDriftBanner.tsx';
 import { DevicesPage } from './DevicesPage.tsx';
 import { KubernetesPage } from './KubernetesPage.tsx';
 import { Logo } from './Logo.tsx';
@@ -96,6 +97,7 @@ export function Shell() {
           Sign out
         </button>
       </header>
+      <ConfigDriftBanner />
       {page === 'approvals' ? (
         <ApprovalsPage />
       ) : page === 'kubernetes' ? (

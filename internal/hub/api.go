@@ -77,6 +77,7 @@ func newAPI(cfg Config) *api {
 		verify: newVerifyGate(), verifyWait: verifyWait, verifyPassword: verifier,
 		logins:  newLoginLimiter(time.Now, loginBurst, loginEvery),
 		metrics: cfg.Metrics,
+		drift:   cfg.ConfigDrift,
 		// Only a release tag is pinned: dev builds have no release to install.
 		installVersion: releaseVersion(cfg.Version),
 	}
@@ -101,6 +102,7 @@ func (a *api) routes() http.Handler {
 	mux.Handle("POST /api/v1/tokens", a.auth(a.createToken))
 	a.kubeRoutes(mux)
 	a.notifyRoutes(mux)
+	mux.Handle("GET /api/v1/cluster/config-drift", a.auth(a.configDrift))
 	mux.Handle("GET /api/v1/audit", a.auth(a.listAudit))
 	mux.Handle("GET /api/v1/approvals", a.auth(a.listApprovals))
 	mux.Handle("POST /api/v1/approvals/{id}/approve", a.auth(a.decideApproval(true)))
@@ -170,6 +172,8 @@ type api struct {
 	kube *kubernetes.Manager
 	// notify is Config.Notify; nil when notification channels are not served.
 	notify *notify.Notifier
+	// drift is Config.ConfigDrift; nil on a standalone hub.
+	drift func(context.Context) (any, error)
 	// installVersion is the --version install commands pin, or "" for none.
 	installVersion string
 }
