@@ -1,0 +1,113 @@
+internal/hub/agentexec.go
+  s_344993999c180f::t_ddb07dec6615de 66-67,78
+docs/security.md
+  s_344993999c180f::t_65d57e0474a530 18-19
+site/src/pages.mjs
+  s_344993999c180f::t_1979b1c46e5fb1 11
+internal/hub/agentlogs.go
+  s_344993999c180f::t_24d8b52eb16e05 1-87,97-154
+  s_344993999c180f::t_1e296b18cf73c3 88-96
+web/src/index.css
+  s_344993999c180f::t_139cddb239bbd7 1351-1420
+  s_344993999c180f::t_8bcb54d630d05a 1000-1001
+internal/agent/logs_stream_test.go
+  s_344993999c180f::t_8ff65f0bb7152b 3-4
+  s_344993999c180f::t_8e48b6ca870f1f 42
+  s_344993999c180f::t_36aa20fad46043 1-2,5-41,43-116
+internal/hub/facts.go
+  s_344993999c180f::t_c105724a26ae80 38-39,72
+web/src/components/DeviceLogSources.tsx
+  s_344993999c180f::t_c9f98d781e7a6c 1-99
+docs/concepts.md
+  s_344993999c180f::t_a3730cac2e3e9c 90
+web/src/api/client.ts
+  s_344993999c180f::t_e8c6b7d36ee99c 448-525
+  s_344993999c180f::t_d8aeed47b8ff7f 33-42
+cmd/hearth/agent.go
+  s_344993999c180f::t_9563591d07646d 36-38,40,43-47
+  s_344993999c180f::t_6649c47c34744c 68-70
+web/src/components/PodLogsDialog.tsx
+  s_344993999c180f::t_06579878898a6b 1-2,4,13-17,36-87
+web/src/components/DeviceDrawer.tsx
+  s_344993999c180f::t_fe1938bf69f343 5
+  s_344993999c180f::t_3ba5f54e9acfc7 60-63
+internal/policy/guardrails_test.go
+  s_344993999c180f::t_626f8080d7e7c6 130
+web/src/api/hooks.ts
+  s_344993999c180f::t_a3fd5ffa2043b9 2,6,20
+  s_344993999c180f::t_900fd436eabc28 351-374,377,382-383,385-395,397-398,401
+  s_344993999c180f::t_cfd3d38840696f 375-376,378-381,384,396,399-400
+internal/agent/run.go
+  s_344993999c180f::t_ce1aaf42b2662a 365-369
+  s_344993999c180f::t_0a34bf47049635 283-284,289-290
+  s_344993999c180f::t_78e06c303bf117 330,332,335,337,340
+  s_344993999c180f::t_a5795f968d7344 285-286
+  s_344993999c180f::t_809b712bc45370 32-33
+internal/hub/agentstream.go
+  s_344993999c180f::t_1c93541d523034 148-149
+internal/agent/logs_test.go
+  s_344993999c180f::t_f1df9131b1935c 53
+  s_344993999c180f::t_8400b696e1ee60 1-52,54-227,229,231-243,245-246,248-258,260-270,272-276
+  s_344993999c180f::t_a182b7dd819393 228,230,244,247,259,271
+internal/policy/ceiling_test.go
+  s_344993999c180f::t_b62da5df556e97 1-44
+web/src/components/LogViewer.tsx
+  s_344993999c180f::t_e21d2833574907 1,28-29
+  s_344993999c180f::t_6182bc21d1c03d 2-27,30-107
+internal/hub/logs_test.go
+  s_344993999c180f::t_fdb3c9bc960105 1-20,22-60,63-239,241-299
+  s_344993999c180f::t_c1e35c8bc44e11 240
+  s_344993999c180f::t_52ae92382c6123 21,61-62
+internal/agent/logs.go
+  s_344993999c180f::t_bc0b3530731a72 65-68,70,72-73
+  s_344993999c180f::t_e4e892ef9257d4 15,94
+  s_344993999c180f::t_b00f63069ec3df 1-14,16-51,53-64,69,71,74-93,95-412
+  s_344993999c180f::t_d5eb1617bc9702 52
+internal/policy/policy.go
+  s_344993999c180f::t_1f847e14b63534 249-251
+  s_344993999c180f::t_d1ce9b4d074f1c 118-120
+internal/hub/logs.go
+  s_344993999c180f::t_4c6867ebfdfe00 1-5,7-109,116-117,120,123-136,142-182
+  s_344993999c180f::t_a22741e03bd9c5 6,111-112,114-115,118-119,121-122,137-141
+  s_344993999c180f::t_8270a4f1e079da 110,113
+web/src/components/DeviceLogsDialog.tsx
+  s_344993999c180f::t_5c0ca8ef59948d 1-84
+internal/policy/ceiling.go
+  s_344993999c180f::t_b4ce233f059884 50-71
+  s_344993999c180f::t_52a4a3887cb835 8,10
+docs/logs.md
+  s_344993999c180f::t_f1df9131b1935c 29
+  s_344993999c180f::t_99b057a8412e44 34-35
+  s_344993999c180f::t_fbee35df133a4a 1-28,30-33,36-66
+cmd/hearth/hub.go
+  s_344993999c180f::t_ee3ad9cd37be62 238
+internal/agent/exec.go
+  s_344993999c180f::t_e4e892ef9257d4 61
+  s_344993999c180f::t_8fda74a54d4099 32-35
+internal/hub/api.go
+  s_344993999c180f::t_c136e5a66592aa 75,98,166-167
+docs/kubernetes.md
+  s_344993999c180f::t_8eed5127da8d1d 53-54
+proto/hearth/agent/v1/agent.proto
+  s_344993999c180f::t_d010691eb199de 27,38-39,88
+  s_344993999c180f::t_43790827c794af 84-87,247-297
+  s_344993999c180f::t_a3772fc437302c 298
+internal/proto/hearth/agent/v1/agent.pb.go
+  s_344993999c180f::t_0d0a863383f915 39,136-144,174-177,190-191,201-202,281-298,319-326,335-338,558-563,619-625,1709-2023,2033,2045,2058,2065,2073-2075,2081-2085,2107,2111-2112,2183-2203,2222,2246-2254,2263-2297,2312,2319-2320,2337
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5af80b5cb1374692fb19fdb29b82f3c7bdc2a6d6",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
