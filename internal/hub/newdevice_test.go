@@ -524,3 +524,28 @@ func TestNewDeviceAlertBurstNotificationFails(t *testing.T) {
 		t.Fatalf("notifications = %v, want one, for the next new host", got)
 	}
 }
+
+// After an outage the hosts come back all at once: one notification names
+// every one of them.
+func TestNewDeviceAlertBurstOfReturnedHosts(t *testing.T) {
+	h := newAlertHarness(t)
+	hosts := burstHosts(50)
+	all := append([]store.NetworkHost{router}, hosts...)
+	h.scan(t, 0, all...) // the baseline: they are all here
+	for at := 30 * time.Minute; at < 2*time.Hour; at += 30 * time.Minute {
+		h.scan(t, at, router)
+	}
+	h.scan(t, 2*time.Hour, all...)
+	got := h.settle(t, 2*time.Hour+5*time.Minute, all...)
+	if len(got) != 1 {
+		t.Fatalf("%d notifications, want one", len(got))
+	}
+	if got[0]["title"] != "50 devices back on your network" {
+		t.Errorf("title = %q", got[0]["title"])
+	}
+	for _, x := range hosts {
+		if !strings.Contains(got[0]["message"], x.MAC) {
+			t.Errorf("%s is not reported", x.MAC)
+		}
+	}
+}

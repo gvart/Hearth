@@ -107,7 +107,9 @@ MAC, and a mark on one address does not carry over to the next.
 
 **Changing it.** To change the message, the channel, or to alert on new hosts only, write your own
 automation with the id `new-device-alerts` in the automations directory: it replaces the built-in.
-The `network` trigger is in the [automation reference](automations.md#network-hosts).
+The `network` trigger is in the [automation reference](automations.md#network-hosts). Give its
+triggers `batch: true`: without it a scan fires once per host, and hosts past the 11 runs an
+automation can hold at a time are dropped.
 
 **If a notification fails.** It is not sent again. The run shows as `failed` in
 `hearth automation runs`, with the hosts in its trigger step, and the audit log has the failure. The
