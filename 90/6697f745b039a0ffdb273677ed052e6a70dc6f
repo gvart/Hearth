@@ -1,0 +1,106 @@
+internal/discovery/neigh_darwin.go
+  s_344993999c180f::t_31317d5d903925 1-48
+internal/discovery/neigh.go
+  s_344993999c180f::t_d7a789844007f7 1-65
+internal/store/command_test.go
+  s_344993999c180f::t_ac28e7a7c10387 326-331,424
+  s_344993999c180f::t_0afaf1a770501b 64-67
+web/src/api/hooks.ts
+  s_344993999c180f::t_f3849cf33b8b24 64
+  s_344993999c180f::t_6fb32e11bc561e 24,40-41,88-92,144-147
+internal/hub/applied.go
+  s_344993999c180f::t_399fa7584340d7 8,31-32,65-71
+internal/hub/network_test.go
+  s_344993999c180f::t_c79d670601e9ae 71
+  s_344993999c180f::t_505cef4116a85f 1-70,72-141
+web/src/index.css
+  s_344993999c180f::t_e2815b7313ae3e 468-497
+internal/store/store_test.go
+  s_344993999c180f::t_ac28e7a7c10387 54
+internal/discovery/neigh_other.go
+  s_344993999c180f::t_9ea7ac0dc59dcb 1-6,13
+  s_344993999c180f::t_c79d670601e9ae 7-12
+cmd/hearth/hub.go
+  s_344993999c180f::t_3f93016dde6296 15,18
+  s_344993999c180f::t_98c56ba7a582c1 26,61-66,86-88,94-100,124-128,133-143,161-168,357-364,369-371,380-382,384,395-399
+internal/discovery/subnets.go
+  s_344993999c180f::t_d991ae87aa178d 51,60-61
+  s_344993999c180f::t_ced70cd88b80c5 1-50,52-59,62-131
+web/src/components/UnmanagedHosts.tsx
+  s_344993999c180f::t_79bfaff14350ed 1-54,56-84
+  s_344993999c180f::t_e2815b7313ae3e 55
+internal/store/networkhosts_test.go
+  s_344993999c180f::t_3731b3ec48140b 1-107
+internal/store/command.go
+  s_344993999c180f::t_be21c8e70fad40 50-51,53-56,695-696
+internal/policy/guardrails_test.go
+  s_344993999c180f::t_ada4f0f4dc70f8 137
+internal/store/schema_test.go
+  s_344993999c180f::t_ac28e7a7c10387 88-89,95
+internal/store/migrations/00013_network_hosts.sql
+  s_344993999c180f::t_cddc415720659b 1-17
+internal/discovery/ouigen/main.go
+  s_344993999c180f::t_1a8101d981ea5e 1-3,7,15,17-20,22,24-25,27-29,31-38,40-48,50-55,57-58,60-64,66-67,72-75,101,104-110,113-149,152-154
+  s_344993999c180f::t_7594d2d33a44c6 4-6,8-14,16,39
+  s_344993999c180f::t_f3f44ca1f928f5 150-151
+  s_344993999c180f::t_c79d670601e9ae 23,49,59,103
+  s_344993999c180f::t_68af95c0d1f796 21,26,30,56,65,68-71,76-100,102,111-112
+internal/discovery/neigh_linux.go
+  s_344993999c180f::t_3adf412bd7aaab 1-22
+internal/hub/registry.go
+  s_344993999c180f::t_399fa7584340d7 27-29,33
+internal/discovery/rdns.go
+  s_344993999c180f::t_5aca71368d1f34 1-99
+site/src/pages.mjs
+  s_344993999c180f::t_c5736bf701774d 11
+internal/policy/policy.go
+  s_344993999c180f::t_ada4f0f4dc70f8 122-124,259-261
+  s_344993999c180f::t_baa3842bb7d251 140-141
+internal/hub/api.go
+  s_344993999c180f::t_399fa7584340d7 93,374-379,416-420
+internal/discovery/oui.go
+  s_344993999c180f::t_451aeeebe4fe8b 1-85,91,93-95
+  s_344993999c180f::t_c79d670601e9ae 92
+  s_344993999c180f::t_b31beebe542f42 86-90
+web/src/components/DevicesPage.tsx
+  s_344993999c180f::t_e2815b7313ae3e 8,130
+docs/discovery.md
+  s_344993999c180f::t_3a431702e30411 1-101
+internal/discovery/discovery_test.go
+  s_344993999c180f::t_396be59c959b63 1-88,93-141,143-232,236-405
+  s_344993999c180f::t_c79d670601e9ae 89-92,142,233-235
+CLAUDE.md
+  s_344993999c180f::t_48f6e2860ee8ad 46
+internal/store/networkhosts.go
+  s_344993999c180f::t_be21c8e70fad40 162
+  s_344993999c180f::t_c68b8ffdc84be2 1-161,163-168
+web/src/api/client.ts
+  s_344993999c180f::t_6fb32e11bc561e 103-117,360,410-411,445-449
+internal/discovery/scanner.go
+  s_344993999c180f::t_5551a1a618da69 1-28,31-271
+  s_344993999c180f::t_0f314e385599d1 29-30
+internal/discovery/sweep.go
+  s_344993999c180f::t_f9388b667c31dc 1-26,30-33,39-40,47-51,66-79
+  s_344993999c180f::t_cc86ca64518fab 27-29,34-38,41-46,52-65
+internal/discovery/mdns.go
+  s_344993999c180f::t_842605e2c0cfd8 1-167,169-177,179-181,185-186,188-194,196-210
+  s_344993999c180f::t_ec8b07e563774b 168,178,182-184,187,195
+internal/hub/network.go
+  s_344993999c180f::t_54161b613b6265 1-82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "906697f745b039a0ffdb273677ed052e6a70dc6f",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
