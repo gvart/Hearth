@@ -102,8 +102,11 @@ func startNodeStore(t *testing.T, ca *pki.CA, id, dir, addr string, bootstrap bo
 	if err != nil {
 		t.Fatal(err)
 	}
-	opts := append([]store.Option{store.WithoutUpgrade(),
-		store.WithApplier(func(s *store.Store) store.Applier { return bind(n, s) })}, storeOpts...)
+	opts := []store.Option{
+		store.WithoutUpgrade(),
+		store.WithApplier(func(s *store.Store) store.Applier { return bind(n, s) }),
+	}
+	opts = append(opts, storeOpts...)
 	st, err := store.Open(t.Context(), filepath.Join(dir, "hearth.db"), opts...)
 	if err != nil {
 		t.Fatal(err)
