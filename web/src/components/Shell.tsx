@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useApprovals, useDeviceEvents, useLogout } from '../api/hooks.ts';
 import { ApprovalsPage } from './ApprovalsPage.tsx';
 import { AuditPage } from './AuditPage.tsx';
@@ -51,6 +51,13 @@ export function Shell() {
   const logout = useLogout();
   const page = usePage();
   const waiting = useApprovals('pending').data?.length ?? 0;
+  const activeLink = useRef<HTMLAnchorElement>(null);
+
+  // On a phone the links scroll sideways: keep the current page's link in view,
+  // also when the waiting badge widens it.
+  useEffect(() => {
+    activeLink.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [page, waiting]);
 
   return (
     <div className="app">
@@ -62,7 +69,13 @@ export function Shell() {
           </div>
           <nav className="nav" aria-label="Sections">
             {pages.map((p) => (
-              <a key={p.id} href={p.hash} className="nav-link" aria-current={page === p.id ? 'page' : undefined}>
+              <a
+                key={p.id}
+                ref={page === p.id ? activeLink : undefined}
+                href={p.hash}
+                className="nav-link"
+                aria-current={page === p.id ? 'page' : undefined}
+              >
                 {p.label}
                 {p.id === 'approvals' && waiting > 0 ? (
                   <span className="badge nav-badge" aria-label={`${String(waiting)} waiting`}>
