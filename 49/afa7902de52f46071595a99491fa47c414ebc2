@@ -1,0 +1,139 @@
+web/src/api/client.ts
+  s_344993999c180f::t_e4fb4219aefdc9 33-42
+internal/agent/shell_test.go
+  s_344993999c180f::t_dee6ec6fcd639b 9
+  s_344993999c180f::t_99cd12edd65db7 171-172
+  s_344993999c180f::t_35a7eb7211d584 175
+  s_344993999c180f::t_f82ba1f08008ce 48
+  s_344993999c180f::t_d30f2d37622aa6 1-8,10-29,31-34,36-47,49-146,149-170,173-174,176-237
+  s_344993999c180f::t_3ece4f36e87cec 30
+  s_344993999c180f::t_b79fba160d6faf 35
+  s_344993999c180f::t_51765c9f3ffb74 147-148
+web/package.json
+  s_344993999c180f::t_c7df03e7a12a7c 16-17
+web/src/components/TerminalPage.tsx
+  s_344993999c180f::t_a636ef6fe84018 13
+  s_344993999c180f::t_4155b622c8976e 1-12,14-164
+internal/policy/ceiling.go
+  s_344993999c180f::t_53619b48f732c2 48-58
+internal/policy/policy.go
+  s_344993999c180f::t_a70ea150a79eaf 265-268
+  s_344993999c180f::t_4070f82a18bee8 125-127
+internal/agent/run.go
+  s_344993999c180f::t_6dccff6588bd18 32
+  s_344993999c180f::t_5e399709c6f0bc 326-329,334,337
+  s_344993999c180f::t_bbd20cea407183 364-365
+  s_344993999c180f::t_46e43785e47aa1 338-339
+internal/hub/agentshell.go
+  s_344993999c180f::t_5d0cff0446b924 12
+  s_344993999c180f::t_0a13545accbd76 1-11,13-41,44-252,255,257-261,263,269,273-279
+  s_344993999c180f::t_ef585c9dfb9b52 262,264-268,270-272
+  s_344993999c180f::t_30ae0d00d506e5 42-43
+  s_344993999c180f::t_85778e22502656 253-254,256
+internal/hub/agentstream.go
+  s_344993999c180f::t_eb3dd829caac5a 148-149
+  s_344993999c180f::t_71d061b132ba8e 108
+internal/hub/server.go
+  s_344993999c180f::t_666c30dd1d9466 76-81
+internal/agent/shell_unix.go
+  s_344993999c180f::t_2edf5ea9502e94 1-21,25-28,30-73,75-99,101-107,109-146
+  s_344993999c180f::t_cbe67fccd2fbe5 108
+  s_344993999c180f::t_35a7eb7211d584 29,74,100
+  s_344993999c180f::t_63afd3842ebdb5 22-24
+docs/guardrails.md
+  s_344993999c180f::t_2196e2063611a0 108
+cmd/hearth/agent.go
+  s_344993999c180f::t_f2abb768b35e28 48-50
+  s_344993999c180f::t_f91a7785730569 66-67
+  s_344993999c180f::t_c77222459c3497 36-38
+internal/agent/exec.go
+  s_344993999c180f::t_7d560ce742472e 32-34
+  s_344993999c180f::t_7a128c49dbca8d 60
+internal/hub/api.go
+  s_344993999c180f::t_f44a36aa0f8608 101
+  s_344993999c180f::t_025bb1a914b84b 171-182
+  s_344993999c180f::t_f4aa30ee596387 80-82
+web/src/components/TerminalPage.css
+  s_344993999c180f::t_dbcfc7642adac7 1-62
+docs/concepts.md
+  s_344993999c180f::t_2196e2063611a0 90
+proto/hearth/agent/v1/agent.proto
+  s_344993999c180f::t_2ba45136710d0d 38
+  s_344993999c180f::t_52aa6a73a6e004 27
+  s_344993999c180f::t_d03d9c378d6705 83-86
+  s_344993999c180f::t_7997ab94745d57 247-314
+internal/agent/shell_other.go
+  s_344993999c180f::t_3d3f70fa3fda4d 7-8,10-12,15-17
+  s_344993999c180f::t_86d13d3abc7929 1-6,9,13-14,18-26
+internal/policy/guardrails_test.go
+  s_344993999c180f::t_c2e6f9983f87c5 138
+web/src/components/DeviceDrawer.tsx
+  s_344993999c180f::t_cfc601522aa065 143-164
+  s_344993999c180f::t_9642a6eb381c2e 25-30
+internal/policy/engine.go
+  s_344993999c180f::t_f4b6d1b367f869 203-210
+web/src/api/terminal.ts
+  s_344993999c180f::t_408c69a7774f55 1-78
+internal/hub/shell.go
+  s_344993999c180f::t_473c481905f374 1-54,57-58,61-189,191-196,201-252,254,256-260,264-277,279-289
+  s_344993999c180f::t_456f60409b65a0 55,59
+  s_344993999c180f::t_8d66d64d671ba3 253,255,261-263
+  s_344993999c180f::t_e7f7ceca1e4728 197-200
+  s_344993999c180f::t_cb7aa505183d20 56,60,190,278
+internal/hub/agentexec.go
+  s_344993999c180f::t_2dce3643d1a243 66
+  s_344993999c180f::t_c0c5eb5a8329fe 77
+  s_344993999c180f::t_1bbb5cddb5bd1a 97
+web/src/App.tsx
+  s_344993999c180f::t_dc5afd806bd3a4 1
+  s_344993999c180f::t_01730e137be495 61-72
+  s_344993999c180f::t_d59bac505d750d 11-16
+  s_344993999c180f::t_c0134bebc9b413 41
+  s_344993999c180f::t_53a0eb9206e3e8 46
+docs/terminal.md
+  s_344993999c180f::t_4e9739828135e7 1-59
+internal/hub/shell_test.go
+  s_344993999c180f::t_d6a9e1c4521250 1-18,20-101,104-180,182,188-403
+  s_344993999c180f::t_5b9870061d2206 19
+  s_344993999c180f::t_e000f93d90e5d4 102
+  s_344993999c180f::t_35a7eb7211d584 103
+  s_344993999c180f::t_258cd1c8e3fdcb 181,183-187
+cmd/hearth/hub.go
+  s_344993999c180f::t_dd2f9b84e04175 287
+  s_344993999c180f::t_bbf149e920f014 131-134,262-263
+  s_344993999c180f::t_ea9fa42a27df97 69-70
+docs/security.md
+  s_344993999c180f::t_2196e2063611a0 18
+internal/agent/shell_stream_test.go
+  s_344993999c180f::t_cb829c864ff229 1-68
+internal/hub/facts.go
+  s_344993999c180f::t_d166aa75ec3362 38-39
+  s_344993999c180f::t_c10a36f989a9d0 72
+internal/agent/shell.go
+  s_344993999c180f::t_451dd8afbb3a5c 1-274,282
+  s_344993999c180f::t_77477adf58b41e 275-281
+go.mod
+  s_344993999c180f::t_06e639698db5cc 7,20
+go.sum
+  s_344993999c180f::t_8855788e43f3ed 8-9
+internal/proto/hearth/agent/v1/agent.pb.go
+  s_344993999c180f::t_dda09d93ae1883 39,136-144,174-177,190-191,201,280-288,309-312,321-322,542-546,602-608,1729-2235,2240,2248-2251,2257-2258,2280,2284-2285,2357-2385,2403,2428-2437,2446-2482,2497,2504,2515-2526,2533
+web/package-lock.json
+  s_344993999c180f::t_55b5e1709b8fab 13-14,1282-1296
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "49afa7902de52f46071595a99491fa47c414ebc2",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
