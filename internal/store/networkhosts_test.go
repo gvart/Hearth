@@ -5,6 +5,7 @@ package store
 import (
 	"errors"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 )
@@ -103,5 +104,137 @@ func TestNetworkHostsBeforeTheirSchema(t *testing.T) {
 	_, err = s.NetworkHosts().RecordScan(ctx, time.Now(), time.Hour, []NetworkHost{{MAC: "aa:aa:aa:aa:aa:aa", IP: "10.0.0.2"}})
 	if !errors.Is(err, ErrSchemaTooOld) || !IsDomainError(err) {
 		t.Errorf("RecordScan before the schema = %v, want a domain ErrSchemaTooOld", err)
+	}
+}
+
+// Names Pi-hole or a DHCP lease gave override and outlast scan names; an
+// import adds hosts no scan saw, and moves IP and last_seen only with its
+// own observation time.
+func TestNetworkHostsImportMergesByMAC(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	hosts := s.NetworkHosts()
+	t0 := time.UnixMilli(1_700_000_000_000).UTC()
+	pi := NetworkHost{MAC: "2c:cf:67:00:00:01", IP: "192.168.2.171", Hostname: "raspberrypi.local", Vendor: "Raspberry Pi"}
+	nas := NetworkHost{MAC: "00:11:32:00:00:02", IP: "192.168.2.20", Hostname: "nas.local", Vendor: "Synology"}
+	if _, err := hosts.RecordScan(ctx, t0, time.Hour, []NetworkHost{pi, nas}); err != nil {
+		t.Fatal(err)
+	}
+
+	t1 := t0.Add(time.Minute)
+	err := hosts.RecordImport(ctx, t1, []ImportedHost{
+		// Pi-hole names the Pi and saw it after the scan, on a new IP.
+		{
+			MAC: pi.MAC, IP: "192.168.2.180", Hostname: "pi5", HostnameSource: SourcePihole,
+			Sources: []string{SourcePihole}, Seen: t1.UnixMilli(),
+		},
+		// A lease without a time for the NAS: no IP or last_seen change.
+		{MAC: nas.MAC, IP: "192.168.2.99", Sources: []string{SourceDHCP}},
+		// A host on another VLAN, unseen by ARP.
+		{
+			MAC: "aa:bb:cc:00:00:03", IP: "192.168.20.5", Hostname: "tv", HostnameSource: SourceDHCP,
+			Vendor: "LG", Sources: []string{SourceDHCP, SourcePihole},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A rescan finds the Pi's mDNS name again: the Pi-hole name stays, the
+	// scan's IP wins.
+	t2 := t1.Add(time.Minute)
+	if _, err := hosts.RecordScan(ctx, t2, time.Hour, []NetworkHost{pi}); err != nil {
+		t.Fatal(err)
+	}
+
+	list, err := hosts.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byMAC := map[string]NetworkHost{}
+	for _, h := range list {
+		byMAC[h.MAC] = h
+	}
+	tests := []struct {
+		mac, ip, name, nameSource string
+		sources                   []string
+		lastSeen                  time.Time
+	}{
+		{pi.MAC, pi.IP, "pi5", SourcePihole, []string{SourcePihole, SourceScan}, t2},
+		{nas.MAC, nas.IP, "nas.local", SourceScan, []string{SourceDHCP, SourceScan}, t0},
+		{"aa:bb:cc:00:00:03", "192.168.20.5", "tv", SourceDHCP, []string{SourceDHCP, SourcePihole}, t1},
+	}
+	for _, tt := range tests {
+		got := byMAC[tt.mac]
+		if got.IP != tt.ip || got.Hostname != tt.name || got.HostnameSource != tt.nameSource ||
+			!slices.Equal(got.Sources, tt.sources) || !got.LastSeen.Equal(tt.lastSeen) {
+			t.Errorf("%s = %+v; want ip %s, name %q from %s, sources %v, last seen %v",
+				tt.mac, got, tt.ip, tt.name, tt.nameSource, tt.sources, tt.lastSeen)
+		}
+	}
+
+	if err := hosts.RecordImport(ctx, t2, []ImportedHost{{MAC: "aa:aa:aa:aa:aa:aa", IP: "10.0.0.2"}}); err == nil {
+		t.Error("RecordImport of a host without a source succeeded")
+	}
+}
+
+// New and baseline count scans only: an import before the first scan does
+// not end the baseline, and a host an import added is new to the first
+// scan that finds it.
+func TestNetworkHostsImportKeepsScanEvents(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	hosts := s.NetworkHosts()
+	t0 := time.UnixMilli(1_700_000_000_000).UTC()
+	phone := NetworkHost{MAC: "3c:2e:f9:00:00:03", IP: "192.168.2.30"}
+	nas := NetworkHost{MAC: "00:11:32:00:00:02", IP: "192.168.2.20"}
+	tv := NetworkHost{MAC: "aa:bb:cc:00:00:04", IP: "192.168.2.40"}
+	if err := hosts.RecordImport(ctx, t0, []ImportedHost{
+		{MAC: nas.MAC, IP: nas.IP, Sources: []string{SourceDHCP}},
+		{MAC: phone.MAC, IP: phone.IP, Hostname: "phone", HostnameSource: SourcePihole, Sources: []string{SourcePihole}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	res, err := hosts.RecordScan(ctx, t0.Add(time.Minute), time.Hour, []NetworkHost{nas, tv})
+	if err != nil || len(res.New) != 0 || len(res.Returned) != 0 {
+		t.Fatalf("first scan after an import = %+v, %v; want the baseline, no events", res, err)
+	}
+	res, err = hosts.RecordScan(ctx, t0.Add(2*time.Minute), time.Hour, []NetworkHost{nas, tv, phone})
+	if err != nil || len(res.New) != 1 || res.New[0].MAC != phone.MAC || res.New[0].Hostname != "phone" {
+		t.Fatalf("scan finding the imported phone = %+v, %v; want it new, with its Pi-hole name", res, err)
+	}
+}
+
+// Before schema 14 an import is refused the same way on every node, and
+// scans still record.
+func TestNetworkHostsImportBeforeItsSchema(t *testing.T) {
+	ctx := t.Context()
+	path := filepath.Join(t.TempDir(), "hearth.db")
+	s, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := s.newMigrator()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.DownTo(ctx, networkHostSourcesSchema-1); err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+	s, err = Open(ctx, path, WithoutUpgrade())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	err = s.NetworkHosts().RecordImport(ctx, time.Now(), []ImportedHost{{MAC: "aa:aa:aa:aa:aa:aa", IP: "10.0.0.2", Sources: []string{SourceDHCP}}})
+	if !errors.Is(err, ErrSchemaTooOld) || !IsDomainError(err) {
+		t.Errorf("RecordImport before the schema = %v, want a domain ErrSchemaTooOld", err)
+	}
+	if _, err := s.NetworkHosts().RecordScan(ctx, time.Now(), time.Hour, []NetworkHost{{MAC: "aa:aa:aa:aa:aa:aa", IP: "10.0.0.2", Hostname: "x.local"}}); err != nil {
+		t.Fatalf("RecordScan at schema 13: %v", err)
+	}
+	if got, err := s.NetworkHosts().List(ctx); err != nil || len(got) != 1 || got[0].Hostname != "x.local" || got[0].Sources != nil {
+		t.Errorf("List at schema 13 = %+v, %v; want the scanned host without sources", got, err)
 	}
 }

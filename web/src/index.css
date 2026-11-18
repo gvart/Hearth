@@ -491,6 +491,18 @@ table {
   cursor: default;
 }
 
+/* Seven columns: tighter cells and a capped vendor keep the actions in view. */
+.devices.network th,
+.devices.network td {
+  padding-inline: 0.625rem;
+}
+
+.devices.network td:nth-child(2) {
+  max-width: 9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .devices .row-end {
   text-align: right;
 }

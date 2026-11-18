@@ -54,6 +54,9 @@ Hosts are stored by MAC address. A host that moves to another IP stays one entry
 a name or vendor a later scan cannot find is kept from earlier scans. A host whose MAC is one of an
 enrolled device's interfaces is that device, and is not listed as unmanaged.
 
+To add names from your Pi-hole or DHCP server, and hosts on VLANs the sweep cannot reach, see
+[Pi-hole and DHCP leases](pihole.md).
+
 ## Events
 
 Each scan publishes, on the hub's event stream (`/api/v1/events`):
@@ -140,7 +143,8 @@ dropped. In Kubernetes, the same applies: `hostNetwork: true` on the hub's pod.
 ```
 
 `device_id` is the enrolled device with that MAC, or empty for an unmanaged host. `state` is `""`,
-`"known"` or `"ignored"`.
+`"known"` or `"ignored"`. Each host also has `sources` (`scan`, `pihole`, `dhcp`) and
+`hostname_source`; see [Pi-hole and DHCP leases](pihole.md#api).
 
 ```
 POST /api/v1/network/hosts/{mac}/known    204, or 404 no such host

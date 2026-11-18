@@ -43,7 +43,7 @@ internal/proto/        generated protobuf/Connect code (do not edit by hand)
 internal/pki/          CA, CSR signing, enrollment tokens
 internal/store/        SQLite access + goose migrations
 internal/policy/       action classes, decisions, audit log
-internal/discovery/    network discovery: ARP sweep, mDNS, OUI vendors (unmanaged hosts)
+internal/discovery/    network discovery: ARP sweep, mDNS, OUI vendors, DHCP lease import (unmanaged hosts)
 internal/cluster/      Raft replication of the hub store (hashicorp/raft), hub join, mTLS transport
 pkg/sdk/               public agent/plugin SDK — Apache-2.0 licensed
 proto/                 .proto sources

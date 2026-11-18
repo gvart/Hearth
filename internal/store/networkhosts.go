@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 )
@@ -21,6 +22,11 @@ const networkHostsSchema = 12
 // marked.
 const networkHostStateSchema = 13
 
+// networkHostSourcesSchema is the schema version whose migration (00014)
+// added the sources, hostname_source and last_scan columns. Until a cluster
+// migrates to it, imports are not recorded and hosts list no source.
+const networkHostSourcesSchema = 14
+
 // What the operator said about a host (NetworkHost.State). Known and ignored
 // hosts never fire new-device alerts.
 const (
@@ -32,6 +38,18 @@ const (
 	HostIgnored = "ignored"
 )
 
+// Where a network host was learned (NetworkHost.Sources) and which source
+// gave its hostname (NetworkHost.HostnameSource).
+const (
+	// SourceScan is network discovery: the ARP sweep, with names from mDNS
+	// and LAN reverse DNS.
+	SourceScan = "scan"
+	// SourcePihole is a Pi-hole's network table and DHCP leases.
+	SourcePihole = "pihole"
+	// SourceDHCP is a DHCP server's lease file (dnsmasq, ISC dhcpd).
+	SourceDHCP = "dhcp"
+)
+
 // NetworkHost is a host network discovery found, keyed by its MAC address.
 type NetworkHost struct {
 	// MAC is lower-case and colon-separated.
@@ -40,11 +58,17 @@ type NetworkHost struct {
 	IP       string
 	Hostname string
 	Vendor   string
-	// FirstSeen is the first scan that found it, LastSeen the latest.
+	// FirstSeen is when it was first found, LastSeen when a scan or an
+	// import last saw it.
 	FirstSeen time.Time
 	LastSeen  time.Time
 	// State is HostUnreviewed, HostKnown or HostIgnored.
 	State string
+	// Sources are where the host was learned (SourceScan, SourcePihole,
+	// SourceDHCP), sorted; none before schema 14.
+	Sources []string
+	// HostnameSource is the source that gave Hostname; "" if none did.
+	HostnameSource string
 }
 
 // NetworkHosts is the repository for hosts found by network discovery.
@@ -53,10 +77,13 @@ type NetworkHosts struct{ s *Store }
 // NetworkHosts returns the network host repository.
 func (s *Store) NetworkHosts() NetworkHosts { return NetworkHosts{s: s} }
 
-// ScanResult is what recording a scan changed.
+// ScanResult is what recording a scan changed. Only scans count: a host an
+// import added is new to the first scan that finds it, and an import never
+// makes an absent host look returned or present.
 type ScanResult struct {
-	// New are hosts no scan had found before. The first scan recorded on an
-	// empty table is the baseline: its hosts are stored but none is new.
+	// New are hosts no scan had found before. The first scan recorded with
+	// no scanned host stored is the baseline: its hosts are stored but none
+	// is new.
 	New []NetworkHost
 	// Returned are known hosts no scan had found for at least the
 	// absentAfter passed to RecordScan.
@@ -66,6 +93,7 @@ type ScanResult struct {
 // RecordScan stores the hosts one scan at time at found, in one write: a
 // known MAC gets the new IP, last_seen and any hostname or vendor found (an
 // empty one keeps the stored value), so re-scans never duplicate a host.
+// From schema 14 a hostname an import gave (see RecordImport) is kept.
 // Before schema 12 it fails with ErrSchemaTooOld.
 func (r NetworkHosts) RecordScan(ctx context.Context, at time.Time, absentAfter time.Duration, hosts []NetworkHost) (ScanResult, error) {
 	cmd := RecordNetworkScan{At: toMillis(at), AbsentAfter: absentAfter.Milliseconds(), Hosts: make([]ScannedHost, 0, len(hosts))}
@@ -113,24 +141,49 @@ func (r NetworkHosts) List(ctx context.Context) ([]NetworkHost, error) {
 
 // networkHostSelect is the SELECT list of a host at schema v, for
 // scanNetworkHost: before schema 13 there is no state, and every host reads
-// as unreviewed.
+// as unreviewed; before schema 14 no host has a source.
 func networkHostSelect(v int64) string {
-	if v < networkHostStateSchema {
-		return `SELECT mac, ip, hostname, vendor, first_seen, last_seen, ''`
+	switch {
+	case v < networkHostStateSchema:
+		return `SELECT mac, ip, hostname, vendor, first_seen, last_seen, '', '', ''`
+	case v < networkHostSourcesSchema:
+		return `SELECT mac, ip, hostname, vendor, first_seen, last_seen, state, '', ''`
 	}
-	return `SELECT mac, ip, hostname, vendor, first_seen, last_seen, state`
+	return `SELECT mac, ip, hostname, vendor, first_seen, last_seen, state, sources, hostname_source`
 }
 
 func scanNetworkHost(row interface{ Scan(...any) error }) (NetworkHost, error) {
 	var (
 		h           NetworkHost
 		first, last int64
+		sources     string
 	)
-	if err := row.Scan(&h.MAC, &h.IP, &h.Hostname, &h.Vendor, &first, &last, &h.State); err != nil {
+	if err := row.Scan(&h.MAC, &h.IP, &h.Hostname, &h.Vendor, &first, &last, &h.State, &sources, &h.HostnameSource); err != nil {
 		return NetworkHost{}, err
 	}
 	h.FirstSeen, h.LastSeen = fromMillis(first), fromMillis(last)
+	h.Sources = splitSources(sources)
 	return h, nil
+}
+
+func splitSources(s string) []string {
+	if s == "" {
+		return nil
+	}
+	return strings.Split(s, ",")
+}
+
+// addSources returns the stored source set (comma-separated) with add
+// included, sorted and comma-separated.
+func addSources(stored string, add ...string) string {
+	set := splitSources(stored)
+	for _, a := range add {
+		if a != "" && !slices.Contains(set, a) {
+			set = append(set, a)
+		}
+	}
+	slices.Sort(set)
+	return strings.Join(set, ",")
 }
 
 // ScannedHost is one host in a RecordNetworkScan.
@@ -157,34 +210,73 @@ func (RecordNetworkScan) Op() string { return "record_network_scan" }
 func (RecordNetworkScan) minSchema() int64 { return networkHostsSchema }
 
 func (c RecordNetworkScan) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	var known int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM network_hosts`).Scan(&known); err != nil {
-		return Result{}, err
-	}
-	baseline := known == 0
 	v, err := schemaVersion(ctx, tx)
 	if err != nil {
 		return Result{}, err
 	}
+	withSources := v >= networkHostSourcesSchema
+	// New, baseline and returned are about scans: what an import stored
+	// (from schema 14) does not count.
+	countKnown, lastScan := `SELECT COUNT(*) FROM network_hosts`, `SELECT last_seen, '' FROM network_hosts WHERE mac = ?`
+	if withSources {
+		countKnown += ` WHERE (',' || sources || ',') LIKE '%,scan,%'`
+		lastScan = `SELECT last_scan, sources FROM network_hosts WHERE mac = ?`
+	}
+	var known int
+	if err := tx.QueryRowContext(ctx, countKnown).Scan(&known); err != nil {
+		return Result{}, err
+	}
+	baseline := known == 0
 	returning := "RETURNING" + strings.TrimPrefix(networkHostSelect(v), "SELECT")
 	var res Result
 	for _, h := range c.Hosts {
-		var last int64
-		err := tx.QueryRowContext(ctx, `SELECT last_seen FROM network_hosts WHERE mac = ?`, h.MAC).Scan(&last)
+		var (
+			last    int64
+			sources string
+		)
+		err := tx.QueryRowContext(ctx, lastScan, h.MAC).Scan(&last, &sources)
 		isNew := errors.Is(err, sql.ErrNoRows)
 		if err != nil && !isNew {
 			return Result{}, err
 		}
-		row, err := scanNetworkHost(tx.QueryRowContext(ctx, `
-			INSERT INTO network_hosts (mac, ip, hostname, vendor, first_seen, last_seen)
-			VALUES (?, ?, ?, ?, ?, ?)
-			ON CONFLICT (mac) DO UPDATE SET
-				ip = excluded.ip,
-				hostname = COALESCE(NULLIF(excluded.hostname, ''), hostname),
-				vendor = COALESCE(NULLIF(excluded.vendor, ''), vendor),
-				last_seen = MAX(last_seen, excluded.last_seen)
-			`+returning,
-			h.MAC, h.IP, h.Hostname, h.Vendor, c.At, c.At))
+		if withSources && !slices.Contains(splitSources(sources), SourceScan) {
+			isNew = true
+		}
+		var row NetworkHost
+		if withSources {
+			// A name Pi-hole or a DHCP lease gave is kept: a scan only
+			// replaces a name a scan found.
+			nameSource := ""
+			if h.Hostname != "" {
+				nameSource = SourceScan
+			}
+			row, err = scanNetworkHost(tx.QueryRowContext(ctx, `
+				INSERT INTO network_hosts (mac, ip, hostname, vendor, first_seen, last_seen, last_scan, sources, hostname_source)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+				ON CONFLICT (mac) DO UPDATE SET
+					ip = excluded.ip,
+					hostname = CASE WHEN excluded.hostname != '' AND hostname_source IN ('', 'scan')
+						THEN excluded.hostname ELSE hostname END,
+					hostname_source = CASE WHEN excluded.hostname != '' AND hostname_source IN ('', 'scan')
+						THEN excluded.hostname_source ELSE hostname_source END,
+					vendor = COALESCE(NULLIF(excluded.vendor, ''), vendor),
+					last_seen = MAX(last_seen, excluded.last_seen),
+					last_scan = MAX(last_scan, excluded.last_scan),
+					sources = excluded.sources
+				`+returning,
+				h.MAC, h.IP, h.Hostname, h.Vendor, c.At, c.At, c.At, addSources(sources, SourceScan), nameSource))
+		} else {
+			row, err = scanNetworkHost(tx.QueryRowContext(ctx, `
+				INSERT INTO network_hosts (mac, ip, hostname, vendor, first_seen, last_seen)
+				VALUES (?, ?, ?, ?, ?, ?)
+				ON CONFLICT (mac) DO UPDATE SET
+					ip = excluded.ip,
+					hostname = COALESCE(NULLIF(excluded.hostname, ''), hostname),
+					vendor = COALESCE(NULLIF(excluded.vendor, ''), vendor),
+					last_seen = MAX(last_seen, excluded.last_seen)
+				`+returning,
+				h.MAC, h.IP, h.Hostname, h.Vendor, c.At, c.At))
+		}
 		if err != nil {
 			return Result{}, err
 		}
@@ -239,4 +331,89 @@ func (c SetNetworkHostState) apply(ctx context.Context, tx *sql.Tx) (Result, err
 		return Result{}, ErrNotFound
 	}
 	return Result{Count: int(n)}, nil
+}
+
+// ImportedHost is one host in a RecordNetworkImport: what Pi-hole and the
+// DHCP lease files know of one MAC, merged.
+type ImportedHost struct {
+	MAC      string `json:"mac"`
+	IP       string `json:"ip"`
+	Hostname string `json:"hostname,omitempty"`
+	// HostnameSource is the source that gave Hostname.
+	HostnameSource string `json:"hostname_source,omitempty"`
+	Vendor         string `json:"vendor,omitempty"`
+	// Sources are the sources that know the host (SourcePihole,
+	// SourceDHCP).
+	Sources []string `json:"sources"`
+	// Seen is when a source last saw the host, in Unix milliseconds; 0 if
+	// no source says (a lease with only an expiry time).
+	Seen int64 `json:"seen,omitempty"`
+}
+
+// RecordImport stores the hosts one import of Pi-hole and DHCP leases at
+// time at found, in one write, merged with the scanned hosts by MAC. A name
+// an import gives replaces the stored name, a scan's included; an empty one
+// keeps it. A known host takes the import's IP only when the import saw it
+// at least as recently as its last_seen, and its last_seen moves only with
+// the Seen the import gives, so a lease alone never makes an absent host
+// look present. An import publishes no events and leaves the host's state
+// alone. Before schema 14 it fails with ErrSchemaTooOld.
+func (r NetworkHosts) RecordImport(ctx context.Context, at time.Time, hosts []ImportedHost) error {
+	for _, h := range hosts {
+		if h.MAC == "" || h.IP == "" || len(h.Sources) == 0 {
+			return errors.New("record network import: every host needs a MAC, an IP and a source")
+		}
+	}
+	if _, err := r.s.apply(ctx, RecordNetworkImport{At: toMillis(at), Hosts: hosts}); err != nil {
+		return fmt.Errorf("record network import: %w", err)
+	}
+	return nil
+}
+
+// RecordNetworkImport upserts the hosts of one import (see RecordImport).
+type RecordNetworkImport struct {
+	At    int64          `json:"at"`
+	Hosts []ImportedHost `json:"hosts"`
+}
+
+// Op implements Command.
+func (RecordNetworkImport) Op() string { return "record_network_import" }
+
+func (RecordNetworkImport) minSchema() int64 { return networkHostSourcesSchema }
+
+func (c RecordNetworkImport) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
+	for _, h := range c.Hosts {
+		var (
+			last    int64
+			sources string
+		)
+		err := tx.QueryRowContext(ctx, `SELECT last_seen, sources FROM network_hosts WHERE mac = ?`, h.MAC).Scan(&last, &sources)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return Result{}, err
+		}
+		seen := h.Seen
+		if seen == 0 {
+			seen = c.At // first and last seen of a new host only
+		}
+		newer := h.Seen != 0 && h.Seen >= last
+		nameSource := ""
+		if h.Hostname != "" {
+			nameSource = h.HostnameSource
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO network_hosts (mac, ip, hostname, vendor, first_seen, last_seen, sources, hostname_source)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT (mac) DO UPDATE SET
+				ip = CASE WHEN ? THEN excluded.ip ELSE ip END,
+				hostname = COALESCE(NULLIF(excluded.hostname, ''), hostname),
+				hostname_source = CASE WHEN excluded.hostname != '' THEN excluded.hostname_source ELSE hostname_source END,
+				vendor = COALESCE(NULLIF(vendor, ''), excluded.vendor),
+				last_seen = MAX(last_seen, ?),
+				sources = excluded.sources`,
+			h.MAC, h.IP, h.Hostname, h.Vendor, seen, seen, addSources(sources, h.Sources...), nameSource,
+			newer, h.Seen); err != nil {
+			return Result{}, err
+		}
+	}
+	return Result{Count: len(c.Hosts)}, nil
 }
