@@ -217,3 +217,7 @@ the replicated log in order with the action.
   hub (see [Upgrading Hearth](#upgrading-hearth)); there is no automatic migration and no downgrade.
 - All hubs share one CA, and every voter holds its key. Protect each hub's data dir accordingly.
 - Clusters of 3 or 5 voters only; no read-only replicas.
+- **Single-core hubs and old password hashes.** Admin password hashes set before
+  [#94](https://github.com/gvart/hearth/issues/94) use four argon2 lanes, and checking one on a slow
+  single-core hub (Pi Zero, Pi 1) can starve Raft long enough for that hub to lose leadership during
+  a login. Run `hearth admin set-password` once after upgrading to re-hash with one lane.

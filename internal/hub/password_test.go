@@ -14,6 +14,10 @@ import (
 // testArgon keeps tests fast; production parameters are checked once.
 var testArgon = argonParams{time: 1, memory: 64, threads: 1}
 
+// legacyHash is "correct horse" hashed with four lanes (p=4), as hubs did
+// before #94, at cheap cost parameters.
+const legacyHash = "$argon2id$v=19$m=64,t=1,p=4$Av/SlOxmdhlu2fxmB66uOw$06vENb3YO5W8xIMBpq3Vm032ngp1Z5P8/pof6D9s81g"
+
 func TestHashPassword(t *testing.T) {
 	h, err := HashPassword("correct horse")
 	if err != nil {
@@ -24,6 +28,11 @@ func TestHashPassword(t *testing.T) {
 	}
 	if ok, err := verifyPassword(h, "correct horse"); err != nil || !ok {
 		t.Fatalf("default hash does not verify: %v %v", ok, err)
+	}
+	// One lane, so hashing cannot crowd Raft off a single-core hub (#94), at no
+	// less than OWASP's argon2id minimum (m=19 MiB, t=2).
+	if !strings.Contains(h, "$m=65536,t=3,p=1$") {
+		t.Fatalf("default parameters changed: %q", h)
 	}
 
 	// The rest uses cheap parameters: the race detector makes argon2 slow.
@@ -47,6 +56,10 @@ func TestHashPassword(t *testing.T) {
 		wantErr bool
 	}{
 		{"right password", h, "correct horse", true, false},
+		// Hashes from before #94 have four lanes; verification uses the
+		// parameters in the hash, so they keep working.
+		{"four-lane hash", legacyHash, "correct horse", true, false},
+		{"four-lane hash, wrong password", legacyHash, "correct horsf", false, false},
 		{"wrong password", h, "correct horsf", false, false},
 		{"empty password", h, "", false, false},
 		{"not a PHC string", "plain", "correct horse", false, true},
