@@ -69,8 +69,10 @@ func logArgv(src *agentv1.LogSource, tail int) []string {
 		if src.GetManager() == "systemd-user" {
 			unit = "--user-unit="
 		}
-		return []string{"journalctl", unit + src.GetName(), "--follow", "--lines=" + n,
-			"--output=json", "--output-fields=MESSAGE", "--no-pager", "--quiet"}
+		return []string{
+			"journalctl", unit + src.GetName(), "--follow", "--lines=" + n,
+			"--output=json", "--output-fields=MESSAGE", "--no-pager", "--quiet",
+		}
 	case "docker":
 		return []string{"docker", "logs", "--follow", "--timestamps", "--tail", n, "--", src.GetName()}
 	}
