@@ -1,4 +1,7 @@
-# Running a 3-hub cluster
+---
+title: Cluster mode
+description: Run three hubs with Raft so Hearth survives the loss of one.
+---
 
 A single hub is the default, and it needs none of this. A cluster of 3 hubs keeps Hearth running when
 any one of them dies: enrollment, the UI, the CLI and agent connections move to the surviving hubs

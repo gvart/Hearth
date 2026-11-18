@@ -1,0 +1,45 @@
+// @ts-check
+import path from 'node:path';
+import { defineConfig } from 'astro/config';
+import starlight from '@astrojs/starlight';
+import { unified } from '@astrojs/markdown-remark';
+import { pages, repoURL, sections } from './src/pages.mjs';
+
+// The pages in docs/ link to each other and to the repository with relative
+// links that work on GitHub. On the site, a link to a published page becomes
+// that page's URL, and any other relative link points at the file on GitHub.
+function docsLinks() {
+	const docsDir = path.resolve('../docs');
+	/** @param {any} node @param {(n: any) => void} fn */
+	const walk = (node, fn) => {
+		fn(node);
+		for (const child of node.children ?? []) walk(child, fn);
+	};
+	/** @param {any} tree @param {any} file */
+	return (tree, file) => {
+		const dir = path.dirname(file.path ?? '');
+		if (path.relative(docsDir, dir).startsWith('..')) return;
+		walk(tree, (node) => {
+			if (node.type !== 'link' || /^([a-z]+:|\/|#)/i.test(node.url)) return;
+			const [target, hash = ''] = node.url.split('#');
+			const repoPath = path.relative(path.resolve('..'), path.resolve(dir, target));
+			const page = repoPath.match(/^docs\/([a-z0-9-]+)\.md$/)?.[1];
+			const anchor = hash ? `#${hash}` : '';
+			node.url = page && pages.includes(page) ? `/${page}/${anchor}` : `${repoURL}/blob/main/${repoPath}${anchor}`;
+		});
+	};
+}
+
+export default defineConfig({
+	markdown: { processor: unified({ remarkPlugins: [docsLinks] }) },
+	integrations: [
+		starlight({
+			title: 'Hearth',
+			description: 'Open-source control plane for homelabs: every device an entity you can see, control and automate.',
+			favicon: '/favicon.svg',
+			customCss: ['./src/styles/theme.css'],
+			social: [{ icon: 'github', label: 'GitHub', href: repoURL }],
+			sidebar: sections.map((s) => ({ label: s.label, items: s.pages })),
+		}),
+	],
+});

@@ -1,4 +1,7 @@
-# HTTPS for the web UI
+---
+title: HTTPS for the web UI
+description: Trust the hub CA once per device to use the UI over HTTPS.
+---
 
 Browsers treat `http://nas.lan:7080` as an insecure context: the Hearth app can't be installed,
 its service worker doesn't run, and the "Copy" buttons fall back to select + Ctrl/⌘+C. Only

@@ -1,0 +1,39 @@
+---
+title: Docs
+description: The Home Assistant model, applied to your homelab.
+template: splash
+hero:
+  title: Hearth
+  tagline: The Home Assistant model, applied to your homelab. Every device becomes an entity you can see, control and automate from one place. Local-first, self-hosted, one Go binary.
+  actions:
+    - text: Getting started
+      link: /getting-started/
+      icon: right-arrow
+    - text: View on GitHub
+      link: https://github.com/gvart/hearth
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+<CardGrid>
+	<Card title="Any device in seconds" icon="rocket">
+		One command on a Raspberry Pi, a NAS or a laptop, and it shows up in the hub with its facts and
+		live status. [Get started](/getting-started/).
+	</Card>
+	<Card title="Automations that act" icon="setting">
+		YAML files in git: a device goes offline, a check fails or a metric runs hot, and Hearth restarts
+		the service or calls a webhook. [Automation reference](/automations/).
+	</Card>
+	<Card title="Adopt, don't replace" icon="puzzle">
+		Plugs into the Prometheus and Kubernetes clusters you already run. Nothing to migrate.
+		[Integrations](/prometheus/).
+	</Card>
+	<Card title="Deny by default" icon="approve-check">
+		Every action from the UI, the CLI or an automation passes one policy engine and lands in an audit
+		log, and each device sets its own ceiling. [Security model](/security/).
+	</Card>
+</CardGrid>
+
+Hearth is pre-alpha and built in public: releases are `v0.0.1-rc.N` pre-releases for now.

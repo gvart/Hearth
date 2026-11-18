@@ -21,6 +21,7 @@ task lint         # golangci-lint + eslint + tsc, zero findings required
 task proto        # buf generate (placeholder until protobuf lands)
 task e2e          # compose-based end-to-end tests (needs Docker)
 task dev          # web UI dev server with hot reload
+task docs         # docs site dev server (site/ renders the docs/*.md pages)
 ```
 
 `./bin/hearth version` prints the version, commit and build date injected at link time.

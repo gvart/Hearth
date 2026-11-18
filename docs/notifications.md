@@ -1,4 +1,7 @@
-# Notifications
+---
+title: Notifications
+description: Phone notifications through ntfy or a Telegram bot, from automations and the web UI.
+---
 
 Hearth sends phone notifications through [ntfy](https://ntfy.sh) or a Telegram bot, so you need no
 Hearth app. A **channel** is one ntfy topic or one Telegram chat, with its credentials. Channels are
