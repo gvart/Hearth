@@ -27,6 +27,22 @@ const maxShellBuffer = 4 << 20
 // maxDeviceShells is how many terminals may be open on one device at a time.
 const maxDeviceShells = 4
 
+const (
+	// shellSendTimeout bounds one send to the agent. A stream that takes
+	// longer has an agent that stopped reading it, and is torn down: the
+	// limits of a session must not depend on that agent.
+	shellSendTimeout = 3 * time.Second
+	// shellCloseWait is how long Close lets the agent report the session's
+	// end. An agent ends a shell within about three seconds (the hangup's
+	// grace, then the last output). One that does not has its stream torn
+	// down, and losing the stream makes it kill the shell.
+	shellCloseWait = 4500 * time.Millisecond
+	// shellForceClosed and shellAgentGone say a session ended without the
+	// agent confirming it.
+	shellForceClosed = "session force-closed: the agent did not confirm"
+	shellAgentGone   = "agent disconnected"
+)
+
 // Shell is an open shell session on a device, through its agent. Read
 // returns what the shell writes, Write sends it input; Close ends it.
 type Shell struct {
@@ -112,7 +128,7 @@ func (s *agentSession) endShells() {
 	s.shells = map[string]*Shell{}
 	s.mu.Unlock()
 	for _, sh := range shells {
-		sh.end(&agentv1.ShellExited{ExitCode: -1, Error: "agent disconnected"})
+		sh.end(&agentv1.ShellExited{ExitCode: -1, Error: shellAgentGone})
 	}
 }
 
@@ -202,10 +218,14 @@ func (a *Agents) OpenShell(ctx context.Context, device string, rows, cols uint32
 	return sh, nil
 }
 
-// send sends a request of this session to the agent.
+// send sends a request of this session to the agent. It returns within
+// shellSendTimeout or so: a send that takes longer, waiting for its turn
+// included, tears the stream down, which ends the send that blocks it.
 func (sh *Shell) send(req *agentv1.ShellRequest) error {
 	req.Id = sh.id
 	s := sh.sess
+	stalled := time.AfterFunc(shellSendTimeout, s.abort)
+	defer stalled.Stop()
 	s.sendMu.Lock()
 	defer s.sendMu.Unlock()
 	if s.closed {
@@ -257,8 +277,10 @@ func (sh *Shell) Resize(rows, cols uint32) error {
 	return sh.send(&agentv1.ShellRequest{Op: &agentv1.ShellRequest_Resize{Resize: &agentv1.TerminalSize{Rows: rows, Cols: cols}}})
 }
 
-// Close ends the session: the agent kills the shell's process group. The
-// session's end is then reported to Read and Exit; Close does not wait.
+// Close ends the session: the agent kills the shell's session. The end is
+// then reported to Read and Exit, within shellCloseWait even if the agent
+// never confirms it. Close does not wait for that, and returns within
+// shellSendTimeout or so however stalled the agent's stream is.
 func (sh *Shell) Close() {
 	sh.mu.Lock()
 	skip := sh.exit != nil || sh.closing
@@ -267,20 +289,30 @@ func (sh *Shell) Close() {
 	if skip {
 		return
 	}
+	// Armed before the send, which may be what stalls.
+	time.AfterFunc(shellCloseWait, sh.forceClose)
 	if err := sh.send(&agentv1.ShellRequest{Op: &agentv1.ShellRequest_Close{Close: &agentv1.ShellClose{}}}); err != nil {
 		sh.forget()
-		sh.end(&agentv1.ShellExited{ExitCode: -1, Error: "agent disconnected"})
-		return
+		sh.end(&agentv1.ShellExited{ExitCode: -1, Error: shellAgentGone})
 	}
-	// An agent that does not report the end in time is not waited for.
-	time.AfterFunc(shellCloseWait, func() {
-		sh.forget()
-		sh.end(&agentv1.ShellExited{ExitCode: -1, Error: "session closed; the agent did not confirm"})
-	})
 }
 
-// shellCloseWait is how long Close lets the agent report the session's end.
-const shellCloseWait = 10 * time.Second
+// forceClose ends a session the agent did not confirm the end of, and tears
+// down its stream: the agent kills the shells of a stream it lost.
+func (sh *Shell) forceClose() {
+	if sh.Exit() != nil {
+		return
+	}
+	sh.forget()
+	sh.end(&agentv1.ShellExited{ExitCode: -1, Error: shellForceClosed})
+	sh.sess.abort()
+}
+
+// Unconfirmed reports whether the session ended without the agent saying so.
+func (sh *Shell) Unconfirmed() bool {
+	e := sh.Exit().GetError()
+	return e == shellForceClosed || e == shellAgentGone
+}
 
 // Exit is how the session ended, or nil while it runs.
 func (sh *Shell) Exit() *agentv1.ShellExited {

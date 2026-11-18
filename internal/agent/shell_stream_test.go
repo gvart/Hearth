@@ -9,6 +9,9 @@ import (
 	"context"
 	"errors"
 	"io"
+	"regexp"
+	"strconv"
+	"syscall"
 	"testing"
 	"time"
 
@@ -37,6 +40,50 @@ func shellGrant(ctx context.Context, t *testing.T) context.Context {
 		t.Fatal(err)
 	}
 	return granted
+}
+
+// TestShellDiesWithStream loses the hub with a job running: what the hub
+// tears down, or a network that fails, takes the shell's whole session along.
+func TestShellDiesWithStream(t *testing.T) {
+	h := startRestartableHub(t, time.Second)
+	id, dataDir := h.join(t)
+	startAgentWith(t, agent.Config{DataDir: dataDir, Ceiling: agent.Ceiling{Shell: true}})
+	granted := shellGrant(t.Context(), t)
+	var sh *hub.Shell
+	var err error
+	waitFor(t, 5*time.Second, "agent connected", func() bool {
+		sh, err = h.agents.OpenShell(granted, id, 24, 80)
+		return !errors.Is(err, hub.ErrAgentNotConnected)
+	})
+	if err != nil {
+		t.Fatalf("OpenShell = %v", err)
+	}
+	// Quoted: an interactive shell would take the ! for a history expansion.
+	if err := sh.Write([]byte("sh -c 'sleep 300 & echo pids-$$-$!-end; wait'\n")); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+	re := regexp.MustCompile(`pids-(\d+)-(\d+)-end`)
+	var out []byte
+	for !re.Match(out) {
+		b, err := sh.Read(ctx)
+		if err != nil {
+			t.Fatalf("read: %v (output %q)", err, out)
+		}
+		out = append(out, b...)
+	}
+	m := re.FindSubmatch(out)
+	h.stop()
+	for _, b := range m[1:] {
+		pid, err := strconv.Atoi(string(b))
+		if err != nil {
+			t.Fatal(err)
+		}
+		waitFor(t, 10*time.Second, "process gone after the stream was lost", func() bool {
+			return errors.Is(syscall.Kill(pid, 0), syscall.ESRCH)
+		})
+	}
 }
 
 // TestShellOverStream opens a shell on a real agent through the hub: only

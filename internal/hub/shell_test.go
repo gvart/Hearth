@@ -187,29 +187,42 @@ func TestAgentsShellNeverBeyondCeiling(t *testing.T) {
 // shells (or refuses them, with deny).
 type terminalFixture struct {
 	*apiFixture
+	agents *Agents
 	cookie *http.Cookie
 	got    <-chan *agentv1.ShellRequest
 }
 
 func newTerminalFixture(t *testing.T, deny bool, opts ...func(*Config)) *terminalFixture {
 	t.Helper()
+	return newTerminalFixtureWith(t, 0, func(stream *connect.BidiStreamForClient[agentv1.AgentMessage, agentv1.HubMessage]) <-chan *agentv1.ShellRequest {
+		return fakeShellAgent(stream, deny)
+	}, opts...)
+}
+
+// newTerminalFixtureWith is newTerminalFixture with agent answering on the
+// stream, whose client takes at most window unread bytes (0: the default).
+func newTerminalFixtureWith(t *testing.T, window int,
+	agent func(*connect.BidiStreamForClient[agentv1.AgentMessage, agentv1.HubMessage]) <-chan *agentv1.ShellRequest,
+	opts ...func(*Config),
+) *terminalFixture {
+	t.Helper()
 	var agents *Agents
 	var stream *connect.BidiStreamForClient[agentv1.AgentMessage, agentv1.HubMessage]
 	f := newAPIFixture(t, true, append([]func(*Config){func(c *Config) {
 		enrollDevice(t, c.Store, "dev-1")
 		var client agentv1connect.AgentServiceClient
-		client, agents = newExecClient(t, c.Store)
+		client, agents = newExecClientWindow(t, c.Store, window)
 		c.Agents = agents
 		stream = connectAgent(t.Context(), t, client, minShellMinor, &agentv1.Ceiling{Shell: true})
 	}}, opts...)...)
-	got := fakeShellAgent(stream, deny)
+	got := agent(stream)
 	for range 100 {
 		if err := agents.CheckShell(t.Context(), "dev-1"); !errors.Is(err, ErrAgentNotConnected) {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	return &terminalFixture{apiFixture: f, cookie: sessionCookie(t, f.login(t, testPassword)), got: got}
+	return &terminalFixture{apiFixture: f, agents: agents, cookie: sessionCookie(t, f.login(t, testPassword)), got: got}
 }
 
 // dial opens the terminal WebSocket of dev-1 from origin.

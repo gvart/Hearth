@@ -34,6 +34,9 @@ const (
 	maxShellFrame = 64 << 10
 	// shellWriteTimeout bounds a write to the browser.
 	shellWriteTimeout = 30 * time.Second
+	// shellEndWriteTimeout bounds a write to the browser once the session
+	// is ending: a browser that stopped reading does not hold up its end.
+	shellEndWriteTimeout = time.Second
 	// shellOpenTimeout bounds the wait for the agent to start the shell.
 	shellOpenTimeout = 30 * time.Second
 )
@@ -188,8 +191,14 @@ func (a *api) serveShell(r *http.Request, ws *websocket.Conn, dev store.Device, 
 	defer wg.Wait()
 	defer func() { _ = ws.Close() }() // ends the browser reader
 	ws.MaxPayloadBytes = maxShellFrame
+	// reason is why the hub ended the session, set once.
+	var reason atomic.Pointer[string]
 	send := func(f shellFrame) error {
-		_ = ws.SetWriteDeadline(time.Now().Add(shellWriteTimeout))
+		timeout := shellWriteTimeout
+		if reason.Load() != nil {
+			timeout = shellEndWriteTimeout
+		}
+		_ = ws.SetWriteDeadline(time.Now().Add(timeout))
 		return shellCodec.Send(ws, f)
 	}
 	sendJSON := func(m ShellMessageJSON) {
@@ -200,10 +209,9 @@ func (a *api) serveShell(r *http.Request, ws *websocket.Conn, dev store.Device, 
 	// live is the running shell, set just before the browser is told so:
 	// what the browser sends before that goes nowhere.
 	var live atomic.Pointer[Shell]
-	// reason is why the hub ended the session, set once.
-	var reason atomic.Pointer[string]
 	end := func(why string) {
 		reason.CompareAndSwap(nil, &why)
+		_ = ws.SetWriteDeadline(time.Now().Add(shellEndWriteTimeout)) // ends a write in progress
 		if sh := live.Load(); sh != nil {
 			sh.Close()
 		}
@@ -344,17 +352,22 @@ func (a *api) serveShell(r *http.Request, ws *websocket.Conn, dev store.Device, 
 		why = ex.GetError()
 	}
 	code := ex.GetExitCode()
-	sendJSON(ShellMessageJSON{Type: "exit", ExitCode: &code, Reason: why})
-	_ = ws.Close() // ends the browser reader
-
 	took := a.now().Sub(opened).Round(time.Second)
-	a.log.InfoContext(ctx, "terminal closed", "device_id", dev.ID, "remote", actor, "duration", took, "reason", why)
-	if err := a.policy.RecordEnd(context.WithoutCancel(ctx), req,
-		fmt.Sprintf("ended: %s, exit %d after %s", why, code, took),
-		map[string]any{"event": "end", "duration_s": int(took / time.Second), "exit_code": code, "reason": why},
-	); err != nil {
+	// The hub ended the session and the agent never said the shell is gone.
+	forced := reason.Load() != nil && sh.Unconfirmed()
+	result := fmt.Sprintf("ended: %s, exit %d after %s", why, code, took)
+	if forced {
+		result = fmt.Sprintf("ended: %s, force-closed: the agent did not confirm, exit %d after %s", why, code, took)
+	}
+	a.log.InfoContext(ctx, "terminal closed", "device_id", dev.ID, "remote", actor, "duration", took, "reason", why, "forced", forced)
+	// Audited first: telling a browser that stopped reading can take a while.
+	if err := a.policy.RecordEnd(context.WithoutCancel(ctx), req, result, map[string]any{
+		"event": "end", "duration_s": int(took / time.Second), "exit_code": code, "reason": why, "forced": forced,
+	}); err != nil {
 		a.log.ErrorContext(ctx, "audit terminal end", "err", err)
 	}
+	sendJSON(ShellMessageJSON{Type: "exit", ExitCode: &code, Reason: why})
+	_ = ws.Close() // ends the browser reader
 }
 
 // shellFrom hands the shell one message from the browser. Only input someone

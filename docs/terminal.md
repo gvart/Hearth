@@ -98,5 +98,10 @@ left the session on purpose (`setsid`) survives. Only typing and pasting count a
 output, resizing the window nor the terminal's automatic answers to the shell do, so a `tail -f`
 nobody types in ends at the idle timeout.
 
+These limits do not depend on the agent. If it stops reading its connection to the hub, the session
+still ends within about five seconds, the audit entry says it was force-closed, and the hub drops
+that connection. An agent that loses its connection kills its shells, so every other terminal on
+that device ends too.
+
 The terminal is served by the hub the agent is connected to: in a cluster, the leader. The browser
 talks to it over a WebSocket on `/api/v1/devices/{id}/shell`, with the session cookie.

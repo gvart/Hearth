@@ -109,7 +109,7 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 		return fmt.Errorf("send welcome to %s: %w", deviceID, err)
 	}
 	// From here on only Agents.Exec, Agents.Probe and Shells send on the stream.
-	sess := s.agents.attach(deviceID, hello, stream.Send)
+	sess := s.agents.attach(deviceID, hello, stream.Send, streamAbort(ctx))
 	defer s.agents.detach(deviceID, sess)
 
 	for {
@@ -125,6 +125,9 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 			} else if errors.Is(cause, errSteppedDown) {
 				log.InfoContext(ctx, "agent stream ended: no longer the cluster leader")
 				return notLeaderError(s.leadership)
+			} else if errors.Is(cause, errStreamStalled) {
+				log.WarnContext(ctx, "agent stream torn down: the agent stopped reading it")
+				return connect.NewError(connect.CodeUnavailable, cause)
 			}
 			return fmt.Errorf("receive from %s: %w", deviceID, err)
 		}

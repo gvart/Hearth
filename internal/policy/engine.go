@@ -116,6 +116,8 @@ type Engine struct {
 	now       func() time.Time
 	// poll is how often a held request reads its approval.
 	poll time.Duration
+	// auditTimeout bounds one audit write.
+	auditTimeout time.Duration
 	// onHeld is told about every approval this engine holds; see OnHeld.
 	onHeld func(ctx context.Context, ap store.Approval)
 	// sweepEvery is how often RunApprovalSweep looks for overdue approvals.
@@ -143,6 +145,10 @@ func (e *Engine) OnHeld(fn func(ctx context.Context, ap store.Approval)) { e.onH
 // denied.
 const DefaultApprovalTimeout = 10 * time.Minute
 
+// auditTimeout bounds one audit write, so that a stuck store or a cluster
+// without quorum cannot hang a request.
+const auditTimeout = 15 * time.Second
+
 // New returns an Engine with the default configuration that writes to
 // audit. It holds nothing for approval.
 func New(audit Auditor) *Engine { return NewWithConfig(audit, nil, Config{}) }
@@ -154,7 +160,7 @@ func NewWithConfig(audit Auditor, approvals Approvals, cfg Config) *Engine {
 	if cfg.ApprovalTimeout <= 0 {
 		cfg.ApprovalTimeout = DefaultApprovalTimeout
 	}
-	return &Engine{audit: audit, approvals: approvals, cfg: cfg, now: time.Now, poll: time.Second, sweepEvery: time.Minute}
+	return &Engine{audit: audit, approvals: approvals, cfg: cfg, now: time.Now, poll: time.Second, sweepEvery: time.Minute, auditTimeout: auditTimeout}
 }
 
 // Do decides on req and, if allowed, runs fn. A request the configuration
@@ -355,6 +361,8 @@ func (e *Engine) RecordEnd(ctx context.Context, req Request, result string, extr
 
 // record writes one audit entry for req, its detail merged with extra.
 func (e *Engine) record(ctx context.Context, req Request, decision, result string, extra map[string]any) error {
+	ctx, cancel := context.WithTimeout(ctx, e.auditTimeout)
+	defer cancel()
 	entry, err := e.entry(req, decision, result, extra)
 	if err != nil {
 		return err

@@ -58,6 +58,8 @@ type agentSession struct {
 	sendMu sync.Mutex
 	send   func(*agentv1.HubMessage) error
 	closed bool
+	// abort tears the stream down, for an agent that stopped reading it.
+	abort func()
 	// done is closed when the stream ends.
 	done chan struct{}
 
@@ -73,9 +75,9 @@ type agentSession struct {
 
 // attach records the stream of deviceID. A newer stream of the same device
 // replaces an older one. Call detach when the stream ends.
-func (a *Agents) attach(deviceID string, hello *agentv1.Hello, send func(*agentv1.HubMessage) error) *agentSession {
+func (a *Agents) attach(deviceID string, hello *agentv1.Hello, send func(*agentv1.HubMessage) error, abort func()) *agentSession {
 	s := &agentSession{
-		minor: hello.GetProtocolVersion().GetMinor(), send: send, done: make(chan struct{}),
+		minor: hello.GetProtocolVersion().GetMinor(), send: send, abort: abort, done: make(chan struct{}),
 		pending: map[string]chan *agentv1.ExecResult{}, probes: map[string]chan *agentv1.ProbeResult{},
 		logs: map[string]*logQueue{}, shells: map[string]*Shell{}, ceiling: hello.GetCeiling(),
 	}

@@ -25,11 +25,18 @@ import (
 // stream's Agents.
 func newExecClient(t *testing.T, st *store.Store) (agentv1connect.AgentServiceClient, *Agents) {
 	t.Helper()
+	return newExecClientWindow(t, st, 0)
+}
+
+// newExecClientWindow is newExecClient for an agent that takes at most window
+// unread bytes from the hub (0: the default), as one that stops reading does.
+func newExecClientWindow(t *testing.T, st *store.Store, window int) (agentv1connect.AgentServiceClient, *Agents) {
+	t.Helper()
 	as := NewAgentStream(slog.New(slog.DiscardHandler), 5*time.Second, NewRegistry(RegistryConfig{Store: st}))
 	path, h := agentv1connect.NewAgentServiceHandler(as)
 	mux := http.NewServeMux()
 	mux.Handle(path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		h.ServeHTTP(w, r.WithContext(withDeviceID(r.Context(), "dev-1")))
+		abortableStream(h).ServeHTTP(w, r.WithContext(withDeviceID(r.Context(), "dev-1")))
 	}))
 	srv := httptest.NewUnstartedServer(mux)
 	srv.Config.Protocols = new(http.Protocols)
@@ -38,6 +45,9 @@ func newExecClient(t *testing.T, st *store.Store) (agentv1connect.AgentServiceCl
 	t.Cleanup(srv.Close)
 	transport := &http.Transport{Protocols: new(http.Protocols)}
 	transport.Protocols.SetUnencryptedHTTP2(true)
+	if window > 0 {
+		transport.HTTP2 = &http.HTTP2Config{MaxReceiveBufferPerStream: window, MaxReceiveBufferPerConnection: window}
+	}
 	t.Cleanup(transport.CloseIdleConnections)
 	return agentv1connect.NewAgentServiceClient(&http.Client{Transport: transport}, srv.URL), as.agents
 }

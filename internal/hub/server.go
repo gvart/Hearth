@@ -136,7 +136,7 @@ func NewHandler(cfg Config) http.Handler {
 	}
 	path, h := agentv1connect.NewAgentServiceHandler(stream)
 	mux.Handle(path, requireClientCert(cfg.Store.Certs(), cfg.Log, authority,
-		EndOnStop(cfg.Stopping, reg.endOnStepDown(h))))
+		EndOnStop(cfg.Stopping, reg.endOnStepDown(abortableStream(h)))))
 	return mux
 }
 
@@ -198,6 +198,38 @@ func NewTLSHandler(cfg Config, web http.Handler) http.Handler {
 	mux.Handle("/"+agentv1connect.AgentServiceName+"/", agents)
 	mux.Handle("/", web)
 	return mux
+}
+
+// errStreamStalled is the cause of an agent stream the hub tore down because
+// the agent stopped taking what the hub sends.
+var errStreamStalled = errors.New("the agent stopped reading its stream")
+
+type abortKey struct{}
+
+// abortableStream lets the handler of an agent stream tear it down without
+// the agent's help: a send blocked on a peer that stopped reading ends only
+// with a write deadline, and the stream's Receive only with its body closed.
+// The agent sees the stream reset, which ends its shells.
+func abortableStream(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithCancelCause(r.Context())
+		defer cancel(nil)
+		rc := http.NewResponseController(w)
+		abort := sync.OnceFunc(func() {
+			cancel(errStreamStalled)
+			_ = rc.SetWriteDeadline(time.Now())
+			_ = r.Body.Close()
+		})
+		next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, abortKey{}, abort)))
+	})
+}
+
+// streamAbort is the function that tears down the agent stream of ctx.
+func streamAbort(ctx context.Context) func() {
+	if abort, ok := ctx.Value(abortKey{}).(func()); ok {
+		return abort
+	}
+	return func() {}
 }
 
 // errStopping is the cause of a request context cancelled by EndOnStop.

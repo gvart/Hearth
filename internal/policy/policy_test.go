@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/gvart/hearth/internal/store"
 )
@@ -441,6 +443,34 @@ func TestEngineDoOutcomeAuditFailure(t *testing.T) {
 				t.Errorf("message = %q, want %q", err, tt.wantMsg)
 			}
 		})
+	}
+}
+
+// stuckAudit is an audit log whose writes hang until their context ends.
+type stuckAudit struct{}
+
+func (stuckAudit) Append(ctx context.Context, _ store.AuditEntry) (int64, error) {
+	<-ctx.Done()
+	return 0, ctx.Err()
+}
+
+// TestAuditWriteIsBounded is a stuck store: the request ends, and the action
+// it could not audit first is not run.
+func TestAuditWriteIsBounded(t *testing.T) {
+	e := New(stuckAudit{})
+	e.auditTimeout = 50 * time.Millisecond
+	ran := false
+	start := time.Now()
+	err := e.Do(t.Context(), Request{ActorKind: ActorAdmin, ActorID: "root", Action: TokenCreate},
+		func(context.Context) error {
+			ran = true
+			return nil
+		})
+	if d := time.Since(start); d > 5*time.Second {
+		t.Errorf("Do took %s", d)
+	}
+	if ran || !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "nothing was run") {
+		t.Fatalf("Do = %v (ran %v), want a timeout that says nothing was run", err, ran)
 	}
 }
 

@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
+
 	"github.com/gvart/hearth/internal/policy"
 	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
 	"github.com/gvart/hearth/internal/store"
@@ -391,5 +393,150 @@ func TestOpenShellCapsSessionsPerDevice(t *testing.T) {
 	}
 	if _, err := agents.OpenShell(granted, "dev-1", 24, 80); err != nil {
 		t.Fatalf("after one ended: %v", err)
+	}
+}
+
+// stalledAgent answers the open of a shell, then never reads its stream again.
+func stalledAgent(stream *connect.BidiStreamForClient[agentv1.AgentMessage, agentv1.HubMessage]) <-chan *agentv1.ShellRequest {
+	got := make(chan *agentv1.ShellRequest, 1)
+	go func() {
+		msg, err := stream.Receive()
+		if err != nil {
+			return
+		}
+		got <- msg.GetShellRequest()
+		_ = stream.Send(&agentv1.AgentMessage{Payload: &agentv1.AgentMessage_ShellEvent{ShellEvent: &agentv1.ShellEvent{
+			Id: msg.GetShellRequest().GetId(), Event: &agentv1.ShellEvent_Started{Started: &agentv1.ShellStarted{Shell: "/bin/fake"}},
+		}}})
+	}()
+	return got
+}
+
+// shellEndBound is how soon after a limit fires a stalled session must be over.
+const shellEndBound = 5 * time.Second
+
+// waitForced checks a session ended force-closed, audited, with the stream gone.
+func (f *terminalFixture) waitForced(t *testing.T, why string) {
+	t.Helper()
+	e := waitShellAudit(t, f.st, 2)[1]
+	if !strings.Contains(e.Result, "ended: "+why) || !strings.Contains(e.Result, "force-closed") ||
+		!strings.Contains(string(e.Detail), `"forced":true`) {
+		t.Errorf("end entry = %q %s, want it force-closed", e.Result, e.Detail)
+	}
+	for range 500 {
+		if errors.Is(f.agents.CheckShell(t.Context(), "dev-1"), ErrAgentNotConnected) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Error("the stalled stream was not torn down")
+}
+
+// TestTerminalLimitsEndStalledSession is the limits of a session whose agent
+// stopped reading its stream, with the send window open and with it full.
+func TestTerminalLimitsEndStalledSession(t *testing.T) {
+	t.Parallel()
+	const limit = 300 * time.Millisecond
+	for name, tc := range map[string]struct {
+		window  int
+		flood   bool
+		signOut bool
+		// detect is how long the hub may take to notice the limit.
+		detect time.Duration
+		opts   func(*Config)
+		why    string
+	}{
+		"idle, window open":  {detect: limit, opts: func(c *Config) { c.ShellIdleTimeout = limit }, why: "idle timeout"},
+		"max duration, full": {window: 64 << 10, flood: true, detect: limit, opts: func(c *Config) { c.ShellMaxDuration = limit }, why: "maximum session duration reached"},
+		"sign-out, full": {
+			window: 64 << 10, flood: true, signOut: true, detect: time.Second,
+			opts: func(c *Config) { c.ShellIdleTimeout = 4 * time.Second }, why: "signed out", // checked every second
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			f := newTerminalFixtureWith(t, tc.window, stalledAgent, tc.opts)
+			ws, err := f.dial(t, f.srv.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if m, _ := next(t, ws); m.Type != "started" {
+				t.Fatalf("first message = %+v, want started", m)
+			}
+			var accepted atomic.Int64
+			if tc.flood {
+				go func() {
+					frame := shellFrame{binary: true, data: make([]byte, 32<<10)}
+					for {
+						_ = ws.SetWriteDeadline(time.Now().Add(10 * time.Second))
+						if shellCodec.Send(ws, frame) != nil {
+							return
+						}
+						accepted.Add(int64(len(frame.data)))
+					}
+				}()
+				time.Sleep(500 * time.Millisecond) // the window fills
+			}
+			fired := time.Now()
+			if tc.signOut {
+				if resp := f.do(t, http.MethodPost, "/api/v1/logout", "", f.cookie); resp.StatusCode != http.StatusNoContent {
+					t.Fatalf("logout: status %d", resp.StatusCode)
+				}
+			}
+			// The browser is told, or at least disconnected, within the bound.
+			_ = ws.SetReadDeadline(time.Now().Add(limit + shellEndBound + 10*time.Second))
+			for {
+				var fr shellFrame
+				if shellCodec.Receive(ws, &fr) != nil {
+					break
+				}
+			}
+			if d := time.Since(fired); d > tc.detect+shellEndBound {
+				t.Errorf("the browser was released %s after the limit, want within %s", d, tc.detect+shellEndBound)
+			}
+			f.waitForced(t, tc.why)
+			if n := accepted.Load(); n > 32<<20 {
+				t.Errorf("the hub took %d bytes of input for an agent that does not read", n)
+			}
+		})
+	}
+}
+
+// TestShellCloseDoesNotBlockOnStalledStream fills the stream of an agent that
+// stopped reading: Close returns, and the session ends, within their bounds.
+func TestShellCloseDoesNotBlockOnStalledStream(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	st := newTestStore(t)
+	enrollDevice(t, st, "dev-1")
+	client, agents := newExecClientWindow(t, st, 64<<10)
+	stream := connectAgent(ctx, t, client, minShellMinor, &agentv1.Ceiling{Shell: true})
+	stalledAgent(stream)
+	sh, err := openShellUntilAttached(grantShell(ctx, t, st), t, agents)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		b := make([]byte, 32<<10)
+		for sh.Write(b) == nil {
+		}
+	}()
+	time.Sleep(300 * time.Millisecond) // the window fills
+	start := time.Now()
+	sh.Close()
+	if d := time.Since(start); d > shellSendTimeout+time.Second {
+		t.Errorf("Close took %s", d)
+	}
+	for {
+		if _, err := sh.Read(ctx); err != nil {
+			break
+		}
+	}
+	if d := time.Since(start); d > shellEndBound {
+		t.Errorf("the session ended %s after Close", d)
+	}
+	if !sh.Unconfirmed() {
+		t.Errorf("exit = %v, want it unconfirmed", sh.Exit())
 	}
 }
