@@ -15,6 +15,7 @@ import (
 
 	"github.com/gvart/hearth/internal/integrations/kubernetes"
 	"github.com/gvart/hearth/internal/integrations/prometheus"
+	"github.com/gvart/hearth/internal/metrics"
 	"github.com/gvart/hearth/internal/notify"
 	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/policy"
@@ -64,6 +65,9 @@ type Config struct {
 	// Prometheus reads device chart series from an existing Prometheus
 	// server. Nil means none is configured: charts report not_configured.
 	Prometheus *prometheus.Reader
+	// Metrics stores the host metrics agents send and serves device charts
+	// when no Prometheus is configured. Nil drops the metrics.
+	Metrics *metrics.Store
 	// Agents runs exec requests over the open agent streams. Share one with
 	// whatever sends them (the automations). If nil, NewHandler creates one.
 	Agents *Agents
@@ -91,6 +95,7 @@ func NewHandler(cfg Config) http.Handler {
 	stream := NewAgentStream(cfg.Log, cfg.HeartbeatInterval, reg)
 	stream.leadership = lead
 	stream.certs, stream.authority = cfg.Store.Certs(), authority
+	stream.metrics = cfg.Metrics
 	if cfg.Agents != nil {
 		stream.agents = cfg.Agents
 	}

@@ -9,6 +9,7 @@ import (
 
 	"github.com/gvart/hearth/internal/automation"
 	"github.com/gvart/hearth/internal/integrations/prometheus"
+	"github.com/gvart/hearth/internal/metrics"
 	"github.com/gvart/hearth/internal/store"
 )
 
@@ -51,13 +52,17 @@ func watchDevices(ctx context.Context, ch <-chan Event, fn func(automation.Devic
 	}
 }
 
-// AutomationMetrics reads the metric trigger's values from Prometheus. It is
-// nil when no Prometheus is configured.
-func AutomationMetrics(st *store.Store, prom *prometheus.Reader) automation.Metrics {
-	if prom == nil {
-		return nil
+// AutomationMetrics reads the metric trigger's values from Prometheus, or,
+// when none is configured, a device's values from the hub's own metrics ms
+// (which answer no PromQL). It is nil when there is neither.
+func AutomationMetrics(st *store.Store, prom *prometheus.Reader, ms *metrics.Store) automation.Metrics {
+	switch {
+	case prom != nil:
+		return promMetrics{devices: st.Devices(), prom: prom}
+	case ms != nil:
+		return builtinMetrics{devices: st.Devices(), metrics: ms}
 	}
-	return promMetrics{devices: st.Devices(), prom: prom}
+	return nil
 }
 
 type promMetrics struct {
@@ -67,7 +72,7 @@ type promMetrics struct {
 
 // DeviceMetric implements automation.Metrics.
 func (m promMetrics) DeviceMetric(ctx context.Context, device, metric string) (float64, error) {
-	d, err := m.findDevice(ctx, device)
+	d, err := findDevice(ctx, m.devices, device)
 	if err != nil {
 		return 0, err
 	}
@@ -84,8 +89,8 @@ func (m promMetrics) Query(ctx context.Context, promql string) ([]float64, error
 }
 
 // findDevice returns the device whose id, name or hostname is ref.
-func (m promMetrics) findDevice(ctx context.Context, ref string) (store.Device, error) {
-	all, err := m.devices.List(ctx)
+func findDevice(ctx context.Context, devices store.Devices, ref string) (store.Device, error) {
+	all, err := devices.List(ctx)
 	if err != nil {
 		return store.Device{}, err
 	}

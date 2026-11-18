@@ -21,6 +21,8 @@ const (
 	defaultPort     = "7443"
 	defaultHTTPPort = "7080"
 	dbFile          = "hearth.db"
+	// metricsDBFile holds the hub's own host metrics; not replicated.
+	metricsDBFile = "metrics.db"
 )
 
 // defaultDataDir is HEARTH_DATA_DIR if set, /var/lib/hearth/<role> for root,

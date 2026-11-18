@@ -28,6 +28,7 @@ import (
 	"github.com/gvart/hearth/internal/integrations/kubernetes"
 	"github.com/gvart/hearth/internal/integrations/prometheus"
 	"github.com/gvart/hearth/internal/mcpserver"
+	"github.com/gvart/hearth/internal/metrics"
 	"github.com/gvart/hearth/internal/notify"
 	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/policy"
@@ -208,6 +209,13 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 			return err
 		}
 	}
+	// Host metrics stay in a database of this hub's own, outside the
+	// replicated store: they are too many writes for the Raft log.
+	ms, err := metrics.Open(ctx, filepath.Join(opts.dataDir, metricsDBFile), nil, log)
+	if err != nil {
+		return err
+	}
+	defer ms.Close()
 	now := time.Now()
 	serverCert, err := ca.IssueServerCert(hosts, now)
 	if err != nil {
@@ -249,6 +257,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		AgentPort:         agentPort,
 		Stopping:          stopping,
 		Prometheus:        prom,
+		Metrics:           ms,
 		Agents:            agents,
 		Kube:              kube,
 		Notify:            notifier,
@@ -282,7 +291,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	}
 	uiMux.Handle(mcpserver.Path, hub.EndOnStop(stopping, mcpserver.Handler(mcpserver.Config{
 		Devices: st.Devices(), Live: reg.Live, Tokens: st.MCPTokens(), Policy: pol, Agents: agents, Kube: kube,
-		Metrics: hub.AutomationMetrics(st, prom), AutomationsDir: automationsDir, Version: opts.version, Log: log,
+		Metrics: hub.AutomationMetrics(st, prom, ms), AutomationsDir: automationsDir, Version: opts.version, Log: log,
 	})))
 	var tlsWeb http.Handler = uiMux
 	if node != nil {
@@ -339,7 +348,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	kinds := automation.Builtin(log)
 	maps.Copy(kinds.Triggers, automation.Triggers(automation.TriggerDeps{
 		Devices: hub.AutomationDevices(reg),
-		Metrics: hub.AutomationMetrics(st, prom),
+		Metrics: hub.AutomationMetrics(st, prom, ms),
 		Probers: agents,
 		Policy:  pol,
 		Log:     log,
@@ -372,6 +381,8 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	}
 	// Every hub of a cluster watches the Kubernetes clusters itself.
 	g.Go(func() error { return kube.Run(gctx) })
+	// Every hub prunes its own metrics.
+	g.Go(func() error { return ms.Run(gctx) })
 	g.Go(func() error { return serve(gctx, agentSrv, func() error { return agentSrv.ServeTLS(agentLn, "", "") }) })
 	g.Go(func() error { return serve(gctx, webSrv, func() error { return webSrv.Serve(webLn) }) })
 	if node != nil {

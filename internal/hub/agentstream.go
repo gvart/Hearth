@@ -14,6 +14,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/gvart/hearth/internal/metrics"
 	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
 	"github.com/gvart/hearth/internal/proto/hearth/agent/v1/agentv1connect"
 	"github.com/gvart/hearth/internal/store"
@@ -40,6 +41,8 @@ type AgentStream struct {
 	authority func() error
 	// agents tracks open streams so exec requests can be sent over them.
 	agents *Agents
+	// metrics, when set, records the agents' MetricsBatches.
+	metrics *metrics.Store
 }
 
 var _ agentv1connect.AgentServiceHandler = (*AgentStream)(nil)
@@ -145,10 +148,10 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 			sess.deliver(p.ExecResult)
 		case *agentv1.AgentMessage_ProbeResult:
 			sess.deliverProbe(p.ProbeResult)
+		case *agentv1.AgentMessage_MetricsBatch:
+			s.recordMetrics(ctx, log, deviceID, p.MetricsBatch)
 		case *agentv1.AgentMessage_Hello:
 			return connect.NewError(connect.CodeInvalidArgument, errors.New("duplicate Hello"))
-		default:
-			// Metrics are handled by a later task.
 		}
 	}
 }

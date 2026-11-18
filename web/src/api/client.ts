@@ -70,7 +70,7 @@ export interface TlsInfo {
 }
 
 /** Why device metrics have no charts; `ok` means they do. */
-export type MetricsStatus = 'ok' | 'not_configured' | 'unreachable' | 'no_target';
+export type MetricsStatus = 'ok' | 'not_configured' | 'unreachable' | 'no_target' | 'no_data';
 
 export interface MetricChart {
   key: string;
@@ -80,9 +80,9 @@ export interface MetricChart {
   points: [number, number][];
 }
 
-/** A device's chart series, read from Prometheus; see GET /api/v1/devices/{id}/metrics. */
+/** A device's chart series, from the hub's own metrics or Prometheus; see GET /api/v1/devices/{id}/metrics. */
 export interface DeviceMetrics {
-  source: string;
+  source: 'builtin' | 'prometheus';
   status: MetricsStatus;
   message?: string;
   /** The Prometheus `instance` label the device mapped to. */

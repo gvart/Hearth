@@ -88,7 +88,7 @@ func waitSubscribed(t *testing.T, reg *Registry) {
 }
 
 func TestAutomationMetrics(t *testing.T) {
-	if m := AutomationMetrics(newTestStore(t), nil); m != nil {
+	if m := AutomationMetrics(newTestStore(t), nil, nil); m != nil {
 		t.Fatalf("metrics without Prometheus = %v, want nil", m)
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -113,7 +113,7 @@ func TestAutomationMetrics(t *testing.T) {
 	}
 	st := newTestStore(t)
 	addDevice(t, st, "d1", "raspberrypi", "192.168.2.131/24")
-	m := AutomationMetrics(st, prometheus.NewReader(c))
+	m := AutomationMetrics(st, prometheus.NewReader(c), nil)
 
 	for _, ref := range []string{"d1", "raspberrypi", "RaspberryPi"} {
 		v, err := m.DeviceMetric(t.Context(), ref, "cpu")

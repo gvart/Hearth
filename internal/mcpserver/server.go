@@ -66,7 +66,8 @@ type Config struct {
 	Agents Agents
 	// Kube is nil when Kubernetes clusters are not served.
 	Kube Kube
-	// Metrics is nil when no Prometheus is configured.
+	// Metrics reads device metrics from Prometheus or the hub's built-in
+	// metrics; nil when the hub has neither.
 	Metrics automation.Metrics
 	// AutomationsDir is where apply_automation writes automation files.
 	AutomationsDir string

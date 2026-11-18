@@ -24,6 +24,7 @@ import (
 
 	"github.com/gvart/hearth/internal/agent"
 	"github.com/gvart/hearth/internal/hub"
+	"github.com/gvart/hearth/internal/metrics"
 	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/policy"
 	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
@@ -45,6 +46,8 @@ type restartableHub struct {
 	done    chan struct{}
 	// agents sends exec requests over the hub's agent streams.
 	agents *hub.Agents
+	// metrics records the agents' host metrics.
+	metrics *metrics.Store
 }
 
 func startRestartableHub(t *testing.T, heartbeat time.Duration) *restartableHub {
@@ -81,12 +84,18 @@ func startClusterHub(t *testing.T, heartbeat time.Duration, peer *restartableHub
 	logs := &syncBuffer{}
 	log := slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	agents := hub.NewAgents(st.Devices())
+	ms, err := metrics.Open(t.Context(), filepath.Join(t.TempDir(), "metrics.db"), nil, log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ms.Close() })
 	h := &restartableHub{
-		t:      t,
-		agents: agents,
+		t:       t,
+		agents:  agents,
+		metrics: ms,
 		handler: hub.NewHandler(hub.Config{
 			Store: st, CA: ca, Policy: policy.New(st.Audit()), Log: log, HeartbeatInterval: heartbeat,
-			Leadership: lead, Agents: agents,
+			Leadership: lead, Agents: agents, Metrics: ms,
 		}),
 		tls:  hub.TLSConfig(ca, cert),
 		st:   st,
@@ -334,6 +343,21 @@ func TestRunRefreshesFacts(t *testing.T) {
 	}
 	if dev.OS == "" || dev.Arch != runtime.GOARCH {
 		t.Errorf("hub stored os=%q arch=%q, want the agent's facts", dev.OS, dev.Arch)
+	}
+}
+
+func TestRunSendsMetrics(t *testing.T) {
+	h := startRestartableHub(t, time.Minute)
+	id, dataDir := h.join(t)
+	a := startAgentWith(t, agent.Config{DataDir: dataDir, MetricsInterval: 100 * time.Millisecond})
+	defer a.stop(t)
+
+	// CPU and network are rates: they come from the second batch on.
+	for _, name := range []string{"cpu", "memory", "disk", "net_rx", "net_tx"} {
+		waitFor(t, 10*time.Second, name+" metric", func() bool {
+			v, err := h.metrics.Latest(t.Context(), id, name, time.Minute)
+			return err == nil && v >= 0 && (name[:3] == "net" || v <= 100)
+		})
 	}
 }
 

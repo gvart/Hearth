@@ -1,7 +1,28 @@
 ---
 title: Prometheus
-description: Device charts and metric triggers from an existing Prometheus.
+description: Built-in device metrics, and device charts and metric triggers from an existing Prometheus.
 ---
+
+## Built-in metrics
+
+With no setup, every agent sends its host metrics to the hub every 15 s: `cpu`, `memory` and `disk`
+(root filesystem) in percent, `temperature` (hottest thermal zone, Linux only) in °C, and `net_rx`
+and `net_tx` in bytes per second. The hub keeps raw samples for 24 hours and one-minute and hourly
+averages for 7 days, in `<data-dir>/metrics.db`, and prunes older data every 10 minutes. Device
+charts use them when no Prometheus is configured:
+
+```
+GET /api/v1/devices/{id}/metrics?range=168h&names=cpu,temperature&source=builtin
+```
+
+`range` is 5m to 168h (default 1h), `names` limits the series, and `source` (`builtin` or
+`prometheus`) overrides the default: Prometheus when it is configured, built-in otherwise.
+
+`metrics.db` is local to each hub and not replicated: in a [cluster](cluster.md) the leader
+records the metrics, so after a failover charts restart on the new leader, and each hub's API shows
+what it recorded. Deleting the file loses only history.
+
+## Prometheus
 
 If you already run Prometheus with node-exporter, the hub can read from it and draw device charts
 (CPU, memory, root disk usage over the last hour) in the device drawer. Hearth only reads; it never
