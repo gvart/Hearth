@@ -24,6 +24,7 @@ export const keys = {
   metrics: (id: string) => ['metrics', id] as const,
   kubeClusters: ['kube', 'clusters'] as const,
   kubeCluster: (id: string) => ['kube', 'cluster', id] as const,
+  notifyChannels: ['notify', 'channels'] as const,
 };
 
 const metricsRefreshMs = 30_000;
@@ -202,6 +203,15 @@ export function useRemoveKubeCluster() {
       qc.removeQueries({ queryKey: keys.kubeCluster(id) });
     },
   });
+}
+
+/** The hub's notification channels, by name and type. */
+export function useNotifyChannels() {
+  return useQuery({ queryKey: keys.notifyChannels, queryFn: api.notifyChannels });
+}
+
+export function useTestNotifyChannel() {
+  return useMutation({ mutationFn: api.testNotifyChannel });
 }
 
 /** Applies a kube.cluster event (or a just-added cluster) to the cache. */

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"maps"
 	"net"
@@ -23,6 +24,7 @@ import (
 	"github.com/gvart/hearth/internal/hub"
 	"github.com/gvart/hearth/internal/integrations/kubernetes"
 	"github.com/gvart/hearth/internal/integrations/prometheus"
+	"github.com/gvart/hearth/internal/notify"
 	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/policy"
 	"github.com/gvart/hearth/internal/store"
@@ -44,6 +46,9 @@ type hubOptions struct {
 	// prometheusURL is an existing Prometheus server to read device charts
 	// from; empty means none.
 	prometheusURL string
+	// notifyConfig is the notification channels file; default
+	// <dataDir>/notify.yaml if it exists.
+	notifyConfig string
 	// dangerousAutomations are the automations granted dangerous actions.
 	dangerousAutomations []string
 	cluster              clusterOptions
@@ -85,6 +90,8 @@ func newHubCmd() *cobra.Command {
 		"Prometheus server to read device charts from, e.g. http://prometheus.lan:9090 (env HEARTH_PROMETHEUS_URL)")
 	cmd.Flags().StringVar(&opts.automationsDir, "automations-dir", "",
 		"directory of automation YAML files, reloaded when they change (default <data-dir>/automations)")
+	cmd.Flags().StringVar(&opts.notifyConfig, "notify-config", os.Getenv("HEARTH_NOTIFY_CONFIG"),
+		"file of notification channels (ntfy, Telegram) for notify actions (env HEARTH_NOTIFY_CONFIG; default <data-dir>/notify.yaml if it exists; see docs/notifications.md)")
 	cmd.Flags().StringArrayVar(&opts.dangerousAutomations, "allow-dangerous-automation", nil,
 		"id of an automation allowed to take dangerous actions, such as exec; repeatable (default: none)")
 	addClusterFlags(cmd, &opts.cluster)
@@ -164,6 +171,10 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	notifier, err := loadNotifier(opts, log)
+	if err != nil {
+		return err
+	}
 	// stopping ends agent streams and /events subscriptions as soon as either
 	// server begins shutting down, so Shutdown waits only on ordinary requests
 	// and agents see a clean end of stream and reconnect at once.
@@ -182,6 +193,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		Prometheus:        prom,
 		Agents:            agents,
 		Kube:              kube,
+		Notify:            notifier,
 	}
 	// ready is closed once a clustered hub has caught up with the cluster.
 	ready := make(chan struct{})
@@ -262,7 +274,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		Metrics: hub.AutomationMetrics(st, prom),
 		Log:     log,
 	}))
-	maps.Copy(kinds.Actions, automation.Actions(automation.ActionDeps{Agents: agents}))
+	maps.Copy(kinds.Actions, automation.Actions(automation.ActionDeps{Agents: agents, Notifier: notifier}))
 	automations := automation.New(automation.Config{
 		Dir:    automationsDir,
 		Kinds:  kinds,
@@ -390,4 +402,30 @@ func ensureAdminPassword(ctx context.Context, st *store.Store, pol *policy.Engin
 	}
 	log.InfoContext(ctx, "admin password set from HEARTH_ADMIN_PASSWORD")
 	return nil
+}
+
+// loadNotifier reads the notification channels file: --notify-config, or
+// <data-dir>/notify.yaml if it exists. Without one the hub has no channels.
+// It logs channel names only, never their addresses or credentials.
+func loadNotifier(opts hubOptions, log *slog.Logger) (*notify.Notifier, error) {
+	path := opts.notifyConfig
+	if path == "" {
+		path = filepath.Join(opts.dataDir, "notify.yaml")
+		if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
+			return &notify.Notifier{}, nil
+		}
+	}
+	n, err := notify.Load(path)
+	if err != nil {
+		return nil, fmt.Errorf("--notify-config: %w", err)
+	}
+	if notify.Exposed(path) {
+		log.Warn("notification channels file is readable by other users, and holds credentials: chmod 600 it", "path", path)
+	}
+	names := []string{}
+	for _, c := range n.Channels() {
+		names = append(names, c.Name)
+	}
+	log.Info("notification channels loaded", "path", path, "channels", names)
+	return n, nil
 }

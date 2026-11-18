@@ -85,6 +85,12 @@ const (
 	// KubeNodeDrain cordons a node and evicts its pods, honouring their
 	// PodDisruptionBudgets.
 	KubeNodeDrain Action = "kube.node.drain"
+	// AutomationNotify is an automation's notify action: a message to a
+	// notification channel (ntfy, Telegram) configured on the hub.
+	AutomationNotify Action = "automation.notify"
+	// NotifyTest sends a test message to a notification channel from the
+	// web UI.
+	NotifyTest Action = "notify.test"
 )
 
 // Actor kinds.
@@ -165,6 +171,10 @@ var rules = map[Action]rule{
 	// A drain takes every workload off a node: on a small homelab cluster
 	// that can be most of the capacity.
 	KubeNodeDrain: {class: Dangerous, actors: []string{ActorWeb}},
+	// A notification touches no device: it tells a person something, on a
+	// channel the operator configured.
+	AutomationNotify: {class: Safe, actors: []string{ActorAutomation}},
+	NotifyTest:       {class: Safe, actors: []string{ActorWeb}},
 }
 
 // ClassOf returns the class of a known action.

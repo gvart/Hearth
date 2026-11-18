@@ -223,6 +223,12 @@ export interface KubeActionResult {
   result?: string;
 }
 
+/** A notification channel configured on the hub; see /api/v1/notify. */
+export interface NotifyChannel {
+  name: string;
+  type: 'ntfy' | 'telegram';
+}
+
 /** ApiError carries the hub's `{"error","code"}` body and the HTTP status. */
 export class ApiError extends Error {
   readonly status: number;
@@ -289,6 +295,9 @@ export const api = {
   },
   kubeAction: (cluster: string, req: KubeActionRequest) =>
     request<KubeActionResult>('POST', `/kube/clusters/${encodeURIComponent(cluster)}/actions`, req),
+  notifyChannels: async () => (await request<{ channels: NotifyChannel[] }>('GET', '/notify/channels')).channels,
+  testNotifyChannel: (name: string) =>
+    request<undefined>('POST', `/notify/channels/${encodeURIComponent(name)}/test`),
 };
 
 export interface EventHandlers {
