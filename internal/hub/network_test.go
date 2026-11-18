@@ -113,16 +113,25 @@ func TestSSENetworkHostEvent(t *testing.T) {
 	}
 	waitLine(": subscribed")
 
-	reg.NetworkHost(discovery.EventNew, store.NetworkHost{MAC: "3e:00:00:00:00:03", IP: "192.168.2.30"})
-	if name := waitLine("event: "); name != discovery.EventNew {
-		t.Fatalf("event %q, want %s", name, discovery.EventNew)
-	}
-	var ev NetworkEventJSON
-	if err := json.Unmarshal([]byte(waitLine("data: ")), &ev); err != nil {
-		t.Fatal(err)
-	}
-	if ev.Type != discovery.EventNew || ev.Host.MAC != "3e:00:00:00:00:03" || ev.Host.IP != "192.168.2.30" {
-		t.Errorf("event = %+v", ev)
+	// One scan's hosts reach clients as one message each.
+	reg.NetworkHosts(discovery.EventNew, []store.NetworkHost{
+		{MAC: "3e:00:00:00:00:03", IP: "192.168.2.30"},
+		{MAC: "3e:00:00:00:00:04", IP: "192.168.2.31"},
+	})
+	for _, want := range []struct{ mac, ip string }{
+		{"3e:00:00:00:00:03", "192.168.2.30"},
+		{"3e:00:00:00:00:04", "192.168.2.31"},
+	} {
+		if name := waitLine("event: "); name != discovery.EventNew {
+			t.Fatalf("event %q, want %s", name, discovery.EventNew)
+		}
+		var ev NetworkEventJSON
+		if err := json.Unmarshal([]byte(waitLine("data: ")), &ev); err != nil {
+			t.Fatal(err)
+		}
+		if ev.Type != discovery.EventNew || ev.Host.MAC != want.mac || ev.Host.IP != want.ip {
+			t.Errorf("event = %+v, want %s", ev, want.mac)
+		}
 	}
 }
 
@@ -138,7 +147,7 @@ func TestAppliedNetworkScan(t *testing.T) {
 	for _, want := range []string{discovery.EventNew, discovery.EventReturned} {
 		select {
 		case ev := <-ch:
-			if ev.Type != want || ev.Host == nil || ev.Host.MAC != h.MAC {
+			if ev.Type != want || len(ev.Hosts) != 1 || ev.Hosts[0].MAC != h.MAC {
 				t.Fatalf("event = %+v, want %s", ev, want)
 			}
 		case <-time.After(time.Second):

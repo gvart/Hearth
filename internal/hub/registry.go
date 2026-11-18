@@ -26,11 +26,12 @@ const (
 
 // Event is a change to a device. Device is its state after the change. A
 // network discovery event (discovery.EventNew, discovery.EventReturned)
-// carries Host instead.
+// carries Hosts instead: every host of that type one scan found, as one event
+// so that a large scan cannot overrun a subscriber's buffer.
 type Event struct {
 	Type   string
 	Device store.Device
-	Host   *store.NetworkHost
+	Hosts  []store.NetworkHost
 }
 
 // RegistryConfig holds the registry's dependencies. Zero values of the

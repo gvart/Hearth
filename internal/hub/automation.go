@@ -60,7 +60,7 @@ func AutomationNetwork(reg *Registry) automation.NetworkEvents { return registry
 // WatchNetwork implements automation.NetworkEvents, renewing a subscription
 // the bus ends as WatchDevices does. A host marked known or ignored, or one
 // of an enrolled device's interfaces, is silenced.
-func (e registryEvents) WatchNetwork(ctx context.Context, fn func(automation.NetworkEvent)) error {
+func (e registryEvents) WatchNetwork(ctx context.Context, fn func([]automation.NetworkEvent)) error {
 	for ctx.Err() == nil {
 		ch, unsubscribe := e.reg.Subscribe()
 		e.watchNetwork(ctx, ch, fn)
@@ -71,7 +71,7 @@ func (e registryEvents) WatchNetwork(ctx context.Context, fn func(automation.Net
 
 // watchNetwork passes on new and returned hosts from ch until ch is closed
 // or ctx is done.
-func (e registryEvents) watchNetwork(ctx context.Context, ch <-chan Event, fn func(automation.NetworkEvent)) {
+func (e registryEvents) watchNetwork(ctx context.Context, ch <-chan Event, fn func([]automation.NetworkEvent)) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -80,22 +80,25 @@ func (e registryEvents) watchNetwork(ctx context.Context, ch <-chan Event, fn fu
 			if !ok {
 				return
 			}
-			if ev.Host == nil || (ev.Type != discovery.EventNew && ev.Type != discovery.EventReturned) {
+			if len(ev.Hosts) == 0 || (ev.Type != discovery.EventNew && ev.Type != discovery.EventReturned) {
 				continue
 			}
-			h := ev.Host
-			silenced := h.State != store.HostUnreviewed
-			if !silenced {
-				// A read of the local store; a failure only leaves the host
-				// unsilenced.
-				devs, err := e.reg.devices.List(ctx)
-				silenced = err == nil && deviceMACs(devs)[h.MAC] != ""
+			// A read of the local store; a failure only leaves the hosts
+			// unsilenced.
+			devs, err := e.reg.devices.List(ctx)
+			if err != nil {
+				devs = nil
 			}
-			fn(automation.NetworkEvent{
-				Returned: ev.Type == discovery.EventReturned,
-				MAC:      h.MAC, IP: h.IP, Vendor: h.Vendor, Name: h.Hostname,
-				Silenced: silenced,
-			})
+			enrolled := deviceMACs(devs)
+			hosts := make([]automation.NetworkEvent, len(ev.Hosts))
+			for i, h := range ev.Hosts {
+				hosts[i] = automation.NetworkEvent{
+					Returned: ev.Type == discovery.EventReturned,
+					MAC:      h.MAC, IP: h.IP, Vendor: h.Vendor, Name: h.Hostname,
+					Silenced: h.State != store.HostUnreviewed || enrolled[h.MAC] != "",
+				}
+			}
+			fn(hosts)
 		}
 	}
 }

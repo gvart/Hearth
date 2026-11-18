@@ -84,6 +84,11 @@ The hub then runs a built-in automation, `new-device-alerts`, that sends to that
 - **Device back on your network** for every `network.device.returned` of a host nobody has marked:
   one that no scan had found for an hour or more.
 
+A scan that finds several hosts sends one notification for them, such as **12 new devices on your
+network**, and another for the hosts that came back. It lists each host, at least 50 of them; on a
+larger scan it ends with `and N more`, and the title still counts them all. The rest are on the
+Devices page.
+
 Without the flag the automation is off. The hub refuses to start if the channel is not in the
 channels file, and warns if discovery is off. Hosts that are one of an enrolled device's interfaces
 never alert: they are that device.
@@ -102,9 +107,13 @@ MAC, and a mark on one address does not carry over to the next.
 
 **Changing it.** To change the message, the channel, or to alert on new hosts only, write your own
 automation with the id `new-device-alerts` in the automations directory: it replaces the built-in.
-The `network` trigger is in the [automation reference](automations.md#network-hosts). Notifications
-are sent one after another (the automation is `queued`), so a scan that finds several hosts sends
-one notification for each, up to 11 at a time.
+The `network` trigger is in the [automation reference](automations.md#network-hosts). Give its
+triggers `batch: true`: without it a scan fires once per host, and hosts past the 11 runs an
+automation can hold at a time are dropped.
+
+**If a notification fails.** It is not sent again. The run shows as `failed` in
+`hearth automation runs`, with the hosts in its trigger step, and the audit log has the failure. The
+hosts stay unmarked on the Devices page, and later scans alert as usual.
 
 In a cluster, the automation runs on the leader: give every hub the same `--new-device-alerts`.
 
