@@ -235,8 +235,15 @@ func readSpooled(root *os.Root, name string) (store.AuditEntry, error) {
 	if err := dec.Decode(&sp); err != nil {
 		return store.AuditEntry{}, err
 	}
-	if sp.Key == "" || sp.TS.IsZero() {
+	// What the audit log would refuse on every retry must not hold up the
+	// entries after it.
+	switch {
+	case sp.Key == "" || sp.TS.IsZero():
 		return store.AuditEntry{}, errors.New("no key or time")
+	case sp.ActorKind == "" || sp.ActorID == "" || sp.Action == "" || sp.Decision == "":
+		return store.AuditEntry{}, errors.New("no actor, action or decision")
+	case len(sp.Detail) > 0 && store.AuditDetailTooDeep(sp.Detail):
+		return store.AuditEntry{}, errors.New("detail nests too deep")
 	}
 	return store.AuditEntry{
 		TS: sp.TS, ActorKind: sp.ActorKind, ActorID: sp.ActorID, Action: sp.Action, Target: sp.Target,

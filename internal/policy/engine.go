@@ -122,8 +122,6 @@ type Engine struct {
 	sweepEvery time.Duration
 	// spool keeps the outcomes that could not be written; see SpoolTo.
 	spool *Spool
-	// outcomeTimeout bounds the first write of an outcome.
-	outcomeTimeout time.Duration
 }
 
 // SpoolTo makes the engine keep in s every entry that reports how an action
@@ -156,7 +154,7 @@ func NewWithConfig(audit Auditor, approvals Approvals, cfg Config) *Engine {
 	if cfg.ApprovalTimeout <= 0 {
 		cfg.ApprovalTimeout = DefaultApprovalTimeout
 	}
-	return &Engine{audit: audit, approvals: approvals, cfg: cfg, now: time.Now, poll: time.Second, sweepEvery: time.Minute, outcomeTimeout: outcomeTimeout}
+	return &Engine{audit: audit, approvals: approvals, cfg: cfg, now: time.Now, poll: time.Second, sweepEvery: time.Minute}
 }
 
 // Do decides on req and, if allowed, runs fn. A request the configuration
@@ -274,7 +272,7 @@ func outcomeNotRecorded(req Request, runErr, auditErr error) error {
 // may commit after seeming to fail, and goes to the spool if it could not be
 // written.
 func (e *Engine) recordOutcome(ctx context.Context, req Request, decision, result string, extra map[string]any) error {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), e.outcomeTimeout)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), outcomeTimeout)
 	defer cancel()
 	entry, err := e.entry(req, decision, result, extra)
 	if err != nil {

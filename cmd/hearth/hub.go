@@ -546,8 +546,14 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	g.Go(func() error { return pve.Run(gctx) })
 	// Every hub prunes its own metrics.
 	g.Go(func() error { return ms.Run(gctx) })
-	// Every hub writes the audit entries it spooled.
-	g.Go(func() error { return spool.Run(gctx) })
+	// Every hub writes the audit entries it spooled; a cluster member once
+	// its store has caught up, so it reads the cluster's schema.
+	g.Go(func() error {
+		if node != nil && node.WaitReady(gctx) != nil {
+			return nil
+		}
+		return spool.Run(gctx)
+	})
 	g.Go(func() error { return serve(gctx, agentSrv, func() error { return agentSrv.ServeTLS(agentLn, "", "") }) })
 	g.Go(func() error { return serve(gctx, webSrv, func() error { return webSrv.Serve(webLn) }) })
 	if node != nil {

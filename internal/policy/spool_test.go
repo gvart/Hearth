@@ -220,6 +220,12 @@ func TestSpoolCorruptEntryRecordsTheGap(t *testing.T) {
 				t.Fatal(err)
 			}
 		},
+		"no action": func(t *testing.T, path string) {
+			b := `{"ts":"2026-01-01T00:00:00Z","actor_kind":"a","actor_id":"b","decision":"allow","key":"k"}`
+			if err := os.WriteFile(path, []byte(b), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		},
 		"no key": func(t *testing.T, path string) {
 			if err := os.WriteFile(path, []byte(`{"ts":"2026-01-01T00:00:00Z","actor_kind":"a"}`), 0o600); err != nil {
 				t.Fatal(err)

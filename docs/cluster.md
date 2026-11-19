@@ -284,8 +284,8 @@ The same goes for a held request that ends in a denial. The hub keeps that entry
 `audit-spool` folder of its data dir and writes it once a majority is back, also after a restart.
 The entry keeps the time it was made and lands only once. If a spooled entry cannot be read back,
 the hub writes an `audit.entry_lost` entry in its place, so the gap shows in the audit log. The
-spool needs a cluster at schema 20 or later (see `hearth cluster migrate`). Below that, a retried
-entry can show up twice.
+entry lands only once on a cluster at schema 20 or later (see `hearth cluster migrate`). Below that,
+a retried entry can show up twice.
 
 ## Limits
 

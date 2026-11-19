@@ -78,14 +78,14 @@ func TestOutcomeWithoutQuorumLandsOnce(t *testing.T) {
 	}
 	// These test nodes write on the leader only (a hub forwards through its
 	// API, which they do not serve): the spooling hub has to lead.
-	if l := leaderOf(t, restarted...); l != hub {
-		if err := l.raft.LeadershipTransferToServer(raft.ServerID(hub.ID()), raft.ServerAddress(hub.Addr())).Error(); err != nil {
-			t.Fatalf("LeadershipTransfer: %v", err)
+	eventually(t, "the spooling hub to lead", func() bool {
+		l := leaderOf(t, restarted...)
+		if l != hub {
+			_ = l.raft.LeadershipTransferToServer(raft.ServerID(hub.ID()), raft.ServerAddress(hub.Addr())).Error()
+			return false
 		}
-	}
-	if leaderOf(t, restarted...) != hub {
-		t.Fatal("the spooling hub did not take the lead")
-	}
+		return true
+	})
 	waitReady(t, restarted...)
 
 	spool, err = policy.OpenSpool(spoolDir, hub.st.Audit(), log)
