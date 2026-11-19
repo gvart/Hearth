@@ -1,0 +1,39 @@
+internal/hub/agentstream.go
+  s_344993999c180f::t_a7346971522d81 108-112
+internal/hub/agentlogs.go
+  s_344993999c180f::t_b67b64e8f16cec 201
+  s_344993999c180f::t_1d52dbc648c77f 133
+internal/hub/agentshell.go
+  s_344993999c180f::t_1d52dbc648c77f 217-219,222,271
+internal/hub/shell_guard_test.go
+  s_344993999c180f::t_1d52dbc648c77f 522
+internal/hub/agentsend_test.go
+  s_344993999c180f::t_8dced788953f04 267-271
+  s_344993999c180f::t_a1ed9e0a35b1f8 1-6,9-25,29-30,39-45,47-52,54-72,74-130,132-142,144-167,169-209,211-220,222-225,227-240,242-266,272-273
+  s_344993999c180f::t_42043c41273c0d 7-8,26-28,31-33,37-38,46,53,143
+  s_344993999c180f::t_08ae699006d1ff 168,210,241
+  s_344993999c180f::t_0fadec51805f26 73,131
+  s_344993999c180f::t_ca917681ae80e5 34-36
+  s_344993999c180f::t_a7346971522d81 221,226
+internal/hub/agentexec.go
+  s_344993999c180f::t_1d52dbc648c77f 12-13,34-39,50-51,59,64-71,97,279,292-312
+  s_344993999c180f::t_3a0939743e7109 313-314
+internal/hub/agentexec_test.go
+  s_344993999c180f::t_1ee5b5f3b93420 33-34,37-39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fd006eb2ae87bda7e9aa75ff7f4ca5af95bc2090",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
