@@ -170,7 +170,7 @@ function decideError(err: Error): string {
     return 'Wrong password. Nothing was approved: the action is still waiting.';
   }
   if (err instanceof ApiError && err.code === 'rate_limited') {
-    return 'Too many password attempts. Wait a minute, then try again.';
+    return 'Too many password attempts. Wait a few seconds, then try again.';
   }
   return err.message;
 }

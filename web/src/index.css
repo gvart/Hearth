@@ -1678,6 +1678,8 @@ dialog::backdrop {
 
 .approve-card .approval-actions .btn {
   flex: 1;
+  justify-content: center;
+  text-decoration: none;
   height: 2.75rem;
 }
 

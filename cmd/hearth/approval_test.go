@@ -28,9 +28,6 @@ func writePolicy(t *testing.T, dir, body string) {
 func TestApprovalFlow(t *testing.T) {
 	dir, _ := initHub(t)
 	writePolicy(t, dir, "classes: {dangerous: confirm}\n")
-	if out, err := executeWithStdin(t, approvalTestPassword+"\n", "admin", "set-password", "--data-dir", dir); err != nil {
-		t.Fatalf("set-password = %v\n%s", err, out)
-	}
 	st := openStore(t, dir)
 	if err := st.Devices().Upsert(t.Context(), store.Device{ID: "pi", Status: store.StatusUnknown}); err != nil {
 		t.Fatal(err)
@@ -66,6 +63,14 @@ func TestApprovalFlow(t *testing.T) {
 	out, err := execute(t, "approval", "list", "--data-dir", dir)
 	if err != nil || !strings.Contains(out, id) || !strings.Contains(out, "device.revoke") {
 		t.Fatalf("approval list = %v\n%s", err, out)
+	}
+	// Without an admin password set, nothing can approve.
+	if out, err := executeWithStdin(t, approvalTestPassword+"\n", "approval", "approve", id, "--data-dir", dir); err == nil ||
+		!strings.Contains(err.Error(), "admin password not set") {
+		t.Fatalf("approve without an admin password = %v\n%s", err, out)
+	}
+	if out, err := executeWithStdin(t, approvalTestPassword+"\n", "admin", "set-password", "--data-dir", dir); err != nil {
+		t.Fatalf("set-password = %v\n%s", err, out)
 	}
 	// Approving needs the admin password, on stdin here; a missing or wrong
 	// one leaves the approval pending.

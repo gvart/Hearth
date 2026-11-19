@@ -84,10 +84,11 @@ the password once more. Denying needs no password: it can only stop an action.
   password to be set (`hearth admin set-password`).
 
 The password is checked as login checks it: the same argon2id hash and cost, one verification at a
-time, and the same per-address rate limit, which approving and logging in share (a burst of 5
-guesses, then one every 12 s; `429` past it). A refused approval stays pending and is in the audit
-log as a denied `approval.approve` whose result says the approver was not re-authenticated. The
-password itself is never logged, audited, stored or echoed in a response.
+time, and the same per-address rate limit, which approving and logging in share: a burst of 5
+attempts with a password, right or wrong, then one every 12 s (`429` past it). A refused approval
+stays pending and is in the audit log as a denied `approval.approve` whose result says the approver
+was not re-authenticated. The password itself is never logged, audited, stored or echoed in a
+response.
 
 Every decision is in the audit log as `approval.approve` or `approval.deny`, by who and how: the
 actor kind says the channel (`admin` for the CLI, `web` for the UI, `approval_link` for a link) and

@@ -35,7 +35,7 @@ func holdRevocation(t *testing.T, f *apiFixture) (id string, ran func() bool, do
 	out := make(chan error, 1)
 	didRun := make(chan struct{}, 1)
 	go func() {
-		out <- cli.Do(context.WithoutCancel(t.Context()), policy.Request{
+		out <- cli.Do(t.Context(), policy.Request{
 			ActorKind: policy.ActorAdmin, ActorID: "root", Action: policy.DeviceRevoke, Target: "pi",
 			OnHold: func(id string, _ time.Time) { held <- id },
 		}, func(context.Context) error { didRun <- struct{}{}; return nil })
@@ -49,9 +49,16 @@ func holdRevocation(t *testing.T, f *apiFixture) (id string, ran func() bool, do
 func TestApproveNeedsPassword(t *testing.T) {
 	const (
 		wrong = "wrong-guess-7f3a9c"
-		other = "another-hubs-admin-pw-55e1" // a real password, of another account
+		other = "previous-admin-pw-55e1"
 	)
-	f := newAPIFixture(t, true, withPolicy(policy.Config{}))
+	f := newAPIFixture(t, false, withPolicy(policy.Config{}))
+	// other was a valid admin password of this hub until it was reset; Hearth
+	// has one account, so that is the nearest to another user's password.
+	for _, pw := range []string{other, testPassword} {
+		if err := setAdminPassword(t.Context(), f.st, f.api.policy, "test", pw, testArgon); err != nil {
+			t.Fatal(err)
+		}
+	}
 	// The victim's session, and the same cookie in a thief's hands.
 	stolen := sessionCookie(t, f.login(t, testPassword))
 	id, ran, done := holdRevocation(t, f)
@@ -64,7 +71,7 @@ func TestApproveNeedsPassword(t *testing.T) {
 		{"no password", "application/json", `{}`},
 		{"empty password", "application/json", passwordBody("")},
 		{"wrong password", "application/json", passwordBody(wrong)},
-		{"another account's password", "application/json", passwordBody(other)},
+		{"a replaced password", "application/json", passwordBody(other)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
