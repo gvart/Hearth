@@ -6,6 +6,7 @@ import (
 	"os"
 	"runtime"
 	"runtime/debug"
+	"strings"
 	"time"
 )
 
@@ -48,6 +49,18 @@ func TuneRuntime() (connected, failed, stop func()) {
 func LimitProcs() {
 	if os.Getenv("GOMAXPROCS") == "" {
 		runtime.GOMAXPROCS(1)
+	}
+}
+
+// StopMemProfile turns the runtime's heap profiling off unless GODEBUG sets
+// memprofilerate, the way to turn it back on for debugging. Nothing in the
+// agent reads heap profiles, yet by default the runtime samples one
+// allocation in every 512 kB and keeps a record of each call stack it
+// sampled for the life of the process. main calls it first thing for
+// `hearth agent run`, before the agent allocates much.
+func StopMemProfile() {
+	if !strings.Contains(os.Getenv("GODEBUG"), "memprofilerate=") {
+		runtime.MemProfileRate = 0
 	}
 }
 

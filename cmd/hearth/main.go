@@ -29,6 +29,7 @@ func main() {
 	}
 	if len(os.Args) > 2 && os.Args[1] == "agent" && os.Args[2] == "run" {
 		agent.LimitProcs()
+		agent.StopMemProfile()
 	}
 	os.Exit(run())
 }

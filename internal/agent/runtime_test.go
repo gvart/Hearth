@@ -187,3 +187,26 @@ loop:
 		t.Errorf("exec during load: exit %d, error %q", res.GetExitCode(), res.GetError())
 	}
 }
+
+// TestStopMemProfile: heap profiling is off unless GODEBUG asks for it. Not
+// parallel: it sets the process's GODEBUG and profile rate.
+func TestStopMemProfile(t *testing.T) {
+	rate := runtime.MemProfileRate
+	t.Cleanup(func() { runtime.MemProfileRate = rate })
+	for _, tc := range []struct {
+		godebug string
+		want    int
+	}{
+		{"", 0},
+		{"gctrace=1", 0},
+		{"memprofilerate=1", 4096},
+		{"gctrace=1,memprofilerate=0", 4096},
+	} {
+		t.Setenv("GODEBUG", tc.godebug)
+		runtime.MemProfileRate = 4096
+		StopMemProfile()
+		if runtime.MemProfileRate != tc.want {
+			t.Errorf("GODEBUG=%q: MemProfileRate = %d, want %d", tc.godebug, runtime.MemProfileRate, tc.want)
+		}
+	}
+}
