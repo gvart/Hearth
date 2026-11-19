@@ -1,0 +1,28 @@
+internal/automation/template_limits_test.go
+  s_344993999c180f::t_fed20c4e9f539a 97-99
+  s_344993999c180f::t_93f779a02cebbc 14,16-17,27-49,56-57
+  s_344993999c180f::t_977eda7796a710 75-96,100-105
+  s_344993999c180f::t_b6f55a3f3c3d3f 8
+internal/automation/template.go
+  s_344993999c180f::t_93f779a02cebbc 19-20,58-64,66,127-128,154,156,158,169,177,180-186,188,192-198,200-201,203-205,207,210-228,280-282
+docs/automations.md
+  s_344993999c180f::t_93f779a02cebbc 432-435
+internal/hub/automations_security_test.go
+  s_344993999c180f::t_abd4fff105da91 181-183
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "407f4afa2f709dd0abc3584c8574f0d06ded2b28",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}

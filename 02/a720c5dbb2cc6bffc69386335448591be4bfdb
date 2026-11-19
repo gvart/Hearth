@@ -1,0 +1,70 @@
+internal/automation/action_device.go
+  s_344993999c180f::t_926af94a60e9f5 94,105,127-128
+internal/hub/automations.go
+  s_344993999c180f::t_9acb28a1bcaa17 16
+  s_344993999c180f::t_926af94a60e9f5 10,14-15,72-76,173-178,180,199-200,218-275,286-288,294-305,342-346,352-366,386-387,392-394,397-398,402,415,417-421,428-448,450
+  s_344993999c180f::t_3cd2a35a8ca1f5 28-33
+internal/automation/action_webhook.go
+  s_344993999c180f::t_926af94a60e9f5 90,99
+internal/automation/runtime.go
+  s_344993999c180f::t_926af94a60e9f5 412
+internal/automation/template.go
+  s_344993999c180f::t_926af94a60e9f5 6,9,12,16-29,48-50,54-57,60-80,112-114,118-157,159-236,262-263,272
+  s_344993999c180f::t_fe7f8a7ac1de4a 158
+internal/automation/testdata/hubread/main.go
+  s_344993999c180f::t_b54d063c9696c8 1-52
+internal/policy/hold.go
+  s_344993999c180f::t_aaea31e6f46804 1-36
+internal/hub/automations_test.go
+  s_344993999c180f::t_926af94a60e9f5 558-559
+internal/hub/automations_unix_test.go
+  s_344993999c180f::t_817bf018d04a01 1-33
+internal/automation/trigger_network_test.go
+  s_344993999c180f::t_926af94a60e9f5 213,217
+internal/hub/api.go
+  s_344993999c180f::t_5b9d0239628c07 192-195
+  s_344993999c180f::t_ae6b0f6a8423c6 86-87
+internal/automation/action_kube.go
+  s_344993999c180f::t_2bbac4cbb4ce6d 230
+  s_344993999c180f::t_021d3721c1096a 241
+  s_344993999c180f::t_926af94a60e9f5 213,218,221
+  s_344993999c180f::t_9cebca1c1a4b1b 209
+internal/automation/template_limits_test.go
+  s_344993999c180f::t_812dd2397ccfd5 1-37,44-101
+  s_344993999c180f::t_5c9f3f848e48a9 38-43
+docs/guardrails.md
+  s_344993999c180f::t_30aa0b6be547c1 41-44
+internal/automation/action_notify.go
+  s_344993999c180f::t_926af94a60e9f5 72,76
+internal/automation/builtin.go
+  s_344993999c180f::t_926af94a60e9f5 78
+internal/policy/hold_test.go
+  s_344993999c180f::t_c0aa4b13aaa73d 42-46
+  s_344993999c180f::t_095c7168579192 1-41,47-58
+internal/automation/files.go
+  s_344993999c180f::t_926af94a60e9f5 88-91,111-118,123,125-130,142-155,179-181,207-209
+internal/hub/automations_security_test.go
+  s_344993999c180f::t_d107addf827263 1-176,178-343,345-346,348-376,382-443
+  s_344993999c180f::t_f91dfa68a3b9eb 347
+  s_344993999c180f::t_e9cd815e19999c 177
+  s_344993999c180f::t_5c9f3f848e48a9 377-381
+  s_344993999c180f::t_2712af8d3bc1d9 344
+internal/automation/template_test.go
+  s_344993999c180f::t_926af94a60e9f5 164
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "02a720c5dbb2cc6bffc69386335448591be4bfdb",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
