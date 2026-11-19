@@ -1,0 +1,27 @@
+internal/integrations/proxmox/manager.go
+  s_344993999c180f::t_e5abb56b869ccd 201-204
+  s_344993999c180f::t_d76025279bf330 205
+  s_344993999c180f::t_ddfa0e09508a1b 582
+  s_344993999c180f::t_54713eb7ada569 237
+internal/integrations/proxmox/pvemock/pvemock.go
+  s_344993999c180f::t_d76025279bf330 21
+  s_344993999c180f::t_5f963ba8fe7703 43,108-115,178-187
+internal/integrations/proxmox/freshread_timeout_test.go
+  s_344993999c180f::t_c5dd123451efa7 1-50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7c94cca1fa034c1435d54cb126f6326c2e2c345f",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
