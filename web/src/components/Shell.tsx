@@ -52,12 +52,22 @@ export function Shell() {
   const logout = useLogout();
   const page = usePage();
   const waiting = useApprovals('pending').data?.length ?? 0;
+  const nav = useRef<HTMLElement>(null);
   const activeLink = useRef<HTMLAnchorElement>(null);
 
   // On a phone the links scroll sideways: keep the current page's link in view,
-  // also when the waiting badge widens it.
+  // also when the waiting badge widens it or the nav narrows, as it does when a
+  // page's data arrives and brings a classic scrollbar with it.
   useEffect(() => {
-    activeLink.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    const observer = new ResizeObserver(() => {
+      activeLink.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    });
+    if (nav.current) {
+      observer.observe(nav.current);
+    }
+    return () => {
+      observer.disconnect();
+    };
   }, [page, waiting]);
 
   return (
@@ -68,7 +78,7 @@ export function Shell() {
             <Logo size={28} />
             <span>Hearth</span>
           </div>
-          <nav className="nav" aria-label="Sections">
+          <nav ref={nav} className="nav" aria-label="Sections">
             {pages.map((p) => (
               <a
                 key={p.id}

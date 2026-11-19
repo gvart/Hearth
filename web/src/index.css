@@ -1137,6 +1137,7 @@ dialog::backdrop {
 
 .tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.25rem;
 }
 
@@ -1164,10 +1165,13 @@ dialog::backdrop {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
+  max-width: 100%;
   padding-bottom: 0.4rem;
 }
 
 .ns-filter select {
+  /* A select is as wide as its longest namespace unless it may shrink. */
+  min-width: 0;
   height: 2rem;
   padding: 0 0.5rem;
   border: 1px solid var(--border);
@@ -1530,6 +1534,11 @@ dialog::backdrop {
 
   .topbar-left {
     gap: 0.75rem;
+  }
+
+  /* All four cluster tabs fit a 320 px window, classic scrollbar included. */
+  .tab {
+    padding-inline: 0.45rem;
   }
 
   .topbar > button {
