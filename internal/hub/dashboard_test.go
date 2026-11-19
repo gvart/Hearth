@@ -200,9 +200,10 @@ func TestDashboardDenied(t *testing.T) {
 			}
 		}
 	}
-	// One row per actor for the hour: the unknown, no-token, wrong-scheme
-	// and session cases are all token/unknown from one address.
-	want := map[string]int{"token/unknown": 1, "token/" + revoked.Token.ID: 1, "token/" + expiring.Token.ID: 1}
+	// One row per known token and source for the hour, and one per reason
+	// for unknown ones: no token (the session case too), an unknown token,
+	// and not a bearer token.
+	want := map[string]int{"token/unknown": 3, "token/" + revoked.Token.ID: 1, "token/" + expiring.Token.ID: 1}
 	if !maps.Equal(denied, want) {
 		t.Fatalf("denials audited = %v, want %v", denied, want)
 	}

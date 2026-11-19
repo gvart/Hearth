@@ -77,6 +77,10 @@ type Config struct {
 	// Agents runs exec requests over the open agent streams. Share one with
 	// whatever sends them (the automations). If nil, NewHandler creates one.
 	Agents *Agents
+	// DashboardAudit spaces out the audit rows of dashboard reads; run it
+	// (DashboardAudit.Run) so that its counts are flushed. If nil, the API
+	// makes one that only writes a key's counts with its next row.
+	DashboardAudit *DashboardAudit
 	// Kube serves adopted Kubernetes clusters under /api/v1/kube and streams
 	// their changes on /api/v1/events. Nil disables both.
 	Kube *kubernetes.Manager

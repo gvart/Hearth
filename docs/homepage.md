@@ -95,14 +95,19 @@ A dashboard read is never held for approval: `confirm` refuses it.
 
 Homepage polls every few seconds. So the audit log does not get a row for every read:
 
-- It gets one row for a token's first read in each hour. That row's `reads_unaudited` counts the
-  reads since the previous row.
+- It gets one row for each token's first read in each hour from each source address, so a token
+  used from a new address shows up at once. That row's `reads_unaudited` counts the reads since
+  the previous row, including those refused for their rate.
 - A refused read (no token, an unknown, revoked or expired token, or one denied by policy) is
   audited as `deny`, with the reason. To keep a forgotten Homepage from flooding the log, this
-  happens at most once an hour for each source address and token, and `denials_unaudited` counts
-  the others.
+  happens at most once an hour for each known token and source address. For credentials that are
+  no token at all (none, an unknown secret, not a bearer token), it happens once an hour per
+  reason, whatever the source. `denials_unaudited` counts the others.
+- Every 10 minutes, and when the hub stops, the hub writes the counts still waiting as rows marked
+  `"flush": true`, with the last source address.
 
-These counts are kept by each hub process, so a hub restart starts them again.
+The counts are kept by each hub process until they are written. If a hub crashes or is killed,
+the counts not yet written are lost. A clean stop writes them first.
 
 Reads are rate-limited per token: a burst of 20, then one a second. Past that, the hub answers
 `429` with `Retry-After`.

@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	"maps"
 	"mime"
 	"net/http"
 	"strings"
@@ -29,9 +31,11 @@ import (
 // as ActorDashboard, token/<token id>, action dashboard.read (class read).
 //
 // Dashboards poll every few seconds, so the audit log gets the first
-// allowed read of each token per hour, not every read, and the first denied
-// read per source address and actor per hour. Each row counts the reads (or
-// denials) since the previous one that got none.
+// allowed read of each token and source per hour, not every read, and the
+// first denied read per token and source, or per reason for an unknown
+// token, per hour. Each row counts the reads (or denials) since the
+// previous one, and DashboardAudit.Run flushes waiting counts every
+// DashboardFlushEvery.
 
 const (
 	// dashboardReadBurst and dashboardReadEvery set the per-token rate of
@@ -48,6 +52,8 @@ const (
 	maxDashboardTokenName = 100
 	// maxDashboardTokenTTL bounds a token's expiry; none means never.
 	maxDashboardTokenTTL = 10 * 365 * 24 * time.Hour
+	// maxDashboardTokenID bounds a token ID in a revoke request.
+	maxDashboardTokenID = 64
 	// dashboardSummaryVersion is the version of the summary's JSON shape.
 	dashboardSummaryVersion = 1
 )
@@ -189,6 +195,12 @@ func (a *api) createDashboardToken(w http.ResponseWriter, r *http.Request) {
 
 func (a *api) revokeDashboardToken(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	// IDs are 26 characters; anything much longer names no token, and is
+	// kept out of the audit log.
+	if len(id) > maxDashboardTokenID {
+		writeError(w, http.StatusNotFound, "not_found", "no such dashboard token in use")
+		return
+	}
 	err := a.policy.Do(r.Context(), policy.Request{
 		ActorKind: policy.ActorWeb, ActorID: remoteHost(r), Action: policy.DashboardTokenRevoke, Target: "token/" + id,
 	}, func(ctx context.Context) error { return a.store.DashboardTokens().Revoke(ctx, id, a.now()) })
@@ -224,24 +236,32 @@ func bearerSecret(r *http.Request) (string, bool) {
 	return secret, ok && strings.EqualFold(scheme, "Bearer") && secret != ""
 }
 
-var errNoBearer = errors.New("no bearer token")
-
 // dashboardSummary answers a dashboard's read. Only a dashboard token, as a
 // bearer token, is a credential here: a session cookie is not.
 func (a *api) dashboardSummary(w http.ResponseWriter, r *http.Request) {
 	ctx := policy.WithScope(r.Context(), policy.Read)
 	now := a.now()
-	tok, authErr := store.DashboardToken{}, errNoBearer
+	remote := remoteHost(r)
+	tok, reason := store.DashboardToken{}, "no dashboard token"
 	if secret, ok := bearerSecret(r); ok {
-		tok, authErr = a.store.DashboardTokens().Check(ctx, secret, now)
-	}
-	switch {
-	case authErr == nil, errors.Is(authErr, errNoBearer), errors.Is(authErr, store.ErrNotFound),
-		errors.Is(authErr, store.ErrTokenRevoked), errors.Is(authErr, store.ErrTokenExpired):
-	default:
-		a.log.ErrorContext(ctx, "check dashboard token", "err", authErr)
-		writeError(w, http.StatusServiceUnavailable, "internal", "cannot check the token")
-		return
+		var err error
+		tok, err = a.store.DashboardTokens().Check(ctx, secret, now)
+		switch {
+		case err == nil:
+			reason = ""
+		case errors.Is(err, store.ErrNotFound):
+			reason = "unknown dashboard token"
+		case errors.Is(err, store.ErrTokenRevoked):
+			reason = "dashboard token revoked"
+		case errors.Is(err, store.ErrTokenExpired):
+			reason = "dashboard token expired"
+		default:
+			a.log.ErrorContext(ctx, "check dashboard token", "err", err)
+			writeError(w, http.StatusServiceUnavailable, "internal", "cannot check the token")
+			return
+		}
+	} else if r.Header.Get("Authorization") != "" {
+		reason = "not a bearer token"
 	}
 	actorID := "token/unknown"
 	if tok.ID != "" {
@@ -249,23 +269,29 @@ func (a *api) dashboardSummary(w http.ResponseWriter, r *http.Request) {
 	}
 	req := policy.Request{
 		ActorKind: policy.ActorDashboard, ActorID: actorID, Action: policy.DashboardRead, Target: "devices",
-		Detail: map[string]any{"remote": remoteHost(r)},
+		Detail: map[string]any{"remote": remote},
 	}
 
-	decision := policy.Deny
-	if authErr == nil {
+	if reason == "" {
+		key := "read/" + tok.ID + "/" + remote
 		if ok, wait := a.dashboardReads.allow(tok.ID); !ok {
+			a.dashboardAudit.count(key, req, "")
 			writeRetry(w, http.StatusTooManyRequests, wait, "rate_limited", "too many reads; try again later")
 			return
 		}
-		decision, _ = a.policy.Check(req)
+		if d, _ := a.policy.Check(req); d == policy.Allow {
+			a.serveDashboardSummary(ctx, w, key, req, now)
+			return
+		}
 	}
-	if decision == policy.Allow {
-		a.serveDashboardSummary(ctx, w, req, tok.ID, now)
-		return
+	// A known token is throttled per source; an unknown one per reason, so
+	// that no stream of sources or secrets adds rows.
+	key := "deny/" + actorID + "/" + reason
+	if tok.ID != "" {
+		key += "/" + remote
 	}
-	a.denyDashboardRead(ctx, req, authErr, decision, remoteHost(r), now)
-	if authErr == nil {
+	a.denyDashboardRead(ctx, key, req, reason, now)
+	if reason == "" {
 		writeError(w, http.StatusForbidden, "forbidden", "dashboard reads are denied by policy")
 		return
 	}
@@ -273,12 +299,27 @@ func (a *api) dashboardSummary(w http.ResponseWriter, r *http.Request) {
 	writeError(w, http.StatusUnauthorized, "unauthenticated", "a valid dashboard token is required")
 }
 
+// dashboardPrecheck refuses a dashboard read for reason, when it has one,
+// and refuses one the configuration would hold for approval: a dashboard
+// cannot wait for one.
+func dashboardPrecheck(e *policy.Engine, req policy.Request, reason string) func(context.Context) error {
+	return func(context.Context) error {
+		if reason != "" {
+			return fmt.Errorf("%s: %w", reason, policy.ErrDenied)
+		}
+		if d, _ := e.Check(req); d == policy.Confirm {
+			return fmt.Errorf("a dashboard read cannot wait for approval: %w", policy.ErrDenied)
+		}
+		return nil
+	}
+}
+
 // serveDashboardSummary answers an allowed read. The first read of the hour
-// goes through policy.Do and is audited; the others were decided by
-// policy.Check alone and are counted for the next audit row.
-func (a *api) serveDashboardSummary(ctx context.Context, w http.ResponseWriter, req policy.Request, id string, now time.Time) {
-	key := "read/" + id
-	due, quiet := a.dashboardAudit.due(key, now)
+// from each token and source goes through policy.Do and is audited; the
+// others were decided by policy.Check alone and are counted for the next
+// audit row.
+func (a *api) serveDashboardSummary(ctx context.Context, w http.ResponseWriter, key string, req policy.Request, now time.Time) {
+	due, quiet := a.dashboardAudit.due(key, now, req, "")
 	if !due {
 		out, err := a.dashboardSummaryOf(ctx)
 		if err != nil {
@@ -289,7 +330,8 @@ func (a *api) serveDashboardSummary(ctx context.Context, w http.ResponseWriter, 
 		writeJSON(w, http.StatusOK, out)
 		return
 	}
-	req.Detail["reads_unaudited"] = quiet
+	req.Detail[readsUnaudited] = quiet
+	req.Precheck = dashboardPrecheck(a.policy, req, "")
 	var out DashboardSummaryJSON
 	err := a.policy.Do(ctx, req, func(ctx context.Context) error {
 		var err error
@@ -298,9 +340,10 @@ func (a *api) serveDashboardSummary(ctx context.Context, w http.ResponseWriter, 
 	})
 	switch {
 	case err == nil:
-		a.dashboardAudit.written(key, now)
+		a.dashboardAudit.written(key, now, quiet)
 		writeJSON(w, http.StatusOK, out)
 	case errors.Is(err, policy.ErrDenied):
+		a.dashboardAudit.written(key, now, quiet)
 		writeError(w, http.StatusForbidden, "forbidden", "dashboard reads are denied by policy")
 	case errors.Is(err, store.ErrUnavailable):
 		writeUnavailable(w)
@@ -310,40 +353,18 @@ func (a *api) serveDashboardSummary(ctx context.Context, w http.ResponseWriter, 
 	}
 }
 
-// denyDashboardRead audits a refused read through policy, at most once per
-// hour for each source and actor, with the count of refusals since. A read
-// that would be held for approval is refused instead: a dashboard cannot
-// wait for one.
-func (a *api) denyDashboardRead(ctx context.Context, req policy.Request, authErr error, decision, remote string, now time.Time) {
-	key := "deny/" + remote + "/" + req.ActorID
-	due, quiet := a.dashboardAudit.due(key, now)
+// denyDashboardRead audits a refused read through policy, at most once an
+// hour for key, with the count of refusals since.
+func (a *api) denyDashboardRead(ctx context.Context, key string, req policy.Request, reason string, now time.Time) {
+	due, quiet := a.dashboardAudit.due(key, now, req, reason)
 	if !due {
 		return
 	}
-	var reason string
-	switch {
-	case errors.Is(authErr, errNoBearer):
-		reason = "no dashboard token"
-	case errors.Is(authErr, store.ErrNotFound):
-		reason = "unknown dashboard token"
-	case errors.Is(authErr, store.ErrTokenRevoked):
-		reason = "dashboard token revoked"
-	case errors.Is(authErr, store.ErrTokenExpired):
-		reason = "dashboard token expired"
-	case decision == policy.Confirm:
-		reason = "a dashboard read cannot wait for approval"
-	}
-	req.Detail["denials_unaudited"] = quiet
-	req.Precheck = func(context.Context) error {
-		if reason == "" {
-			return nil // the configuration denies it, and says why
-		}
-		return fmt.Errorf("%s: %w", reason, policy.ErrDenied)
-	}
+	req.Detail[denialsUnaudited] = quiet
+	req.Precheck = dashboardPrecheck(a.policy, req, reason)
 	// Precheck or the configuration refuses it: nothing runs.
-	err := a.policy.Do(ctx, req, func(context.Context) error { return nil })
-	if errors.Is(err, policy.ErrDenied) {
-		a.dashboardAudit.written(key, now)
+	if err := a.policy.Do(ctx, req, func(context.Context) error { return nil }); errors.Is(err, policy.ErrDenied) {
+		a.dashboardAudit.written(key, now, quiet)
 	}
 }
 
@@ -379,55 +400,169 @@ func (a *api) dashboardSummaryOf(ctx context.Context) (DashboardSummaryJSON, err
 	return out, nil
 }
 
-// maxAuditThrottleKeys bounds the throttle's table; past it, keys whose
-// hour is over are dropped, and if none is, all are.
-const maxAuditThrottleKeys = 4096
+// Detail keys of the counts an audit row of dashboard reads carries.
+const (
+	readsUnaudited   = "reads_unaudited"
+	denialsUnaudited = "denials_unaudited"
+)
 
-// auditThrottle spaces the audit rows of a key out to one per every, and
-// counts what happened in between. It lives in the hub process: a restart,
-// or another hub of a cluster, starts its own count.
-type auditThrottle struct {
-	every time.Duration
+const (
+	// DashboardFlushEvery is how often DashboardAudit.Run writes the counts
+	// of reads and refusals that are waiting for their next audit row.
+	DashboardFlushEvery = 10 * time.Minute
+	// maxDashboardAuditKeys bounds the throttle's table; past it, a new key
+	// gets an audit row every time.
+	maxDashboardAuditKeys = 4096
+	// dashboardFlushTimeout bounds the last flush when the hub stops.
+	dashboardFlushTimeout = 10 * time.Second
+)
 
-	mu    sync.Mutex
-	last  map[string]time.Time
-	quiet map[string]int
+// DashboardAudit spaces out the audit rows of dashboard reads: one per key
+// every dashboardAuditEvery, each counting the reads (or refusals) since the
+// previous one, and a flush every DashboardFlushEvery for counts still
+// waiting. Counts not yet flushed live in the hub process and are lost if it
+// dies; a hub that stops cleanly flushes them first (see Run).
+type DashboardAudit struct {
+	policy *policy.Engine
+	log    *slog.Logger
+	every  time.Duration
+
+	mu   sync.Mutex
+	keys map[string]*dashboardAuditKey
 }
 
-func newAuditThrottle(every time.Duration) *auditThrottle {
-	return &auditThrottle{every: every, last: map[string]time.Time{}, quiet: map[string]int{}}
+// dashboardAuditKey is one throttled key: when its last row was written,
+// what happened since, and its latest request, for a flush.
+type dashboardAuditKey struct {
+	last   time.Time
+	quiet  int
+	req    policy.Request
+	reason string
+}
+
+// NewDashboardAudit returns the throttle of dashboard reads' audit rows,
+// whose flushes are decided and audited by pol. Run it, and pass it to the
+// API in Config.DashboardAudit.
+func NewDashboardAudit(pol *policy.Engine, log *slog.Logger) *DashboardAudit {
+	return &DashboardAudit{policy: pol, log: log, every: dashboardAuditEvery, keys: map[string]*dashboardAuditKey{}}
 }
 
 // due reports whether key needs an audit row at now and, if it does, how
 // many times it went without one since the last. A key that is not due has
-// this time counted.
-func (t *auditThrottle) due(key string, now time.Time) (bool, int) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if at, ok := t.last[key]; ok && now.Sub(at) < t.every {
-		t.quiet[key]++
+// this time counted. req is kept as the key's latest request.
+func (d *DashboardAudit) due(key string, now time.Time, req policy.Request, reason string) (bool, int) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	k := d.key(key, now)
+	if k == nil {
+		return true, 0
+	}
+	k.req, k.reason = req, reason
+	if !k.last.IsZero() && now.Sub(k.last) < d.every {
+		k.quiet++
 		return false, 0
 	}
-	return true, t.quiet[key]
+	return true, k.quiet
 }
 
-// written records that key's audit row was written at now. Until then key
-// stays due, so a failed write is tried again on the next request.
-func (t *auditThrottle) written(key string, now time.Time) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if _, ok := t.last[key]; !ok && len(t.last) >= maxAuditThrottleKeys {
-		for k, at := range t.last {
-			if now.Sub(at) >= t.every {
-				delete(t.last, k)
-				delete(t.quiet, k)
+// count counts a time key went without an audit row, such as a read
+// refused for its rate.
+func (d *DashboardAudit) count(key string, req policy.Request, reason string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if k := d.key(key, time.Time{}); k != nil {
+		k.req, k.reason = req, reason
+		k.quiet++
+	}
+}
+
+// written records that key's audit row, counting n, was written at now.
+// Until then key stays due, so a failed write is tried again.
+func (d *DashboardAudit) written(key string, now time.Time, n int) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if k, ok := d.keys[key]; ok {
+		k.last = now
+		k.quiet = max(0, k.quiet-n)
+	}
+}
+
+// key returns key's entry, made if new; nil when the table is full of keys
+// that still count something.
+func (d *DashboardAudit) key(key string, now time.Time) *dashboardAuditKey {
+	if k, ok := d.keys[key]; ok {
+		return k
+	}
+	if len(d.keys) >= maxDashboardAuditKeys {
+		for name, k := range d.keys {
+			if k.quiet == 0 && (now.IsZero() || now.Sub(k.last) >= d.every) {
+				delete(d.keys, name)
 			}
 		}
-		if len(t.last) >= maxAuditThrottleKeys {
-			clear(t.last)
-			clear(t.quiet)
+		if len(d.keys) >= maxDashboardAuditKeys {
+			return nil
 		}
 	}
-	t.last[key] = now
-	delete(t.quiet, key)
+	k := &dashboardAuditKey{}
+	d.keys[key] = k
+	return k
+}
+
+// Run flushes the waiting counts every DashboardFlushEvery until ctx ends,
+// and once more as the hub stops.
+func (d *DashboardAudit) Run(ctx context.Context) error {
+	t := time.NewTicker(DashboardFlushEvery)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), dashboardFlushTimeout)
+			d.flush(fctx, time.Now())
+			cancel()
+			return nil
+		case <-t.C:
+			d.flush(ctx, time.Now())
+		}
+	}
+}
+
+// flush writes an audit row for every key with counts waiting: the key's
+// latest request, decided again, with the count and "flush": true.
+func (d *DashboardAudit) flush(ctx context.Context, now time.Time) {
+	type pending struct {
+		key    string
+		req    policy.Request
+		reason string
+		n      int
+	}
+	d.mu.Lock()
+	var todo []pending
+	for name, k := range d.keys {
+		if k.quiet > 0 {
+			todo = append(todo, pending{name, k.req, k.reason, k.quiet})
+		}
+	}
+	d.mu.Unlock()
+	for _, p := range todo {
+		req := p.req
+		req.Detail = maps.Clone(req.Detail)
+		if req.Detail == nil {
+			req.Detail = map[string]any{}
+		}
+		countKey := readsUnaudited
+		if strings.HasPrefix(p.key, "deny/") {
+			countKey = denialsUnaudited
+		}
+		req.Detail[countKey], req.Detail["flush"] = p.n, true
+		req.Precheck = dashboardPrecheck(d.policy, req, p.reason)
+		err := d.policy.Do(policy.WithScope(ctx, policy.Read), req, func(context.Context) error { return nil })
+		if err == nil || errors.Is(err, policy.ErrDenied) {
+			d.written(p.key, now, p.n)
+			continue
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		d.log.WarnContext(ctx, "flush dashboard read counts", "actor", req.ActorID, "err", err)
+	}
 }

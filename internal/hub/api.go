@@ -101,7 +101,10 @@ func newAPI(cfg Config) *api {
 	a.guestActions = newLoginLimiter(now, guestActionBurst, guestActionEvery)
 	a.guestReads = newLoginLimiter(now, guestReadBurst, guestReadEvery)
 	a.dashboardReads = newLoginLimiter(now, dashboardReadBurst, dashboardReadEvery)
-	a.dashboardAudit = newAuditThrottle(dashboardAuditEvery)
+	a.dashboardAudit = cfg.DashboardAudit
+	if a.dashboardAudit == nil {
+		a.dashboardAudit = NewDashboardAudit(cfg.Policy, cfg.Log)
+	}
 	return a
 }
 
@@ -252,7 +255,7 @@ type api struct {
 	// dashboardReads limits the reads of each dashboard token.
 	dashboardReads *loginLimiter
 	// dashboardAudit spaces out the audit rows of dashboard reads.
-	dashboardAudit *auditThrottle
+	dashboardAudit *DashboardAudit
 }
 
 // orDefault is d, or def when d is not positive.
