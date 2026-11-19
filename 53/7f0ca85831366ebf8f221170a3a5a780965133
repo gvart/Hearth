@@ -1,0 +1,28 @@
+internal/store/audit.go
+  s_344993999c180f::t_9efef6d9cf0717 47-50
+docs/guardrails.md
+  s_344993999c180f::t_c62369e778577d 139
+internal/policy/engine.go
+  s_344993999c180f::t_1415f836be91ac 324-327,329-331,342-343,345-348
+  s_344993999c180f::t_f23b3208c56bf2 344
+internal/policy/deepdetail_test.go
+  s_344993999c180f::t_4658bbb8b84048 1-166
+web/src/components/AuditPage.tsx
+  s_344993999c180f::t_18db391a106b30 320
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "537f0ca85831366ebf8f221170a3a5a780965133",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
