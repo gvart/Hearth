@@ -1,0 +1,23 @@
+internal/backup/backup.go
+  s_344993999c180f::t_ec6e3a5b49ec6b 663,755-778
+  s_344993999c180f::t_5b0098b539f1b1 182-187,189,191-192,542,601,618
+  s_344993999c180f::t_29fba2399967e1 543-544,661-662
+internal/backup/carotation_test.go
+  s_344993999c180f::t_26d9deeec6328d 1-128
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6cd8f6109fb826ea8d45bd728ef54ba15a29425e",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
