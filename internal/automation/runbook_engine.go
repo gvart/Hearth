@@ -220,6 +220,7 @@ func (r *Runbooks) Start(ctx context.Context, actorKind, actorID, id string) (Ru
 	}
 	runID := strings.ToLower(rand.Text())
 	var out RunbookRunJSON
+	saved := false
 	err = r.cfg.Policy.Do(ctx, policy.Request{
 		ActorKind: actorKind, ActorID: actorID, Action: policy.RunbookStart, Target: rb.ID,
 		Detail: map[string]any{"run": runID},
@@ -242,14 +243,26 @@ func (r *Runbooks) Start(ctx context.Context, actorKind, actorID, id string) (Ru
 		if err := r.cfg.Runs.Create(ctx, run); err != nil {
 			return err
 		}
-		out = runbookRunJSON(run, st)
+		out, saved = runbookRunJSON(run, st), true
 		return nil
 	})
+	err = r.savedDespite(ctx, err, saved, "started", runID)
 	if err != nil {
 		return RunbookRunJSON{}, err
 	}
 	r.poke()
 	return out, nil
+}
+
+// savedDespite is err of a change to a run, without ErrOutcomeNotRecorded if
+// the change was saved: the run is what it was made, the audit log shows the
+// change as started, and an operator who is told it failed would make it twice.
+func (r *Runbooks) savedDespite(ctx context.Context, err error, saved bool, what, runID string) error {
+	if saved && errors.Is(err, policy.ErrOutcomeNotRecorded) {
+		r.cfg.Log.WarnContext(ctx, "runbook run "+what+", but its audit outcome was not recorded", "run", runID, "err", err)
+		return nil
+	}
+	return err
 }
 
 // runbookSealID binds a run's sealed file to the run.
@@ -291,6 +304,7 @@ func (r *Runbooks) operate(ctx context.Context, actorKind, actorID string, actio
 	detail map[string]any, change func(run *store.RunbookRun, st *RunbookState, actor string) error,
 ) (RunbookRunJSON, error) {
 	var out RunbookRunJSON
+	saved := false
 	detail["run"] = runID
 	err := r.cfg.Policy.Do(ctx, policy.Request{
 		ActorKind: actorKind, ActorID: actorID, Action: action, Target: runID, Detail: detail,
@@ -309,9 +323,10 @@ func (r *Runbooks) operate(ctx context.Context, actorKind, actorID string, actio
 		if err := r.save(ctx, &run, st); err != nil {
 			return err
 		}
-		out = runbookRunJSON(run, st)
+		out, saved = runbookRunJSON(run, st), true
 		return nil
 	})
+	err = r.savedDespite(ctx, err, saved, "changed", runID)
 	if err != nil {
 		return RunbookRunJSON{}, err
 	}
