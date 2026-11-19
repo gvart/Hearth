@@ -1,0 +1,28 @@
+internal/discovery/import.go
+  s_344993999c180f::t_f9cba48208e704 15,25,145-151,224,250-251,253-254,259-269
+  s_344993999c180f::t_1aa7b9cbd698e5 21-24,26-28
+  s_344993999c180f::t_2e2e2ef7716098 270
+internal/integrations/pihole/client.go
+  s_344993999c180f::t_f9cba48208e704 39-41,56-57,74-76,271,273
+internal/integrations/pihole/pihole_test.go
+  s_344993999c180f::t_36b5e73d0dd8e6 14,17
+  s_344993999c180f::t_1aa7b9cbd698e5 257-305
+internal/discovery/import_test.go
+  s_344993999c180f::t_1aa7b9cbd698e5 9,249-316
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "66837bc3541b0397c381ed6a7aa939a58c548be1",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
