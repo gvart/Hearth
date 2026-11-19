@@ -421,8 +421,8 @@ func (s *session) applyAutomation(ctx context.Context, in applyIn) (any, error) 
 	req.Detail = map[string]any{"file": path}
 	req.ApprovalDetail = map[string]any{policy.DetailPlan: desc}
 	err = s.doOn(engine, ctx, req, func(context.Context) error {
-		s.cfg.automationsMu.Lock()
-		defer s.cfg.automationsMu.Unlock()
+		s.cfg.AutomationsLock.Lock()
+		defer s.cfg.AutomationsLock.Unlock()
 		// Approval can take minutes: judge the directory as it is now.
 		path, err := s.saveTarget(a)
 		if err != nil {

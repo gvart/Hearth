@@ -78,9 +78,9 @@ type Config struct {
 	AutomationKinds automation.Kinds
 	Version         string
 	Log             *slog.Logger
-
-	// automationsMu makes each apply's check and write one step.
-	automationsMu *sync.Mutex
+	// AutomationsLock makes each apply's check and write one step: share it
+	// with the web editor's saves. Nil means the server's own.
+	AutomationsLock sync.Locker
 }
 
 // Handler serves MCP over streamable HTTP (see protocol.go). Each request
@@ -88,7 +88,9 @@ type Config struct {
 // tools the token's scope allows. Every request authenticates on its own,
 // so a revoked token stops at once, and there are no sessions to keep.
 func Handler(cfg Config) http.Handler {
-	cfg.automationsMu = new(sync.Mutex)
+	if cfg.AutomationsLock == nil {
+		cfg.AutomationsLock = new(sync.Mutex)
+	}
 	if cfg.Live == nil {
 		cfg.Live = func(d store.Device) store.Device { return d }
 	}

@@ -79,13 +79,14 @@ func newAPI(cfg Config) *api {
 		proxmox: cfg.Proxmox,
 		notify:  cfg.Notify,
 		verify:  newVerifyGate(), verifyWait: verifyWait, verifyPassword: verifier,
-		logins:      newLoginLimiter(time.Now, loginBurst, loginEvery),
-		metrics:     cfg.Metrics,
-		drift:       cfg.ConfigDrift,
-		runbooks:    cfg.Runbooks,
-		leadership:  leadershipOf(cfg),
-		automations: automation.Files{Dir: cfg.AutomationsDir, Kinds: cfg.AutomationKinds},
-		dryRuns:     newLoginLimiter(time.Now, dryRunBurst, dryRunEvery),
+		logins:        newLoginLimiter(time.Now, loginBurst, loginEvery),
+		metrics:       cfg.Metrics,
+		drift:         cfg.ConfigDrift,
+		runbooks:      cfg.Runbooks,
+		leadership:    leadershipOf(cfg),
+		automations:   automation.Files{Dir: cfg.AutomationsDir, Kinds: cfg.AutomationKinds},
+		automationsMu: automationsLock(cfg.AutomationsLock),
+		dryRuns:       newLoginLimiter(time.Now, dryRunBurst, dryRunEvery),
 		// Only a release tag is pinned: dev builds have no release to install.
 		installVersion: releaseVersion(cfg.Version),
 	}
@@ -194,7 +195,7 @@ type api struct {
 	// automations are the files the automation editor reads and writes.
 	automations automation.Files
 	// automationsMu makes each save's check and write one step.
-	automationsMu sync.Mutex
+	automationsMu sync.Locker
 	// dryRuns limits how often a client may ask for a dry run.
 	dryRuns *loginLimiter
 	// installVersion is the --version install commands pin, or "" for none.
@@ -565,4 +566,12 @@ func writeError(w http.ResponseWriter, status int, code, msg string) {
 func writeUnavailable(w http.ResponseWriter) {
 	writeError(w, http.StatusServiceUnavailable, "cluster_unavailable",
 		"no cluster leader is reachable right now; try again shortly")
+}
+
+// automationsLock is l, or a private lock when the hub gave none.
+func automationsLock(l sync.Locker) sync.Locker {
+	if l == nil {
+		return new(sync.Mutex)
+	}
+	return l
 }

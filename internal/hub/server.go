@@ -9,6 +9,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"connectrpc.com/connect"
@@ -95,6 +96,10 @@ type Config struct {
 	// AutomationKinds are the step types the hub runs: the editor validates
 	// files with them, as the hub will when it loads them.
 	AutomationKinds automation.Kinds
+	// AutomationsLock makes each save of an automation file one step: share
+	// it with every other writer of the directory, such as the MCP server.
+	// Nil means the editor's own.
+	AutomationsLock sync.Locker
 }
 
 // NewHandler serves EnrollService to anyone (the token is the credential) and

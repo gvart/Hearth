@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -188,5 +189,32 @@ func TestApplyDeniedBeforeParsing(t *testing.T) {
 	e := f.lastAudit(t)
 	if e.Action != string(policy.AutomationApply) || e.Decision != policy.Deny {
 		t.Errorf("audit = %+v, want the denial", e)
+	}
+}
+
+// TestApplyUsesTheSharedSaveLock: the web editor and apply_automation write
+// one directory, so a save made while another holds the lock waits for it.
+func TestApplyUsesTheSharedSaveLock(t *testing.T) {
+	var lock sync.Mutex
+	f := newFixture(t, allowMCP(), func(c *Config) { c.AutomationsLock = &lock })
+	cs := f.mustConnect(t, "admin-token")
+	lock.Lock()
+	done := make(chan bool, 1)
+	go func() {
+		_, isErr := call(t, cs, "apply_automation", map[string]any{"yaml": helloYAML})
+		done <- isErr
+	}()
+	select {
+	case <-done:
+		t.Fatal("the apply did not wait for the shared lock")
+	case <-time.After(300 * time.Millisecond):
+	}
+	wantNoFile(t, f)
+	lock.Unlock()
+	if isErr := <-done; isErr {
+		t.Error("the apply failed after the lock was released")
+	}
+	if _, err := os.Stat(filepath.Join(f.dir, "hello.yaml")); err != nil {
+		t.Error(err)
 	}
 }

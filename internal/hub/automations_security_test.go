@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -441,5 +442,28 @@ func newAutomationFixtureWith(t *testing.T, engine func(*store.Store) *policy.En
 	return &automationFixture{
 		apiFixture: &apiFixture{api: a, srv: srv, st: st}, dir: dir, cookie: testCookie("auto-session"),
 		agents: agents, notifier: notifier,
+	}
+}
+
+// TestSaveUsesTheSharedLock: MCP's apply_automation writes the same directory
+// under the lock the hub is given, so a web save waits for it.
+func TestSaveUsesTheSharedLock(t *testing.T) {
+	f := newAutomationFixture(t, policy.Config{})
+	var lock sync.Mutex
+	f.api.automationsMu = &lock
+	lock.Lock()
+	done := make(chan apiResp, 1)
+	go func() { done <- f.do(t, http.MethodPost, "/api/v1/automations", saveBody(t, helloYAML, ""), f.cookie) }()
+	select {
+	case resp := <-done:
+		t.Fatalf("the save did not wait for the shared lock: %d %s", resp.StatusCode, resp.body)
+	case <-time.After(300 * time.Millisecond):
+	}
+	if files := f.files(t); len(files) != 0 {
+		t.Fatalf("written while the lock was held: %v", files)
+	}
+	lock.Unlock()
+	if resp := <-done; resp.StatusCode != http.StatusCreated {
+		t.Fatalf("status %d: %s", resp.StatusCode, resp.body)
 	}
 }
