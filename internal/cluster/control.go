@@ -76,7 +76,8 @@ const maxCommandSize = 1 << 20
 // ControlHandler serves the control API: GET /v1/status (with every hub's
 // schema), POST /v1/apply (an encoded store command, proposed through node
 // or forwarded to the leader), and the member operations /v1/remove,
-// /v1/transfer-leadership and /v1/migrate.
+// /v1/transfer-leadership and /v1/migrate, and /v1/ca/rotate, /v1/ca/finish and
+// /v1/ca/status of a hub CA rotation.
 func ControlHandler(node *Node, log *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/status", func(w http.ResponseWriter, r *http.Request) {
@@ -132,7 +133,42 @@ func ControlHandler(node *Node, log *slog.Logger) http.Handler {
 		from, err := node.MigrateSchema(r.Context(), req.To)
 		writeJSON(w, migrateReply{From: from, Error: wireErr(err)})
 	})
+	mux.HandleFunc("POST /v1/ca/rotate", func(w http.ResponseWriter, r *http.Request) {
+		var req RotateOptions
+		if !readJSON(w, r, &req) {
+			return
+		}
+		plan, err := node.RotateCA(r.Context(), req)
+		writeJSON(w, rotateReply{Plan: plan, Error: wireErr(err)})
+	})
+	mux.HandleFunc("POST /v1/ca/finish", func(w http.ResponseWriter, r *http.Request) {
+		var req FinishOptions
+		if !readJSON(w, r, &req) {
+			return
+		}
+		plan, err := node.FinishCA(r.Context(), req)
+		writeJSON(w, finishReply{Plan: plan, Error: wireErr(err)})
+	})
+	mux.HandleFunc("GET /v1/ca/status", func(w http.ResponseWriter, r *http.Request) {
+		st, err := node.CAStatus(r.Context())
+		writeJSON(w, caStatusReply{Status: st, Error: wireErr(err)})
+	})
 	return mux
+}
+
+type rotateReply struct {
+	Plan  RotatePlan `json:"plan"`
+	Error *wireError `json:"error,omitempty"`
+}
+
+type finishReply struct {
+	Plan  FinishPlan `json:"plan"`
+	Error *wireError `json:"error,omitempty"`
+}
+
+type caStatusReply struct {
+	Status CAStatus   `json:"status"`
+	Error  *wireError `json:"error,omitempty"`
 }
 
 type migrateRequest struct {
@@ -260,6 +296,9 @@ var wireKinds = map[string]error{
 	"schema_old":           store.ErrSchemaTooOld,
 	"ca_rotation_active":   store.ErrCARotationActive,
 	"ca_rotation_conflict": store.ErrCARotationConflict,
+	"unpinned_certs":       ErrUnpinnedCerts,
+	"old_ca_holders":       ErrOldCAHolders,
+	"no_rotation":          ErrNoRotation,
 }
 
 // kindError is a known store error received over the wire: it keeps the
@@ -388,20 +427,70 @@ func (c *ControlClient) MigrateSchema(ctx context.Context, to int64) (int64, err
 	return reply.From, nil
 }
 
+// RotateCA starts a hub CA rotation through the hub's node (see
+// Node.RotateCA). The plan comes back with a refusal too.
+func (c *ControlClient) RotateCA(ctx context.Context, opts RotateOptions) (RotatePlan, error) {
+	var reply rotateReply
+	if err := c.post(ctx, "/v1/ca/rotate", opts, &reply); err != nil {
+		return RotatePlan{}, err
+	}
+	if reply.Error != nil {
+		return reply.Plan, reply.Error.toError()
+	}
+	return reply.Plan, nil
+}
+
+// FinishCA finishes the hub CA rotation through the hub's node (see
+// Node.FinishCA), which waits for every hub, so for up to caFinishTimeout.
+// The plan comes back with a refusal too.
+func (c *ControlClient) FinishCA(ctx context.Context, opts FinishOptions) (FinishPlan, error) {
+	ctx, cancel := context.WithTimeout(ctx, caFinishTimeout)
+	defer cancel()
+	long := &http.Client{Transport: c.http.Transport}
+	var reply finishReply
+	if err := c.postWith(ctx, long, "/v1/ca/finish", opts, &reply); err != nil {
+		return FinishPlan{}, err
+	}
+	if reply.Error != nil {
+		return reply.Plan, reply.Error.toError()
+	}
+	return reply.Plan, nil
+}
+
+// CAStatus returns the hub CA rotation's status (see Node.CAStatus).
+func (c *ControlClient) CAStatus(ctx context.Context) (CAStatus, error) {
+	var reply caStatusReply
+	if err := c.do(ctx, http.MethodGet, "/v1/ca/status", nil, &reply); err != nil {
+		return CAStatus{}, err
+	}
+	if reply.Error != nil {
+		return CAStatus{}, reply.Error.toError()
+	}
+	return reply.Status, nil
+}
+
 func (c *ControlClient) post(ctx context.Context, path string, body, out any) error {
+	return c.postWith(ctx, c.http, path, body, out)
+}
+
+func (c *ControlClient) postWith(ctx context.Context, hc *http.Client, path string, body, out any) error {
 	b, err := json.Marshal(body)
 	if err != nil {
 		return err
 	}
-	return c.do(ctx, http.MethodPost, path, b, out)
+	return c.doWith(ctx, hc, http.MethodPost, path, b, out)
 }
 
 func (c *ControlClient) do(ctx context.Context, method, path string, body []byte, out any) error {
+	return c.doWith(ctx, c.http, method, path, body, out)
+}
+
+func (c *ControlClient) doWith(ctx context.Context, hc *http.Client, method, path string, body []byte, out any) error {
 	req, err := http.NewRequestWithContext(ctx, method, "http://hub"+path, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
-	resp, err := c.http.Do(req)
+	resp, err := hc.Do(req)
 	if err != nil {
 		return fmt.Errorf("hub control socket %s: %w", c.path, err)
 	}

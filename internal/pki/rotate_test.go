@@ -45,18 +45,19 @@ func TestCARotation(t *testing.T) {
 	}
 	oldClient := clientCert(t, leader, "pi")
 
-	member, memberDir := newCA(t)
+	_, memberDir := newCA(t)
 	// The member is a copy of the leader's CA, as after a join.
 	for _, f := range []string{CACertFile, CAKeyFile} {
 		b, err := os.ReadFile(filepath.Join(leaderDir, f))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(memberDir, f), b, 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(memberDir, f), b, 0o600); err != nil { //nolint:gosec // a test temp dir
 			t.Fatal(err)
 		}
 	}
-	if member, err = LoadOrCreateCA(memberDir, now); err != nil {
+	member, err := LoadOrCreateCA(memberDir, now)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -222,7 +223,7 @@ func TestCARotationRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, NextCAKeyFile), b, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, NextCAKeyFile), b, 0o600); err != nil { //nolint:gosec // a test temp dir
 		t.Fatal(err)
 	}
 	if _, err := LoadOrCreateCA(dir, now); err == nil {

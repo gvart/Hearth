@@ -199,14 +199,8 @@ func (s *tlsStream) closeRevoked(revoked func(*x509.Certificate) bool) int {
 	return n
 }
 
-// serverTLS accepts only clients with a hub node certificate from ca that
-// check accepts, and presents cert.
-func serverTLS(cert tls.Certificate, ca *pki.CA, check peerCheck) *tls.Config {
-	return serverTLSFunc(func() *tls.Certificate { return &cert }, ca, check)
-}
-
-// serverTLSFunc is serverTLS presenting the certificate cert returns at each
-// handshake. The CAs it trusts are ca's at each handshake, so a hub CA
+// serverTLSFunc accepts only clients with a hub node certificate from ca that
+// check accepts, and presents the certificate cert returns at each handshake. The CAs it trusts are ca's at each handshake, so a hub CA
 // rotation reaches new connections without a restart.
 func serverTLSFunc(cert func() *tls.Certificate, ca *pki.CA, check peerCheck) *tls.Config {
 	return &tls.Config{

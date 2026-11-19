@@ -315,14 +315,20 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		return err
 	}
 	defer ms.Close()
-	now := time.Now()
 	var epoch string
 	if node != nil {
 		epoch = node.Epoch()
 	}
-	serverCert, err := ca.IssueHubServerCert(hosts, epoch, now)
+	serverCert, err := newServerCert(ctx, ca, hosts, epoch, log)
 	if err != nil {
 		return err
+	}
+	sealers, err := newHubSealers(ctx, ca, log)
+	if err != nil {
+		return err
+	}
+	if node != nil {
+		node.SetResealer(sealers.reseal)
 	}
 
 	pol := policy.NewWithConfig(st.Audit(), st.Approvals(), polCfg)
@@ -347,11 +353,11 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	}
 	reg := hub.NewRegistry(hub.RegistryConfig{Store: st, Log: log, Replicated: node != nil})
 	agents := hub.NewAgents(st.Devices())
-	kube, err := newKubeManager(st, ca, pol, log)
+	kube, err := newKubeManager(st, sealers.kube, pol, log)
 	if err != nil {
 		return err
 	}
-	pve, err := newProxmoxManager(st, ca, pol, log)
+	pve, err := newProxmoxManager(st, sealers.proxmox, pol, log)
 	if err != nil {
 		return err
 	}
@@ -375,7 +381,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	// and agents see a clean end of stream and reconnect at once.
 	stopping, stop := context.WithCancel(context.WithoutCancel(ctx))
 	defer stop()
-	runbooks, err := newRunbooks(opts, st, ca, pol, agents, notifier, kube, log)
+	runbooks, err := newRunbooks(opts, st, sealers.runbook, pol, agents, notifier, kube, log)
 	if err != nil {
 		return err
 	}
@@ -466,7 +472,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	}
 	agentSrv := &http.Server{
 		Handler:           hub.NewTLSHandler(cfg, tlsWeb),
-		TLSConfig:         hub.TLSConfig(ca, serverCert),
+		TLSConfig:         hub.TLSConfigFunc(ca, serverCert.Load),
 		ReadHeaderTimeout: 10 * time.Second,
 		ErrorLog:          errLog,
 		BaseContext:       baseCtx,
@@ -477,7 +483,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	webMux := http.NewServeMux()
 	webMux.Handle("/", uiMux)
 	hub.RegisterInstallRoutes(webMux, opts.assetsDir)
-	hub.RegisterCARoute(webMux, ca.Cert())
+	hub.RegisterCARouteFunc(webMux, ca.Cert)
 	// No WriteTimeout: /api/v1/events is a long-lived stream.
 	webSrv := &http.Server{
 		Handler:           webMux,
@@ -669,48 +675,22 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 }
 
 // newKubeManager returns the manager of adopted Kubernetes clusters. Their
-// kubeconfigs are sealed with a key derived from the hub CA key, which every
-// hub of a cluster holds.
-func newKubeManager(st *store.Store, ca *pki.CA, pol *policy.Engine, log *slog.Logger) (*kubernetes.Manager, error) {
-	secret, err := ca.KeyDER()
-	if err != nil {
-		return nil, err
-	}
-	sealer, err := kubernetes.NewSealer(secret)
-	if err != nil {
-		return nil, err
-	}
+// kubeconfigs are sealed with sealer (hubSealers).
+func newKubeManager(st *store.Store, sealer *kubernetes.Sealer, pol *policy.Engine, log *slog.Logger) (*kubernetes.Manager, error) {
 	return kubernetes.NewManager(kubernetes.Config{Store: st, Sealer: sealer, Policy: pol, Log: log}), nil
 }
 
 // newProxmoxManager returns the manager of adopted Proxmox VE servers. Their
-// API tokens are sealed with a key of their own, derived from the hub CA key.
-func newProxmoxManager(st *store.Store, ca *pki.CA, pol *policy.Engine, log *slog.Logger) (*proxmox.Manager, error) {
-	secret, err := ca.KeyDER()
-	if err != nil {
-		return nil, err
-	}
-	sealer, err := kubernetes.NewPurposeSealer(secret, proxmox.SealInfo)
-	if err != nil {
-		return nil, err
-	}
+// API tokens are sealed with sealer (hubSealers).
+func newProxmoxManager(st *store.Store, sealer *kubernetes.Sealer, pol *policy.Engine, log *slog.Logger) (*proxmox.Manager, error) {
 	return proxmox.NewManager(proxmox.Config{Store: st, Sealer: sealer, Policy: pol, Log: log}), nil
 }
 
 // newRunbooks returns the runbook engine. A run keeps a copy of its runbook
-// file, sealed with a key derived from the hub CA key, which every hub of a
-// cluster holds.
-func newRunbooks(opts hubOptions, st *store.Store, ca *pki.CA, pol *policy.Engine, agents *hub.Agents,
+// file, sealed with sealer (hubSealers).
+func newRunbooks(opts hubOptions, st *store.Store, sealer *kubernetes.Sealer, pol *policy.Engine, agents *hub.Agents,
 	notifier *notify.Notifier, kube *kubernetes.Manager, log *slog.Logger,
 ) (*automation.Runbooks, error) {
-	secret, err := ca.KeyDER()
-	if err != nil {
-		return nil, err
-	}
-	sealer, err := kubernetes.NewPurposeSealer(secret, "hearth runbook run seal v1")
-	if err != nil {
-		return nil, err
-	}
 	kinds := automation.Builtin(log)
 	maps.Copy(kinds.Actions, automation.Actions(automation.ActionDeps{Agents: agents, Notifier: notifier, Kube: kube}))
 	return automation.NewRunbooks(automation.RunbooksConfig{

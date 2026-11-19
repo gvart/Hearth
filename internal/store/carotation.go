@@ -302,7 +302,7 @@ func (AdvanceCARotation) Op() string { return "advance_ca_rotation" }
 func (AdvanceCARotation) minSchema() int64 { return CARotationSchema }
 
 func (c AdvanceCARotation) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	if !(c.From == CAStageStarted && c.To == CAStageCutover) && !(c.From == CAStageCutover && c.To == CAStageFinished) {
+	if step := c.From + ">" + c.To; step != CAStageStarted+">"+CAStageCutover && step != CAStageCutover+">"+CAStageFinished {
 		return Result{}, fmt.Errorf("%w: no step from %q to %q", ErrCARotationConflict, c.From, c.To)
 	}
 	res, err := tx.ExecContext(ctx, `UPDATE ca_rotations SET stage = ?, updated_at = ? WHERE new_ca_fp = ? AND stage = ?`,

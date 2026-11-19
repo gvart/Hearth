@@ -5,9 +5,9 @@ package cluster
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"crypto/tls"
 	"crypto/x509"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -76,7 +76,7 @@ func startRotationHubs(t *testing.T) ([]*rotHub, *pki.CA) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(filepath.Join(dir, f), b, 0o600); err != nil {
+			if err := os.WriteFile(filepath.Join(dir, f), b, 0o600); err != nil { //nolint:gosec // a test temp dir
 				t.Fatal(err)
 			}
 		}
@@ -228,7 +228,7 @@ func fileContains(t *testing.T, root string, needle []byte) []string {
 		if err != nil || d.IsDir() {
 			return nil //nolint:nilerr // a file that vanished mid-walk holds nothing
 		}
-		if b, err := os.ReadFile(path); err == nil && bytes.Contains(b, needle) {
+		if b, err := os.ReadFile(path); err == nil && bytes.Contains(b, needle) { //nolint:gosec // a test temp dir
 			hits = append(hits, path)
 		}
 		return nil
@@ -259,10 +259,21 @@ func TestCARotationThreeHubs(t *testing.T) {
 	if _, err := follower.RotateCA(ctx, RotateOptions{}); !errors.As(err, &nl) {
 		t.Fatalf("RotateCA on a follower = %v, want *ErrNotLeader", err)
 	}
-	// Hub certificates without a recorded fingerprint refuse the rotation.
+	// Hub certificates without a recorded fingerprint refuse the rotation,
+	// also through the control socket, which returns the plan with it.
 	_, err := leader.RotateCA(ctx, RotateOptions{})
 	if !errors.Is(err, ErrUnpinnedCerts) || !strings.Contains(err.Error(), "hub n2") {
 		t.Fatalf("RotateCA with unrecorded hub certificates = %v, want ErrUnpinnedCerts naming them", err)
+	}
+	lc := serveControl(t, leader.testNode)
+	if p, err := lc.RotateCA(ctx, RotateOptions{DryRun: true}); !errors.Is(err, ErrUnpinnedCerts) || len(p.Unpinned) != 3 {
+		t.Fatalf("RotateCA through the socket = %+v, %v; want ErrUnpinnedCerts with 3 certificates", p, err)
+	}
+	if _, err := serveControl(t, follower.testNode).RotateCA(ctx, RotateOptions{}); !errors.As(err, &nl) {
+		t.Fatalf("RotateCA through a follower's socket = %v, want *ErrNotLeader", err)
+	}
+	if _, err := lc.FinishCA(ctx, FinishOptions{}); !errors.Is(err, ErrNoRotation) {
+		t.Fatalf("FinishCA with no rotation = %v, want ErrNoRotation", err)
 	}
 	for _, h := range hubs {
 		h.RecordNodeCert(ctx)
@@ -487,6 +498,17 @@ func TestCARotationThreeHubs(t *testing.T) {
 		}
 	}
 
+	// Every hub answers over the new CA alone.
+	st, err := lc.CAStatus(ctx)
+	if err != nil || st.Rotation == nil || st.Rotation.Stage != store.CAStageFinished || len(st.Hubs) != 3 {
+		t.Fatalf("CAStatus after the finish = %+v, %v", st, err)
+	}
+	for _, h := range st.Hubs {
+		if h.Error != "" || h.Info.ServingFP != newFP || h.Info.NextFP != "" {
+			t.Errorf("CAStatus of %s after the finish = %+v", h.ID, h)
+		}
+	}
+
 	// Raft carries on: a write through a follower reaches every hub.
 	if err := follower.st.Hubs().SetAgentURL(ctx, follower.ID(), follower.url+"/after"); err != nil {
 		t.Fatalf("write after the finish: %v", err)
@@ -499,9 +521,6 @@ func TestCARotationThreeHubs(t *testing.T) {
 		if err := h.fsm.haltedErr(); err != nil {
 			t.Fatalf("%s halted: %v", h.ID(), err)
 		}
-	}
-	if st, err := leader.CAStatus(ctx); err != nil || st.Rotation == nil || st.Rotation.Stage != store.CAStageFinished {
-		t.Errorf("CAStatus after the finish = %+v, %v", st, err)
 	}
 }
 

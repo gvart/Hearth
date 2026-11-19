@@ -35,13 +35,39 @@ between Hearth processes is mutually authenticated TLS.
 
 The hub CA is created on the first start in the hub's data dir (`ca.crt`, `ca.key`, mode 0600). Its
 private key never leaves that directory, except to a new hub joining a cluster, over the pinned,
-mutually authenticated join channel, and inside a passphrase-encrypted [backup](backup.md) archive:
+mutually authenticated join channel; to the members of a cluster during a hub CA rotation, over the
+cluster's mutual TLS, and only to a member presenting exactly the node certificate pinned when the
+rotation started (the key itself never enters the database, the Raft log or a snapshot); and inside
+a passphrase-encrypted [backup](backup.md) archive:
 one that only an authenticated admin can create, through policy (`hub.backup`) and with an audit entry,
 or a scheduled one the hub uploads to a bucket, through policy (`hub.scheduled_backup`) and with an
 audit entry, which holds the CA key only when the operator starts the hub with `--backup-include-ca`.
 Whoever can read a hub's data dir can mint certificates the
 whole installation trusts: protect it like a root password, and wipe the data dir of a hub you
 remove from a cluster.
+
+### Rotating the hub CA
+
+A cluster can replace its CA (`hearth cluster ca rotate`, then `hearth cluster ca finish`; see
+[Rotating the hub CA](cluster.md#rotating-the-hub-ca)). Both are dangerous policy actions for the
+local admin, audited. What it does and does not protect against:
+
+- Until the finish, both CAs are trusted, and whoever holds the old key can still pose as a hub to
+  browsers and agents and mint agent certificates. Old-CA hub certificates are accepted only if they
+  are exactly the ones pinned when the rotation started, so the old key cannot mint a new hub
+  identity, and fetching the new key with a forged one is refused and audited. After the finish,
+  nothing of the old CA is trusted, including connections opened before it.
+- An agent is renewed only for the exact certificate the hub recorded for it, on its own key. Agents
+  that were offline, or run a Hearth older than the rotation, are cut off at the finish and enroll
+  again.
+- A hub that is still a member gets the new key. Remove and re-join a member you suspect before you
+  rotate.
+- Backups taken before the finish with the CA key still hold the old key. Destroy them if its leak is
+  why you rotate.
+- A leaked database also leaked the Kubernetes and Proxmox credentials sealed in it, whatever the key:
+  rotate them at their source.
+- Enrollment and join tokens created before the finish stop working.
+- Standalone hubs have no rotation: delete `ca.crt` and `ca.key` and enroll every agent again.
 
 ## Enrollment tokens
 

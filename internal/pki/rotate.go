@@ -383,7 +383,7 @@ func replaceFile(path string, data []byte, perm os.FileMode) error {
 // syncDir flushes a directory's entries, so renames survive a crash. A
 // failure is ignored: not every platform can sync a directory.
 func syncDir(dir string) {
-	if d, err := os.Open(dir); err == nil { //nolint:gosec // a data dir the hub owns
+	if d, err := os.Open(dir); err == nil {
 		_ = d.Sync()
 		_ = d.Close()
 	}

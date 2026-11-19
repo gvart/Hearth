@@ -5,9 +5,9 @@ package cluster
 import (
 	"context"
 	"crypto"
-	"encoding/json"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -53,6 +53,9 @@ const (
 	caMemberWait = 2 * time.Minute
 	// caInfoTimeout bounds one CAInfo or FetchCAKey call.
 	caInfoTimeout = 5 * time.Second
+	// caFinishTimeout bounds a finish over the control socket: two waits
+	// for every hub, and the re-seal.
+	caFinishTimeout = 3*caMemberWait + time.Minute
 )
 
 // Errors of the rotation.
@@ -371,9 +374,9 @@ type CAStatus struct {
 
 // HubCAInfo is one hub's side of a rotation, or why it is unknown.
 type HubCAInfo struct {
-	ID   string
-	Info CAInfo
-	Err  error
+	ID    string
+	Info  CAInfo
+	Error string `json:",omitempty"`
 }
 
 // CAStatus reports the latest rotation, every hub's side of it, and the
@@ -403,7 +406,12 @@ func (n *Node) CAStatus(ctx context.Context) (CAStatus, error) {
 	var wg sync.WaitGroup
 	for i, s := range servers {
 		st.Hubs[i].ID = string(s.ID)
-		wg.Go(func() { st.Hubs[i].Info, st.Hubs[i].Err = n.hubCAInfo(ctx, string(s.ID), string(s.Address)) })
+		wg.Go(func() {
+			var err error
+			if st.Hubs[i].Info, err = n.hubCAInfo(ctx, string(s.ID), string(s.Address)); err != nil {
+				st.Hubs[i].Error = err.Error()
+			}
+		})
 	}
 	wg.Wait()
 	return st, nil

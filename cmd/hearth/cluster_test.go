@@ -30,6 +30,15 @@ func TestClusterCommandsNeedAMember(t *testing.T) {
 	if err := runClusterMigrate(t.Context(), dir, 0, false, io.Discard); err == nil || !strings.Contains(err.Error(), "not a cluster member") {
 		t.Errorf("migrate: err = %v", err)
 	}
+	if err := runClusterCARotate(t.Context(), dir, false, false, io.Discard); err == nil || !strings.Contains(err.Error(), "not a cluster member") {
+		t.Errorf("ca rotate: err = %v", err)
+	}
+	if err := runClusterCAFinish(t.Context(), dir, false, false, io.Discard); err == nil || !strings.Contains(err.Error(), "not a cluster member") {
+		t.Errorf("ca finish: err = %v", err)
+	}
+	if err := runClusterCAStatus(t.Context(), dir, io.Discard); err == nil || !strings.Contains(err.Error(), "standalone") {
+		t.Errorf("ca status: err = %v", err)
+	}
 	if err := runClusterRemove(t.Context(), dir, "Bad ID", false, io.Discard); err == nil || !strings.Contains(err.Error(), "invalid node ID") {
 		t.Errorf("remove with an invalid ID: err = %v", err)
 	}

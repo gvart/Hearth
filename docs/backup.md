@@ -11,7 +11,7 @@ already have: nothing has to be enrolled again.
 
 | Item                  | Notes                                                                       |
 | --------------------- | --------------------------------------------------------------------------- |
-| The CA                | `ca.crt` and `ca.key` (a scheduled backup leaves `ca.key` out by default). Agents trust this CA, and it seals stored kubeconfigs |
+| The CA                | `ca.crt` and `ca.key` (a scheduled backup leaves `ca.key` out by default). Agents trust this CA, and it seals stored kubeconfigs. During a [hub CA rotation](cluster.md#rotating-the-hub-ca) the new CA too (`ca.next.crt`, and `ca.next.key` when `ca.key` is in): both are restored |
 | The database          | Devices, certificates, tokens, audit log, admin password hash, sessions     |
 | `policy.yaml`         | If there is one                                                             |
 | `notify.yaml`         | Including the credentials in it                                             |
