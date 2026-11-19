@@ -124,7 +124,7 @@ func newHubCmd() *cobra.Command {
 			"--netalertx-url adds the devices a NetAlertX knows (see docs/netalertx.md).\n\n" +
 			"--beszel-url reads the systems a Beszel hub monitors, with their status and usage (see docs/beszel.md).\n\n" +
 			"--backup-interval uploads an encrypted backup to an S3-compatible bucket at that interval and keeps\n" +
-			"the newest --backup-keep; in a cluster the leader does (see docs/backup.md).",
+			"the newest --backup-keep, without the CA key unless --backup-include-ca; in a cluster the leader does (see docs/backup.md).",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			opts.adminPassword = os.Getenv("HEARTH_ADMIN_PASSWORD")

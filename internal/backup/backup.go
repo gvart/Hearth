@@ -60,6 +60,9 @@ type Manifest struct {
 	Schema int64 `json:"schema"`
 	// Clustered is true for a backup of a Raft cluster member.
 	Clustered bool `json:"clustered"`
+	// NoCAKey is true for a backup without the CA private key: it holds the
+	// CA certificate only, and a restore needs the key from another backup.
+	NoCAKey bool `json:"no_ca_key,omitempty"`
 }
 
 // CreateOptions configures Create.
@@ -82,6 +85,8 @@ type CreateOptions struct {
 	// HearthVersion and Clustered go into the manifest.
 	HearthVersion string
 	Clustered     bool
+	// WithoutCAKey leaves the CA private key out of the backup.
+	WithoutCAKey bool
 
 	// kdf overrides the KDF cost, for tests.
 	kdf kdfParams
@@ -135,7 +140,7 @@ func Create(ctx context.Context, opts CreateOptions) (Manifest, error) {
 	}
 	m := Manifest{
 		Format: formatVersion, CreatedAt: time.Now().UTC(), HearthVersion: opts.HearthVersion,
-		Schema: schema, Clustered: opts.Clustered,
+		Schema: schema, Clustered: opts.Clustered, NoCAKey: opts.WithoutCAKey,
 	}
 	kdf := opts.kdf
 	if kdf == (kdfParams{}) {
@@ -174,7 +179,11 @@ func configFiles(opts CreateOptions) ([]namedFile, error) {
 		out = append(out, namedFile{name: name, data: b})
 		return nil
 	}
-	for _, name := range []string{pki.CACertFile, pki.CAKeyFile} {
+	ca := []string{pki.CACertFile, pki.CAKeyFile}
+	if opts.WithoutCAKey {
+		ca = ca[:1]
+	}
+	for _, name := range ca {
 		if err := add(name, filepath.Join(opts.DataDir, name), false); err != nil {
 			return nil, err
 		}
@@ -467,7 +476,7 @@ func Restore(ctx context.Context, opts RestoreOptions) (m Manifest, err error) {
 	if m, err = unpack(ctx, o, stage); err != nil {
 		return Manifest{}, err
 	}
-	if err := verifyStage(ctx, stage, opts.BeforeCommit); err != nil {
+	if err := verifyStage(ctx, stage, !m.NoCAKey, opts.BeforeCommit); err != nil {
 		return Manifest{}, err
 	}
 	if err := cluster.WriteNewEpoch(stage); err != nil {
@@ -520,10 +529,14 @@ func unpack(ctx context.Context, o *opener, stage string) (Manifest, error) {
 			return Manifest{}, err
 		}
 	}
-	for _, name := range []string{dbName, pki.CACertFile, pki.CAKeyFile} {
+	for _, name := range []string{dbName, pki.CACertFile} {
 		if !seen[name] {
 			return Manifest{}, ErrCorrupt
 		}
+	}
+	// The manifest says whether the CA key is in, and the entries agree.
+	if seen[pki.CAKeyFile] == m.NoCAKey {
+		return Manifest{}, ErrCorrupt
 	}
 	// The final chunk must follow the end of the entries, with nothing after.
 	if n, err := r.Read(make([]byte, 1)); n != 0 || !errors.Is(err, io.EOF) {
@@ -620,19 +633,24 @@ func unpackFile(r io.Reader, stage, name string, size int64) error {
 	return nil
 }
 
-// verifyStage checks the unpacked CA and database, and retires the old
-// cluster's hub certificates in the restored database.
-func verifyStage(ctx context.Context, stage string, beforeCommit func(context.Context, *store.Store) error) error {
+// verifyStage checks the unpacked CA (its key too, if withKey) and
+// database, and retires the old cluster's hub certificates in the restored
+// database.
+func verifyStage(ctx context.Context, stage string, withKey bool, beforeCommit func(context.Context, *store.Store) error) error {
 	certPEM, err := os.ReadFile(filepath.Join(stage, pki.CACertFile))
 	if err != nil {
 		return fmt.Errorf("restore CA: %w", err)
 	}
-	keyPEM, err := os.ReadFile(filepath.Join(stage, pki.CAKeyFile))
-	if err != nil {
+	if withKey {
+		keyPEM, err := os.ReadFile(filepath.Join(stage, pki.CAKeyFile))
+		if err != nil {
+			return fmt.Errorf("restore CA: %w", err)
+		}
+		if _, err := tls.X509KeyPair(certPEM, keyPEM); err != nil {
+			return errors.New("restore CA: the certificate and key in the backup do not match") // never echo key material
+		}
+	} else if _, err := pki.ParseCertPEM(certPEM); err != nil {
 		return fmt.Errorf("restore CA: %w", err)
-	}
-	if _, err := tls.X509KeyPair(certPEM, keyPEM); err != nil {
-		return errors.New("restore CA: the certificate and key in the backup do not match") // never echo key material
 	}
 	dbPath := filepath.Join(stage, dbName)
 	if err := store.CheckSnapshotFile(ctx, dbPath); err != nil {

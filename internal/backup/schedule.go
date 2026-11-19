@@ -64,8 +64,9 @@ type ScheduleConfig struct {
 	Prefix string
 	// Passphrase encrypts the backups. It is never logged or audited.
 	Passphrase string
-	// Backup is what each backup holds: DataDir, Store and the rest. Its
-	// Output and Passphrase are set for each run.
+	// Backup is what each backup holds: DataDir, Store and the rest, and
+	// WithoutCAKey, which leaves the CA key out. Its Output and Passphrase
+	// are set for each run.
 	Backup CreateOptions
 	Policy *policy.Engine
 	// Notifier and Channel receive a message for every failed backup; no
@@ -143,7 +144,7 @@ func (s *Scheduler) RunOnce(ctx context.Context) error {
 	key := s.cfg.Prefix + "hearth-" + s.cfg.now().UTC().Format(stampLayout) + ".hbk"
 	// The policy engine encodes Detail after fn returns: the size and the
 	// count filled in below are audited with the outcome.
-	detail := map[string]any{"bucket": s.cfg.BucketName, "key": key}
+	detail := map[string]any{"bucket": s.cfg.BucketName, "key": key, "ca_key": !s.cfg.Backup.WithoutCAKey}
 	return s.cfg.Policy.Do(ctx, policy.Request{
 		ActorKind: policy.ActorHub,
 		ActorID:   scheduleActor,

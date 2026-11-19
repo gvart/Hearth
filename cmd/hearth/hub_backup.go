@@ -38,6 +38,8 @@ type scheduledBackupOptions struct {
 	secretKeyFile string
 	// notify is the notification channel told about a failed backup.
 	notify string
+	// includeCA puts the CA private key into scheduled backups.
+	includeCA bool
 }
 
 func addBackupFlags(cmd *cobra.Command, o *scheduledBackupOptions) {
@@ -65,6 +67,9 @@ func addBackupFlags(cmd *cobra.Command, o *scheduledBackupOptions) {
 			"HEARTH_BACKUP_S3_SECRET_ACCESS_KEY or --backup-s3-secret-key-file")
 	f.StringVar(&o.secretKeyFile, "backup-s3-secret-key-file", os.Getenv("HEARTH_BACKUP_S3_SECRET_KEY_FILE"),
 		"file holding the bucket's secret access key, mode 0600 (env HEARTH_BACKUP_S3_SECRET_KEY_FILE)")
+	f.BoolVar(&o.includeCA, "backup-include-ca", false,
+		"put the hub's CA private key into scheduled backups, so that a backup from the bucket restores the hub "+
+			"alone; without it, a restore needs the key from a `hearth backup` file (env HEARTH_BACKUP_INCLUDE_CA)")
 	f.StringVar(&o.notify, "backup-notify", os.Getenv("HEARTH_BACKUP_NOTIFY"),
 		"notification channel to tell about a failed scheduled backup (env HEARTH_BACKUP_NOTIFY)")
 }
@@ -78,6 +83,13 @@ func (o *scheduledBackupOptions) fromEnv(cmd *cobra.Command) error {
 			return fmt.Errorf("HEARTH_BACKUP_INTERVAL: %w", err)
 		}
 		o.interval = d
+	}
+	if v := os.Getenv("HEARTH_BACKUP_INCLUDE_CA"); v != "" && !cmd.Flags().Changed("backup-include-ca") {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return fmt.Errorf("HEARTH_BACKUP_INCLUDE_CA: %w", err)
+		}
+		o.includeCA = b
 	}
 	if v := os.Getenv("HEARTH_BACKUP_KEEP"); v != "" && !cmd.Flags().Changed("backup-keep") {
 		n, err := strconv.Atoi(v)
@@ -139,14 +151,14 @@ func backupScheduler(opts hubOptions, st *store.Store, pol *policy.Engine, n *no
 		return nil, fmt.Errorf("--backup-s3-endpoint: %w", err)
 	}
 	log.Info("scheduled backups on", "bucket", o.bucket, "prefix", prefix, "interval", o.interval, "keep", o.keep,
-		"notify", o.notify)
+		"notify", o.notify, "ca_key", o.includeCA)
 	return backup.NewScheduler(backup.ScheduleConfig{
 		Interval: o.interval, Keep: o.keep, Bucket: bucket, BucketName: o.bucket, Prefix: prefix,
 		Passphrase: passphrase,
 		Backup: backup.CreateOptions{
 			DataDir: opts.dataDir, Store: st, NotifyConfig: opts.notifyConfig,
 			AutomationsDir: opts.automationsDir, RunbooksDir: opts.runbooksDir,
-			HearthVersion: opts.version, Clustered: clustered,
+			HearthVersion: opts.version, Clustered: clustered, WithoutCAKey: !o.includeCA,
 		},
 		Policy: pol, Notifier: n, Channel: o.notify, Log: log,
 	}), nil

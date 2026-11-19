@@ -13,7 +13,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gvart/hearth/internal/backup"
 	"github.com/gvart/hearth/internal/notify"
+	"github.com/gvart/hearth/internal/pki"
 )
 
 func TestBackupScheduler(t *testing.T) {
@@ -101,5 +103,49 @@ func TestBackupScheduler(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestRestoreWithoutCAKey restores a scheduled backup made without
+// --backup-include-ca: everything comes back but the CA key, the hub refuses
+// to start until the key is there, and the key from a `hearth backup` file
+// completes it.
+func TestRestoreWithoutCAKey(t *testing.T) {
+	t.Setenv(passphraseEnv, testBackupPassphrase)
+	dir, ca := initHub(t)
+	st := openStore(t, dir)
+	file := filepath.Join(t.TempDir(), "scheduled.hbk")
+	if _, err := backup.Create(t.Context(), backup.CreateOptions{
+		DataDir: dir, Store: st, Output: file, Passphrase: testBackupPassphrase, WithoutCAKey: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(t.TempDir(), "restored")
+	out, err := execute(t, "restore", file, "--data-dir", target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "holds no CA key") || !strings.Contains(out, "enroll") {
+		t.Errorf("restore output does not say what to do about the CA key:\n%s", out)
+	}
+	for name, want := range map[string]bool{dbFile: true, pki.CACertFile: true, pki.CAKeyFile: false} {
+		if _, err := os.Stat(filepath.Join(target, name)); (err == nil) != want {
+			t.Errorf("%s in the restored data dir: %v, want present %v", name, err, want)
+		}
+	}
+	if _, err := pki.LoadOrCreateCA(target, time.Now()); err == nil || !strings.Contains(err.Error(), "incomplete") {
+		t.Fatalf("hub CA without its key: %v, want refused as incomplete", err)
+	}
+	// As docs/backup.md says: the key of the hub's own data dir, as a
+	// `hearth backup` file would restore it.
+	if err := os.Link(filepath.Join(dir, pki.CAKeyFile), filepath.Join(target, pki.CAKeyFile)); err != nil {
+		t.Fatal(err)
+	}
+	got, err := pki.LoadOrCreateCA(target, time.Now())
+	if err != nil {
+		t.Fatalf("CA with the key copied back: %v", err)
+	}
+	if got.Fingerprint() != ca.Fingerprint() {
+		t.Fatal("the restored CA is not the hub's CA")
 	}
 }
