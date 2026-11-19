@@ -320,7 +320,7 @@ func TestAuditAppendSetsOpColumns(t *testing.T) {
 func TestAuditFoldUsesTheIndex(t *testing.T) {
 	ctx := t.Context()
 	s := openTest(t)
-	rows, err := s.db.QueryContext(ctx, `EXPLAIN QUERY PLAN `+auditFoldSQL(true), 0, `["a"]`)
+	rows, err := s.db.QueryContext(ctx, `EXPLAIN QUERY PLAN `+auditFoldIndexedSQL, 0, `["a"]`)
 	if err != nil {
 		t.Fatal(err)
 	}

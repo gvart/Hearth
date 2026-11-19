@@ -44,24 +44,62 @@ const maxAuditDetailDepth = 64
 // indexed audit_op and audit_outcome_of columns.
 const auditOpSchema = 18
 
-// auditOpSQL and auditOutcomeOfSQL are the operation an entry starts and the
-// one it reports the outcome of, if any, read from the detail. A detail SQLite
-// cannot parse has none, instead of failing the whole query. A write sets the
-// columns from them (see AppendAudit), and a database before auditOpSchema is
-// read with them.
-const (
-	auditOpSQL        = `CASE WHEN json_valid(detail) THEN json_extract(detail, '$.` + AuditOpKey + `') END`
-	auditOutcomeOfSQL = `CASE WHEN json_valid(detail) THEN json_extract(detail, '$.` + AuditOutcomeOfKey + `') END`
-)
+// The operation an entry starts (audit_op) and the one it reports the outcome
+// of (audit_outcome_of), if any, are read from the detail as
+//
+//	CASE WHEN json_valid(detail) THEN json_extract(detail, '$.audit_op') END
+//
+// and the same for audit_outcome_of: a detail SQLite cannot parse has none,
+// instead of failing the whole query. A write sets the columns this way (see
+// AppendAudit), and a database before auditOpSchema is read this way. The
+// statements below are whole constants, one per schema, so none is built at
+// run time.
 
-// auditOpExprs returns the SQL for an entry's operation and outcome-of: the
-// indexed columns, or the detail JSON on a database before auditOpSchema.
-func auditOpExprs(indexed bool) (op, outcomeOf string) {
-	if indexed {
-		return "audit_op", "audit_outcome_of"
-	}
-	return auditOpSQL, auditOutcomeOfSQL
-}
+// auditPageIndexedSQL and auditPageDetailSQL select a page of entries and the
+// operation each starts. The + before the outcome column makes SQLite scan by
+// id and stop at the limit, not walk the index, which holds nearly every row
+// as NULL.
+const auditPageIndexedSQL = `
+	SELECT id, ts, actor_kind, actor_id, action, target, decision, result, detail,
+	       coalesce(audit_op, '')
+	FROM audit_log
+	WHERE +audit_outcome_of IS NULL
+	  AND (?1 = '' OR actor_kind = ?1)
+	  AND (?2 = '' OR instr(actor_id, ?2) > 0)
+	  AND (?3 = '[]' OR action IN (SELECT value FROM json_each(?3)))
+	  AND (?4 = '[]' OR target IN (SELECT value FROM json_each(?4)))
+	  AND (?5 = '' OR decision = ?5)
+	  AND (?6 = 0 OR ts >= ?6)
+	  AND (?7 = 0 OR ts < ?7)
+	  AND (?8 = 0 OR id < ?8)
+	ORDER BY id DESC LIMIT ?9`
+
+const auditPageDetailSQL = `
+	SELECT id, ts, actor_kind, actor_id, action, target, decision, result, detail,
+	       coalesce(CASE WHEN json_valid(detail) THEN json_extract(detail, '$.audit_op') END, '')
+	FROM audit_log
+	WHERE +CASE WHEN json_valid(detail) THEN json_extract(detail, '$.audit_outcome_of') END IS NULL
+	  AND (?1 = '' OR actor_kind = ?1)
+	  AND (?2 = '' OR instr(actor_id, ?2) > 0)
+	  AND (?3 = '[]' OR action IN (SELECT value FROM json_each(?3)))
+	  AND (?4 = '[]' OR target IN (SELECT value FROM json_each(?4)))
+	  AND (?5 = '' OR decision = ?5)
+	  AND (?6 = 0 OR ts >= ?6)
+	  AND (?7 = 0 OR ts < ?7)
+	  AND (?8 = 0 OR id < ?8)
+	ORDER BY id DESC LIMIT ?9`
+
+// auditFoldIndexedSQL and auditFoldDetailSQL select the outcome entries newer
+// than ?1 that report one of the operations in the JSON array ?2.
+const auditFoldIndexedSQL = `
+	SELECT audit_outcome_of, result, detail
+	FROM audit_log
+	WHERE id > ?1 AND audit_outcome_of IN (SELECT value FROM json_each(?2))`
+
+const auditFoldDetailSQL = `
+	SELECT CASE WHEN json_valid(detail) THEN json_extract(detail, '$.audit_outcome_of') END, result, detail
+	FROM audit_log
+	WHERE id > ?1 AND CASE WHEN json_valid(detail) THEN json_extract(detail, '$.audit_outcome_of') END IN (SELECT value FROM json_each(?2))`
 
 // AuditDetailTooDeep reports whether the valid JSON document detail nests
 // deeper than Audit.Append accepts.
@@ -179,21 +217,11 @@ func (r Audit) query(ctx context.Context, f AuditFilter, limit int, indexed bool
 	if !f.Until.IsZero() {
 		until = toMillis(f.Until)
 	}
-	opSQL, outcomeOfSQL := auditOpExprs(indexed)
-	rows, err := r.s.db.QueryContext(ctx, `
-		SELECT id, ts, actor_kind, actor_id, action, target, decision, result, detail,
-		       coalesce(`+opSQL+`, '')
-		FROM audit_log
-		WHERE +`+outcomeOfSQL+` IS NULL -- the +: scan by id and stop at the limit, not by the index, which holds nearly every row as NULL
-		  AND (?1 = '' OR actor_kind = ?1)
-		  AND (?2 = '' OR instr(actor_id, ?2) > 0)
-		  AND (?3 = '[]' OR action IN (SELECT value FROM json_each(?3)))
-		  AND (?4 = '[]' OR target IN (SELECT value FROM json_each(?4)))
-		  AND (?5 = '' OR decision = ?5)
-		  AND (?6 = 0 OR ts >= ?6)
-		  AND (?7 = 0 OR ts < ?7)
-		  AND (?8 = 0 OR id < ?8)
-		ORDER BY id DESC LIMIT ?9`,
+	page := auditPageDetailSQL
+	if indexed {
+		page = auditPageIndexedSQL
+	}
+	rows, err := r.s.db.QueryContext(ctx, page,
 		f.ActorKind, f.ActorID, string(actions), string(targets), f.Decision, since, until, f.Before, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list audit: %w", err)
@@ -244,7 +272,11 @@ func (r Audit) foldOutcomes(ctx context.Context, out []AuditEntry, ops map[strin
 	if err != nil {
 		return err
 	}
-	rows, err := r.s.db.QueryContext(ctx, auditFoldSQL(indexed), oldest, string(ids))
+	fold := auditFoldDetailSQL
+	if indexed {
+		fold = auditFoldIndexedSQL
+	}
+	rows, err := r.s.db.QueryContext(ctx, fold, oldest, string(ids))
 	if err != nil {
 		return err
 	}
@@ -263,15 +295,6 @@ func (r Audit) foldOutcomes(ctx context.Context, out []AuditEntry, ops map[strin
 		out[i].Detail = withoutOpKeys(out[i].Detail)
 	}
 	return nil
-}
-
-// auditFoldSQL selects the outcome entries newer than ?1 that report one of
-// the operations in the JSON array ?2.
-func auditFoldSQL(indexed bool) string {
-	_, outcomeOf := auditOpExprs(indexed)
-	return `SELECT ` + outcomeOf + `, result, detail
-		FROM audit_log
-		WHERE id > ?1 AND ` + outcomeOf + ` IN (SELECT value FROM json_each(?2))`
 }
 
 // withoutOpKeys returns detail without the keys that tie an action's entries,
