@@ -5,6 +5,7 @@ package store
 import (
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -114,5 +115,103 @@ func TestApprovalsBeforeTheirSchema(t *testing.T) {
 	})
 	if !errors.Is(err, ErrSchemaTooOld) || !IsDomainError(err) {
 		t.Errorf("Create before the schema = %v, want a domain ErrSchemaTooOld", err)
+	}
+}
+
+// A decided approval keeps no plan: the plan can hold secrets from command
+// arguments, and a decided approval no longer needs it. The rest of the
+// detail stays; a pending approval keeps its plan.
+func TestApprovalsDropPlanWhenDecided(t *testing.T) {
+	const detail = `{"plan":{"argv":["curl","-H","Authorization: s3cret"]},"device":"pi"}`
+	base := time.UnixMilli(1_700_000_000_000).UTC()
+	tests := []struct {
+		name   string
+		status string
+		at     time.Time
+	}{
+		{"approved", ApprovalApproved, base.Add(time.Second)},
+		{"denied", ApprovalDenied, base.Add(time.Second)},
+		{"expired", ApprovalExpired, base.Add(time.Minute)},
+	}
+	s := openTest(t)
+	ctx := t.Context()
+	ap := s.Approvals()
+	for _, id := range []string{"pending", "approved", "denied", "expired"} {
+		if err := ap.Create(ctx, Approval{
+			ID: id, CreatedAt: base, ExpiresAt: base.Add(time.Minute), ActorKind: "automation", ActorID: "x",
+			Action: "automation.exec", Class: "dangerous", Detail: []byte(detail),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got, _ := ap.Get(ctx, "pending"); string(got.Detail) != detail {
+		t.Errorf("pending detail = %s, want the full plan", got.Detail)
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := ap.Decide(ctx, tt.name, tt.status, "admin/root", tt.at); err != nil {
+				t.Fatal(err)
+			}
+			got, err := ap.Get(ctx, tt.name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(got.Detail), "s3cret") || strings.Contains(string(got.Detail), `"plan"`) {
+				t.Errorf("decided detail = %s, want no plan", got.Detail)
+			}
+			if !strings.Contains(string(got.Detail), `"device"`) {
+				t.Errorf("decided detail = %s, want the rest kept", got.Detail)
+			}
+			var raw string
+			if err := s.db.QueryRowContext(ctx, `SELECT detail FROM approvals WHERE id = ?`, tt.name).Scan(&raw); err != nil ||
+				strings.Contains(raw, "s3cret") {
+				t.Errorf("stored detail = %q, %v; want no plan", raw, err)
+			}
+		})
+	}
+	// A refused decision leaves the plan of the approval it did not close.
+	if err := ap.Decide(ctx, "pending", ApprovalApproved, "admin/root", base.Add(time.Hour)); !errors.Is(err, ErrApprovalClosed) {
+		t.Fatalf("late approve = %v", err)
+	}
+	if got, _ := ap.Get(ctx, "pending"); string(got.Detail) != detail {
+		t.Errorf("pending detail after a refused decision = %s, want the full plan", got.Detail)
+	}
+}
+
+// Migration 00017 clears the plan of approvals decided before it, and leaves
+// a pending one alone.
+func TestApprovalsPlanMigration(t *testing.T) {
+	ctx := t.Context()
+	path := filepath.Join(t.TempDir(), "hearth.db")
+	s, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	p, err := s.newMigrator()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.DownTo(ctx, approvalPlanSchema-1); err != nil {
+		t.Fatal(err)
+	}
+	const detail = `{"plan":{"argv":["x","s3cret"]},"device":"pi"}`
+	for id, status := range map[string]string{"p": "pending", "a": "approved", "d": "denied", "e": "expired"} {
+		if _, err := s.db.ExecContext(ctx, `INSERT INTO approvals (id, created_at, expires_at, actor_kind, actor_id, action, class, detail, status)
+			VALUES (?, 1, 2, 'a', 'b', 'c', 'dangerous', ?, ?)`, id, detail, status); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.migrateTo(ctx, approvalPlanSchema); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"a", "d", "e"} {
+		got, err := s.Approvals().Get(ctx, id)
+		if err != nil || strings.Contains(string(got.Detail), "s3cret") || !strings.Contains(string(got.Detail), `"device"`) {
+			t.Errorf("%s detail = %s, %v; want the plan cleared and the rest kept", id, got.Detail, err)
+		}
+	}
+	if got, _ := s.Approvals().Get(ctx, "p"); string(got.Detail) != detail {
+		t.Errorf("pending detail = %s, want it untouched", got.Detail)
 	}
 }

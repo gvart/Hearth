@@ -141,6 +141,26 @@ describe('values nobody touched stay what the hub reads', () => {
     assert.equal(tell.values.title, undefined);
   });
 
+  test('a block text at the end of a file with no final newline reads as the hub reads it', () => {
+    const head = 'id: a\nactions:\n  - type: webhook\n    url: https://e.example\n    body: ';
+    for (const [style, tail, want] of [
+      ['|', '\n      a', 'a'],
+      ['|', '\n      a\n', 'a\n'],
+      ['|-', '\n      a', 'a'],
+      ['|+', '\n      a', 'a'],
+      ['|+', '\n      a\n', 'a\n'],
+      ['>', '\n      a', 'a'],
+      ['>', '\n      a\n', 'a\n'],
+    ]) {
+      const source = head + style + tail;
+      const hub = hubReads(source).actions.content[0].content.find((n, i, all) => all[i - 1]?.value === 'body').value;
+      assert.equal(hub, want, `hub reads ${JSON.stringify(source)}`);
+      const read = readAutomation(source);
+      assert.ok(read.ok);
+      assert.equal(read.model.blocks.actions[0].values.body, hub, `editor reads ${JSON.stringify(source)}`);
+    }
+  });
+
   test('a number the hub reads differently is read-only', () => {
     const source = 'id: a\ntriggers:\n  - type: metric\n    above: 010\nactions: []\n';
     const read = readAutomation(source);

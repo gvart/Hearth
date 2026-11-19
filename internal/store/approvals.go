@@ -16,6 +16,15 @@ import (
 // approval, so policy denies an action that needs one.
 const approvalsSchema = 9
 
+// approvalPlanSchema is the schema version whose migration (00017) cleared
+// the plan of the approvals decided before it. DecideApproval clears the plan
+// at any schema, so no command is gated on it.
+const approvalPlanSchema = 17
+
+// planKey is the key of a held request's plan in an approval's detail; it is
+// policy.DetailPlan, which the store cannot import.
+const planKey = "plan"
+
 // Approval statuses.
 const (
 	ApprovalPending  = "pending"
@@ -218,7 +227,10 @@ func (c DecideApproval) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
 	if c.Status != ApprovalExpired && c.At >= expires {
 		return Result{}, fmt.Errorf("%w: it has expired", ErrApprovalClosed)
 	}
-	_, err = tx.ExecContext(ctx, `UPDATE approvals SET status = ?, decided_by = ?, decided_at = ? WHERE id = ?`,
+	// The plan can hold secrets from command arguments and a decided approval
+	// has no use for it, so it goes in the write that records the decision.
+	_, err = tx.ExecContext(ctx, `UPDATE approvals SET status = ?, decided_by = ?, decided_at = ?,
+		detail = json_remove(detail, '$.`+planKey+`') WHERE id = ?`,
 		c.Status, c.By, c.At, c.ID)
 	return Result{}, err
 }

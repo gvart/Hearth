@@ -4,6 +4,7 @@ package hub
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -70,6 +71,84 @@ func TestAPIApprovals(t *testing.T) {
 	all := decode[[]ApprovalJSON](t, f.do(t, http.MethodGet, "/api/v1/approvals?status=all", "", c))
 	if len(all) != 1 || all[0].Status != store.ApprovalApproved || all[0].DecidedBy != "web/127.0.0.1" || all[0].DecidedAt == nil {
 		t.Errorf("all = %+v", all)
+	}
+}
+
+// A pending approval shows its plan to a signed-in approver; once it is
+// approved, denied or expired, the API returns none and the store holds none.
+func TestAPIDecidedApprovalReturnsNoPlan(t *testing.T) {
+	f := newAPIFixture(t, true, withPolicy(policy.Config{}))
+	c := sessionCookie(t, f.login(t, testPassword))
+	plan := map[string]any{policy.DetailPlan: map[string]any{"argv": []string{"curl", "-H", "Authorization: s3cret"}}}
+
+	for _, outcome := range []string{store.ApprovalPending, store.ApprovalApproved, store.ApprovalDenied, store.ApprovalExpired} {
+		t.Run(outcome, func(t *testing.T) {
+			timeout := time.Minute
+			if outcome == store.ApprovalExpired {
+				timeout = 300 * time.Millisecond
+			}
+			cli := policy.NewWithConfig(f.st.Audit(), f.st.Approvals(), policy.Config{
+				Classes:         map[policy.Class]policy.Mode{policy.Dangerous: policy.ModeConfirm},
+				ApprovalTimeout: timeout,
+			})
+			held := make(chan string, 1)
+			ctx, cancel := context.WithCancel(t.Context())
+			done := make(chan error, 1)
+			go func() {
+				done <- cli.Do(ctx, policy.Request{
+					ActorKind: policy.ActorAdmin, ActorID: "root", Action: policy.DeviceRevoke, Target: outcome,
+					ApprovalDetail: plan,
+					OnHold:         func(id string, _ time.Time) { held <- id },
+				}, func(context.Context) error { return nil })
+			}()
+			id := <-held
+			if outcome == store.ApprovalPending {
+				list := decode[[]ApprovalJSON](t, f.do(t, http.MethodGet, "/api/v1/approvals", "", c))
+				if len(list) == 0 || list[0].ID != id || !strings.Contains(string(list[0].Detail), "s3cret") {
+					t.Errorf("pending list = %+v, want the plan", list)
+				}
+				cancel()
+				if err := <-done; !errors.Is(err, policy.ErrDenied) {
+					t.Errorf("cancelled held action = %v, want denied", err)
+				}
+				return
+			}
+			defer cancel()
+			if outcome != store.ApprovalExpired {
+				verb := map[string]string{store.ApprovalApproved: "approve", store.ApprovalDenied: "deny"}[outcome]
+				if resp := f.do(t, http.MethodPost, "/api/v1/approvals/"+id+"/"+verb, "", c); resp.StatusCode != http.StatusNoContent {
+					t.Fatalf("%s = %d %s", verb, resp.StatusCode, resp.body)
+				}
+			}
+			wantErr := policy.ErrDenied
+			if outcome == store.ApprovalApproved {
+				wantErr = nil
+			}
+			if err := <-done; !errors.Is(err, wantErr) {
+				t.Errorf("held action = %v, want %v", err, wantErr)
+			}
+
+			var got *ApprovalJSON
+			list := decode[[]ApprovalJSON](t, f.do(t, http.MethodGet, "/api/v1/approvals?status=all", "", c))
+			for i := range list {
+				if list[i].ID == id {
+					got = &list[i]
+				}
+			}
+			if got == nil {
+				t.Fatalf("approval %s not listed in %+v", id, list)
+			}
+			if got.Status != outcome {
+				t.Fatalf("status = %s, want %s", got.Status, outcome)
+			}
+			if strings.Contains(string(got.Detail), "s3cret") || strings.Contains(string(got.Detail), policy.DetailPlan) {
+				t.Errorf("API detail = %s, want no plan", got.Detail)
+			}
+			ap, err := f.st.Approvals().Get(t.Context(), id)
+			if err != nil || strings.Contains(string(ap.Detail), "s3cret") {
+				t.Errorf("stored detail = %s, %v; want no plan", ap.Detail, err)
+			}
+		})
 	}
 }
 
