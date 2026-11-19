@@ -20,6 +20,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -126,7 +127,15 @@ type rbHarness struct {
 	cfg    policy.Config
 	kinds  Kinds
 	rb     *Runbooks
+	// skew moves the engine's clock ahead of real time, in nanoseconds.
+	skew atomic.Int64
 }
+
+// now is the engine's clock: real time plus skew.
+func (h *rbHarness) now() time.Time { return time.Now().Add(time.Duration(h.skew.Load())) }
+
+// advance moves the engine's clock forward by d.
+func (h *rbHarness) advance(d time.Duration) { h.skew.Add(int64(d)) }
 
 func newRBHarness(t *testing.T, yaml string, cfg policy.Config) *rbHarness {
 	t.Helper()
@@ -182,7 +191,7 @@ func (h *rbHarness) open() {
 func (h *rbHarness) engine() *Runbooks {
 	return NewRunbooks(RunbooksConfig{
 		Dir: h.dir, Kinds: h.kinds, Policy: policy.NewWithConfig(h.audit, nil, h.cfg),
-		Runs: h.st.RunbookRuns(), Sealer: xorSealer{}, Poll: 5 * time.Millisecond,
+		Runs: h.st.RunbookRuns(), Sealer: xorSealer{}, Poll: 5 * time.Millisecond, Now: h.now,
 	})
 }
 
@@ -613,13 +622,15 @@ steps:
   - id: ask
     type: prompt
     message: Anyone there?
-    timeout: 30ms
+    timeout: 1h
   - id: after
     type: action
     action: {type: script, name: after}
 `, policy.Config{})
 	h.run(h.rb)
 	id := h.start("rb")
+	h.await(id, RunbookWaiting)
+	h.advance(time.Hour)
 	run := h.await(id, RunbookFailed)
 	if run.Steps[0].Status != stepFailed || !strings.Contains(run.Steps[0].Error, "no answer") || run.Awaiting != "" {
 		t.Fatalf("run = %+v", run)
