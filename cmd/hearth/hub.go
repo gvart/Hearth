@@ -445,6 +445,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	uiMux.Handle("GET /api/v1/events", hub.EndOnStop(stopping, webH))
 	uiMux.Handle("GET /api/v1/devices/{id}/logs", hub.EndOnStop(stopping, webH))
 	uiMux.Handle("GET /api/v1/devices/{id}/shell", hub.EndOnStop(stopping, webH))
+	uiMux.Handle("GET /api/v1/guest/{token}/events", hub.EndOnStop(stopping, webH))
 	if node != nil {
 		node.SetConfigSource(cluster.FileConfigSource(policyDigest, notifyDigest, automationsDir, runbooksDirOf(opts)))
 	}

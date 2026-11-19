@@ -94,12 +94,23 @@ func newAPI(cfg Config) *api {
 		telemetryOff:   cfg.TelemetryOff,
 		shellIdle:      orDefault(cfg.ShellIdleTimeout, DefaultShellIdleTimeout),
 		shellMax:       orDefault(cfg.ShellMaxDuration, DefaultShellMaxDuration),
+		runner:         runnerOf(cfg.Agents),
+		guestActions:   newLoginLimiter(time.Now, guestActionBurst, guestActionEvery),
 	}
+}
+
+// runnerOf is agents as an agentRunner, nil when there are none.
+func runnerOf(agents *Agents) agentRunner {
+	if agents == nil {
+		return nil
+	}
+	return agents
 }
 
 func (a *api) routes() http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle("/", webui.Handler())
+	ui := webui.Handler()
+	mux.Handle("/", ui)
 	mux.HandleFunc("POST /api/v1/login", a.login)
 	mux.HandleFunc("GET /api/v1/tls", a.tlsInfo)
 	mux.Handle("POST /api/v1/logout", a.auth(a.logout))
@@ -129,6 +140,8 @@ func (a *api) routes() http.Handler {
 	a.approvalLinkRoutes(mux)
 	a.runbookRoutes(mux)
 	a.telemetryRoutes(mux)
+	a.panelRoutes(mux)
+	a.guestRoutes(mux, ui)
 	mux.Handle("/api/v1/", a.auth(func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "no such endpoint")
 	}))
@@ -217,6 +230,13 @@ type api struct {
 	telemetryOff bool
 	// shellIdle and shellMax limit terminal sessions.
 	shellIdle, shellMax time.Duration
+	// runner is agents as an agentRunner, for guest actions; nil when the
+	// hub runs no agent actions.
+	runner agentRunner
+	// guestActions limits the actions of each panel share link.
+	guestActions *loginLimiter
+	// guestBusy bounds each share link's actions running at once.
+	guestBusy guestInflight
 }
 
 // orDefault is d, or def when d is not positive.
