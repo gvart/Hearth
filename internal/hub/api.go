@@ -100,6 +100,8 @@ func newAPI(cfg Config) *api {
 	now := func() time.Time { return a.now() }
 	a.guestActions = newLoginLimiter(now, guestActionBurst, guestActionEvery)
 	a.guestReads = newLoginLimiter(now, guestReadBurst, guestReadEvery)
+	a.dashboardReads = newLoginLimiter(now, dashboardReadBurst, dashboardReadEvery)
+	a.dashboardAudit = newAuditThrottle(dashboardAuditEvery)
 	return a
 }
 
@@ -146,6 +148,7 @@ func (a *api) routes() http.Handler {
 	a.telemetryRoutes(mux)
 	a.panelRoutes(mux)
 	a.guestRoutes(mux, ui)
+	a.dashboardRoutes(mux)
 	mux.Handle("/api/v1/", a.auth(func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "no such endpoint")
 	}))
@@ -246,6 +249,10 @@ type api struct {
 	guestBusy, guestHeld guestInflight
 	// guestStreams counts the guest event streams and wakes them.
 	guestStreams guestStreams
+	// dashboardReads limits the reads of each dashboard token.
+	dashboardReads *loginLimiter
+	// dashboardAudit spaces out the audit rows of dashboard reads.
+	dashboardAudit *auditThrottle
 }
 
 // orDefault is d, or def when d is not positive.

@@ -263,9 +263,10 @@ func auditHas(entries []store.AuditEntry, action, kind string) bool {
 	return false
 }
 
-// TestGuestIsolation is the issue's "Done when": a share link reaches its
-// own panel and nothing else, by any route or any way of presenting it.
-func TestGuestIsolation(t *testing.T) {
+// newIsolationFixture is a panel fixture serving every route family, with
+// MCP mounted beside the API, as cmd/hearth does.
+func newIsolationFixture(t *testing.T) *panelFixture {
+	t.Helper()
 	var mcpCfg mcpserver.Config
 	f := newPanelFixture(t, func(c *Config) {
 		log := slog.New(slog.DiscardHandler)
@@ -300,19 +301,18 @@ func TestGuestIsolation(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	f.srv = srv
+	return f
+}
 
-	mine := f.createPanel(t, restartPanel)
-	other := f.createPanel(t, `{"name": "Office", "widgets": [
-		{"kind": "device", "entity": "nas", "actions": [{"action": "device.restart", "service": "systemd:kodi"}]}]}`)
-	token := f.share(t, mine.ID, "").Token
-	otherToken := f.share(t, other.ID, "").Token
-	if r := f.raw(t, http.MethodGet, "/api/v1/guest/"+token, "", nil); r.StatusCode != http.StatusOK {
-		t.Fatalf("own panel = %d %s", r.StatusCode, r.body)
-	}
+// isolationRoute is one request of an isolation test.
+type isolationRoute struct {
+	family, method, path, body string
+}
 
-	routes := []struct {
-		family, method, path, body string
-	}{
+// isolationRoutes are a request to every route family, for a credential
+// token that must open none of them. mine and other are two panels.
+func isolationRoutes(token string, mine, other PanelJSON) []isolationRoute {
+	return []isolationRoute{
 		{"devices", http.MethodGet, "/api/v1/devices", ""},
 		{"devices", http.MethodGet, "/api/v1/devices/pi", ""},
 		{"devices", http.MethodGet, "/api/v1/devices/pi/metrics", ""},
@@ -358,8 +358,28 @@ func TestGuestIsolation(t *testing.T) {
 		{"other panels", http.MethodGet, "/api/v1/guest/" + other.ID, ""},
 		{"other panels", http.MethodGet, "/api/v1/guest/" + token + "x", ""},
 		{"other panels", http.MethodGet, "/api/v1/guest/" + strings.ToLower(token), ""},
+		{"dashboard", http.MethodGet, "/api/v1/dashboard/summary", ""},
+		{"dashboard", http.MethodGet, "/api/v1/dashboard/tokens", ""},
+		{"dashboard", http.MethodPost, "/api/v1/dashboard/tokens", `{"name": "x"}`},
+		{"dashboard", http.MethodDelete, "/api/v1/dashboard/tokens/x", ""},
 		{"unknown", http.MethodGet, "/api/v1/no-such-endpoint", ""},
 	}
+}
+
+// TestGuestIsolation is the issue's "Done when": a share link reaches its
+// own panel and nothing else, by any route or any way of presenting it.
+func TestGuestIsolation(t *testing.T) {
+	f := newIsolationFixture(t)
+	mine := f.createPanel(t, restartPanel)
+	other := f.createPanel(t, `{"name": "Office", "widgets": [
+		{"kind": "device", "entity": "nas", "actions": [{"action": "device.restart", "service": "systemd:kodi"}]}]}`)
+	token := f.share(t, mine.ID, "").Token
+	otherToken := f.share(t, other.ID, "").Token
+	if r := f.raw(t, http.MethodGet, "/api/v1/guest/"+token, "", nil); r.StatusCode != http.StatusOK {
+		t.Fatalf("own panel = %d %s", r.StatusCode, r.body)
+	}
+
+	routes := isolationRoutes(token, mine, other)
 	creds := map[string]http.Header{
 		"as session cookie":        {"Cookie": {SessionCookie + "=" + token}},
 		"as secure session cookie": {"Cookie": {SecureSessionCookie + "=" + token}},

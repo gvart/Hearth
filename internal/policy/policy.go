@@ -201,9 +201,9 @@ const (
 	// states) by a dashboard such as Homepage, with a dashboard token.
 	DashboardRead Action = "dashboard.read"
 	// DashboardTokenCreate creates a read-only token for a dashboard.
-	DashboardTokenCreate Action = "dashboard.token.create" //nolint:gosec // an action name
+	DashboardTokenCreate Action = "dashboard.token.create"
 	// DashboardTokenRevoke revokes a dashboard's token.
-	DashboardTokenRevoke Action = "dashboard.token.revoke" //nolint:gosec // an action name
+	DashboardTokenRevoke Action = "dashboard.token.revoke"
 )
 
 // Actor kinds.
