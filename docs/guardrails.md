@@ -122,7 +122,8 @@ report no ceiling, and the hub sends them no actions until they are upgraded.
 - Automations: `hearth hub --automations-dry-run` audits every action's decision and runs none
   (Kubernetes actions it would allow are planned, and the plan recorded in the run; triggers still
   watch, so checks `from` a device still run, as they change nothing);
-  `hearth automation plan <file>` checks a file without touching policy.
+  `hearth automation plan <file>` checks a file without touching policy. The web UI's automation
+  editor has a **Dry run** button: see [automations.md](automations.md#the-visual-editor).
 
 ## Audit log
 

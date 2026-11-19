@@ -1,0 +1,339 @@
+/* The automations list and the visual editor. */
+.auto-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.auto-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1rem;
+}
+
+.auto-list-item + .auto-list-item {
+  border-top: 1px solid var(--border);
+}
+
+.auto-list-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.auto-list-meta {
+  flex: none;
+}
+
+.auto-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-width: 56rem;
+}
+
+.auto-head {
+  flex-wrap: wrap;
+  margin-bottom: 0;
+}
+
+.auto-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.auto-title h1 {
+  font-size: 1.35rem;
+}
+
+.auto-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.auto-view {
+  display: inline-flex;
+  gap: 0.15rem;
+  padding: 0.15rem;
+  background: var(--surface-2);
+  border-radius: 8px;
+}
+
+.auto-view .btn {
+  border-color: transparent;
+  background: transparent;
+}
+
+.auto-view .btn[aria-pressed='true'] {
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+.auto-visual {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.auto-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  min-width: 0;
+}
+
+.auto-card h2 {
+  font-size: 1rem;
+}
+
+.auto-card h2 + p {
+  margin-top: -0.5rem;
+}
+
+.auto-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.auto-step {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-width: 0;
+}
+
+.auto-step-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.auto-step-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.auto-step-buttons {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.auto-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+  align-items: start;
+  gap: 0.75rem;
+}
+
+.auto-wide {
+  grid-column: 1 / -1;
+}
+
+.auto-editor .field {
+  min-width: 0;
+}
+
+.auto-editor .field input,
+.auto-editor .field select,
+.auto-editor .field textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-weight: 400;
+}
+
+.auto-editor .field select {
+  height: 2.5rem;
+  padding: 0 0.5rem;
+}
+
+.auto-editor .field textarea {
+  padding: 0.5rem 0.75rem;
+  resize: vertical;
+}
+
+.auto-editor .field textarea.mono,
+.auto-editor .field textarea.auto-yaml {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+}
+
+.auto-editor .field textarea.auto-yaml {
+  line-height: 1.55;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.auto-editor .field select:focus,
+.auto-editor .field textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.auto-editor .field [aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+.auto-hint {
+  font-size: 0.78rem;
+  font-weight: 400;
+}
+
+.auto-check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.5rem;
+  font-size: 0.85rem;
+  font-weight: 550;
+}
+
+.auto-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.auto-add .field {
+  flex: 1 1 14rem;
+}
+
+.auto-raw {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0.65rem 0.75rem;
+  background: var(--warn-soft);
+  border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent);
+  border-radius: 8px;
+  min-width: 0;
+}
+
+.auto-raw pre,
+.auto-plan {
+  margin: 0;
+  padding: 0.5rem 0.65rem;
+  overflow-x: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+}
+
+.auto-problems {
+  margin: 0;
+  padding-left: 1.1rem;
+  overflow-wrap: anywhere;
+}
+
+.auto-decisions {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.auto-decisions li {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.6rem 0;
+}
+
+.auto-decisions li + li {
+  border-top: 1px solid var(--border);
+}
+
+.auto-decisions li > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.auto-decision {
+  flex: none;
+}
+
+.auto-decision-allow {
+  background: var(--ok-soft);
+  color: var(--online);
+}
+
+.auto-decision-confirm {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.auto-decision-deny {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.auto-result summary {
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 550;
+}
+
+.auto-plan {
+  margin-top: 0.5rem;
+}
+
+@media (max-width: 640px) {
+  .auto-actions {
+    width: 100%;
+  }
+
+  .auto-actions > .btn {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .auto-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .auto-step-buttons .btn {
+    min-height: 2.25rem;
+  }
+}

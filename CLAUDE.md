@@ -69,6 +69,7 @@ test/e2e/              end-to-end tests (compose: hub + agents)
 ```
 task build        # build web + binary
 task test         # go test ./... -race
+task test:web     # web UI tests (node --test): the automation editor's YAML round trip
 task lint         # SPDX header check + golangci-lint + eslint + tsc
 task proto        # buf lint + buf generate (into internal/proto)
 task e2e          # compose-based end-to-end test of the headline demo

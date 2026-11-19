@@ -181,6 +181,47 @@ hearth automation plan automations/hello.yaml
 validates the file and prints what the automation would do, without running anything. Problems are
 reported with their line, as `file:line: message`.
 
+## The visual editor
+
+The web UI's **Automations** page lists the files of the automations directory, and edits them as
+trigger, condition and action blocks or as YAML. Both views change the same file: switch between them
+at any time. The file stays the source of truth, so keep it in git as before.
+
+- **Your file stays yours.** Comments, key order and quoting stay as written through an edit, and so
+  does the spacing of the lines around it.
+- **What the form cannot show is kept.** A step with a type the editor has no form for, YAML anchors,
+  aliases or tags, a key it does not know, or a value of an unexpected shape appears as a read-only
+  YAML block. It is written back untouched; change it in the YAML view. A file that does not parse
+  opens in the YAML view only.
+- **Dry run** sends the file to the hub, which validates it as it would when loading it, and asks
+  policy about saving it and about each action, as the automation would ask when it runs. Each
+  decision is shown (allowed, needs approval, denied) and audited with the result `dry-run`. Nothing
+  is saved, no trigger starts and no action runs. A check that runs `from` a device is decided when
+  its trigger starts, and is not part of the dry run.
+- **Save** needs a signed-in session. The hub validates the file again, with the notification channels
+  and other settings it really has, and refuses it, with the line of each problem, if it would not load.
+  It also refuses a save when another file of the directory is invalid, since one invalid file stops
+  the reload of all of them, and when the file changed on disk since you opened it.
+
+Saving goes through policy as `automation.apply` (class `dangerous`) with actor `web/<address>`, and is
+in the audit log with the file's name, its SHA-256 and its steps, but not its content, which may hold
+secrets. To require approval for saves, or to forbid them:
+
+```yaml
+actors:
+  web:
+    dangerous: confirm   # or deny
+```
+
+With `confirm`, the save finishes once someone approves it on the **Approvals** page. That setting
+covers every dangerous action from the web UI.
+
+An automation's id cannot be changed in the editor: create a new one and remove the old file. Files
+that are symbolic links can be opened but not saved. The built-in [new-device
+alerts](discovery.md#new-device-alerts) automation has no file, so it is not listed. In a cluster, a
+save writes to the directory of the hub you are connected to only: copy the file to the other hubs,
+as [configuration drift](cluster.md#configuration-drift) will remind you.
+
 ## How the hub runs them
 
 - The hub checks the directory every 2 s. A new or changed file is loaded; a changed automation

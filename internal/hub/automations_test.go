@@ -172,8 +172,8 @@ func TestAutomationAPIRequiresSession(t *testing.T) {
 
 func TestAutomationSaveWritesExactBytesAndAudits(t *testing.T) {
 	f := newAutomationFixture(t, policy.Config{})
-	secret := "https://hooks.example/s3cr3t-token"
-	yaml := helloYAML + "  - type: webhook\n    url: " + secret + "\n"
+	hookURL := "https://hooks.example/s3cr3t-token"
+	yaml := helloYAML + "  - type: webhook\n    url: " + hookURL + "\n"
 	resp := f.do(t, http.MethodPost, "/api/v1/automations", saveBody(t, yaml, ""), f.cookie)
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create: status %d: %s", resp.StatusCode, resp.body)

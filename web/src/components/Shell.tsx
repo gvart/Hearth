@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { useApprovals, useDeviceEvents, useLogout } from '../api/hooks.ts';
 import { ApprovalsPage } from './ApprovalsPage.tsx';
 import { AuditPage } from './AuditPage.tsx';
@@ -10,13 +10,25 @@ import { NotificationsPage } from './NotificationsPage.tsx';
 import { ProxmoxPage } from './ProxmoxPage.tsx';
 import { RunbooksPage } from './RunbooksPage.tsx';
 
-type Page = 'devices' | 'kubernetes' | 'proxmox' | 'runbooks' | 'notifications' | 'audit' | 'approvals';
+// Loaded when opened: the editor brings a YAML parser no other page needs.
+const AutomationsPage = lazy(() => import('./AutomationsPage.tsx'));
+
+type Page =
+  | 'devices'
+  | 'kubernetes'
+  | 'proxmox'
+  | 'runbooks'
+  | 'automations'
+  | 'notifications'
+  | 'audit'
+  | 'approvals';
 
 const pages: { id: Page; label: string; hash: string }[] = [
   { id: 'devices', label: 'Devices', hash: '#/' },
   { id: 'kubernetes', label: 'Kubernetes', hash: '#/kubernetes' },
   { id: 'proxmox', label: 'Proxmox', hash: '#/proxmox' },
   { id: 'runbooks', label: 'Runbooks', hash: '#/runbooks' },
+  { id: 'automations', label: 'Automations', hash: '#/automations' },
   { id: 'notifications', label: 'Notifications', hash: '#/notifications' },
   { id: 'audit', label: 'Audit', hash: '#/audit' },
   { id: 'approvals', label: 'Approvals', hash: '#/approvals' },
@@ -37,6 +49,9 @@ function pageOf(hash: string): Page {
   }
   if (hash.startsWith('#/proxmox')) {
     return 'proxmox';
+  }
+  if (hash.startsWith('#/automations')) {
+    return 'automations';
   }
   return hash.startsWith('#/kubernetes') ? 'kubernetes' : 'devices';
 }
@@ -126,6 +141,10 @@ export function Shell() {
         <ProxmoxPage />
       ) : page === 'runbooks' ? (
         <RunbooksPage />
+      ) : page === 'automations' ? (
+        <Suspense fallback={<main className="content muted">Loading automations…</main>}>
+          <AutomationsPage />
+        </Suspense>
       ) : page === 'notifications' ? (
         <NotificationsPage />
       ) : page === 'audit' ? (

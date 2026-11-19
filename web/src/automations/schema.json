@@ -1,0 +1,160 @@
+{
+  "triggers": {
+    "manual": { "label": "Run by hand", "fields": [] },
+    "device": {
+      "label": "Device online or offline",
+      "fields": [
+        { "key": "device", "label": "Device", "kind": "text", "help": "Id, name or hostname. Empty means any device." },
+        { "key": "to", "label": "Goes", "kind": "select", "options": ["online", "offline"], "required": true }
+      ]
+    },
+    "network": {
+      "label": "Network host found",
+      "fields": [
+        { "key": "event", "label": "Event", "kind": "select", "options": ["new", "returned"], "help": "Empty means both." },
+        { "key": "batch", "label": "Fire once per scan", "kind": "bool" }
+      ]
+    },
+    "metric": {
+      "label": "Metric threshold",
+      "fields": [
+        { "key": "device", "label": "Device", "kind": "text", "help": "Id, name or hostname. Use with Metric." },
+        { "key": "metric", "label": "Metric", "kind": "select", "options": ["cpu", "memory", "disk"] },
+        { "key": "query", "label": "PromQL query", "kind": "text", "help": "Instead of Device and Metric." },
+        { "key": "above", "label": "Above", "kind": "number" },
+        { "key": "below", "label": "Below", "kind": "number" },
+        { "key": "for", "label": "For", "kind": "duration" },
+        { "key": "every", "label": "Every", "kind": "duration" },
+        { "key": "timeout", "label": "Timeout", "kind": "duration" }
+      ]
+    },
+    "http": {
+      "label": "HTTP check fails",
+      "fields": [
+        { "key": "url", "label": "URL", "kind": "text", "required": true },
+        { "key": "status", "label": "Expected status", "kind": "number", "help": "Default: any 2xx or 3xx." },
+        { "key": "from", "label": "From device", "kind": "text" },
+        { "key": "every", "label": "Every", "kind": "duration" },
+        { "key": "for", "label": "For", "kind": "duration" },
+        { "key": "timeout", "label": "Timeout", "kind": "duration" }
+      ]
+    },
+    "dns": {
+      "label": "DNS check fails",
+      "fields": [
+        { "key": "name", "label": "Name", "kind": "text", "required": true },
+        { "key": "server", "label": "DNS server", "kind": "text", "required": true },
+        { "key": "from", "label": "From device", "kind": "text" },
+        { "key": "every", "label": "Every", "kind": "duration" },
+        { "key": "for", "label": "For", "kind": "duration" },
+        { "key": "timeout", "label": "Timeout", "kind": "duration" }
+      ]
+    },
+    "tcp": {
+      "label": "TCP check fails",
+      "fields": [
+        { "key": "address", "label": "Address", "kind": "text", "required": true, "help": "host:port" },
+        { "key": "from", "label": "From device", "kind": "text" },
+        { "key": "every", "label": "Every", "kind": "duration" },
+        { "key": "for", "label": "For", "kind": "duration" },
+        { "key": "timeout", "label": "Timeout", "kind": "duration" }
+      ]
+    },
+    "schedule": {
+      "label": "Schedule",
+      "fields": [
+        { "key": "cron", "label": "Cron", "kind": "text", "required": true, "help": "Five fields, or @daily, @every 15m." }
+      ]
+    }
+  },
+  "conditions": {},
+  "actions": {
+    "log": {
+      "label": "Write to the hub log",
+      "fields": [{ "key": "message", "label": "Message", "kind": "multiline", "required": true }]
+    },
+    "webhook": {
+      "label": "Send a webhook",
+      "fields": [
+        { "key": "url", "label": "URL", "kind": "text", "required": true },
+        { "key": "method", "label": "Method", "kind": "text", "help": "Default: POST." },
+        { "key": "headers", "label": "Headers", "kind": "map", "help": "One per line, as Name: value." },
+        { "key": "body", "label": "Body", "kind": "multiline" },
+        { "key": "timeout", "label": "Timeout", "kind": "duration" }
+      ]
+    },
+    "notify": {
+      "label": "Send a notification",
+      "fields": [
+        { "key": "channel", "label": "Channel", "kind": "text", "required": true },
+        { "key": "title", "label": "Title", "kind": "text" },
+        { "key": "message", "label": "Message", "kind": "multiline", "required": true }
+      ]
+    },
+    "restart": {
+      "label": "Restart a service",
+      "fields": [
+        { "key": "device", "label": "Device", "kind": "text", "required": true },
+        { "key": "service", "label": "Service", "kind": "text", "required": true, "help": "systemd:UNIT, systemd-user:UNIT or docker:CONTAINER" },
+        { "key": "timeout", "label": "Timeout", "kind": "duration" }
+      ]
+    },
+    "exec": {
+      "label": "Run a command",
+      "fields": [
+        { "key": "device", "label": "Device", "kind": "text", "required": true },
+        { "key": "command", "label": "Command", "kind": "list", "required": true, "help": "One argument per line, program first. Never a shell." },
+        { "key": "timeout", "label": "Timeout", "kind": "duration" }
+      ]
+    },
+    "kube_restart": {
+      "label": "Restart a workload",
+      "fields": [
+        { "key": "cluster", "label": "Cluster", "kind": "text", "required": true },
+        { "key": "kind", "label": "Kind", "kind": "select", "options": ["Deployment", "StatefulSet", "DaemonSet"], "required": true },
+        { "key": "namespace", "label": "Namespace", "kind": "text", "required": true },
+        { "key": "name", "label": "Name", "kind": "text", "required": true }
+      ]
+    },
+    "kube_scale": {
+      "label": "Scale a workload",
+      "fields": [
+        { "key": "cluster", "label": "Cluster", "kind": "text", "required": true },
+        { "key": "kind", "label": "Kind", "kind": "select", "options": ["Deployment", "StatefulSet"], "required": true },
+        { "key": "namespace", "label": "Namespace", "kind": "text", "required": true },
+        { "key": "name", "label": "Name", "kind": "text", "required": true },
+        { "key": "replicas", "label": "Replicas", "kind": "number", "required": true }
+      ]
+    },
+    "kube_delete_pod": {
+      "label": "Delete a pod",
+      "fields": [
+        { "key": "cluster", "label": "Cluster", "kind": "text", "required": true },
+        { "key": "namespace", "label": "Namespace", "kind": "text", "required": true },
+        { "key": "name", "label": "Name", "kind": "text", "required": true }
+      ]
+    },
+    "kube_cordon": {
+      "label": "Cordon a node",
+      "fields": [
+        { "key": "cluster", "label": "Cluster", "kind": "text", "required": true },
+        { "key": "node", "label": "Node", "kind": "text", "required": true }
+      ]
+    },
+    "kube_uncordon": {
+      "label": "Uncordon a node",
+      "fields": [
+        { "key": "cluster", "label": "Cluster", "kind": "text", "required": true },
+        { "key": "node", "label": "Node", "kind": "text", "required": true }
+      ]
+    },
+    "kube_drain": {
+      "label": "Drain a node",
+      "fields": [
+        { "key": "cluster", "label": "Cluster", "kind": "text", "required": true },
+        { "key": "node", "label": "Node", "kind": "text", "required": true },
+        { "key": "timeout", "label": "Timeout", "kind": "duration" }
+      ]
+    }
+  }
+}
