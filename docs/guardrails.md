@@ -56,7 +56,7 @@ request or the automation run. The hold and its outcome are both in the audit lo
 
 ```sh
 hearth approval list [--all]
-hearth approval approve <id>      # the held action runs at once
+hearth approval approve <id>      # asks for the admin password; the held action runs at once
 hearth approval deny <id>
 ```
 
@@ -66,6 +66,28 @@ is one whose requester gives up (Ctrl-C). A decided or expired approval cannot b
 
 The web UI's **Approvals** page lists the pending approvals, each with **Approve** and **Deny**, and
 the decided ones below; the nav shows how many are waiting. It refreshes every 5 s.
+
+#### Approving asks for the password again
+
+Approving a held action takes the admin password again, at the moment of approval. A session alone
+cannot approve: someone holding a stolen session cookie, or the session that asked for the action,
+can see and deny a held action but not let it run. This works with a single admin, who just types
+the password once more. Denying needs no password: it can only stop an action.
+
+- The web UI asks for the password below the plan, when you press **Approve…**. A wrong password
+  says so and leaves the action waiting.
+- The API takes it in the body: `POST /api/v1/approvals/{id}/approve` with
+  `{"password": "..."}` (`Content-Type: application/json`). A missing or wrong password is answered
+  `403` with code `reauth_failed`, not `401`, since the session itself is still valid.
+- `hearth approval approve <id>` prompts for it without echo on a terminal, and otherwise reads the
+  first line of stdin, for scripts: `hearth approval approve <id> < password-file`. It needs an admin
+  password to be set (`hearth admin set-password`).
+
+The password is checked as login checks it: the same argon2id hash and cost, one verification at a
+time, and the same per-address rate limit, which approving and logging in share (a burst of 5
+guesses, then one every 12 s; `429` past it). A refused approval stays pending and is in the audit
+log as a denied `approval.approve` whose result says the approver was not re-authenticated. The
+password itself is never logged, audited, stored or echoed in a response.
 
 Every decision is in the audit log as `approval.approve` or `approval.deny`, by who and how: the
 actor kind says the channel (`admin` for the CLI, `web` for the UI, `approval_link` for a link) and
@@ -118,18 +140,24 @@ approval_notify:
 
 The message says who wants what, on which target, and when it expires, with a **Review** link (on
 ntfy, a button and a tap on the notification). The link opens a page that shows the action, with
-**Approve** and **Deny**: opening it decides nothing, a tap does. It needs no login: the link is
-the credential, for that one approval only.
+**Deny** and **Sign in to approve**: opening it decides nothing, a tap on **Deny** does. Denying
+needs no login: the link is the credential, for that one approval only, and only to deny.
+
+A link cannot approve. Approving takes the admin password again (see
+[Approving asks for the password again](#approving-asks-for-the-password-again)), so **Sign in to
+approve** opens the **Approvals** page, where you sign in and approve with your password. An approve
+through the link's API (`POST /api/v1/approval-link/approve`) is refused with `403`
+`signin_required`, audited as a denied `approval_link` decision, and leaves the link unspent.
 
 - It is a 256-bit random secret, of which the hub stores only the SHA-256 hash.
-- It works once: the first approve or deny spends it, whatever the outcome.
+- It works once: the first deny spends it, whatever the outcome.
 - It expires with the approval (`approval_timeout`, default 10 minutes).
 - It is in the URL's `#` fragment, which browsers never send to a server, and the page then sends it
   in a POST body: it is in no server log, path or query string. The hub never logs it or audits it.
 - A wrong, used or expired link gets the same answer, and is audited as a denied `approval_link`
   decision.
 
-Anyone who can read the channel can approve, so treat it like a password: a self-hosted ntfy server
+Anyone who can read the channel can deny, and see what is held, so keep it private: a self-hosted ntfy server
 or an access-token protected topic, or a private Telegram chat. An ntfy server keeps the message
 (with its link) in its cache, but the link is dead after its first use or its approval's expiry.
 

@@ -13,6 +13,9 @@ import (
 	"github.com/gvart/hearth/internal/store"
 )
 
+// approvalTestPassword is the admin password the approval tests set.
+const approvalTestPassword = "approver-pw-4b7f"
+
 func writePolicy(t *testing.T, dir, body string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, policy.ConfigFile), []byte(body), 0o600); err != nil {
@@ -25,6 +28,9 @@ func writePolicy(t *testing.T, dir, body string) {
 func TestApprovalFlow(t *testing.T) {
 	dir, _ := initHub(t)
 	writePolicy(t, dir, "classes: {dangerous: confirm}\n")
+	if out, err := executeWithStdin(t, approvalTestPassword+"\n", "admin", "set-password", "--data-dir", dir); err != nil {
+		t.Fatalf("set-password = %v\n%s", err, out)
+	}
 	st := openStore(t, dir)
 	if err := st.Devices().Upsert(t.Context(), store.Device{ID: "pi", Status: store.StatusUnknown}); err != nil {
 		t.Fatal(err)
@@ -61,7 +67,21 @@ func TestApprovalFlow(t *testing.T) {
 	if err != nil || !strings.Contains(out, id) || !strings.Contains(out, "device.revoke") {
 		t.Fatalf("approval list = %v\n%s", err, out)
 	}
-	if out, err := execute(t, "approval", "approve", id, "--data-dir", dir); err != nil || !strings.Contains(out, "Approved "+id) {
+	// Approving needs the admin password, on stdin here; a missing or wrong
+	// one leaves the approval pending.
+	for _, stdin := range []string{"", "\n", "wrong-password-9d2e\n"} {
+		out, err := executeWithStdin(t, stdin, "approval", "approve", id, "--data-dir", dir)
+		if err == nil || !strings.Contains(err.Error(), "re-authenticat") {
+			t.Fatalf("approve with stdin %q = %v\n%s", stdin, err, out)
+		}
+		if strings.Contains(out+err.Error(), "wrong-password-9d2e") {
+			t.Errorf("the password was echoed: %s %v", out, err)
+		}
+		if ap, err := st.Approvals().Get(t.Context(), id); err != nil || ap.Status != store.ApprovalPending {
+			t.Fatalf("approval after a refused approve = %+v, %v", ap, err)
+		}
+	}
+	if out, err := executeWithStdin(t, approvalTestPassword+"\n", "approval", "approve", id, "--data-dir", dir); err != nil || !strings.Contains(out, "Approved "+id) {
 		t.Fatalf("approve = %v\n%s", err, out)
 	}
 	r := <-done

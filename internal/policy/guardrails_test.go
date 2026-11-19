@@ -352,14 +352,14 @@ func TestConfirmApprovedRuns(t *testing.T) {
 	if ran {
 		t.Fatal("ran before approval")
 	}
-	if err := e.Decide(t.Context(), ActorWeb, "192.0.2.1", id, true); err != nil {
+	if err := e.Decide(t.Context(), ActorWeb, "192.0.2.1", id, true, reauthed); err != nil {
 		t.Fatal(err)
 	}
 	if err := <-done; err != nil || !ran {
 		t.Fatalf("Do = %v, ran %v; want approved and run", err, ran)
 	}
 	// Deciding again is refused.
-	if err := e.Decide(t.Context(), ActorAdmin, "root", id, false); !errors.Is(err, store.ErrApprovalClosed) {
+	if err := e.Decide(t.Context(), ActorAdmin, "root", id, false, nil); !errors.Is(err, store.ErrApprovalClosed) {
 		t.Errorf("second decision = %v, want ErrApprovalClosed", err)
 	}
 	entries, _ := s.Audit().List(t.Context(), 10)
@@ -378,7 +378,7 @@ func TestConfirmApprovedRuns(t *testing.T) {
 
 func TestConfirmNegative(t *testing.T) {
 	denyIt := func(t *testing.T, e *Engine, id string) {
-		if err := e.Decide(t.Context(), ActorAdmin, "root", id, false); err != nil {
+		if err := e.Decide(t.Context(), ActorAdmin, "root", id, false, nil); err != nil {
 			t.Error(err)
 		}
 	}
@@ -439,7 +439,7 @@ func TestConfirmNegative(t *testing.T) {
 				t.Errorf("approval = %+v, %v; want %s", ap, err, tt.wantStatus)
 			}
 			// An expired or decided approval can no longer be approved.
-			if err := e.Decide(t.Context(), ActorAdmin, "root", id, true); !errors.Is(err, store.ErrApprovalClosed) {
+			if err := e.Decide(t.Context(), ActorAdmin, "root", id, true, reauthed); !errors.Is(err, store.ErrApprovalClosed) {
 				t.Errorf("late approval = %v, want ErrApprovalClosed", err)
 			}
 		})
@@ -489,7 +489,7 @@ func TestDecisionAuditedBeforeItTakesEffect(t *testing.T) {
 			approvals := &decisionLog{audit: audit}
 			id := heldApproval(t, approvals)
 			e := NewWithConfig(audit, approvals, Config{})
-			if err := e.Decide(t.Context(), ActorWeb, "192.0.2.1", id, tt.approve); err != nil {
+			if err := e.Decide(t.Context(), ActorWeb, "192.0.2.1", id, tt.approve, reauthed); err != nil {
 				t.Fatal(err)
 			}
 			if got := approvals.atDecide; len(got) != 1 || got[0].Action != string(tt.action) || got[0].Decision != Allow || got[0].Result != Started {
@@ -508,7 +508,7 @@ func TestDecisionNotAuditedDoesNotTakeEffect(t *testing.T) {
 	approvals := &decisionLog{audit: &memAudit{}}
 	id := heldApproval(t, approvals)
 	e := NewWithConfig(failingAudit{errors.New("audit log unavailable")}, approvals, Config{})
-	if err := e.Decide(t.Context(), ActorWeb, "192.0.2.1", id, true); err == nil {
+	if err := e.Decide(t.Context(), ActorWeb, "192.0.2.1", id, true, reauthed); err == nil {
 		t.Fatal("Decide succeeded without an audit entry")
 	}
 	ap, err := approvals.Get(t.Context(), id)
@@ -524,7 +524,7 @@ func TestDecisionLostRaceIsAudited(t *testing.T) {
 	approvals := &decisionLog{audit: audit, decideErr: store.ErrApprovalClosed}
 	id := heldApproval(t, approvals)
 	e := NewWithConfig(audit, approvals, Config{})
-	if err := e.Decide(t.Context(), ActorWeb, "192.0.2.1", id, true); !errors.Is(err, store.ErrApprovalClosed) {
+	if err := e.Decide(t.Context(), ActorWeb, "192.0.2.1", id, true, reauthed); !errors.Is(err, store.ErrApprovalClosed) {
 		t.Fatalf("Decide = %v, want ErrApprovalClosed", err)
 	}
 	got := audit.all()

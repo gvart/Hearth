@@ -291,23 +291,8 @@ func (a *api) login(w http.ResponseWriter, r *http.Request) {
 		Action:    policy.AdminLogin,
 		Target:    adminUser,
 	}, func(ctx context.Context) error {
-		hash, err := a.store.Admin().PasswordHash(ctx)
-		if errors.Is(err, store.ErrNotFound) {
-			return errPasswordNotSet
-		}
-		if err != nil {
+		if err := a.checkAdminPassword(ctx, body.Password); err != nil {
 			return err
-		}
-		var ok bool
-		var verr error
-		if err := a.verify.do(ctx, a.verifyWait, func() { ok, verr = a.verifyPassword(ctx, hash, body.Password) }); err != nil {
-			return err
-		}
-		if verr != nil {
-			return verr
-		}
-		if !ok {
-			return errWrongPassword
 		}
 		return a.store.Admin().CreateSession(ctx, secret, now, expires)
 	})
@@ -350,6 +335,32 @@ func (a *api) login(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteStrictMode,
 	})
 	writeJSON(w, http.StatusOK, SessionJSON{User: adminUser, ExpiresAt: expires})
+}
+
+// checkAdminPassword checks password against the admin password, as login
+// and approving do: one argon2 verification at a time (see a.verify). It
+// returns nil on a match, errWrongPassword, errPasswordNotSet, errVerifyBusy,
+// or another error that never holds the password.
+func (a *api) checkAdminPassword(ctx context.Context, password string) error {
+	hash, err := a.store.Admin().PasswordHash(ctx)
+	if errors.Is(err, store.ErrNotFound) {
+		return errPasswordNotSet
+	}
+	if err != nil {
+		return err
+	}
+	var ok bool
+	var verr error
+	if err := a.verify.do(ctx, a.verifyWait, func() { ok, verr = a.verifyPassword(ctx, hash, password) }); err != nil {
+		return err
+	}
+	if verr != nil {
+		return verr
+	}
+	if !ok {
+		return errWrongPassword
+	}
+	return nil
 }
 
 func (a *api) logout(w http.ResponseWriter, r *http.Request) {

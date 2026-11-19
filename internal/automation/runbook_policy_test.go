@@ -123,7 +123,7 @@ steps:
 	default:
 	}
 
-	if err := pol.Decide(context.Background(), policy.ActorWeb, "10.0.0.1", held.ID, true); err != nil {
+	if err := pol.Decide(context.Background(), policy.ActorWeb, "10.0.0.1", held.ID, true, func(context.Context) error { return nil }); err != nil {
 		t.Fatal(err)
 	}
 	h.await(id, RunbookSucceeded)

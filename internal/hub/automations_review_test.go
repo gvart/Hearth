@@ -34,7 +34,7 @@ func TestSaveIsHeldWhenPolicyWouldRunItsDangerousAction(t *testing.T) {
 			if got := f.read(t, "nightly.yaml"); got != nightlyLogYAML {
 				t.Fatalf("written before approval:\n%s", got)
 			}
-			if err := f.api.policy.Decide(t.Context(), policy.ActorAdmin, "op", id, false); err != nil {
+			if err := f.api.policy.Decide(t.Context(), policy.ActorAdmin, "op", id, false, nil); err != nil {
 				t.Fatal(err)
 			}
 			if resp := <-done; resp.StatusCode != http.StatusForbidden {
@@ -116,7 +116,7 @@ func TestPlanSecretsStayWithTheApprover(t *testing.T) {
 		}
 	}
 
-	if err := f.api.policy.Decide(t.Context(), policy.ActorAdmin, "op", id, true); err != nil {
+	if err := f.api.policy.Decide(t.Context(), policy.ActorAdmin, "op", id, true, reauthed); err != nil {
 		t.Fatal(err)
 	}
 	if resp := <-done; resp.StatusCode != http.StatusCreated {

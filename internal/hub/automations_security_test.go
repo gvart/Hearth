@@ -55,7 +55,7 @@ func TestGrantedAutomationRewriteIsHeld(t *testing.T) {
 		if got := f.read(t, "nightly.yaml"); got != nightlyLogYAML {
 			t.Fatalf("written before approval:\n%s", got)
 		}
-		if err := f.api.policy.Decide(t.Context(), policy.ActorAdmin, "op", id, true); err != nil {
+		if err := f.api.policy.Decide(t.Context(), policy.ActorAdmin, "op", id, true, reauthed); err != nil {
 			t.Fatal(err)
 		}
 		if resp := <-done; resp.StatusCode != http.StatusOK {
@@ -73,7 +73,7 @@ func TestGrantedAutomationRewriteIsHeld(t *testing.T) {
 		f := newAutomationFixture(t, grantNightly)
 		f.write(t, "nightly.yaml", nightlyLogYAML)
 		id, done := heldSave(t, f, http.MethodPut, "/api/v1/automations/nightly", saveBody(t, nightlyExecYAML, revision))
-		if err := f.api.policy.Decide(t.Context(), policy.ActorAdmin, "op", id, false); err != nil {
+		if err := f.api.policy.Decide(t.Context(), policy.ActorAdmin, "op", id, false, nil); err != nil {
 			t.Fatal(err)
 		}
 		if resp := <-done; resp.StatusCode != http.StatusForbidden {
@@ -90,7 +90,7 @@ func TestGrantedAutomationRewriteIsHeld(t *testing.T) {
 		if got := f.files(t); len(got) != 0 {
 			t.Fatalf("written before approval: %v", got)
 		}
-		if err := f.api.policy.Decide(t.Context(), policy.ActorAdmin, "op", id, false); err != nil {
+		if err := f.api.policy.Decide(t.Context(), policy.ActorAdmin, "op", id, false, nil); err != nil {
 			t.Fatal(err)
 		}
 		if resp := <-done; resp.StatusCode != http.StatusForbidden {
@@ -210,7 +210,7 @@ actions:
 			t.Errorf("the plan lacks %q:\n%s", want, detail.Plan)
 		}
 	}
-	if err := f.api.policy.Decide(t.Context(), policy.ActorAdmin, "op", id, false); err != nil {
+	if err := f.api.policy.Decide(t.Context(), policy.ActorAdmin, "op", id, false, nil); err != nil {
 		t.Fatal(err)
 	}
 	<-done

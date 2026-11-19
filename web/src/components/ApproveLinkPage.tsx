@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ApiError } from '../api/client.ts';
-import { useApprovalLink, useDecideApprovalLink } from '../api/hooks.ts';
+import { useApprovalLink, useDenyApprovalLink } from '../api/hooks.ts';
 import { timeLeft } from '../format.ts';
 import { ApprovalDetails, StatusPill } from './ApprovalsPage.tsx';
 import { Logo } from './Logo.tsx';
@@ -22,11 +22,12 @@ function useNow(): number {
 /**
  * The page an approval link opens (#/approve/<token>), with no session: the
  * link is the credential for its one approval. Opening it only shows the
- * action; it is decided by an explicit tap, which spends the link.
+ * action; a tap denies it, which spends the link. A link cannot approve:
+ * that takes a signed-in approver and their password.
  */
 export function ApproveLinkPage({ token }: { token: string }) {
   const link = useApprovalLink(token);
-  const decide = useDecideApprovalLink(token);
+  const decide = useDenyApprovalLink(token);
   const now = useNow();
 
   const invalid =
@@ -52,8 +53,8 @@ export function ApproveLinkPage({ token }: { token: string }) {
   } else if (decide.isSuccess) {
     body = (
       <div className="notice" role="status">
-        <strong>{decide.variables ? 'Approved.' : 'Denied.'}</strong>
-        <p>{decide.variables ? 'The action runs now.' : 'The action will not run.'} This link is used up.</p>
+        <strong>Denied.</strong>
+        <p>The action will not run. This link is used up.</p>
       </div>
     );
   } else if (ap) {
@@ -77,22 +78,19 @@ export function ApproveLinkPage({ token }: { token: string }) {
                 type="button"
                 disabled={decide.isPending}
                 onClick={() => {
-                  decide.mutate(false);
+                  decide.mutate();
                 }}
               >
                 Deny
               </button>
-              <button
-                className="btn btn-primary"
-                type="button"
-                disabled={decide.isPending}
-                onClick={() => {
-                  decide.mutate(true);
-                }}
-              >
-                Approve
-              </button>
+              <a className="btn btn-primary" href="#/approvals">
+                Sign in to approve
+              </a>
             </div>
+            <p className="muted small">
+              This link can only deny. Approving takes your password: sign in to Hearth and approve it on the
+              Approvals page.
+            </p>
           </>
         ) : (
           <p>

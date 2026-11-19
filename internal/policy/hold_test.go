@@ -74,7 +74,7 @@ func TestApprovalDetailIsNeverAudited(t *testing.T) {
 	if !strings.Contains(string(ap.Detail), "approver-only") || !strings.Contains(string(ap.Detail), "nightly.yaml") {
 		t.Errorf("approval detail = %s, want the file and the plan", ap.Detail)
 	}
-	if err := e.Decide(t.Context(), ActorAdmin, "op", id, true); err != nil {
+	if err := e.Decide(t.Context(), ActorAdmin, "op", id, true, reauthed); err != nil {
 		t.Fatal(err)
 	}
 	if err := <-done; err != nil {

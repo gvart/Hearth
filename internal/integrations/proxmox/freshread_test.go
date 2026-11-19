@@ -45,7 +45,7 @@ func (f *fixture) stopAfter(t *testing.T, id string, mode policy.Mode, change fu
 	}
 	held, done := f.holdStop(t, id)
 	changeUnseen()
-	if err := f.pol.Decide(t.Context(), policy.ActorAdmin, "admin", held.ID, true); err != nil {
+	if err := f.pol.Decide(t.Context(), policy.ActorAdmin, "admin", held.ID, true, func(context.Context) error { return nil }); err != nil {
 		t.Fatal(err)
 	}
 	return actResult(t, done)

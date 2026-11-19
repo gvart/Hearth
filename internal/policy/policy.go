@@ -352,3 +352,14 @@ var ErrDenied = errors.New("denied by policy")
 // before sending it, and the device's agent refuses it again if it gets it.
 // It matches ErrDenied.
 var ErrBeyondCeiling = fmt.Errorf("beyond the device's capability ceiling: %w", ErrDenied)
+
+// ErrReauth is returned when an approval is refused because the approver did
+// not re-authenticate: approving a held action takes the approver's password
+// again, so a session alone, such as a stolen one, cannot approve. It is
+// returned together with ErrDenied.
+var ErrReauth = errors.New("approver not re-authenticated")
+
+// ErrLinkApprove is returned when an approval link is used to approve: a link
+// can only deny. Approving needs a signed-in approver and their password. It
+// is returned together with ErrDenied.
+var ErrLinkApprove = errors.New("an approval link can only deny; sign in to Hearth to approve, with your password")

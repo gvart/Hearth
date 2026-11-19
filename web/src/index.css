@@ -1664,6 +1664,18 @@ dialog::backdrop {
   gap: 0.5rem;
 }
 
+.approval-reauth {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.approval-reauth p {
+  margin: 0;
+}
+
 .approve-card .approval-actions .btn {
   flex: 1;
   height: 2.75rem;

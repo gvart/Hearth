@@ -450,10 +450,16 @@ func (e *Engine) expire(ctx context.Context, id string) {
 // It fails with store.ErrNotFound for an unknown approval and with
 // store.ErrApprovalClosed for one no longer pending.
 //
+// Approving needs reauth, which re-authenticates the approver (checks their
+// password) and returns nil if they are who they claim. A nil reauth, or one
+// that fails for any reason, refuses the approval, audited, with an error
+// matching ErrReauth, ErrDenied and reauth's error; the approval stays
+// pending. Denying ignores reauth: it can only stop an action.
+//
 // A decision on an open approval is audited before it takes effect: the held
 // request acts as soon as it reads the decision, on any hub, and the audit
 // log must show the approval before the action it allowed.
-func (e *Engine) Decide(ctx context.Context, actorKind, actorID, id string, approve bool) error {
+func (e *Engine) Decide(ctx context.Context, actorKind, actorID, id string, approve bool, reauth func(context.Context) error) error {
 	if e.approvals == nil {
 		return errors.New("decide approval: this hub holds no approvals")
 	}
@@ -465,13 +471,17 @@ func (e *Engine) Decide(ctx context.Context, actorKind, actorID, id string, appr
 	if approve {
 		action, status = ApprovalApprove, store.ApprovalApproved
 	}
-	decided := false
-	err = e.Do(ctx, Request{
+	req := Request{
 		ActorKind: actorKind, ActorID: actorID, Action: action, Target: id,
 		Detail: map[string]any{
 			"action": held.Action, "actor": held.ActorKind + "/" + held.ActorID, "target": held.Target,
 		},
-	}, func(ctx context.Context) error {
+	}
+	if approve {
+		req.Precheck = func(ctx context.Context) error { return checkReauth(ctx, reauth) }
+	}
+	decided := false
+	err = e.Do(ctx, req, func(ctx context.Context) error {
 		err := e.approvals.Decide(ctx, id, status, actorKind+"/"+actorID, e.now())
 		decided = err == nil
 		return err
@@ -484,17 +494,36 @@ func (e *Engine) Decide(ctx context.Context, actorKind, actorID, id string, appr
 	return err
 }
 
-// DecideLink approves or denies, as the holder of an approval link from
-// actorID (its remote address), the approval the link was sent for. use
-// spends the link, once, and returns its approval's id. A link that cannot
-// be used (unknown, used or expired) is audited as a denial and returns
-// use's error, which also wraps ErrDenied; otherwise it is Decide as
-// ActorApprovalLink.
-func (e *Engine) DecideLink(ctx context.Context, actorID string, approve bool, use func(context.Context) (string, error)) error {
-	action := ApprovalDeny
-	if approve {
-		action = ApprovalApprove
+// checkReauth runs reauth for an approval. Re-authentication fails closed:
+// a missing check, or any error, is a denial, whatever its cause.
+func checkReauth(ctx context.Context, reauth func(context.Context) error) error {
+	if reauth == nil {
+		return fmt.Errorf("%w (%w)", ErrReauth, ErrDenied)
 	}
+	if err := reauth(ctx); err != nil {
+		return fmt.Errorf("%w: %w (%w)", ErrReauth, err, ErrDenied)
+	}
+	return nil
+}
+
+// DecideLink denies, as the holder of an approval link from actorID (its
+// remote address), the approval the link was sent for. use spends the link,
+// once, and returns its approval's id. A link that cannot be used (unknown,
+// used or expired) is audited as a denial and returns use's error, which
+// also wraps ErrDenied; otherwise it is Decide as ActorApprovalLink.
+//
+// A link never approves: with approve set, the attempt is audited as a
+// denial and refused with ErrLinkApprove (and ErrDenied), and the link is
+// left unspent, so it can still deny.
+func (e *Engine) DecideLink(ctx context.Context, actorID string, approve bool, use func(context.Context) (string, error)) error {
+	if approve {
+		req := Request{ActorKind: ActorApprovalLink, ActorID: actorID, Action: ApprovalApprove}
+		if err := e.record(ctx, req, Deny, ErrLinkApprove.Error(), nil); err != nil {
+			return errors.Join(ErrLinkApprove, ErrDenied, err)
+		}
+		return fmt.Errorf("%s by %s/%s: %w (%w)", ApprovalApprove, ActorApprovalLink, orUnknown(actorID), ErrLinkApprove, ErrDenied)
+	}
+	action := ApprovalDeny
 	id, err := use(ctx)
 	if err != nil {
 		req := Request{ActorKind: ActorApprovalLink, ActorID: actorID, Action: action}
@@ -504,7 +533,7 @@ func (e *Engine) DecideLink(ctx context.Context, actorID string, approve bool, u
 		}
 		return fmt.Errorf("%s by %s/%s: %w (%w)", action, ActorApprovalLink, orUnknown(actorID), err, ErrDenied)
 	}
-	return e.Decide(ctx, ActorApprovalLink, actorID, id, approve)
+	return e.Decide(ctx, ActorApprovalLink, actorID, id, false, nil)
 }
 
 // rootCause follows a chain of single wrapped errors to its end.

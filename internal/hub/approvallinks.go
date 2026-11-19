@@ -22,10 +22,11 @@ import (
 // When the policy file names an approval_notify channel, every held action
 // is sent there with a link to the web UI's #/approve/<secret> page. The
 // secret is the link's only credential, for that one approval: 256 random
-// bits, stored hashed, spent by its first approve or deny, and expiring
-// with the approval. It travels in the URL fragment, which browsers never
-// send to a server, and then in a POST body: never in a path, a query or a
-// log. Opening the page only shows the action; deciding takes a tap.
+// bits, stored hashed, spent by its first deny, and expiring with the
+// approval. It travels in the URL fragment, which browsers never send to a
+// server, and then in a POST body: never in a path, a query or a log.
+// Opening the page only shows the action; denying takes a tap. A link never
+// approves: that takes a signed-in approver and their password.
 
 // approvalLinkPath is the web UI route of an approval link; the secret
 // follows it.
@@ -164,7 +165,9 @@ func (a *api) peekApprovalLink(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// decideApprovalLink approves or denies through a link, spending it.
+// decideApprovalLink denies through a link, spending it. A link cannot
+// approve: approving needs a signed-in approver's password, and the approve
+// route only refuses, audited, without spending the link.
 func (a *api) decideApprovalLink(approve bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		secret, ok := linkSecret(w, r)
@@ -185,6 +188,9 @@ func (a *api) decideApprovalLink(approve bool) http.HandlerFunc {
 		case errors.Is(err, store.ErrNotFound), errors.Is(err, store.ErrTokenUsed), errors.Is(err, store.ErrTokenExpired),
 			errors.Is(err, store.ErrSchemaTooOld):
 			writeLinkInvalid(w)
+		case errors.Is(err, policy.ErrLinkApprove):
+			writeError(w, http.StatusForbidden, "signin_required",
+				"an approval link can only deny: sign in to Hearth and approve on the Approvals page, with your password")
 		case errors.Is(err, policy.ErrDenied):
 			writeError(w, http.StatusForbidden, "forbidden", "denied by policy")
 		default:

@@ -572,13 +572,14 @@ export const api = {
     request<undefined>('POST', `/notify/channels/${encodeURIComponent(name)}/test`),
   /** The newest approvals: pending ones, or all of them. */
   approvals: (status: 'pending' | 'all') => request<Approval[]>('GET', `/approvals?status=${status}`),
-  decideApproval: (id: string, approve: boolean) =>
-    request<undefined>('POST', `/approvals/${encodeURIComponent(id)}/${approve ? 'approve' : 'deny'}`),
+  /** Approving takes the admin password again; a wrong or missing one is a 403 reauth_failed. */
+  approveApproval: (id: string, password: string) =>
+    request<undefined>('POST', `/approvals/${encodeURIComponent(id)}/approve`, { password }),
+  denyApproval: (id: string) => request<undefined>('POST', `/approvals/${encodeURIComponent(id)}/deny`),
   /** The approval an approval link is for; needs no session, and does not use the link. */
   approvalLink: (token: string) => request<Approval>('POST', '/approval-link', { token }),
-  /** Approves or denies through an approval link, which this spends. */
-  decideApprovalLink: (token: string, approve: boolean) =>
-    request<undefined>('POST', `/approval-link/${approve ? 'approve' : 'deny'}`, { token }),
+  /** Denies through an approval link, which this spends. A link cannot approve. */
+  denyApprovalLink: (token: string) => request<undefined>('POST', '/approval-link/deny', { token }),
   runbooks: () => request<RunbookList>('GET', '/runbooks'),
   /** What a run would do. Nothing is executed. */
   runbookPlan: (id: string) => request<RunbookPlan>('GET', `/runbooks/${encodeURIComponent(id)}/plan`),
