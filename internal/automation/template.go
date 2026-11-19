@@ -188,9 +188,10 @@ func boundBranch(b *parse.BranchNode) (named bool) {
 	return boundList(b.ElseList) || named
 }
 
-// printfSize finds a width or precision too large for a message, or one
-// computed when the template runs: one call could build gigabytes.
-var printfSize = regexp.MustCompile(`%[-+# 0]*(\[|\*|\d{4,}|\d*\.(\[|\*|\d{4,}))`)
+// printfSize finds a width or precision too large for a message, one computed
+// when the template runs, or an argument index, which uses one argument over
+// and over: one call could build gigabytes.
+var printfSize = regexp.MustCompile(`%[-+# 0-9.*]*\[|%[-+# 0]*(\*|\d{4,}|\d*\.(\*|\d{4,}))`)
 
 // renderBudget limits the text one render builds, which a value doubled at
 // every step could otherwise grow without writing anything.
@@ -236,7 +237,8 @@ func (b *renderBudget) funcs() template.FuncMap {
 		"js":       wrap(template.JSEscaper),
 		"urlquery": wrap(template.URLQueryEscaper),
 		"printf": func(format string, args ...any) (string, error) {
-			if printfSize.MatchString(format) {
+			// %% is a percent sign, and starts no verb.
+			if printfSize.MatchString(strings.ReplaceAll(format, "%%", "")) {
 				return "", errRenderLimit
 			}
 			return b.build(args, func() string { return fmt.Sprintf(format, args...) })

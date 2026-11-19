@@ -34,6 +34,46 @@ func TestNamedTemplatesAreFound(t *testing.T) {
 	}
 }
 
+// TestPrintfArgumentIndexesAreRefused: an index uses one argument again and
+// again, so a short format builds far more text than its arguments hold.
+func TestPrintfArgumentIndexesAreRefused(t *testing.T) {
+	for _, raw := range []string{
+		`{{printf "%[1]s" "x"}}`,
+		`{{printf "%1[1]s" "x"}}`,
+		`{{printf "%-5[1]s" "x"}}`,
+		`{{printf "%.2[1]f" 1.5}}`,
+		`{{printf "%5.2[1]f" 1.5}}`,
+		`{{printf "%%%1[1]s" "x"}}`,
+	} {
+		text, err := parseTestText(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := text.Render(t.Context(), Event{Data: map[string]any{}}); !errors.Is(err, errRenderLimit) {
+			t.Errorf("%s rendered with %v, want the render limit", raw, err)
+		}
+	}
+}
+
+func TestPrintfBracketsOutsideVerbsStillWork(t *testing.T) {
+	for raw, want := range map[string]string{
+		`{{printf "100%%[x]"}}`: "100%[x]",
+		`{{printf "%d[1]" 5}}`:  "5[1]",
+		`{{printf "[%s]" "x"}}`: "[x]",
+		`{{printf "%5s|" "x"}}`: "    x|",
+		`{{printf "%%1000d"}}`:  "%1000d",
+	} {
+		text, err := parseTestText(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := text.Render(t.Context(), Event{Data: map[string]any{}})
+		if err != nil || got != want {
+			t.Errorf("%s rendered %q, %v, want %q", raw, got, err, want)
+		}
+	}
+}
+
 // TestRenderTimeLimit: running out of the limit is the template's fault, and
 // says so; the caller's own cancellation stays what it is.
 func TestRenderTimeLimit(t *testing.T) {

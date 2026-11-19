@@ -991,7 +991,7 @@ func (r *Runbooks) runAction(ctx context.Context, rb *Runbook, run *store.Runboo
 ) error {
 	secrets := r.secretsOf(run.ID)
 	ev := runbookEvent(rb.ID, run.StartedAt, inputFor(a.Impl, st.Inputs, secrets))
-	target, err := a.Impl.Target().Render(ev)
+	target, err := a.Impl.Target().Render(ctx, ev)
 	if err != nil {
 		return scrubSecrets(err, secrets)
 	}
