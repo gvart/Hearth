@@ -150,11 +150,11 @@ func (s *session) offered() []tool {
 // do runs fn through policy as this session's token, capped by its scope.
 // A held request waits for its approval.
 func (s *session) do(ctx context.Context, req policy.Request, fn func(context.Context) error) error {
-	return s.doOn(s.cfg.Policy, ctx, req, fn)
+	return s.doOn(ctx, s.cfg.Policy, req, fn)
 }
 
 // doOn is do through the engine e, which may hold more than the hub's.
-func (s *session) doOn(e *policy.Engine, ctx context.Context, req policy.Request, fn func(context.Context) error) error {
+func (s *session) doOn(ctx context.Context, e *policy.Engine, req policy.Request, fn func(context.Context) error) error {
 	req.ActorKind, req.ActorID = policy.ActorMCP, s.tok.Name
 	return e.Do(s.scoped(ctx), req, fn)
 }
