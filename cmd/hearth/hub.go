@@ -43,8 +43,12 @@ type hubOptions struct {
 	dataDir    string
 	listen     string
 	httpListen string
-	hosts      []string
-	assetsDir  string
+	// agentLn and webLn, if set, are listeners already bound to listen and
+	// httpListen, which the hub serves on and closes. Tests bind port 0
+	// and pass them, so no other process can take the port first.
+	agentLn, webLn net.Listener
+	hosts          []string
+	assetsDir      string
 	// automationsDir holds the automation files; default <dataDir>/automations.
 	automationsDir string
 	// runbooksDir holds the runbook files; default <dataDir>/runbooks.
@@ -457,14 +461,17 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	}
 	webSrv.RegisterOnShutdown(stop)
 	lc := &net.ListenConfig{}
-	agentLn, err := lc.Listen(ctx, "tcp", opts.listen)
-	if err != nil {
-		return fmt.Errorf("listen on %s: %w", opts.listen, err)
+	agentLn, webLn := opts.agentLn, opts.webLn
+	if agentLn == nil {
+		if agentLn, err = lc.Listen(ctx, "tcp", opts.listen); err != nil {
+			return fmt.Errorf("listen on %s: %w", opts.listen, err)
+		}
 	}
-	webLn, err := lc.Listen(ctx, "tcp", opts.httpListen)
-	if err != nil {
-		_ = agentLn.Close()
-		return fmt.Errorf("listen on %s: %w", opts.httpListen, err)
+	if webLn == nil {
+		if webLn, err = lc.Listen(ctx, "tcp", opts.httpListen); err != nil {
+			_ = agentLn.Close()
+			return fmt.Errorf("listen on %s: %w", opts.httpListen, err)
+		}
 	}
 	fp := ca.Fingerprint()
 	logAttrs := []any{

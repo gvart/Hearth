@@ -443,7 +443,8 @@ func TestJoinWithNewerBinary(t *testing.T) {
 	leaderOf(t, n1)
 	upsert(t, n1, "pi")
 	srv := joinServer(t, n1, ca)
-	dir, addr := t.TempDir(), freeAddr(t)
+	dir, ln := t.TempDir(), heldAddr(t)
+	addr := ln.Addr().String()
 	if err := Join(t.Context(), JoinParams{
 		URL: srv.URL, Token: joinToken(t, n1, ca, time.Now().Add(time.Hour)), DataDir: dir,
 		NodeID: "n2", RaftAddress: addr, MaxSchema: nextSchema,
@@ -455,7 +456,7 @@ func TestJoinWithNewerBinary(t *testing.T) {
 		t.Fatal(err)
 	}
 	h := startNodeStore(t, jca, "n2", dir, addr, false, (*Node).Bind,
-		[]store.Option{store.WithExtraMigration(nextSchema, testMigration)})
+		[]store.Option{store.WithExtraMigration(nextSchema, testMigration)}, withListener(ln))
 	waitReady(t, h)
 	if err := Promote(t.Context(), dir, "n2"); err != nil {
 		t.Fatalf("Promote: %v", err)

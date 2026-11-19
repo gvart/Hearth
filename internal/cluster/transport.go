@@ -44,10 +44,13 @@ func (a advertiseAddr) String() string  { return string(a) }
 // one. nil accepts every hub certificate from the CA.
 type peerCheck func(*x509.Certificate) error
 
-func listenTLS(ctx context.Context, listen, advertise string, cert tls.Certificate, ca *pki.CA, check peerCheck) (*tlsStream, error) {
-	ln, err := (&net.ListenConfig{}).Listen(ctx, "tcp", listen)
-	if err != nil {
-		return nil, fmt.Errorf("raft listen on %s: %w", listen, err)
+// listenTLS listens on listen, or takes ln if it is not nil.
+func listenTLS(ctx context.Context, ln net.Listener, listen, advertise string, cert tls.Certificate, ca *pki.CA, check peerCheck) (*tlsStream, error) {
+	if ln == nil {
+		var err error
+		if ln, err = (&net.ListenConfig{}).Listen(ctx, "tcp", listen); err != nil {
+			return nil, fmt.Errorf("raft listen on %s: %w", listen, err)
+		}
 	}
 	if advertise == "" {
 		advertise = ln.Addr().String()

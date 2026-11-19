@@ -52,7 +52,7 @@ func TestTransportRefusesRevokedHubs(t *testing.T) {
 	ca := newTestCA(t)
 	revoked := &revokedSet{serials: map[string]bool{}}
 	server, good, bad := hubCert(t, ca, "server"), hubCert(t, ca, "good"), hubCert(t, ca, "bad")
-	ln, err := listenTLS(t.Context(), "127.0.0.1:0", "", server, ca, revoked.check)
+	ln, err := listenTLS(t.Context(), nil, "127.0.0.1:0", "", server, ca, revoked.check)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +123,7 @@ func TestTransportRefusesRevokedHubs(t *testing.T) {
 
 	// A dialer refuses a listener whose certificate is revoked.
 	revoked.revoke(server)
-	dialer, err := listenTLS(t.Context(), "127.0.0.1:0", "", good, ca, revoked.check)
+	dialer, err := listenTLS(t.Context(), nil, "127.0.0.1:0", "", good, ca, revoked.check)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +223,7 @@ func TestRemovedHubRefusedOnRaftPort(t *testing.T) {
 	}
 
 	// A fresh handshake with the removed hub's certificate fails.
-	stream, err := listenTLS(t.Context(), "127.0.0.1:0", "", nodeCert(t, gone), leader.cfg.CA, nil)
+	stream, err := listenTLS(t.Context(), nil, "127.0.0.1:0", "", nodeCert(t, gone), leader.cfg.CA, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

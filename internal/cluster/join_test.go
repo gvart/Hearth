@@ -65,7 +65,8 @@ func joinToken(t *testing.T, n *testNode, ca *pki.CA, expires time.Time) string 
 // is a voter.
 func joinAndStart(t *testing.T, url, token, id string) *testNode {
 	t.Helper()
-	dir, addr := t.TempDir(), freeAddr(t)
+	dir, ln := t.TempDir(), heldAddr(t)
+	addr := ln.Addr().String()
 	if err := Join(t.Context(), JoinParams{URL: url, Token: token, DataDir: dir, NodeID: id, RaftAddress: addr}); err != nil {
 		t.Fatalf("Join %s: %v", id, err)
 	}
@@ -73,7 +74,7 @@ func joinAndStart(t *testing.T, url, token, id string) *testNode {
 	if err != nil {
 		t.Fatalf("load the received CA: %v", err)
 	}
-	n := startNode(t, ca, id, dir, addr, false)
+	n := startNode(t, ca, id, dir, addr, false, withListener(ln))
 	eventually(t, id+" to catch up", func() bool { return n.raft.AppliedIndex() > 0 && n.Leader().ID != "" })
 	if err := Promote(t.Context(), dir, id); err != nil {
 		t.Fatalf("Promote %s: %v", id, err)

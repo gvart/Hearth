@@ -45,7 +45,7 @@ func deviceCert(t *testing.T, ca *pki.CA) tls.Certificate {
 // a dialer only trusts such listeners.
 func TestTransportAuthenticatesHubs(t *testing.T) {
 	ca, other := newTestCA(t), newTestCA(t)
-	ln, err := listenTLS(t.Context(), "127.0.0.1:0", "", hubCert(t, ca, "server"), ca, nil)
+	ln, err := listenTLS(t.Context(), nil, "127.0.0.1:0", "", hubCert(t, ca, "server"), ca, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestTransportAuthenticatesHubs(t *testing.T) {
 		}
 	}
 	// A dialer refuses a listener whose certificate is a device's.
-	devLn, err := listenTLS(t.Context(), "127.0.0.1:0", "", deviceCert(t, ca), ca, nil)
+	devLn, err := listenTLS(t.Context(), nil, "127.0.0.1:0", "", deviceCert(t, ca), ca, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
