@@ -1,0 +1,25 @@
+internal/automation/template.go
+  s_344993999c180f::t_0521bdb0d149b1 240-242
+internal/automation/template_limits_test.go
+  s_344993999c180f::t_22eda21e6b28f1 104-105
+  s_344993999c180f::t_8bf84d9e60e3af 60
+  s_344993999c180f::t_eb10dcce44ac88 96-103
+docs/mcp.md
+  s_344993999c180f::t_a807cc1e662e1a 77
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e51db57ba1b5a9e43ea7eaf60ff8e567413c17a9",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
