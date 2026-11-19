@@ -1,0 +1,21 @@
+internal/store/migrations/00019_audit_no_replace.sql
+  s_344993999c180f::t_530b4910d986a2 1-17
+internal/store/auditreplace_test.go
+  s_344993999c180f::t_f04941d1ec8e0d 1-99
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a931ea923011336fd2b9b011f817836758b2103e",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
