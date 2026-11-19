@@ -81,15 +81,16 @@ func TestRenewalForCARotation(t *testing.T) {
 		if cert != nil {
 			t.Errorf("%s: renewed", tt.name)
 		}
-		if strings.Count(string(bundle), "BEGIN CERTIFICATE") != 2 {
-			t.Errorf("%s: the Welcome does not carry both CAs", tt.name)
+		// An agent adds a CA only with a certificate of it.
+		if bundle != nil {
+			t.Errorf("%s: the Welcome carries CAs to trust without a certificate", tt.name)
 		}
 	}
 
 	s.authority = func() error { return nil }
-	cert, _ := renew(genuine, pki.SerialString(genuine))
-	if cert == nil {
-		t.Fatal("the recorded certificate was not renewed")
+	cert, bundle := renew(genuine, pki.SerialString(genuine))
+	if cert == nil || strings.Count(string(bundle), "BEGIN CERTIFICATE") != 2 {
+		t.Fatal("the recorded certificate was not renewed with both CAs to trust")
 	}
 	renewed, err := pki.ParseCertPEM(cert)
 	if err != nil {
