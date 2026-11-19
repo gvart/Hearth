@@ -114,7 +114,7 @@ func (a *autoApprovals) Decide(_ context.Context, id, status, by string, _ time.
 }
 
 // actorKinds are every actor kind there is.
-var actorKinds = []string{ActorAdmin, ActorToken, ActorWeb, ActorJoinToken, ActorHub, ActorAutomation, ActorApprovalLink, ActorMCP}
+var actorKinds = []string{ActorAdmin, ActorToken, ActorWeb, ActorJoinToken, ActorHub, ActorAutomation, ActorApprovalLink, ActorMCP, ActorGuest}
 
 // expected is the action table written out independently of rules: its
 // class, the actor kinds it admits, and whether the configuration applies.
@@ -158,7 +158,7 @@ var expected = map[Action]struct {
 	DeviceMetrics:             {Read, []string{ActorMCP}, false},
 	DeviceLogs:                {Read, []string{ActorWeb}, false},
 	KubeRead:                  {Read, []string{ActorMCP}, false},
-	DeviceRestart:             {Safe, []string{ActorMCP}, false},
+	DeviceRestart:             {Safe, []string{ActorMCP, ActorGuest}, false},
 	DeviceExec:                {Dangerous, []string{ActorMCP}, false},
 	AutomationPlan:            {Read, []string{ActorMCP}, false},
 	AutomationApply:           {Dangerous, []string{ActorMCP, ActorWeb}, false},
@@ -184,6 +184,10 @@ var expected = map[Action]struct {
 	HubScheduledBackup:        {Dangerous, []string{ActorHub}, true},
 	TelemetrySet:              {Safe, []string{ActorWeb}, false},
 	DeviceShell:               {Dangerous, []string{ActorWeb}, false},
+	PanelSave:                 {Safe, []string{ActorWeb}, false},
+	PanelDelete:               {Safe, []string{ActorWeb}, false},
+	PanelLinkCreate:           {Safe, []string{ActorWeb}, false},
+	PanelLinkRevoke:           {Safe, []string{ActorWeb}, false},
 }
 
 func TestExpectedCoversEveryAction(t *testing.T) {
@@ -244,6 +248,8 @@ func checkDecision(t *testing.T, action Action, kind, cfgName string, cfg Config
 		want = Deny
 	case cfgName == "defaults" && exp.class == Dangerous && kind == ActorMCP:
 		want = Confirm
+	case cfgName == "defaults" && exp.class == Dangerous && kind == ActorGuest:
+		want = Deny
 	}
 
 	audit, approvals := &memAudit{}, &autoApprovals{decision: store.ApprovalApproved}
@@ -674,6 +680,37 @@ approval_notify: {channel: phone, url: "https://hearth.lan:8443"}
 	} {
 		if _, err := LoadConfig(write(body)); err == nil {
 			t.Errorf("%s: loaded, want an error", name)
+		}
+	}
+}
+
+// TestGuestNeverDangerous: a panel's guest holds an unauthenticated link, so
+// no rule may admit it to a dangerous action.
+func TestGuestNeverDangerous(t *testing.T) {
+	for _, a := range Actions() {
+		class, _ := ClassOf(a)
+		if Admits(a, ActorGuest) && class == Dangerous {
+			t.Errorf("%s is dangerous and admits %s", a, ActorGuest)
+		}
+	}
+	if !Admits(DeviceRestart, ActorGuest) || Admits(DeviceExec, ActorGuest) || Admits("no.such", ActorGuest) {
+		t.Error("Admits disagrees with the rule table")
+	}
+}
+
+// TestGuestConfigurable: an operator can hold or refuse guests' actions.
+func TestGuestConfigurable(t *testing.T) {
+	for _, tt := range []struct {
+		mode Mode
+		want string
+	}{{ModeAllow, Allow}, {ModeConfirm, Confirm}, {ModeDeny, Deny}} {
+		cfg := Config{Actors: map[string]map[Class]Mode{ActorGuest: {Safe: tt.mode}}}
+		if err := cfg.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		e := NewWithConfig(&memAudit{}, nil, cfg)
+		if got, _ := e.Check(Request{ActorKind: ActorGuest, ActorID: "panel/p1", Action: DeviceRestart}); got != tt.want {
+			t.Errorf("guest safe %s: decision = %s, want %s", tt.mode, got, tt.want)
 		}
 	}
 }
