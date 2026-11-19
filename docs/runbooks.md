@@ -96,9 +96,9 @@ most 100 steps, in a file of at most 64 KiB.
 
 - **action** takes any action of the [automation reference](automations.md), with the same fields.
   `rollback` is another action, which undoes this one.
-- **check** takes an `http`, `tcp` or `dns` check as in the automation reference, and is tried every
-  `every` until it passes or `within` has passed. It runs from the hub unless it sets `from`; see
-  [Checks from a device](#checks-from-a-device).
+- **check** takes an `http`, `tcp` or `dns` check as in the automation reference, or a `kube_node`
+  check, and is tried every `every` until it passes or `within` has passed. It runs from the hub
+  unless it sets `from`; see [Checks from a device](#checks-from-a-device).
 - **prompt** is `input` for a line of text or `confirm` for yes or no. Answering no fails the step.
   `timeout` is 1 hour by default and at most 7 days. A prompt nobody answers in time fails the step.
 - **wait** keeps its deadline across a hub restart.
@@ -126,6 +126,29 @@ only reachable from inside the device's network or on its localhost:
   `denied`; plan mode shows that denial too. An unknown device, or an agent that is offline, fails the
   step at once, without waiting for `within`.
   The check never falls back to running from the hub. Retry or roll back as for any failed step.
+
+### A Kubernetes node is Ready
+
+A `kube_node` check passes when the Node is Ready, read by the hub from a cluster it has
+[adopted](kubernetes.md), named as on the Kubernetes page:
+
+```yaml
+  - id: node-ready
+    type: check
+    check: {type: kube_node, cluster: homelab, node: pi-3}
+    within: 15m
+    every: 15s
+```
+
+- Each attempt at the step is decided as `kube.node.ready` (class `read`) on `<cluster>/<node>`, with
+  one audit entry, however often it polls. The hub reads the Node through the cluster's kubeconfig.
+- A node that is not there yet fails the check like one that is not Ready, so the step keeps trying
+  while a new node registers. A cluster the hub has not adopted fails the step at once.
+- It always runs from the hub: it has no `from`.
+
+To remove a Node object, such as the one a node leaves behind after a rollback, use the
+`kube_node_delete` action (`kube.node.delete`, dangerous) from the
+[automation reference](automations.md#kubernetes-actions).
 
 ## Vars
 
@@ -244,6 +267,7 @@ People act through a signed-in session. These actions are audited with who took 
 | `runbook.pass_over` | safe | pass over a stopped rollback step |
 | `runbook.check`    | read  | run a check step        |
 | `automation.probe` | read  | run a check step `from` a device |
+| `kube.node.ready`  | read  | run a `kube_node` check step |
 
 ## A run keeps its definition
 

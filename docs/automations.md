@@ -333,6 +333,7 @@ named by its name in Hearth:
 | `kube_cordon`     | marks a node unschedulable                                   | `kube.node.cordon`      | safe      |
 | `kube_uncordon`   | marks a node schedulable again                               | `kube.node.uncordon`    | safe      |
 | `kube_drain`      | cordons a node and evicts its pods, honouring PodDisruptionBudgets | `kube.node.drain` | dangerous |
+| `kube_node_delete` | deletes a Node object, as `kubectl delete node`; nothing to do if it is not there | `kube.node.delete` | dangerous |
 
 ```yaml
 id: nightly-web
@@ -363,6 +364,9 @@ actions:
     cluster: homelab
     node: pi-2
     timeout: 5m                  # optional, default 2m, at most 10m
+  - type: kube_node_delete
+    cluster: homelab
+    node: pi-2
 ```
 
 - Policy decides on each one before anything is sent to the cluster, with actor `automation/<id>`
@@ -371,7 +375,10 @@ actions:
 - `kube_drain` is dangerous: like `exec`, an automation may take it only when the hub grants it by
   id (`hearth hub --allow-dangerous-automation <id>` or `dangerous_automations` in the policy file),
   or when the policy file says `confirm` and an operator approves it (see [guardrails.md](guardrails.md)).
-  Without either, it is denied.
+  Without either, it is denied. `kube_node_delete` is dangerous in the same way; it is the clean-up
+  after a node was reset or its Kubernetes uninstalled, typically a [runbook](runbooks.md)'s rollback.
+  Its plan warns when the node is still Ready (its kubelet registers it again) or has pods bound to it.
+  Only automations and runbooks can take it: the web UI and MCP clients cannot.
 - A drain that runs out of time stops, leaves the node cordoned and fails the run, naming the pods
   still there.
 - With `hearth hub --automations-dry-run`, a Kubernetes action policy would allow is planned

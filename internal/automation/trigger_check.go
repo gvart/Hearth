@@ -56,11 +56,14 @@ type checkTrigger struct {
 	// req is the check; it carries the URL unredacted.
 	req *agentv1.ProbeRequest
 	// from is the device the check runs from; empty for the hub.
-	from    string
-	probers Probers
-	policy  Policy
-	clock   Clock
-	log     *slog.Logger
+	from string
+	// kubeNode, for a runbook's kube_node check, reads a Node instead of
+	// sending req.
+	kubeNode *kubeNodeCheck
+	probers  Probers
+	policy   Policy
+	clock    Clock
+	log      *slog.Logger
 }
 
 func (t *checkTrigger) Describe() string {

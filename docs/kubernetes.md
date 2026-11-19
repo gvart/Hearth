@@ -73,6 +73,11 @@ They are buttons on the Kubernetes page, `POST /api/v1/kube/clusters/{id}/action
 | Cordon, uncordon a node                   | `kube.node.cordon`, `kube.node.uncordon` | safe | Sets `spec.unschedulable`                                     |
 | Drain a node                              | `kube.node.drain`       | dangerous | Cordons it and evicts its pods (below)                                      |
 
+Automations and runbooks also have `kube_node_delete` (`kube.node.delete`, dangerous), which deletes a
+Node object, and runbooks a `kube_node` check (`kube.node.ready`, read) that passes when a node is Ready:
+see [automations](automations.md#kubernetes-actions) and [runbooks](runbooks.md#steps). Neither is a
+button on the Kubernetes page.
+
 - **Dry run first.** Every action can be planned with `"dry_run": true`: Hearth reads the objects
   involved and says what the action would do, with warnings (a pod no controller recreates, a
   `Recreate` strategy, scaling to zero, ...). The UI always shows the dry run and asks to confirm. A dry

@@ -434,7 +434,8 @@ func parseRunbookAction(n *yaml.Node, s *RunbookStep, field string, kinds Kinds,
 	return &a
 }
 
-// parseRunbookCheck builds the check in n from the http, tcp and dns triggers.
+// parseRunbookCheck builds the check in n from the http, tcp and dns
+// triggers, or a kube_node check.
 func parseRunbookCheck(n *yaml.Node, s *RunbookStep, errs *[]error) *checkTrigger {
 	if n == nil {
 		*errs = append(*errs, lineError(s.Line, "a check step needs check"))
@@ -449,6 +450,8 @@ func parseRunbookCheck(n *yaml.Node, s *RunbookStep, errs *[]error) *checkTrigge
 		"http": func(p Params) (Trigger, error) { return buildHTTPCheck(p, deps) },
 		"tcp":  func(p Params) (Trigger, error) { return buildTCPCheck(p, deps) },
 		"dns":  func(p Params) (Trigger, error) { return buildDNSCheck(p, deps) },
+		// Runbooks only: an automation reacts to the cluster's own events.
+		"kube_node": buildKubeNodeCheck,
 	}
 	list := &yaml.Node{Kind: yaml.SequenceNode, Line: n.Line, Content: []*yaml.Node{n}}
 	built := buildSteps(list, "check", builders, errs)
