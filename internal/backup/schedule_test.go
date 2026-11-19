@@ -114,8 +114,9 @@ func newScheduler(t *testing.T, b Bucket, n Notifier, now time.Time) (*Scheduler
 	s := NewScheduler(ScheduleConfig{
 		Interval: time.Hour, Keep: 3, Bucket: b, BucketName: "backups", Prefix: "hearth/",
 		Passphrase: testPassphrase,
-		Backup:     CreateOptions{DataDir: dir, Store: st, HearthVersion: "test", kdf: testKDF},
-		Policy:     policy.New(st.Audit()), Notifier: n, Channel: "phone",
+		// As the hub does by default.
+		Backup: CreateOptions{DataDir: dir, Store: st, HearthVersion: "test", WithoutCAKey: true, kdf: testKDF},
+		Policy: policy.New(st.Audit()), Notifier: n, Channel: "phone",
 		Log: slog.New(slog.DiscardHandler), now: func() time.Time { return now },
 	})
 	return s, dir, st
@@ -242,6 +243,40 @@ func TestFailedBackupIsReported(t *testing.T) {
 				t.Fatalf("audit = %+v", entries)
 			}
 		})
+	}
+}
+
+// stallingBucket accepts an upload and never answers, like a server that
+// stopped responding after the connection opened.
+type stallingBucket struct{ *memBucket }
+
+func (stallingBucket) Put(ctx context.Context, _ string, _ io.ReadSeeker, _ int64) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func TestStalledUploadFailsAndIsReported(t *testing.T) {
+	n := &fakeNotifier{sent: make(chan sentMessage, 4)}
+	s, _, st := newScheduler(t, stallingBucket{newMemBucket()}, n, time.Now())
+	s.cfg.runTime = 500 * time.Millisecond
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- s.Run(ctx) }()
+	select {
+	case m := <-n.sent:
+		if !strings.Contains(m.message, "deadline exceeded") {
+			t.Errorf("notification = %+v, want the time limit", m)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("a stalled upload was never reported")
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	entries, err := st.Audit().Query(t.Context(), store.AuditFilter{Actions: []string{string(policy.HubScheduledBackup)}}, 10)
+	if err != nil || len(entries) != 1 || !strings.HasPrefix(entries[0].Result, "error: ") {
+		t.Fatalf("audit = %+v, %v, want the failure", entries, err)
 	}
 }
 

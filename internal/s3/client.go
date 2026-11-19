@@ -102,9 +102,6 @@ func New(cfg Config) (*Client, error) {
 	}, nil
 }
 
-// Bucket is the bucket's name.
-func (c *Client) Bucket() string { return c.bucket }
-
 // objectURL is the URL of key, or of the bucket when key is empty.
 func (c *Client) objectURL(key string, query string) *url.URL {
 	u := *c.base

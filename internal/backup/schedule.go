@@ -28,6 +28,9 @@ const (
 	stampLayout = "20060102T150405Z"
 	// maxRetryAfter bounds the wait before a failed backup is tried again.
 	maxRetryAfter = time.Hour
+	// maxRunTime bounds one backup, upload and prune, so that a bucket that
+	// stops answering fails the run instead of stalling it.
+	maxRunTime = time.Hour
 )
 
 // scheduledName matches the names scheduled backups are given under the
@@ -77,6 +80,8 @@ type ScheduleConfig struct {
 
 	// now is the clock, for tests.
 	now func() time.Time
+	// runTime overrides the time limit of one run, for tests.
+	runTime time.Duration
 }
 
 // Scheduler takes a backup at every interval, uploads it and prunes the
@@ -92,6 +97,9 @@ func NewScheduler(cfg ScheduleConfig) *Scheduler {
 	}
 	if cfg.now == nil {
 		cfg.now = time.Now
+	}
+	if cfg.runTime <= 0 {
+		cfg.runTime = min(cfg.Interval, maxRunTime)
 	}
 	return &Scheduler{cfg: cfg}
 }
@@ -139,8 +147,11 @@ func (s *Scheduler) untilDue(ctx context.Context) time.Duration {
 }
 
 // RunOnce takes one backup, uploads it and prunes the bucket, as the policy
-// action hub.scheduled_backup.
+// action hub.scheduled_backup. It fails once it takes longer than the
+// interval or an hour, whichever is shorter.
 func (s *Scheduler) RunOnce(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, s.cfg.runTime)
+	defer cancel()
 	key := s.cfg.Prefix + "hearth-" + s.cfg.now().UTC().Format(stampLayout) + ".hbk"
 	// The policy engine encodes Detail after fn returns: the size and the
 	// count filled in below are audited with the outcome.
