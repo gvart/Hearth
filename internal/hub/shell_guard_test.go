@@ -519,7 +519,7 @@ func TestShellCloseDoesNotBlockOnStalledStream(t *testing.T) {
 	time.Sleep(300 * time.Millisecond) // the window fills
 	start := time.Now()
 	sh.Close()
-	if d := time.Since(start); d > shellSendTimeout+time.Second {
+	if d := time.Since(start); d > sendTimeout+time.Second {
 		t.Errorf("Close took %s", d)
 	}
 	for {
