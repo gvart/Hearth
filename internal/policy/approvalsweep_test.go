@@ -98,17 +98,17 @@ func TestSweepApprovals(t *testing.T) {
 func TestSweepApprovalsClockSkew(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()
-	real := time.Now()
+	requester := time.Now()
 	// The requester's hub holds it for ten minutes on its own clock.
 	if err := s.Approvals().Create(ctx, store.Approval{
-		ID: "live", CreatedAt: real, ExpiresAt: real.Add(10 * time.Minute), ActorKind: ActorAutomation, ActorID: "a",
+		ID: "live", CreatedAt: requester, ExpiresAt: requester.Add(10 * time.Minute), ActorKind: ActorAutomation, ActorID: "a",
 		Action: string(AutomationExec), Class: string(Dangerous), Target: "pi", Detail: []byte(sweepPlan),
 	}); err != nil {
 		t.Fatal(err)
 	}
 	leader := func(ahead time.Duration) *Engine {
 		e := NewWithConfig(s.Audit(), s.Approvals(), confirmAll(10*time.Minute))
-		e.now = func() time.Time { return real.Add(ahead) }
+		e.now = func() time.Time { return requester.Add(ahead) }
 		return e
 	}
 	// 11 minutes ahead would have expired it at once without the grace.
