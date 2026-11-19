@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/gvart/hearth/internal/automation"
+	"github.com/gvart/hearth/internal/cluster"
 	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/policy"
 	"github.com/gvart/hearth/internal/store"
@@ -33,10 +34,18 @@ const (
 	notifyName     = "notify.yaml"
 	automationsDir = "automations"
 	maxManifest    = 1 << 20
+	// maxEntryName is the longest entry name a backup can hold.
+	maxEntryName = 255
+	// completeMarker is written to the data dir as the last step of a restore.
+	completeMarker = "restore-complete"
 )
 
 // ErrDataDirNotEmpty refuses a restore over existing data.
 var ErrDataDirNotEmpty = errors.New("the data dir is not empty")
+
+// ErrIncompleteRestore means a restore stopped while it moved files into the
+// data dir. It matches ErrDataDirNotEmpty.
+var ErrIncompleteRestore = fmt.Errorf("%w: it holds an incomplete restore; empty it and restore again", ErrDataDirNotEmpty)
 
 // ErrOutputExists refuses to overwrite an existing backup.
 var ErrOutputExists = errors.New("the backup file already exists")
@@ -100,19 +109,22 @@ func Create(ctx context.Context, opts CreateOptions) (Manifest, error) {
 	if err := CheckSource(opts.DataDir, opts.Output); err != nil {
 		return Manifest{}, err
 	}
+	if err := PrepareDataDir(opts.DataDir, false); err != nil {
+		return Manifest{}, err
+	}
 	files, err := configFiles(opts)
 	if err != nil {
 		return Manifest{}, err
 	}
 	// The copy stays in the data dir, as private as the database it comes from.
-	tmp, err := os.MkdirTemp(opts.DataDir, ".backup-")
+	tmp, err := store.NewTempDir(opts.DataDir, store.BackupTempPrefix)
 	if err != nil {
 		return Manifest{}, fmt.Errorf("backup: %w", err)
 	}
 	defer func() { _ = os.RemoveAll(tmp) }()
 	snapshot := filepath.Join(tmp, dbName)
-	if err := writeSnapshot(ctx, opts.Store, snapshot); err != nil {
-		return Manifest{}, err
+	if err := opts.Store.VacuumInto(ctx, snapshot); err != nil {
+		return Manifest{}, fmt.Errorf("backup store: %w", err)
 	}
 	schema, err := opts.Store.SchemaVersion(ctx)
 	if err != nil {
@@ -146,6 +158,9 @@ type namedFile struct {
 func configFiles(opts CreateOptions) ([]namedFile, error) {
 	var out []namedFile
 	add := func(name, src string, optional bool) error {
+		if !validName(name) {
+			return fmt.Errorf("cannot back up %s: a restore could not write this file name; rename the file", name)
+		}
 		b, err := os.ReadFile(src)
 		if optional && errors.Is(err, fs.ErrNotExist) {
 			return nil
@@ -188,21 +203,6 @@ func configFiles(opts CreateOptions) ([]namedFile, error) {
 	return out, nil
 }
 
-func writeSnapshot(ctx context.Context, st *store.Store, path string) error {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-	if err != nil {
-		return fmt.Errorf("backup store: %w", err)
-	}
-	if err := st.Snapshot(ctx, f); err != nil {
-		_ = f.Close()
-		return fmt.Errorf("backup store: %w", err)
-	}
-	if err := f.Close(); err != nil {
-		return fmt.Errorf("backup store: %w", err)
-	}
-	return nil
-}
-
 // writeArchive writes the header and the sealed entries to w.
 func writeArchive(ctx context.Context, w io.Writer, passphrase string, kdf kdfParams, m Manifest, files []namedFile, snapshot string) error {
 	s, err := newSealer(w, passphrase, kdf)
@@ -240,7 +240,7 @@ func writeArchive(ctx context.Context, w io.Writer, passphrase string, kdf kdfPa
 }
 
 func writeEntry(w io.Writer, name string, size int64, r io.Reader) error {
-	head := binary.BigEndian.AppendUint16(nil, uint16(len(name))) //nolint:gosec // names are short and from a fixed set
+	head := binary.BigEndian.AppendUint16(nil, uint16(len(name))) //nolint:gosec // validName caps a name at maxEntryName bytes
 	head = append(head, name...)
 	head = binary.BigEndian.AppendUint64(head, uint64(size)) //nolint:gosec // a file size is never negative
 	if _, err := w.Write(head); err != nil {
@@ -291,10 +291,37 @@ func writeAtomic(path string, write func(io.Writer) error) (err error) {
 	if err := f.Close(); err != nil {
 		return fmt.Errorf("write backup file: %w", err)
 	}
-	if err := os.Rename(f.Name(), path); err != nil {
+	if err := publish(f.Name(), path); errors.Is(err, fs.ErrExist) {
+		return fmt.Errorf("%w: %s", ErrOutputExists, path)
+	} else if err != nil {
 		return fmt.Errorf("write backup file: %w", err)
 	}
 	syncDir(dir)
+	return nil
+}
+
+// publish moves the file src to dst, and fails with fs.ErrExist rather than
+// replace anything at dst. On a filesystem without hard links it claims the
+// name with an exclusive create, then renames over its own empty file.
+func publish(src, dst string) error {
+	err := os.Link(src, dst)
+	if err == nil {
+		return os.Remove(src)
+	}
+	if errors.Is(err, fs.ErrExist) {
+		return err
+	}
+	claim, err := os.OpenFile(dst, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	if err := claim.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(src, dst); err != nil {
+		_ = os.Remove(dst)
+		return err
+	}
 	return nil
 }
 
@@ -318,7 +345,8 @@ type RestoreOptions struct {
 	BeforeCommit func(context.Context, *store.Store) error
 }
 
-// CheckDataDir refuses a data dir that exists and holds anything.
+// CheckDataDir refuses a data dir that exists and holds anything, apart from
+// the staging directory of a restore that was killed.
 func CheckDataDir(dir string) error {
 	entries, err := os.ReadDir(dir)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -327,10 +355,56 @@ func CheckDataDir(dir string) error {
 	if err != nil {
 		return fmt.Errorf("check data dir: %w", err)
 	}
-	if len(entries) > 0 {
+	abandoned, other := false, false
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), store.RestoreTempPrefix) && store.AbandonedTempDir(e, true) {
+			abandoned = true
+		} else {
+			other = true
+		}
+	}
+	switch {
+	case abandoned && other:
+		return fmt.Errorf("%w: %s", ErrIncompleteRestore, dir)
+	case other:
 		return fmt.Errorf("%w: %s", ErrDataDirNotEmpty, dir)
 	}
 	return nil
+}
+
+// PrepareDataDir readies a hub data dir for use. It refuses one that a restore
+// is still writing or left half done, and deletes the plaintext working files
+// of operations that were killed. See store.AbandonedTempDir for selfStale.
+func PrepareDataDir(dir string, selfStale bool) error {
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("check data dir: %w", err)
+	}
+	var restoring, abandoned, content, complete bool
+	for _, e := range entries {
+		switch {
+		case e.Name() == completeMarker:
+			complete = true
+		case strings.HasPrefix(e.Name(), store.RestoreTempPrefix):
+			if store.AbandonedTempDir(e, selfStale) {
+				abandoned = true
+			} else {
+				restoring = true
+			}
+		case !store.IsTempDir(e.Name()):
+			content = true
+		}
+	}
+	switch {
+	case restoring:
+		return fmt.Errorf("a restore into %s is still running", dir)
+	case abandoned && content && !complete:
+		return fmt.Errorf("%w: %s", ErrIncompleteRestore, dir)
+	}
+	return store.RemoveAbandonedTempDirs(dir, selfStale)
 }
 
 // Restore unpacks the backup into a staging directory inside opts.DataDir,
@@ -350,29 +424,40 @@ func Restore(ctx context.Context, opts RestoreOptions) (m Manifest, err error) {
 		return Manifest{}, err
 	}
 
-	_, statErr := os.Stat(opts.DataDir)
+	info, statErr := os.Stat(opts.DataDir)
 	created := errors.Is(statErr, fs.ErrNotExist)
 	if err := os.MkdirAll(opts.DataDir, 0o700); err != nil {
 		return Manifest{}, fmt.Errorf("create data dir: %w", err)
 	}
+	defer func() {
+		switch {
+		case err == nil:
+		case created:
+			_ = os.Remove(opts.DataDir)
+		case statErr == nil:
+			_ = os.Chmod(opts.DataDir, info.Mode().Perm())
+		}
+	}()
 	if err := os.Chmod(opts.DataDir, 0o700); err != nil { //nolint:gosec // a directory needs its search bit
 		return Manifest{}, fmt.Errorf("create data dir: %w", err)
 	}
-	stage, err := os.MkdirTemp(opts.DataDir, ".restore-")
+	if err := store.RemoveAbandonedTempDirs(opts.DataDir, true); err != nil {
+		return Manifest{}, fmt.Errorf("restore: %w", err)
+	}
+	stage, err := store.NewTempDir(opts.DataDir, store.RestoreTempPrefix)
 	if err != nil {
 		return Manifest{}, fmt.Errorf("restore: %w", err)
 	}
-	defer func() {
-		_ = os.RemoveAll(stage)
-		if err != nil && created {
-			_ = os.Remove(opts.DataDir)
-		}
-	}()
+	// Runs before the deferred call above, which removes an empty data dir.
+	defer func() { _ = os.RemoveAll(stage) }()
 
 	if m, err = unpack(ctx, o, stage); err != nil {
 		return Manifest{}, err
 	}
 	if err := verifyStage(ctx, stage, opts.BeforeCommit); err != nil {
+		return Manifest{}, err
+	}
+	if err := cluster.WriteNewEpoch(stage); err != nil {
 		return Manifest{}, err
 	}
 	if err := commit(stage, opts.DataDir); err != nil {
@@ -456,7 +541,7 @@ func readEntryHead(r io.Reader) (string, int64, error) {
 	if nameLen == 0 {
 		return "", 0, nil
 	}
-	if nameLen > 255 {
+	if nameLen > maxEntryName {
 		return "", 0, ErrCorrupt
 	}
 	name := make([]byte, nameLen)
@@ -477,6 +562,9 @@ func readEntryHead(r io.Reader) (string, int64, error) {
 // validName reports whether an entry may be unpacked: a fixed set of files, and
 // automation files directly in the automations directory.
 func validName(name string) bool {
+	if len(name) > maxEntryName {
+		return false
+	}
 	switch name {
 	case dbName, pki.CACertFile, pki.CAKeyFile, policy.ConfigFile, notifyName:
 		return true
@@ -554,9 +642,11 @@ func verifyStage(ctx context.Context, stage string, beforeCommit func(context.Co
 	return nil
 }
 
-// commit moves the staged files into the data dir, the database last: a hub
-// never starts on a database without its CA. On failure it takes back what it
-// moved.
+// commit moves the staged files into the data dir without replacing anything,
+// the database last: a hub never starts on a database without its CA. The
+// marker comes after everything else, so a data dir without it, next to an
+// abandoned stage, is a restore that stopped half way. On failure commit takes
+// back what it moved.
 func commit(stage, dataDir string) (err error) {
 	entries, err := os.ReadDir(stage)
 	if err != nil {
@@ -570,24 +660,54 @@ func commit(stage, dataDir string) (err error) {
 			}
 		}
 	}()
-	move := func(name string) error {
-		dst := filepath.Join(dataDir, name)
-		if err := os.Rename(filepath.Join(stage, name), dst); err != nil {
-			return fmt.Errorf("restore %s: %w", name, err)
+	move := func(e fs.DirEntry) error {
+		src, dst := filepath.Join(stage, e.Name()), filepath.Join(dataDir, e.Name())
+		if !e.IsDir() {
+			if err := publish(src, dst); err != nil {
+				return fmt.Errorf("restore %s: %w", e.Name(), err)
+			}
+			moved = append(moved, dst)
+			return nil
+		}
+		if err := os.Mkdir(dst, 0o700); err != nil {
+			return fmt.Errorf("restore %s: %w", e.Name(), err)
 		}
 		moved = append(moved, dst)
+		files, err := os.ReadDir(src)
+		if err != nil {
+			return fmt.Errorf("restore %s: %w", e.Name(), err)
+		}
+		for _, f := range files {
+			if err := publish(filepath.Join(src, f.Name()), filepath.Join(dst, f.Name())); err != nil {
+				return fmt.Errorf("restore %s/%s: %w", e.Name(), f.Name(), err)
+			}
+		}
 		return nil
 	}
+	var db fs.DirEntry
 	for _, e := range entries {
 		if e.Name() == dbName {
+			db = e
 			continue
 		}
-		if err := move(e.Name()); err != nil {
+		if err := move(e); err != nil {
 			return err
 		}
 	}
-	if err := move(dbName); err != nil {
+	if db == nil {
+		return errors.New("restore: the staged database is missing")
+	}
+	if err := move(db); err != nil {
 		return err
+	}
+	marker := filepath.Join(dataDir, completeMarker)
+	f, err := os.OpenFile(marker, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return fmt.Errorf("restore: %w", err)
+	}
+	moved = append(moved, marker)
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("restore: %w", err)
 	}
 	syncDir(dataDir)
 	return nil

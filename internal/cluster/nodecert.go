@@ -96,11 +96,13 @@ func deriveNodeID(hostname string) (string, error) {
 
 // loadOrIssueNodeCert loads the node certificate from dir, or, when it is
 // missing or about to expire, issues a new one with the local CA key (every
-// voter holds it) and saves it.
-func loadOrIssueNodeCert(dir string, ca *pki.CA, nodeID string, now time.Time) (tls.Certificate, error) {
+// voter holds it) and saves it. A renewed certificate stays in the epoch of the
+// one it replaces; a first certificate is in epoch.
+func loadOrIssueNodeCert(dir string, ca *pki.CA, nodeID, epoch string, now time.Time) (tls.Certificate, error) {
 	certPath, keyPath := filepath.Join(dir, nodeCertFile), filepath.Join(dir, nodeKeyFile)
 	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
 	if err == nil {
+		epoch = pki.HubEpoch(cert.Leaf)
 		id, idErr := pki.HubNodeID(cert.Leaf)
 		if idErr == nil && id == nodeID && now.Add(renewBefore).Before(cert.Leaf.NotAfter) {
 			return cert, nil
@@ -121,7 +123,7 @@ func loadOrIssueNodeCert(dir string, ca *pki.CA, nodeID string, now time.Time) (
 	if err != nil {
 		return tls.Certificate{}, err
 	}
-	leaf, err := ca.SignHubCSR(csr, nodeID, now)
+	leaf, err := ca.SignHubCSRInEpoch(csr, nodeID, epoch, now)
 	if err != nil {
 		return tls.Certificate{}, err
 	}

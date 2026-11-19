@@ -146,6 +146,12 @@ func Fingerprint(cert *x509.Certificate) [sha256.Size]byte { return sha256.Sum25
 // IssueServerCert issues a fresh hub TLS certificate for hosts (DNS names or IPs).
 // The returned chain includes the CA so pinning clients can verify it.
 func (c *CA) IssueServerCert(hosts []string, now time.Time) (tls.Certificate, error) {
+	return c.IssueHubServerCert(hosts, "", now)
+}
+
+// IssueHubServerCert is IssueServerCert for a hub of cluster epoch epoch, which
+// other hubs check before they call it.
+func (c *CA) IssueHubServerCert(hosts []string, epoch string, now time.Time) (tls.Certificate, error) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return tls.Certificate{}, fmt.Errorf("generate server key: %w", err)
@@ -168,6 +174,13 @@ func (c *CA) IssueServerCert(hosts []string, now time.Time) (tls.Certificate, er
 		} else if h != "" {
 			tmpl.DNSNames = append(tmpl.DNSNames, h)
 		}
+	}
+	if epoch != "" {
+		u, err := url.Parse(hubEpochURIPrefix + epoch)
+		if err != nil {
+			return tls.Certificate{}, fmt.Errorf("hub epoch URI: %w", err)
+		}
+		tmpl.URIs = []*url.URL{u}
 	}
 	der, err := x509.CreateCertificate(rand.Reader, tmpl, c.cert, key.Public(), c.key)
 	if err != nil {

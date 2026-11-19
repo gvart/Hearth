@@ -516,7 +516,7 @@ func hubParts(t *testing.T) ([]namedFile, string) {
 		files = append(files, namedFile{name: name, data: b})
 	}
 	snapshot := filepath.Join(t.TempDir(), dbName)
-	if err := writeSnapshot(t.Context(), st, snapshot); err != nil {
+	if err := st.VacuumInto(t.Context(), snapshot); err != nil {
 		t.Fatal(err)
 	}
 	return files, snapshot
@@ -532,7 +532,7 @@ func TestRestoreRefusesNewerSchema(t *testing.T) {
 	}
 	defer st.Close()
 	snapshot := filepath.Join(t.TempDir(), dbName)
-	if err := writeSnapshot(t.Context(), st, snapshot); err != nil {
+	if err := st.VacuumInto(t.Context(), snapshot); err != nil {
 		t.Fatal(err)
 	}
 	// The manifest is checked first; the database itself is checked as well.

@@ -23,6 +23,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/gvart/hearth/internal/automation"
+	"github.com/gvart/hearth/internal/backup"
 	"github.com/gvart/hearth/internal/cluster"
 	"github.com/gvart/hearth/internal/discovery"
 	"github.com/gvart/hearth/internal/hub"
@@ -220,6 +221,9 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if err := os.MkdirAll(opts.dataDir, 0o700); err != nil {
 		return fmt.Errorf("create data dir: %w", err)
 	}
+	if err := backup.PrepareDataDir(opts.dataDir, true); err != nil {
+		return err
+	}
 	var subnets []netip.Prefix
 	var autoSubnets bool
 	if len(opts.discoverSubnets) > 0 {
@@ -288,7 +292,11 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	}
 	defer ms.Close()
 	now := time.Now()
-	serverCert, err := ca.IssueServerCert(hosts, now)
+	var epoch string
+	if node != nil {
+		epoch = node.Epoch()
+	}
+	serverCert, err := ca.IssueHubServerCert(hosts, epoch, now)
 	if err != nil {
 		return err
 	}

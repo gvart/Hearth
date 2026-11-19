@@ -31,10 +31,11 @@ const (
 	keyLen    = 32
 
 	// Limits on the KDF cost read from a file, checked before running it, so
-	// a crafted header cannot exhaust the host's memory.
-	maxKDFTime    = 16
-	maxKDFMemory  = 1 << 20 // KiB: 1 GiB
-	maxKDFThreads = 16
+	// a crafted header cannot exhaust the host. Format 1 is written at
+	// defaultKDF; these allow twice its cost per pass and per byte of memory.
+	maxKDFTime    = 6
+	maxKDFMemory  = 128 * 1024 // KiB: 128 MiB
+	maxKDFThreads = 4
 )
 
 // Errors of reading a backup.

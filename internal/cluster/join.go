@@ -127,7 +127,7 @@ func (s *JoinServer) Join(ctx context.Context, req *connect.Request[clusterv1.Jo
 			return errNodeTaken
 		}
 		now := s.now()
-		c, err := s.ca.SignHubCSR(msg.GetCsr(), msg.GetNodeId(), now)
+		c, err := s.ca.SignHubCSRInEpoch(msg.GetCsr(), msg.GetNodeId(), s.node.epoch, now)
 		if err != nil {
 			return fmt.Errorf("%w: %w", errBadCSR, err)
 		}
@@ -367,6 +367,8 @@ func Promote(ctx context.Context, dataDir, nodeID string) error {
 			ServerName:   u.Hostname(),
 			RootCAs:      roots,
 			Certificates: []tls.Certificate{cert},
+			// The leader this hub joined is of the epoch in its certificate.
+			VerifyConnection: requireEpoch(pki.HubEpoch(cert.Leaf)),
 		}}
 		defer transport.CloseIdleConnections()
 		client := clusterv1connect.NewClusterServiceClient(&http.Client{Transport: transport}, u.String())

@@ -122,9 +122,13 @@ func (w *memberWatch) isFailing(id raft.ServerID) bool {
 	return w.failing[id]
 }
 
-// checkPeerCert refuses a revoked hub node certificate. It reads the local
-// replica of the revocation table and returns any read error.
+// checkPeerCert refuses a hub node certificate of another cluster epoch, and a
+// revoked one. It reads the local replica of the revocation table and returns
+// any read error.
 func (n *Node) checkPeerCert(cert *x509.Certificate) error {
+	if pki.HubEpoch(cert) != n.epoch {
+		return errOtherEpoch
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	return n.store.Hubs().CheckCert(ctx, pki.SerialString(cert))

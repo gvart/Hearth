@@ -25,8 +25,8 @@ func (s *Store) Snapshot(ctx context.Context, w io.Writer) error {
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
 	path := filepath.Join(dir, "snapshot.db")
-	if _, err := s.db.ExecContext(ctx, `VACUUM INTO ?`, path); err != nil {
-		return fmt.Errorf("snapshot: %w", err)
+	if err := s.VacuumInto(ctx, path); err != nil {
+		return err
 	}
 	f, err := os.Open(path)
 	if err != nil {
@@ -34,6 +34,15 @@ func (s *Store) Snapshot(ctx context.Context, w io.Writer) error {
 	}
 	defer func() { _ = f.Close() }()
 	if _, err := io.Copy(w, f); err != nil {
+		return fmt.Errorf("snapshot: %w", err)
+	}
+	return nil
+}
+
+// VacuumInto writes a consistent copy of the whole database to a new file at
+// path. Writes may continue while it runs.
+func (s *Store) VacuumInto(ctx context.Context, path string) error {
+	if _, err := s.db.ExecContext(ctx, `VACUUM INTO ?`, path); err != nil {
 		return fmt.Errorf("snapshot: %w", err)
 	}
 	return nil
@@ -110,7 +119,7 @@ func (s *Store) RetireHubCerts(ctx context.Context, now time.Time) error {
 // tempDir creates a private (0700) directory next to the database, so
 // snapshot copies never leave the data dir and stay on the same filesystem.
 func (s *Store) tempDir() (string, error) {
-	return os.MkdirTemp(filepath.Dir(s.path), ".snapshot-")
+	return NewTempDir(filepath.Dir(s.path), snapshotTempPrefix)
 }
 
 func writeFile(path string, r io.Reader) error {

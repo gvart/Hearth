@@ -16,7 +16,7 @@ import (
 
 func hubCert(t *testing.T, ca *pki.CA, id string) tls.Certificate {
 	t.Helper()
-	cert, err := loadOrIssueNodeCert(t.TempDir(), ca, id, time.Now())
+	cert, err := loadOrIssueNodeCert(t.TempDir(), ca, id, "", time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

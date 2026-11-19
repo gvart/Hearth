@@ -93,6 +93,7 @@ Restore refuses, and leaves the data dir as it found it, when:
 | `wrong passphrase`                       | Use the passphrase this backup was made with                                     |
 | `the backup is corrupted or truncated`   | Use another copy of the backup                                                   |
 | `schema version not supported`           | The backup comes from a newer Hearth: install that version or a newer one        |
+| `it holds an incomplete restore`         | A restore was killed while moving files. Empty the data dir and restore again    |
 
 A filesystem's `lost+found` counts as content: restore into a subdirectory of such a mount.
 
@@ -104,6 +105,10 @@ The hub returns to the moment of the backup. Whatever happened after it is gone:
 - **A device enrolled after the backup is unknown.** Enroll it again: remove its agent data dir and
   run `hearth agent join` with a new token.
 - **Enrollment tokens** created before the backup and not yet expired are valid again until they expire.
+- **MCP tokens revoked after the backup work again.** Run `hearth mcp token revoke <name>` for each one
+  once more, and check the list with `hearth mcp token list`.
+- **Web sessions that ended after the backup work again** until they expire, including sessions you logged
+  out of. To end them all, run `hearth admin set-password`: it logs out every session.
 - Admin password changes, approvals and audit entries made after the backup are lost.
 
 ## Restoring a cluster
@@ -148,9 +153,16 @@ Agents need nothing: they try the hubs they know, and learn the new list once th
 
 ### Why the old hubs cannot interfere
 
-A restored hub has no Raft state, so it knows no peers and never contacts one. The old hubs still hold
-certificates from the same CA, though, and one that is still running would keep calling the old
-members' addresses. A restore therefore revokes every hub certificate recorded in the backup. The
-restored hub refuses those certificates on its Raft port and on hub-to-hub calls, so a forgotten old hub
-cannot disturb the new cluster. This is a safety net, not a replacement for step 1: a certificate an old
-hub renewed after the backup is not on that list.
+A restored hub has no Raft state, so it knows no peers. The old hubs still hold certificates from the
+same CA, though, and one that is still running keeps calling the old members' addresses, including the
+address the restored hub now uses.
+
+Every restore therefore starts a new **cluster epoch**: a random value in the `cluster-epoch` file, carried
+in the certificates of the restored hub and of every hub that joins it. Hubs of different epochs refuse
+each other on the Raft port and on hub-to-hub calls, in both directions. This covers hubs that joined
+after the backup, which the backup cannot know about. A restore also revokes every hub certificate
+recorded in the backup.
+
+This keeps out hubs that are merely out of date. It is not a defence against a hostile hub: every voter
+of the old cluster holds the CA key, which is why step 4 matters. If those hubs might be compromised,
+start over with a new CA instead of restoring this one.

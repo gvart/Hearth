@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -51,7 +53,9 @@ func newBackupCmd() *cobra.Command {
 			if len(passphrase) < backup.MinPassphraseLen {
 				return fmt.Errorf("the backup passphrase needs at least %d characters", backup.MinPassphraseLen)
 			}
-			return runBackup(cmd.Context(), opts, args[0], passphrase, cmd.Root().Version, cmd.OutOrStdout())
+			ctx, stop := withHangup(cmd.Context())
+			defer stop()
+			return runBackup(ctx, opts, args[0], passphrase, cmd.Root().Version, cmd.OutOrStdout())
 		},
 	}
 	cmd.Flags().StringVar(&opts.dataDir, "data-dir", defaultDataDir("hub"), "hub data directory (env HEARTH_DATA_DIR)")
@@ -129,7 +133,9 @@ func newRestoreCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return runRestore(cmd.Context(), dataDir, args[0], passphrase, cmd.OutOrStdout())
+			ctx, stop := withHangup(cmd.Context())
+			defer stop()
+			return runRestore(ctx, dataDir, args[0], passphrase, cmd.OutOrStdout())
 		},
 	}
 	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir("hub"), "hub data directory to restore into (env HEARTH_DATA_DIR)")
@@ -161,6 +167,15 @@ func runRestore(ctx context.Context, dataDir, input, passphrase string, out io.W
 		return fmt.Errorf("write result: %w", err)
 	}
 	return nil
+}
+
+// withHangup ends ctx when the terminal goes away, so that a backup or restore
+// removes its plaintext working files. Under nohup the signal stays ignored.
+func withHangup(ctx context.Context) (context.Context, context.CancelFunc) {
+	if signal.Ignored(syscall.SIGHUP) {
+		return ctx, func() {}
+	}
+	return signal.NotifyContext(ctx, syscall.SIGHUP)
 }
 
 // readPassphrase returns the passphrase from the environment or, on a terminal,
