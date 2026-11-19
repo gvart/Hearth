@@ -27,7 +27,7 @@ const (
 )
 
 // errRenderLimit is a template that renders too much.
-var errRenderLimit = errors.New("template exceeds the render limit")
+var errRenderLimit = errors.New("template exceeds the render limit (1 MiB of output, 8 MiB of text built, 100000 steps or 2 seconds)")
 
 // Text is an action's string field, which may hold Go templates over the
 // event that started the run: "{{ .Trigger.Device }}". Templates get no
@@ -39,6 +39,8 @@ type Text struct {
 	t *template.Template
 	// line is where the field is in its file, for load errors.
 	line int
+	// named says the field uses define, template or block.
+	named bool
 }
 
 // Literal is a Text that is never rendered as a template.
@@ -50,10 +52,15 @@ func (x Text) String() string { return x.raw }
 // Render executes the field's templates for ev. It stops when ctx ends, and
 // when the template renders more than the limits allow.
 func (x Text) Render(ctx context.Context, ev Event) (string, error) {
+	return x.renderWithin(ctx, ev, maxRenderTime)
+}
+
+// renderWithin is Render with limit as its time limit.
+func (x Text) renderWithin(ctx context.Context, ev Event, limit time.Duration) (string, error) {
 	if x.t == nil {
 		return x.raw, nil
 	}
-	ctx, cancel := context.WithTimeout(ctx, maxRenderTime)
+	limited, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
 	// A clone, for this render's own budget: renders may run side by side.
 	t, err := x.t.Clone()
@@ -62,8 +69,11 @@ func (x Text) Render(ctx context.Context, ev Event) (string, error) {
 	}
 	budget := renderBudget{left: maxRenderBudget}
 	t.Funcs(budget.funcs())
-	w := renderWriter{stopped: ctx.Err}
+	w := renderWriter{stopped: limited.Err}
 	if err := t.Execute(&w, ev.templateData()); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+			return "", errRenderLimit // the limit ran out, not the caller's time
+		}
 		return "", templateErr(err)
 	}
 	return w.b.String(), nil
@@ -123,59 +133,59 @@ func (p Params) Text(raw string, path ...string) (Text, error) {
 	if err != nil {
 		return Text{}, lineError(line, "%s: %v", strings.Join(path, "."), err)
 	}
-	if err := boundTemplate(t); err != nil {
-		return Text{}, lineError(line, "%s: %v", strings.Join(path, "."), err)
-	}
-	return Text{raw: raw, t: t, line: line}, nil
+	return Text{raw: raw, t: t, line: line, named: boundTemplate(t)}, nil
 }
 
-// boundTemplate refuses templates that call each other, whose depth nothing
-// else limits, and makes every loop iteration count as a step.
-func boundTemplate(t *template.Template) error {
-	if len(t.Templates()) > 1 {
-		return errors.New("define and block are not allowed")
+// boundTemplate makes every loop iteration and every call of a named template
+// count as a step, and reports whether t uses named templates.
+func boundTemplate(t *template.Template) (named bool) {
+	for _, each := range t.Templates() {
+		if each.Tree == nil || each.Root == nil {
+			continue
+		}
+		named = boundList(each.Root) || named || each.Name() != t.Name()
+		countStep(each.Root)
 	}
-	if t.Tree == nil {
-		return nil
-	}
-	return boundList(t.Root)
+	return named
 }
 
-func boundList(list *parse.ListNode) error {
+// countStep makes running list call the writer: an empty text node writes
+// nothing, but it does get written.
+func countStep(list *parse.ListNode) {
+	list.Nodes = append([]parse.Node{&parse.TextNode{NodeType: parse.NodeText}}, list.Nodes...)
+}
+
+// boundList bounds the loops in list, and reports whether it calls a named
+// template.
+func boundList(list *parse.ListNode) (named bool) {
 	if list == nil {
-		return nil
+		return false
 	}
 	for _, n := range list.Nodes {
-		if err := boundNode(n); err != nil {
-			return err
-		}
+		named = boundNode(n) || named
 	}
-	return nil
+	return named
 }
 
-func boundNode(n parse.Node) error {
+func boundNode(n parse.Node) (named bool) {
 	switch n := n.(type) {
 	case *parse.IfNode:
 		return boundBranch(&n.BranchNode)
 	case *parse.WithNode:
 		return boundBranch(&n.BranchNode)
 	case *parse.RangeNode:
-		if err := boundBranch(&n.BranchNode); err != nil {
-			return err
-		}
-		// An empty text node writes nothing, but it does call the writer.
-		n.List.Nodes = append([]parse.Node{&parse.TextNode{NodeType: parse.NodeText}}, n.List.Nodes...)
+		named = boundBranch(&n.BranchNode)
+		countStep(n.List)
+		return named
 	case *parse.TemplateNode:
-		return errors.New("template is not allowed")
+		return true
 	}
-	return nil
+	return false
 }
 
-func boundBranch(b *parse.BranchNode) error {
-	if err := boundList(b.List); err != nil {
-		return err
-	}
-	return boundList(b.ElseList)
+func boundBranch(b *parse.BranchNode) (named bool) {
+	named = boundList(b.List)
+	return boundList(b.ElseList) || named
 }
 
 // printfSize finds a width or precision too large for a message, or one
@@ -257,7 +267,9 @@ func (p Params) line(path ...string) int {
 
 // checkTemplates renders every template of a's actions for a sample firing
 // of each of its triggers, so a template that names a field some trigger
-// does not provide fails the load, at its line, rather than a run.
+// does not provide fails the load, at its line, rather than a run. A template
+// over the render limits is a warning, not a failure: one invalid file stops
+// the whole directory loading, and only that template's runs need to fail.
 func checkTemplates(a *Automation, errs *[]error) {
 	ctx, cancel := context.WithTimeout(context.Background(), maxCheckTime)
 	defer cancel()
@@ -267,12 +279,26 @@ func checkTemplates(a *Automation, errs *[]error) {
 			continue
 		}
 		for _, x := range tx.texts() {
+			if x.named {
+				a.named = append(a.named, Problem{Line: x.line, Message: fmt.Sprintf(
+					"action %s: define, template and block are not available here: edit this file on the hub", s.ID)})
+			}
 			for _, tr := range a.Triggers {
 				ev := Event{TriggerID: tr.ID, TriggerType: tr.Type, Data: tr.Impl.Sample()}
-				if _, err := x.Render(ctx, ev); err != nil {
-					*errs = append(*errs, lineError(x.line, "action %s: %v (when trigger %s fires)", s.ID, err, tr.ID))
-					break
+				_, err := x.Render(ctx, ev)
+				if err == nil {
+					continue
 				}
+				if errors.Is(err, errRenderLimit) || errors.Is(err, context.DeadlineExceeded) {
+					a.Warnings = append(a.Warnings, Problem{Line: x.line, Message: fmt.Sprintf(
+						"action %s: %v (when trigger %s fires)", s.ID, errRenderLimit, tr.ID)})
+				} else {
+					*errs = append(*errs, lineError(x.line, "action %s: %v (when trigger %s fires)", s.ID, err, tr.ID))
+				}
+				break
+			}
+			if ctx.Err() != nil {
+				return // out of time: what is left is judged when it runs
 			}
 		}
 	}

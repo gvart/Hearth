@@ -113,6 +113,7 @@ func (r *Runtime) Run(ctx context.Context) error {
 			if err != nil {
 				r.cfg.Log.ErrorContext(ctx, "automations not reloaded: invalid files", "dir", r.cfg.Dir, "err", err)
 			} else {
+				r.warn(ctx, set)
 				r.reconcile(ctx, withBuiltin(set, r.cfg.Builtin))
 			}
 		}
@@ -120,6 +121,16 @@ func (r *Runtime) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case <-tick.C:
+		}
+	}
+}
+
+// warn logs what loaded but will fail when it runs.
+func (r *Runtime) warn(ctx context.Context, set []*Automation) {
+	for _, a := range set {
+		for _, w := range a.Warnings {
+			r.cfg.Log.WarnContext(ctx, "automation loaded, but runs reaching this template will fail",
+				"file", a.File, "line", w.Line, "problem", w.Message)
 		}
 	}
 }

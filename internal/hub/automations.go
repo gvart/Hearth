@@ -263,7 +263,7 @@ func (a *api) savePolicy(p *automation.Automation) *policy.Engine {
 // parseAutomation validates a file from the web UI.
 func (a *api) parseAutomation(id string, content []byte) (*automation.Automation, error) {
 	name := automationFileName(id)
-	parsed, err := automation.Parse(name, content, a.automations.Kinds)
+	parsed, err := automation.ParseForSave(name, content, a.automations.Kinds)
 	if err != nil {
 		return nil, err
 	}

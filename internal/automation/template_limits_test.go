@@ -11,16 +11,44 @@ import (
 	"time"
 )
 
-func TestTemplatesCallingEachOtherAreRefused(t *testing.T) {
-	for name, raw := range map[string]string{
-		"define": `{{define "a"}}x{{end}}{{template "a"}}`,
-		"block":  `{{block "a" .}}x{{end}}`,
+func TestNamedTemplatesAreFound(t *testing.T) {
+	for raw, want := range map[string]bool{
+		`{{define "a"}}x{{end}}{{template "a"}}`:                            true,
+		`{{define "a"}}x{{end}}`:                                            true,
+		`{{block "a" .}}x{{end}}`:                                           true,
+		`{{if .}}{{template "a"}}{{end}}`:                                   true,
+		`{{if .}}{{else}}{{template "a"}}{{end}}`:                           true,
+		`{{with .}}{{template "a"}}{{end}}`:                                 true,
+		`{{range .}}{{template "a"}}{{end}}`:                                true,
+		`{{range .}}{{if .}}{{else}}{{template "a"}}{{end}}{{end}}`:         true,
+		`{{if .}}x{{else}}y{{end}}{{range .}}{{.}}{{end}}{{with .}}{{end}}`: false,
 	} {
-		t.Run(name, func(t *testing.T) {
-			if _, err := parseTestText(raw); err == nil {
-				t.Errorf("%s was accepted", raw)
-			}
-		})
+		text, err := parseTestText(raw)
+		if err != nil {
+			t.Errorf("%s: %v", raw, err)
+			continue
+		}
+		if text.named != want {
+			t.Errorf("%s: named = %v, want %v", raw, text.named, want)
+		}
+	}
+}
+
+// TestRenderTimeLimit: running out of the limit is the template's fault, and
+// says so; the caller's own cancellation stays what it is.
+func TestRenderTimeLimit(t *testing.T) {
+	text, err := parseTestText(`{{range 3}}x{{end}}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ev := Event{Data: map[string]any{}}
+	if _, err := text.renderWithin(t.Context(), ev, 0); !errors.Is(err, errRenderLimit) {
+		t.Errorf("out of time: %v, want the render limit", err)
+	}
+	ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+	defer cancel()
+	if _, err := text.renderWithin(ctx, ev, time.Minute); !errors.Is(err, context.DeadlineExceeded) || errors.Is(err, errRenderLimit) {
+		t.Errorf("caller out of time: %v, want its deadline", err)
 	}
 }
 

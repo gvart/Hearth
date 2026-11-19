@@ -429,10 +429,20 @@ string, and it is caught when the file is loaded: every template is tried agains
 its automation, so `{{ .Trigger.Device }}` next to a `schedule` trigger is rejected with its line.
 A `device` that renders empty fails the run.
 
-Templates are bounded, so that a file cannot exhaust the hub. A field renders at most 1 MiB, builds at
-most 8 MiB of text along the way, and takes at most 100,000 steps and 2 seconds; past that the action
-fails, and a template that does so for its sample event is refused when the file loads. A `printf`
-width or precision may have at most 3 digits. `define`, `template` and `block` are not available.
+Templates are bounded, so that a file cannot exhaust the hub. Each time a field renders, it may
+produce at most 1 MiB, build at most 8 MiB of text along the way, and take at most 100,000 steps and
+2 seconds. A `printf` width or precision may have at most 3 digits. A render over a limit fails that
+run with an error naming the limits.
+
+What happens to a file that goes further depends on how it reaches the hub:
+
+| | File on disk, or applied over MCP | Saved in the web UI |
+|---|---|---|
+| Template over a limit for its sample event | Loads, with a warning in the hub log naming the file. Runs that reach it fail. | Refused |
+| `define`, `template` or `block` | Loads and runs | Refused |
+
+A file on disk never stops the rest of the directory loading because of these limits. To change a
+file that uses `define`, `template` or `block`, edit it on the hub.
 
 `hearth automation plan` shows templates as written, and lists the fields each trigger provides.
 Policy decides on, and the audit log records, the rendered device. Run history keeps the trigger's
