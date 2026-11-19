@@ -1,0 +1,49 @@
+web/src/api/client.ts
+  s_344993999c180f::t_5499ea1002bf6e 131
+  s_344993999c180f::t_138000df28e351 531
+  s_344993999c180f::t_faf2bdd66c6023 138,140
+  s_344993999c180f::t_bef1e4abaa3735 156-187
+web/src/components/BeszelSystems.tsx
+  s_344993999c180f::t_b4e6cc4a63143f 1-122
+docs/beszel.md
+  s_344993999c180f::t_4cb42e74f99809 1-93
+web/src/components/UnmanagedHosts.tsx
+  s_344993999c180f::t_4ae2839bf4ac96 25
+docs/netalertx.md
+  s_344993999c180f::t_7b30522b98802c 18-19
+  s_344993999c180f::t_d82a296ad38ac5 1-17,20-82
+web/src/components/DevicesPage.tsx
+  s_344993999c180f::t_8f6722bc381397 6
+  s_344993999c180f::t_14eb384c51a244 142
+site/src/pages.mjs
+  s_344993999c180f::t_156fb7ed92b57b 11
+internal/hub/beszel_test.go
+  s_344993999c180f::t_ec0afd8118c636 50-57
+web/src/api/hooks.ts
+  s_344993999c180f::t_69a333519edf82 27
+  s_344993999c180f::t_66bfd10763f839 114-118
+  s_344993999c180f::t_35b3ed2e94db26 84
+web/src/index.css
+  s_344993999c180f::t_73b5e2eccd20fb 539-545
+  s_344993999c180f::t_946f1da42f9be4 1535-1538
+docs/pihole.md
+  s_344993999c180f::t_d4b2ea5a37a0c1 98
+internal/integrations/beszel/beszel_test.go
+  s_344993999c180f::t_ec0afd8118c636 123-128
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cb5cbb614e6052df6325a2db61db2bacd2e9a14c",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}

@@ -1,0 +1,40 @@
+cmd/hearth/hub.go
+  s_344993999c180f::t_b027633ef0d20e 301-302,509-512,528,531,556-558,560
+  s_344993999c180f::t_69f893dd6eda9a 559
+internal/integrations/beszel/reader.go
+  s_344993999c180f::t_b027633ef0d20e 33-35,67-69,92-96,100-101,105-108,162-165
+  s_344993999c180f::t_de13044a5f3e08 166-167
+internal/hub/beszel.go
+  s_344993999c180f::t_a8d0fed1a32ad4 36-37
+internal/integrations/beszel/beszel_test.go
+  s_344993999c180f::t_e2bcc49ee9c89f 217-247
+  s_344993999c180f::t_797732787f238a 6
+docs/beszel.md
+  s_344993999c180f::t_8b2dc1d58bd1c1 66-69
+  s_344993999c180f::t_ed17e12472c5ce 97-101
+  s_344993999c180f::t_7b361502d6c492 80
+web/src/api/client.ts
+  s_344993999c180f::t_548c44d1e88548 180-181
+web/src/components/BeszelSystems.tsx
+  s_344993999c180f::t_848aced1b34dd0 54-56
+docs/comparison.md
+  s_344993999c180f::t_3462ebe729c899 53-54,108-109,128
+internal/integrations/beszel/beszelmock/beszelmock.go
+  s_344993999c180f::t_9a2547425e643b 10-11,14-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fe8c16ae5f09fef25f22b7001c80906b5ee787c6",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
