@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
-	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -390,11 +389,12 @@ func (s *session) applyAutomation(ctx context.Context, in applyIn) (any, error) 
 		return nil, err
 	}
 	path := filepath.Join(s.cfg.AutomationsDir, a.ID+".yaml")
-	// The plan, in the approval and the audit log, is what the operator
-	// approves.
+	// The plan is what the operator approves. It quotes commands and messages,
+	// so it stays out of the audit log.
 	err = s.do(ctx, policy.Request{
 		Action: policy.AutomationApply, Target: a.ID, DryRun: in.DryRun,
-		Detail: map[string]any{"file": path, "plan": desc},
+		Detail:         map[string]any{"file": path},
+		ApprovalDetail: map[string]any{policy.DetailPlan: desc},
 	}, func(context.Context) error { return s.writeAutomation(a.ID, path, []byte(in.YAML)) })
 	if err != nil {
 		return nil, err
@@ -419,25 +419,7 @@ func (s *session) writeAutomation(id, path string, b []byte) error {
 			return fmt.Errorf("automation %s is defined in %s: edit that file instead", id, e.File)
 		}
 	}
-	if err := os.MkdirAll(s.cfg.AutomationsDir, 0o700); err != nil {
-		return fmt.Errorf("create automations dir: %w", err)
-	}
-	tmp, err := os.CreateTemp(s.cfg.AutomationsDir, ".apply-*")
-	if err != nil {
-		return fmt.Errorf("write automation: %w", err)
-	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.Write(b); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("write automation: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("write automation: %w", err)
-	}
-	if err := os.Rename(tmp.Name(), path); err != nil {
-		return fmt.Errorf("write automation: %w", err)
-	}
-	return nil
+	return automation.WriteFile(s.cfg.AutomationsDir, path, b)
 }
 
 type kubeObjectsIn struct {

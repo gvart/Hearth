@@ -49,7 +49,7 @@ actions:
 		"Shows what would happen.",
 		"- tick (fake): fires in tests",
 		"- go (manual): fires when run by hand",
-		"- check (fake): the fake condition holds — only then",
+		`- check (fake): the fake condition holds — "only then"`,
 		"1. act (fake): do the fake thing on fake-target",
 		"policy: automation.log (read), actor automation/plan-me",
 		`2. say (log): log "done"`,

@@ -1634,6 +1634,11 @@ dialog::backdrop {
   overflow-wrap: anywhere;
 }
 
+/* What is being approved is read in full, without scrolling a small box. */
+.approval-detail.approval-plan {
+  max-height: none;
+}
+
 .approval-detail {
   margin: 0;
   padding: 0.5rem 0.65rem;

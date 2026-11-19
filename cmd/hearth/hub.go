@@ -328,6 +328,21 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if _, port, err := net.SplitHostPort(opts.httpListen); err == nil && port != "0" {
 		cfg.HTTPPort = port
 	}
+	automationsDir := opts.automationsDir
+	if automationsDir == "" {
+		automationsDir = filepath.Join(opts.dataDir, "automations")
+	}
+	kinds := automation.Builtin(log)
+	maps.Copy(kinds.Triggers, automation.Triggers(automation.TriggerDeps{
+		Devices: hub.AutomationDevices(reg),
+		Network: hub.AutomationNetwork(reg),
+		Metrics: hub.AutomationMetrics(st, prom, ms),
+		Probers: agents,
+		Policy:  pol,
+		Log:     log,
+	}))
+	maps.Copy(kinds.Actions, automation.Actions(automation.ActionDeps{Agents: agents, Notifier: notifier, Kube: kube}))
+	cfg.AutomationsDir, cfg.AutomationKinds = automationsDir, kinds
 	errLog := slog.NewLogLogger(log.Handler(), slog.LevelWarn)
 	baseCtx := func(net.Listener) context.Context { return ctx }
 	// The UI and API, served on both listeners. Over TLS they share the agent
@@ -336,10 +351,6 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	uiMux := http.NewServeMux()
 	uiMux.Handle("/", webH)
 	uiMux.Handle("GET /api/v1/events", hub.EndOnStop(stopping, webH))
-	automationsDir := opts.automationsDir
-	if automationsDir == "" {
-		automationsDir = filepath.Join(opts.dataDir, "automations")
-	}
 	if node != nil {
 		node.SetConfigSource(cluster.FileConfigSource(policyDigest, notifyDigest, automationsDir))
 	}
@@ -399,16 +410,6 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	logAttrs = append(logAttrs, "prometheus", prom != nil, "pihole", opts.piholeURL != "", "dhcp_lease_files", len(opts.dhcpLeases))
 	log.InfoContext(ctx, "hub listening", logAttrs...)
 
-	kinds := automation.Builtin(log)
-	maps.Copy(kinds.Triggers, automation.Triggers(automation.TriggerDeps{
-		Devices: hub.AutomationDevices(reg),
-		Network: hub.AutomationNetwork(reg),
-		Metrics: hub.AutomationMetrics(st, prom, ms),
-		Probers: agents,
-		Policy:  pol,
-		Log:     log,
-	}))
-	maps.Copy(kinds.Actions, automation.Actions(automation.ActionDeps{Agents: agents, Notifier: notifier, Kube: kube}))
 	var builtin []*automation.Automation
 	if opts.newDeviceAlerts != "" {
 		a, err := automation.NewDeviceAlerts(opts.newDeviceAlerts, kinds)

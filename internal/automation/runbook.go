@@ -3,6 +3,7 @@
 package automation
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"maps"
@@ -466,7 +467,9 @@ func checkRunbookTemplates(rb *Runbook, errs *[]error) {
 		ev := runbookEvent(rb.ID, time.Time{}, inputFor(a.Impl, plain, secrets))
 		failed := false
 		for _, x := range tx.texts() {
-			if _, err := x.Render(ev); err != nil {
+			_, err := x.Render(context.Background(), ev)
+			// Over the render limits costs that run, not the runbook's load.
+			if err != nil && !errors.Is(err, errRenderLimit) {
 				failed = true
 				*errs = append(*errs, lineError(x.line, "step %s: %s", a.ID, runbookTemplateErr(a.Impl, err)))
 			}

@@ -32,6 +32,13 @@ tasks:
       # the race detector needs cgo, release builds stay CGO_ENABLED=0.
       - CGO_ENABLED=1 go test -race ./...
 
+  test:web:
+    desc: Run the web UI's tests (the automation editor's YAML round trip)
+    deps: [web:deps]
+    dir: web
+    cmds:
+      - npm test
+
   lint:
     desc: Run golangci-lint, eslint and tsc
     deps: [web:deps]

@@ -439,8 +439,12 @@ func TestApplyAutomation(t *testing.T) {
 		t.Fatalf("file = %q, %v", b, err)
 	}
 	e := f.lastAudit(t)
-	if e.Action != string(policy.AutomationApply) || e.Target != "hello" || e.Decision != policy.Allow || !strings.Contains(string(e.Detail), "Automation hello") {
+	if e.Action != string(policy.AutomationApply) || e.Target != "hello" || e.Decision != policy.Allow || !strings.Contains(string(e.Detail), "hello.yaml") {
 		t.Errorf("audit = %+v", e)
+	}
+	// The plan quotes commands and messages: it is for an approver only.
+	if strings.Contains(string(e.Detail), "Automation hello") {
+		t.Errorf("the audit entry holds the plan: %s", e.Detail)
 	}
 	// Another file with the same id would break the hub's reload.
 	if err := os.Rename(path, filepath.Join(f.dir, "other.yaml")); err != nil {

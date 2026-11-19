@@ -41,6 +41,7 @@ jobs:
           version: ${{ env.GOLANGCI_LINT_VERSION }}
           install-only: true
       - run: task lint
+      - run: task test:web
       - name: go.mod is tidy
         run: |
           go mod tidy -diff

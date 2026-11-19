@@ -190,6 +190,24 @@ func Parse(name string, b []byte, kinds Kinds) (*Automation, error) {
 	return a, nil
 }
 
+// ParseForSave validates a new version of a file, written through the web UI.
+// It is stricter than Parse, which must keep loading the files a hub already
+// runs: it also refuses named templates and templates over the render limits.
+func ParseForSave(name string, b []byte, kinds Kinds) (*Automation, error) {
+	a, err := Parse(name, b, kinds)
+	if err != nil {
+		return nil, err
+	}
+	var errs []error
+	for _, p := range slices.Concat(a.named, a.Warnings) {
+		errs = append(errs, lineError(p.Line, "%s", p.Message))
+	}
+	if len(errs) > 0 {
+		return nil, &LoadError{File: name, Errs: errs}
+	}
+	return a, nil
+}
+
 // checkStepIDs requires every step id to be well formed and unique in its
 // automation.
 func checkStepIDs(a *Automation, errs *[]error) {

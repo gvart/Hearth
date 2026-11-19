@@ -103,6 +103,12 @@ type Automation struct {
 	Actions     []Step[Action]
 	// File is the file it was loaded from.
 	File string
+	// Warnings are templates over the render limits for their sample event.
+	// The automation loads, and the runs that reach them fail.
+	Warnings []Problem
+	// named are the fields using define, template or block, which load from
+	// disk but which ParseForSave refuses.
+	named []Problem
 	// sum identifies the file's content: an automation whose file has not
 	// changed keeps running across a reload.
 	sum [32]byte

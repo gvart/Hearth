@@ -206,19 +206,19 @@ func (a *kubeAction) Target() Text          { return a.target }
 func (a *kubeAction) texts() []Text         { return []Text{a.cluster, a.namespace, a.name} }
 
 // render returns the cluster and the request for ev.
-func (a *kubeAction) render(ev Event) (string, kubernetes.ActionRequest, error) {
+func (a *kubeAction) render(ctx context.Context, ev Event) (string, kubernetes.ActionRequest, error) {
 	if a.kube == nil {
 		return "", kubernetes.ActionRequest{}, errors.New("this hub runs no Kubernetes integration")
 	}
-	cluster, err := a.cluster.Render(ev)
+	cluster, err := a.cluster.Render(ctx, ev)
 	if err != nil {
 		return "", kubernetes.ActionRequest{}, err
 	}
 	req := a.req
-	if req.Namespace, err = a.namespace.Render(ev); err != nil {
+	if req.Namespace, err = a.namespace.Render(ctx, ev); err != nil {
 		return "", kubernetes.ActionRequest{}, err
 	}
-	if req.Name, err = a.name.Render(ev); err != nil {
+	if req.Name, err = a.name.Render(ctx, ev); err != nil {
 		return "", kubernetes.ActionRequest{}, err
 	}
 	return cluster, req, nil
@@ -227,7 +227,7 @@ func (a *kubeAction) render(ev Event) (string, kubernetes.ActionRequest, error) 
 // Run carries the action out. The runtime calls it inside the policy
 // decision on it, which RunAction checks.
 func (a *kubeAction) Run(ctx context.Context, ev Event) error {
-	cluster, req, err := a.render(ev)
+	cluster, req, err := a.render(ctx, ev)
 	if err != nil {
 		return err
 	}
@@ -243,7 +243,7 @@ func (a *kubeAction) Run(ctx context.Context, ev Event) error {
 // Plan reads, and changes nothing: what the action would do now, for a
 // dry run.
 func (a *kubeAction) Plan(ctx context.Context, ev Event) (string, error) {
-	cluster, req, err := a.render(ev)
+	cluster, req, err := a.render(ctx, ev)
 	if err != nil {
 		return "", err
 	}

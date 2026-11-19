@@ -38,6 +38,11 @@ The most specific setting wins: a grant in `dangerous_automations` (or `hearth h
 --allow-dangerous-automation <id>`, added to the file's list), then `actors`, then `classes`, then
 the defaults. Unknown keys, classes, modes or actor kinds are errors: the hub refuses to start.
 
+A grant in `dangerous_automations` follows the automation's id, not the content of its file. Saving a
+file from the web UI with a dangerous action that the automation could then run without asking anyone,
+by such a grant or an `allow` mode, therefore always waits for approval, whatever the modes say, and is
+refused on a hub that cannot hold approvals.
+
 Some actions are never held or denied by the file: logging in, enrolling a device, joining and
 promoting hubs (each proves itself with a credential, mid-protocol), setting the admin password (the
 way back in), and approving or denying an approval itself.
@@ -122,7 +127,8 @@ report no ceiling, and the hub sends them no actions until they are upgraded.
 - Automations: `hearth hub --automations-dry-run` audits every action's decision and runs none
   (Kubernetes actions it would allow are planned, and the plan recorded in the run; triggers still
   watch, so checks `from` a device still run, as they change nothing);
-  `hearth automation plan <file>` checks a file without touching policy.
+  `hearth automation plan <file>` checks a file without touching policy. The web UI's automation
+  editor has a **Dry run** button: see [automations.md](automations.md#the-visual-editor).
 
 ## Audit log
 

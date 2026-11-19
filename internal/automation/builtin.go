@@ -75,7 +75,7 @@ func (a *logAction) Policy() policy.Action { return policy.AutomationLog }
 func (a *logAction) Target() Text { return Literal("") }
 
 func (a *logAction) Run(ctx context.Context, ev Event) error {
-	msg, err := a.message.Render(ev)
+	msg, err := a.message.Render(ctx, ev)
 	if err != nil {
 		return err
 	}

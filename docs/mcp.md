@@ -74,7 +74,7 @@ exit code, not the output. The command it runs is in the approval and the audit 
 operator sees what they approve: keep secrets out of commands.
 
 `apply_automation` writes `<id>.yaml` to the hub's automations directory, which the hub then loads;
-its plan is in the approval and the audit log. Every action also takes `dry_run`: the decision is
+its plan is in the approval, and the audit log names only the file. Every action also takes `dry_run`: the decision is
 audited, and nothing runs.
 
 ## Approvals

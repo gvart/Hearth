@@ -36,6 +36,10 @@ type Request struct {
 	Target    string
 	// Detail is marshalled into the audit entry. It must never contain secrets.
 	Detail map[string]any
+	// ApprovalDetail is added to Detail in the approval of a held request, and
+	// is never audited: it is for what only the approver should read, such as
+	// DetailPlan.
+	ApprovalDetail map[string]any
 	// DryRun decides on the request and audits the decision with the result
 	// DryRun, and never runs it nor holds it for approval. Do then returns
 	// nil, unless the request would be denied.
@@ -321,6 +325,11 @@ func (e *Engine) record(ctx context.Context, req Request, decision, result strin
 	return nil
 }
 
+// DetailPlan is the key, in Request.ApprovalDetail, of the plan of what a held
+// request would do. A plan quotes commands and messages, which may hold
+// secrets: only a signed-in approver is shown it.
+const DetailPlan = "plan"
+
 // DetailOmitted is the key of the placeholder detail of an entry whose
 // request detail nested too deep for the audit log (see detailJSON).
 const DetailOmitted = "detail_omitted"
@@ -356,7 +365,7 @@ func (e *Engine) hold(ctx context.Context, req Request, class Class) (decision, 
 	if e.approvals == nil {
 		return Deny, "needs approval, which this hub cannot hold", nil, nil
 	}
-	detail, err := detailJSON(req.Detail, nil)
+	detail, err := detailJSON(req.Detail, req.ApprovalDetail)
 	if err != nil {
 		return "", "", nil, fmt.Errorf("audit %s: encode detail: %w", req.Action, err)
 	}

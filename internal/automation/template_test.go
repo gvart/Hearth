@@ -161,7 +161,7 @@ func TestTemplateMissingKeyAtRunIsAnError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = text.Render(Event{TriggerID: "t", Data: map[string]any{}})
+	_, err = text.Render(t.Context(), Event{TriggerID: "t", Data: map[string]any{}})
 	wantErrContains(t, err, "device: .Trigger.Device: no such field")
 
 	a := &agentAction{agents: &fakeAgents{}, device: text, req: func() *agentv1.ExecRequest { return &agentv1.ExecRequest{} }}

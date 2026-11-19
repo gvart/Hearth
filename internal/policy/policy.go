@@ -113,7 +113,8 @@ const (
 	// do, for an MCP client. Nothing runs.
 	AutomationPlan Action = "automation.plan"
 	// AutomationApply writes an automation file to the hub's automations
-	// directory, for an MCP client; the hub then loads and runs it.
+	// directory, for an MCP client or the web UI's automation editor; the hub
+	// then loads and runs it.
 	AutomationApply Action = "automation.apply"
 	// MCPTokenCreate creates a bearer token for an MCP client.
 	MCPTokenCreate Action = "mcp.token.create" //nolint:gosec // an action name
@@ -286,7 +287,7 @@ var rules = map[Action]rule{
 	AutomationPlan: {class: Read, actors: []string{ActorMCP}},
 	// An applied automation runs on its own, again and again, long after the
 	// request: as dangerous as anything it may do.
-	AutomationApply: {class: Dangerous, actors: []string{ActorMCP}},
+	AutomationApply: {class: Dangerous, actors: []string{ActorMCP, ActorWeb}},
 	// A token may carry the dangerous scope; revoking one only takes access
 	// away.
 	MCPTokenCreate: {class: Dangerous, actors: []string{ActorAdmin}},
