@@ -1,0 +1,35 @@
+docs/runbooks.md
+  s_344993999c180f::t_ad3ad7643ee419 130-162
+  s_344993999c180f::t_d275d23a5d404f 214-215
+internal/automation/runbook_vars_test.go
+  s_344993999c180f::t_7efe3942f21a96 1-41,43-149
+  s_344993999c180f::t_c78d73888203f0 42
+internal/automation/runbook_engine.go
+  s_344993999c180f::t_0ac02d151dac94 165-168
+  s_344993999c180f::t_65202ef0ab57bd 179
+  s_344993999c180f::t_d9fc9e790f694a 164
+cmd/hearth/runbook.go
+  s_344993999c180f::t_3c93587a7c8640 355-360
+  s_344993999c180f::t_6affe221109298 13,17
+internal/automation/runbook.go
+  s_344993999c180f::t_5eadd12e2c689d 224,232-233,235,240-244
+  s_344993999c180f::t_2a5fd18fb74b1e 245,549-632
+  s_344993999c180f::t_66d124912fe8c5 11
+  s_344993999c180f::t_403d790ddb16ab 64-67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "201e5dd57645d0e6501497facdf9c2887bdb668c",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
