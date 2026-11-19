@@ -15,10 +15,12 @@ the audit log. Three guardrails sit on top of the built-in action table:
 `<data-dir>/policy.yaml` on the hub host. The hub reads it at start; CLI commands on the hub host
 read it on every run. Without it, every action the table allows is allowed, except dangerous actions
 of automations, which are denied unless granted, and dangerous actions of MCP clients, which are held
-for approval ([mcp.md](mcp.md)).
+for approval ([mcp.md](mcp.md)). The holder of a panel's share link is the actor `guest`
+([panels.md](panels.md)): it may only take the read and safe actions a panel allows, and setting
+`actors: {guest: {safe: confirm}}` holds each of them for approval.
 
 ```yaml
-classes:                 # for every operator client: admin (CLI), web (UI), automation, mcp
+classes:                 # for every operator client: admin (CLI), web (UI), automation, mcp, guest
   read: allow
   safe: allow
   dangerous: confirm     # allow | confirm | deny
