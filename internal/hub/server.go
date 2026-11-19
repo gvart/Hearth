@@ -89,6 +89,12 @@ type Config struct {
 	// Runbooks serves the runbooks under /api/v1/runbooks and
 	// /api/v1/runbook-runs. Nil disables them.
 	Runbooks *automation.Runbooks
+	// AutomationsDir is the directory of automation files the web UI's editor
+	// reads and writes under /api/v1/automations. Empty disables it.
+	AutomationsDir string
+	// AutomationKinds are the step types the hub runs: the editor validates
+	// files with them, as the hub will when it loads them.
+	AutomationKinds automation.Kinds
 }
 
 // NewHandler serves EnrollService to anyone (the token is the credential) and

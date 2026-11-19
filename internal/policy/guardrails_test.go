@@ -154,7 +154,7 @@ var expected = map[Action]struct {
 	DeviceRestart:             {Safe, []string{ActorMCP}, false},
 	DeviceExec:                {Dangerous, []string{ActorMCP}, false},
 	AutomationPlan:            {Read, []string{ActorMCP}, false},
-	AutomationApply:           {Dangerous, []string{ActorMCP}, false},
+	AutomationApply:           {Dangerous, []string{ActorMCP, ActorWeb}, false},
 	MCPTokenCreate:            {Dangerous, []string{ActorAdmin}, false},
 	MCPTokenRevoke:            {Safe, []string{ActorAdmin}, false},
 	NetworkScan:               {Read, []string{ActorHub}, false},

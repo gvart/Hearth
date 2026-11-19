@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gvart/hearth/internal/automation"
@@ -78,11 +79,12 @@ func newAPI(cfg Config) *api {
 		proxmox: cfg.Proxmox,
 		notify:  cfg.Notify,
 		verify:  newVerifyGate(), verifyWait: verifyWait, verifyPassword: verifier,
-		logins:     newLoginLimiter(time.Now, loginBurst, loginEvery),
-		metrics:    cfg.Metrics,
-		drift:      cfg.ConfigDrift,
-		runbooks:   cfg.Runbooks,
-		leadership: leadershipOf(cfg),
+		logins:      newLoginLimiter(time.Now, loginBurst, loginEvery),
+		metrics:     cfg.Metrics,
+		drift:       cfg.ConfigDrift,
+		runbooks:    cfg.Runbooks,
+		leadership:  leadershipOf(cfg),
+		automations: automation.Files{Dir: cfg.AutomationsDir, Kinds: cfg.AutomationKinds},
 		// Only a release tag is pinned: dev builds have no release to install.
 		installVersion: releaseVersion(cfg.Version),
 	}
@@ -108,6 +110,7 @@ func (a *api) routes() http.Handler {
 	a.kubeRoutes(mux)
 	a.proxmoxRoutes(mux)
 	a.notifyRoutes(mux)
+	a.automationRoutes(mux)
 	mux.Handle("GET /api/v1/cluster/config-drift", a.auth(a.configDrift))
 	mux.Handle("GET /api/v1/audit", a.auth(a.listAudit))
 	mux.Handle("GET /api/v1/approvals", a.auth(a.listApprovals))
@@ -187,6 +190,10 @@ type api struct {
 	runbooks *automation.Runbooks
 	// leadership names the cluster's leader, where secret answers must go.
 	leadership Leadership
+	// automations are the files the automation editor reads and writes.
+	automations automation.Files
+	// automationsMu makes each save's check and write one step.
+	automationsMu sync.Mutex
 	// installVersion is the --version install commands pin, or "" for none.
 	installVersion string
 }

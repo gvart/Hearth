@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
-	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -419,25 +418,7 @@ func (s *session) writeAutomation(id, path string, b []byte) error {
 			return fmt.Errorf("automation %s is defined in %s: edit that file instead", id, e.File)
 		}
 	}
-	if err := os.MkdirAll(s.cfg.AutomationsDir, 0o700); err != nil {
-		return fmt.Errorf("create automations dir: %w", err)
-	}
-	tmp, err := os.CreateTemp(s.cfg.AutomationsDir, ".apply-*")
-	if err != nil {
-		return fmt.Errorf("write automation: %w", err)
-	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.Write(b); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("write automation: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("write automation: %w", err)
-	}
-	if err := os.Rename(tmp.Name(), path); err != nil {
-		return fmt.Errorf("write automation: %w", err)
-	}
-	return nil
+	return automation.WriteFile(s.cfg.AutomationsDir, path, b)
 }
 
 type kubeObjectsIn struct {
