@@ -289,6 +289,19 @@ func TestCARotationThreeHubs(t *testing.T) {
 			return true
 		})
 	}
+	// A member forwards a record of only the node certificate it presents:
+	// recorded fingerprints decide the pins.
+	other := mintHubCert(t, leader.ca, follower.ID())
+	own := follower.stream.currentCert().Leaf
+	for name, rec := range map[string]store.RecordHubCert{
+		"another certificate":    {Serial: pki.SerialString(other.Leaf), NodeID: follower.ID(), Fingerprint: pki.FingerprintHex(other.Leaf)},
+		"another fingerprint":    {Serial: pki.SerialString(own), NodeID: follower.ID(), Fingerprint: pki.FingerprintHex(other.Leaf)},
+		"another hub's identity": {Serial: pki.SerialString(own), NodeID: leader.ID(), Fingerprint: pki.FingerprintHex(own)},
+	} {
+		if _, _, err := follower.forwardWrite(ctx, leader.ID(), leader.Addr(), rec); connect.CodeOf(err) != connect.CodePermissionDenied {
+			t.Errorf("forwarded record of %s = %v, want PermissionDenied", name, err)
+		}
+	}
 	plan, err := leader.RotateCA(ctx, RotateOptions{DryRun: true})
 	if err != nil || len(plan.Pins) != 3 || leader.ca.Next() != nil {
 		t.Fatalf("dry run = %+v, %v; want 3 pins and no next CA", plan, err)
@@ -401,8 +414,14 @@ func TestCARotationThreeHubs(t *testing.T) {
 	if _, err := leader.Apply(ctx, store.AdvanceCARotation{NewCAFP: newFP, From: store.CAStageStarted, To: store.CAStageCutover}); !errors.Is(err, errRotationViaLog) {
 		t.Errorf("Apply(advance_ca_rotation) = %v, want errRotationViaLog", err)
 	}
-	if _, err := follower.ApplyOrForward(ctx, store.ResealSecrets{NewCAFP: newFP}); err == nil {
-		t.Error("a forwarded reseal_secrets was applied")
+	advance := store.AdvanceCARotation{NewCAFP: newFP, From: store.CAStageStarted, To: store.CAStageCutover}
+	if _, err := follower.ApplyOrForward(ctx, advance); !errors.Is(err, errRotationViaLog) {
+		t.Errorf("ApplyOrForward(advance_ca_rotation) on a follower = %v, want errRotationViaLog", err)
+	}
+	// The leader refuses one forwarded to it too.
+	if _, _, err := follower.forwardWrite(ctx, leader.ID(), leader.Addr(), advance); err == nil ||
+		!strings.Contains(err.Error(), errRotationViaLog.Error()) {
+		t.Errorf("forwarded advance_ca_rotation = %v, want the leader to refuse it", err)
 	}
 	tok, err := pki.ParseJoinToken(joinToken(t, leader.testNode, leader.ca, time.Now().Add(time.Hour)))
 	if err != nil {

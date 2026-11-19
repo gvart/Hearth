@@ -101,6 +101,30 @@ func (s *AgentStream) renewal(ctx context.Context, log *slog.Logger, deviceID st
 	return pki.EncodeCertPEM(c), bundle
 }
 
+// rotationState names the latest hub CA rotation and its stage, or is empty;
+// ok is false when the store could not tell.
+// A stream whose Welcome saw another state is ended on its next heartbeat,
+// so that the agent reconnects and its Welcome carries the renewal and the
+// CAs to trust: agents connected when a rotation starts renew without a hub
+// restart, and drop the old CA once it finishes.
+func (s *AgentStream) rotationState(ctx context.Context) (string, bool) {
+	if s.rotations == nil {
+		return "", true
+	}
+	rot, err := s.rotations.Latest(ctx)
+	if errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrSchemaTooOld) {
+		return "", true
+	} else if err != nil {
+		return "", false // unknown: checked again on the next heartbeat
+	}
+	return rot.NewCAFP + "/" + rot.Stage, true
+}
+
+// errRotationMoved ends a stream to hand the agent what a hub CA rotation
+// changed; the agent reconnects at once.
+var errRotationMoved = connect.NewError(connect.CodeUnavailable,
+	errors.New("the hub CA rotation moved on: reconnect"))
+
 // errUntrustedCA ends a stream whose client certificate is of a CA the hub
 // no longer trusts: one opened before a hub CA rotation finished.
 var errUntrustedCA = connect.NewError(connect.CodeUnauthenticated,

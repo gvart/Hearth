@@ -116,6 +116,7 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 	}
 	pinned := s.pinCert(ctx, log, deviceID)
 	cert, bundle := s.renewal(ctx, log, deviceID)
+	rotation, _ := s.rotationState(ctx)
 
 	welcome := &agentv1.HubMessage{Payload: &agentv1.HubMessage_Welcome{Welcome: &agentv1.Welcome{
 		ServerTime:        timestamppb.New(s.now()),
@@ -160,6 +161,10 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 			log.DebugContext(ctx, "heartbeat")
 			if err := s.recheckCert(ctx, log, deviceID); err != nil {
 				return err
+			}
+			if now, ok := s.rotationState(ctx); ok && now != rotation {
+				log.InfoContext(ctx, "agent stream ended: the hub CA rotation moved on; the agent reconnects for its certificate and CAs")
+				return errRotationMoved
 			}
 			if !pinned {
 				pinned = s.pinCert(ctx, log, deviceID)

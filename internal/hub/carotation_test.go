@@ -147,4 +147,12 @@ func TestRequireClientCertRefusesUntrustedCA(t *testing.T) {
 	if code := serve(); code == http.StatusNoContent {
 		t.Fatal("an old-CA client certificate is accepted after the finish")
 	}
+	// A stream opened before the finish ends on its next heartbeat.
+	s := NewAgentStream(slog.New(slog.DiscardHandler), time.Second, NewRegistry(RegistryConfig{Store: st}))
+	s.ca, s.certs = ca, st.Certs()
+	c := context.WithValue(withDeviceID(t.Context(), "pi"), serialKey{}, pki.SerialString(leaf))
+	c = context.WithValue(c, chainKey{}, []*x509.Certificate{leaf})
+	if err := s.recheckCert(c, s.log, "pi"); !errors.Is(err, errUntrustedCA) {
+		t.Errorf("recheckCert of an old-CA stream after the finish = %v, want errUntrustedCA", err)
+	}
 }

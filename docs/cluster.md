@@ -325,7 +325,10 @@ hub's CA, delete `ca.crt` and `ca.key` and enroll every agent again.
 - **Enroll and join tokens** made before the finish name the old CA and stop working: create new ones.
   No hub can join while a rotation is under way.
 - **Backups taken before the finish still hold the old key** if they were taken with it. A backup taken
-  during the rotation holds both CAs and restores as such; one taken after holds only the new CA.
+  during the rotation holds both CAs and restores as such; one taken after holds only the new CA. A
+  cluster restored from a backup taken during the rotation is a rotation under way: finish it on the
+  restored hub before the others join again (see [Restoring a cluster](backup.md#restoring-a-cluster)).
+  A standalone hub restored from one keeps trusting both CAs, as rotation needs a cluster.
   Destroy the old ones if the key's leak was the reason to rotate.
 
 What a rotation does not undo: until the finish, whoever holds the old key can still pose as a hub to

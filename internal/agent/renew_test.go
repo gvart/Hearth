@@ -5,7 +5,6 @@ package agent_test
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -46,10 +45,8 @@ func TestRunRenewsForCARotation(t *testing.T) {
 	}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	h.stop()
-	h.start()
-
-	// One connection renews, the next uses the renewed certificate.
+	// No hub restart: the open stream ends on its next heartbeat, the next
+	// connection renews, and the one after uses the renewed certificate.
 	waitFor(t, 10*time.Second, "the agent to reconnect with its renewed certificate", connected(3))
 	pair, err := tls.LoadX509KeyPair(filepath.Join(dataDir, agent.CertFile), filepath.Join(dataDir, agent.KeyFile))
 	if err != nil {
@@ -87,26 +84,23 @@ func TestRunRenewsForCARotation(t *testing.T) {
 	if err := h.ca.Finish(); err != nil {
 		t.Fatal(err)
 	}
-	h.stop()
-	h.start()
 	waitFor(t, 10*time.Second, "the agent to reconnect and drop the old CA", func() bool {
 		b, err := os.ReadFile(filepath.Join(dataDir, agent.CAFile))
 		return err == nil && strings.Count(string(b), "BEGIN CERTIFICATE") == 1 && connected(5)()
 	})
 	a.assertRunning(t)
 
-	// The old certificate is refused once the old CA is gone.
+	// The old certificate is refused once the old CA is gone: the hub ends
+	// the handshake.
 	pool := x509.NewCertPool()
 	pool.AddCert(h.ca.Cert())
-	c := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{
-		MinVersion: tls.VersionTLS13, RootCAs: pool, Certificates: []tls.Certificate{oldPair},
-	}}}
-	defer c.CloseIdleConnections()
-	resp, err := c.Get(h.url + "/api/v1/devices")
+	c, err := tls.Dial("tcp", h.addr, &tls.Config{MinVersion: tls.VersionTLS13, RootCAs: pool, Certificates: []tls.Certificate{oldPair}})
 	if err == nil {
-		_ = resp.Body.Close()
-		if resp.StatusCode < 400 {
-			t.Errorf("the old agent certificate got %s after the finish", resp.Status)
-		}
+		defer func() { _ = c.Close() }()
+		_ = c.SetDeadline(time.Now().Add(2 * time.Second))
+		_, err = c.Read(make([]byte, 1))
+	}
+	if err == nil || !strings.Contains(err.Error(), "certificate") {
+		t.Errorf("the old agent certificate after the finish: %v, want a handshake refusal", err)
 	}
 }
