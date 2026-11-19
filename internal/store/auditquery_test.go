@@ -5,6 +5,7 @@ package store
 import (
 	"encoding/json"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -124,6 +125,74 @@ func TestAuditQueryOneRowPerAction(t *testing.T) {
 	}
 	if len(page) != 1 || page[0].ID != 1 || page[0].Result != "ok" {
 		t.Errorf("older page = %+v, want action 1 with its outcome", page)
+	}
+}
+
+// nestedJSON returns a JSON array nested depth levels deep.
+func nestedJSON(depth int) json.RawMessage {
+	return json.RawMessage(strings.Repeat("[", depth) + strings.Repeat("]", depth))
+}
+
+// TestAuditAppendLimitsDetailDepth: a detail nested too deep for the log's
+// readers is refused when written.
+func TestAuditAppendLimitsDetailDepth(t *testing.T) {
+	tests := []struct {
+		name    string
+		detail  json.RawMessage
+		wantErr bool
+	}{
+		{"at the limit", nestedJSON(maxAuditDetailDepth), false},
+		{"over the limit", nestedJSON(maxAuditDetailDepth + 1), true},
+		{"what SQLite cannot parse", nestedJSON(1001), true},
+		{"objects count too", json.RawMessage(strings.Repeat(`{"a":`, maxAuditDetailDepth+1) + "1" + strings.Repeat("}", maxAuditDetailDepth+1)), true},
+		{"brackets in a string do not", json.RawMessage(`{"a":"` + strings.Repeat("[", maxAuditDetailDepth+1) + `"}`), false},
+		{"an escaped quote does not end a string", json.RawMessage(`{"a":"\"` + strings.Repeat("[", maxAuditDetailDepth+1) + `"}`), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := openTest(t).Audit().Append(t.Context(), AuditEntry{
+				ActorKind: "admin", ActorID: "root", Action: "device.revoke", Decision: "allow", Detail: tt.detail,
+			})
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Append = %v, want error %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestAuditQueryReadsARowSQLiteCannotParse: a detail SQLite's JSON functions
+// reject, such as one written before the depth limit, must not take the rest
+// of the log down with it.
+func TestAuditQueryReadsARowSQLiteCannotParse(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	add := func(action, result, detail string) {
+		t.Helper()
+		// Through the applier, as a row already in the replicated log arrives.
+		if _, err := s.apply(ctx, AppendAudit{
+			TS: toMillis(time.Now()), ActorKind: "admin", ActorID: "root", Action: action,
+			Decision: "allow", Result: result, Detail: detail,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	deep := string(nestedJSON(1001))
+	add("device.revoke", "started", `{"audit_op":"x"}`)
+	add("device.exec", "ok", deep)
+	add("device.revoke", "ok", `{"audit_outcome_of":"x"}`)
+
+	got, err := s.Audit().List(ctx, 10)
+	if err != nil {
+		t.Fatalf("the log is unreadable: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d rows, want 2: %+v", len(got), got)
+	}
+	if got[0].Action != "device.exec" || string(got[0].Detail) != deep {
+		t.Errorf("row = %s, want the deep row as written", got[0].Action)
+	}
+	if got[1].Action != "device.revoke" || got[1].Result != "ok" {
+		t.Errorf("row = %+v, want the action folded with its outcome", got[1])
 	}
 }
 

@@ -36,6 +36,35 @@ const (
 	AuditOutcomeOfKey = "audit_outcome_of"
 )
 
+// maxAuditDetailDepth is how deep an entry's Detail may nest. SQLite's JSON
+// functions give up at 1000 levels; no entry comes close to this.
+const maxAuditDetailDepth = 64
+
+// auditOutcomeOfSQL is the operation an entry reports the outcome of, if any.
+// A detail SQLite cannot parse has none, instead of failing the whole query.
+const auditOutcomeOfSQL = `CASE WHEN json_valid(detail) THEN json_extract(detail, '$.` + AuditOutcomeOfKey + `') END`
+
+// jsonDepth returns how deep the valid JSON document b nests.
+func jsonDepth(b []byte) int {
+	depth, deepest, inString := 0, 0, false
+	for i := 0; i < len(b); i++ {
+		switch c := b[i]; {
+		case inString && c == '\\':
+			i++
+		case inString:
+			inString = c != '"'
+		case c == '"':
+			inString = true
+		case c == '[' || c == '{':
+			depth++
+			deepest = max(deepest, depth)
+		case c == ']' || c == '}':
+			depth--
+		}
+	}
+	return deepest
+}
+
 // Audit is the repository for the audit log. Append is the only write path:
 // there is no update or delete, and the schema rejects both.
 type Audit struct{ s *Store }
@@ -54,6 +83,9 @@ func (r Audit) Append(ctx context.Context, e AuditEntry) (int64, error) {
 	}
 	if !json.Valid(detail) {
 		return 0, errors.New("append audit: detail is not valid JSON")
+	}
+	if jsonDepth(detail) > maxAuditDetailDepth {
+		return 0, fmt.Errorf("append audit: detail nests deeper than %d levels", maxAuditDetailDepth)
 	}
 	if e.TS.IsZero() {
 		e.TS = time.Now()
@@ -116,9 +148,9 @@ func (r Audit) Query(ctx context.Context, f AuditFilter, limit int) ([]AuditEntr
 	}
 	rows, err := r.s.db.QueryContext(ctx, `
 		SELECT id, ts, actor_kind, actor_id, action, target, decision, result, detail,
-		       coalesce(json_extract(detail, '$.`+AuditOpKey+`'), '')
+		       coalesce(CASE WHEN json_valid(detail) THEN json_extract(detail, '$.`+AuditOpKey+`') END, '')
 		FROM audit_log
-		WHERE json_extract(detail, '$.`+AuditOutcomeOfKey+`') IS NULL
+		WHERE `+auditOutcomeOfSQL+` IS NULL
 		  AND (?1 = '' OR actor_kind = ?1)
 		  AND (?2 = '' OR instr(actor_id, ?2) > 0)
 		  AND (?3 = '[]' OR action IN (SELECT value FROM json_each(?3)))
@@ -179,9 +211,9 @@ func (r Audit) foldOutcomes(ctx context.Context, out []AuditEntry, ops map[strin
 		return err
 	}
 	rows, err := r.s.db.QueryContext(ctx, `
-		SELECT json_extract(detail, '$.`+AuditOutcomeOfKey+`'), result, detail
+		SELECT `+auditOutcomeOfSQL+`, result, detail
 		FROM audit_log
-		WHERE id > ?1 AND json_extract(detail, '$.`+AuditOutcomeOfKey+`') IN (SELECT value FROM json_each(?2))`,
+		WHERE id > ?1 AND `+auditOutcomeOfSQL+` IN (SELECT value FROM json_each(?2))`,
 		oldest, string(ids))
 	if err != nil {
 		return err
@@ -198,24 +230,25 @@ func (r Audit) foldOutcomes(ctx context.Context, out []AuditEntry, ops map[strin
 		return err
 	}
 	for _, i := range ops {
-		detail, err := withoutOpKeys(out[i].Detail)
-		if err != nil {
-			return err
-		}
-		out[i].Detail = detail
+		out[i].Detail = withoutOpKeys(out[i].Detail)
 	}
 	return nil
 }
 
-// withoutOpKeys returns detail without the keys that tie an action's entries.
-func withoutOpKeys(detail json.RawMessage) (json.RawMessage, error) {
+// withoutOpKeys returns detail without the keys that tie an action's entries,
+// or as it is if it cannot be read: one odd row must not hide the log.
+func withoutOpKeys(detail json.RawMessage) json.RawMessage {
 	var m map[string]json.RawMessage
 	if err := json.Unmarshal(detail, &m); err != nil {
-		return nil, err
+		return detail
 	}
 	delete(m, AuditOpKey)
 	delete(m, AuditOutcomeOfKey)
-	return json.Marshal(m)
+	out, err := json.Marshal(m)
+	if err != nil {
+		return detail
+	}
+	return out
 }
 
 func nonNilStrings(s []string) []string {

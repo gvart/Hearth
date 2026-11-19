@@ -380,18 +380,26 @@ func TestEngineDoOutcomeAuditFailure(t *testing.T) {
 		runErr   error
 		auditErr error
 		wantIs   []error
+		wantNot  []error
 		wantMsg  string
 	}{
-		{"action ok, audit fails", nil, disk, []error{disk}, "token.create ran, but its outcome was not recorded: audit token.create: disk full"},
+		{
+			"action ok, audit fails", nil, disk,
+			[]error{ErrOutcomeNotRecorded},
+			[]error{disk},
+			"token.create ran, but its outcome was not recorded: audit token.create: disk full",
+		},
 		{
 			"same cause reported once", fmt.Errorf("create token: %w", unavailable), unavailable,
-			[]error{store.ErrUnavailable},
-			"create token: forward: " + store.ErrUnavailable.Error() + " (the audit entry was not written either)",
+			[]error{store.ErrUnavailable, ErrOutcomeNotRecorded},
+			nil,
+			"create token: forward: " + store.ErrUnavailable.Error() + " (its outcome was not recorded either)",
 		},
 		{
 			"different causes both kept", store.ErrTokenUsed, disk,
-			[]error{store.ErrTokenUsed, disk},
-			store.ErrTokenUsed.Error() + "\ntoken.create ran, but its outcome was not recorded: audit token.create: disk full",
+			[]error{store.ErrTokenUsed, ErrOutcomeNotRecorded},
+			[]error{disk},
+			store.ErrTokenUsed.Error() + " (its outcome was not recorded: audit token.create: disk full)",
 		},
 	}
 	for _, tt := range tests {
@@ -401,6 +409,11 @@ func TestEngineDoOutcomeAuditFailure(t *testing.T) {
 			for _, target := range tt.wantIs {
 				if !errors.Is(err, target) {
 					t.Errorf("err = %v, want it to match %v", err, target)
+				}
+			}
+			for _, target := range tt.wantNot {
+				if errors.Is(err, target) {
+					t.Errorf("err = %v, want it not to match %v", err, target)
 				}
 			}
 			if err == nil || err.Error() != tt.wantMsg {

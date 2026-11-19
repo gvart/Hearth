@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -188,11 +189,84 @@ func TestUnfinishedActionIsNotASuccess(t *testing.T) {
 	audit := &scriptedAudit{failFrom: 2, err: errAuditDown}
 	err := New(audit).Do(t.Context(), Request{ActorKind: ActorAdmin, ActorID: "root", Action: DeviceRevoke},
 		func(context.Context) error { return nil })
-	if !errors.Is(err, errAuditDown) {
-		t.Errorf("err = %v, want the failed outcome write reported", err)
+	if !errors.Is(err, ErrOutcomeNotRecorded) {
+		t.Errorf("err = %v, want ErrOutcomeNotRecorded", err)
 	}
 	if got := audit.all(); len(got) != 1 || got[0].Result != Started {
 		t.Errorf("audit = %+v, want one entry still %q", got, Started)
+	}
+}
+
+// TestOutcomeNotRecordedIsNotUnavailable: an action that ran must not read as
+// the retryable "nothing happened" of a cluster without a leader.
+func TestOutcomeNotRecordedIsNotUnavailable(t *testing.T) {
+	audit := &scriptedAudit{failFrom: 2, err: store.ErrUnavailable}
+	err := New(audit).Do(t.Context(), Request{ActorKind: ActorAdmin, ActorID: "root", Action: DeviceRevoke},
+		func(context.Context) error { return nil })
+	if !errors.Is(err, ErrOutcomeNotRecorded) {
+		t.Errorf("err = %v, want ErrOutcomeNotRecorded", err)
+	}
+	if errors.Is(err, store.ErrUnavailable) {
+		t.Errorf("err = %v matches store.ErrUnavailable, but the action ran", err)
+	}
+}
+
+// TestDecisionThatTookEffectIsASuccess: an approval that committed is not
+// reported as failed because its outcome entry could not be written. A retry
+// could only be told the approval is closed.
+func TestDecisionThatTookEffectIsASuccess(t *testing.T) {
+	approvals := &decisionLog{audit: &memAudit{}}
+	id := heldApproval(t, approvals)
+	audit := &scriptedAudit{failFrom: 2, err: store.ErrUnavailable}
+	if err := NewWithConfig(audit, approvals, Config{}).Decide(t.Context(), ActorWeb, "192.0.2.1", id, true); err != nil {
+		t.Errorf("Decide = %v, want success: the approval took effect", err)
+	}
+	ap, err := approvals.Get(t.Context(), id)
+	if err != nil || ap.Status != store.ApprovalApproved {
+		t.Errorf("approval = %+v, %v; want it approved", ap, err)
+	}
+	if got := audit.all(); len(got) != 1 || got[0].Result != Started {
+		t.Errorf("audit = %+v, want the decision still shown as started", got)
+	}
+}
+
+// TestDecisionThatFailedStaysAFailure: losing the outcome entry does not turn
+// a decision that did not take effect into a success.
+func TestDecisionThatFailedStaysAFailure(t *testing.T) {
+	approvals := &decisionLog{audit: &memAudit{}, decideErr: store.ErrApprovalClosed}
+	id := heldApproval(t, approvals)
+	audit := &scriptedAudit{failFrom: 2, err: store.ErrUnavailable}
+	err := NewWithConfig(audit, approvals, Config{}).Decide(t.Context(), ActorWeb, "192.0.2.1", id, true)
+	if !errors.Is(err, store.ErrApprovalClosed) || !errors.Is(err, ErrOutcomeNotRecorded) {
+		t.Errorf("Decide = %v, want ErrApprovalClosed and ErrOutcomeNotRecorded", err)
+	}
+}
+
+// TestReservedDetailKeysCannotHideAnEntry: the keys that tie an action's
+// entries belong to the engine, whatever a request's Detail says.
+func TestReservedDetailKeysCannotHideAnEntry(t *testing.T) {
+	for _, key := range []string{store.AuditOpKey, store.AuditOutcomeOfKey} {
+		t.Run(key, func(t *testing.T) {
+			s, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "hearth.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = s.Close() })
+			req := Request{
+				ActorKind: ActorMCP, ActorID: "claude", Action: DeviceRead, Target: "pi",
+				Detail: map[string]any{key: "forged", "query": "pi"},
+			}
+			if err := New(s.Audit()).Do(t.Context(), req, func(context.Context) error { return nil }); err != nil {
+				t.Fatal(err)
+			}
+			got, err := s.Audit().List(t.Context(), 10)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(got) != 1 || got[0].Result != ReadAllowed || string(got[0].Detail) != `{"query":"pi"}` {
+				t.Fatalf("audit = %+v, want the entry visible without the forged key", got)
+			}
+		})
 	}
 }
 
