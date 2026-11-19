@@ -3,6 +3,7 @@
 package main
 
 import (
+	"crypto/rand"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,9 +13,6 @@ import (
 	"github.com/gvart/hearth/internal/policy"
 	"github.com/gvart/hearth/internal/store"
 )
-
-// approvalTestPassword is the admin password the approval tests set.
-const approvalTestPassword = "approver-pw-4b7f"
 
 func writePolicy(t *testing.T, dir, body string) {
 	t.Helper()
@@ -27,6 +25,8 @@ func writePolicy(t *testing.T, dir, body string) {
 // approve`, then runs.
 func TestApprovalFlow(t *testing.T) {
 	dir, _ := initHub(t)
+	// The admin password, made at run time.
+	adminPW := rand.Text()
 	writePolicy(t, dir, "classes: {dangerous: confirm}\n")
 	st := openStore(t, dir)
 	if err := st.Devices().Upsert(t.Context(), store.Device{ID: "pi", Status: store.StatusUnknown}); err != nil {
@@ -65,11 +65,11 @@ func TestApprovalFlow(t *testing.T) {
 		t.Fatalf("approval list = %v\n%s", err, out)
 	}
 	// Without an admin password set, nothing can approve.
-	if out, err := executeWithStdin(t, approvalTestPassword+"\n", "approval", "approve", id, "--data-dir", dir); err == nil ||
+	if out, err := executeWithStdin(t, adminPW+"\n", "approval", "approve", id, "--data-dir", dir); err == nil ||
 		!strings.Contains(err.Error(), "admin password not set") {
 		t.Fatalf("approve without an admin password = %v\n%s", err, out)
 	}
-	if out, err := executeWithStdin(t, approvalTestPassword+"\n", "admin", "set-password", "--data-dir", dir); err != nil {
+	if out, err := executeWithStdin(t, adminPW+"\n", "admin", "set-password", "--data-dir", dir); err != nil {
 		t.Fatalf("set-password = %v\n%s", err, out)
 	}
 	// Approving needs the admin password, on stdin here; a missing or wrong
@@ -86,7 +86,7 @@ func TestApprovalFlow(t *testing.T) {
 			t.Fatalf("approval after a refused approve = %+v, %v", ap, err)
 		}
 	}
-	if out, err := executeWithStdin(t, approvalTestPassword+"\n", "approval", "approve", id, "--data-dir", dir); err != nil || !strings.Contains(out, "Approved "+id) {
+	if out, err := executeWithStdin(t, adminPW+"\n", "approval", "approve", id, "--data-dir", dir); err != nil || !strings.Contains(out, "Approved "+id) {
 		t.Fatalf("approve = %v\n%s", err, out)
 	}
 	r := <-done
