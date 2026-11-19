@@ -1,0 +1,60 @@
+internal/store/store_test.go
+  s_344993999c180f::t_61d90f0f7b03ed 54
+internal/store/pins_test.go
+  s_344993999c180f::t_eadfe6d8e91b15 47-48,51-52,55-60,63-65,74-84
+  s_344993999c180f::t_58ae68a75a196e 198-202
+  s_344993999c180f::t_61d90f0f7b03ed 145,161
+internal/hub/revoke_test.go
+  s_344993999c180f::t_3a2497cec4886a 7,30,33-35,67,77-79
+internal/store/command.go
+  s_344993999c180f::t_a843990ce81e80 57-58
+  s_344993999c180f::t_61d90f0f7b03ed 309,497
+internal/store/command_test.go
+  s_344993999c180f::t_99ecd0f7bada98 41,298-299
+internal/cluster/migrate_test.go
+  s_344993999c180f::t_384ca205bb4660 605-618,620-648,650-655
+  s_344993999c180f::t_ddcb62449c54b8 619,649
+  s_344993999c180f::t_d233ee6755f773 656
+internal/hub/server.go
+  s_344993999c180f::t_68686a41f698a3 132
+  s_344993999c180f::t_9de6c2405268cd 334,338,340-344
+internal/store/migrations/00023_ca_rotation.sql
+  s_344993999c180f::t_a73fff5447f1cb 2,7-9,11-13,18,25
+internal/integrations/kubernetes/seal.go
+  s_344993999c180f::t_6c6a53c16d1a99 107-112,114
+internal/store/pins.go
+  s_344993999c180f::t_3076dd6f70c939 85-107,109-133,135-136,138-147,149,153-156,161-162,171-180,182-188,190-192
+  s_344993999c180f::t_61d90f0f7b03ed 13,16,52,68,168,204
+  s_344993999c180f::t_a8779033abba62 10,14-15
+internal/hub/agentstream.go
+  s_344993999c180f::t_68686a41f698a3 7,20,48-50,111,155-157,337
+  s_344993999c180f::t_aa6cf67691f374 261-266,269-286,288-290,292-295,299-300,303-309,311-313,315-316,318-336,338-340
+internal/store/hubs.go
+  s_344993999c180f::t_61d90f0f7b03ed 141
+internal/integrations/kubernetes/seal_test.go
+  s_344993999c180f::t_0e2cc141476de3 100-102
+  s_344993999c180f::t_e2691ef6c3ce8d 7
+internal/hub/certpin_test.go
+  s_344993999c180f::t_08e250060587d6 11,20,113
+  s_344993999c180f::t_52e6c5fd721279 61-82,91,99-100,102-103,112,114-118,121-123,129-131,135-139,143-148,153-185
+internal/cluster/members.go
+  s_344993999c180f::t_3ea1bcaab5753f 230-240
+  s_344993999c180f::t_f34020c041689f 199,203-204,209-215
+  s_344993999c180f::t_7ab891e455619e 173
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "851a9794fe7aceb45fcaedfbfec7843a1acf2e4a",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
