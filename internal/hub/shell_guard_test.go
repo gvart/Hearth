@@ -244,9 +244,9 @@ func (a *switchAudit) Append(ctx context.Context, e store.AuditEntry) (int64, er
 	return a.Auditor.Append(ctx, e)
 }
 
-// TestTerminalUnauditedShellIsClosed is the audit log failing after the shell
-// started: a shell without an audit entry does not stay.
-func TestTerminalUnauditedShellIsClosed(t *testing.T) {
+// TestTerminalUnauditedShellIsNotOpened is the audit log failing: a shell
+// whose audit entry cannot be written first is never asked of the agent.
+func TestTerminalUnauditedShellIsNotOpened(t *testing.T) {
 	t.Parallel()
 	audit := &switchAudit{}
 	f := newTerminalFixture(t, false, func(c *Config) {
@@ -261,16 +261,10 @@ func TestTerminalUnauditedShellIsClosed(t *testing.T) {
 	if m, _ := next(t, ws); m.Type != "error" {
 		t.Fatalf("message = %+v, want an error", m)
 	}
-	if req := <-f.got; req.GetOpen() == nil {
-		t.Fatalf("first request = %v, want open", req)
-	}
 	select {
 	case req := <-f.got:
-		if req.GetClose() == nil {
-			t.Fatalf("request = %v, want close", req)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("the unaudited shell was left running")
+		t.Fatalf("agent got %v for a shell without an audit entry", req)
+	case <-time.After(500 * time.Millisecond):
 	}
 }
 
