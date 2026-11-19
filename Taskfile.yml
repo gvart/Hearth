@@ -100,7 +100,7 @@ tasks:
     cmds:
       # Inline so a CGO_ENABLED from the caller's shell can never produce a cgo binary.
       # The -gcflags match .goreleaser.yaml, which explains them.
-      - CGO_ENABLED=0 go build -trimpath -gcflags=all=-l -gcflags=modernc.org/...= -gcflags=runtime= -gcflags=runtime/...= -gcflags=sync= -gcflags=sync/...= -gcflags=internal/...= -ldflags "{{.LDFLAGS}}" -o {{.BIN}} ./cmd/hearth
+      - CGO_ENABLED=0 go build -trimpath -gcflags=all=-l -gcflags=modernc.org/...= -gcflags=runtime= -gcflags=runtime/...= -gcflags=sync= -gcflags=sync/...= -gcflags=internal/...= -gcflags=crypto/...= -gcflags=encoding/...= -gcflags=google.golang.org/protobuf/...= -gcflags=connectrpc.com/...= -ldflags "{{.LDFLAGS}}" -o {{.BIN}} ./cmd/hearth
 
   web:deps:
     internal: true
