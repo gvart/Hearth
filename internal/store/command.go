@@ -289,7 +289,7 @@ func (c SetHubURL) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
 // RecordHubCert records a hub node certificate issued to a cluster node.
 // Recording a known serial again is a no-op: it never clears a revocation.
 //
-// From schema 23 it also records the certificate's Fingerprint and the
+// From CertPinsSchema it also records the certificate's Fingerprint and the
 // fingerprint of the CA that issued it (CAFP), and fills them in for a known
 // serial of the same node recorded without them. Below that schema they are
 // dropped, the same way on every node.
@@ -479,7 +479,7 @@ func (c ConsumeJoinToken) apply(ctx context.Context, tx *sql.Tx) (Result, error)
 	}
 }
 
-// CreateCert records a certificate issued to a device. From schema 23 it also
+// CreateCert records a certificate issued to a device. From CertPinsSchema it also
 // records the certificate's Fingerprint and the fingerprint of the CA that
 // issued it (CAFP); below that schema they are dropped, the same way on every
 // node.

@@ -129,7 +129,7 @@ func TestHubCertFingerprints(t *testing.T) {
 	}
 }
 
-// Below schema 23 the fingerprints are not recorded and nothing is pinned,
+// Below CertPinsSchema the fingerprints are not recorded and nothing is pinned,
 // the same way on every node.
 func TestCertFingerprintsBeforeSchema(t *testing.T) {
 	ctx := t.Context()
@@ -159,7 +159,7 @@ func TestCertFingerprintsBeforeSchema(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = s.Close() })
 	if s.AtSchema(ctx, CertPinsSchema) {
-		t.Fatal("AtSchema(23) at schema 22 = true")
+		t.Fatal("AtSchema(CertPinsSchema) below it = true")
 	}
 
 	now := time.UnixMilli(1_700_000_000_000)

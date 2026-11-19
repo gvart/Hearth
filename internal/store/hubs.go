@@ -124,7 +124,7 @@ type HubCert struct {
 	Revoked bool
 	// Fingerprint and CAFP are the SHA-256 of the certificate and of the
 	// CA that issued it, as pki.FingerprintHex; empty when not recorded,
-	// as before schema 23.
+	// as before CertPinsSchema.
 	Fingerprint string
 	CAFP        string
 }

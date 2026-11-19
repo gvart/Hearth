@@ -10,10 +10,10 @@ import (
 	"time"
 )
 
-// CertPinsSchema is the schema version whose migration (00023) added the
+// CertPinsSchema is the schema version whose migration (00024_cert_pins.sql) added the
 // certificate fingerprints. Below it no fingerprint is recorded and no
 // device certificate is pinned.
-const CertPinsSchema = 23
+const CertPinsSchema = 24
 
 // atSchema reports whether the database behind q is at schema min or newer.
 func atSchema(ctx context.Context, q querier, minVersion int64) (bool, error) {
@@ -42,7 +42,7 @@ type CertRecord struct {
 }
 
 // Record records a certificate issued to a device, as Create does, with its
-// fingerprints. Below schema 23 the fingerprints are left out of the command:
+// fingerprints. Below CertPinsSchema the fingerprints are left out of the command:
 // a hub whose binary predates them could not decode it.
 func (r Certs) Record(ctx context.Context, c CertRecord) error {
 	if c.Serial == "" || c.DeviceID == "" {
@@ -62,8 +62,8 @@ func (r Certs) Record(ctx context.Context, c CertRecord) error {
 
 // Fingerprint returns the fingerprint recorded for the certificate with
 // serial issued to deviceID: empty when none is, as for a certificate issued
-// before schema 23 and not pinned since. It fails with ErrNotFound for an
-// unknown certificate and with ErrSchemaTooOld below schema 23.
+// before CertPinsSchema and not pinned since. It fails with ErrNotFound for an
+// unknown certificate and with ErrSchemaTooOld below CertPinsSchema.
 func (r Certs) Fingerprint(ctx context.Context, serial, deviceID string) (string, error) {
 	if ok, err := atSchema(ctx, r.s.db, CertPinsSchema); err != nil {
 		return "", fmt.Errorf("cert fingerprint %s: %w", serial, err)
@@ -100,10 +100,10 @@ const (
 // Pin records fingerprint and caFP, the fingerprint of the CA that issued it,
 // for the certificate with serial issued to deviceID, unless a fingerprint is
 // recorded already: trust on first use, for a certificate issued before
-// schema 23. A recorded fingerprint that differs is a certificate someone
+// CertPinsSchema. A recorded fingerprint that differs is a certificate someone
 // minted with the CA key: the first such sighting is recorded with its time,
 // now. It fails with ErrNotFound for an unknown certificate and with
-// ErrSchemaTooOld below schema 23, before proposing anything.
+// ErrSchemaTooOld below CertPinsSchema, before proposing anything.
 func (r Certs) Pin(ctx context.Context, serial, deviceID, fingerprint, caFP string, now time.Time) (PinOutcome, error) {
 	if serial == "" || deviceID == "" || fingerprint == "" {
 		return PinKept, errors.New("pin cert: serial, device ID and fingerprint are required")
@@ -127,7 +127,7 @@ func (r Certs) Pin(ctx context.Context, serial, deviceID, fingerprint, caFP stri
 }
 
 // PinMismatches returns the serials of device deviceID's certificates whose
-// mismatch was recorded (see Pin); none below schema 23.
+// mismatch was recorded (see Pin); none below CertPinsSchema.
 func (r Certs) PinMismatches(ctx context.Context, deviceID string) ([]string, error) {
 	if ok, err := atSchema(ctx, r.s.db, CertPinsSchema); err != nil || !ok {
 		return nil, err
@@ -194,7 +194,7 @@ func (c PinCert) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
 
 // Record records a hub node certificate issued to c.NodeID, as RecordCert
 // does, with its fingerprints, which it also fills in for a serial recorded
-// without them. Below schema 23 the fingerprints are left out of the command:
+// without them. Below CertPinsSchema the fingerprints are left out of the command:
 // a hub whose binary predates them could not decode it.
 func (r Hubs) Record(ctx context.Context, c HubCert) error {
 	if c.Serial == "" || c.NodeID == "" {

@@ -273,7 +273,7 @@ const ActionCertMismatch = "agent.cert_mismatch"
 // pinCert records the fingerprint of the stream's client certificate, and
 // its CA's, when none is recorded for its serial: trust on first use, for a
 // certificate issued before the hub recorded fingerprints at enrollment
-// (schema 23). A hub CA rotation renews only a certificate whose exact
+// (store.CertPinsSchema). A hub CA rotation renews only a certificate whose exact
 // fingerprint is recorded, since its serial and device ID are in every copy
 // of the database. A certificate whose serial has another fingerprint was
 // minted by someone else with the CA key: the first sighting is recorded on
