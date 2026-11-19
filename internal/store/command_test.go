@@ -18,6 +18,7 @@ import (
 // allCommands has one value of every Command type, with every field set.
 func allCommands() []Command {
 	boot := int64(1_699_999_000_000)
+	exp := int64(31)
 	return []Command{
 		UpsertDevice{
 			ID: "pi", Name: "Pi", Hostname: "pi.lan", OS: "linux", Arch: "arm64",
@@ -77,6 +78,11 @@ func allCommands() []Command {
 		SetNetworkHostState{MAC: "aa:bb:cc:dd:ee:ff", State: HostIgnored},
 		SetTelemetry{Enabled: true, InstallID: "0123456789abcdef", At: 25},
 		MarkTelemetrySent{InstallID: "0123456789abcdef", At: 26},
+		CreatePanel{ID: "p1", Name: "Hall", Widgets: `[{"id":"w1"}]`, At: 27},
+		UpdatePanel{ID: "p1", Name: "Hallway", Widgets: `[]`, At: 28},
+		DeletePanel{ID: "p1"},
+		CreatePanelLink{ID: "l1", PanelID: "p1", Hash: []byte{1, 2}, CreatedAt: 29, ExpiresAt: &exp},
+		RevokePanelLink{PanelID: "p1", ID: "l1", At: 30},
 		RecordNetworkImport{At: 24, Hosts: []ImportedHost{
 			{
 				MAC: "2c:cf:67:00:00:01", IP: "192.168.2.171", Hostname: "pi5", HostnameSource: SourcePihole,
@@ -374,6 +380,19 @@ func runScenario(t *testing.T, s *Store) {
 	must(s.Telemetry().MarkSent(ctx, "0123456789abcdef", at(7*time.Hour+time.Minute)))
 	must(s.Telemetry().Set(ctx, false, "", at(8*time.Hour)))
 	wantErr(s.Telemetry().MarkSent(ctx, "0123456789abcdef", at(8*time.Hour)), ErrNotFound)
+	// A panel shared by two links, one revoked; a second panel deleted with its link.
+	must(s.Panels().Create(ctx, Panel{ID: "p1", Name: "Hall", Widgets: `[]`, CreatedAt: at(9 * time.Hour)}))
+	must(s.Panels().Update(ctx, Panel{ID: "p1", Name: "Hallway", Widgets: `[{"id":"w1"}]`}, at(9*time.Hour+time.Minute)))
+	wantErr(s.Panels().Update(ctx, Panel{ID: "nope", Name: "x", Widgets: `[]`}, at(9*time.Hour)), ErrNotFound)
+	must(s.Panels().CreateLink(ctx, PanelLink{ID: "l1", PanelID: "p1", CreatedAt: at(9 * time.Hour)}, "panel-secret-1"))
+	must(s.Panels().CreateLink(ctx, PanelLink{ID: "l2", PanelID: "p1", CreatedAt: at(9 * time.Hour), ExpiresAt: at(10 * time.Hour)}, "panel-secret-2"))
+	wantErr(s.Panels().CreateLink(ctx, PanelLink{ID: "l3", PanelID: "nope", CreatedAt: at(9 * time.Hour)}, "panel-secret-3"), ErrNotFound)
+	must(s.Panels().RevokeLink(ctx, "p1", "l1", at(9*time.Hour+2*time.Minute)))
+	wantErr(s.Panels().RevokeLink(ctx, "p1", "l1", at(9*time.Hour+3*time.Minute)), ErrNotFound)
+	must(s.Panels().Create(ctx, Panel{ID: "p2", Name: "Gone", Widgets: `[]`, CreatedAt: at(9 * time.Hour)}))
+	must(s.Panels().CreateLink(ctx, PanelLink{ID: "l4", PanelID: "p2", CreatedAt: at(9 * time.Hour)}, "panel-secret-4"))
+	must(s.Panels().Delete(ctx, "p2"))
+	wantErr(s.Panels().Delete(ctx, "p2"), ErrNotFound)
 }
 
 // dumpTables returns every row of every table (sqlite_sequence included,
