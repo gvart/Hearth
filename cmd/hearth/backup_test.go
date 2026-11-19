@@ -9,6 +9,7 @@ import (
 	"errors"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -26,21 +27,85 @@ import (
 
 const testBackupPassphrase = "correct horse battery staple"
 
-// freeAddr returns a loopback address nothing listens on right now.
-func freeAddr(t *testing.T) string {
+// holdAddr binds a loopback port for the whole test. runBackupTestHub hands
+// each hub run a copy of the listener, so the port stays bound across hub
+// restarts: no other process can take it before or between hub runs.
+func holdAddr(t *testing.T) *net.TCPListener {
 	t.Helper()
 	var lc net.ListenConfig
 	l, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = l.Close() }()
-	return l.Addr().String()
+	t.Cleanup(func() { _ = l.Close() })
+	return l.(*net.TCPListener)
 }
 
-// runBackupTestHub runs a hub until the returned function stops it.
+// testHubOptions are the options of a hub on dataDir that listens on
+// loopback ports held for the whole test.
+func testHubOptions(t *testing.T, dataDir string) hubOptions {
+	t.Helper()
+	agentLn, webLn := holdAddr(t), holdAddr(t)
+	return hubOptions{
+		dataDir: dataDir, hosts: []string{"127.0.0.1"},
+		listen: agentLn.Addr().String(), agentLn: agentLn, httpListen: webLn.Addr().String(), webLn: webLn,
+	}
+}
+
+// testClusterOptions are the options of cluster node nodeID on a loopback
+// Raft port held for the whole test.
+func testClusterOptions(t *testing.T, nodeID string) clusterOptions {
+	t.Helper()
+	raftLn := holdAddr(t)
+	addr := raftLn.Addr().String()
+	return clusterOptions{nodeID: nodeID, raftListen: addr, advertise: addr, raftLn: raftLn}
+}
+
+// copyListener returns a listener on a duplicate of l's socket: closing it
+// leaves l, and with it the port, bound. nil stays nil.
+func copyListener(t *testing.T, l net.Listener) net.Listener {
+	t.Helper()
+	if l == nil {
+		return nil
+	}
+	f, err := l.(*net.TCPListener).File()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	c, err := net.FileListener(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+	return c
+}
+
+// serving reports whether a hub serves HTTP on httpAddr. A TCP connect does
+// not tell: a held port accepts connections while no hub runs on it.
+func serving(t *testing.T, httpAddr string) func() bool {
+	return func() bool {
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+		defer cancel()
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+httpAddr+"/ca.crt", nil)
+		if err != nil {
+			return false
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return false
+		}
+		_ = resp.Body.Close()
+		return resp.StatusCode == http.StatusOK
+	}
+}
+
+// runBackupTestHub runs a hub until the returned function stops it. The hub
+// serves on copies of the held listeners in opts (see holdAddr).
 func runBackupTestHub(t *testing.T, opts hubOptions) (stop func()) {
 	t.Helper()
+	opts.agentLn, opts.webLn = copyListener(t, opts.agentLn), copyListener(t, opts.webLn)
+	opts.cluster.raftLn = copyListener(t, opts.cluster.raftLn)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- runHub(ctx, opts, slog.New(slog.DiscardHandler)) }()
@@ -90,18 +155,10 @@ func TestRestoredHubTakesBackItsAgent(t *testing.T) {
 func testRestoredHub(t *testing.T, mode string) {
 	t.Setenv(passphraseEnv, testBackupPassphrase)
 	dataDir := t.TempDir()
-	listen, httpListen := freeAddr(t), freeAddr(t)
-	hubURL := "https://" + listen
-	hubOpts := hubOptions{dataDir: dataDir, listen: listen, httpListen: httpListen, hosts: []string{"127.0.0.1"}}
+	hubOpts := testHubOptions(t, dataDir)
+	hubURL := "https://" + hubOpts.listen
 	stopHub := runBackupTestHub(t, hubOpts)
-	listening := func() bool {
-		var d net.Dialer
-		c, err := d.DialContext(t.Context(), "tcp", listen)
-		if err == nil {
-			_ = c.Close()
-		}
-		return err == nil
-	}
+	listening := serving(t, hubOpts.httpListen)
 	waitFor(t, "the hub to listen", 10*time.Second, listening)
 
 	enroll := func(dir, name string) string {
@@ -261,11 +318,10 @@ func testRestoredHub(t *testing.T, mode string) {
 func TestRestoredClusterMemberFormsANewCluster(t *testing.T) {
 	t.Setenv(passphraseEnv, testBackupPassphrase)
 	dirA, dirB := t.TempDir(), t.TempDir()
-	listenA, raftA := freeAddr(t), freeAddr(t)
-	optsA := hubOptions{
-		dataDir: dirA, listen: listenA, httpListen: freeAddr(t), hosts: []string{"127.0.0.1"},
-		cluster: clusterOptions{form: true, nodeID: "hub-a", raftListen: raftA, advertise: raftA},
-	}
+	optsA := testHubOptions(t, dirA)
+	optsA.cluster = testClusterOptions(t, "hub-a")
+	optsA.cluster.form = true
+	listenA := optsA.listen
 	stopA := runBackupTestHub(t, optsA)
 	clusterStatus := func(dir string) (cluster.Status, bool) {
 		out, err := execute(t, "cluster", "status", "--json", "--data-dir", dir)
@@ -288,11 +344,10 @@ func TestRestoredClusterMemberFormsANewCluster(t *testing.T) {
 	if token == "" {
 		t.Fatalf("no join token in %q", out)
 	}
-	raftB := freeAddr(t)
-	stopB := runBackupTestHub(t, hubOptions{
-		dataDir: dirB, listen: freeAddr(t), httpListen: freeAddr(t), hosts: []string{"127.0.0.1"},
-		cluster: clusterOptions{join: "https://" + listenA, joinToken: token, nodeID: "hub-b", raftListen: raftB, advertise: raftB},
-	})
+	optsB := testHubOptions(t, dirB)
+	optsB.cluster = testClusterOptions(t, "hub-b")
+	optsB.cluster.join, optsB.cluster.joinToken = "https://"+listenA, token
+	stopB := runBackupTestHub(t, optsB)
 	waitFor(t, "hub-b to become a voter with a recorded certificate", 60*time.Second, func() bool {
 		s, ok := clusterStatus(dirA)
 		if !ok || len(s.Peers) != 2 {

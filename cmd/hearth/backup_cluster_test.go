@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
-	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -41,18 +40,17 @@ func voters(s cluster.Status) int {
 
 // clusterHub is one hub of a test cluster.
 type clusterHub struct {
-	dir, listen, raft string
-	opts              hubOptions
-	stop              func()
+	dir, listen string
+	opts        hubOptions
+	stop        func()
 }
 
 func newClusterHub(t *testing.T, nodeID string) *clusterHub {
 	t.Helper()
-	h := &clusterHub{dir: t.TempDir(), listen: freeAddr(t), raft: freeAddr(t)}
-	h.opts = hubOptions{
-		dataDir: h.dir, listen: h.listen, httpListen: freeAddr(t), hosts: []string{"127.0.0.1"},
-		cluster: clusterOptions{nodeID: nodeID, raftListen: h.raft, advertise: h.raft},
-	}
+	h := &clusterHub{dir: t.TempDir()}
+	h.opts = testHubOptions(t, h.dir)
+	h.opts.cluster = testClusterOptions(t, nodeID)
+	h.listen = h.opts.listen
 	return h
 }
 
@@ -202,7 +200,7 @@ func TestRestoredHubExpiresApprovalsLeftPending(t *testing.T) {
 	if _, err := execute(t, "restore", file, "--data-dir", restored); err != nil {
 		t.Fatal(err)
 	}
-	runBackupTestHub(t, hubOptions{dataDir: restored, listen: freeAddr(t), httpListen: freeAddr(t), hosts: []string{"127.0.0.1"}})
+	runBackupTestHub(t, testHubOptions(t, restored))
 	rs, err := store.Open(t.Context(), filepath.Join(restored, dbFile), store.WithoutUpgrade())
 	if err != nil {
 		t.Fatal(err)
@@ -255,16 +253,9 @@ func TestHubStartRemovesAbandonedTempDirs(t *testing.T) {
 	dir := t.TempDir()
 	stale := filepath.Join(dir, ".snapshot-abc")
 	abandonTempDir(t, stale)
-	listen := freeAddr(t)
-	runBackupTestHub(t, hubOptions{dataDir: dir, listen: listen, httpListen: freeAddr(t), hosts: []string{"127.0.0.1"}})
-	waitFor(t, "the hub to listen", 10*time.Second, func() bool {
-		var d net.Dialer
-		c, err := d.DialContext(t.Context(), "tcp", listen)
-		if err == nil {
-			_ = c.Close()
-		}
-		return err == nil
-	})
+	opts := testHubOptions(t, dir)
+	runBackupTestHub(t, opts)
+	waitFor(t, "the hub to listen", 10*time.Second, serving(t, opts.httpListen))
 	if _, err := os.Stat(stale); !os.IsNotExist(err) {
 		t.Errorf("the abandoned snapshot is still there: %v", err)
 	}

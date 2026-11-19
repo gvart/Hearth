@@ -28,6 +28,9 @@ type clusterOptions struct {
 	nodeID     string
 	raftListen string
 	advertise  string
+	// raftLn, if set, is a listener already bound to raftListen (see
+	// cluster.Config.Listener).
+	raftLn net.Listener
 }
 
 func addClusterFlags(cmd *cobra.Command, o *clusterOptions) {
@@ -120,7 +123,7 @@ func startClusterNode(ctx context.Context, opts hubOptions, log *slog.Logger, on
 		return nil, nil, nil, err
 	}
 	node, err := cluster.New(cluster.Config{
-		DataDir: opts.dataDir, NodeID: nodeID, Listen: o.raftListen, Advertise: advertise,
+		DataDir: opts.dataDir, NodeID: nodeID, Listen: o.raftListen, Listener: o.raftLn, Advertise: advertise,
 		CA: ca, Bootstrap: o.form, Log: log, OnFatal: onFatal, AgentURL: agentURL, AgentPort: agentPort,
 	})
 	if err != nil {

@@ -47,7 +47,26 @@ type testNode struct {
 	t     *testing.T
 }
 
-// freeAddr returns a loopback address with a port that was free a moment ago.
+// heldAddr binds a loopback port for a node to take with withListener: the
+// address is known before the node starts, and no other process can take
+// the port in between.
+func heldAddr(t *testing.T) net.Listener {
+	t.Helper()
+	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	return ln
+}
+
+// withListener makes the node take ln (see heldAddr).
+func withListener(ln net.Listener) func(*Config) {
+	return func(c *Config) { c.Listener = ln }
+}
+
+// freeAddr returns a loopback address with a port that was free a moment
+// ago, for a hub that never listens on it. A node takes heldAddr instead.
 func freeAddr(t *testing.T) string {
 	t.Helper()
 	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")

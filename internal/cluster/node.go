@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -61,6 +62,10 @@ type Config struct {
 	NodeID string
 	// Listen is the address the Raft transport listens on, e.g. ":7444".
 	Listen string
+	// Listener, if set, is the transport's listener, already bound to
+	// Listen; the node closes it on shutdown. Tests bind port 0 and pass
+	// it, so no other process can take the port before the node starts.
+	Listener net.Listener
 	// Advertise is the host:port other hubs dial to reach this one; empty
 	// means the listener's own address (only useful on loopback, in tests).
 	Advertise string
@@ -206,7 +211,7 @@ func (n *Node) Start(ctx context.Context) error {
 		&hclog.LoggerOptions{Name: "raft", Level: hclog.Info})
 
 	n.cert = cert.Leaf
-	stream, err := listenTLS(ctx, n.cfg.Listen, n.cfg.Advertise, cert, n.cfg.CA, n.refuseRevoked)
+	stream, err := listenTLS(ctx, n.cfg.Listener, n.cfg.Listen, n.cfg.Advertise, cert, n.cfg.CA, n.refuseRevoked)
 	if err != nil {
 		return fmt.Errorf("cluster: %w", err)
 	}
