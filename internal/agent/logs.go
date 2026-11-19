@@ -6,9 +6,10 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -39,10 +40,16 @@ const (
 	defaultLogTail = 100
 	// maxLogLine caps one line's text; the rest is cut.
 	maxLogLine = 4 << 10
-	// maxLogRead caps the bytes read for one line of the source's output
-	// (a journald JSON record): longer records are cut and shown raw.
+	// maxLogRead caps the bytes read for one line of the source's output,
+	// or one field of a journald entry: the rest is dropped.
 	maxLogRead = 64 << 10
+	// maxJournalField is the longest binary field of a journald entry
+	// read (and mostly dropped); a longer one means corrupt output.
+	maxJournalField = 1 << 30
 )
+
+// errJournalCorrupt is output of journalctl that is not export format.
+var errJournalCorrupt = errors.New("corrupt journal export")
 
 // Log managers a ceiling entry or a LogRequest may name.
 var logManagers = []string{"systemd", "systemd-user", "docker"}
@@ -75,7 +82,7 @@ func logArgv(src *agentv1.LogSource, tail int) []string {
 		}
 		return []string{
 			"journalctl", unit + src.GetName(), "--follow", "--lines=" + n,
-			"--output=json", "--output-fields=MESSAGE", "--no-pager", "--quiet",
+			"--output=export", "--output-fields=MESSAGE", "--no-pager", "--quiet",
 		}
 	case "docker":
 		return []string{"docker", "logs", "--follow", "--timestamps", "--tail", n, "--", src.GetName()}
@@ -253,15 +260,21 @@ func (l *logStreams) run(ctx context.Context, manager string, argv []string, s *
 	if err != nil {
 		return fmt.Errorf("start %s: %w", argv[0], err)
 	}
-	parse := parseDockerLine
-	if manager != "docker" {
-		parse = parseJournalLine
-	}
 	br := bufio.NewReaderSize(pr, 4<<10)
+	next := func() (*agentv1.LogLine, error) {
+		line, err := readLogLine(br, maxLogRead)
+		if len(line) == 0 {
+			return nil, err
+		}
+		return parseDockerLine(line), err
+	}
+	if manager != "docker" {
+		next = func() (*agentv1.LogLine, error) { return readJournalEntry(br, maxLogRead) }
+	}
 	for {
-		line, rerr := readLogLine(br, maxLogRead)
-		if len(line) > 0 {
-			s.append(parse(line))
+		line, rerr := next()
+		if line != nil {
+			s.append(line)
 		}
 		if rerr != nil {
 			break
@@ -297,33 +310,73 @@ func readLogLine(r *bufio.Reader, limit int) ([]byte, error) {
 	}
 }
 
-// parseJournalLine reads a journalctl --output=json record.
-func parseJournalLine(b []byte) *agentv1.LogLine {
-	var rec struct {
-		TS      string          `json:"__REALTIME_TIMESTAMP"`
-		Message json.RawMessage `json:"MESSAGE"`
-	}
-	if json.Unmarshal(b, &rec) != nil {
-		return &agentv1.LogLine{Text: clipLine(string(b))}
-	}
-	line := &agentv1.LogLine{}
-	if us, err := strconv.ParseInt(rec.TS, 10, 64); err == nil {
-		line.Ts = timestamppb.New(time.UnixMicro(us))
-	}
-	// MESSAGE is a string, or an array of bytes when it is not valid UTF-8.
-	var text string
-	if json.Unmarshal(rec.Message, &text) != nil {
-		var raw []byte
-		var ints []int
-		if json.Unmarshal(rec.Message, &ints) == nil {
-			for _, i := range ints {
-				raw = append(raw, byte(i)) //nolint:gosec // journald encodes bytes as 0-255
+// readJournalEntry reads one entry of journalctl --output=export: fields
+// of KEY=value lines, or of a KEY line, a 64-bit little-endian length and
+// that many bytes (for values that are not plain text, such as a message
+// of several lines), up to an empty line. Only __REALTIME_TIMESTAMP and
+// MESSAGE are kept, each at most limit bytes. It returns nil and the error
+// once the output ends without another entry. It decodes the format by
+// hand: encoding/json, the other choice, costs the agent memory.
+func readJournalEntry(r *bufio.Reader, limit int) (*agentv1.LogLine, error) {
+	var line *agentv1.LogLine
+	for {
+		field, err := readLogLine(r, limit)
+		if len(field) == 0 {
+			if err == nil && line == nil {
+				continue // blank lines between entries
+			}
+			return line, err
+		}
+		if line == nil {
+			line = &agentv1.LogLine{}
+		}
+		key, value, text := bytes.Cut(field, []byte("="))
+		if !text {
+			if value, err = readJournalBinary(r, limit); err != nil {
+				return line, err
 			}
 		}
-		text = strings.ToValidUTF8(string(raw), "�")
+		switch string(key) {
+		case "__REALTIME_TIMESTAMP":
+			if us, perr := strconv.ParseInt(string(value), 10, 64); perr == nil {
+				line.Ts = timestamppb.New(time.UnixMicro(us))
+			}
+		case "MESSAGE":
+			line.Text = clipLine(strings.ToValidUTF8(string(value), "�"))
+		}
+		if err != nil {
+			return line, err
+		}
 	}
-	line.Text = clipLine(text)
-	return line
+}
+
+// readJournalBinary reads the value of a binary export field after its
+// name: the length, the bytes (at most limit kept, the rest dropped) and
+// the newline after them, if there is one. A length over maxJournalField
+// is an error: journald stores no such field, so the output is corrupt.
+func readJournalBinary(r *bufio.Reader, limit int) ([]byte, error) {
+	var size [8]byte
+	if _, err := io.ReadFull(r, size[:]); err != nil {
+		return nil, err
+	}
+	n := binary.LittleEndian.Uint64(size[:])
+	if n > maxJournalField {
+		return nil, fmt.Errorf("journal field of %d bytes: %w", n, errJournalCorrupt)
+	}
+	keep := min(int(n), limit)
+	value := make([]byte, keep)
+	if _, err := io.ReadFull(r, value); err != nil {
+		return nil, err
+	}
+	if _, err := r.Discard(int(n) - keep); err != nil {
+		return nil, err
+	}
+	if b, err := r.ReadByte(); err != nil {
+		return value, err
+	} else if b != '\n' {
+		_ = r.UnreadByte() // no newline: the byte starts the next field
+	}
+	return value, nil
 }
 
 // parseDockerLine reads a docker logs --timestamps line: an RFC 3339
