@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -244,4 +245,72 @@ func (*readSpy) Target() string { return "dhcp:spy" }
 func (s *readSpy) Records(context.Context) ([]Record, error) {
 	*s.read = true
 	return nil, nil
+}
+
+func TestMergeRecordsClipsText(t *testing.T) {
+	// "é" is 2 bytes: an odd cut lands inside one.
+	multi := strings.Repeat("é", maxTextLen)
+	for _, tt := range []struct {
+		name, host, vendor string
+		wantHost, wantVend string
+	}{
+		{"short", "pi5", "Raspberry Pi", "pi5", "Raspberry Pi"},
+		{"vendor at the limit", "", strings.Repeat("v", maxTextLen), "", strings.Repeat("v", maxTextLen)},
+		{"over-long vendor", "", strings.Repeat("v", 8<<20), "", strings.Repeat("v", maxTextLen)},
+		{"over-long hostname", strings.Repeat("h", 1<<20), "", strings.Repeat("h", maxTextLen), ""},
+		{"multi-byte vendor at the cut", "", multi, "", strings.Repeat("é", maxTextLen/2)},
+		{"multi-byte hostname at the cut", multi, "", strings.Repeat("é", maxTextLen/2), ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got := mergeRecords([]sourceRecords{{name: store.SourcePihole, recs: []Record{
+				{MAC: "2c:cf:67:00:00:01", IP: "192.168.2.1", Hostname: tt.host, Vendor: tt.vendor},
+			}}})
+			if len(got) != 1 {
+				t.Fatalf("got %d hosts, want 1", len(got))
+			}
+			if got[0].Hostname != tt.wantHost || got[0].Vendor != tt.wantVend {
+				t.Errorf("hostname %d bytes, vendor %d bytes; want %d and %d", len(got[0].Hostname), len(got[0].Vendor), len(tt.wantHost), len(tt.wantVend))
+			}
+		})
+	}
+}
+
+func manyRecords(n int) []Record {
+	recs := make([]Record, n)
+	for i := range recs {
+		recs[i] = Record{MAC: fmt.Sprintf("02:00:00:00:%02x:%02x", i>>8, i&0xff), IP: "192.168.2.1"}
+	}
+	return recs
+}
+
+func TestImportHostCap(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		sources []Source
+		wantErr string
+		want    int // hosts stored
+	}{
+		{"at the cap", []Source{fakeSource{name: store.SourcePihole, recs: manyRecords(maxHostsPerSource)}}, "", maxHostsPerSource},
+		{"over the cap", []Source{fakeSource{name: store.SourcePihole, recs: manyRecords(maxHostsPerSource + 1)}}, "too many hosts", 0},
+		{"over-cap source skipped, the other imported", []Source{
+			fakeSource{name: store.SourcePihole, recs: manyRecords(maxHostsPerSource + 1)},
+			fakeSource{name: store.SourceDHCP, recs: manyRecords(2)},
+		}, "", 2},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			st := openStore(t)
+			im := NewImporter(ImportConfig{Sources: tt.sources, Hosts: st.NetworkHosts(), Policy: policy.New(st.Audit())})
+			err := im.Import(t.Context())
+			switch {
+			case tt.wantErr == "" && err != nil:
+				t.Fatalf("Import = %v", err)
+			case tt.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tt.wantErr)):
+				t.Fatalf("Import = %v; want %q", err, tt.wantErr)
+			}
+			hosts, err := st.NetworkHosts().List(t.Context())
+			if err != nil || len(hosts) != tt.want {
+				t.Errorf("stored %d hosts, %v; want %d", len(hosts), err, tt.want)
+			}
+		})
+	}
 }

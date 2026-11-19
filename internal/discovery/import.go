@@ -12,9 +12,18 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gvart/hearth/internal/policy"
 	"github.com/gvart/hearth/internal/store"
+)
+
+const (
+	// maxTextLen clips an imported hostname or vendor, in bytes.
+	maxTextLen = 255
+	// maxHostsPerSource is the most records one source may return in one
+	// import; a source past it fails as a whole and adds nothing.
+	maxHostsPerSource = 4096
 )
 
 // Record is one host a lease source knows: a DHCP lease, or an entry of
@@ -133,6 +142,13 @@ func (im *Importer) Import(ctx context.Context) error {
 				errs = append(errs, fmt.Errorf("%s: %w", s.Target(), err))
 				continue
 			}
+			if len(recs) > maxHostsPerSource {
+				err := fmt.Errorf("too many hosts: %d, at most %d", len(recs), maxHostsPerSource)
+				im.log.WarnContext(ctx, "network import source failed", "source", s.Target(), "err", err)
+				failed = append(failed, s.Target())
+				errs = append(errs, fmt.Errorf("%s: %w", s.Target(), err))
+				continue
+			}
 			read = append(read, sourceRecords{name: s.Name(), recs: recs})
 		}
 		if len(read) == 0 {
@@ -205,7 +221,7 @@ func mergeRecords(read []sourceRecords) []store.ImportedHost {
 				m.h.Hostname, m.h.HostnameSource, m.nameRank = name, sr.name, rank
 			}
 			if m.h.Vendor == "" {
-				m.h.Vendor = strings.TrimSpace(r.Vendor)
+				m.h.Vendor = strings.TrimSpace(ClipText(r.Vendor, maxTextLen))
 			}
 		}
 	}
@@ -231,13 +247,24 @@ func hostMAC(mac string) (string, bool) {
 	return hw.String(), true
 }
 
-// cleanName returns a hostname without the trailing dot, or "" for the "*"
-// dnsmasq writes for a client that sent none and for anything longer than
-// a DNS name can be.
+// cleanName returns a hostname clipped to maxTextLen and without the
+// trailing dot, or "" for the "*" dnsmasq writes for a client that sent none.
 func cleanName(name string) string {
-	name = strings.TrimSuffix(strings.TrimSpace(name), ".")
-	if name == "*" || len(name) > 253 {
+	name = strings.TrimSuffix(strings.TrimSpace(ClipText(name, maxTextLen)), ".")
+	if name == "*" {
 		return ""
 	}
 	return name
+}
+
+// ClipText returns s cut to at most n bytes, never inside a UTF-8 character.
+// Sources are not trusted to bound what they send.
+func ClipText(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
 }

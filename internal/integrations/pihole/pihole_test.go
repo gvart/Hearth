@@ -11,8 +11,10 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gvart/hearth/internal/discovery"
 	"github.com/gvart/hearth/internal/policy"
@@ -250,5 +252,54 @@ func TestRealPihole(t *testing.T) {
 			}
 			t.Logf("%+v", r)
 		}
+	}
+}
+
+func TestRedirectRefused(t *testing.T) {
+	var second atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		second.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"devices":[]}`)
+	}))
+	t.Cleanup(target.Close)
+	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL+r.URL.Path, http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(first.Close)
+	for name, hc := range map[string]*http.Client{"nil client": nil, "plain client": {Timeout: time.Second}} {
+		t.Run(name, func(t *testing.T) {
+			c, err := New(first.URL, "", hc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := c.Records(t.Context()); err == nil || !strings.Contains(err.Error(), "307") {
+				t.Errorf("Records = %v; want a 307 error", err)
+			}
+			if n := second.Load(); n != 0 {
+				t.Errorf("the redirect target got %d requests; want none", n)
+			}
+		})
+	}
+}
+
+func TestErrorMessageClipped(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		// Multi-byte, so the cut lands inside a character.
+		_, _ = io.WriteString(w, `{"error":{"key":"bad","message":"`+strings.Repeat("é", 1<<20)+`"}}`)
+	}))
+	t.Cleanup(srv.Close)
+	c, err := New(srv.URL, "", srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.Records(t.Context())
+	if err == nil || len(err.Error()) > 1024 || !utf8.ValidString(err.Error()) || !strings.Contains(err.Error(), "500: bad") {
+		n := 0
+		if err != nil {
+			n = len(err.Error())
+		}
+		t.Errorf("error is %d bytes (%v); want a short valid UTF-8 one naming the status and key", n, err != nil)
 	}
 }
