@@ -1,0 +1,23 @@
+internal/pki/abandon_test.go
+  s_344993999c180f::t_3d94be8231d09e 1-73
+internal/pki/rotate.go
+  s_344993999c180f::t_a7ef2fddf5ae9a 349-388
+  s_344993999c180f::t_94a5365afb951e 413-414,420-433
+  s_344993999c180f::t_636f4c081c1ce6 317-319,332-337
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7ed6a6970009711c0189eb8af012e979e4f863c4",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
