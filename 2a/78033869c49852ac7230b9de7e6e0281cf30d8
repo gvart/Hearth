@@ -1,0 +1,30 @@
+internal/integrations/kubernetes/actions.go
+  s_344993999c180f::t_125a5169352d49 30-32
+  s_344993999c180f::t_cd8acd17fcc486 361-365
+  s_344993999c180f::t_a4cf3495dac176 537-628
+internal/integrations/kubernetes/node_test.go
+  s_344993999c180f::t_4de2425af8b8fc 1-72,74-115,117-122,124-131,133-135
+  s_344993999c180f::t_35708b6c91cc2a 73,132
+  s_344993999c180f::t_9c246f67c0993a 116,123
+internal/policy/guardrails_test.go
+  s_344993999c180f::t_80bf52c9b396a2 151-152
+internal/policy/policy.go
+  s_344993999c180f::t_5c66d40a5848a5 88-93
+  s_344993999c180f::t_544cf626fa246b 288-293
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2a78033869c49852ac7230b9de7e6e0281cf30d8",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
