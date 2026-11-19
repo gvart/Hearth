@@ -120,8 +120,12 @@ func TestSystemsTimeout(t *testing.T) {
 
 func TestNew(t *testing.T) {
 	for _, tt := range []struct{ url, email, password string }{
-		{"ftp://x", "e", "p"}, {"http://", "e", "p"}, {"http://u:p@x", "e", "p"}, {"http://x?a=b", "e", "p"},
-		{"http://x", "", "p"}, {"http://x", "e", ""},
+		{"ftp://x", "e", "p"},
+		{"http://", "e", "p"},
+		{"http://u:p@x", "e", "p"},
+		{"http://x?a=b", "e", "p"},
+		{"http://x", "", "p"},
+		{"http://x", "e", ""},
 	} {
 		if _, err := beszel.New(tt.url, tt.email, tt.password, nil); err == nil {
 			t.Errorf("New(%q, %q) = nil error", tt.url, tt.email)

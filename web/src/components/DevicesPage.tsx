@@ -3,6 +3,7 @@ import type { Device } from '../api/client.ts';
 import { useDevices, useMetricsSparklines } from '../api/hooks.ts';
 import { displayName, formatUptime, osArch, primaryIP, relativeTime, statusLabel } from '../format.ts';
 import { AddDeviceDialog } from './AddDeviceDialog.tsx';
+import { BeszelSystems } from './BeszelSystems.tsx';
 import { DeviceDrawer } from './DeviceDrawer.tsx';
 import { DeviceSparklines } from './DeviceSparklines.tsx';
 import { StatusDot } from './StatusDot.tsx';
@@ -138,6 +139,7 @@ export function DevicesPage() {
           </div>
         )}
         <UnmanagedHosts now={now} onAdd={openAdd} />
+        <BeszelSystems now={now} onSelect={setSelectedId} />
       </main>
 
       {adding ? (

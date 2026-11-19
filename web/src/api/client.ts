@@ -128,16 +128,16 @@ export interface DeviceEvent {
   device: Device;
 }
 
-export type NetworkHostSource = 'scan' | 'pihole' | 'dhcp';
+export type NetworkHostSource = 'scan' | 'pihole' | 'dhcp' | 'netalertx';
 
 /** A host network discovery found on the LAN; see /api/v1/network/hosts. */
 export interface NetworkHost {
   /** Lower-case, colon-separated; the host's identity across IP changes. */
   mac: string;
   ip: string;
-  /** From Pi-hole, a DHCP lease, mDNS or LAN reverse DNS; empty when unknown. */
+  /** From Pi-hole, a DHCP lease, NetAlertX, mDNS or LAN reverse DNS; empty when unknown. */
   hostname: string;
-  /** Where the host was learned: the network scan, Pi-hole, DHCP lease files. */
+  /** Where the host was learned: the network scan, Pi-hole, DHCP lease files, NetAlertX. */
   sources: NetworkHostSource[];
   /** The source that gave `hostname`; empty when none did. */
   hostname_source: NetworkHostSource | '';
@@ -152,6 +152,38 @@ export interface NetworkHost {
 }
 
 export type NetworkHostState = '' | 'known' | 'ignored';
+
+export type BeszelSystemStatus = 'up' | 'down' | 'paused' | 'pending';
+
+/** A system a Beszel hub monitors, as the hub last read it; see /api/v1/beszel/systems. */
+export interface BeszelSystem {
+  id: string;
+  name: string;
+  /** The IP address or hostname Beszel reaches the system's agent at. */
+  host: string;
+  status: BeszelSystemStatus;
+  /** Percent in use; disk is the root filesystem. */
+  cpu: number;
+  memory: number;
+  disk: number;
+  /** Seconds. */
+  uptime: number;
+  agent_version: string;
+  /** The enrolled device this system is; empty if none. */
+  device_id: string;
+  device_name: string;
+  /** The network host this system is, when it is no enrolled device; empty if none. */
+  network_mac: string;
+}
+
+export interface BeszelSystems {
+  status: 'not_configured' | 'connecting' | 'ok' | 'unavailable';
+  /** Why the last read failed. */
+  error?: string;
+  /** When the last read that succeeded finished; null if none has. */
+  read_at: string | null;
+  systems: BeszelSystem[];
+}
 
 /** A Kubernetes cluster adopted through a kubeconfig; see /api/v1/kube. */
 export type KubeState = 'connecting' | 'connected' | 'error';
@@ -496,6 +528,7 @@ export const api = {
   },
   devices: async () => (await request<{ devices: Device[] }>('GET', '/devices')).devices,
   networkHosts: async () => (await request<{ hosts: NetworkHost[] }>('GET', '/network/hosts')).hosts,
+  beszelSystems: () => request<BeszelSystems>('GET', '/beszel/systems'),
   deviceMetrics: (id: string, range: MetricsRange = '1h') =>
     request<DeviceMetrics>('GET', `/devices/${encodeURIComponent(id)}/metrics?range=${encodeURIComponent(range)}`),
   metricsSparklines: () => request<MetricsSparklines>('GET', '/metrics/sparklines'),

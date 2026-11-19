@@ -22,6 +22,7 @@ const sourceLabels: Record<NetworkHostSource, { label: string; title: string }> 
   scan: { label: 'Scan', title: 'Found by the ARP sweep' },
   pihole: { label: 'Pi-hole', title: 'Known to Pi-hole' },
   dhcp: { label: 'DHCP', title: 'In a DHCP lease file' },
+  netalertx: { label: 'NetAlertX', title: 'Known to NetAlertX' },
 };
 
 function byIP(a: NetworkHost, b: NetworkHost) {

@@ -536,6 +536,13 @@ table {
   text-overflow: ellipsis;
 }
 
+/* Beszel systems: on phones the host and uptime give way to the usage. */
+@media (max-width: 640px) {
+  .devices.beszel :is(th, td):is(:nth-child(2), :nth-child(6)) {
+    display: none;
+  }
+}
+
 .devices .row-end {
   text-align: right;
 }
@@ -1525,10 +1532,10 @@ dialog::backdrop {
   }
 
   /* Keep the table readable on phones: name, IP and last seen. */
-  .devices:not(.kube, .audit) th:nth-child(2),
-  .devices:not(.kube, .audit) td:nth-child(2),
-  .devices:not(.kube, .audit) th:nth-child(5),
-  .devices:not(.kube, .audit) td:nth-child(5) {
+  .devices:not(.kube, .audit, .beszel) th:nth-child(2),
+  .devices:not(.kube, .audit, .beszel) td:nth-child(2),
+  .devices:not(.kube, .audit, .beszel) th:nth-child(5),
+  .devices:not(.kube, .audit, .beszel) td:nth-child(5) {
     display: none;
   }
 

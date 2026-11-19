@@ -47,10 +47,14 @@ func TestAPIBeszelSystems(t *testing.T) {
 	f := newAPIFixture(t, true, func(c *Config) { c.Beszel = snap })
 	ctx := t.Context()
 	for _, d := range []store.Device{
-		{ID: "pi", Name: "Pi 5", Hostname: "pi5", FirstSeen: now, LastSeen: now, Status: store.StatusOnline,
-			Facts: json.RawMessage(`{"interfaces":[{"name":"eth0","mac":"2c:cf:67:00:00:01","ips":["192.168.2.171/24"]}]}`)},
-		{ID: "mini", Name: "Mac mini", Hostname: "MINI.local", FirstSeen: now, LastSeen: now, Status: store.StatusOnline,
-			Facts: json.RawMessage(`{"interfaces":[{"name":"lo0","ips":["127.0.0.1/8"]}]}`)},
+		{
+			ID: "pi", Name: "Pi 5", Hostname: "pi5", FirstSeen: now, LastSeen: now, Status: store.StatusOnline,
+			Facts: json.RawMessage(`{"interfaces":[{"name":"eth0","mac":"2c:cf:67:00:00:01","ips":["192.168.2.171/24"]}]}`),
+		},
+		{
+			ID: "mini", Name: "Mac mini", Hostname: "MINI.local", FirstSeen: now, LastSeen: now, Status: store.StatusOnline,
+			Facts: json.RawMessage(`{"interfaces":[{"name":"lo0","ips":["127.0.0.1/8"]}]}`),
+		},
 	} {
 		if err := f.st.Devices().Upsert(ctx, d); err != nil {
 			t.Fatal(err)
