@@ -10,7 +10,8 @@
 -- the old CA is accepted only with exactly that certificate.
 --
 -- stage is started (both CAs trusted, the old one served), cutover (the new
--- one served) or finished (the old one dropped, its key deleted).
+-- one served), finished (the old one dropped, its key deleted) or aborted
+-- (given up before the cutover, the new one dropped).
 
 -- +goose Up
 CREATE TABLE ca_rotations (

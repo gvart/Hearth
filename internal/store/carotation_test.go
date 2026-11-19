@@ -88,7 +88,7 @@ func TestCARotations(t *testing.T) {
 	if err := rots.Reseal(ctx, "new", []SealedSecret{{Table: SealedKubeClusters, ID: "k1", Sealed: []byte{1}, Resealed: []byte{2}}}); !errors.Is(err, ErrCARotationConflict) {
 		t.Errorf("Reseal before the cutover = %v, want ErrCARotationConflict", err)
 	}
-	for _, step := range [][2]string{{CAStageStarted, CAStageFinished}, {CAStageCutover, CAStageFinished}, {CAStageFinished, CAStageStarted}} {
+	for _, step := range [][2]string{{CAStageStarted, CAStageFinished}, {CAStageCutover, CAStageFinished}, {CAStageFinished, CAStageStarted}, {CAStageCutover, CAStageAborted}, {CAStageAborted, CAStageStarted}} {
 		if err := rots.Advance(ctx, "new", step[0], step[1], now); !errors.Is(err, ErrCARotationConflict) {
 			t.Errorf("Advance %s -> %s = %v, want ErrCARotationConflict", step[0], step[1], err)
 		}
@@ -122,7 +122,18 @@ func TestCARotations(t *testing.T) {
 		t.Errorf("after Reseal: %+v", again)
 	}
 
-	must(rots.Advance(ctx, "new", CAStageCutover, CAStageFinished, now))
+	// Finishing names the sealed secrets checked: one sealed since refuses it.
+	if err := rots.Advance(ctx, "new", CAStageCutover, CAStageFinished, now); !errors.Is(err, ErrCARotationConflict) {
+		t.Errorf("finish without the sealed digest = %v, want ErrCARotationConflict", err)
+	}
+	checked := SealedDigest(again)
+	must(s.KubeClusters().Add(ctx, KubeCluster{ID: "k2", Name: "late", Sealed: []byte{3}, CreatedAt: now}))
+	if err := rots.Finish(ctx, "new", checked, now); !errors.Is(err, ErrCARotationConflict) {
+		t.Errorf("finish after a secret was sealed since the check = %v, want ErrCARotationConflict", err)
+	}
+	again, err = rots.Sealed(ctx)
+	must(err)
+	must(rots.Finish(ctx, "new", SealedDigest(again), now))
 	if _, err := rots.Active(ctx); !errors.Is(err, ErrNotFound) {
 		t.Errorf("Active after finish = %v, want ErrNotFound", err)
 	}
@@ -131,6 +142,22 @@ func TestCARotations(t *testing.T) {
 	}
 	// Another rotation can start once one finished.
 	must(rots.Start(ctx, CARotation{NewCAFP: "newer", OldCAFP: "new", Pins: map[string]string{}}, now.Add(time.Hour)))
+	// Latest is the one started last, whatever the clocks say; an aborted one
+	// is no longer under way, and once aborted it stays so.
+	if latest, err := rots.Latest(ctx); err != nil || latest.NewCAFP != "newer" {
+		t.Errorf("Latest = %+v, %v; want the one started last", latest, err)
+	}
+	must(rots.Advance(ctx, "newer", CAStageStarted, CAStageAborted, now))
+	if _, err := rots.Active(ctx); !errors.Is(err, ErrNotFound) {
+		t.Errorf("Active after abort = %v, want ErrNotFound", err)
+	}
+	if err := rots.Advance(ctx, "newer", CAStageStarted, CAStageCutover, now); !errors.Is(err, ErrCARotationConflict) {
+		t.Errorf("cutover after abort = %v, want ErrCARotationConflict", err)
+	}
+	must(rots.Start(ctx, CARotation{NewCAFP: "newest", OldCAFP: "new", Pins: map[string]string{}}, now.Add(-time.Hour)))
+	if latest, err := rots.Latest(ctx); err != nil || latest.NewCAFP != "newest" {
+		t.Errorf("Latest after an earlier-clocked start = %+v, %v", latest, err)
+	}
 }
 
 // Below CARotationSchema no rotation can be read or started: the command

@@ -369,7 +369,9 @@ func runScenario(t *testing.T, s *Store) {
 		{Table: SealedKubeClusters, ID: "k1", Sealed: []byte{1}, Resealed: []byte{11}},
 		{Table: SealedProxmoxServers, ID: "p1", Sealed: []byte{1}, Resealed: []byte{12}},
 	}))
-	must(s.CARotations().Advance(ctx, "c1", CAStageCutover, CAStageFinished, at(5*time.Hour)))
+	sealed, err := s.CARotations().Sealed(ctx)
+	must(err)
+	must(s.CARotations().Finish(ctx, "c1", SealedDigest(sealed), at(5*time.Hour)))
 
 	// An approval held, then decided; deciding it again is refused.
 	must(s.Approvals().Create(ctx, Approval{

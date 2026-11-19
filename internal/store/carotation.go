@@ -5,7 +5,10 @@ package store
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,6 +28,9 @@ const (
 	CAStageCutover = "cutover"
 	// CAStageFinished: the old CA is no longer trusted and its key is gone.
 	CAStageFinished = "finished"
+	// CAStageAborted: the rotation was given up before the cutover; the new
+	// CA is dropped everywhere.
+	CAStageAborted = "aborted"
 )
 
 // ErrCARotationActive is returned when starting a hub CA rotation while one
@@ -51,8 +57,8 @@ type CARotation struct {
 	UpdatedAt time.Time
 }
 
-// Active reports whether the rotation has not finished.
-func (c CARotation) Active() bool { return c.Stage != CAStageFinished }
+// Active reports whether the rotation has neither finished nor been aborted.
+func (c CARotation) Active() bool { return c.Stage != CAStageFinished && c.Stage != CAStageAborted }
 
 // CARotations is the hub CA rotation repository.
 type CARotations struct{ s *Store }
@@ -78,7 +84,7 @@ func scanCARotation(row interface{ Scan(...any) error }) (CARotation, error) {
 	return c, nil
 }
 
-// Latest returns the most recently started rotation, finished or not. It
+// Latest returns the most recently started rotation, whatever its stage. It
 // fails with ErrNotFound when there has been none, and with ErrSchemaTooOld
 // below CARotationSchema.
 func (r CARotations) Latest(ctx context.Context) (CARotation, error) {
@@ -88,7 +94,7 @@ func (r CARotations) Latest(ctx context.Context) (CARotation, error) {
 		return CARotation{}, fmt.Errorf("read hub CA rotation: %w", ErrSchemaTooOld)
 	}
 	c, err := scanCARotation(r.s.db.QueryRowContext(ctx,
-		`SELECT `+caRotationColumns+` FROM ca_rotations ORDER BY started_at DESC, new_ca_fp LIMIT 1`))
+		`SELECT `+caRotationColumns+` FROM ca_rotations ORDER BY rowid DESC LIMIT 1`))
 	if errors.Is(err, sql.ErrNoRows) {
 		return CARotation{}, ErrNotFound
 	}
@@ -126,7 +132,20 @@ func (r CARotations) Start(ctx context.Context, c CARotation, now time.Time) err
 // Advance moves the rotation to the new CA newCAFP from stage from to stage
 // to. It fails with ErrCARotationConflict when the rotation is not at from.
 func (r CARotations) Advance(ctx context.Context, newCAFP, from, to string, now time.Time) error {
-	if _, err := r.s.apply(ctx, AdvanceCARotation{NewCAFP: newCAFP, From: from, To: to, Now: now.UnixMilli()}); err != nil {
+	return r.advance(ctx, AdvanceCARotation{NewCAFP: newCAFP, From: from, To: to, Now: now.UnixMilli()})
+}
+
+// Finish moves the rotation to newCAFP from its cutover to CAStageFinished,
+// if the sealed secrets are still those of sealedDigest (see SealedDigest).
+func (r CARotations) Finish(ctx context.Context, newCAFP, sealedDigest string, now time.Time) error {
+	return r.advance(ctx, AdvanceCARotation{
+		NewCAFP: newCAFP, From: CAStageCutover, To: CAStageFinished, Now: now.UnixMilli(), SealedDigest: sealedDigest,
+	})
+}
+
+func (r CARotations) advance(ctx context.Context, c AdvanceCARotation) error {
+	to := c.To
+	if _, err := r.s.apply(ctx, c); err != nil {
 		return fmt.Errorf("advance hub CA rotation to %s: %w", to, err)
 	}
 	return nil
@@ -193,6 +212,26 @@ func (r CARotations) OldCADevices(ctx context.Context, caFP string) ([]string, e
 	return out, rows.Err()
 }
 
+// RenewedDevices lists the devices that were handed a certificate of the CA
+// caFP: aborting its rotation cuts them off.
+func (r CARotations) RenewedDevices(ctx context.Context, caFP string) ([]string, error) {
+	rows, err := r.s.db.QueryContext(ctx, `
+		SELECT DISTINCT device_id FROM certs WHERE revoked_at IS NULL AND ca_fp = ? ORDER BY device_id`, caFP)
+	if err != nil {
+		return nil, fmt.Errorf("list devices renewed by the new CA: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("list devices renewed by the new CA: %w", err)
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
 // Tables of sealed secrets: each is re-sealed with the new CA's key before a
 // rotation finishes.
 const (
@@ -219,10 +258,34 @@ type SealedSecret struct {
 
 // Sealed returns every sealed secret, ordered by table and ID.
 func (r CARotations) Sealed(ctx context.Context) ([]SealedSecret, error) {
+	return readSealed(ctx, r.s.db)
+}
+
+// SealedDigest is a digest of secrets, as Sealed returns them: finishing a
+// rotation names the digest of the secrets checked to be sealed with the new
+// key, and is refused if any changed since. It is empty for no secrets.
+func SealedDigest(secrets []SealedSecret) string {
+	if len(secrets) == 0 {
+		return ""
+	}
+	h := sha256.New()
+	for _, s := range secrets {
+		for _, b := range [][]byte{[]byte(s.Table), []byte(s.ID), s.Sealed} {
+			_ = binary.Write(h, binary.BigEndian, uint64(len(b)))
+			h.Write(b)
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func readSealed(ctx context.Context, q interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+},
+) ([]SealedSecret, error) {
 	var out []SealedSecret
 	for _, table := range []string{SealedKubeClusters, SealedProxmoxServers, SealedRunbookRuns} {
 		// table and column are constants of this file.
-		rows, err := r.s.db.QueryContext(ctx, `SELECT id, `+sealedColumns[table]+` FROM `+table+` ORDER BY id`) //nolint:gosec // see above
+		rows, err := q.QueryContext(ctx, `SELECT id, `+sealedColumns[table]+` FROM `+table+` ORDER BY id`)
 		if err != nil {
 			return nil, fmt.Errorf("read sealed %s: %w", table, err)
 		}
@@ -275,7 +338,7 @@ func (StartCARotation) minSchema() int64 { return CARotationSchema }
 func (c StartCARotation) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
 	var n int
 	if err := tx.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM ca_rotations WHERE stage != '`+CAStageFinished+`'`).Scan(&n); err != nil {
+		`SELECT COUNT(*) FROM ca_rotations WHERE stage NOT IN ('`+CAStageFinished+`', '`+CAStageAborted+`')`).Scan(&n); err != nil {
 		return Result{}, err
 	}
 	if n > 0 {
@@ -288,12 +351,17 @@ func (c StartCARotation) apply(ctx context.Context, tx *sql.Tx) (Result, error) 
 }
 
 // AdvanceCARotation moves the rotation to the CA NewCAFP from stage From to
-// stage To: started to cutover, or cutover to finished.
+// stage To: started to cutover, cutover to finished, or started to aborted.
 type AdvanceCARotation struct {
 	NewCAFP string `json:"new_ca_fp"`
 	From    string `json:"from"`
 	To      string `json:"to"`
 	Now     int64  `json:"now"`
+	// SealedDigest, for the step to CAStageFinished, is the SealedDigest of
+	// the sealed secrets checked to be sealed with the new key: the step is
+	// refused if any secret changed since, as one sealed with the old key
+	// after the check would be lost when the old key goes.
+	SealedDigest string `json:"sealed_digest,omitempty"`
 }
 
 // Op implements Command.
@@ -302,8 +370,18 @@ func (AdvanceCARotation) Op() string { return "advance_ca_rotation" }
 func (AdvanceCARotation) minSchema() int64 { return CARotationSchema }
 
 func (c AdvanceCARotation) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	if step := c.From + ">" + c.To; step != CAStageStarted+">"+CAStageCutover && step != CAStageCutover+">"+CAStageFinished {
+	if step := c.From + ">" + c.To; step != CAStageStarted+">"+CAStageCutover && step != CAStageCutover+">"+CAStageFinished &&
+		step != CAStageStarted+">"+CAStageAborted {
 		return Result{}, fmt.Errorf("%w: no step from %q to %q", ErrCARotationConflict, c.From, c.To)
+	}
+	if c.To == CAStageFinished {
+		secrets, err := readSealed(ctx, tx)
+		if err != nil {
+			return Result{}, err
+		}
+		if SealedDigest(secrets) != c.SealedDigest {
+			return Result{}, fmt.Errorf("%w: sealed secrets changed since they were checked", ErrCARotationConflict)
+		}
 	}
 	res, err := tx.ExecContext(ctx, `UPDATE ca_rotations SET stage = ?, updated_at = ? WHERE new_ca_fp = ? AND stage = ?`,
 		c.To, c.Now, c.NewCAFP, c.From)
