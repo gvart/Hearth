@@ -17,7 +17,8 @@ read it on every run. Without it, every action the table allows is allowed, exce
 of automations, which are denied unless granted, and dangerous actions of MCP clients, which are held
 for approval ([mcp.md](mcp.md)). The holder of a panel's share link is the actor `guest`
 ([panels.md](panels.md)): it may only take the read and safe actions a panel allows, and setting
-`actors: {guest: {safe: confirm}}` holds each of them for approval.
+`actors: {guest: {safe: confirm}}` holds each of them for approval. A file that sets
+`actors.guest.dangerous` to anything but `deny` fails to load.
 
 ```yaml
 classes:                 # for every operator client: admin (CLI), web (UI), automation, mcp, guest

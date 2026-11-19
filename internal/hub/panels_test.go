@@ -890,6 +890,39 @@ func TestGuestOneHeldPerLink(t *testing.T) {
 	if r := <-done; r.StatusCode != http.StatusForbidden {
 		t.Errorf("third hold = %d %s", r.StatusCode, r.body)
 	}
+
+	// A guest that goes away leaves no approval pending behind it, so it
+	// cannot pile up holds by leaving and asking again.
+	ctx, cancel := context.WithCancel(t.Context())
+	gone := make(chan struct{})
+	go func() {
+		defer close(gone)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, f.srv.URL+"/api/v1/guest/"+link.Token+"/actions", strings.NewReader(body))
+		if err != nil {
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if resp, err := f.srv.Client().Do(req); err == nil {
+			_ = resp.Body.Close()
+		}
+	}()
+	awaitApproval(t, f.st)
+	cancel()
+	<-gone
+	deadline = time.Now().Add(5 * time.Second)
+	for {
+		aps, err := f.st.Approvals().List(t.Context(), store.ApprovalPending, 10)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(aps) == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("approvals still pending after the guest left: %+v", aps)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 // TestGuestRateLimits: probes for unknown widgets spend a link's action
