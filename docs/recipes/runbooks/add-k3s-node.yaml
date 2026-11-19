@@ -10,21 +10,29 @@
 #     /etc/hearth/k3s-token (mode 0600). Put it there yourself: this runbook
 #     only names the file and never holds the token.
 #   - The server answers on port 6443 and the machine can reach it.
-#   - Edit the placeholders below (`k3s-new` is the new device, 192.0.2.10 the
-#     k3s server, 192.0.2.60 the new node) in every step before you start.
+#   - The cluster is adopted on the hub's Kubernetes page, so the hub can check
+#     the node and delete its Node object on a rollback.
+#   - Edit the vars below: the new device, the k3s server's address, the name
+#     the node registers with (its hostname, by default) and the cluster's name
+#     on the Kubernetes page.
 #
-# Install and uninstall are exec actions, which are dangerous: they are held or
+# Install, uninstall and the Node deletion are dangerous: they are held or
 # denied until the hub grants them, for example:
 #   hearth hub --allow-dangerous-automation runbook/add-k3s-node
 id: add-k3s-node
-description: Join a machine to a k3s cluster as an agent, check it comes up, undo with the k3s uninstaller.
+description: Join a machine to a k3s cluster as an agent, check it is Ready, undo with the k3s uninstaller.
+vars:
+  device: k3s-new
+  server-ip: 192.0.2.10
+  node-name: k3s-new
+  cluster: homelab
 steps:
   - id: ready
     type: prompt
     prompt: confirm
     message: >-
-      Is the agent on the new machine enrolled and allowed to run curl and sh, is the
-      join token in /etc/hearth/k3s-token, and are the placeholders in this runbook edited?
+      Is the agent on ${{ vars.device }} enrolled and allowed to run curl and sh, is the
+      join token in /etc/hearth/k3s-token, and are the vars in this runbook edited?
     timeout: 30m
 
   - id: server-up
@@ -32,7 +40,7 @@ steps:
     description: The k3s server's API answers.
     check:
       type: tcp
-      address: "192.0.2.10:6443"
+      address: "${{ vars.server-ip }}:6443"
     within: 2m
     every: 10s
 
@@ -41,55 +49,60 @@ steps:
     description: Download the k3s install script.
     action:
       type: exec
-      device: k3s-new
+      device: ${{ vars.device }}
       command: [/usr/bin/curl, -sfL, -o, /tmp/k3s-install.sh, "https://get.k3s.io"]
       timeout: 2m
     rollback:
       type: exec
-      device: k3s-new
+      device: ${{ vars.device }}
       command: [/bin/rm, -f, /tmp/k3s-install.sh]
+
+  - id: forget-node
+    type: action
+    description: >-
+      Nothing to do on the way forward. On a rollback, this runs after k3s is
+      uninstalled and deletes the Node object it left in the cluster.
+    action:
+      type: log
+      message: On a rollback, the Node ${{ vars.node-name }} is deleted after the uninstall.
+    rollback:
+      type: kube_node_delete
+      cluster: ${{ vars.cluster }}
+      node: ${{ vars.node-name }}
 
   - id: install
     type: action
     description: Install k3s as an agent and join the server, reading the token from its file.
     action:
       type: exec
-      device: k3s-new
+      device: ${{ vars.device }}
       command:
         - /bin/sh
         - /tmp/k3s-install.sh
         - agent
         - --server
-        - "https://192.0.2.10:6443"
+        - "https://${{ vars.server-ip }}:6443"
         - --token-file
         - /etc/hearth/k3s-token
       timeout: 10m
     rollback:
       type: exec
-      device: k3s-new
+      device: ${{ vars.device }}
       command: [/usr/local/bin/k3s-agent-uninstall.sh]
       timeout: 5m
 
-  - id: kubelet
+  - id: node-ready
     type: check
-    description: The kubelet of the new node answers.
+    description: The node registered and is Ready.
     check:
-      type: tcp
-      address: "192.0.2.60:10250"
+      type: kube_node
+      cluster: ${{ vars.cluster }}
+      node: ${{ vars.node-name }}
     within: 10m
     every: 10s
-
-  - id: node-ready
-    type: prompt
-    prompt: confirm
-    message: >-
-      Does the node show as Ready on the Kubernetes page? Answer no to stop the run,
-      then roll back to uninstall k3s. After a rollback, remove the stale Node
-      object by hand: kubectl delete node <name>.
-    timeout: 30m
 
   - id: done
     type: action
     action:
       type: log
-      message: k3s node joined and confirmed Ready.
+      message: k3s node ${{ vars.node-name }} joined and is Ready.

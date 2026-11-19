@@ -8,8 +8,7 @@
 #         --allow-exec /usr/bin/systemctl --allow-exec /usr/bin/docker \
 #         --allow-exec /usr/bin/apt-get --allow-exec /bin/rm
 #     Allowing sh is a wide grant: remove it from the agent again after the run.
-#   - Edit the placeholders below (`docker-new` is the new device, 192.0.2.70 its
-#     address) in every step before you start.
+#   - Edit the vars below: the new device and its address.
 #   - Afterwards, add --allow-restart docker:<container> to the agent for every
 #     container Hearth should be able to restart.
 #
@@ -18,13 +17,16 @@
 #   hearth hub --allow-dangerous-automation runbook/add-docker-host
 id: add-docker-host
 description: Install Docker Engine on a machine, start it, verify it, undo with a purge.
+vars:
+  device: docker-new
+  address: 192.0.2.70
 steps:
   - id: ready
     type: prompt
     prompt: confirm
     message: >-
       Is the agent on the new machine enrolled and allowed to run the programs listed
-      in this runbook, and are the placeholders edited?
+      in this runbook, and are the vars edited?
     timeout: 30m
 
   - id: host-up
@@ -32,7 +34,7 @@ steps:
     description: The machine answers on SSH, so it is on the network.
     check:
       type: tcp
-      address: "192.0.2.70:22"
+      address: "${{ vars.address }}:22"
     within: 2m
     every: 10s
 
@@ -41,12 +43,12 @@ steps:
     description: Download Docker's convenience install script.
     action:
       type: exec
-      device: docker-new
+      device: ${{ vars.device }}
       command: [/usr/bin/curl, -fsSL, -o, /tmp/get-docker.sh, "https://get.docker.com"]
       timeout: 2m
     rollback:
       type: exec
-      device: docker-new
+      device: ${{ vars.device }}
       command: [/bin/rm, -f, /tmp/get-docker.sh]
 
   - id: install
@@ -54,12 +56,12 @@ steps:
     description: Install Docker Engine from Docker's apt repository.
     action:
       type: exec
-      device: docker-new
+      device: ${{ vars.device }}
       command: [/bin/sh, /tmp/get-docker.sh]
       timeout: 10m
     rollback:
       type: exec
-      device: docker-new
+      device: ${{ vars.device }}
       command:
         - /usr/bin/apt-get
         - purge
@@ -76,12 +78,12 @@ steps:
     description: Start Docker now and at every boot.
     action:
       type: exec
-      device: docker-new
+      device: ${{ vars.device }}
       command: [/usr/bin/systemctl, enable, --now, docker.service]
       timeout: 2m
     rollback:
       type: exec
-      device: docker-new
+      device: ${{ vars.device }}
       command: [/usr/bin/systemctl, disable, --now, docker.service, docker.socket]
       timeout: 2m
 
@@ -90,7 +92,7 @@ steps:
     description: Ask the daemon for its version, which fails if it is not running. Changes nothing.
     action:
       type: exec
-      device: docker-new
+      device: ${{ vars.device }}
       command: [/usr/bin/docker, version, --format, "{{.Server.Version}}"]
       timeout: 1m
 
