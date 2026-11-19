@@ -1,0 +1,64 @@
+internal/cluster/epoch.go
+  s_344993999c180f::t_1ae3a3f713c35d 26-28,50-55
+internal/cluster/join.go
+  s_344993999c180f::t_9451bd10097f86 283-285,324
+  s_344993999c180f::t_f993d331600a8e 353
+  s_344993999c180f::t_1ae3a3f713c35d 77,97-98,109-116,124,167-168,348-352
+cmd/hearth/backup_cluster_test.go
+  s_344993999c180f::t_2d4b77eca29534 158-164,167-168,171-183
+  s_344993999c180f::t_02fed832d1b63c 213
+  s_344993999c180f::t_1ae3a3f713c35d 184-187,190,193-194,197-202,220
+  s_344993999c180f::t_d8b14b9542194f 191-192,195-196
+internal/store/tempdirs_unix_test.go
+  s_344993999c180f::t_d46d7b6de31470 1-15,17-34,36-41,44-47,50-51,53-56
+  s_344993999c180f::t_1ae3a3f713c35d 16,35,42-43,48,52
+  s_344993999c180f::t_02fed832d1b63c 49
+internal/backup/hardening_test.go
+  s_344993999c180f::t_1ae3a3f713c35d 14,18,21-22,24-26,130-131,145-149,158,168,170,174-178,187
+internal/store/tempdirs_unix.go
+  s_344993999c180f::t_3365a6c346f942 1-15,17-21
+  s_344993999c180f::t_02fed832d1b63c 16
+internal/store/snapshot.go
+  s_344993999c180f::t_1ae3a3f713c35d 22,26,57,61,121
+internal/backup/backup.go
+  s_344993999c180f::t_1ae3a3f713c35d 112,120,124,360,377-378,392,407,444,447,452-457
+internal/store/tempdirs.go
+  s_344993999c180f::t_f17b2dcdbeb664 52-53
+  s_344993999c180f::t_b02b7c34032973 16,25-47,49-51,55-56,58,60-67,69-74,87-89,93-94,96,98,102-104,108-109,118
+  s_344993999c180f::t_02fed832d1b63c 48,54,59,68
+internal/proto/hearth/cluster/v1/cluster.pb.go
+  s_344993999c180f::t_a977ee83a9ec06 40-42,112-118,859,865-866
+docs/backup.md
+  s_344993999c180f::t_b7f9dc9f22d300 58-59
+  s_344993999c180f::t_1ae3a3f713c35d 149-151
+internal/cluster/join_test.go
+  s_344993999c180f::t_7c0f8148d6d750 31
+cmd/hearth/hub.go
+  s_344993999c180f::t_1ae3a3f713c35d 189
+internal/store/tempdirs_windows.go
+  s_344993999c180f::t_3112fae43d5a59 1-33
+internal/store/tempdirs_test.go
+  s_344993999c180f::t_7ea7523da5fe54 1-122
+internal/cluster/epoch_test.go
+  s_344993999c180f::t_d6d2e437e9550f 13,17
+  s_344993999c180f::t_2ed2f51a0cd3c2 18
+  s_344993999c180f::t_9451bd10097f86 156-230
+proto/hearth/cluster/v1/cluster.proto
+  s_344993999c180f::t_9451bd10097f86 60-62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9af27af95967aeb73ad68ca3e77833a34b3a1c42",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": null
+    }
+  }
+}
