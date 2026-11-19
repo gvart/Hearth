@@ -255,6 +255,8 @@ var wireKinds = map[string]error{
 	"token_expired": store.ErrTokenExpired,
 	"unavailable":   store.ErrUnavailable,
 	"closed":        store.ErrApprovalClosed,
+	"run_conflict":  store.ErrRunbookRunConflict,
+	"schema_old":    store.ErrSchemaTooOld,
 }
 
 // kindError is a known store error received over the wire: it keeps the

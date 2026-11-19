@@ -141,6 +141,16 @@ const (
 	ProxmoxGuestStop Action = "proxmox.guest.stop"
 	// ProxmoxGuestReboot shuts a VM or LXC container down and starts it again.
 	ProxmoxGuestReboot Action = "proxmox.guest.reboot"
+	// RunbookStart starts a run of a runbook from a signed-in session. Every
+	// action step of the run is decided on its own.
+	RunbookStart Action = "runbook.start"
+	// RunbookAnswer answers a prompt of a runbook run.
+	RunbookAnswer Action = "runbook.answer"
+	// RunbookRetry runs a stopped runbook step again.
+	RunbookRetry Action = "runbook.retry"
+	// RunbookRollback rolls a stopped runbook run back, or passes over the
+	// rollback step it stopped at.
+	RunbookRollback Action = "runbook.rollback"
 )
 
 // Actor kinds.
@@ -293,6 +303,14 @@ var rules = map[Action]rule{
 	// down whatever the guest serves.
 	ProxmoxGuestStop:   {class: Dangerous, actors: []string{ActorWeb}},
 	ProxmoxGuestReboot: {class: Dangerous, actors: []string{ActorWeb}},
+	// Starting a run does nothing by itself: each action step goes through
+	// policy again, as the runbook.
+	RunbookStart: {class: Safe, actors: []string{ActorWeb}},
+	// An operator's answer to a run that stopped to ask: holding it in turn
+	// would leave the run stuck. What they lead to is decided step by step.
+	RunbookAnswer:   {class: Safe, actors: []string{ActorWeb}, fixed: true},
+	RunbookRetry:    {class: Safe, actors: []string{ActorWeb}, fixed: true},
+	RunbookRollback: {class: Safe, actors: []string{ActorWeb}, fixed: true},
 }
 
 // Actions returns every known action, sorted.

@@ -421,12 +421,7 @@ func (r *Runtime) act(ctx context.Context, a *Automation, s Step[Action], runID 
 		Detail:    map[string]any{"run": runID, "step": s.ID, "trigger": ev.TriggerID},
 		DryRun:    r.cfg.DryRun,
 	}
-	if p, ok := s.Impl.(prechecker); ok {
-		req.Precheck = func(ctx context.Context) error { return p.Precheck(ctx, ev) }
-	}
-	err = r.cfg.Policy.Do(context.WithoutCancel(ctx), req, func(granted context.Context) error {
-		return s.Impl.Run(policy.WithGrant(ctx, granted), ev)
-	})
+	err = doAction(context.WithoutCancel(ctx), ctx, r.cfg.Policy, req, s.Impl, ev, s.Impl.Run)
 	p, ok := s.Impl.(planner)
 	if err != nil || !r.cfg.DryRun || !ok {
 		return "", err
@@ -437,6 +432,20 @@ func (r *Runtime) act(ctx context.Context, a *Automation, s Step[Action], runID 
 	}
 	r.cfg.Log.InfoContext(ctx, "automation dry run", "automation", a.ID, "run", runID, "step", s.ID, "plan", plan)
 	return plan, nil
+}
+
+// doAction runs one action through policy: run is called only if policy
+// allows it, in ctx with the grant policy gave it, while policy itself works
+// in decideCtx, so that its audit entry is written even if ctx ends meanwhile.
+func doAction(decideCtx, ctx context.Context, p Policy, req policy.Request, impl Action, ev Event,
+	run func(context.Context, Event) error,
+) error {
+	if c, ok := impl.(prechecker); ok {
+		req.Precheck = func(ctx context.Context) error { return c.Precheck(ctx, ev) }
+	}
+	return p.Do(decideCtx, req, func(granted context.Context) error {
+		return run(policy.WithGrant(ctx, granted), ev)
+	})
 }
 
 // planner is an action that can tell what it would do now without doing

@@ -42,6 +42,9 @@ type Event struct {
 	// Device, Value, Error ... Action templates see it, with ID, Type and
 	// At, as .Trigger.
 	Data map[string]any
+	// Input holds the answers to a runbook's prompts that this step may use,
+	// by prompt id. They are values only: templates are never parsed from them.
+	Input map[string]string
 }
 
 // FireFunc starts a run with the data of one firing; data has the same keys

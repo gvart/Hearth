@@ -40,7 +40,8 @@ func (x Text) Render(ev Event) (string, error) {
 	return b.String(), nil
 }
 
-// templateData is what templates see: the trigger's fields under .Trigger.
+// templateData is what templates see: the trigger's fields under .Trigger
+// and, in a runbook step allowed them, prompt answers under .Input.
 func (ev Event) templateData() map[string]any {
 	trig := make(map[string]any, len(ev.Data)+3)
 	for k, v := range ev.Data {
@@ -49,7 +50,11 @@ func (ev Event) templateData() map[string]any {
 	trig["ID"] = ev.TriggerID
 	trig["Type"] = ev.TriggerType
 	trig["At"] = ev.At.UTC().Format(time.RFC3339)
-	return map[string]any{"Trigger": trig}
+	data := map[string]any{"Trigger": trig}
+	if ev.Input != nil {
+		data["Input"] = ev.Input
+	}
+	return data
 }
 
 // texted is an action with template fields, which the loader checks against

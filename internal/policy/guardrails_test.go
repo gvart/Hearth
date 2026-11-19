@@ -165,6 +165,10 @@ var expected = map[Action]struct {
 	ProxmoxGuestStart:         {Safe, []string{ActorWeb}, false},
 	ProxmoxGuestStop:          {Dangerous, []string{ActorWeb}, false},
 	ProxmoxGuestReboot:        {Dangerous, []string{ActorWeb}, false},
+	RunbookStart:              {Safe, []string{ActorWeb}, false},
+	RunbookAnswer:             {Safe, []string{ActorWeb}, true},
+	RunbookRetry:              {Safe, []string{ActorWeb}, true},
+	RunbookRollback:           {Safe, []string{ActorWeb}, true},
 }
 
 func TestExpectedCoversEveryAction(t *testing.T) {

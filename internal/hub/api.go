@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gvart/hearth/internal/automation"
 	"github.com/gvart/hearth/internal/hub/webui"
 	"github.com/gvart/hearth/internal/integrations/kubernetes"
 	"github.com/gvart/hearth/internal/integrations/prometheus"
@@ -77,9 +78,11 @@ func newAPI(cfg Config) *api {
 		proxmox: cfg.Proxmox,
 		notify:  cfg.Notify,
 		verify:  newVerifyGate(), verifyWait: verifyWait, verifyPassword: verifier,
-		logins:  newLoginLimiter(time.Now, loginBurst, loginEvery),
-		metrics: cfg.Metrics,
-		drift:   cfg.ConfigDrift,
+		logins:     newLoginLimiter(time.Now, loginBurst, loginEvery),
+		metrics:    cfg.Metrics,
+		drift:      cfg.ConfigDrift,
+		runbooks:   cfg.Runbooks,
+		leadership: leadershipOf(cfg),
 		// Only a release tag is pinned: dev builds have no release to install.
 		installVersion: releaseVersion(cfg.Version),
 	}
@@ -111,6 +114,7 @@ func (a *api) routes() http.Handler {
 	mux.Handle("POST /api/v1/approvals/{id}/approve", a.auth(a.decideApproval(true)))
 	mux.Handle("POST /api/v1/approvals/{id}/deny", a.auth(a.decideApproval(false)))
 	a.approvalLinkRoutes(mux)
+	a.runbookRoutes(mux)
 	mux.Handle("/api/v1/", a.auth(func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "no such endpoint")
 	}))
@@ -179,6 +183,10 @@ type api struct {
 	notify *notify.Notifier
 	// drift is Config.ConfigDrift; nil on a standalone hub.
 	drift func(context.Context) (any, error)
+	// runbooks is Config.Runbooks; nil when runbooks are not served.
+	runbooks *automation.Runbooks
+	// leadership names the cluster's leader, where secret answers must go.
+	leadership Leadership
 	// installVersion is the --version install commands pin, or "" for none.
 	installVersion string
 }

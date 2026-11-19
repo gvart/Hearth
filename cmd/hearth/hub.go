@@ -44,6 +44,8 @@ type hubOptions struct {
 	assetsDir  string
 	// automationsDir holds the automation files; default <dataDir>/automations.
 	automationsDir string
+	// runbooksDir holds the runbook files; default <dataDir>/runbooks.
+	runbooksDir string
 	// adminPassword is HEARTH_ADMIN_PASSWORD: it sets the admin password on a
 	// hub that has none yet.
 	adminPassword string
@@ -130,6 +132,8 @@ func newHubCmd() *cobra.Command {
 		"Prometheus server to read device charts from, e.g. http://prometheus.lan:9090 (env HEARTH_PROMETHEUS_URL)")
 	cmd.Flags().StringVar(&opts.automationsDir, "automations-dir", "",
 		"directory of automation YAML files, reloaded when they change (default <data-dir>/automations)")
+	cmd.Flags().StringVar(&opts.runbooksDir, "runbooks-dir", "",
+		"directory of runbook YAML files (default <data-dir>/runbooks; see docs/runbooks.md)")
 	cmd.Flags().StringVar(&opts.notifyConfig, "notify-config", os.Getenv("HEARTH_NOTIFY_CONFIG"),
 		"file of notification channels (ntfy, Telegram) for notify actions (env HEARTH_NOTIFY_CONFIG; default <data-dir>/notify.yaml if it exists; see docs/notifications.md)")
 	cmd.Flags().StringArrayVar(&opts.dangerousAutomations, "allow-dangerous-automation", nil,
@@ -286,6 +290,10 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	// and agents see a clean end of stream and reconnect at once.
 	stopping, stop := context.WithCancel(context.WithoutCancel(ctx))
 	defer stop()
+	runbooks, err := newRunbooks(opts, st, ca, pol, agents, notifier, kube, log)
+	if err != nil {
+		return err
+	}
 	cfg := hub.Config{
 		Store:             st,
 		CA:                ca,
@@ -303,6 +311,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		Proxmox:           pve,
 		Notify:            notifier,
 		Version:           opts.version,
+		Runbooks:          runbooks,
 	}
 	if exe, err := os.Executable(); err == nil {
 		cfg.VerifyPassword = hub.ChildVerifier(exe)
@@ -440,6 +449,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if node == nil {
 		g.Go(func() error { return reg.Run(gctx) })
 		g.Go(func() error { return automations.Run(gctx) })
+		g.Go(func() error { return runbooks.Run(gctx) })
 		if scanner != nil {
 			g.Go(func() error { return scanner.Run(gctx) })
 		}
@@ -461,9 +471,9 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		// Presence, automations and network discovery run on the leader
 		// only and follow leadership.
 		changed, automationsChanged, discoveryChanged := make(chan struct{}, 1), make(chan struct{}, 1), make(chan struct{}, 1)
-		importChanged := make(chan struct{}, 1)
+		importChanged, runbooksChanged := make(chan struct{}, 1), make(chan struct{}, 1)
 		node.OnLeaderChange(func(cluster.LeaderInfo) {
-			for _, c := range []chan struct{}{changed, automationsChanged, discoveryChanged, importChanged} {
+			for _, c := range []chan struct{}{changed, automationsChanged, discoveryChanged, importChanged, runbooksChanged} {
 				select {
 				case c <- struct{}{}:
 				default:
@@ -473,6 +483,9 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		g.Go(func() error { return reg.RunReplicated(gctx, node, changed) })
 		g.Go(func() error {
 			return automation.RunWhileLeading(gctx, node, automationsChanged, log, automations.Run)
+		})
+		g.Go(func() error {
+			return automation.RunWhileLeading(gctx, node, runbooksChanged, log.With("component", "runbooks"), runbooks.Run)
 		})
 		if scanner != nil {
 			g.Go(func() error {
@@ -544,6 +557,32 @@ func newProxmoxManager(st *store.Store, ca *pki.CA, pol *policy.Engine, log *slo
 		return nil, err
 	}
 	return proxmox.NewManager(proxmox.Config{Store: st, Sealer: sealer, Policy: pol, Log: log}), nil
+}
+
+// newRunbooks returns the runbook engine. A run keeps a copy of its runbook
+// file, sealed with a key derived from the hub CA key, which every hub of a
+// cluster holds.
+func newRunbooks(opts hubOptions, st *store.Store, ca *pki.CA, pol *policy.Engine, agents *hub.Agents,
+	notifier *notify.Notifier, kube *kubernetes.Manager, log *slog.Logger,
+) (*automation.Runbooks, error) {
+	secret, err := ca.KeyDER()
+	if err != nil {
+		return nil, err
+	}
+	sealer, err := kubernetes.NewPurposeSealer(secret, "hearth runbook run seal v1")
+	if err != nil {
+		return nil, err
+	}
+	dir := opts.runbooksDir
+	if dir == "" {
+		dir = filepath.Join(opts.dataDir, "runbooks")
+	}
+	kinds := automation.Builtin(log)
+	maps.Copy(kinds.Actions, automation.Actions(automation.ActionDeps{Agents: agents, Notifier: notifier, Kube: kube}))
+	return automation.NewRunbooks(automation.RunbooksConfig{
+		Dir: dir, Kinds: kinds, Policy: pol, Runs: st.RunbookRuns(), Sealer: sealer,
+		Log: log.With("component", "runbooks"), DryRun: opts.automationsDryRun,
+	}), nil
 }
 
 // serve runs srv until ctx is done, then shuts it down gracefully (forcibly
