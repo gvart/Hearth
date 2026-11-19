@@ -39,6 +39,9 @@ func allCommands() []Command {
 		ConsumeJoinToken{Hash: []byte{7, 8}, Now: 13},
 		CreateCert{Serial: "0a", DeviceID: "pi", Fingerprint: "f1", CAFP: "c0"},
 		PinCert{Serial: "0a", DeviceID: "pi", Fingerprint: "f1", CAFP: "c0", Now: 19},
+		StartCARotation{NewCAFP: "c1", OldCAFP: "c0", NewCACert: "pem", Pins: `{"hub-a":"f0b"}`, Now: 20},
+		AdvanceCARotation{NewCAFP: "c1", From: CAStageStarted, To: CAStageCutover, Now: 21},
+		ResealSecrets{NewCAFP: "c1", Secrets: []SealedSecret{{Table: SealedKubeClusters, ID: "k1", Sealed: []byte{1}, Resealed: []byte{9}}}},
 		RevokeDevice{DeviceID: "pi", Now: 8},
 		AppendAudit{
 			TS: 9, ActorKind: "agent", ActorID: "pi", Action: "agent.enroll", Target: "pi",
@@ -353,6 +356,20 @@ func runScenario(t *testing.T, s *Store) {
 	}
 	must(s.ProxmoxServers().Remove(ctx, "p2"))
 	wantErr(s.ProxmoxServers().Remove(ctx, "p2"), ErrNotFound)
+
+	// A hub CA rotation: started, a second refused, cut over, its secrets
+	// re-sealed (a stale one refused), finished.
+	rot := CARotation{NewCAFP: "c1", OldCAFP: "ca", NewCACert: "pem", Pins: map[string]string{"hub-a": "f0b"}}
+	must(s.CARotations().Start(ctx, rot, at(5*time.Hour)))
+	wantErr(s.CARotations().Start(ctx, CARotation{NewCAFP: "c2", OldCAFP: "ca"}, at(5*time.Hour)), ErrCARotationActive)
+	wantErr(s.CARotations().Advance(ctx, "c1", CAStageCutover, CAStageFinished, at(5*time.Hour)), ErrCARotationConflict)
+	must(s.CARotations().Advance(ctx, "c1", CAStageStarted, CAStageCutover, at(5*time.Hour)))
+	wantErr(s.CARotations().Reseal(ctx, "c1", []SealedSecret{{Table: SealedKubeClusters, ID: "k1", Sealed: []byte{7}, Resealed: []byte{8}}}), ErrCARotationConflict)
+	must(s.CARotations().Reseal(ctx, "c1", []SealedSecret{
+		{Table: SealedKubeClusters, ID: "k1", Sealed: []byte{1}, Resealed: []byte{11}},
+		{Table: SealedProxmoxServers, ID: "p1", Sealed: []byte{1}, Resealed: []byte{12}},
+	}))
+	must(s.CARotations().Advance(ctx, "c1", CAStageCutover, CAStageFinished, at(5*time.Hour)))
 
 	// An approval held, then decided; deciding it again is refused.
 	must(s.Approvals().Create(ctx, Approval{

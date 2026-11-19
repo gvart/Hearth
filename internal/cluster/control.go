@@ -250,14 +250,16 @@ type wireError struct {
 }
 
 var wireKinds = map[string]error{
-	"not_found":       store.ErrNotFound,
-	"token_used":      store.ErrTokenUsed,
-	"token_expired":   store.ErrTokenExpired,
-	"unavailable":     store.ErrUnavailable,
-	"closed":          store.ErrApprovalClosed,
-	"run_conflict":    store.ErrRunbookRunConflict,
-	"runs_unresolved": store.ErrRunbookRunsUnresolved,
-	"schema_old":      store.ErrSchemaTooOld,
+	"not_found":            store.ErrNotFound,
+	"token_used":           store.ErrTokenUsed,
+	"token_expired":        store.ErrTokenExpired,
+	"unavailable":          store.ErrUnavailable,
+	"closed":               store.ErrApprovalClosed,
+	"run_conflict":         store.ErrRunbookRunConflict,
+	"runs_unresolved":      store.ErrRunbookRunsUnresolved,
+	"schema_old":           store.ErrSchemaTooOld,
+	"ca_rotation_active":   store.ErrCARotationActive,
+	"ca_rotation_conflict": store.ErrCARotationConflict,
 }
 
 // kindError is a known store error received over the wire: it keeps the

@@ -81,7 +81,8 @@ func WithExtraMigration(version int64, up string) Option {
 func IsDomainError(err error) bool {
 	if errors.Is(err, ErrNotFound) || errors.Is(err, ErrTokenUsed) || errors.Is(err, ErrTokenExpired) ||
 		errors.Is(err, ErrSchemaNotNewer) || errors.Is(err, ErrSchemaTooOld) || errors.Is(err, ErrApprovalClosed) ||
-		errors.Is(err, ErrRunbookRunConflict) || errors.Is(err, ErrRunbookRunsUnresolved) {
+		errors.Is(err, ErrRunbookRunConflict) || errors.Is(err, ErrRunbookRunsUnresolved) ||
+		errors.Is(err, ErrCARotationActive) || errors.Is(err, ErrCARotationConflict) {
 		return true
 	}
 	var se *sqlite.Error
