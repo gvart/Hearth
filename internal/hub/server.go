@@ -13,6 +13,7 @@ import (
 
 	"connectrpc.com/connect"
 
+	"github.com/gvart/hearth/internal/automation"
 	"github.com/gvart/hearth/internal/integrations/kubernetes"
 	"github.com/gvart/hearth/internal/integrations/prometheus"
 	"github.com/gvart/hearth/internal/integrations/proxmox"
@@ -85,6 +86,9 @@ type Config struct {
 	// GET /api/v1/cluster/config-drift; nil on a standalone hub. Its result is
 	// served as is, so it must hold no digests or file contents.
 	ConfigDrift func(context.Context) (any, error)
+	// Runbooks serves the runbooks under /api/v1/runbooks and
+	// /api/v1/runbook-runs. Nil disables them.
+	Runbooks *automation.Runbooks
 }
 
 // NewHandler serves EnrollService to anyone (the token is the credential) and

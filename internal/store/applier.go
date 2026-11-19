@@ -73,14 +73,15 @@ func WithExtraMigration(version int64, up string) Option {
 
 // IsDomainError reports whether err, returned by ApplyLocal, is an outcome of
 // the command itself rather than a failure of this node: an unknown row, a
-// used or expired token, a closed approval, or a constraint violation. Such errors are
+// used or expired token, a closed approval, a runbook run that moved on, or a constraint violation. Such errors are
 // deterministic, so every node applying the same command to the same state
 // gets the same one and the transaction rolls back everywhere. Any other error
 // (I/O, a full disk, a closed database) means this node failed to apply a
 // write the others applied.
 func IsDomainError(err error) bool {
 	if errors.Is(err, ErrNotFound) || errors.Is(err, ErrTokenUsed) || errors.Is(err, ErrTokenExpired) ||
-		errors.Is(err, ErrSchemaNotNewer) || errors.Is(err, ErrSchemaTooOld) || errors.Is(err, ErrApprovalClosed) {
+		errors.Is(err, ErrSchemaNotNewer) || errors.Is(err, ErrSchemaTooOld) || errors.Is(err, ErrApprovalClosed) ||
+		errors.Is(err, ErrRunbookRunConflict) || errors.Is(err, ErrRunbookRunsUnresolved) {
 		return true
 	}
 	var se *sqlite.Error

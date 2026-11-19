@@ -232,7 +232,12 @@ func (a *kubeAction) Run(ctx context.Context, ev Event) error {
 		return err
 	}
 	_, err = a.kube.RunAction(ctx, cluster, req)
-	return err
+	if err == nil || errors.Is(err, kubernetes.ErrWriteOutcomeUnknown) || errors.Is(err, kubernetes.ErrDrainIncomplete) {
+		return err
+	}
+	// Whatever else went wrong, no write is left unanswered: the reads an action
+	// starts with change nothing, even if they time out.
+	return definiteFailure{err}
 }
 
 // Plan reads, and changes nothing: what the action would do now, for a

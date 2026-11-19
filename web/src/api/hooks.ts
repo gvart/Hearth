@@ -34,7 +34,15 @@ export const keys = {
   audit: (filter: AuditFilter) => ['audit', filter] as const,
   approvals: (status: 'pending' | 'all') => ['approvals', status] as const,
   approvalLink: (token: string) => ['approval-link', token] as const,
+  runbooks: ['runbooks', 'list'] as const,
+  runbookPlan: (id: string) => ['runbooks', 'plan', id] as const,
+  runbookRuns: ['runbooks', 'runs'] as const,
+  runbookRun: (id: string) => ['runbooks', 'run', id] as const,
 };
+
+/** A run moves on by itself on the hub, so it is polled until it has ended. */
+const runbookRunRefreshMs = 1500;
+const runbookRunsRefreshMs = 5000;
 
 /** Approvals change on other hubs and in automations, so they are polled. */
 const approvalsRefreshMs = 5000;
@@ -316,6 +324,51 @@ export function useApprovalLink(token: string) {
 
 export function useDecideApprovalLink(token: string) {
   return useMutation({ mutationFn: (approve: boolean) => api.decideApprovalLink(token, approve) });
+}
+
+export function useRunbooks() {
+  return useQuery({ queryKey: keys.runbooks, queryFn: api.runbooks });
+}
+
+/** The plan of a runbook, fetched anew each time it is opened. */
+export function useRunbookPlan(id: string, enabled: boolean) {
+  return useQuery({ queryKey: keys.runbookPlan(id), queryFn: () => api.runbookPlan(id), enabled, staleTime: 0, gcTime: 0 });
+}
+
+export function useRunbookRuns() {
+  return useQuery({ queryKey: keys.runbookRuns, queryFn: api.runbookRuns, refetchInterval: runbookRunsRefreshMs });
+}
+
+export function useRunbookRun(id: string) {
+  return useQuery({
+    queryKey: keys.runbookRun(id),
+    queryFn: () => api.runbookRun(id),
+    refetchInterval: (q) => {
+      const status = q.state.data?.status;
+      return status === 'succeeded' || status === 'rolled_back' ? false : runbookRunRefreshMs;
+    },
+  });
+}
+
+export function useStartRunbook() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.startRunbook,
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.runbookRuns }),
+  });
+}
+
+/** Answers, retries or rolls back a run, then shows where the run is now. */
+export function useRunbookRunAction<T>(id: string, act: (vars: T) => Promise<unknown>) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: act,
+    onSettled: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: keys.runbookRun(id) }),
+        qc.invalidateQueries({ queryKey: keys.runbookRuns }),
+      ]),
+  });
 }
 
 /** Applies a kube.cluster event (or a just-added cluster) to the cache. */

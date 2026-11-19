@@ -702,6 +702,10 @@ func DecodeCommand(b []byte) (Command, error) {
 		cmd, err = decodeAs[SetNetworkHostState](env.Cmd)
 	case RecordNetworkImport{}.Op():
 		cmd, err = decodeAs[RecordNetworkImport](env.Cmd)
+	case CreateRunbookRun{}.Op():
+		cmd, err = decodeAs[CreateRunbookRun](env.Cmd)
+	case SaveRunbookRun{}.Op():
+		cmd, err = decodeAs[SaveRunbookRun](env.Cmd)
 	default:
 		return nil, fmt.Errorf("decode command: unknown op %q", env.Op)
 	}

@@ -1,0 +1,101 @@
+/* Runbooks */
+.runbook-list,
+.runbook-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.runbook-card,
+.runbook-step,
+.runbook-stopped,
+.runbook-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.85rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow-wrap: anywhere;
+}
+
+.runbook-stopped {
+  margin-bottom: 0.75rem;
+  border-left: 3px solid var(--danger);
+}
+
+.runbook-prompt {
+  margin-bottom: 0.75rem;
+  border-left: 3px solid var(--warn);
+}
+
+.runbook-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.runbook-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.runbook-step-error {
+  margin: 0;
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+}
+
+.runbook-back {
+  margin-bottom: 0.75rem;
+}
+
+.runbook-sub {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--border);
+  font-size: 0.875rem;
+}
+
+.runbook-log {
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+
+.runbook-log li {
+  padding: 0.15rem 0;
+  overflow-wrap: anywhere;
+}
+
+.runbook-answer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.runbook-answer .field {
+  flex: 1 1 14rem;
+  min-width: 0;
+}

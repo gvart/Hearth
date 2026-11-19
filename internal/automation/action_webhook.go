@@ -8,10 +8,13 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"net"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/gvart/hearth/internal/policy"
@@ -118,10 +121,16 @@ func (a *webhookAction) Policy() policy.Action { return policy.AutomationWebhook
 func (a *webhookAction) Target() Text          { return Literal(a.site) }
 
 // Run sends the request. Any 2xx answer is success. Errors name the site
-// only: never the full URL, headers or body, which may hold secrets.
+// only: never the full URL, headers or body, which may hold secrets. An error
+// wraps ErrOutcomeUnknown unless the request certainly did nothing: the first
+// hop could not be reached, or the target itself answered with a refusal.
 func (a *webhookAction) Run(ctx context.Context, ev Event) error {
 	ctx, cancel := context.WithTimeout(ctx, a.timeout)
 	defer cancel()
+	var connected atomic.Bool
+	ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
+		GotConn: func(httptrace.GotConnInfo) { connected.Store(true) },
+	})
 	req, err := newWebhookRequest(ctx, a.method, a.url, a.headers, a.body, ev)
 	if err != nil {
 		return fmt.Errorf("webhook %s: %w", a.site, err)
@@ -132,12 +141,26 @@ func (a *webhookAction) Run(ctx context.Context, ev Event) error {
 		if errors.As(err, &uerr) {
 			err = uerr.Err // url.Error repeats the full URL
 		}
-		return fmt.Errorf("webhook %s %s: %w", a.method, a.site, err)
+		if !connected.Load() && unreachable(err) {
+			return fmt.Errorf("webhook %s %s: %w", a.method, a.site, err)
+		}
+		return fmt.Errorf("webhook %s %s: %w: %w", a.method, a.site, err, ErrOutcomeUnknown)
 	}
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxWebhookDrain))
 	_ = resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		if resp.Request != nil && resp.Request.Response != nil {
+			// An earlier hop took the request before sending it on.
+			return fmt.Errorf("webhook %s %s answered %s after a redirect: %w", a.method, a.site, resp.Status, ErrOutcomeUnknown)
+		}
 		return fmt.Errorf("webhook %s %s answered %s", a.method, a.site, resp.Status)
 	}
 	return nil
+}
+
+// unreachable reports whether err is a failure to find or dial a host.
+func unreachable(err error) bool {
+	var op *net.OpError
+	var dns *net.DNSError
+	return (errors.As(err, &op) && op.Op == "dial") || errors.As(err, &dns)
 }

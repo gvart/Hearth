@@ -14,6 +14,7 @@ import (
 
 	"connectrpc.com/connect"
 
+	"github.com/gvart/hearth/internal/automation"
 	"github.com/gvart/hearth/internal/policy"
 	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
 	"github.com/gvart/hearth/internal/proto/hearth/agent/v1/agentv1connect"
@@ -117,6 +118,34 @@ func TestAgentsExec(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Error("agent still connected after its stream ended")
+}
+
+// TestAgentsExecLostAgentLeavesTheOutcomeUnknown: the request went out and the
+// answer never came, so the command may have run.
+func TestAgentsExecLostAgentLeavesTheOutcomeUnknown(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	st := newTestStore(t)
+	enrollDevice(t, st, "dev-1")
+	client, agents := newExecClient(t, st)
+	stream := connectAgent(ctx, t, client, 2, &agentv1.Ceiling{Exec: []string{"/bin/true"}})
+	// The agent takes the request and goes away without answering.
+	go func() {
+		_, _ = stream.Receive()
+		_ = stream.CloseRequest()
+		_ = stream.CloseResponse()
+	}()
+	var err error
+	for range 100 { // the session attaches just after Welcome
+		if _, err = agents.Exec(ctx, "dev-1", trueCmd()); !errors.Is(err, ErrAgentNotConnected) {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !errors.Is(err, automation.ErrOutcomeUnknown) {
+		t.Errorf("Exec = %v, want ErrOutcomeUnknown", err)
+	}
 }
 
 func TestAgentsExecOldAgent(t *testing.T) {

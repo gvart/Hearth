@@ -50,6 +50,12 @@ const (
 var (
 	ErrBadAction      = errors.New("invalid action")
 	ErrObjectNotFound = errors.New("no such object in the cluster")
+	// ErrDrainIncomplete marks a drain that stopped after it cordoned the node:
+	// some of its work is done and some is not.
+	ErrDrainIncomplete = errors.New("the drain is incomplete")
+	// ErrWriteOutcomeUnknown marks a write that was sent and never answered:
+	// the cluster may have carried it out.
+	ErrWriteOutcomeUnknown = errors.New("the request may have reached the cluster")
 )
 
 // ActionRequest is a Kubernetes action on one object of a cluster.
@@ -656,10 +662,10 @@ func (m *Manager) drain(ctx context.Context, c *apiClient, name string, cordoned
 		left = append(left, k+" ("+pending[k]+")")
 	}
 	if errors.Is(err, context.DeadlineExceeded) && ctx.Err() != nil {
-		err = fmt.Errorf("timed out after %s", timeout)
+		err = fmt.Errorf("timed out after %s: %w", timeout, err)
 	}
-	return "", fmt.Errorf("node %s stays cordoned, %d of %d pods were not evicted: %s: %w",
-		name, len(pending), len(pods), strings.Join(left, ", "), err)
+	return "", fmt.Errorf("node %s stays cordoned, %d of %d pods were not evicted: %s: %w: %w",
+		name, len(pending), len(pods), strings.Join(left, ", "), ErrDrainIncomplete, err)
 }
 
 // evict evicts p and waits until it is gone, retrying every evictRetry while

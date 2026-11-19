@@ -117,10 +117,20 @@ func (a *agentAction) Run(ctx context.Context, ev Event) error {
 	if res.GetDenied() {
 		return fmt.Errorf("%s on device %s: %w", a.what, device, policy.ErrBeyondCeiling)
 	}
-	if res.GetError() != "" {
-		return fmt.Errorf("%s on device %s: %s", a.what, device, res.GetError())
+	if msg := res.GetError(); agentStoppedCommand(msg) {
+		return fmt.Errorf("%s on device %s: %s: %w", a.what, device, msg, ErrOutcomeUnknown)
+	} else if msg != "" {
+		return fmt.Errorf("%s on device %s: %s", a.what, device, msg)
 	}
 	return nil
+}
+
+// agentStoppedCommand reports whether msg, an agent's report of a command, says
+// the agent stopped the command before it ended: it may have done part of its
+// work. Agents report this only as text.
+func agentStoppedCommand(msg string) bool {
+	return strings.HasPrefix(msg, context.DeadlineExceeded.Error()+" after ") ||
+		strings.HasPrefix(msg, context.Canceled.Error()+" after ")
 }
 
 // renderDevice renders a device field, which must not come out empty.

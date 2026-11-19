@@ -141,6 +141,22 @@ const (
 	ProxmoxGuestStop Action = "proxmox.guest.stop"
 	// ProxmoxGuestReboot shuts a VM or LXC container down and starts it again.
 	ProxmoxGuestReboot Action = "proxmox.guest.reboot"
+	// RunbookStart starts a run of a runbook from a signed-in session. Every
+	// action step of the run is decided on its own.
+	RunbookStart Action = "runbook.start"
+	// RunbookAnswer answers a prompt of a runbook run.
+	RunbookAnswer Action = "runbook.answer"
+	// RunbookRetry runs a stopped runbook step again.
+	RunbookRetry Action = "runbook.retry"
+	// RunbookRollback rolls a stopped runbook run back, or passes over the
+	// rollback step it stopped at.
+	RunbookRollback Action = "runbook.rollback"
+	// RunbookPassOver gives up on the rollback step a run stopped at and goes
+	// on with the others: what that step should have undone stays as it is.
+	RunbookPassOver Action = "runbook.pass_over" //nolint:gosec // an action name, not a credential
+	// RunbookCheck is a check step of a runbook run: the hub reads a service
+	// over the network and changes nothing.
+	RunbookCheck Action = "runbook.check"
 )
 
 // Actor kinds.
@@ -293,6 +309,19 @@ var rules = map[Action]rule{
 	// down whatever the guest serves.
 	ProxmoxGuestStop:   {class: Dangerous, actors: []string{ActorWeb}},
 	ProxmoxGuestReboot: {class: Dangerous, actors: []string{ActorWeb}},
+	// Starting a run does nothing by itself: each action step goes through
+	// policy again, as the runbook.
+	RunbookStart: {class: Safe, actors: []string{ActorWeb}},
+	// An answer to a run that stopped to ask: holding it for approval in turn
+	// would leave the run stuck, and the steps it leads to are decided anyway.
+	RunbookAnswer: {class: Safe, actors: []string{ActorWeb}, fixed: true},
+	// Deciding what a stopped run does next follows the hub's policy file;
+	// each step that follows is decided on its own as well.
+	RunbookRetry:    {class: Safe, actors: []string{ActorWeb}},
+	RunbookRollback: {class: Safe, actors: []string{ActorWeb}},
+	RunbookPassOver: {class: Safe, actors: []string{ActorWeb}},
+	// A check reads a service and changes nothing.
+	RunbookCheck: {class: Read, actors: []string{ActorAutomation}},
 }
 
 // Actions returns every known action, sorted.

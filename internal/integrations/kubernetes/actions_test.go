@@ -3,6 +3,7 @@
 package kubernetes
 
 import (
+	"context"
 	"errors"
 	"reflect"
 	"slices"
@@ -291,6 +292,9 @@ func TestDrainTimeout(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "default/web-2 (refused: Cannot evict pod as it would violate the pod's disruption budget.)") ||
 		!strings.Contains(err.Error(), "timed out after 1s") {
 		t.Fatalf("Act = %v, want a timeout naming the refused pod", err)
+	}
+	if !errors.Is(err, context.DeadlineExceeded) || !errors.Is(err, ErrDrainIncomplete) {
+		t.Errorf("Act = %v, want it to match the timeout and an incomplete drain", err)
 	}
 	if d := time.Since(start); d > 5*time.Second {
 		t.Errorf("drain took %v, past its timeout", d)

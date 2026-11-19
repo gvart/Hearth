@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/gvart/hearth/internal/automation"
 	"github.com/gvart/hearth/internal/policy"
 	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
 	"github.com/gvart/hearth/internal/store"
@@ -266,7 +267,7 @@ func roundTrip[R any](ctx context.Context, s *agentSession, device string, pendi
 	case r := <-ch:
 		return r, nil
 	case <-s.done:
-		return zero, fmt.Errorf("device %s: agent disconnected before answering", device)
+		return zero, fmt.Errorf("device %s: agent disconnected before answering: %w", device, automation.ErrOutcomeUnknown)
 	case <-ctx.Done():
 		return zero, fmt.Errorf("device %s: %w", device, context.Cause(ctx))
 	}
