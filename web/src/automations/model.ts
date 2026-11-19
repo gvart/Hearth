@@ -81,8 +81,11 @@ export type ParseResult =
 
 const rootKeys = ['id', 'description', 'mode', ...sections];
 
-/** Characters the hub reads as line breaks, and this editor's parser does not. */
-const hiddenBreak = /[\u0085\u2028\u2029]/;
+/**
+ * Characters the hub reads as line breaks, and this editor's parser does not:
+ * a carriage return counts unless a line feed follows it (CRLF is fine).
+ */
+const hiddenBreak = /[\u0085\u2028\u2029]|\r(?!\n)/;
 
 function lineOf(source: string, offset: number): number {
   return source.slice(0, offset).split('\n').length;

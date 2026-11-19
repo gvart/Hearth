@@ -195,8 +195,9 @@ at any time. The file stays the source of truth, so keep it in git as before.
   YAML block. So does a value the form could change by showing it: a number such as `010` or `0750`,
   which is not the number it looks like, and a list item or header with spaces around it. It is written
   back untouched; change it in the YAML view. A file that does not parse opens in the YAML view only,
-and so does a file holding the invisible characters U+0085, U+2028 or U+2029, which the hub reads as
-line breaks, or defining one anchor name twice. The form refuses those characters too.
+  and so does a file holding the invisible characters U+0085, U+2028 or U+2029, or a carriage return
+  with no line feed after it, which the hub reads as line breaks, or defining one anchor name twice.
+  The form refuses those characters too.
 - **Dry run** sends the file to the hub, which validates it as it would when loading it, and asks
   policy about saving it and about each action, as the automation would ask when it runs. Each
   decision is shown (allowed, needs approval, denied) and audited with the result `dry-run`. Nothing

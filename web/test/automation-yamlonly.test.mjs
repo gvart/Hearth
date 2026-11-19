@@ -1,5 +1,6 @@
 // Files the visual view could misread open in the YAML view only. The hub reads
-// U+0085, U+2028 and U+2029 as line breaks and this editor's parser does not, so
+// U+0085, U+2028, U+2029 and a lone carriage return as line breaks and this
+// editor's parser does not, so
 // a step can hide inside what the form shows as a comment or a single value.
 
 import assert from 'node:assert/strict';
@@ -19,7 +20,15 @@ const hiddenBreaks = [
   ['U+0085', '\u0085'],
   ['U+2028', '\u2028'],
   ['U+2029', '\u2029'],
+  // A carriage return with no line feed after it.
+  ['U+000D', '\r'],
 ];
+
+test('a file with CRLF line endings still opens in the visual view', () => {
+  const read = model.readAutomation(plain.replaceAll('\n', '\r\n'));
+  assert.equal(read.ok, true);
+  assert.equal(model.yamlOnlyReason(plain.replaceAll('\n', '\r\n')), undefined);
+});
 
 const messageField = model.stepSpecs.actions.log.fields.find((f) => f.key === 'message');
 const logRef = { section: 'actions', index: 0 };
