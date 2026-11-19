@@ -1,0 +1,32 @@
+internal/store/auditop_test.go
+  s_344993999c180f::t_a956f907da8e0a 1-405
+internal/store/migrations/00018_audit_op.sql
+  s_344993999c180f::t_9d932552091287 1-32
+internal/store/command.go
+  s_344993999c180f::t_d7bbf6df73bb03 522-531,533-535
+internal/store/audit.go
+  s_344993999c180f::t_098469e5c84f9d 187
+  s_344993999c180f::t_a606840abe00f8 154-163
+  s_344993999c180f::t_0ad11dedc95c4b 233
+  s_344993999c180f::t_751cd3fc64a4c1 268-276
+  s_344993999c180f::t_38dd27c34313fc 182,185
+  s_344993999c180f::t_0e8e40846f151d 242
+  s_344993999c180f::t_2daab2c7f42473 43-64
+  s_344993999c180f::t_454ef1da814b01 247
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "32823af4bf445e83d6be15a38fc2ed528af92348",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
