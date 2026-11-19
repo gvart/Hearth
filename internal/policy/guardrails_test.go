@@ -663,6 +663,9 @@ approval_notify: {channel: phone, url: "https://hearth.lan:8443"}
 	if _, err := LoadConfig(write("")); err != nil {
 		t.Errorf("empty file: %v", err)
 	}
+	if _, err := LoadConfig(write("actors: {guest: {safe: confirm, dangerous: deny}}")); err != nil {
+		t.Errorf("guest with dangerous deny: %v", err)
+	}
 	for name, body := range map[string]string{
 		"unknown field":         "class: {safe: allow}",
 		"unknown class":         "classes: {risky: allow}",
@@ -670,6 +673,8 @@ approval_notify: {channel: phone, url: "https://hearth.lan:8443"}
 		"machine actor kind":    "actors: {token: {safe: deny}}",
 		"unknown actor kind":    "actors: {robot: {safe: deny}}",
 		"actor with a bad mode": "actors: {web: {safe: ask}}",
+		"dangerous guest allow": "actors: {guest: {dangerous: allow}}",
+		"dangerous guest hold":  "actors: {guest: {dangerous: confirm}}",
 		"negative timeout":      "approval_timeout: -1m",
 		"notify url scheme":     "approval_notify: {channel: phone, url: ftp://hub}",
 		"notify url no host":    "approval_notify: {channel: phone, url: https://}",

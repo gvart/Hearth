@@ -119,6 +119,11 @@ func (c Config) Validate() error {
 				kind, strings.Join(ConfigurableActors, ", ")))
 		}
 		checkModes("actors."+kind, m)
+		// A guest holds an unauthenticated share link: nothing may grant it
+		// a dangerous action, so a config that tries is refused, not ignored.
+		if mode, ok := m[Dangerous]; kind == ActorGuest && ok && mode != ModeDeny {
+			errs = append(errs, fmt.Errorf("actors.%s.dangerous: must be deny, not %q", ActorGuest, mode))
+		}
 	}
 	if c.ApprovalTimeout < 0 {
 		errs = append(errs, errors.New("approval_timeout must not be negative"))
