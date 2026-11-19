@@ -96,11 +96,36 @@ most 100 steps, in a file of at most 64 KiB.
 
 - **action** takes any action of the [automation reference](automations.md), with the same fields.
   `rollback` is another action, which undoes this one.
-- **check** takes an `http`, `tcp` or `dns` check as in the automation reference. It runs from the hub
-  (`from` is not supported), and is tried every `every` until it passes or `within` has passed.
+- **check** takes an `http`, `tcp` or `dns` check as in the automation reference, and is tried every
+  `every` until it passes or `within` has passed. It runs from the hub unless it sets `from`; see
+  [Checks from a device](#checks-from-a-device).
 - **prompt** is `input` for a line of text or `confirm` for yes or no. Answering no fails the step.
   `timeout` is 1 hour by default and at most 7 days. A prompt nobody answers in time fails the step.
 - **wait** keeps its deadline across a hub restart.
+
+### Checks from a device
+
+A check with `from` (a device id, name or hostname) runs on that device's agent, to verify something
+only reachable from inside the device's network or on its localhost:
+
+```yaml
+  - id: db-reachable
+    type: check
+    check: {type: tcp, address: 10.20.0.5:5432, from: pi5, timeout: 5s}
+    within: 1m
+    every: 5s
+```
+
+- The device's agent must allow it: `hearth agent run --allow-probe`, as for an
+  [automation check from a device](automations.md). The hub never sends a check beyond the ceiling
+  the agent reports, and the agent refuses it again.
+- `timeout` is at most 1m.
+- Each attempt at the step is decided as `automation.probe` (class `read`) on the device, with one
+  audit entry, however often it polls within `within`. A retry is a new decision.
+- A policy denial, or an agent that is too old or whose ceiling does not allow probes, marks the step
+  `denied`; plan mode shows that denial too. An unknown device, or an agent that is offline, fails the
+  step at once, without waiting for `within`.
+  The check never falls back to running from the hub. Retry or roll back as for any failed step.
 
 ## Plan mode
 
@@ -184,6 +209,7 @@ People act through a signed-in session. These actions are audited with who took 
 | `runbook.rollback` | safe  | roll a stopped run back |
 | `runbook.pass_over` | safe | pass over a stopped rollback step |
 | `runbook.check`    | read  | run a check step        |
+| `automation.probe` | read  | run a check step `from` a device |
 
 ## A run keeps its definition
 

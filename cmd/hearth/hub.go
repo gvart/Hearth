@@ -669,7 +669,7 @@ func newRunbooks(opts hubOptions, st *store.Store, ca *pki.CA, pol *policy.Engin
 	kinds := automation.Builtin(log)
 	maps.Copy(kinds.Actions, automation.Actions(automation.ActionDeps{Agents: agents, Notifier: notifier, Kube: kube}))
 	return automation.NewRunbooks(automation.RunbooksConfig{
-		Dir: runbooksDirOf(opts), Kinds: kinds, Policy: pol, Runs: st.RunbookRuns(), Sealer: sealer,
+		Dir: runbooksDirOf(opts), Kinds: kinds, Policy: pol, Runs: st.RunbookRuns(), Sealer: sealer, Probers: agents,
 		Log: log.With("component", "runbooks"), DryRun: opts.automationsDryRun,
 	}), nil
 }
