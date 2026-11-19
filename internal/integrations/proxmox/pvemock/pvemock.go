@@ -142,6 +142,17 @@ func (s *Server) RemoveGuest(vmid int) {
 	s.resources = slices.DeleteFunc(s.resources, func(e map[string]any) bool { return e["vmid"] == vmid })
 }
 
+// ReplaceGuest makes vmid name another guest, as destroying a guest and
+// creating one with the same VMID does. With the same kind and name it is a
+// migration to node.
+func (s *Server) ReplaceGuest(vmid int, kind, name, node string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if g := s.guest(vmid); g != nil {
+		g["id"], g["type"], g["name"], g["node"] = kind+"/"+strconv.Itoa(vmid), kind, name, node
+	}
+}
+
 // guest finds guest vmid. mu is held.
 func (s *Server) guest(vmid int) map[string]any {
 	for _, e := range s.resources {

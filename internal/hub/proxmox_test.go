@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -175,5 +176,15 @@ func TestProxmoxAPIDeniedActionNeverReachesProxmox(t *testing.T) {
 	}
 	if got := p.mock.Posts(); len(got) != 0 {
 		t.Errorf("a denied action reached Proxmox: %v", got)
+	}
+}
+
+func TestProxmoxAPIAnswersAChangedGuestWithAConflict(t *testing.T) {
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/proxmox/servers/a/actions", nil)
+	err := fmt.Errorf("stop lab/qemu/100: %w: VMID 100 is now lxc \"prod-database\"", proxmox.ErrGuestChanged)
+	(&api{log: slog.Default()}).writeProxmoxError(w, r, "proxmox action", err)
+	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "guest_changed") {
+		t.Errorf("answer = %d %s, want 409 guest_changed", w.Code, w.Body)
 	}
 }

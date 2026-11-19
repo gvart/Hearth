@@ -77,10 +77,29 @@ type ProxmoxServers struct{ s *Store }
 // ProxmoxServers returns the Proxmox server repository.
 func (s *Store) ProxmoxServers() ProxmoxServers { return ProxmoxServers{s: s} }
 
-// Add stores c. Its connection must already be sealed.
+// requireSchema refuses a write before the schema that added the table. It
+// runs before the proposal: a hub still on an older binary halts on a command
+// it cannot decode.
+func (r ProxmoxServers) requireSchema(ctx context.Context) error {
+	v, err := schemaVersion(ctx, r.s.db)
+	if err != nil {
+		return err
+	}
+	if v < proxmoxServersSchema {
+		return fmt.Errorf("%w: it needs %d, the database is at %d; run `hearth cluster migrate` first",
+			ErrSchemaTooOld, proxmoxServersSchema, v)
+	}
+	return nil
+}
+
+// Add stores c. Its connection must already be sealed. Before schema 15 it
+// fails with ErrSchemaTooOld.
 func (r ProxmoxServers) Add(ctx context.Context, c ProxmoxServer) error {
 	if c.ID == "" || c.Name == "" || len(c.Sealed) == 0 {
 		return errors.New("add proxmox server: ID, name and sealed connection are required")
+	}
+	if err := r.requireSchema(ctx); err != nil {
+		return fmt.Errorf("add proxmox server %s: %w", c.Name, err)
 	}
 	if _, err := r.s.apply(ctx, AddProxmoxServer{
 		ID: c.ID, Name: c.Name, Sealed: c.Sealed, CreatedAt: toMillis(c.CreatedAt),
@@ -90,8 +109,12 @@ func (r ProxmoxServers) Add(ctx context.Context, c ProxmoxServer) error {
 	return nil
 }
 
-// Remove deletes server id, or fails with ErrNotFound.
+// Remove deletes server id, or fails with ErrNotFound. Before schema 15 it
+// fails with ErrSchemaTooOld.
 func (r ProxmoxServers) Remove(ctx context.Context, id string) error {
+	if err := r.requireSchema(ctx); err != nil {
+		return fmt.Errorf("remove proxmox server %s: %w", id, err)
+	}
 	if _, err := r.s.apply(ctx, RemoveProxmoxServer{ID: id}); err != nil {
 		return fmt.Errorf("remove proxmox server %s: %w", id, err)
 	}

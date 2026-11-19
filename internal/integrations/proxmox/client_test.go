@@ -191,6 +191,7 @@ func TestErrorsNeverCarryTheToken(t *testing.T) {
 func TestLenientNumbers(t *testing.T) {
 	for in, want := range map[string]num{
 		`1`: 1, `0`: 0, `"1"`: 1, `""`: 0, `true`: 1, `false`: 0, `null`: 0, `0.25`: 0.25, `"105"`: 105, `"odd"`: 0,
+		`"NaN"`: 0, `"nan"`: 0, `"Inf"`: 0, `"-Inf"`: 0, `"Infinity"`: 0, `"+Infinity"`: 0, `"1e999"`: 0,
 	} {
 		var n num
 		if err := json.Unmarshal([]byte(in), &n); err != nil || n != want {

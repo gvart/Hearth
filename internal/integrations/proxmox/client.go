@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -39,6 +40,9 @@ const (
 	// maxBody caps a response the hub will read: the resources of a large
 	// cluster are well under this.
 	maxBody = 8 << 20
+	// maxResources caps the entries of one read: a body within maxBody can
+	// hold millions of tiny ones.
+	maxResources = 20000
 	// maxMessage caps the part of an error message taken from the server.
 	maxMessage = 200
 	// statusNodeUnreachable is what Proxmox VE answers when the node it
@@ -49,6 +53,11 @@ const (
 // ErrBadConnection is returned for a connection that cannot be used. Its
 // messages never include the token.
 var ErrBadConnection = errors.New("invalid proxmox connection")
+
+var (
+	errBadJSON = errors.New("the server's answer is not valid JSON")
+	errBadForm = errors.New("the server's answer has an unexpected form")
+)
 
 // Connection is how the hub reaches one server: what is sealed in the store.
 type Connection struct {
@@ -272,23 +281,9 @@ func (e *statusError) Error() string {
 
 // do calls the API and decodes the data of its answer into out, if not nil.
 func (c *client) do(ctx context.Context, method, path string, out any) error {
-	req, err := http.NewRequestWithContext(ctx, method, c.base+path, nil)
+	body, err := c.call(ctx, method, path)
 	if err != nil {
-		return fmt.Errorf("build request: %w", err)
-	}
-	req.Header.Set("Authorization", "PVEAPIToken="+c.token)
-	req.Header.Set("Accept", "application/json")
-	resp, err := c.hc.Do(req)
-	if err != nil {
-		return requestError(err)
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
-	if err != nil {
-		return requestError(err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return &statusError{code: resp.StatusCode, message: c.serverMessage(resp, body)}
+		return err
 	}
 	if out == nil {
 		return nil
@@ -297,12 +292,35 @@ func (c *client) do(ctx context.Context, method, path string, out any) error {
 		Data json.RawMessage `json:"data"`
 	}
 	if err := json.Unmarshal(body, &env); err != nil {
-		return errors.New("the server's answer is not valid JSON")
+		return errBadJSON
 	}
 	if err := json.Unmarshal(env.Data, out); err != nil {
-		return errors.New("the server's answer has an unexpected form")
+		return errBadForm
 	}
 	return nil
+}
+
+// call makes one API request and returns the body of a successful answer.
+func (c *client) call(ctx context.Context, method, path string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, method, c.base+path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Authorization", "PVEAPIToken="+c.token)
+	req.Header.Set("Accept", "application/json")
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return nil, requestError(err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
+	if err != nil {
+		return nil, requestError(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, &statusError{code: resp.StatusCode, message: c.serverMessage(resp, body)}
+	}
+	return body, nil
 }
 
 // requestError drops the URL an http.Client error starts with.
@@ -340,7 +358,8 @@ func (c *client) serverMessage(resp *http.Response, body []byte) string {
 // 0 or 1 on the wire).
 type num float64
 
-// UnmarshalJSON implements json.Unmarshaler. What is no number counts as 0.
+// UnmarshalJSON implements json.Unmarshaler. What is no finite number counts
+// as 0: JSON cannot carry NaN or an infinity on to the UI.
 func (n *num) UnmarshalJSON(b []byte) error {
 	s := strings.Trim(string(b), `"`)
 	switch s {
@@ -352,7 +371,7 @@ func (n *num) UnmarshalJSON(b []byte) error {
 		return nil
 	}
 	f, err := strconv.ParseFloat(s, 64)
-	if err != nil {
+	if err != nil || math.IsNaN(f) || math.IsInf(f, 0) {
 		*n = 0
 		return nil //nolint:nilerr // one odd field must not fail the whole read
 	}
@@ -384,9 +403,76 @@ type resource struct {
 // resources reads the nodes, guests and storage of the whole cluster in one
 // request, which still answers when a node is down.
 func (c *client) resources(ctx context.Context) ([]resource, error) {
-	var out []resource
-	if err := c.do(ctx, http.MethodGet, "/cluster/resources", &out); err != nil {
+	body, err := c.call(ctx, http.MethodGet, "/cluster/resources")
+	if err != nil {
 		return nil, err
+	}
+	return decodeResources(body)
+}
+
+// decodeResources reads the entries of an answer one at a time and stops at
+// maxResources: decoded whole, a small body of tiny entries takes gigabytes.
+func decodeResources(body []byte) ([]resource, error) {
+	dec := json.NewDecoder(bytes.NewReader(body))
+	if t, err := dec.Token(); err != nil || t != json.Delim('{') {
+		return nil, errBadJSON
+	}
+	var out []resource
+	found := false
+	for dec.More() {
+		key, err := dec.Token()
+		if err != nil {
+			return nil, errBadJSON
+		}
+		if key != "data" {
+			var skip json.RawMessage
+			if err := dec.Decode(&skip); err != nil {
+				return nil, errBadJSON
+			}
+			continue
+		}
+		found = true
+		if out, err = decodeEntries(dec); err != nil {
+			return nil, err
+		}
+	}
+	if t, err := dec.Token(); err != nil || t != json.Delim('}') {
+		return nil, errBadJSON
+	}
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return nil, errBadJSON
+	}
+	if !found {
+		return nil, errBadForm
+	}
+	return out, nil
+}
+
+// decodeEntries reads the value of the data field: a list, or null.
+func decodeEntries(dec *json.Decoder) ([]resource, error) {
+	t, err := dec.Token()
+	if err != nil {
+		return nil, errBadJSON
+	}
+	if t == nil {
+		return nil, nil
+	}
+	if t != json.Delim('[') {
+		return nil, errBadForm
+	}
+	var out []resource
+	for dec.More() {
+		if len(out) == maxResources {
+			return nil, fmt.Errorf("the server listed more than %d resources", maxResources)
+		}
+		var e resource
+		if err := dec.Decode(&e); err != nil {
+			return nil, errBadForm
+		}
+		out = append(out, e)
+	}
+	if _, err := dec.Token(); err != nil {
+		return nil, errBadJSON
 	}
 	return out, nil
 }

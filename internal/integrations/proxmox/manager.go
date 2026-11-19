@@ -53,6 +53,9 @@ const (
 	// another hub of a Raft cluster.
 	DefaultSyncInterval = 5 * time.Second
 	maxNameLength       = 63
+	// maxFieldLength caps a name or other text the server reports: Proxmox VE
+	// keeps its own names far shorter.
+	maxFieldLength = 255
 )
 
 // Errors of the manager's API.
@@ -62,6 +65,9 @@ var (
 	ErrBadName       = errors.New("server name must be 1 to 63 printable characters")
 	ErrBadAction     = errors.New("invalid action: want start, stop or reboot")
 	ErrGuestNotFound = errors.New("no such guest on this server")
+	// ErrGuestChanged is returned when the VMID of an approved action now
+	// names another guest.
+	ErrGuestChanged = errors.New("the guest changed since the action was requested")
 	// ErrUnavailable is returned for an action on a server the hub cannot
 	// read at the moment.
 	ErrUnavailable = errors.New("the proxmox server is unavailable")
@@ -194,6 +200,8 @@ type Manager struct {
 	every  time.Duration
 	now    func() time.Time
 	kick   chan struct{}
+	// toEntities is convert; tests replace it.
+	toEntities func([]resource) ([]Node, []Guest, []Storage)
 
 	mu      sync.Mutex
 	servers map[string]*running
@@ -222,7 +230,7 @@ func NewManager(cfg Config) *Manager {
 	m := &Manager{
 		store: cfg.Store, sealer: cfg.Sealer, policy: cfg.Policy, log: cfg.Log,
 		poll: cfg.PollInterval, every: cfg.SyncInterval, now: cfg.Now,
-		kick: make(chan struct{}, 1), servers: map[string]*running{},
+		kick: make(chan struct{}, 1), servers: map[string]*running{}, toEntities: convert,
 	}
 	if m.poll <= 0 {
 		m.poll = DefaultPollInterval
@@ -353,6 +361,14 @@ func (m *Manager) read(ctx context.Context, r *running) {
 	if ctx.Err() != nil {
 		return
 	}
+	var (
+		nodes   []Node
+		guests  []Guest
+		storage []Storage
+	)
+	if err == nil {
+		nodes, guests, storage = m.toEntities(res)
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if err != nil {
@@ -368,7 +384,7 @@ func (m *Manager) read(ctx context.Context, r *running) {
 		m.log.InfoContext(ctx, "proxmox server connected", "server", r.info.Name)
 	}
 	r.state, r.err = StateConnected, ""
-	r.nodes, r.guests, r.storage = convert(res)
+	r.nodes, r.guests, r.storage = nodes, guests, storage
 }
 
 // convert sorts the API's resources into entities, leaving out templates and
@@ -376,6 +392,10 @@ func (m *Manager) read(ctx context.Context, r *running) {
 func convert(res []resource) ([]Node, []Guest, []Storage) {
 	nodes, guests, storage := []Node{}, []Guest{}, []Storage{}
 	for _, e := range res {
+		// Text this long is no real entry, and would end up in audit rows.
+		if !fieldsFit(e.Node, e.Status, e.Name, e.Storage, e.PluginType, e.Content) {
+			continue
+		}
 		switch e.Type {
 		case "node":
 			nodes = append(nodes, Node{
@@ -405,6 +425,16 @@ func convert(res []resource) ([]Node, []Guest, []Storage) {
 		return cmp.Or(cmp.Compare(a.Name, b.Name), cmp.Compare(a.Node, b.Node))
 	})
 	return nodes, guests, storage
+}
+
+// fieldsFit reports whether every field is within maxFieldLength.
+func fieldsFit(fields ...string) bool {
+	for _, f := range fields {
+		if len(f) > maxFieldLength {
+			return false
+		}
+	}
+	return true
 }
 
 func (m *Manager) stopAll() {
@@ -516,17 +546,25 @@ func (m *Manager) Act(ctx context.Context, actorKind, actorID, id string, req Ac
 		return ActionResult{}, err
 	}
 	target := fmt.Sprintf("%s/%s/%d", r.info.Name, g.Kind, g.VMID)
+	detail := map[string]any{"server_id": id, "node": g.Node, "kind": g.Kind, "vmid": g.VMID, "name": g.Name}
 	var task string
 	err = m.policy.Do(ctx, policy.Request{
-		ActorKind: actorKind, ActorID: actorID, Action: action, Target: target,
-		Detail: map[string]any{"server_id": id, "node": g.Node, "kind": g.Kind, "vmid": g.VMID, "name": g.Name},
+		ActorKind: actorKind, ActorID: actorID, Action: action, Target: target, Detail: detail,
 	}, func(ctx context.Context) error {
-		// An approval can take minutes: the guest may have moved or gone.
-		r, g, err := m.resolve(id, req.VMID)
+		// An approval can take minutes: the guest may have moved or gone, and
+		// its VMID may now belong to another guest.
+		r, now, err := m.resolve(id, req.VMID)
 		if err != nil {
 			return err
 		}
-		task, err = r.client.guestAction(ctx, g, req.Action)
+		if now.Kind != g.Kind || now.Name != g.Name {
+			return fmt.Errorf("%w: VMID %d is now %s %q", ErrGuestChanged, now.VMID, now.Kind, now.Name)
+		}
+		if now.Node != g.Node {
+			// A migration: the audit entry names the node actually used.
+			detail["node"], detail["approved_node"] = now.Node, g.Node
+		}
+		task, err = r.client.guestAction(ctx, now, req.Action)
 		return err
 	})
 	if err != nil {

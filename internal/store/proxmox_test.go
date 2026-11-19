@@ -4,10 +4,57 @@ package store
 
 import (
 	"bytes"
+	"context"
 	"errors"
+	"path/filepath"
 	"testing"
 	"time"
 )
+
+// A hub on an older binary halts on a command it cannot decode, so before the
+// schema that added them these writes must never be proposed at all.
+func TestProxmoxServersBeforeTheSchema(t *testing.T) {
+	ctx := t.Context()
+	path := filepath.Join(t.TempDir(), "hearth.db")
+	s, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := s.newMigrator()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.DownTo(ctx, proxmoxServersSchema-1); err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+
+	var proposed []string
+	s, err = Open(ctx, path, WithoutUpgrade(), WithApplier(func(s *Store) Applier {
+		return ApplierFunc(func(ctx context.Context, cmd Command) (Result, error) {
+			proposed = append(proposed, cmd.Op())
+			return s.ApplyLocal(ctx, cmd)
+		})
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	if got, err := s.ProxmoxServers().List(ctx); err != nil || len(got) != 0 {
+		t.Errorf("List before the schema = %v, %v; want none", got, err)
+	}
+	add := ProxmoxServer{ID: "a", Name: "rack", Sealed: []byte("x"), CreatedAt: time.Now()}
+	if err := s.ProxmoxServers().Add(ctx, add); !errors.Is(err, ErrSchemaTooOld) || !IsDomainError(err) {
+		t.Errorf("Add before the schema = %v, want a domain ErrSchemaTooOld", err)
+	}
+	if err := s.ProxmoxServers().Remove(ctx, "a"); !errors.Is(err, ErrSchemaTooOld) || !IsDomainError(err) {
+		t.Errorf("Remove before the schema = %v, want a domain ErrSchemaTooOld", err)
+	}
+	if len(proposed) != 0 {
+		t.Errorf("proposed %v before the schema, want nothing", proposed)
+	}
+}
 
 func TestProxmoxServers(t *testing.T) {
 	ctx := t.Context()

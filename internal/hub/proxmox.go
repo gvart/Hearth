@@ -97,6 +97,8 @@ func (a *api) writeProxmoxError(w http.ResponseWriter, r *http.Request, op strin
 		writeError(w, http.StatusNotFound, "not_found", "no such server")
 	case errors.Is(err, proxmox.ErrGuestNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "no such guest on this server")
+	case errors.Is(err, proxmox.ErrGuestChanged):
+		writeError(w, http.StatusConflict, "guest_changed", err.Error())
 	case errors.Is(err, proxmox.ErrBadConnection), errors.Is(err, proxmox.ErrBadName), errors.Is(err, proxmox.ErrBadAction):
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 	case errors.Is(err, proxmox.ErrNameTaken):

@@ -95,6 +95,9 @@ one, and they are also available as `POST /api/v1/proxmox/servers/{id}/actions` 
   accepted it, and the guest's status changes on a later read.
 - **The hub picks the node.** A request names only the guest's VMID. The hub looks up its node and kind
   in what it last read from the server.
+- **An approval covers one guest.** If the VMID names a guest of another kind or name by the time an
+  action is approved, Hearth refuses it and sends nothing. A guest that only migrated is still acted on,
+  and the audit log records the node actually used.
 - **Web UI only, for now.** Automations and MCP clients cannot take these actions, and hosts themselves
   cannot be rebooted or shut down from Hearth.
 
