@@ -354,9 +354,10 @@ func denied(req Request, reason string, precheckErr error) error {
 // RecordEnd audits the end of what an allowed req started and outlives Do,
 // such as a shell session: an entry with the decision Allow, the result,
 // and req's detail merged with extra. It decides and runs nothing; call it
-// only after Do allowed req.
+// only after Do allowed req. Like an outcome, it is written even when ctx is
+// cancelled, and spooled when the audit log cannot take it.
 func (e *Engine) RecordEnd(ctx context.Context, req Request, result string, extra map[string]any) error {
-	return e.record(ctx, req, Allow, result, extra)
+	return e.recordOutcome(ctx, req, Allow, result, extra)
 }
 
 // record writes one audit entry for req, its detail merged with extra.
