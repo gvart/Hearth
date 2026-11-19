@@ -3,7 +3,10 @@ import { useConfigDrift } from '../api/hooks.ts';
 
 const docsURL = 'https://github.com/gvart/hearth/blob/main/docs/cluster.md#configuration-drift';
 
-const itemLabels: Record<string, string> = { automations: 'automations directory' };
+const itemLabels: Record<string, string> = {
+  automations: 'automations directory',
+  runbooks: 'runbooks directory',
+};
 
 function itemLabel(item: string) {
   return itemLabels[item] ?? item;

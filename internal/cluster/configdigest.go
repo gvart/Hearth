@@ -34,9 +34,10 @@ func ConfigFileDigest(path string, extra ...string) string {
 }
 
 // FileConfigSource reports the digests of the policy and notification files as
-// the hub loaded them, and of the automations directory as it is now: followers
-// load that directory only when they take over, so its files are what counts.
-func FileConfigSource(policyDigest, notifyDigest, automationsDir string) ConfigSource {
+// the hub loaded them, and of the automations and runbooks directories as they
+// are now: followers load the automations only when they take over, and the
+// runbooks are read when a run starts, so their files are what counts.
+func FileConfigSource(policyDigest, notifyDigest, automationsDir, runbooksDir string) ConfigSource {
 	return func() map[string]string {
 		out := map[string]string{}
 		if policyDigest != "" {
@@ -47,6 +48,10 @@ func FileConfigSource(policyDigest, notifyDigest, automationsDir string) ConfigS
 		}
 		if d, err := automation.DirDigest(automationsDir); err == nil {
 			out[ConfigAutomations] = d
+		}
+		// Runbooks load from the same kind of directory, so they digest alike.
+		if d, err := automation.DirDigest(runbooksDir); err == nil {
+			out[ConfigRunbooks] = d
 		}
 		return out
 	}

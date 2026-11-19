@@ -20,7 +20,7 @@ import (
 
 // Configuration drift.
 //
-// The automations directory, notify.yaml and policy.yaml live on each hub and
+// The automations and runbooks directories, notify.yaml and policy.yaml live on each hub and
 // are not replicated. Each hub digests them and serves the digests to the other
 // members through ClusterService.ConfigDigests, over the hub mTLS channel. A
 // DriftReport says which items differ on which hubs; it never holds a digest,
@@ -31,11 +31,13 @@ const (
 	ConfigPolicy      = "policy.yaml"
 	ConfigNotify      = "notify.yaml"
 	ConfigAutomations = "automations"
+	ConfigRunbooks    = "runbooks"
 )
 
 // configItems are the items of a DriftReport. An item a newer hub reports
-// beyond these is ignored.
-var configItems = []string{ConfigPolicy, ConfigNotify, ConfigAutomations}
+// beyond these is ignored, and an item an older hub does not report is
+// unknown for that hub.
+var configItems = []string{ConfigPolicy, ConfigNotify, ConfigAutomations, ConfigRunbooks}
 
 // Item states of a DriftReport.
 const (

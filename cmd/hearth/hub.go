@@ -352,7 +352,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	uiMux.Handle("/", webH)
 	uiMux.Handle("GET /api/v1/events", hub.EndOnStop(stopping, webH))
 	if node != nil {
-		node.SetConfigSource(cluster.FileConfigSource(policyDigest, notifyDigest, automationsDir))
+		node.SetConfigSource(cluster.FileConfigSource(policyDigest, notifyDigest, automationsDir, runbooksDirOf(opts)))
 	}
 	uiMux.Handle(mcpserver.Path, hub.EndOnStop(stopping, mcpserver.Handler(mcpserver.Config{
 		Devices: st.Devices(), Live: reg.Live, Tokens: st.MCPTokens(), Policy: pol, Agents: agents, Kube: kube,
@@ -574,16 +574,20 @@ func newRunbooks(opts hubOptions, st *store.Store, ca *pki.CA, pol *policy.Engin
 	if err != nil {
 		return nil, err
 	}
-	dir := opts.runbooksDir
-	if dir == "" {
-		dir = filepath.Join(opts.dataDir, "runbooks")
-	}
 	kinds := automation.Builtin(log)
 	maps.Copy(kinds.Actions, automation.Actions(automation.ActionDeps{Agents: agents, Notifier: notifier, Kube: kube}))
 	return automation.NewRunbooks(automation.RunbooksConfig{
-		Dir: dir, Kinds: kinds, Policy: pol, Runs: st.RunbookRuns(), Sealer: sealer,
+		Dir: runbooksDirOf(opts), Kinds: kinds, Policy: pol, Runs: st.RunbookRuns(), Sealer: sealer,
 		Log: log.With("component", "runbooks"), DryRun: opts.automationsDryRun,
 	}), nil
+}
+
+// runbooksDirOf is the directory the hub loads runbooks from.
+func runbooksDirOf(opts hubOptions) string {
+	if opts.runbooksDir != "" {
+		return opts.runbooksDir
+	}
+	return filepath.Join(opts.dataDir, "runbooks")
 }
 
 // serve runs srv until ctx is done, then shuts it down gracefully (forcibly

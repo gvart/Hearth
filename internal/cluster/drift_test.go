@@ -207,6 +207,24 @@ func TestConfigDriftPartialReport(t *testing.T) {
 	wantItem(t, itemOf(t, r, ConfigPolicy), DriftInSync, allThree, []string{})
 }
 
+// TestConfigDriftHubWithoutRunbooks: a hub whose Hearth predates the runbooks
+// item reports the other items only. Runbooks are unknown for it alone, never
+// differing, and the other items still compare.
+func TestConfigDriftHubWithoutRunbooks(t *testing.T) {
+	hubs := startHubs(t, hubOpts{offlineAfter: time.Minute, flushEvery: time.Minute})
+	configs := sameConfig(hubs)
+	configs["n2"].mu.Lock()
+	delete(configs["n2"].digests, ConfigRunbooks)
+	configs["n2"].mu.Unlock()
+	r := driftOf(t, hubs[0].testNode)
+	wantItem(t, itemOf(t, r, ConfigRunbooks), DriftUnknown, [][]string{{"n1", "n3"}}, []string{"n2"})
+	wantItem(t, itemOf(t, r, ConfigAutomations), DriftInSync, allThree, []string{})
+	wantItem(t, itemOf(t, r, ConfigPolicy), DriftInSync, allThree, []string{})
+	if h := hubOf(t, r, "n2"); !h.Reported {
+		t.Errorf("hub n2 answered with digests but is not reported: %+v", h)
+	}
+}
+
 // olderHub answers like a hub whose Hearth predates ConfigDigests: its
 // ClusterService does not know the procedure.
 func olderHub(t *testing.T, h *testHub) *httptest.Server {
