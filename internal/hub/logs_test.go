@@ -354,10 +354,10 @@ func TestDeviceLogsLinesBeforeTheReader(t *testing.T) {
 	}
 }
 
-// failingAudit cannot write the audit entry of an opened stream.
-type failingAudit struct{ policy.Auditor }
+// failingOpenAudit cannot write the audit entry of an opened stream.
+type failingOpenAudit struct{ policy.Auditor }
 
-func (a failingAudit) Append(ctx context.Context, e store.AuditEntry) (int64, error) {
+func (a failingOpenAudit) Append(ctx context.Context, e store.AuditEntry) (int64, error) {
 	if e.Result == "ok" {
 		return 0, errors.New("disk full")
 	}
@@ -370,7 +370,7 @@ func TestDeviceLogsAuditFails(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	f := newLogsFixtureAudit(t, func(a policy.Auditor) policy.Auditor { return failingAudit{a} })
+	f := newLogsFixtureAudit(t, func(a policy.Auditor) policy.Auditor { return failingOpenAudit{a} })
 	stream := connectAgent(ctx, t, f.client, minLogsMinor, &agentv1.Ceiling{Logs: []string{"systemd:*"}})
 	reqs, cancels := fakeLogAgent(stream, "")
 	var resp *http.Response
