@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -378,6 +379,64 @@ func TestRestoreDamagedBackup(t *testing.T) {
 			assertRefused(t, path, testPassphrase, tt.want)
 		})
 	}
+}
+
+// TestStreamRefusesReorderedChunks checks the sealed stream on its own: inside
+// one large entry, the entry framing cannot notice chunks that were moved.
+func TestStreamRefusesReorderedChunks(t *testing.T) {
+	const chunks = 4
+	var sealed bytes.Buffer
+	s, err := newSealer(&sealed, testPassphrase, testKDF)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain := make([]byte, chunks*chunkSize)
+	if _, err := rand.Read(plain); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Write(plain); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	orig := sealed.Bytes()
+	size := chunkSize + 16
+	chunk := func(b []byte, i int) []byte { return b[headerLen+i*size : headerLen+(i+1)*size] }
+
+	got, err := io.ReadAll(mustOpen(t, orig))
+	if err != nil || !bytes.Equal(got, plain) {
+		t.Fatalf("intact stream: %d bytes, %v", len(got), err)
+	}
+	tests := map[string]func([]byte) []byte{
+		"middle chunks swapped": func(b []byte) []byte {
+			first := bytes.Clone(chunk(b, 1))
+			copy(chunk(b, 1), chunk(b, 2))
+			copy(chunk(b, 2), first)
+			return b
+		},
+		"middle chunk dropped": func(b []byte) []byte {
+			return append(b[:headerLen+size:headerLen+size], b[headerLen+2*size:]...)
+		},
+		"cut at a chunk boundary": func(b []byte) []byte { return b[:headerLen+2*size] },
+		"final chunk repeated":    func(b []byte) []byte { return append(b, chunk(b, chunks-1)...) },
+	}
+	for name, mod := range tests {
+		t.Run(name, func(t *testing.T) {
+			if _, err := io.ReadAll(mustOpen(t, mod(bytes.Clone(orig)))); !errors.Is(err, ErrCorrupt) {
+				t.Fatalf("read = %v, want ErrCorrupt", err)
+			}
+		})
+	}
+}
+
+func mustOpen(t *testing.T, b []byte) *opener {
+	t.Helper()
+	o, err := newOpener(bytes.NewReader(b), testPassphrase)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return o
 }
 
 func TestRestoreRefusesACostlyHeader(t *testing.T) {
