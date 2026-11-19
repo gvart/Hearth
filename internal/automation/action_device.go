@@ -91,7 +91,7 @@ func (a *agentAction) Precheck(ctx context.Context, ev Event) error {
 	if !ok {
 		return nil
 	}
-	device, err := renderDevice(a.device, ev)
+	device, err := renderDevice(ctx, a.device, ev)
 	if err != nil {
 		return nil // Run reports it
 	}
@@ -102,7 +102,7 @@ func (a *agentAction) Run(ctx context.Context, ev Event) error {
 	if a.agents == nil {
 		return errors.New("this hub does not run actions on devices")
 	}
-	device, err := renderDevice(a.device, ev)
+	device, err := renderDevice(ctx, a.device, ev)
 	if err != nil {
 		return err
 	}
@@ -134,8 +134,8 @@ func agentStoppedCommand(msg string) bool {
 }
 
 // renderDevice renders a device field, which must not come out empty.
-func renderDevice(device Text, ev Event) (string, error) {
-	d, err := device.Render(ev)
+func renderDevice(ctx context.Context, device Text, ev Event) (string, error) {
+	d, err := device.Render(ctx, ev)
 	if err != nil {
 		return "", err
 	}

@@ -85,6 +85,10 @@ type File struct {
 	Automation *Automation
 	// Err says why the hub cannot load it.
 	Err error
+	// Linked is a file that is not a regular file of the directory, such as
+	// a symlink. The hub loads what it points to, so its id and validity
+	// count, but Content is empty: what is outside the directory stays there.
+	Linked bool
 }
 
 // Files reads and writes the automation files of a directory, as the hub
@@ -104,12 +108,26 @@ func (f Files) List() ([]File, error) {
 	out := make([]File, 0, len(paths))
 	seen := map[string]string{}
 	for _, path := range paths {
+		linked, readable, err := linkState(path)
+		if err != nil {
+			return nil, err
+		}
+		if !readable {
+			out = append(out, File{Path: path, Linked: true, Err: ErrNotRegular})
+			continue
+		}
 		b, err := os.ReadFile(path)
 		if err != nil {
 			return nil, fmt.Errorf("read automation file: %w", err)
 		}
-		file := File{Path: path, ID: declaredID(b), Content: b}
+		file := File{Path: path, ID: declaredID(b), Content: b, Linked: linked}
 		file.Automation, file.Err = Parse(filepath.Base(path), b, f.Kinds)
+		if linked {
+			file.Content = nil
+			if file.Err != nil {
+				file.Err = ErrNotRegular // its problems would quote the target
+			}
+		}
 		if prev, dup := seen[file.ID]; dup && file.ID != "" && file.Err == nil {
 			file.Automation, file.Err = nil, fmt.Errorf("automation id %q is already used by %s", file.ID, filepath.Base(prev))
 		}
@@ -119,6 +137,20 @@ func (f Files) List() ([]File, error) {
 		out = append(out, file)
 	}
 	return out, nil
+}
+
+// linkState reports whether path is something other than a regular file, and
+// whether it can be read without blocking: a named pipe would never answer.
+func linkState(path string) (linked, readable bool, err error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return false, false, fmt.Errorf("check automation file: %w", err)
+	}
+	if info.Mode().IsRegular() {
+		return false, true, nil
+	}
+	target, err := os.Stat(path)
+	return true, err == nil && target.Mode().IsRegular(), nil
 }
 
 // declaredID is the id a file declares, read without validating the rest of
@@ -144,6 +176,9 @@ func (f Files) Get(id string) (File, error) {
 	}
 	for _, file := range files {
 		if file.ID == id {
+			if file.Linked {
+				return File{}, fmt.Errorf("automation %s: %w", id, ErrNotRegular)
+			}
 			return file, nil
 		}
 	}
@@ -168,6 +203,9 @@ func (f Files) Target(a *Automation, create bool, revision string) (string, erro
 		case file.ID == a.ID && path == "":
 			if create {
 				return "", fmt.Errorf("automation %s is defined in %s: %w", a.ID, filepath.Base(file.Path), ErrExists)
+			}
+			if file.Linked {
+				return "", fmt.Errorf("%s: %w", filepath.Base(file.Path), ErrNotRegular)
 			}
 			if Revision(file.Content) != revision {
 				return "", fmt.Errorf("automation %s: %w", a.ID, ErrRevision)

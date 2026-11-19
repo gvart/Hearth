@@ -85,6 +85,8 @@ func newAPI(cfg Config) *api {
 		runbooks:    cfg.Runbooks,
 		leadership:  leadershipOf(cfg),
 		automations: automation.Files{Dir: cfg.AutomationsDir, Kinds: cfg.AutomationKinds},
+		leadership:  leadershipOf(cfg),
+		dryRuns:     newLoginLimiter(time.Now, dryRunBurst, dryRunEvery),
 		// Only a release tag is pinned: dev builds have no release to install.
 		installVersion: releaseVersion(cfg.Version),
 	}
@@ -194,6 +196,10 @@ type api struct {
 	automations automation.Files
 	// automationsMu makes each save's check and write one step.
 	automationsMu sync.Mutex
+	// leadership says whether this hub runs the automations it saves.
+	leadership Leadership
+	// dryRuns limits how often a client may ask for a dry run.
+	dryRuns *loginLimiter
 	// installVersion is the --version install commands pin, or "" for none.
 	installVersion string
 }

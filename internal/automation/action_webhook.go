@@ -90,7 +90,7 @@ func buildWebhook(p Params, client *http.Client) (Action, error) {
 // newWebhookRequest renders the headers and body for ev. Errors never hold
 // their values, which may be secrets.
 func newWebhookRequest(ctx context.Context, method, rawURL string, headers map[string]Text, body Text, ev Event) (*http.Request, error) {
-	b, err := body.Render(ev)
+	b, err := body.Render(ctx, ev)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +99,7 @@ func newWebhookRequest(ctx context.Context, method, rawURL string, headers map[s
 		return nil, errors.New("invalid request")
 	}
 	for k, v := range headers {
-		h, err := v.Render(ev)
+		h, err := v.Render(ctx, ev)
 		if err != nil {
 			return nil, err
 		}

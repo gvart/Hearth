@@ -69,11 +69,11 @@ func (a *notifyAction) Run(ctx context.Context, ev Event) error {
 	if a.notifier == nil {
 		return errors.New("this hub sends no notifications")
 	}
-	title, err := a.title.Render(ev)
+	title, err := a.title.Render(ctx, ev)
 	if err != nil {
 		return err
 	}
-	msg, err := a.message.Render(ev)
+	msg, err := a.message.Render(ctx, ev)
 	if err != nil {
 		return err
 	}

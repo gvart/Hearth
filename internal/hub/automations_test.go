@@ -555,7 +555,8 @@ func TestAutomationDryRunExecutesNothing(t *testing.T) {
 	if !out.Valid || out.Blocked != "" || out.Plan == "" {
 		t.Fatalf("dry run answered %+v", out)
 	}
-	if out.Save == nil || out.Save.Decision != policy.Allow || out.Save.Class != string(policy.Dangerous) {
+	// The id is granted and the file has dangerous actions: a person decides.
+	if out.Save == nil || out.Save.Decision != policy.Confirm || out.Save.Class != string(policy.Dangerous) {
 		t.Errorf("save decision %+v", out.Save)
 	}
 	if len(out.Actions) != 5 {

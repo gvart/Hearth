@@ -210,11 +210,11 @@ func TestNewDeviceAlertsSummarySize(t *testing.T) {
 	}
 	n := a.Actions[0].Impl.(*notifyAction)
 	ev := Event{TriggerID: "new", TriggerType: "network", Data: batchData(worstHosts(maxScanHosts))}
-	title, err := n.title.Render(ev)
+	title, err := n.title.Render(t.Context(), ev)
 	if err != nil {
 		t.Fatal(err)
 	}
-	msg, err := n.message.Render(ev)
+	msg, err := n.message.Render(t.Context(), ev)
 	if err != nil {
 		t.Fatal(err)
 	}

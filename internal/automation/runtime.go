@@ -409,7 +409,7 @@ func (r *Runtime) execute(ctx context.Context, a *Automation, ev Event) string {
 // grant policy gave it. In a dry run, an action policy would allow that can
 // plan says what it would do.
 func (r *Runtime) act(ctx context.Context, a *Automation, s Step[Action], runID string, ev Event) (string, error) {
-	target, err := s.Impl.Target().Render(ev)
+	target, err := s.Impl.Target().Render(ctx, ev)
 	if err != nil {
 		return "", err
 	}
