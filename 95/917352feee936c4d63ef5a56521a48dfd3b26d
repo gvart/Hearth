@@ -1,0 +1,31 @@
+internal/integrations/proxmox/manager_test.go
+  s_344993999c180f::t_3baf96ac147432 65-69
+  s_344993999c180f::t_13faf1b1da5c4e 86
+  s_344993999c180f::t_c7a0f31b8cce1d 64
+docs/proxmox.md
+  s_344993999c180f::t_2f90f7d5e9e6b4 96-102
+internal/integrations/proxmox/freshread_test.go
+  s_344993999c180f::t_504385c3386028 1-153,155-168
+  s_344993999c180f::t_49da887a13cbf6 154
+internal/integrations/proxmox/manager.go
+  s_344993999c180f::t_dca98f95484551 59-60
+  s_344993999c180f::t_4da874444e12aa 537-552
+  s_344993999c180f::t_25d7028ddb3a30 553-554
+  s_344993999c180f::t_363529d38e7acd 574-580
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "95917352feee936c4d63ef5a56521a48dfd3b26d",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
