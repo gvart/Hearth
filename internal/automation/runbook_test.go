@@ -127,6 +127,8 @@ type rbHarness struct {
 	cfg    policy.Config
 	kinds  Kinds
 	rb     *Runbooks
+	// probers run the checks from devices, when set.
+	probers Probers
 	// skew moves the engine's clock ahead of real time, in nanoseconds.
 	skew atomic.Int64
 }
@@ -191,7 +193,7 @@ func (h *rbHarness) open() {
 func (h *rbHarness) engine() *Runbooks {
 	return NewRunbooks(RunbooksConfig{
 		Dir: h.dir, Kinds: h.kinds, Policy: policy.NewWithConfig(h.audit, nil, h.cfg),
-		Runs: h.st.RunbookRuns(), Sealer: xorSealer{}, Poll: 5 * time.Millisecond, Now: h.now,
+		Runs: h.st.RunbookRuns(), Sealer: xorSealer{}, Poll: 5 * time.Millisecond, Now: h.now, Probers: h.probers,
 	})
 }
 
@@ -1198,7 +1200,7 @@ func TestParseRunbookRejects(t *testing.T) {
 		{"prompt without message", head + "  - {type: prompt}\n", "needs a message"},
 		{"secret confirm", head + "  - {type: prompt, prompt: confirm, secret: true, message: hi}\n", "cannot be secret"},
 		{"action without action", head + "  - {type: action}\n", "needs action"},
-		{"check from a device", head + "  - {type: check, check: {type: tcp, address: 'a:1', from: pi}}\n", "from is not supported"},
+		{"check from a device for too long", head + "  - {type: check, check: {type: tcp, address: 'a:1', from: pi, timeout: 2m}}\n", "at most 1m0s"},
 		{
 			"input in a device field",
 			head + "  - {id: a, type: prompt, message: hi}\n" +

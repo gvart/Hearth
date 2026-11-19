@@ -79,7 +79,10 @@ type RunbooksConfig struct {
 	Policy RunbookPolicy
 	Runs   RunbookStore
 	Sealer RunbookSealer
-	Log    *slog.Logger
+	// Probers run the check steps that name a device in from. Without
+	// them, such a step fails.
+	Probers Probers
+	Log     *slog.Logger
 	// Poll is how often the engine looks for work. Default 1s.
 	Poll time.Duration
 	// Now is the clock; default time.Now.
@@ -179,10 +182,7 @@ func (r *Runbooks) Plan(ctx context.Context, id string) (*RunbookPlan, error) {
 			r.planAction(ctx, rb, s.Action, &p)
 		}
 		if s.Check != nil {
-			p.Target, p.Action, p.Class = s.Check.what, string(policy.RunbookCheck), string(policy.Read)
-			p.Decision, p.Reason = r.cfg.Policy.Check(policy.Request{
-				ActorKind: policy.ActorAutomation, ActorID: RunbookActor(rb.ID), Action: policy.RunbookCheck, Target: p.Target,
-			})
+			r.planCheck(ctx, rb, s.Check, &p)
 		}
 		if s.Rollback != nil {
 			rp := RunbookPlanStep{ID: s.ID, Type: RunbookStepAction, What: s.Rollback.Impl.Describe()}
@@ -193,6 +193,43 @@ func (r *Runbooks) Plan(ctx context.Context, id string) (*RunbookPlan, error) {
 	}
 	return plan, nil
 }
+
+// planCheck fills in what policy would decide on the check c.
+func (r *Runbooks) planCheck(ctx context.Context, rb *Runbook, c *checkTrigger, p *RunbookPlanStep) {
+	action, target := checkAction(c)
+	class, _ := policy.ClassOf(action)
+	p.Target, p.Action, p.Class = target, string(action), string(class)
+	p.Decision, p.Reason = r.cfg.Policy.Check(policy.Request{
+		ActorKind: policy.ActorAutomation, ActorID: RunbookActor(rb.ID), Action: action, Target: target,
+	})
+	if c.from != "" && p.Decision != policy.Deny {
+		// Only a refusal counts: an agent that is offline now may be back.
+		if err := r.checkProbe(ctx, c.from); errors.Is(err, policy.ErrDenied) {
+			p.Decision, p.Reason = policy.Deny, err.Error()
+		}
+	}
+}
+
+// checkAction is the policy action and target of the check c: a check from a
+// device is that device's probe, one from the hub reads the check's target.
+func checkAction(c *checkTrigger) (policy.Action, string) {
+	if c.from != "" {
+		return policy.AutomationProbe, c.from
+	}
+	return policy.RunbookCheck, c.what
+}
+
+// checkProbe reports whether a probe would be sent to device: an error
+// wrapping policy.ErrBeyondCeiling when its agent's ceiling refuses probes.
+func (r *Runbooks) checkProbe(ctx context.Context, device string) error {
+	if r.cfg.Probers == nil {
+		return errNoProbers
+	}
+	return r.cfg.Probers.CheckProbe(ctx, device)
+}
+
+// errNoProbers fails a check from a device on a hub that cannot run one.
+var errNoProbers = errors.New("this hub does not run checks from devices")
 
 // planAction fills in what policy would decide on a.
 func (r *Runbooks) planAction(ctx context.Context, rb *Runbook, a *Step[Action], p *RunbookPlanStep) {
@@ -968,23 +1005,46 @@ func (r *Runbooks) execute(ctx context.Context, rb *Runbook, run *store.RunbookR
 }
 
 // policedCheck takes a check step through policy, as the runbook: one decision
-// and one audit entry for each attempt at the step, however often it polls.
+// and one audit entry for each attempt at the step, however often it polls. A
+// check from a device is decided as that device's probe, and is denied when
+// the device's capability ceiling does not allow probes.
 func (r *Runbooks) policedCheck(ctx context.Context, rb *Runbook, run *store.RunbookRun, d *RunbookStep, attempt int) error {
 	decideCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancel()
-	return r.cfg.Policy.Do(decideCtx, policy.Request{
-		ActorKind: policy.ActorAutomation, ActorID: RunbookActor(rb.ID), Action: policy.RunbookCheck, Target: d.Check.what,
+	action, target := checkAction(d.Check)
+	req := policy.Request{
+		ActorKind: policy.ActorAutomation, ActorID: RunbookActor(rb.ID), Action: action, Target: target,
 		Detail: map[string]any{"run": run.ID, "step": d.ID, "attempt": attempt, "started_by": run.StartedBy},
 		DryRun: r.cfg.DryRun,
 		OnHold: func(string, time.Time) { context.AfterFunc(ctx, cancel) },
-	}, func(granted context.Context) error { return r.runCheck(policy.WithGrant(ctx, granted), d) })
+	}
+	if d.Check.from != "" {
+		req.Detail["check"] = d.Check.what
+		req.Precheck = func(ctx context.Context) error { return r.checkProbe(ctx, d.Check.from) }
+	}
+	return r.cfg.Policy.Do(decideCtx, req, func(granted context.Context) error { return r.runCheck(policy.WithGrant(ctx, granted), d) })
 }
 
-// runCheck repeats a check until it passes or its time is up.
+// runCheck repeats a check until it passes or its time is up. A check from a
+// device that cannot run at all (the device is unknown, its agent offline or
+// refusing probes) fails at once: it never falls back to the hub.
 func (r *Runbooks) runCheck(ctx context.Context, d *RunbookStep) error {
+	c := *d.Check
+	if c.from != "" {
+		if r.cfg.Probers == nil {
+			return errNoProbers
+		}
+		c.probers = r.cfg.Probers
+	}
 	deadline := r.cfg.Now().Add(d.Within)
 	for {
-		_, err := d.Check.run(ctx)
+		ran, err := c.run(ctx)
+		if ctx.Err() != nil {
+			return err
+		}
+		if !ran {
+			return fmt.Errorf("the check cannot run from its device: %w", err)
+		}
 		if err == nil || ctx.Err() != nil {
 			return err
 		}

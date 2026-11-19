@@ -78,8 +78,8 @@ type RunbookStep struct {
 	Action *Step[Action]
 	// Rollback undoes an action step.
 	Rollback *Step[Action]
-	// Check is what a check step checks, from the hub. Within is how long it
-	// keeps trying, Every how often.
+	// Check is what a check step checks, from the hub or from the device
+	// in its from. Within is how long it keeps trying, Every how often.
 	Check  *checkTrigger
 	Within time.Duration
 	Every  time.Duration
@@ -108,10 +108,14 @@ func (s *RunbookStep) What() string {
 	case RunbookStepAction:
 		return s.Action.Impl.Describe()
 	case RunbookStepCheck:
-		if s.Within > 0 {
-			return fmt.Sprintf("check %s, for up to %s", s.Check.what, s.Within)
+		what := "check " + s.Check.what
+		if s.Check.from != "" {
+			what += " from device " + s.Check.from
 		}
-		return "check " + s.Check.what
+		if s.Within > 0 {
+			return fmt.Sprintf("%s, for up to %s", what, s.Within)
+		}
+		return what
 	case RunbookStepPrompt:
 		return s.Prompt.Message
 	default:
@@ -440,10 +444,6 @@ func parseRunbookCheck(n *yaml.Node, s *RunbookStep, errs *[]error) *checkTrigge
 	}
 	c, ok := built[0].Impl.(*checkTrigger)
 	if !ok {
-		return nil
-	}
-	if c.from != "" {
-		*errs = append(*errs, lineError(n.Line, "a check step runs from the hub: from is not supported"))
 		return nil
 	}
 	return c
