@@ -200,9 +200,13 @@ so. The hub does not start until the key is there (`CA … is incomplete`). Then
 - **Or start with a new CA**: delete `ca.crt` from the restored data dir. The hub creates a new CA, so
   every browser must trust it again (see [HTTPS](https.md)), every agent has to enroll again with a new
   token, every other hub of a cluster has to join again, and Kubernetes clusters and Proxmox servers have
-  to be added again: their credentials are sealed with a key derived from the CA key. Devices, the audit
-  log, automations and the rest of the configuration are kept. A restored hub shows the scheduled backup it
-came from as `started` in its audit log, like a backup taken with `hearth backup`.
+  to be added again: their credentials are sealed with a key derived from the CA key. The audit log,
+  automations and the rest of the configuration are kept. An agent that enrolls again (remove its agent
+  data dir, then `hearth agent join` with a new token) becomes a new device; its old entry stays, offline,
+  until you revoke it with `hearth device revoke`.
+
+A restored hub shows the scheduled backup it came from as `started` in its audit log, like a backup taken
+with `hearth backup`.
 
 ## Restoring a hub
 
