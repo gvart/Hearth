@@ -61,6 +61,8 @@ type Config struct {
 	Ceiling Ceiling
 	// Connected, if set, is called each time a hub accepts this agent.
 	Connected func()
+	// Failed, if set, is called after each attempt that no hub accepted.
+	Failed func()
 }
 
 type runner struct {
@@ -159,6 +161,9 @@ func Run(ctx context.Context, cfg Config) error {
 		} else {
 			failed++
 			r.cur = (r.cur + 1) % len(r.hubs)
+			if cfg.Failed != nil {
+				cfg.Failed()
+			}
 		}
 		if leader >= 0 {
 			r.cur = leader
