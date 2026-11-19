@@ -178,6 +178,9 @@ func TestApproverSeesThePlan(t *testing.T) {
 	yaml := `id: planned
 triggers:
   - type: manual
+  - id: probe
+    type: http
+    url: https://user:trigger-s3cret@status.example/health?token=trigger-s3cret
 actions:
   - id: run-it
     type: exec

@@ -16,6 +16,8 @@ import (
 const (
 	// maxRenderBytes bounds what one field renders to.
 	maxRenderBytes = 1 << 20
+	// maxRenderBudget bounds the text one render builds along the way.
+	maxRenderBudget = 8 * maxRenderBytes
 	// maxRenderSteps bounds the writes and loop iterations of one render.
 	maxRenderSteps = 100_000
 	// maxRenderTime bounds one render.
@@ -53,8 +55,15 @@ func (x Text) Render(ctx context.Context, ev Event) (string, error) {
 	}
 	ctx, cancel := context.WithTimeout(ctx, maxRenderTime)
 	defer cancel()
+	// A clone, for this render's own budget: renders may run side by side.
+	t, err := x.t.Clone()
+	if err != nil {
+		return "", fmt.Errorf("render template: %w", err)
+	}
+	budget := renderBudget{left: maxRenderBudget}
+	t.Funcs(budget.funcs())
 	w := renderWriter{stopped: ctx.Err}
-	if err := x.t.Execute(&w, ev.templateData()); err != nil {
+	if err := t.Execute(&w, ev.templateData()); err != nil {
 		return "", templateErr(err)
 	}
 	return w.b.String(), nil
@@ -120,8 +129,8 @@ func (p Params) Text(raw string, path ...string) (Text, error) {
 	return Text{raw: raw, t: t, line: line}, nil
 }
 
-// boundTemplate refuses what could use unbounded memory or time before the
-// render limits are reached, and makes every loop iteration count as a step.
+// boundTemplate refuses templates that call each other, whose depth nothing
+// else limits, and makes every loop iteration count as a step.
 func boundTemplate(t *template.Template) error {
 	if len(t.Templates()) > 1 {
 		return errors.New("define and block are not allowed")
@@ -146,17 +155,12 @@ func boundList(list *parse.ListNode) error {
 
 func boundNode(n parse.Node) error {
 	switch n := n.(type) {
-	case *parse.ActionNode:
-		return boundPipe(n.Pipe, false)
 	case *parse.IfNode:
-		return boundBranch(&n.BranchNode, false)
+		return boundBranch(&n.BranchNode)
 	case *parse.WithNode:
-		return boundBranch(&n.BranchNode, false)
+		return boundBranch(&n.BranchNode)
 	case *parse.RangeNode:
-		if err := boundRangeOver(n.Pipe); err != nil {
-			return err
-		}
-		if err := boundBranch(&n.BranchNode, true); err != nil {
+		if err := boundBranch(&n.BranchNode); err != nil {
 			return err
 		}
 		// An empty text node writes nothing, but it does call the writer.
@@ -167,76 +171,67 @@ func boundNode(n parse.Node) error {
 	return nil
 }
 
-func boundBranch(b *parse.BranchNode, declares bool) error {
-	if err := boundPipe(b.Pipe, declares); err != nil {
-		return err
-	}
+func boundBranch(b *parse.BranchNode) error {
 	if err := boundList(b.List); err != nil {
 		return err
 	}
 	return boundList(b.ElseList)
 }
 
-// boundRangeOver allows ranging over the event's data only: over a number, a
-// file could loop as many times as it likes.
-func boundRangeOver(p *parse.PipeNode) error {
-	if len(p.Cmds) == 1 && len(p.Cmds[0].Args) == 1 {
-		switch p.Cmds[0].Args[0].(type) {
-		case *parse.FieldNode, *parse.DotNode, *parse.VariableNode, *parse.ChainNode:
-			return nil
-		}
-	}
-	return errors.New("range may only go over a field of the event")
-}
-
 // printfSize finds a width or precision too large for a message, or one
-// computed when the template runs.
+// computed when the template runs: one call could build gigabytes.
 var printfSize = regexp.MustCompile(`%[-+# 0]*(\[|\*|\d{4,}|\d*\.(\[|\*|\d{4,}))`)
 
-func boundPipe(p *parse.PipeNode, declares bool) error {
-	if p == nil {
-		return nil
+// renderBudget limits the text one render builds, which a value doubled at
+// every step could otherwise grow without writing anything.
+type renderBudget struct{ left int }
+
+func (b *renderBudget) spend(n int) error {
+	if n > b.left {
+		return errRenderLimit
 	}
-	if p.IsAssign || (len(p.Decl) > 0 && !declares) {
-		return errors.New("variables are only allowed in range")
-	}
-	for _, c := range p.Cmds {
-		if id, ok := c.Args[0].(*parse.IdentifierNode); ok && id.Ident == "printf" {
-			if err := boundPrintf(c); err != nil {
-				return err
-			}
-		}
-		for _, arg := range c.Args {
-			if err := boundArg(arg); err != nil {
-				return err
-			}
-		}
-	}
+	b.left -= n
 	return nil
 }
 
-func boundPrintf(c *parse.CommandNode) error {
-	if len(c.Args) < 2 {
-		return errors.New("printf needs its format written in the template")
+// build runs fn, which makes a string out of args, within the budget.
+func (b *renderBudget) build(args []any, fn func() string) (string, error) {
+	size := 0
+	for _, a := range args {
+		if s, ok := a.(string); ok {
+			size += len(s)
+		}
 	}
-	format, ok := c.Args[1].(*parse.StringNode)
-	if !ok {
-		return errors.New("printf needs its format written in the template")
+	if err := b.spend(size); err != nil {
+		return "", err
 	}
-	if printfSize.MatchString(format.Text) {
-		return errors.New("printf width and precision may be at most 3 digits")
+	out := fn()
+	if err := b.spend(len(out)); err != nil {
+		return "", err
 	}
-	return nil
+	return out, nil
 }
 
-func boundArg(n parse.Node) error {
-	switch n := n.(type) {
-	case *parse.PipeNode:
-		return boundPipe(n, false)
-	case *parse.ChainNode:
-		return boundArg(n.Node)
+// funcs are text/template's functions that build strings, within the budget.
+func (b *renderBudget) funcs() template.FuncMap {
+	wrap := func(fn func(...any) string) func(...any) (string, error) {
+		return func(args ...any) (string, error) {
+			return b.build(args, func() string { return fn(args...) })
+		}
 	}
-	return nil
+	return template.FuncMap{
+		"print":    wrap(fmt.Sprint),
+		"println":  wrap(fmt.Sprintln),
+		"html":     wrap(template.HTMLEscaper),
+		"js":       wrap(template.JSEscaper),
+		"urlquery": wrap(template.URLQueryEscaper),
+		"printf": func(format string, args ...any) (string, error) {
+			if printfSize.MatchString(format) {
+				return "", errRenderLimit
+			}
+			return b.build(args, func() string { return fmt.Sprintf(format, args...) })
+		},
+	}
 }
 
 // line returns the line of the value at path, or of the step if it is not
@@ -287,6 +282,9 @@ func checkTemplates(a *Automation, errs *[]error) {
 // needs: `executing "device" at <.Trigger.Foo>: map has no entry for key
 // "Foo"` becomes `device: .Trigger.Foo: no such field`.
 func templateErr(err error) error {
+	if errors.Is(err, errRenderLimit) {
+		return errRenderLimit
+	}
 	var ee template.ExecError
 	if !errors.As(err, &ee) {
 		return err

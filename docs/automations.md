@@ -429,10 +429,10 @@ string, and it is caught when the file is loaded: every template is tried agains
 its automation, so `{{ .Trigger.Device }}` next to a `schedule` trigger is rejected with its line.
 A `device` that renders empty fails the run.
 
-Templates are bounded, so that a file cannot exhaust the hub. A field renders at most 1 MiB, in at most
-100,000 steps and 2 seconds; past that the action fails. `range` goes over a field of the event only.
-`define`, `template`, `block` and variables outside `range` are refused when the file loads, and so is
-a `printf` whose format is not written in the template or has a width or precision over 3 digits.
+Templates are bounded, so that a file cannot exhaust the hub. A field renders at most 1 MiB, builds at
+most 8 MiB of text along the way, and takes at most 100,000 steps and 2 seconds; past that the action
+fails, and a template that does so for its sample event is refused when the file loads. A `printf`
+width or precision may have at most 3 digits. `define`, `template` and `block` are not available.
 
 `hearth automation plan` shows templates as written, and lists the fields each trigger provides.
 Policy decides on, and the audit log records, the rendered device. Run history keeps the trigger's
