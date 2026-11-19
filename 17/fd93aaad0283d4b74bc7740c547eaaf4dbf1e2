@@ -1,0 +1,46 @@
+internal/policy/policy_test.go
+  s_344993999c180f::t_b48af280e86d56 414-418
+  s_344993999c180f::t_e7e9612bcb4cac 388-389,394-395,400-401
+  s_344993999c180f::t_bb5d411dc73a27 383,386-387,390-391,396,402
+internal/policy/engine.go
+  s_344993999c180f::t_fc2a7e54e5bd79 332-334
+  s_344993999c180f::t_7356ab294b7f6b 70-82
+  s_344993999c180f::t_f566b89e686e52 228,233-245
+  s_344993999c180f::t_8029f25b3eab6c 444-445,451-453,455-460
+  s_344993999c180f::t_9573ecff15e8bd 246-247
+internal/store/auditquery_test.go
+  s_344993999c180f::t_458fe723d4a05d 8
+  s_344993999c180f::t_e587536e821661 131-198
+docs/guardrails.md
+  s_344993999c180f::t_57f79fd926e7bb 140
+web/src/components/AuditPage.tsx
+  s_344993999c180f::t_6b8f27b4e90d10 318-321
+  s_344993999c180f::t_8bf77798bea278 328-331
+internal/policy/auditfirst_test.go
+  s_344993999c180f::t_2b8ac185d04d4d 200-272
+  s_344993999c180f::t_95e8206c2d8b8d 192-193
+  s_344993999c180f::t_e45c17891d5665 9
+internal/store/audit.go
+  s_344993999c180f::t_a9c7002d0f8c6b 39-42
+  s_344993999c180f::t_df044ec2cb774f 87-89
+  s_344993999c180f::t_8bf26a8f7cf241 151,153
+  s_344993999c180f::t_ff2ef9ab8775e5 43-67
+  s_344993999c180f::t_546adeb5aa1f53 214,216
+  s_344993999c180f::t_0461b8093c9669 233,238-240,243,247-251
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "17fd93aaad0283d4b74bc7740c547eaaf4dbf1e2",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
