@@ -20,8 +20,8 @@ its own certificate authority (CA):
 No certificate is bought or requested from anywhere: each device you browse from trusts the hub CA
 **once**, and from then on `https://<host>:7443` is a normal secure site. The CA can only issue
 certificates from the hub's data dir; its private key stays there, apart from an encrypted
-[backup](backup.md) archive an admin takes through policy, and `/ca.crt` serves only the
-certificate.
+[backup](backup.md) archive an admin takes through policy, or a scheduled one the hub uploads when
+started with `--backup-include-ca`, and `/ca.crt` serves only the certificate.
 
 The installer stays on plain HTTP: `curl` on a new device doesn't trust the hub CA yet. The
 "Add device" dialog always gives an `http://<host>:7080/install.sh` command, even when opened over

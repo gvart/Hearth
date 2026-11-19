@@ -45,6 +45,7 @@ internal/store/        SQLite access + goose migrations
 internal/policy/       action classes, decisions, audit log
 internal/discovery/    network discovery: ARP sweep, mDNS, OUI vendors, DHCP lease import (unmanaged hosts)
 internal/cluster/      Raft replication of the hub store (hashicorp/raft), hub join, mTLS transport
+internal/s3/           minimal SigV4 S3 client (put, list, delete) for scheduled backups
 pkg/sdk/               public agent/plugin SDK — Apache-2.0 licensed
 proto/                 .proto sources
 web/                   Vite + React + TypeScript UI, embedded via embed.FS
@@ -99,7 +100,8 @@ Keep this list in sync with `Taskfile.yml`. If you add a task, document it here.
 - Enrollment tokens: single-use, short TTL, stored hashed.
 - mTLS everywhere between hub and agents, and between hubs; the hub CA key never leaves a hub voter's data
   dir (0600), except inside an encrypted backup archive created by an authenticated admin through policy and
-  audited; it is replicated only over the pinned mTLS join channel.
+  audited, or by a scheduled hub backup when the operator opts in with `--backup-include-ca` (also through
+  policy and audited); it is replicated only over the pinned mTLS join channel.
 - Agent-side config is the capability ceiling; the hub can never grant more than the device allows.
 - Any new action type must declare its class (`read` / `safe` / `dangerous`) in `internal/policy`.
 - Shell-outs: no string concatenation into shells; use `exec.Command` with args.

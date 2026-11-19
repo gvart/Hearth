@@ -166,6 +166,10 @@ const (
 	HubBackup Action = "hub.backup"
 	// HubRestore brings a hub back from a backup into an empty data dir.
 	HubRestore Action = "hub.restore"
+	// HubScheduledBackup is the hub's own scheduled backup: an encrypted
+	// backup, without the CA key unless the operator opts in, uploaded to
+	// S3-compatible storage, with the oldest backups there pruned.
+	HubScheduledBackup Action = "hub.scheduled_backup"
 )
 
 // Actor kinds.
@@ -339,6 +343,10 @@ var rules = map[Action]rule{
 	// A restore brings back a CA and every credential. It is the way back
 	// after losing the hub, when no one is left to approve it.
 	HubRestore: {class: Dangerous, actors: []string{ActorAdmin}, fixed: true},
+	// The operator turns scheduled backups on with the hub's flags, the
+	// passphrase file and the bucket's credentials: that is the grant. No one
+	// is there to approve each run.
+	HubScheduledBackup: {class: Dangerous, actors: []string{ActorHub}, fixed: true},
 }
 
 // Actions returns every known action, sorted.

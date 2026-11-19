@@ -94,7 +94,9 @@ type hubOptions struct {
 	beszelPasswordFile string
 	// dhcpLeases are DHCP lease files (dnsmasq, ISC dhcpd) to import.
 	dhcpLeases []string
-	cluster    clusterOptions
+	// backup schedules encrypted backups to an S3-compatible bucket.
+	backup  scheduledBackupOptions
+	cluster clusterOptions
 	// version is the binary's version, which install commands pin agents to.
 	version string
 }
@@ -120,7 +122,9 @@ func newHubCmd() *cobra.Command {
 			"notification for every new host (see docs/discovery.md). --pihole-url and --dhcp-leases add\n" +
 			"the hosts a Pi-hole or a DHCP server knows, with their names, on every VLAN (see docs/pihole.md);\n" +
 			"--netalertx-url adds the devices a NetAlertX knows (see docs/netalertx.md).\n\n" +
-			"--beszel-url reads the systems a Beszel hub monitors, with their status and usage (see docs/beszel.md).",
+			"--beszel-url reads the systems a Beszel hub monitors, with their status and usage (see docs/beszel.md).\n\n" +
+			"--backup-interval uploads an encrypted backup to an S3-compatible bucket at that interval and keeps\n" +
+			"the newest --backup-keep, without the CA key unless --backup-include-ca; in a cluster the leader does (see docs/backup.md).",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			opts.adminPassword = os.Getenv("HEARTH_ADMIN_PASSWORD")
@@ -135,6 +139,9 @@ func newHubCmd() *cobra.Command {
 					return fmt.Errorf("HEARTH_DISCOVER_INTERVAL: %w", err)
 				}
 				opts.discoverInterval = d
+			}
+			if err := opts.backup.fromEnv(cmd); err != nil {
+				return err
 			}
 			return runHub(cmd.Context(), opts, newLogger(cmd.ErrOrStderr()))
 		},
@@ -189,6 +196,7 @@ func newHubCmd() *cobra.Command {
 	cmd.Flags().StringArrayVar(&opts.dhcpLeases, "dhcp-leases", splitList(os.Getenv("HEARTH_DHCP_LEASES")),
 		"DHCP lease file to import hosts from, dnsmasq (/var/lib/misc/dnsmasq.leases) or ISC dhcpd (dhcpd.leases); "+
 			"repeatable (env HEARTH_DHCP_LEASES, comma-separated)")
+	addBackupFlags(cmd, &opts.backup)
 	addClusterFlags(cmd, &opts.cluster)
 	return cmd
 }
@@ -332,6 +340,10 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	notifyDigest := cluster.ConfigFileDigest(notifyConfigPath(opts))
 	if opts.newDeviceAlerts != "" && !notifier.Has(opts.newDeviceAlerts) {
 		return fmt.Errorf("--new-device-alerts: no notification channel %q (see --notify-config)", opts.newDeviceAlerts)
+	}
+	backups, err := backupScheduler(opts, st, pol, notifier, node != nil, log.With("component", "backup"))
+	if err != nil {
+		return err
 	}
 	if err := notifyApprovals(pol, polCfg.ApprovalNotify, st, notifier, hosts[0], agentPort, log); err != nil {
 		return err
@@ -518,6 +530,9 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		if beszelReader != nil {
 			g.Go(func() error { return beszelReader.Run(gctx) })
 		}
+		if backups != nil {
+			g.Go(func() error { return backups.Run(gctx) })
+		}
 	}
 	// Every hub of a cluster watches the Kubernetes clusters itself.
 	g.Go(func() error { return kube.Run(gctx) })
@@ -534,9 +549,12 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		// only and follow leadership.
 		changed, automationsChanged, discoveryChanged := make(chan struct{}, 1), make(chan struct{}, 1), make(chan struct{}, 1)
 		importChanged, runbooksChanged, beszelChanged := make(chan struct{}, 1), make(chan struct{}, 1), make(chan struct{}, 1)
-		approvalsChanged := make(chan struct{}, 1)
+		approvalsChanged, backupsChanged := make(chan struct{}, 1), make(chan struct{}, 1)
 		node.OnLeaderChange(func(cluster.LeaderInfo) {
-			for _, c := range []chan struct{}{changed, automationsChanged, discoveryChanged, importChanged, runbooksChanged, approvalsChanged, beszelChanged} {
+			for _, c := range []chan struct{}{
+				changed, automationsChanged, discoveryChanged, importChanged, runbooksChanged, approvalsChanged,
+				beszelChanged, backupsChanged,
+			} {
 				select {
 				case c <- struct{}{}:
 				default:
@@ -564,6 +582,12 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		if beszelReader != nil {
 			g.Go(func() error {
 				return automation.RunWhileLeading(gctx, node, beszelChanged, log.With("component", "beszel"), beszelReader.Run)
+			})
+		}
+		if backups != nil {
+			// Only the leader backs up, as only it can audit.
+			g.Go(func() error {
+				return automation.RunWhileLeading(gctx, node, backupsChanged, log.With("component", "backup"), backups.Run)
 			})
 		}
 		g.Go(func() error {

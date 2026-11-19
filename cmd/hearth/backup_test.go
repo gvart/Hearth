@@ -19,6 +19,7 @@ import (
 	"github.com/gvart/hearth/internal/agent"
 	"github.com/gvart/hearth/internal/backup"
 	"github.com/gvart/hearth/internal/cluster"
+	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/policy"
 	"github.com/gvart/hearth/internal/store"
 )
@@ -77,23 +78,48 @@ var enrollTokenRe = regexp.MustCompile(`HEARTH_TOKEN=(\S+)`)
 
 // TestRestoredHubTakesBackItsAgent is the promise of a backup: an agent that
 // enrolled before it reconnects to the restored hub with the identity it has,
-// without enrolling again.
+// without enrolling again. A scheduled backup without the CA key keeps that
+// promise once the key is copied back from a `hearth backup` file; without
+// any key, the hub starts over with a new CA and agents enroll again.
 func TestRestoredHubTakesBackItsAgent(t *testing.T) {
+	for _, mode := range []string{"backup", "no CA key, key copied back", "no CA key, new CA"} {
+		t.Run(mode, func(t *testing.T) { testRestoredHub(t, mode) })
+	}
+}
+
+func testRestoredHub(t *testing.T, mode string) {
 	t.Setenv(passphraseEnv, testBackupPassphrase)
 	dataDir := t.TempDir()
 	listen, httpListen := freeAddr(t), freeAddr(t)
 	hubURL := "https://" + listen
 	hubOpts := hubOptions{dataDir: dataDir, listen: listen, httpListen: httpListen, hosts: []string{"127.0.0.1"}}
 	stopHub := runBackupTestHub(t, hubOpts)
-	waitFor(t, "the hub to listen", 10*time.Second, func() bool {
+	listening := func() bool {
 		var d net.Dialer
 		c, err := d.DialContext(t.Context(), "tcp", listen)
 		if err == nil {
 			_ = c.Close()
 		}
 		return err == nil
-	})
+	}
+	waitFor(t, "the hub to listen", 10*time.Second, listening)
 
+	enroll := func(dir, name string) string {
+		t.Helper()
+		out, err := execute(t, "token", "create", "--data-dir", dir, "--hub-url", hubURL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m := enrollTokenRe.FindStringSubmatch(out)
+		if m == nil {
+			t.Fatalf("no token in %q", out)
+		}
+		id, err := agent.Join(t.Context(), hubURL, m[1], t.TempDir(), name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
 	out, err := execute(t, "token", "create", "--data-dir", dataDir, "--hub-url", hubURL)
 	if err != nil {
 		t.Fatal(err)
@@ -134,10 +160,26 @@ func TestRestoredHubTakesBackItsAgent(t *testing.T) {
 	}
 	waitFor(t, "the agent to come online", 15*time.Second, deviceOnline(dataDir, time.Time{}))
 
-	// The backup is taken from the running hub.
-	file := filepath.Join(t.TempDir(), "hub.hbk")
-	if _, err := execute(t, "backup", file, "--data-dir", dataDir); err != nil {
+	// The backups are taken from the running hub: the admin's, and for the
+	// other modes the scheduled one without the CA key.
+	adminFile := filepath.Join(t.TempDir(), "hub.hbk")
+	if _, err := execute(t, "backup", adminFile, "--data-dir", dataDir); err != nil {
 		t.Fatal(err)
+	}
+	file := adminFile
+	if mode != "backup" {
+		file = filepath.Join(t.TempDir(), "scheduled.hbk")
+		st, err := openBackupStore(t.Context(), dataDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = backup.Create(t.Context(), backup.CreateOptions{
+			DataDir: dataDir, Store: st, Output: file, Passphrase: testBackupPassphrase, WithoutCAKey: true,
+		})
+		_ = st.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	stopHub()
 
@@ -147,17 +189,44 @@ func TestRestoredHubTakesBackItsAgent(t *testing.T) {
 	} else if !strings.Contains(out, "Restored the backup") {
 		t.Errorf("restore output: %q", out)
 	}
+	switch mode {
+	case "no CA key, key copied back":
+		// As docs/backup.md says: restore the admin's backup elsewhere, copy its key.
+		keyDir := filepath.Join(t.TempDir(), "ca")
+		if _, err := execute(t, "restore", adminFile, "--data-dir", keyDir); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Link(filepath.Join(keyDir, pki.CAKeyFile), filepath.Join(restored, pki.CAKeyFile)); err != nil {
+			t.Fatal(err)
+		}
+	case "no CA key, new CA":
+		if err := os.Remove(filepath.Join(restored, pki.CACertFile)); err != nil {
+			t.Fatal(err)
+		}
+	}
 	restoredAt := time.Now()
 	hubOpts.dataDir = restored
 	runBackupTestHub(t, hubOpts)
-	waitFor(t, "the agent to reconnect to the restored hub", 60*time.Second, deviceOnline(restored, restoredAt))
 
-	certAfter, err := os.ReadFile(filepath.Join(agentDir, agent.CertFile))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(certBefore) != string(certAfter) {
-		t.Error("the agent's certificate changed: it enrolled again")
+	expectEnrolls := 1
+	if mode == "no CA key, new CA" {
+		waitFor(t, "the hub with a new CA to listen", 10*time.Second, listening)
+		// The agent's old certificate is from the old CA: it has to enroll again.
+		time.Sleep(3 * time.Second)
+		if deviceOnline(restored, restoredAt)() {
+			t.Fatal("an agent of the old CA got back in")
+		}
+		enroll(restored, "re-enrolled-pi")
+		expectEnrolls = 2
+	} else {
+		waitFor(t, "the agent to reconnect to the restored hub", 60*time.Second, deviceOnline(restored, restoredAt))
+		certAfter, err := os.ReadFile(filepath.Join(agentDir, agent.CertFile))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(certBefore) != string(certAfter) {
+			t.Error("the agent's certificate changed: it enrolled again")
+		}
 	}
 	st, err := store.Open(t.Context(), filepath.Join(restored, dbFile), store.WithoutUpgrade())
 	if err != nil {
@@ -168,8 +237,8 @@ func TestRestoredHubTakesBackItsAgent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(devices) != 1 || devices[0].ID != deviceID {
-		t.Errorf("devices after the restore = %+v, want only %s", devices, deviceID)
+	if len(devices) != expectEnrolls || devices[0].ID != deviceID && devices[len(devices)-1].ID != deviceID {
+		t.Errorf("devices after the restore = %+v, want %d, %s among them", devices, expectEnrolls, deviceID)
 	}
 	entries, err := st.Audit().Query(t.Context(), store.AuditFilter{
 		Actions: []string{string(policy.HubBackup), string(policy.HubRestore), string(policy.DeviceEnroll)},
@@ -181,8 +250,8 @@ func TestRestoredHubTakesBackItsAgent(t *testing.T) {
 	for _, e := range entries {
 		counts[e.Action]++
 	}
-	if counts[string(policy.HubRestore)] != 1 || counts[string(policy.DeviceEnroll)] != 1 {
-		t.Errorf("audit after the restore = %v, want one hub.restore and the one device.enroll", counts)
+	if counts[string(policy.HubRestore)] != 1 || counts[string(policy.DeviceEnroll)] != expectEnrolls {
+		t.Errorf("audit after the restore = %v, want one hub.restore and %d device.enroll", counts, expectEnrolls)
 	}
 }
 
