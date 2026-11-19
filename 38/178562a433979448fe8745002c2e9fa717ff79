@@ -1,0 +1,21 @@
+cmd/hearth/memdiag.go
+  s_344993999c180f::t_6b71c3311f70c5 1-28
+cmd/hearth/agent.go
+  s_344993999c180f::t_c9a1af0a3147cd 58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "38178562a433979448fe8745002c2e9fa717ff79",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
