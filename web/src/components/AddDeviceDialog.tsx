@@ -112,7 +112,7 @@ const copyLabels: Record<CopyState, string> = {
   selected: 'Press Ctrl/⌘+C',
 };
 
-function Command({ label, value }: { label: string; value: string }) {
+export function Command({ label, value }: { label: string; value: string }) {
   const [state, setState] = useState<CopyState>('idle');
   const pre = useRef<HTMLPreElement>(null);
   useEffect(() => {

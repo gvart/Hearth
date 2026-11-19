@@ -5,6 +5,8 @@ import {
   ApiError,
   streamDeviceLogs,
   subscribeEvents,
+  subscribeGuestEvents,
+  type PanelInput,
   type AuditFilter,
   type Device,
   type DeviceEvent,
@@ -42,6 +44,8 @@ export const keys = {
   runbookRuns: ['runbooks', 'runs'] as const,
   runbookRun: (id: string) => ['runbooks', 'run', id] as const,
   telemetry: ['telemetry'] as const,
+  panels: ['panels'] as const,
+  guestPanel: (token: string) => ['guest-panel', token] as const,
 };
 
 /** A run moves on by itself on the hub, so it is polled until it has ended. */
@@ -473,6 +477,91 @@ export function applyKubeChange(snap: KubeSnapshot | undefined, c: KubeChange): 
           .slice(0, maxEvents),
       };
   }
+}
+
+export function usePanels() {
+  return useQuery({ queryKey: keys.panels, queryFn: api.panels });
+}
+
+/** Creates a panel, or saves an existing one when id is set. */
+export function useSavePanel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, panel }: { id?: string; panel: PanelInput }) =>
+      id ? api.updatePanel(id, panel) : api.createPanel(panel),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.panels }),
+  });
+}
+
+export function useDeletePanel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.deletePanel,
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.panels }),
+  });
+}
+
+export function useCreatePanelLink() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, expiresIn }: { id: string; expiresIn: string }) => api.createPanelLink(id, expiresIn),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.panels }),
+  });
+}
+
+export function useRevokePanelLink() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, link }: { id: string; link: string }) => api.revokePanelLink(id, link),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.panels }),
+  });
+}
+
+/**
+ * A panel through its share link, refetched whenever the hub says an entity
+ * on it changed, and whenever the change stream (re)opens. A link the hub no
+ * longer knows (404) stops the stream for good.
+ */
+export function useGuestPanel(token: string) {
+  const qc = useQueryClient();
+  const query = useQuery({
+    queryKey: keys.guestPanel(token),
+    queryFn: () => api.guestPanel(token),
+    retry: (n, err) => !(err instanceof ApiError && err.status === 404) && n < 3,
+  });
+  const gone = query.error instanceof ApiError && query.error.status === 404;
+  useEffect(() => {
+    if (gone) {
+      return;
+    }
+    let close: (() => void) | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const refetch = () => qc.invalidateQueries({ queryKey: keys.guestPanel(token) });
+    const connect = () => {
+      close = subscribeGuestEvents(token, {
+        onOpen: () => void refetch(),
+        onChange: () => void refetch(),
+        onError: () => {
+          void refetch();
+          timer = setTimeout(connect, reconnectDelayMs);
+        },
+      });
+    };
+    connect();
+    return () => {
+      clearTimeout(timer);
+      close?.();
+    };
+  }, [qc, token, gone]);
+  return query;
+}
+
+export function useGuestAction(token: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ widget, action }: { widget: string; action: string }) => api.guestAction(token, widget, action),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.guestPanel(token) }),
+  });
 }
 
 /** Sends the UI back to the login page when any request finds the session gone. */
