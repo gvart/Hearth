@@ -83,6 +83,7 @@ internal/agent/exec.go
   s_344993999c180f::t_8fda74a54d4099 32-35
 internal/hub/api.go
   s_344993999c180f::t_c136e5a66592aa 120,207-208
+  s_344993999c180f::t_e8899a2ea7dfbe 90
 docs/kubernetes.md
   s_344993999c180f::t_8eed5127da8d1d 53-54
 proto/hearth/agent/v1/agent.proto
@@ -91,6 +92,8 @@ proto/hearth/agent/v1/agent.proto
   s_344993999c180f::t_a3772fc437302c 304
 internal/proto/hearth/agent/v1/agent.pb.go
   s_344993999c180f::t_0d0a863383f915 39,136-144,174-177,190-191,201-202,281-298,319-326,335-338,558-563,619-625,1715-2029,2039,2051,2064,2071,2079-2081,2087-2091,2113,2117-2118,2189-2209,2228,2252-2260,2269-2303,2318,2325-2326,2343
+site/src/pages.mjs
+  s_344993999c180f::t_e8899a2ea7dfbe 11
 ---
 {
   "schema_version": "authorship/3.0.0",
