@@ -52,6 +52,8 @@ func allCommands() []Command {
 		},
 		AddKubeCluster{ID: "k1", Name: "lab", Sealed: []byte{9, 9}, CreatedAt: 17},
 		RemoveKubeCluster{ID: "k1"},
+		AddProxmoxServer{ID: "p1", Name: "rack", Sealed: []byte{9, 9}, CreatedAt: 17},
+		RemoveProxmoxServer{ID: "p1"},
 		CreateApproval{
 			ID: "ap1", CreatedAt: 19, ExpiresAt: 20, ActorKind: "automation", ActorID: "a",
 			Action: "automation.exec", Class: "dangerous", Target: "pi", Detail: `{"run":"r1"}`,
@@ -312,6 +314,13 @@ func runScenario(t *testing.T, s *Store) {
 	}
 	must(s.KubeClusters().Remove(ctx, "k2"))
 	wantErr(s.KubeClusters().Remove(ctx, "k2"), ErrNotFound)
+	must(s.ProxmoxServers().Add(ctx, ProxmoxServer{ID: "p1", Name: "rack", Sealed: []byte{1}, CreatedAt: at(5 * time.Hour)}))
+	must(s.ProxmoxServers().Add(ctx, ProxmoxServer{ID: "p2", Name: "attic", Sealed: []byte{2}, CreatedAt: at(5 * time.Hour)}))
+	if err := s.ProxmoxServers().Add(ctx, ProxmoxServer{ID: "p3", Name: "rack", Sealed: []byte{3}, CreatedAt: at(5 * time.Hour)}); !IsDomainError(err) {
+		t.Fatalf("duplicate proxmox server name = %v, want a domain error", err)
+	}
+	must(s.ProxmoxServers().Remove(ctx, "p2"))
+	wantErr(s.ProxmoxServers().Remove(ctx, "p2"), ErrNotFound)
 
 	// An approval held, then decided; deciding it again is refused.
 	must(s.Approvals().Create(ctx, Approval{

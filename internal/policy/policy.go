@@ -129,6 +129,18 @@ const (
 	// NetworkImport is one import of the hosts a Pi-hole and DHCP lease
 	// files know, by the hub.
 	NetworkImport Action = "network.import"
+	// ProxmoxServerAdd adopts a Proxmox VE server: the hub stores its API
+	// token, sealed, and starts reading it.
+	ProxmoxServerAdd Action = "proxmox.server.add"
+	// ProxmoxServerRemove forgets an adopted Proxmox VE server and its token.
+	ProxmoxServerRemove Action = "proxmox.server.remove"
+	// ProxmoxGuestStart starts a stopped VM or LXC container.
+	ProxmoxGuestStart Action = "proxmox.guest.start"
+	// ProxmoxGuestStop stops a VM or LXC container at once, without a clean
+	// shutdown.
+	ProxmoxGuestStop Action = "proxmox.guest.stop"
+	// ProxmoxGuestReboot shuts a VM or LXC container down and starts it again.
+	ProxmoxGuestReboot Action = "proxmox.guest.reboot"
 )
 
 // Actor kinds.
@@ -270,6 +282,17 @@ var rules = map[Action]rule{
 	NetworkHostMark: {class: Safe, actors: []string{ActorWeb}},
 	// An import reads Pi-hole's API and lease files; it changes nothing.
 	NetworkImport: {class: Read, actors: []string{ActorHub}},
+	// Adding a server hands the hub a credential to it; the hub only reads
+	// with it, except for the proxmox.guest actions below, each decided and
+	// audited on its own.
+	ProxmoxServerAdd:    {class: Safe, actors: []string{ActorWeb}},
+	ProxmoxServerRemove: {class: Safe, actors: []string{ActorWeb}},
+	// Starting a guest brings a service up and loses nothing.
+	ProxmoxGuestStart: {class: Safe, actors: []string{ActorWeb}},
+	// A stop pulls the plug and may damage the guest's data; a reboot takes
+	// down whatever the guest serves.
+	ProxmoxGuestStop:   {class: Dangerous, actors: []string{ActorWeb}},
+	ProxmoxGuestReboot: {class: Dangerous, actors: []string{ActorWeb}},
 }
 
 // Actions returns every known action, sorted.

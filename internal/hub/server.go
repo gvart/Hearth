@@ -15,6 +15,7 @@ import (
 
 	"github.com/gvart/hearth/internal/integrations/kubernetes"
 	"github.com/gvart/hearth/internal/integrations/prometheus"
+	"github.com/gvart/hearth/internal/integrations/proxmox"
 	"github.com/gvart/hearth/internal/metrics"
 	"github.com/gvart/hearth/internal/notify"
 	"github.com/gvart/hearth/internal/pki"
@@ -74,6 +75,9 @@ type Config struct {
 	// Kube serves adopted Kubernetes clusters under /api/v1/kube and streams
 	// their changes on /api/v1/events. Nil disables both.
 	Kube *kubernetes.Manager
+	// Proxmox serves adopted Proxmox VE servers under /api/v1/proxmox. Nil
+	// disables it.
+	Proxmox *proxmox.Manager
 	// Notify serves the notification channels under /api/v1/notify. Nil
 	// disables it.
 	Notify *notify.Notifier

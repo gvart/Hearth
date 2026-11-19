@@ -680,6 +680,10 @@ func DecodeCommand(b []byte) (Command, error) {
 		cmd, err = decodeAs[AddKubeCluster](env.Cmd)
 	case RemoveKubeCluster{}.Op():
 		cmd, err = decodeAs[RemoveKubeCluster](env.Cmd)
+	case AddProxmoxServer{}.Op():
+		cmd, err = decodeAs[AddProxmoxServer](env.Cmd)
+	case RemoveProxmoxServer{}.Op():
+		cmd, err = decodeAs[RemoveProxmoxServer](env.Cmd)
 	case CreateApproval{}.Op():
 		cmd, err = decodeAs[CreateApproval](env.Cmd)
 	case DecideApproval{}.Op():

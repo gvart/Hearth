@@ -20,6 +20,7 @@ import (
 	"github.com/gvart/hearth/internal/hub/webui"
 	"github.com/gvart/hearth/internal/integrations/kubernetes"
 	"github.com/gvart/hearth/internal/integrations/prometheus"
+	"github.com/gvart/hearth/internal/integrations/proxmox"
 	"github.com/gvart/hearth/internal/metrics"
 	"github.com/gvart/hearth/internal/notify"
 	"github.com/gvart/hearth/internal/pki"
@@ -71,10 +72,11 @@ func newAPI(cfg Config) *api {
 	return &api{
 		store: cfg.Store, policy: cfg.Policy, registry: reg, log: cfg.Log, now: time.Now, keepalive: sseKeepalive,
 		ca: cfg.CA, agentHosts: cfg.AgentHosts, agentPort: agentPort, httpPort: httpPort, ready: cfg.Ready, readyWait: readyWait,
-		prom:   cfg.Prometheus,
-		kube:   cfg.Kube,
-		notify: cfg.Notify,
-		verify: newVerifyGate(), verifyWait: verifyWait, verifyPassword: verifier,
+		prom:    cfg.Prometheus,
+		kube:    cfg.Kube,
+		proxmox: cfg.Proxmox,
+		notify:  cfg.Notify,
+		verify:  newVerifyGate(), verifyWait: verifyWait, verifyPassword: verifier,
 		logins:  newLoginLimiter(time.Now, loginBurst, loginEvery),
 		metrics: cfg.Metrics,
 		drift:   cfg.ConfigDrift,
@@ -101,6 +103,7 @@ func (a *api) routes() http.Handler {
 	mux.Handle("GET /api/v1/events", a.auth(a.events))
 	mux.Handle("POST /api/v1/tokens", a.auth(a.createToken))
 	a.kubeRoutes(mux)
+	a.proxmoxRoutes(mux)
 	a.notifyRoutes(mux)
 	mux.Handle("GET /api/v1/cluster/config-drift", a.auth(a.configDrift))
 	mux.Handle("GET /api/v1/audit", a.auth(a.listAudit))
@@ -170,6 +173,8 @@ type api struct {
 	metrics *metrics.Store
 	// kube is Config.Kube; nil when Kubernetes clusters are not served.
 	kube *kubernetes.Manager
+	// proxmox is Config.Proxmox; nil when Proxmox servers are not served.
+	proxmox *proxmox.Manager
 	// notify is Config.Notify; nil when notification channels are not served.
 	notify *notify.Notifier
 	// drift is Config.ConfigDrift; nil on a standalone hub.
