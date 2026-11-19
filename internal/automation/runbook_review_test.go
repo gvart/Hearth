@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/gvart/hearth/internal/policy"
+	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
 	"github.com/gvart/hearth/internal/store"
 )
 
@@ -546,4 +547,77 @@ steps:
 `, urls["hang"]), policy.Config{})
 	h.run(h.rb)
 	h.await(h.start("rb"), RunbookFailed)
+}
+
+// scriptedAgents answers every request the same way.
+type scriptedAgents struct {
+	res *agentv1.ExecResult
+	err error
+}
+
+func (a scriptedAgents) Exec(context.Context, string, *agentv1.ExecRequest) (*agentv1.ExecResult, error) {
+	return a.res, a.err
+}
+
+// TestRunbookDeviceCommandOutcome: an agent reports a command it had to stop
+// as text, and that command may have done part of its work.
+func TestRunbookDeviceCommandOutcome(t *testing.T) {
+	const yaml = `id: rb
+steps:
+  - id: run
+    type: action
+    action: {type: exec, device: pi, command: [/usr/bin/true]}
+`
+	for _, tc := range []struct {
+		name      string
+		agents    scriptedAgents
+		uncertain bool
+	}{
+		{"stopped at its timeout", scriptedAgents{res: &agentv1.ExecResult{ExitCode: -1, Error: "context deadline exceeded after 30s: half done"}}, true},
+		{"stopped as the agent shut down", scriptedAgents{res: &agentv1.ExecResult{ExitCode: -1, Error: "context canceled after 30s"}}, true},
+		{"the agent went away", scriptedAgents{err: fmt.Errorf("device pi: %w", ErrOutcomeUnknown)}, true},
+		{"no answer in time", scriptedAgents{err: context.DeadlineExceeded}, true},
+		{"a command that failed", scriptedAgents{res: &agentv1.ExecResult{ExitCode: 1, Error: "exit status 1: context deadline exceeded after a while"}}, false},
+		{"refused by the agent", scriptedAgents{res: &agentv1.ExecResult{Denied: true, Error: "beyond the ceiling"}}, false},
+		{"never sent", scriptedAgents{err: errors.New("agent not connected")}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rb, err := ParseRunbook("rb.yaml", []byte(yaml), actionKinds(ActionDeps{Agents: tc.agents}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			runErr := rb.Steps[0].Action.Impl.Run(t.Context(), Event{})
+			if runErr == nil {
+				t.Fatal("the action succeeded")
+			}
+			if got := outcomeUncertain(runErr); got != tc.uncertain {
+				t.Errorf("outcomeUncertain(%v) = %v, want %v", runErr, got, tc.uncertain)
+			}
+		})
+	}
+}
+
+// TestRunbookUncertainOutcomeSurvivesSecretScrubbing: taking a secret out of an
+// error's text must not lose what kind of error it was.
+func TestRunbookUncertainOutcomeSurvivesSecretScrubbing(t *testing.T) {
+	const secret = "the-secret-answer"
+	urls := outcomeServers(t)
+	h := newRBHarness(t, fmt.Sprintf(`id: rb
+steps:
+  - id: token
+    type: prompt
+    message: The token?
+    secret: true
+  - id: call
+    type: action
+    action: {type: webhook, url: %s, body: "t={{ .Input.token }}", timeout: 100ms}
+`, urls["hang"]), policy.Config{})
+	h.run(h.rb)
+	id := h.start("rb")
+	h.await(id, RunbookWaiting)
+	h.answer(id, "token", secret)
+	run := h.await(id, RunbookUnknown)
+	if run.Steps[1].Status != stepUnknown || strings.Contains(run.Steps[1].Error, secret) {
+		t.Errorf("step = %+v", run.Steps[1])
+	}
 }
