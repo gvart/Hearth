@@ -327,7 +327,9 @@ func TestSlowSubscriberDoesNotBlockApplies(t *testing.T) {
 // every hub publishes the device's transitions exactly once, in order, and
 // its events follow the agent to the new leader.
 func TestLeadershipChangeMidStream(t *testing.T) {
-	hubs := startHubs(t, hubOpts{offlineAfter: testOffline, flushEvery: 200 * time.Millisecond})
+	// Writes wait for an election as long as they do on a real hub: this test
+	// logs in on followers, and an election under load outlasts a shorter wait.
+	hubs := startHubs(t, hubOpts{offlineAfter: testOffline, flushEvery: 200 * time.Millisecond, forwardWait: defaultForwardWait})
 	leader := leaderHub(t, hubs)
 	setPassword(t, hubs, leader)
 	streams := map[*testHub]*sseStream{}
