@@ -159,7 +159,7 @@ func TestTerminalHeldInputIsDiscarded(t *testing.T) {
 		t.Fatal(err)
 	}
 	time.Sleep(50 * time.Millisecond)
-	if err := f.api.policy.Decide(t.Context(), policy.ActorAdmin, "root", m.Approval, true); err != nil {
+	if err := f.api.policy.Decide(t.Context(), policy.ActorAdmin, "root", m.Approval, true, reauthed); err != nil {
 		t.Fatal(err)
 	}
 	if m, _ := next(t, ws); m.Type != "started" {
@@ -192,7 +192,7 @@ func TestTerminalHeldThenSignedOut(t *testing.T) {
 	if resp := f.do(t, http.MethodPost, "/api/v1/logout", "", f.cookie); resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("logout: status %d", resp.StatusCode)
 	}
-	if err := f.api.policy.Decide(t.Context(), policy.ActorAdmin, "root", m.Approval, true); err != nil {
+	if err := f.api.policy.Decide(t.Context(), policy.ActorAdmin, "root", m.Approval, true, reauthed); err != nil {
 		t.Fatal(err)
 	}
 	if m, _ := next(t, ws); m.Type != "error" || m.Code != "forbidden" {
@@ -225,7 +225,7 @@ func TestTerminalHeldThenBrowserLeaves(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if err := f.api.policy.Decide(t.Context(), policy.ActorAdmin, "root", m.Approval, true); !errors.Is(err, store.ErrApprovalClosed) {
+	if err := f.api.policy.Decide(t.Context(), policy.ActorAdmin, "root", m.Approval, true, reauthed); !errors.Is(err, store.ErrApprovalClosed) {
 		t.Fatalf("approving a withdrawn request = %v, want it closed", err)
 	}
 	f.noRequest(t)
