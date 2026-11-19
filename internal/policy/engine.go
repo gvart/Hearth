@@ -26,6 +26,7 @@ type Approvals interface {
 	Create(ctx context.Context, a store.Approval) error
 	Get(ctx context.Context, id string) (store.Approval, error)
 	Decide(ctx context.Context, id, status, decider string, at time.Time) error
+	Overdue(ctx context.Context, at time.Time, limit int) ([]store.Approval, error)
 }
 
 // Request describes an action someone wants to perform.
@@ -117,6 +118,8 @@ type Engine struct {
 	poll time.Duration
 	// onHeld is told about every approval this engine holds; see OnHeld.
 	onHeld func(ctx context.Context, ap store.Approval)
+	// sweepEvery is how often RunApprovalSweep looks for overdue approvals.
+	sweepEvery time.Duration
 }
 
 // OnHeld sets fn to be called with every approval the engine holds, once
@@ -142,7 +145,7 @@ func NewWithConfig(audit Auditor, approvals Approvals, cfg Config) *Engine {
 	if cfg.ApprovalTimeout <= 0 {
 		cfg.ApprovalTimeout = DefaultApprovalTimeout
 	}
-	return &Engine{audit: audit, approvals: approvals, cfg: cfg, now: time.Now, poll: time.Second}
+	return &Engine{audit: audit, approvals: approvals, cfg: cfg, now: time.Now, poll: time.Second, sweepEvery: time.Minute}
 }
 
 // Do decides on req and, if allowed, runs fn. A request the configuration

@@ -94,6 +94,10 @@ func (a *autoApprovals) Get(_ context.Context, id string) (store.Approval, error
 	return ap, nil
 }
 
+func (a *autoApprovals) Overdue(context.Context, time.Time, int) ([]store.Approval, error) {
+	return nil, nil
+}
+
 func (a *autoApprovals) Decide(_ context.Context, id, status, by string, _ time.Time) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()

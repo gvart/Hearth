@@ -71,6 +71,36 @@ Every decision is in the audit log as `approval.approve` or `approval.deny`, by 
 actor kind says the channel (`admin` for the CLI, `web` for the UI, `approval_link` for a link) and
 the id says who (the local user, or the remote address). The approval records it as `decided_by`.
 
+An approval whose requester is gone, because the hub stopped or crashed while it waited, would stay
+pending for good. The hub (in a cluster, its leader, as soon as it leads) expires every pending
+approval more than 5 minutes past its expiry at startup and then every minute, through the same
+replicated write as any expiry: its plan is cleared and the denial is in the audit log (written just
+before the expiry, so a crash between the two never leaves an unaudited expiry; an approval its own
+requester closes at the same moment can leave one extra entry). A sweep that fails, for example
+without a quorum, is logged and tried again a minute later; it never delays startup.
+
+The 5 minutes of grace keep a sweep from expiring a live hold when the leader's clock is ahead of
+the hub that holds it. Keep the hubs' clocks within it: a leader whose clock runs more than 5
+minutes ahead can still expire a hold before its timeout.
+
+### Where a plan survives
+
+The plan of a held request, which can quote command arguments, is removed from the approval row when
+it is decided or expires. Copies outside the row stay for a while:
+
+- The Raft log entry that created the approval and the retained Raft snapshots hold the plan until
+  Raft compacts the log and replaces the snapshots. Hearth cannot scrub them sooner, and every hub
+  of a cluster keeps its own copies.
+- SQLite has `secure_delete` on, so the pages the plan is removed from are overwritten with zeros
+  rather than left in the file's free pages. The write-ahead log (`-wal`) can hold an older copy of
+  a page: Hearth sets `journal_size_limit` to 0, so once a checkpoint has copied the frames and the
+  next write restarts the log, the file is truncated. A test shows this for an idle store; a
+  long-lived reader can hold the log open, and copies remain until the frames are overwritten or the
+  store is closed.
+- Backups and snapshots of the data directory taken while the approval was pending keep the plan.
+
+Treat the data directory as holding secrets: keep it readable by the hub's user only.
+
 After a rolling upgrade, nothing can be held until `hearth cluster migrate` brings the cluster to
 schema 9: until then `confirm` actions are denied.
 

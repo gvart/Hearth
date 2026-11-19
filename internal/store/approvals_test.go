@@ -3,7 +3,9 @@
 package store
 
 import (
+	"bytes"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -213,5 +215,79 @@ func TestApprovalsPlanMigration(t *testing.T) {
 	}
 	if got, _ := s.Approvals().Get(ctx, "p"); string(got.Detail) != detail {
 		t.Errorf("pending detail = %s, want it untouched", got.Detail)
+	}
+}
+
+// The plan of a decided approval does not stay in the -wal file: once a
+// checkpoint has copied it and the next write restarts the log, the file is
+// truncated (journal_size_limit), while the store is still open.
+func TestDecidedPlanLeavesTheWAL(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	base := time.Now()
+	if err := s.Approvals().Create(ctx, Approval{
+		ID: "x", CreatedAt: base, ExpiresAt: base.Add(time.Minute), ActorKind: "a", ActorID: "b",
+		Action: "c", Class: "dangerous", Detail: []byte(`{"plan":"MARKERSECRET"}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Approvals().Decide(ctx, "x", ApprovalDenied, "w/w", base); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.ExecContext(ctx, "PRAGMA wal_checkpoint(PASSIVE)"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Approvals().Create(ctx, Approval{
+		ID: "y", CreatedAt: base, ExpiresAt: base, ActorKind: "a", ActorID: "b", Action: "c", Class: "dangerous",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	wal, err := os.ReadFile(s.path + "-wal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(wal, []byte("MARKERSECRET")) {
+		t.Errorf("the -wal file (%d bytes) still holds the plan of a decided approval", len(wal))
+	}
+}
+
+func TestApprovalsOverdue(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	ap := s.Approvals()
+	base := time.UnixMilli(1_700_000_000_000).UTC()
+	for id, exp := range map[string]time.Duration{"due": time.Minute, "later": time.Hour, "decided": time.Minute} {
+		if err := ap.Create(ctx, Approval{
+			ID: id, CreatedAt: base, ExpiresAt: base.Add(exp), ActorKind: "automation", ActorID: "x",
+			Action: "automation.exec", Class: "dangerous", Target: "pi",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := ap.Decide(ctx, "decided", ApprovalDenied, "admin/root", base.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		name string
+		at   time.Time
+		want string
+	}{
+		{"before any expiry", base.Add(time.Minute - time.Millisecond), ""},
+		{"at expiry", base.Add(time.Minute), "due"},
+		{"later", base.Add(2 * time.Hour), "due,later"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ap.Overdue(ctx, tt.at, 10)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ids := make([]string, 0, len(got))
+			for _, a := range got {
+				ids = append(ids, a.ID)
+			}
+			if strings.Join(ids, ",") != tt.want {
+				t.Errorf("Overdue = %v, want %q", ids, tt.want)
+			}
+		})
 	}
 }

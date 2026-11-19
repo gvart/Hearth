@@ -451,6 +451,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		g.Go(func() error { return reg.Run(gctx) })
 		g.Go(func() error { return automations.Run(gctx) })
 		g.Go(func() error { return runbooks.Run(gctx) })
+		g.Go(func() error { return hub.RunApprovalSweep(gctx, pol, nil, nil, log) })
 		if scanner != nil {
 			g.Go(func() error { return scanner.Run(gctx) })
 		}
@@ -473,8 +474,9 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		// only and follow leadership.
 		changed, automationsChanged, discoveryChanged := make(chan struct{}, 1), make(chan struct{}, 1), make(chan struct{}, 1)
 		importChanged, runbooksChanged := make(chan struct{}, 1), make(chan struct{}, 1)
+		approvalsChanged := make(chan struct{}, 1)
 		node.OnLeaderChange(func(cluster.LeaderInfo) {
-			for _, c := range []chan struct{}{changed, automationsChanged, discoveryChanged, importChanged, runbooksChanged} {
+			for _, c := range []chan struct{}{changed, automationsChanged, discoveryChanged, importChanged, runbooksChanged, approvalsChanged} {
 				select {
 				case c <- struct{}{}:
 				default:
@@ -485,6 +487,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		g.Go(func() error {
 			return automation.RunWhileLeading(gctx, node, automationsChanged, log, automations.Run)
 		})
+		g.Go(func() error { return hub.RunApprovalSweep(gctx, pol, node, approvalsChanged, log) })
 		g.Go(func() error {
 			return automation.RunWhileLeading(gctx, node, runbooksChanged, log.With("component", "runbooks"), runbooks.Run)
 		})
