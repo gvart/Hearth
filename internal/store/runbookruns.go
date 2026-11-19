@@ -51,6 +51,21 @@ type RunbookRuns struct{ s *Store }
 // RunbookRuns returns the runbook runs repository.
 func (s *Store) RunbookRuns() RunbookRuns { return RunbookRuns{s: s} }
 
+// requireSchema refuses a write before the schema that added the table. It
+// runs before the proposal: a hub still on an older binary halts on a command
+// it cannot decode.
+func (r RunbookRuns) requireSchema(ctx context.Context) error {
+	v, err := schemaVersion(ctx, r.s.db)
+	if err != nil {
+		return err
+	}
+	if v < runbookRunsSchema {
+		return fmt.Errorf("%w: it needs %d, the database is at %d; run `hearth cluster migrate` first",
+			ErrSchemaTooOld, runbookRunsSchema, v)
+	}
+	return nil
+}
+
 // Create stores a new run at version 1 and prunes the runbook's finished runs
 // to the newest RunbookRunsKept. Before schema 16 it fails with
 // ErrSchemaTooOld.
@@ -60,6 +75,9 @@ func (r RunbookRuns) Create(ctx context.Context, run RunbookRun) error {
 	}
 	if !json.Valid(run.State) {
 		return errors.New("create runbook run: state is not valid JSON")
+	}
+	if err := r.requireSchema(ctx); err != nil {
+		return fmt.Errorf("create run %s of runbook %s: %w", run.ID, run.RunbookID, err)
 	}
 	if _, err := r.s.apply(ctx, CreateRunbookRun{
 		ID: run.ID, RunbookID: run.RunbookID, Status: run.Status, StartedBy: run.StartedBy,
@@ -77,6 +95,9 @@ func (r RunbookRuns) Create(ctx context.Context, run RunbookRun) error {
 func (r RunbookRuns) Save(ctx context.Context, run RunbookRun) (int64, error) {
 	if !json.Valid(run.State) {
 		return 0, errors.New("save runbook run: state is not valid JSON")
+	}
+	if err := r.requireSchema(ctx); err != nil {
+		return 0, fmt.Errorf("save runbook run %s: %w", run.ID, err)
 	}
 	var finished int64
 	if !run.FinishedAt.IsZero() {

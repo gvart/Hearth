@@ -222,4 +222,8 @@ func TestRunbookRunsBeforeTheirSchema(t *testing.T) {
 	if !errors.Is(err, ErrSchemaTooOld) || !IsDomainError(err) {
 		t.Errorf("Create before the schema = %v, want a domain ErrSchemaTooOld", err)
 	}
+	_, err = runs.Save(ctx, testRunbookRun("r", time.Now()))
+	if !errors.Is(err, ErrSchemaTooOld) || !IsDomainError(err) {
+		t.Errorf("Save before the schema = %v, want a domain ErrSchemaTooOld", err)
+	}
 }
