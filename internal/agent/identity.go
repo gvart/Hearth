@@ -55,10 +55,6 @@ func loadIdentity(dataDir string) (*identity, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read hub CA: %w", err)
 	}
-	ca, err := pki.ParseCertPEM(caPEM)
-	if err != nil {
-		return nil, fmt.Errorf("parse hub CA: %w", err)
-	}
 	raw, err := os.ReadFile(filepath.Join(dataDir, HubURLFile))
 	if err != nil {
 		return nil, fmt.Errorf("read hub URL: %w", err)
@@ -72,8 +68,11 @@ func loadIdentity(dataDir string) (*identity, error) {
 		return nil, err
 	}
 
+	// Every CA in the file: both while the hub CA is rotated.
 	roots := x509.NewCertPool()
-	roots.AddCert(ca)
+	if !roots.AppendCertsFromPEM(caPEM) {
+		return nil, errors.New("parse hub CA: no certificate in " + CAFile)
+	}
 	return &identity{
 		hubURL:   u,
 		hubs:     mergeHubs(known, []string{u.String()}),
