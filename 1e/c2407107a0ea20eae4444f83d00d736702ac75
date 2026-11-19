@@ -1,0 +1,21 @@
+docs/guardrails.md
+  s_344993999c180f::t_d8149b89e3acbb 20-21
+internal/hub/panels_test.go
+  s_344993999c180f::t_00181a35de6ce5 893-925
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1ec2407107a0ea20eae4444f83d00d736702ac75",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
