@@ -257,14 +257,15 @@ func TestRealPihole(t *testing.T) {
 
 func TestRedirectRefused(t *testing.T) {
 	var second atomic.Int32
-	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		second.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `{"devices":[]}`)
 	}))
 	t.Cleanup(target.Close)
+	targetURL := target.URL + "/api/network/devices"
 	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, target.URL+r.URL.Path, http.StatusTemporaryRedirect)
+		http.Redirect(w, r, targetURL, http.StatusTemporaryRedirect)
 	}))
 	t.Cleanup(first.Close)
 	for name, hc := range map[string]*http.Client{"nil client": nil, "plain client": {Timeout: time.Second}} {
@@ -284,7 +285,7 @@ func TestRedirectRefused(t *testing.T) {
 }
 
 func TestErrorMessageClipped(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		// Multi-byte, so the cut lands inside a character.
 		_, _ = io.WriteString(w, `{"error":{"key":"bad","message":"`+strings.Repeat("é", 1<<20)+`"}}`)
