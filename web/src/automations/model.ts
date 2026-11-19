@@ -74,9 +74,15 @@ export interface YamlProblem {
   message: string;
 }
 
-export type ParseResult = { ok: true; model: AutomationModel } | { ok: false; problems: YamlProblem[] };
+export type ParseResult =
+  | { ok: true; model: AutomationModel }
+  /** With yamlOnly the file is fine, but the form could misrepresent it. */
+  | { ok: false; problems: YamlProblem[]; yamlOnly?: boolean };
 
 const rootKeys = ['id', 'description', 'mode', ...sections];
+
+/** Characters the hub reads as line breaks, and this editor's parser does not. */
+const hiddenBreak = /[\u0085\u2028\u2029]/;
 
 function lineOf(source: string, offset: number): number {
   return source.slice(0, offset).split('\n').length;
@@ -84,6 +90,41 @@ function lineOf(source: string, offset: number): number {
 
 function parse(source: string): Document.Parsed {
   return parseDocument(source, { prettyErrors: false });
+}
+
+/**
+ * Why this file can only be edited as text, if it can: the form would show
+ * something other than what the hub runs, or an edit could change what an alias
+ * means.
+ */
+export function yamlOnlyReason(source: string): string | undefined {
+  const hidden = hiddenBreak.exec(source);
+  if (hidden) {
+    const code = (hidden[0].codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, '0');
+    return `Line ${String(lineOf(source, hidden.index))} holds the invisible character U+${code}, which the hub reads as a line break, so the hub may run steps the visual view would not show. Use the YAML view, and remove the character to get the visual view back.`;
+  }
+  const doc = parse(source);
+  if (doc.errors.length > 0) {
+    return undefined;
+  }
+  const seen = new Set<string>();
+  let repeated: string | undefined;
+  visit(doc, {
+    Node(_, node) {
+      const { anchor } = node as { anchor?: string };
+      if (anchor !== undefined && seen.has(anchor)) {
+        repeated = anchor;
+        return visit.BREAK;
+      }
+      if (anchor !== undefined) {
+        seen.add(anchor);
+      }
+      return undefined;
+    },
+  });
+  return repeated === undefined
+    ? undefined
+    : `The anchor &${repeated} is defined more than once, so moving or removing a step could change what its aliases mean. Use the YAML view, and give each anchor its own name to get the visual view back.`;
 }
 
 /** The text of a node's range, with the indentation of its first line removed. */
@@ -136,8 +177,9 @@ function usesYamlFeatures(node: unknown): boolean {
   return found;
 }
 
+/** A string the form can show. An escaped line break stays as it is written. */
 function stringOf(node: unknown): string | undefined {
-  return isScalar(node) && typeof node.value === 'string' ? node.value : undefined;
+  return isScalar(node) && typeof node.value === 'string' && !hiddenBreak.test(node.value) ? node.value : undefined;
 }
 
 /** Lists and maps are edited as lines, which are trimmed: padding would be lost. */
@@ -240,6 +282,10 @@ function readBlock(source: string, section: Section, item: unknown, index: numbe
 
 /** Reads a file into the visual model, or says why it cannot be shown. */
 export function readAutomation(source: string): ParseResult {
+  const yamlOnly = yamlOnlyReason(source);
+  if (yamlOnly !== undefined) {
+    return { ok: false, yamlOnly: true, problems: [{ line: 0, message: yamlOnly }] };
+  }
   const doc = parse(source);
   if (doc.errors.length > 0) {
     return {
@@ -358,6 +404,10 @@ function applySplices(source: string, splices: Splice[]): string {
  * to the text of each number, or the edit is refused.
  */
 function edit(source: string, change: (state: EditState) => void): string {
+  const yamlOnly = yamlOnlyReason(source);
+  if (yamlOnly !== undefined) {
+    throw new Error(yamlOnly);
+  }
   const doc = parse(source);
   if (doc.errors.length > 0) {
     throw new Error('the file does not parse');
@@ -756,6 +806,10 @@ function isEmpty(value: FieldValue | undefined): boolean {
 const plainNumber = /^-?(0|[1-9]\d*)(\.\d+)?$/;
 
 function applyField(state: EditState, ref: StepRef, field: FieldSpec | string, value: FieldValue | undefined) {
+  const typed = typeof value === 'string' ? [value] : Array.isArray(value) ? value.flat() : [];
+  if (typed.some((text) => hiddenBreak.test(text))) {
+    throw new Error('This text holds an invisible character the hub reads as a line break. Remove it and try again.');
+  }
   const map = targetMap(state.root, ref);
   const key = typeof field === 'string' ? field : field.key;
   const kind = typeof field === 'string' ? 'text' : field.kind;

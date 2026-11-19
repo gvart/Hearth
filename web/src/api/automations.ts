@@ -61,6 +61,8 @@ export interface SavedAutomation {
   cluster: boolean;
   /** This hub runs automations now. */
   leader: boolean;
+  /** What to know about a save that worked. */
+  warning?: string;
 }
 
 export interface SaveAutomation {

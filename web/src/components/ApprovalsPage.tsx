@@ -31,7 +31,7 @@ export function StatusPill({ status }: { status: ApprovalStatus }) {
 
 /** What a held action is: the action, who asked, its target and detail. */
 export function ApprovalDetails({ approval }: { approval: Approval }) {
-  const { planText, rest } = approvalDetail(approval.detail);
+  const { planText, planWithheld, rest } = approvalDetail(approval.detail);
   const detail = Object.keys(rest).length > 0 ? JSON.stringify(rest, null, 2) : '';
   return (
     <dl className="approval-details">
@@ -56,6 +56,12 @@ export function ApprovalDetails({ approval }: { approval: Approval }) {
           <dd>
             <pre className="approval-detail approval-plan">{planText}</pre>
           </dd>
+        </>
+      ) : null}
+      {planWithheld ? (
+        <>
+          <dt>Plan</dt>
+          <dd>Sign in to Hearth and open Approvals to read what this would do before you decide.</dd>
         </>
       ) : null}
       {detail ? (

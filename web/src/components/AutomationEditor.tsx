@@ -163,6 +163,8 @@ function Editor({ id, file, initial, revision: initialRevision, problems = [] }:
   };
 
   const busy = save.isPending || dryRun.isPending;
+  const yamlOnly = !read.ok && read.yamlOnly === true ? read.problems[0]?.message : undefined;
+  const shownView = yamlOnly === undefined ? view : 'yaml';
 
   return (
     <main className="content auto-editor">
@@ -192,7 +194,8 @@ function Editor({ id, file, initial, revision: initialRevision, problems = [] }:
                 key={v}
                 type="button"
                 className="btn btn-small"
-                aria-pressed={view === v}
+                aria-pressed={shownView === v}
+                disabled={v === 'visual' && yamlOnly !== undefined}
                 onClick={() => {
                   setView(v);
                 }}
@@ -212,6 +215,12 @@ function Editor({ id, file, initial, revision: initialRevision, problems = [] }:
 
       {loadProblems.length > 0 && !dirty ? (
         <Problems title="The hub cannot load this file" problems={loadProblems} />
+      ) : null}
+      {yamlOnly !== undefined ? (
+        <div className="error-box" role="alert">
+          <strong>This file opens in the YAML view only</strong>
+          {yamlOnly}
+        </div>
       ) : null}
       {editError ? (
         <div ref={editErrorBox} className="error-box" role="alert">
@@ -241,8 +250,8 @@ function Editor({ id, file, initial, revision: initialRevision, problems = [] }:
       {dryRunResult ? <DryRunResult result={dryRunResult} /> : null}
 
       <fieldset className="auto-lock" disabled={!mayEdit(save.isPending)}>
-        {view === 'yaml' ? (
-          <YamlView source={source} problems={read.ok ? [] : read.problems} onChange={change} />
+        {shownView === 'yaml' ? (
+          <YamlView source={source} problems={read.ok || read.yamlOnly ? [] : read.problems} onChange={change} />
         ) : read.ok ? (
           <VisualView model={read.model} isNew={id === undefined} edit={edit} />
         ) : (

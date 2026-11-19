@@ -194,7 +194,9 @@ at any time. The file stays the source of truth, so keep it in git as before.
   aliases or tags, a key it does not know, or a value of an unexpected shape appears as a read-only
   YAML block. So does a value the form could change by showing it: a number such as `010` or `0750`,
   which is not the number it looks like, and a list item or header with spaces around it. It is written
-  back untouched; change it in the YAML view. A file that does not parse opens in the YAML view only.
+  back untouched; change it in the YAML view. A file that does not parse opens in the YAML view only,
+and so does a file holding the invisible characters U+0085, U+2028 or U+2029, which the hub reads as
+line breaks, or defining one anchor name twice. The form refuses those characters too.
 - **Dry run** sends the file to the hub, which validates it as it would when loading it, and asks
   policy about saving it and about each action, as the automation would ask when it runs. Each
   decision is shown (allowed, needs approval, denied) and audited with the result `dry-run`. Nothing
@@ -207,9 +209,11 @@ at any time. The file stays the source of truth, so keep it in git as before.
   more than 64 steps. The form is locked until the save is answered.
 
 Saving goes through policy as `automation.apply` (class `dangerous`) with actor `web/<address>`. The
-audit log and any approval show the file's name, its SHA-256, its steps and the plan, with each command
-and its device. Of a webhook they show only the site: its URL, headers and body may hold secrets. To
-require approval for saves, or to forbid them:
+audit log, and any approval, show the file's name, its SHA-256 and its steps by id and type. Commands,
+messages, queries and descriptions may hold secrets, so they stay out of the audit log and out of
+approval notifications. The plan, with each command and its device, is shown only on the
+**Approvals** page to someone signed in; an approval link says to sign in to read it. Of a webhook
+even the plan shows only the site. To require approval for saves, or to forbid them:
 
 ```yaml
 actors:
@@ -220,10 +224,11 @@ actors:
 With `confirm`, the save finishes once someone approves it on the **Approvals** page. That setting
 covers every dangerous action from the web UI.
 
-A save of an automation listed in [`dangerous_automations`](guardrails.md) that has a dangerous action
-always waits for approval, whatever the modes say, and is refused if the hub cannot hold approvals: the
-grant belongs to the id, so whoever could rewrite the file would otherwise inherit it. A mode of `deny`
-still denies it.
+A save of a file with a dangerous action that policy would let the automation run without asking
+anyone, through [`dangerous_automations`](guardrails.md) or an `allow` mode for automations, always
+waits for approval, whatever the modes say about saves, and is refused if the hub cannot hold
+approvals: saving is the last moment a person sees what the file does. A mode of `deny` for the web UI
+still denies it. The person who made the save may approve it.
 
 An automation's id cannot be changed in the editor: create a new one and remove the old file. Files
 that are symbolic links are not opened or saved here, and nothing of what they point to is shown. The
