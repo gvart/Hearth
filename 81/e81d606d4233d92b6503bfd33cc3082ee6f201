@@ -1,0 +1,23 @@
+cmd/hearth/hub_backup.go
+  s_344993999c180f::t_804be619bb1805 1-153
+cmd/hearth/hub_backup_test.go
+  s_344993999c180f::t_9c0b2ac76b58b1 1-105
+cmd/hearth/hub.go
+  s_344993999c180f::t_c3c61a4058bb71 97-99,125-127,143-145,199,344-347,533-535,552,554-557,587-592
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "81e81d606d4233d92b6503bfd33cc3082ee6f201",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
