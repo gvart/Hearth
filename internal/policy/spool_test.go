@@ -231,11 +231,12 @@ func TestSpoolCorruptEntryRecordsTheGap(t *testing.T) {
 				t.Fatal(err)
 			}
 		},
-		"unreadable": func(t *testing.T, path string) {
-			if runtime.GOOS == "windows" || os.Geteuid() == 0 {
-				t.Skip("file modes do not stop this user reading")
+		"too large": func(t *testing.T, path string) {
+			big := make([]byte, maxSpooledEntry+1)
+			for i := range big {
+				big[i] = ' '
 			}
-			if err := os.WriteFile(path, []byte(`{}`), 0o000); err != nil {
+			if err := os.WriteFile(path, big, 0o600); err != nil {
 				t.Fatal(err)
 			}
 		},
@@ -257,8 +258,109 @@ func TestSpoolCorruptEntryRecordsTheGap(t *testing.T) {
 			if n := f.rows(t, AuditEntryLost); n != 1 {
 				t.Errorf("%d %s rows, want 1", n, AuditEntryLost)
 			}
+			lost, err := f.st.Audit().Query(ctx, store.AuditFilter{Actions: []string{AuditEntryLost}}, 10)
+			if err != nil || len(lost) != 1 || lost[0].Decision != Deny {
+				t.Errorf("gap entries = %+v, %v; want one with decision %s", lost, err, Deny)
+			}
 			if bad := f.files(t, "*"+spoolBad); len(bad) != 1 {
 				t.Errorf("set aside %v, want the one file", bad)
+			}
+		})
+	}
+}
+
+// TestSpoolUnreadableEntryIsRetried: a file that cannot be read now (here a
+// permission error) is not taken for lost: it stays, holds up the queue, and
+// is written once it can be read.
+func TestSpoolUnreadableEntryIsRetried(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("file modes do not stop this user reading")
+	}
+	ctx := t.Context()
+	f := newSpoolFixture(t)
+	if err := f.sp.Put(store.AuditEntry{
+		TS: time.Now(), ActorKind: ActorHub, ActorID: "n1", Action: "x", Decision: Allow, Key: "k",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	files := f.files(t, "*"+spoolExt)
+	if len(files) != 1 {
+		t.Fatalf("spool holds %v", files)
+	}
+	if err := os.Chmod(files[0], 0o000); err != nil {
+		t.Fatal(err)
+	}
+	if !f.sp.Drain(ctx) {
+		t.Error("Drain of an unreadable file reported nothing left")
+	}
+	if n, lost := f.rows(t, "x"), f.rows(t, AuditEntryLost); n != 0 || lost != 0 {
+		t.Errorf("%d entries, %d gaps; want neither yet", n, lost)
+	}
+	if err := os.Chmod(files[0], 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if f.sp.Drain(ctx) {
+		t.Error("Drain left entries")
+	}
+	if n, lost := f.rows(t, "x"), f.rows(t, AuditEntryLost); n != 1 || lost != 0 {
+		t.Errorf("%d entries, %d gaps; want the entry once and no gap", n, lost)
+	}
+}
+
+// TestOpenSpoolTidiesItsDir: an existing dir is made 0700, and what a cut
+// short write left is removed; whole entries stay.
+func TestOpenSpoolTidiesItsDir(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "spool")
+	if err := os.Mkdir(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"1-a" + spoolExt + spoolTmp, "2-b" + spoolExt} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(`{}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	newTestSpool(t, dir, nil)
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o700 {
+		t.Errorf("dir mode = %v, want 0700", info.Mode().Perm())
+	}
+	left, err := filepath.Glob(filepath.Join(dir, "*"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(left) != 1 || filepath.Base(left[0]) != "2-b"+spoolExt {
+		t.Errorf("dir holds %v, want only the whole entry", left)
+	}
+}
+
+// failingCreate is an approval store that cannot store anything, as one
+// without quorum.
+type failingCreate struct{ autoApprovals }
+
+func (*failingCreate) Create(context.Context, store.Approval) error { return errNoQuorum }
+
+// TestUnheldDenialIsNotSpooled: a request that needed approval but could not
+// be held wrote no pending entry, so its denial closes nothing: it is not
+// spooled, and Do fails with the audit error as for a plain denial. Without
+// quorum, repeating such requests must not grow the spool.
+func TestUnheldDenialIsNotSpooled(t *testing.T) {
+	for name, approvals := range map[string]Approvals{"no approvals": nil, "create fails": &failingCreate{}} {
+		t.Run(name, func(t *testing.T) {
+			f := newSpoolFixture(t)
+			e := NewWithConfig(f.audit, approvals, Config{Classes: map[Class]Mode{Dangerous: ModeConfirm}})
+			e.SpoolTo(f.sp)
+			f.audit.down.Store(true)
+			for range 3 {
+				err := e.Do(t.Context(), spoolReq, func(context.Context) error { return nil })
+				if !errors.Is(err, errNoQuorum) || errors.Is(err, ErrDenied) {
+					t.Fatalf("Do = %v, want the audit error", err)
+				}
+			}
+			if got := f.files(t, "*"); len(got) != 0 {
+				t.Errorf("spool holds %v, want nothing", got)
 			}
 		})
 	}

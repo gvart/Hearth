@@ -50,16 +50,54 @@ const (
 	spoolBad = ".bad"
 )
 
-// OpenSpool returns the spool kept in dir, created 0700 if missing, writing
-// to audit.
+// maxSpooledEntry is the largest spool file that is written back. The
+// command carrying it, its detail escaped as a JSON string, stays below what
+// a hub forwards to the cluster leader (1 MiB): a larger one would fail on
+// every retry and hold up the entries after it.
+const maxSpooledEntry = 512 << 10
+
+// errSpoolInvalid marks a spool file that can never be written back, as
+// opposed to one that could not be read this time.
+var errSpoolInvalid = errors.New("invalid spooled audit entry")
+
+// OpenSpool returns the spool kept in dir, created if missing and made
+// 0700, writing to audit. It removes the files a write cut short left
+// behind: call it before the spool is used.
 func OpenSpool(dir string, audit Auditor, log *slog.Logger) (*Spool, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, fmt.Errorf("open audit spool: %w", err)
+	}
+	if err := tidy(dir); err != nil {
 		return nil, fmt.Errorf("open audit spool: %w", err)
 	}
 	return &Spool{
 		dir: dir, audit: audit, log: log, wake: make(chan struct{}, 1),
 		retryMin: time.Second, retryMax: 30 * time.Second, timeout: outcomeTimeout,
 	}, nil
+}
+
+// tidy makes dir 0700, as it holds audit entries, and removes the entries a
+// stopped hub left half written: their Put failed, so their action reported
+// the outcome as not recorded.
+func tidy(dir string) error {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = root.Close() }()
+	if err := root.Chmod(".", 0o700); err != nil {
+		return err
+	}
+	names, err := fs.Glob(root.FS(), "*"+spoolExt+spoolTmp)
+	if err != nil {
+		return err
+	}
+	for _, name := range names {
+		if err := root.Remove(name); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // spooled is an entry as a spool file holds it.
@@ -127,11 +165,16 @@ func (s *Spool) write(name string, b []byte) error {
 		_ = root.Remove(tmp)
 		return err
 	}
-	if d, err := root.Open("."); err == nil {
-		_ = d.Sync()
-		_ = d.Close()
+	// The rename is durable only once the directory is.
+	d, err := root.Open(".")
+	if err != nil {
+		return err
 	}
-	return nil
+	err = d.Sync()
+	if cErr := d.Close(); err == nil {
+		err = cErr
+	}
+	return err
 }
 
 // Run writes the spooled entries at once and whenever Put adds one, and
@@ -163,9 +206,10 @@ func (s *Spool) Run(ctx context.Context) error {
 }
 
 // Drain writes the spooled entries, oldest first, and reports whether any is
-// left: it stops at the first that cannot be written, as the next would fail
-// the same way. A file that cannot be read back is replaced by an
-// AuditEntryLost entry and set aside.
+// left: it stops at the first that cannot be written or read, as the next
+// would fail the same way. A file that can never be written back (it does
+// not decode, misses what the log requires, or is too large) is replaced by
+// an AuditEntryLost entry and set aside.
 func (s *Spool) Drain(ctx context.Context) (left bool) {
 	root, err := os.OpenRoot(s.dir)
 	if err != nil {
@@ -194,11 +238,16 @@ func (s *Spool) Drain(ctx context.Context) (left bool) {
 // it is done with it.
 func (s *Spool) drainOne(ctx context.Context, root *os.Root, name string) bool {
 	e, readErr := readSpooled(root, name)
+	if readErr != nil && !errors.Is(readErr, errSpoolInvalid) {
+		// An I/O error may pass: the file is tried again.
+		s.log.WarnContext(ctx, "spooled audit entry not readable now, will retry", "file", name, "err", readErr)
+		return false
+	}
 	if readErr != nil {
-		s.log.ErrorContext(ctx, "spooled audit entry unreadable, recording the gap", "file", name, "err", readErr)
+		s.log.ErrorContext(ctx, "spooled audit entry invalid, recording the gap", "file", name, "err", readErr)
 		e = store.AuditEntry{
 			TS: time.Now(), ActorKind: ActorHub, ActorID: "audit-spool", Action: AuditEntryLost,
-			Decision: Allow, Result: "lost: a spooled audit entry could not be read back",
+			Decision: Deny, Result: "lost: a spooled audit entry could not be read back",
 			Detail: lostDetail(name, readErr), Key: "lost-" + strings.TrimSuffix(name, spoolExt),
 		}
 	}
@@ -225,6 +274,13 @@ func (s *Spool) drainOne(ctx context.Context, root *os.Root, name string) bool {
 }
 
 func readSpooled(root *os.Root, name string) (store.AuditEntry, error) {
+	info, err := root.Stat(name)
+	if err != nil {
+		return store.AuditEntry{}, err
+	}
+	if info.Size() > maxSpooledEntry {
+		return store.AuditEntry{}, fmt.Errorf("%w: %d bytes, over %d", errSpoolInvalid, info.Size(), maxSpooledEntry)
+	}
 	b, err := root.ReadFile(name)
 	if err != nil {
 		return store.AuditEntry{}, err
@@ -233,17 +289,17 @@ func readSpooled(root *os.Root, name string) (store.AuditEntry, error) {
 	dec := json.NewDecoder(bytes.NewReader(b))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&sp); err != nil {
-		return store.AuditEntry{}, err
+		return store.AuditEntry{}, fmt.Errorf("%w: %w", errSpoolInvalid, err)
 	}
 	// What the audit log would refuse on every retry must not hold up the
 	// entries after it.
 	switch {
 	case sp.Key == "" || sp.TS.IsZero():
-		return store.AuditEntry{}, errors.New("no key or time")
+		return store.AuditEntry{}, fmt.Errorf("%w: no key or time", errSpoolInvalid)
 	case sp.ActorKind == "" || sp.ActorID == "" || sp.Action == "" || sp.Decision == "":
-		return store.AuditEntry{}, errors.New("no actor, action or decision")
+		return store.AuditEntry{}, fmt.Errorf("%w: no actor, action or decision", errSpoolInvalid)
 	case len(sp.Detail) > 0 && store.AuditDetailTooDeep(sp.Detail):
-		return store.AuditEntry{}, errors.New("detail nests too deep")
+		return store.AuditEntry{}, fmt.Errorf("%w: detail nests too deep", errSpoolInvalid)
 	}
 	return store.AuditEntry{
 		TS: sp.TS, ActorKind: sp.ActorKind, ActorID: sp.ActorID, Action: sp.Action, Target: sp.Target,

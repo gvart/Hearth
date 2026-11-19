@@ -115,3 +115,51 @@ func TestAuditKeyBeforeTheSchema(t *testing.T) {
 		t.Errorf("keyed command before the schema = %v, want a domain ErrSchemaTooOld", err)
 	}
 }
+
+// TestAuditRefusesReplaceOnKey: the key's unique index is a second conflict
+// target, and a REPLACE on it would delete the row holding the key: it is
+// refused like one on an existing id, and the down migration keeps the id
+// guard.
+func TestAuditRefusesReplaceOnKey(t *testing.T) {
+	ctx := t.Context()
+	s := openTest(t)
+	e := AuditEntry{ActorKind: "admin", ActorID: "root", Action: "x", Decision: "allow", Key: "k1"}
+	id, err := s.Audit().Append(ctx, e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		`INSERT OR REPLACE INTO audit_log (ts, actor_kind, actor_id, action, decision, audit_key) VALUES (2, 'evil', 'evil', 'forged', 'allow', 'k1')`,
+		`REPLACE INTO audit_log (ts, actor_kind, actor_id, action, decision, audit_key) VALUES (2, 'evil', 'evil', 'forged', 'allow', 'k1')`,
+		`INSERT INTO audit_log (ts, actor_kind, actor_id, action, decision, audit_key) VALUES (2, 'evil', 'evil', 'forged', 'allow', 'k1') ON CONFLICT DO UPDATE SET action = 'forged'`,
+	} {
+		if _, err := s.db.ExecContext(ctx, q); err == nil {
+			t.Errorf("%.30q on an existing key succeeded", q)
+		}
+	}
+	var action string
+	if err := s.db.QueryRowContext(ctx, `SELECT action FROM audit_log WHERE id = ?`, id).Scan(&action); err != nil {
+		t.Fatalf("the keyed row is gone: %v", err)
+	}
+	if action != "x" || auditRows(ctx, t, s, "forged") != 0 {
+		t.Errorf("row action = %q after a refused replace; want x and no forged row", action)
+	}
+	// A retry through the store still lands once.
+	if again, err := s.Audit().Append(ctx, e); err != nil || again != id {
+		t.Errorf("keyed retry = %d, %v; want %d", again, err, id)
+	}
+
+	p, err := s.newMigrator()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.DownTo(ctx, auditKeySchema-1); err != nil {
+		t.Fatal(err)
+	}
+	if !auditTriggers(ctx, t, s)["audit_log_no_replace"] {
+		t.Fatal("the down migration dropped the id guard")
+	}
+	if _, err := s.db.ExecContext(ctx, `INSERT OR REPLACE INTO audit_log (id, ts, actor_kind, actor_id, action, decision) VALUES (?, 9, 'e', 'e', 'forged', 'allow')`, id); err == nil {
+		t.Error("REPLACE on an existing id succeeded after the down migration")
+	}
+}

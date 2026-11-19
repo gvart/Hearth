@@ -207,8 +207,10 @@ func (e *Engine) Do(ctx context.Context, req Request, fn func(context.Context) e
 		return e.run(ctx, req, class, held, extra, fn)
 	}
 	record := e.record
-	if held {
-		// It closes the hold written in the log already.
+	if held && extra != nil {
+		// It closes the hold written in the log already. A hold that could
+		// not be stored or audited wrote nothing to close: its denial is a
+		// plain one.
 		record = e.recordOutcome
 	}
 	if err := record(auditCtx, req, decision, reason, extra); err != nil {
@@ -408,7 +410,8 @@ func detailJSON(detail, extra map[string]any) (json.RawMessage, error) {
 // hold stores req as a pending approval, audits the hold and waits for the
 // approval's outcome. It returns the decision to go on with (Allow or Deny),
 // the reason for a denial, and the detail that ties the final audit entry
-// to the approval. It fails only when the hold could not be audited.
+// to the approval, nil unless the hold's pending entry was written. It fails
+// only when the hold could not be audited.
 func (e *Engine) hold(ctx context.Context, req Request, class Class) (decision, reason string, extra map[string]any, err error) {
 	if e.approvals == nil {
 		return Deny, "needs approval, which this hub cannot hold", nil, nil
