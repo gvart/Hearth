@@ -1,0 +1,21 @@
+internal/integrations/kubernetes/seal_test.go
+  s_344993999c180f::t_31cb3d62b8ef11 52-113
+internal/integrations/kubernetes/seal.go
+  s_344993999c180f::t_b4decf51460ed5 13,27-29,31-33,43-69,85,91-92,96,99,101-128,130,132,134
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ae59dd85db0cb22fd927cfacec1641fa06efde11",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
