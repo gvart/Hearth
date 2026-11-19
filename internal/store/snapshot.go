@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"modernc.org/sqlite"
 )
@@ -78,6 +79,30 @@ func (s *Store) Restore(ctx context.Context, r io.Reader) error {
 	})
 	if err != nil {
 		return fmt.Errorf("restore: %w", err)
+	}
+	return nil
+}
+
+// CheckSnapshotFile verifies that the file at path is an intact SQLite database
+// at a schema version this binary supports. It fails with ErrSchemaMismatch for
+// a newer schema.
+func CheckSnapshotFile(ctx context.Context, path string) error {
+	return checkSnapshot(ctx, path, SchemaVersion())
+}
+
+// RetireHubCerts revokes every hub node certificate recorded in the database.
+// A restored hub starts a new cluster, and the hubs of the old one share its CA:
+// this keeps them out if they are still running. It writes the local file
+// directly, so it is only for a restored database no hub runs on yet.
+func (s *Store) RetireHubCerts(ctx context.Context, now time.Time) error {
+	if err := s.Hubs().RequireCerts(ctx); errors.Is(err, ErrSchemaTooOld) {
+		return nil // no hub certificates were recorded at this schema
+	} else if err != nil {
+		return fmt.Errorf("retire hub certs: %w", err)
+	}
+	if _, err := s.db.ExecContext(ctx,
+		`UPDATE hub_certs SET revoked_at = ? WHERE revoked_at IS NULL`, toMillis(now)); err != nil {
+		return fmt.Errorf("retire hub certs: %w", err)
 	}
 	return nil
 }

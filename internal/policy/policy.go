@@ -161,6 +161,11 @@ const (
 	// RunbookCheck is a check step of a runbook run: the hub reads a service
 	// over the network and changes nothing.
 	RunbookCheck Action = "runbook.check"
+	// HubBackup writes an encrypted backup of the hub, CA key included, to a
+	// file on the hub host.
+	HubBackup Action = "hub.backup"
+	// HubRestore brings a hub back from a backup into an empty data dir.
+	HubRestore Action = "hub.restore"
 )
 
 // Actor kinds.
@@ -329,6 +334,11 @@ var rules = map[Action]rule{
 	RunbookPassOver: {class: Safe, actors: []string{ActorWeb}},
 	// A check reads a service and changes nothing.
 	RunbookCheck: {class: Read, actors: []string{ActorAutomation}},
+	// A backup carries the CA key out of the data dir, encrypted.
+	HubBackup: {class: Dangerous, actors: []string{ActorAdmin}},
+	// A restore brings back a CA and every credential. It is the way back
+	// after losing the hub, when no one is left to approve it.
+	HubRestore: {class: Dangerous, actors: []string{ActorAdmin}, fixed: true},
 }
 
 // Actions returns every known action, sorted.
