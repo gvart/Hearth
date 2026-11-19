@@ -20,6 +20,10 @@ import (
 	"github.com/gvart/hearth/internal/store"
 )
 
+// minBackupInterval is the shortest --backup-interval: each backup is an
+// audit entry, and each failure a notification.
+const minBackupInterval = 5 * time.Minute
+
 // scheduledBackupOptions are the hub's flags for scheduled backups to an
 // S3-compatible bucket. They are off unless interval is set.
 type scheduledBackupOptions struct {
@@ -115,8 +119,8 @@ func backupScheduler(opts hubOptions, st *store.Store, pol *policy.Engine, n *no
 		return nil, nil
 	}
 	switch {
-	case o.interval < 0:
-		return nil, errors.New("--backup-interval must be positive")
+	case o.interval < minBackupInterval:
+		return nil, fmt.Errorf("--backup-interval must be at least %s", minBackupInterval)
 	case o.keep < 1:
 		return nil, errors.New("--backup-keep must be at least 1")
 	case o.endpoint == "" || o.bucket == "":

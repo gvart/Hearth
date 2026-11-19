@@ -167,8 +167,8 @@ const (
 	// HubRestore brings a hub back from a backup into an empty data dir.
 	HubRestore Action = "hub.restore"
 	// HubScheduledBackup is the hub's own scheduled backup: an encrypted
-	// backup, CA key included, uploaded to S3-compatible storage, with the
-	// oldest backups there pruned.
+	// backup, without the CA key unless the operator opts in, uploaded to
+	// S3-compatible storage, with the oldest backups there pruned.
 	HubScheduledBackup Action = "hub.scheduled_backup"
 )
 

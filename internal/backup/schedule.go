@@ -31,6 +31,8 @@ const (
 	// maxRunTime bounds one backup, upload and prune, so that a bucket that
 	// stops answering fails the run instead of stalling it.
 	maxRunTime = time.Hour
+	// maxListTime bounds the listing that finds when the first backup is due.
+	maxListTime = time.Minute
 )
 
 // scheduledName matches the names scheduled backups are given under the
@@ -131,9 +133,12 @@ func (s *Scheduler) Run(ctx context.Context) error {
 }
 
 // untilDue is the time until the next backup is due, from the newest
-// backup in the bucket. When the bucket cannot be read it is now: the
-// backup will fail and say why.
+// backup in the bucket, and never more than an interval: a backup dated in
+// the future does not put the schedule off. When the bucket cannot be read
+// in time it is now: the backup will fail and say why.
 func (s *Scheduler) untilDue(ctx context.Context) time.Duration {
+	ctx, cancel := context.WithTimeout(ctx, min(s.cfg.runTime, maxListTime))
+	defer cancel()
 	keys, err := s.scheduled(ctx)
 	if err != nil || len(keys) == 0 {
 		return 0
@@ -143,7 +148,7 @@ func (s *Scheduler) untilDue(ctx context.Context) time.Duration {
 	if err != nil {
 		return 0
 	}
-	return max(0, at.Add(s.cfg.Interval).Sub(s.cfg.now()))
+	return min(s.cfg.Interval, max(0, at.Add(s.cfg.Interval).Sub(s.cfg.now())))
 }
 
 // RunOnce takes one backup, uploads it and prunes the bucket, as the policy
@@ -168,7 +173,7 @@ func (s *Scheduler) RunOnce(ctx context.Context) error {
 			return err
 		}
 		detail["size"] = size
-		pruned, err := s.prune(ctx)
+		pruned, err := s.prune(ctx, key)
 		detail["pruned"] = pruned
 		if err != nil {
 			return fmt.Errorf("uploaded %s, then prune: %w", key, err)
@@ -216,21 +221,24 @@ func (s *Scheduler) scheduled(ctx context.Context) ([]string, error) {
 		return nil, fmt.Errorf("list: %w", err)
 	}
 	keys = slices.DeleteFunc(keys, func(k string) bool {
-		return !scheduledName.MatchString(strings.TrimPrefix(k, s.cfg.Prefix))
+		rest, ok := strings.CutPrefix(k, s.cfg.Prefix)
+		return !ok || !scheduledName.MatchString(rest)
 	})
 	slices.Sort(keys)
 	return keys, nil
 }
 
 // prune deletes all but the newest Keep scheduled backups, and returns how
-// many it deleted.
-func (s *Scheduler) prune(ctx context.Context) (int, error) {
+// many it deleted. uploaded, the backup just taken, counts as the newest
+// whatever its name: after the clock went back, it would sort as the oldest.
+func (s *Scheduler) prune(ctx context.Context, uploaded string) (int, error) {
 	keys, err := s.scheduled(ctx)
 	if err != nil {
 		return 0, err
 	}
+	keys = slices.DeleteFunc(keys, func(k string) bool { return k == uploaded })
 	n := 0
-	for _, k := range keys[:max(0, len(keys)-s.cfg.Keep)] {
+	for _, k := range keys[:max(0, len(keys)-(s.cfg.Keep-1))] {
 		if err := s.cfg.Bucket.Delete(ctx, k); err != nil {
 			return n, fmt.Errorf("delete %s: %w", k, err)
 		}
