@@ -11,6 +11,7 @@ import {
 import { displayName, formatDateTime } from '../format.ts';
 import { addDevice, linkExpiries, moveWidget, restartServices, shareURL, toggleRestart, toInput } from '../panels.ts';
 import { Command } from './AddDeviceDialog.tsx';
+import { DashboardTokens } from './DashboardTokens.tsx';
 import { Modal } from './Modal.tsx';
 import { StatusDot } from './StatusDot.tsx';
 import './PanelsPage.css';
@@ -79,6 +80,8 @@ export function PanelsPage() {
           ))}
         </div>
       )}
+
+      <DashboardTokens />
 
       {editing ? (
         <PanelEditor
