@@ -30,6 +30,16 @@ export interface Facts {
   interfaces?: NetInterface[];
   agent_version?: string;
   capabilities?: string[];
+  /** What the device's agent lets the hub do; absent for an agent too old to say. */
+  ceiling?: Ceiling;
+}
+
+export interface Ceiling {
+  exec: string[];
+  restart: string[];
+  probe: boolean;
+  /** Log sources the hub may stream, as manager:pattern (systemd:*, docker:web). */
+  logs?: string[];
 }
 
 export interface Device {
@@ -663,5 +673,83 @@ export function subscribeEvents(h: EventHandlers): () => void {
   });
   return () => {
     es.close();
+  };
+}
+
+/** One line of a log stream. */
+export interface LogLine {
+  /** When it was written (RFC 3339), or null if the source does not say. */
+  ts: string | null;
+  text: string;
+}
+
+export interface LogStreamHandlers {
+  /** New lines; skipped counts lines dropped before them because the reader was slow. */
+  onLines: (lines: LogLine[], skipped: number) => void;
+  /** The stream ended: refused, failed, or the source ended (no error). */
+  onEnd: (error?: string) => void;
+}
+
+/**
+ * Streams a device's log source (manager:name, such as systemd:nginx.service):
+ * its last tail lines, then new ones. Returns a closer; closing ends the
+ * stream on the device too. It does not reconnect: every stream opened is a
+ * policy decision and an audit entry.
+ */
+export function streamDeviceLogs(device: string, source: string, tail: number, h: LogStreamHandlers): () => void {
+  const ctl = new AbortController();
+  const q = new URLSearchParams({ source, tail: String(tail) });
+  const run = async () => {
+    const res = await fetch(`${base}/devices/${encodeURIComponent(device)}/logs?${q.toString()}`, {
+      credentials: 'same-origin',
+      headers: { Accept: 'text/event-stream' },
+      signal: ctl.signal,
+    });
+    if (!res.ok || !res.body) {
+      const err = ((await res.json().catch(() => null)) ?? {}) as Partial<{ error: string }>;
+      h.onEnd(err.error ?? `request failed with status ${String(res.status)}`);
+      return;
+    }
+    const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+    let buf = '';
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) {
+        h.onEnd('the hub closed the stream');
+        return;
+      }
+      buf += value;
+      let i;
+      while ((i = buf.indexOf('\n\n')) >= 0) {
+        const block = buf.slice(0, i);
+        buf = buf.slice(i + 2);
+        let event = '';
+        let data = '';
+        for (const line of block.split('\n')) {
+          if (line.startsWith('event: ')) {
+            event = line.slice(7);
+          } else if (line.startsWith('data: ')) {
+            data += line.slice(6);
+          }
+        }
+        if (event === 'lines') {
+          const m = JSON.parse(data) as { lines: LogLine[]; skipped?: number };
+          h.onLines(m.lines, m.skipped ?? 0);
+        } else if (event === 'end') {
+          const m = JSON.parse(data) as { error?: string };
+          ctl.abort();
+          h.onEnd(m.error);
+          return;
+        }
+      }
+    }
+  };
+  run().catch((err: unknown) => {
+    if (!ctl.signal.aborted) {
+      h.onEnd(err instanceof Error ? err.message : String(err));
+    }
+  });
+  return () => {
+    ctl.abort();
   };
 }

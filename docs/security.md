@@ -15,7 +15,8 @@ between Hearth processes is mutually authenticated TLS.
    actor, the action and its target. Secrets (tokens, passwords, kubeconfigs, webhook URLs and
    headers, command arguments) never reach the audit log or the hub log.
 3. **The device has the last word.** An agent runs only what its own `--allow-exec`,
-   `--allow-restart` and `--allow-probe` flags allow, and nothing by default. Nothing on the hub can raise that ceiling.
+   `--allow-restart` and `--allow-probe` flags allow, and streams only the logs its `--allow-logs`
+   flag names, and nothing by default. Nothing on the hub can raise that ceiling.
 4. **Dangerous needs a name.** Actions of class `dangerous` (running a command, draining a node) are
    taken by an automation only when the hub is started with `--allow-dangerous-automation <id>` for
    that automation.
