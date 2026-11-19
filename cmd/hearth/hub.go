@@ -304,7 +304,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 			return err
 		}
 		defer st.Close()
-		if ca, err = pki.LoadOrCreateCA(opts.dataDir, time.Now()); err != nil {
+		if ca, err = loadStandaloneCA(opts.dataDir, log); err != nil {
 			return err
 		}
 	}

@@ -349,7 +349,8 @@ refused: finish the rotation instead.
   copy of the CA key, stops trusting the old CA and stops: it never serves the old CA again. Remove it
   (`hearth cluster remove`), wipe its data dir, and join it again with a new token. One cut off before the
   finish reached it keeps running, outside the cluster, with the old key: remove and wipe it all the
-  same.- **Browsers and phones** that trusted the old CA must trust the new one: fetch it again from
+  same.
+- **Browsers and phones** that trusted the old CA must trust the new one: fetch it again from
   `http://<hub>:<port>/ca.crt` (see [HTTPS for the web UI](https.md)).
 - **Enroll and join tokens** made before the finish name the old CA and stop working: create new ones.
   No hub can join while a rotation is under way.
@@ -357,7 +358,8 @@ refused: finish the rotation instead.
   during the rotation holds both CAs and restores as such; one taken after holds only the new CA. A
   cluster restored from a backup taken during the rotation is a rotation under way: finish it on the
   restored hub before the others join again (see [Restoring a cluster](backup.md#restoring-a-cluster)).
-  A standalone hub restored from one keeps trusting both CAs, as rotation needs a cluster.
+  A standalone hub restored from one drops the new CA when it starts, and logs that, as rotation
+  needs a cluster: agents renewed or enrolled during the rotation have to enroll again.
   Destroy the old ones if the key's leak was the reason to rotate.
 
 What a rotation does not undo: until the finish, whoever holds the old key can still pose as a hub to

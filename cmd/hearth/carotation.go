@@ -22,6 +22,24 @@ const runbookSealInfo = "hearth runbook run seal v1"
 
 // newServerCert returns the hub's server certificate, issued again by the CA
 // the hub serves whenever a hub CA rotation changes it.
+// loadStandaloneCA loads a standalone hub's CA. A next CA, which only a
+// cluster's rotation uses (a standalone hub restored from a backup taken
+// during one has it), is dropped: the hub keeps the CA it serves.
+func loadStandaloneCA(dataDir string, log *slog.Logger) (*pki.CA, error) {
+	ca, err := pki.LoadOrCreateCA(dataDir, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	if next := ca.Next(); next != nil {
+		log.Warn("dropping the next hub CA of a rotation: a standalone hub has no rotation; agents renewed "+
+			"or enrolled with it have to enroll again", "next_ca", pki.FingerprintHex(next))
+		if err := ca.DropNext(); err != nil {
+			return nil, fmt.Errorf("drop the next hub CA: %w", err)
+		}
+	}
+	return ca, nil
+}
+
 func newServerCert(ctx context.Context, ca *pki.CA, hosts []string, epoch string, log *slog.Logger) (*atomic.Pointer[tls.Certificate], error) {
 	var p atomic.Pointer[tls.Certificate]
 	issue := func() error {
