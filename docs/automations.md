@@ -364,9 +364,6 @@ actions:
     cluster: homelab
     node: pi-2
     timeout: 5m                  # optional, default 2m, at most 10m
-  - type: kube_node_delete
-    cluster: homelab
-    node: pi-2
 ```
 
 - Policy decides on each one before anything is sent to the cluster, with actor `automation/<id>`
@@ -377,6 +374,7 @@ actions:
   or when the policy file says `confirm` and an operator approves it (see [guardrails.md](guardrails.md)).
   Without either, it is denied. `kube_node_delete` is dangerous in the same way; it is the clean-up
   after a node was reset or its Kubernetes uninstalled, typically a [runbook](runbooks.md)'s rollback.
+  It takes `cluster` and `node`, as `kube_cordon` does.
   Its plan warns when the node is still Ready (its kubelet registers it again) or has pods bound to it.
   Only automations and runbooks can take it: the web UI and MCP clients cannot.
 - A drain that runs out of time stops, leaves the node cordoned and fails the run, naming the pods
