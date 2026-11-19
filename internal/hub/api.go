@@ -90,6 +90,7 @@ func newAPI(cfg Config) *api {
 		dryRuns:       newLoginLimiter(time.Now, dryRunBurst, dryRunEvery),
 		// Only a release tag is pinned: dev builds have no release to install.
 		installVersion: releaseVersion(cfg.Version),
+		telemetryOff:   cfg.TelemetryOff,
 	}
 }
 
@@ -122,6 +123,7 @@ func (a *api) routes() http.Handler {
 	mux.Handle("POST /api/v1/approvals/{id}/deny", a.auth(a.decideApproval(false)))
 	a.approvalLinkRoutes(mux)
 	a.runbookRoutes(mux)
+	a.telemetryRoutes(mux)
 	mux.Handle("/api/v1/", a.auth(func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "no such endpoint")
 	}))
@@ -204,6 +206,8 @@ type api struct {
 	dryRuns *loginLimiter
 	// installVersion is the --version install commands pin, or "" for none.
 	installVersion string
+	// telemetryOff is Config.TelemetryOff.
+	telemetryOff bool
 }
 
 // DeviceJSON is the API representation of a device.

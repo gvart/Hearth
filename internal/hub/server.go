@@ -103,6 +103,9 @@ type Config struct {
 	// it with every other writer of the directory, such as the MCP server.
 	// Nil means the editor's own.
 	AutomationsLock sync.Locker
+	// TelemetryOff is HEARTH_TELEMETRY=off: the web UI does not ask about
+	// telemetry, and the answer cannot be changed.
+	TelemetryOff bool
 }
 
 // NewHandler serves EnrollService to anyone (the token is the credential) and

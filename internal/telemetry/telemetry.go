@@ -25,11 +25,6 @@ import (
 	"github.com/gvart/hearth/internal/store"
 )
 
-// DefaultEndpoint is the collector the hub sends to. It is empty until the
-// project runs a collector (deploy/telemetry-worker): opting in is then
-// stored, and nothing is sent.
-const DefaultEndpoint = ""
-
 // Interval is how often an opted-in hub sends.
 const Interval = 7 * 24 * time.Hour
 

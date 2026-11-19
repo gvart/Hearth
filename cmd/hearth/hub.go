@@ -99,8 +99,9 @@ type hubOptions struct {
 	// dhcpLeases are DHCP lease files (dnsmasq, ISC dhcpd) to import.
 	dhcpLeases []string
 	// backup schedules encrypted backups to an S3-compatible bucket.
-	backup  scheduledBackupOptions
-	cluster clusterOptions
+	backup    scheduledBackupOptions
+	cluster   clusterOptions
+	telemetry telemetryOptions
 	// version is the binary's version, which install commands pin agents to.
 	version string
 }
@@ -201,6 +202,7 @@ func newHubCmd() *cobra.Command {
 		"DHCP lease file to import hosts from, dnsmasq (/var/lib/misc/dnsmasq.leases) or ISC dhcpd (dhcpd.leases); "+
 			"repeatable (env HEARTH_DHCP_LEASES, comma-separated)")
 	addBackupFlags(cmd, &opts.backup)
+	addTelemetryFlags(cmd, &opts.telemetry)
 	addClusterFlags(cmd, &opts.cluster)
 	return cmd
 }
@@ -234,6 +236,10 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		return fmt.Errorf("create data dir: %w", err)
 	}
 	if err := backup.PrepareDataDir(opts.dataDir); err != nil {
+		return err
+	}
+	telemetryOff, err := opts.telemetry.off()
+	if err != nil {
 		return err
 	}
 	var subnets []netip.Prefix
@@ -386,6 +392,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		Notify:            notifier,
 		Version:           opts.version,
 		Runbooks:          runbooks,
+		TelemetryOff:      telemetryOff,
 	}
 	if exe, err := os.Executable(); err == nil {
 		cfg.VerifyPassword = hub.ChildVerifier(exe)
@@ -553,6 +560,9 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	g.Go(func() error { return pve.Run(gctx) })
 	// Every hub prunes its own metrics.
 	g.Go(func() error { return ms.Run(gctx) })
+	// Every hub checks the telemetry answer; only the leader sends.
+	telemetrySender := newTelemetrySender(opts, telemetryOff, st, node, log.With("component", "telemetry"))
+	g.Go(func() error { return telemetrySender.Run(gctx) })
 	// Every hub writes the audit entries it spooled; a cluster member once
 	// its store has caught up, so it reads the cluster's schema.
 	g.Go(func() error {
