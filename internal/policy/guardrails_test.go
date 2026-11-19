@@ -114,7 +114,7 @@ func (a *autoApprovals) Decide(_ context.Context, id, status, by string, _ time.
 }
 
 // actorKinds are every actor kind there is.
-var actorKinds = []string{ActorAdmin, ActorToken, ActorWeb, ActorJoinToken, ActorHub, ActorAutomation, ActorApprovalLink, ActorMCP, ActorGuest}
+var actorKinds = []string{ActorAdmin, ActorToken, ActorWeb, ActorJoinToken, ActorHub, ActorAutomation, ActorApprovalLink, ActorMCP, ActorGuest, ActorDashboard}
 
 // expected is the action table written out independently of rules: its
 // class, the actor kinds it admits, and whether the configuration applies.
@@ -188,6 +188,9 @@ var expected = map[Action]struct {
 	PanelDelete:               {Safe, []string{ActorWeb}, false},
 	PanelLinkCreate:           {Safe, []string{ActorWeb}, false},
 	PanelLinkRevoke:           {Safe, []string{ActorWeb}, false},
+	DashboardRead:             {Read, []string{ActorDashboard}, false},
+	DashboardTokenCreate:      {Safe, []string{ActorWeb}, false},
+	DashboardTokenRevoke:      {Safe, []string{ActorWeb}, false},
 }
 
 func TestExpectedCoversEveryAction(t *testing.T) {
@@ -717,5 +720,27 @@ func TestGuestConfigurable(t *testing.T) {
 		if got, _ := e.Check(Request{ActorKind: ActorGuest, ActorID: "panel/p1", Action: DeviceRestart}); got != tt.want {
 			t.Errorf("guest safe %s: decision = %s, want %s", tt.mode, got, tt.want)
 		}
+	}
+}
+
+// TestDashboardOnlyReads: a dashboard token reads the dashboard summary and
+// nothing else, so no other rule may admit the dashboard actor.
+func TestDashboardOnlyReads(t *testing.T) {
+	for _, a := range Actions() {
+		if Admits(a, ActorDashboard) && a != DashboardRead {
+			t.Errorf("%s admits %s", a, ActorDashboard)
+		}
+	}
+	if class, _ := ClassOf(DashboardRead); class != Read || !Admits(DashboardRead, ActorDashboard) {
+		t.Errorf("dashboard.read is %s, want read and admitting %s", class, ActorDashboard)
+	}
+	// An operator can turn dashboards off.
+	cfg := Config{Actors: map[string]map[Class]Mode{ActorDashboard: {Read: ModeDeny}}}
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	e := NewWithConfig(&memAudit{}, nil, cfg)
+	if got, _ := e.Check(Request{ActorKind: ActorDashboard, ActorID: "token/t1", Action: DashboardRead}); got != Deny {
+		t.Errorf("dashboard read with read: deny = %s, want deny", got)
 	}
 }

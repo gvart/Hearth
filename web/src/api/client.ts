@@ -551,6 +551,22 @@ export interface CreatedPanelLink {
   path: string;
 }
 
+/** A read-only token of a dashboard such as Homepage; see docs/homepage.md. */
+export interface DashboardToken {
+  id: string;
+  name: string;
+  created_at: string;
+  expires_at: string | null;
+  revoked_at: string | null;
+  status: 'active' | 'expired' | 'revoked';
+}
+
+/** A new dashboard token: the only time its secret is shown. */
+export interface CreatedDashboardToken {
+  token: DashboardToken;
+  secret: string;
+}
+
 /** A panel as its guests see it: names and states, nothing else. */
 export interface GuestPanel {
   name: string;
@@ -691,6 +707,11 @@ export const api = {
     request<CreatedPanelLink>('POST', `/panels/${encodeURIComponent(id)}/links`, expiresIn ? { expires_in: expiresIn } : {}),
   revokePanelLink: (id: string, link: string) =>
     request<undefined>('DELETE', `/panels/${encodeURIComponent(id)}/links/${encodeURIComponent(link)}`),
+  dashboardTokens: async () => (await request<{ tokens: DashboardToken[] }>('GET', '/dashboard/tokens')).tokens,
+  /** expiresIn is a duration such as "720h"; empty for a token that never expires. */
+  createDashboardToken: (name: string, expiresIn: string) =>
+    request<CreatedDashboardToken>('POST', '/dashboard/tokens', expiresIn ? { name, expires_in: expiresIn } : { name }),
+  revokeDashboardToken: (id: string) => request<undefined>('DELETE', `/dashboard/tokens/${encodeURIComponent(id)}`),
   /** A panel through its share link; needs no session. */
   guestPanel: (token: string) => request<GuestPanel>('GET', `/guest/${encodeURIComponent(token)}`),
   guestAction: (token: string, widget: string, action: string) =>

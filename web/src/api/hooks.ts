@@ -46,6 +46,7 @@ export const keys = {
   telemetry: ['telemetry'] as const,
   panels: ['panels'] as const,
   guestPanel: (token: string) => ['guest-panel', token] as const,
+  dashboardTokens: ['dashboard-tokens'] as const,
 };
 
 /** A run moves on by itself on the hub, so it is polled until it has ended. */
@@ -514,6 +515,26 @@ export function useRevokePanelLink() {
   return useMutation({
     mutationFn: ({ id, link }: { id: string; link: string }) => api.revokePanelLink(id, link),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.panels }),
+  });
+}
+
+export function useDashboardTokens() {
+  return useQuery({ queryKey: keys.dashboardTokens, queryFn: api.dashboardTokens });
+}
+
+export function useCreateDashboardToken() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ name, expiresIn }: { name: string; expiresIn: string }) => api.createDashboardToken(name, expiresIn),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.dashboardTokens }),
+  });
+}
+
+export function useRevokeDashboardToken() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.revokeDashboardToken,
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.dashboardTokens }),
   });
 }
 

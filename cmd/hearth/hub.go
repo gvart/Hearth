@@ -439,6 +439,8 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	baseCtx := func(net.Listener) context.Context { return ctx }
 	// The UI and API, served on both listeners. Over TLS they share the agent
 	// port, so browsers get HTTPS with the hub CA (see docs/https.md).
+	dashboardAudit := hub.NewDashboardAudit(pol, log)
+	cfg.DashboardAudit = dashboardAudit
 	webH := hub.NewHTTPHandler(cfg)
 	uiMux := http.NewServeMux()
 	uiMux.Handle("/", webH)
@@ -571,6 +573,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	g.Go(func() error { return pve.Run(gctx) })
 	// Every hub prunes its own metrics.
 	g.Go(func() error { return ms.Run(gctx) })
+	g.Go(func() error { return dashboardAudit.Run(gctx) })
 	// Every hub checks the telemetry answer; only the leader sends.
 	telemetrySender := newTelemetrySender(opts, telemetryOff, st, node, log.With("component", "telemetry"))
 	g.Go(func() error { return telemetrySender.Run(gctx) })

@@ -124,8 +124,8 @@ devices, not for a start page.
 **Use Hearth when** you want to do something about what you see: Homepage displays, Hearth acts. A
 red tile on Homepage can be a Hearth automation that already restarted the service.
 
-**Together.** Keep Homepage as your front door. Exporting Hearth's devices and services to Homepage
-is **planned** ([#185](https://github.com/gvart/hearth/issues/185)).
+**Together.** Keep Homepage as your front door. A `customapi` widget shows Hearth's device counts,
+read with a token that can do nothing else ([Homepage](homepage.md)).
 
 ## When Hearth is the wrong tool
 

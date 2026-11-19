@@ -34,7 +34,7 @@ const ConfigFile = "policy.yaml"
 // ConfigurableActors are the actor kinds the configuration applies to: the
 // operator's clients. The other kinds (agents, joining hubs, cluster members)
 // prove themselves with a credential, and their actions are fixed.
-var ConfigurableActors = []string{ActorAdmin, ActorWeb, ActorAutomation, ActorMCP, ActorGuest}
+var ConfigurableActors = []string{ActorAdmin, ActorWeb, ActorAutomation, ActorMCP, ActorGuest, ActorDashboard}
 
 // Config is the operator's policy configuration on top of the rule table.
 // The zero Config allows every action the table allows, except dangerous
