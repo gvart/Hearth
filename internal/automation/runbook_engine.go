@@ -1043,6 +1043,7 @@ func (r *Runbooks) runCheck(ctx context.Context, d *RunbookStep) error {
 		}
 		c.probers = r.cfg.Probers
 	}
+	deadline := r.cfg.Now().Add(d.Within)
 	once := c.run
 	cannot := "the check cannot run from its device"
 	if c.kubeNode != nil {
@@ -1051,8 +1052,18 @@ func (r *Runbooks) runCheck(ctx context.Context, d *RunbookStep) error {
 		}
 		once = func(ctx context.Context) (bool, error) { return c.kubeNode.run(ctx, r.cfg.KubeNodes) }
 		cannot = "the check cannot run"
+		// Right after the hub starts, every cluster is unknown until the
+		// clusters are loaded: wait for that, out of the step's within.
+		wctx, cancel := context.WithTimeout(ctx, d.Within)
+		err := r.cfg.KubeNodes.WaitLoaded(wctx)
+		cancel()
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if err != nil {
+			return fmt.Errorf("%s: the Kubernetes clusters did not load within %s", cannot, d.Within)
+		}
 	}
-	deadline := r.cfg.Now().Add(d.Within)
 	for {
 		ran, err := once(ctx)
 		if ctx.Err() != nil {

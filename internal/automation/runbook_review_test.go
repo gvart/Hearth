@@ -923,6 +923,8 @@ type scriptedKube struct {
 	err error
 }
 
+func (scriptedKube) WaitLoaded(context.Context) error { return nil }
+
 func (k scriptedKube) RunAction(context.Context, string, kubernetes.ActionRequest) (kubernetes.ActionResult, error) {
 	return kubernetes.ActionResult{}, k.err
 }

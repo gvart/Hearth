@@ -17,6 +17,8 @@ import (
 // fakeKube records the requests it gets. Like *kubernetes.Manager, it runs
 // an action only in a context policy granted it.
 type fakeKube struct {
+	loadGate
+
 	mu    sync.Mutex
 	plans []string
 	runs  []string
@@ -45,6 +47,35 @@ func (k *fakeKube) RunAction(ctx context.Context, cluster string, req kubernetes
 	defer k.mu.Unlock()
 	k.runs = append(k.runs, kubeCall(cluster, req))
 	return kubernetes.ActionResult{Result: "done"}, nil
+}
+
+// loadGate is a hub loading its clusters: loaded at once if loaded is nil,
+// else once it is closed. A wait that starts is told on waiting, if set and
+// not full.
+type loadGate struct {
+	loaded  chan struct{}
+	waiting chan struct{}
+}
+
+func (g *loadGate) WaitLoaded(ctx context.Context) error {
+	if g.loaded == nil {
+		return nil
+	}
+	select {
+	case g.waiting <- struct{}{}:
+	default:
+	}
+	select {
+	case <-g.loaded:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// newLoadGate returns a gate still loading, and its waiting channel.
+func newLoadGate() loadGate {
+	return loadGate{loaded: make(chan struct{}), waiting: make(chan struct{}, 1)}
 }
 
 func (k *fakeKube) calls() (plans, runs []string) {

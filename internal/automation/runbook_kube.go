@@ -18,6 +18,9 @@ type KubeNodes interface {
 	// NodeReady returns nil if the node is Ready; an error wrapping
 	// kubernetes.ErrNotFound if the hub has no such cluster.
 	NodeReady(ctx context.Context, cluster, node string) error
+	// WaitLoaded waits until the hub has loaded the clusters it adopted, or
+	// ctx is done: right after a hub starts, a cluster is unknown until then.
+	WaitLoaded(ctx context.Context) error
 }
 
 // errNoKubeNodes fails a kube_node check on a hub that cannot run one.

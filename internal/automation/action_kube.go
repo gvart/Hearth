@@ -20,6 +20,9 @@ import (
 type Kube interface {
 	PlanAction(ctx context.Context, cluster string, req kubernetes.ActionRequest) (kubernetes.ActionResult, error)
 	RunAction(ctx context.Context, cluster string, req kubernetes.ActionRequest) (kubernetes.ActionResult, error)
+	// WaitLoaded waits until the hub has loaded the clusters it adopted, or
+	// ctx is done: right after a hub starts, a cluster is unknown until then.
+	WaitLoaded(ctx context.Context) error
 }
 
 // kubeActions returns the kube_* action kinds.
@@ -214,6 +217,9 @@ func (a *kubeAction) texts() []Text         { return []Text{a.cluster, a.namespa
 func (a *kubeAction) render(ctx context.Context, ev Event) (string, kubernetes.ActionRequest, error) {
 	if a.kube == nil {
 		return "", kubernetes.ActionRequest{}, errors.New("this hub runs no Kubernetes integration")
+	}
+	if err := a.kube.WaitLoaded(ctx); err != nil {
+		return "", kubernetes.ActionRequest{}, err
 	}
 	cluster, err := a.cluster.Render(ctx, ev)
 	if err != nil {
