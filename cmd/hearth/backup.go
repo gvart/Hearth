@@ -48,6 +48,9 @@ func newBackupCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if len(passphrase) < backup.MinPassphraseLen {
+				return fmt.Errorf("the backup passphrase needs at least %d characters", backup.MinPassphraseLen)
+			}
 			return runBackup(cmd.Context(), opts, args[0], passphrase, cmd.Root().Version, cmd.OutOrStdout())
 		},
 	}

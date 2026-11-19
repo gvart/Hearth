@@ -300,6 +300,18 @@ func TestBackupCommandRefusals(t *testing.T) {
 			t.Fatalf("backup = %v, want an error naming %s", err, passphraseEnv)
 		}
 	})
+	t.Run("short passphrase", func(t *testing.T) {
+		t.Setenv(passphraseEnv, "too short")
+		_, err := execute(t, "backup", file, "--data-dir", dir)
+		if err == nil || !strings.Contains(err.Error(), "at least") {
+			t.Fatalf("backup = %v, want the minimum length", err)
+		}
+		st := openStore(t, dir)
+		entries, err := st.Audit().Query(t.Context(), store.AuditFilter{Actions: []string{string(policy.HubBackup)}}, 5)
+		if err != nil || len(entries) != 0 {
+			t.Errorf("audit = %+v, %v: refused before the policy decision", entries, err)
+		}
+	})
 	t.Run("no passphrase flag exists", func(t *testing.T) {
 		for _, cmd := range []string{"backup", "restore"} {
 			if _, err := execute(t, cmd, "x", "--passphrase", "secret"); err == nil || !strings.Contains(err.Error(), "unknown flag") {
