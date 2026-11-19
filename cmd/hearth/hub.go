@@ -310,6 +310,12 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	}
 
 	pol := policy.NewWithConfig(st.Audit(), st.Approvals(), polCfg)
+	// An outcome a cluster without quorum cannot take waits here for it.
+	spool, err := policy.OpenSpool(filepath.Join(opts.dataDir, auditSpoolDir), st.Audit(), log.With("component", "audit-spool"))
+	if err != nil {
+		return err
+	}
+	pol.SpoolTo(spool)
 	var beszelReader *beszel.Reader
 	if beszelClient != nil {
 		beszelReader = beszel.NewReader(beszel.ReaderConfig{
@@ -540,6 +546,8 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	g.Go(func() error { return pve.Run(gctx) })
 	// Every hub prunes its own metrics.
 	g.Go(func() error { return ms.Run(gctx) })
+	// Every hub writes the audit entries it spooled.
+	g.Go(func() error { return spool.Run(gctx) })
 	g.Go(func() error { return serve(gctx, agentSrv, func() error { return agentSrv.ServeTLS(agentLn, "", "") }) })
 	g.Go(func() error { return serve(gctx, webSrv, func() error { return webSrv.Serve(webLn) }) })
 	if node != nil {

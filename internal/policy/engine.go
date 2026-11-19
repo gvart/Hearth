@@ -120,7 +120,18 @@ type Engine struct {
 	onHeld func(ctx context.Context, ap store.Approval)
 	// sweepEvery is how often RunApprovalSweep looks for overdue approvals.
 	sweepEvery time.Duration
+	// spool keeps the outcomes that could not be written; see SpoolTo.
+	spool *Spool
+	// outcomeTimeout bounds the first write of an outcome.
+	outcomeTimeout time.Duration
 }
+
+// SpoolTo makes the engine keep in s every entry that reports how an action
+// or a held request ended and that could not be written, instead of losing
+// it: s writes it later (see Spool.Run). An action whose outcome was spooled
+// returns its own result, without ErrOutcomeNotRecorded. Call it before the
+// engine is used.
+func (e *Engine) SpoolTo(s *Spool) { e.spool = s }
 
 // OnHeld sets fn to be called with every approval the engine holds, once
 // it is stored and audited and before the requester waits: the hub sends
@@ -145,7 +156,7 @@ func NewWithConfig(audit Auditor, approvals Approvals, cfg Config) *Engine {
 	if cfg.ApprovalTimeout <= 0 {
 		cfg.ApprovalTimeout = DefaultApprovalTimeout
 	}
-	return &Engine{audit: audit, approvals: approvals, cfg: cfg, now: time.Now, poll: time.Second, sweepEvery: time.Minute}
+	return &Engine{audit: audit, approvals: approvals, cfg: cfg, now: time.Now, poll: time.Second, sweepEvery: time.Minute, outcomeTimeout: outcomeTimeout}
 }
 
 // Do decides on req and, if allowed, runs fn. A request the configuration
@@ -197,7 +208,12 @@ func (e *Engine) Do(ctx context.Context, req Request, fn func(context.Context) e
 	if decision == Allow {
 		return e.run(ctx, req, class, held, extra, fn)
 	}
-	if err := e.record(auditCtx, req, decision, reason, extra); err != nil {
+	record := e.record
+	if held {
+		// It closes the hold written in the log already.
+		record = e.recordOutcome
+	}
+	if err := record(auditCtx, req, decision, reason, extra); err != nil {
 		return err
 	}
 	return denied(req, reason, precheckErr)
@@ -252,11 +268,33 @@ func outcomeNotRecorded(req Request, runErr, auditErr error) error {
 	return fmt.Errorf("%w (%w: %v)", runErr, ErrOutcomeNotRecorded, auditErr) //nolint:errorlint // see ErrOutcomeNotRecorded
 }
 
-// recordOutcome is record on a context that ctx being cancelled cannot stop.
+// recordOutcome is record for an entry reporting how something already
+// written in the log ended, on a context that ctx being cancelled cannot
+// stop. With a spool, the entry carries a key from its first write, which
+// may commit after seeming to fail, and goes to the spool if it could not be
+// written.
 func (e *Engine) recordOutcome(ctx context.Context, req Request, decision, result string, extra map[string]any) error {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), outcomeTimeout)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), e.outcomeTimeout)
 	defer cancel()
-	return e.record(ctx, req, decision, result, extra)
+	entry, err := e.entry(req, decision, result, extra)
+	if err != nil {
+		return err
+	}
+	if e.spool != nil {
+		entry.Key = strings.ToLower(rand.Text())
+	}
+	_, err = e.audit.Append(ctx, entry)
+	if err == nil {
+		return nil
+	}
+	err = fmt.Errorf("audit %s: %w", req.Action, err)
+	if e.spool == nil {
+		return err
+	}
+	if sErr := e.spool.Put(entry); sErr != nil {
+		return fmt.Errorf("%w (%w)", err, sErr)
+	}
+	return nil
 }
 
 // withDetail returns a copy of extra with key set to value.
@@ -309,11 +347,23 @@ func denied(req Request, reason string, precheckErr error) error {
 
 // record writes one audit entry for req, its detail merged with extra.
 func (e *Engine) record(ctx context.Context, req Request, decision, result string, extra map[string]any) error {
+	entry, err := e.entry(req, decision, result, extra)
+	if err != nil {
+		return err
+	}
+	if _, err := e.audit.Append(ctx, entry); err != nil {
+		return fmt.Errorf("audit %s: %w", req.Action, err)
+	}
+	return nil
+}
+
+// entry is the audit entry for req, its detail merged with extra.
+func (e *Engine) entry(req Request, decision, result string, extra map[string]any) (store.AuditEntry, error) {
 	detail, err := detailJSON(req.Detail, extra)
 	if err != nil {
-		return fmt.Errorf("audit %s: encode detail: %w", req.Action, err)
+		return store.AuditEntry{}, fmt.Errorf("audit %s: encode detail: %w", req.Action, err)
 	}
-	if _, err := e.audit.Append(ctx, store.AuditEntry{
+	return store.AuditEntry{
 		TS:        e.now(),
 		ActorKind: orUnknown(req.ActorKind),
 		ActorID:   orUnknown(req.ActorID),
@@ -322,10 +372,7 @@ func (e *Engine) record(ctx context.Context, req Request, decision, result strin
 		Decision:  decision,
 		Result:    result,
 		Detail:    detail,
-	}); err != nil {
-		return fmt.Errorf("audit %s: %w", req.Action, err)
-	}
-	return nil
+	}, nil
 }
 
 // DetailPlan is the key, in Request.ApprovalDetail, of the plan of what a held
