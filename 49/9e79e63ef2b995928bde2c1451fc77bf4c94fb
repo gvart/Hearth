@@ -1,0 +1,108 @@
+web/src/components/LogViewer.tsx
+  s_344993999c180f::t_47ead643e70989 1-107
+cmd/hearth/backup_cluster_test.go
+  s_344993999c180f::t_47ead643e70989 43-45,50-53,203,256-258
+internal/hub/agentlogs.go
+  s_344993999c180f::t_47ead643e70989 1-217
+web/src/api/client.ts
+  s_344993999c180f::t_47ead643e70989 43-44,668-745
+web/src/components/DeviceLogsDialog.tsx
+  s_344993999c180f::t_47ead643e70989 1-84
+cmd/hearth/agent.go
+  s_344993999c180f::t_47ead643e70989 39-40,42,45-49,79-81
+  s_344993999c180f::t_dff2b37f256802 38
+cmd/hearth/hub_cluster.go
+  s_344993999c180f::t_47ead643e70989 31-33,126
+internal/agent/run.go
+  s_344993999c180f::t_47ead643e70989 302-309,312-313,353,359,362,364,366,369,399-409
+  s_344993999c180f::t_4932c480263d3d 32-33
+internal/policy/ceiling_test.go
+  s_344993999c180f::t_47ead643e70989 1-44
+internal/cluster/migrate_test.go
+  s_344993999c180f::t_47ead643e70989 446-447,459
+docs/logs.md
+  s_344993999c180f::t_47ead643e70989 1-66
+internal/policy/policy.go
+  s_344993999c180f::t_47ead643e70989 120-122,305-307
+internal/cluster/join_test.go
+  s_344993999c180f::t_47ead643e70989 68-69,77
+internal/agent/logs_test.go
+  s_344993999c180f::t_47ead643e70989 1-292
+internal/hub/agentstream.go
+  s_344993999c180f::t_47ead643e70989 158-159
+internal/policy/guardrails_test.go
+  s_344993999c180f::t_47ead643e70989 157
+cmd/hearth/hub.go
+  s_344993999c180f::t_47ead643e70989 46-51,440,480-484,486-490
+web/src/components/DeviceDrawer.tsx
+  s_344993999c180f::t_47ead643e70989 6,72-73
+  s_344993999c180f::t_1dd08870ef2ccb 74-75
+web/src/components/PodLogsDialog.tsx
+  s_344993999c180f::t_47ead643e70989 1-2,4,13-17,36-87
+internal/cluster/transport.go
+  s_344993999c180f::t_47ead643e70989 47-53
+internal/policy/ceiling.go
+  s_344993999c180f::t_b487a3a6514f48 61
+  s_344993999c180f::t_47ead643e70989 8,10,62-81
+  s_344993999c180f::t_5ae9f5c4b83fa0 82
+internal/cluster/transport_test.go
+  s_344993999c180f::t_47ead643e70989 48,97
+internal/agent/logs_stream_test.go
+  s_344993999c180f::t_47ead643e70989 1-117
+docs/kubernetes.md
+  s_344993999c180f::t_47ead643e70989 53-54
+site/src/pages.mjs
+  s_344993999c180f::t_47ead643e70989 11
+internal/cluster/node.go
+  s_344993999c180f::t_47ead643e70989 11,65-68,214
+internal/cluster/helpers_test.go
+  s_344993999c180f::t_47ead643e70989 50-69
+internal/cluster/members_test.go
+  s_344993999c180f::t_47ead643e70989 55,126,226
+internal/hub/facts.go
+  s_344993999c180f::t_dff2b37f256802 74
+  s_344993999c180f::t_47ead643e70989 40-41
+internal/hub/api.go
+  s_344993999c180f::t_47ead643e70989 123
+internal/hub/logs.go
+  s_344993999c180f::t_47ead643e70989 1-198
+web/src/index.css
+  s_344993999c180f::t_47ead643e70989 1315-1316,1690-1759
+cmd/hearth/backup_test.go
+  s_344993999c180f::t_47ead643e70989 12,30-33,40-41,44-104,107-108,158-159,161,321-324,347-350
+internal/agent/logs.go
+  s_344993999c180f::t_47ead643e70989 1-436
+internal/agent/exec.go
+  s_344993999c180f::t_dff2b37f256802 64
+  s_344993999c180f::t_47ead643e70989 35-38
+web/src/api/hooks.ts
+  s_344993999c180f::t_47ead643e70989 2,6,20,467-517
+internal/hub/agentexec.go
+  s_344993999c180f::t_47ead643e70989 70-71
+  s_344993999c180f::t_dff2b37f256802 82
+proto/hearth/agent/v1/agent.proto
+  s_344993999c180f::t_47ead643e70989 28,40-41,90-94,259-309
+  s_344993999c180f::t_aa2d08dd2e84be 310
+web/src/components/DeviceLogSources.tsx
+  s_344993999c180f::t_47ead643e70989 1-99
+internal/hub/logs_test.go
+  s_344993999c180f::t_47ead643e70989 1-499
+internal/proto/hearth/agent/v1/agent.pb.go
+  s_344993999c180f::t_7db53b0fa1b0de 40,146-154,188-191,206-207,218-219,307-324,349-356,367-370,594-599,662-668,1758-2072,2082,2094,2107,2132,2144,2157,2270,2282,2295,2316,2328,2341,2367,2379,2392,2412,2424,2437,2516,2528,2541,2568,2580,2593,2621,2631-2633,2640-2644,2666,2671-2672,2743-2763,2810,2834-2849,2858-2900,2916,2924-2925,2936,2943,2954
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "499e79e63ef2b995928bde2c1451fc77bf4c94fb",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
