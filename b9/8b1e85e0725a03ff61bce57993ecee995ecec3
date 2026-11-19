@@ -1,0 +1,33 @@
+internal/pki/hub.go
+  s_344993999c180f::t_25d740ce603ca0 111-114,116
+  s_344993999c180f::t_41d53d92f260ac 78-79
+internal/pki/rotate.go
+  s_344993999c180f::t_8c14c27fbf4285 1-390
+internal/pki/ca.go
+  s_344993999c180f::t_1014859a41978b 336-337
+  s_344993999c180f::t_911425767473ae 24-25
+  s_344993999c180f::t_89d3bcfe73ef49 50-55,57-70,75-109,111-117,119-121,124-126,131-138
+  s_344993999c180f::t_962324c153ee73 110,139,174
+  s_344993999c180f::t_f5ea7fdb1484e5 164-173,175-178,181,185
+  s_344993999c180f::t_4e68652124ec5f 199,203,205,208,211,215,219,223-224,226-231,234-236,238-239
+  s_344993999c180f::t_00fd7bfb88903c 289-290,298,312-318
+internal/pki/rotate_test.go
+  s_344993999c180f::t_3c1aaf80c8e20c 1-81,83-216,218-246
+  s_344993999c180f::t_ba5c0a677aba45 82,217
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b98b1e85e0725a03ff61bce57993ecee995ecec3",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
