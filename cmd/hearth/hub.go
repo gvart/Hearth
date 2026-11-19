@@ -356,7 +356,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	}
 	uiMux.Handle(mcpserver.Path, hub.EndOnStop(stopping, mcpserver.Handler(mcpserver.Config{
 		Devices: st.Devices(), Live: reg.Live, Tokens: st.MCPTokens(), Policy: pol, Agents: agents, Kube: kube,
-		Metrics: hub.AutomationMetrics(st, prom, ms), AutomationsDir: automationsDir, Version: opts.version, Log: log,
+		Metrics: hub.AutomationMetrics(st, prom, ms), AutomationsDir: automationsDir, AutomationKinds: kinds, Version: opts.version, Log: log,
 	})))
 	var tlsWeb http.Handler = uiMux
 	if node != nil {

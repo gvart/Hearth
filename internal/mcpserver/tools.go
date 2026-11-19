@@ -327,7 +327,12 @@ func (s *session) agentAction(ctx context.Context, action policy.Action, device 
 // outcome says what policy does with action for this token, for a dry run
 // it allowed: allowed, or held for approval.
 func (s *session) outcome(action policy.Action) string {
-	if d, _ := s.cfg.Policy.Check(policy.Request{ActorKind: policy.ActorMCP, ActorID: s.tok.Name, Action: action}); d == policy.Confirm {
+	return outcome(s.cfg.Policy, policy.Request{ActorKind: policy.ActorMCP, ActorID: s.tok.Name, Action: action})
+}
+
+// outcome is what e does with req, as session.outcome says it.
+func outcome(e *policy.Engine, req policy.Request) string {
+	if d, _ := e.Check(req); d == policy.Confirm {
 		return "held for approval"
 	}
 	return "allowed"
@@ -349,12 +354,21 @@ func planKinds() automation.Kinds {
 // maxAutomationBytes bounds an automation file from a client.
 const maxAutomationBytes = 64 << 10
 
-// plan parses an automation file and describes it.
-func plan(yaml string) (*automation.Automation, string, error) {
+// kinds are the step types to validate a file with: the hub's own when it
+// gave them, so that a file is judged as the hub will load it.
+func (s *session) kinds() automation.Kinds {
+	if s.cfg.AutomationKinds.Actions != nil {
+		return s.cfg.AutomationKinds
+	}
+	return planKinds()
+}
+
+// plan parses an automation file as a web save does, and describes it.
+func (s *session) plan(yaml string) (*automation.Automation, string, error) {
 	if len(yaml) > maxAutomationBytes {
 		return nil, "", fmt.Errorf("automation is larger than %d KiB", maxAutomationBytes>>10)
 	}
-	a, err := automation.Parse("automation.yaml", []byte(yaml), planKinds())
+	a, err := automation.ParseForSave("automation.yaml", []byte(yaml), s.kinds())
 	if err != nil {
 		return nil, "", err
 	}
@@ -369,7 +383,7 @@ func (s *session) planAutomation(ctx context.Context, in automationIn) (any, err
 	var out string
 	err := s.do(ctx, policy.Request{Action: policy.AutomationPlan}, func(context.Context) error {
 		var err error
-		_, out, err = plan(in.YAML)
+		_, out, err = s.plan(in.YAML)
 		return err
 	})
 	return out, err
@@ -384,42 +398,70 @@ func (s *session) applyAutomation(ctx context.Context, in applyIn) (any, error) 
 	if s.cfg.AutomationsDir == "" {
 		return nil, errors.New("this hub has no automations directory")
 	}
-	a, desc, err := plan(in.YAML)
+	req := policy.Request{Action: policy.AutomationApply, DryRun: in.DryRun, ActorKind: policy.ActorMCP, ActorID: s.tok.Name}
+	// Before the file is read: parsing it runs its templates.
+	if d, _ := s.cfg.Policy.Check(req); d == policy.Deny {
+		if err := s.do(ctx, req, func(context.Context) error { return nil }); err != nil {
+			return nil, err
+		}
+	}
+	a, desc, err := s.plan(in.YAML)
 	if err != nil {
 		return nil, err
 	}
-	path := filepath.Join(s.cfg.AutomationsDir, a.ID+".yaml")
+	// Refused now, a misplaced save is not held for approval first.
+	path, err := s.saveTarget(a)
+	if err != nil {
+		return nil, err
+	}
+	engine := automation.SaveEngine(s.cfg.Policy, policy.ActorMCP, a)
 	// The plan is what the operator approves. It quotes commands and messages,
 	// so it stays out of the audit log.
-	err = s.do(ctx, policy.Request{
-		Action: policy.AutomationApply, Target: a.ID, DryRun: in.DryRun,
-		Detail:         map[string]any{"file": path},
-		ApprovalDetail: map[string]any{policy.DetailPlan: desc},
-	}, func(context.Context) error { return s.writeAutomation(a.ID, path, []byte(in.YAML)) })
+	req.Target = a.ID
+	req.Detail = map[string]any{"file": path}
+	req.ApprovalDetail = map[string]any{policy.DetailPlan: desc}
+	err = s.doOn(engine, ctx, req, func(context.Context) error {
+		s.cfg.automationsMu.Lock()
+		defer s.cfg.automationsMu.Unlock()
+		// Approval can take minutes: judge the directory as it is now.
+		path, err := s.saveTarget(a)
+		if err != nil {
+			return err
+		}
+		return automation.WriteFile(s.cfg.AutomationsDir, path, []byte(in.YAML))
+	})
 	if err != nil {
 		return nil, err
 	}
 	if in.DryRun {
 		return fmt.Sprintf("Dry run: applying %s would be %s. Nothing was written.\n\n%s",
-			a.ID, s.outcome(policy.AutomationApply), desc), nil
+			a.ID, outcome(engine, req), desc), nil
 	}
 	return fmt.Sprintf("Wrote %s; the hub loads it within seconds.\n\n%s", path, desc), nil
 }
 
-// writeAutomation writes the automation id to path, unless another file of
-// the automations directory has that id: two files with one id fail the
-// hub's whole reload.
-func (s *session) writeAutomation(id, path string, b []byte) error {
-	existing, err := automation.LoadDir(s.cfg.AutomationsDir, planKinds())
+// saveTarget is the file saving a would write, as the web editor decides it:
+// <id>.yaml, new or replaced. It refuses a file that is a link, a file named
+// after another automation's id, an id defined in a file of another name, and
+// a directory the hub could not load: two files with one id, or one invalid
+// file, fail the hub's whole reload.
+func (s *session) saveTarget(a *automation.Automation) (string, error) {
+	files := automation.Files{Dir: s.cfg.AutomationsDir, Kinds: s.kinds()}
+	existing, err := files.List()
 	if err != nil {
-		return fmt.Errorf("the automations directory does not load, fix it first: %w", err)
+		return "", fmt.Errorf("read the automations directory: %w", err)
 	}
-	for _, e := range existing {
-		if e.ID == id && e.File != path {
-			return fmt.Errorf("automation %s is defined in %s: edit that file instead", id, e.File)
+	for _, f := range existing {
+		if f.ID != a.ID {
+			continue
 		}
+		if name := filepath.Base(f.Path); name != a.ID+".yaml" {
+			return "", fmt.Errorf("automation %s is defined in %s: edit that file instead", a.ID, name)
+		}
+		// Replacing the file as it is now: the client has no revision to give.
+		return files.Target(a, false, automation.Revision(f.Content))
 	}
-	return automation.WriteFile(s.cfg.AutomationsDir, path, b)
+	return files.Target(a, true, "")
 }
 
 type kubeObjectsIn struct {

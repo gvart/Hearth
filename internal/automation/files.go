@@ -14,6 +14,8 @@ import (
 	"strconv"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/gvart/hearth/internal/policy"
 )
 
 // Why a file cannot be saved.
@@ -276,4 +278,22 @@ func WriteFile(dir, path string, b []byte) error {
 		return fmt.Errorf("write automation: %w", err)
 	}
 	return nil
+}
+
+// SaveEngine returns the engine that decides on saving p, written by an actor
+// of kind. When e would let p run a dangerous action with nobody asked, by a
+// grant to its id or by a mode, saving the file is the last moment a person
+// can see what it does: the save is approved by a person, whatever the modes
+// say about saves by kind.
+func SaveEngine(e *policy.Engine, kind string, p *Automation) *policy.Engine {
+	for _, s := range p.Actions {
+		if class, _ := policy.ClassOf(s.Impl.Policy()); class != policy.Dangerous {
+			continue
+		}
+		run := policy.Request{ActorKind: policy.ActorAutomation, ActorID: p.ID, Action: s.Impl.Policy()}
+		if decision, _ := e.Check(run); decision == policy.Allow {
+			return e.Holding(kind, policy.Dangerous)
+		}
+	}
+	return e
 }
