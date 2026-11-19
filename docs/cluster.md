@@ -77,8 +77,8 @@ start.
 
 ## Configuration drift
 
-The database is replicated, but three things stay on each hub and are **not** copied between hubs:
-`policy.yaml`, `notify.yaml` and the automations directory. Keep them identical on every hub: after a
+The database is replicated, but four things stay on each hub and are **not** copied between hubs:
+`policy.yaml`, `notify.yaml`, the automations directory and the runbooks directory. Keep them identical on every hub: after a
 failover, the new leader acts on its own copy, so a hub with a looser policy or missing notification
 channels changes how Hearth behaves. Hearth does not sync them; it detects when hubs disagree and warns.
 
@@ -91,6 +91,7 @@ CONFIG       STATE    HUBS
 policy.yaml  differs  hub-a, hub-b | hub-c
 notify.yaml  in_sync  hub-a, hub-b, hub-c
 automations  unknown  hub-a, hub-b | unknown: hub-c
+runbooks     differs  hub-a, hub-b | hub-c
 ```
 
 | State     | Meaning                                                                    |
@@ -107,8 +108,9 @@ hubs only: digests and file contents are never shown, and never logged.
 **What is compared.** The bytes, so a changed comment or whitespace counts as a difference. A missing
 file counts the same as an empty one. The policy digest also covers `--allow-dangerous-automation`
 flags, since they grant what the file could. Paths do not matter: `--notify-config` and
-`--automations-dir` may differ between hubs. In the automations directory, only the files Hearth loads
-count (`.yaml` and `.yml`, not hidden). A value that is specific to one hub inside a compared file
+`--automations-dir` and `--runbooks-dir` may differ between hubs. In the automations and runbooks
+directories, only the files Hearth loads count (`.yaml` and `.yml`, not hidden), by name and content, so
+a runbook that differs, one missing on a hub and an extra one all show as a difference. A value that is specific to one hub inside a compared file
 shows as a permanent difference: leave `approval_notify.url` in `policy.yaml` empty, or give it the
 same address on every hub, such as a DNS name all hubs share.
 
@@ -119,7 +121,7 @@ same address on every hub, such as a DNS name all hubs share.
   changes nothing until the restart, in the hub's behaviour or in the warning. The exception is
   `hearth` CLI commands on the hub's host, which read `policy.yaml` each time they run, so they follow
   an edit at once, before the warning does.
-- **The automations directory:** at the next comparison. The UI compares every 30 seconds, and
+- **The automations and runbooks directories:** at the next comparison. The UI compares every 30 seconds, and
   `hearth cluster status` compares each time it runs.
 
 **Resolving a warning.**

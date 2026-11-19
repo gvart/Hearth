@@ -192,7 +192,9 @@ The hub keeps the newest 100 finished runs, and every unfinished one.
 ## In a cluster
 
 Run state is replicated through the store like other hub state, so any hub can show a run or take an
-operator's decision, and the leader runs the steps. Give every hub the same runbook files.
+operator's decision, and the leader runs the steps. Give every hub the same runbook files: which file a
+new run starts from depends on the hub that takes the request. Hearth does not sync them, but it warns
+when hubs differ (see [configuration drift](cluster.md#configuration-drift)).
 
 ## Commands
 

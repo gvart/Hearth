@@ -58,7 +58,8 @@ func TestFileConfigSource(t *testing.T) {
 	writeConfig(t, policyFile, "classes: {dangerous: deny}\n")
 	automations := filepath.Join(dir, "automations")
 	loaded := ConfigFileDigest(policyFile)
-	src := FileConfigSource(loaded, "", automations)
+	runbooks := filepath.Join(dir, ConfigRunbooks)
+	src := FileConfigSource(loaded, "", automations, runbooks)
 
 	before := src()
 	if before[ConfigPolicy] != loaded {
@@ -77,6 +78,13 @@ func TestFileConfigSource(t *testing.T) {
 	if after[ConfigAutomations] == before[ConfigAutomations] {
 		t.Error("a new automation file did not change the digest")
 	}
+	if after[ConfigRunbooks] != before[ConfigRunbooks] {
+		t.Error("an automation file changed the runbooks digest")
+	}
+	writeConfig(t, filepath.Join(runbooks, "new.yaml"), "id: new\n")
+	if src()[ConfigRunbooks] == before[ConfigRunbooks] {
+		t.Error("a new runbook file did not change the digest")
+	}
 }
 
 // loadHubFiles points h at the configuration files in its data dir, as a hub
@@ -86,6 +94,7 @@ func loadHubFiles(h *testHub) {
 		ConfigFileDigest(filepath.Join(h.dir, ConfigPolicy)),
 		ConfigFileDigest(filepath.Join(h.dir, ConfigNotify)),
 		filepath.Join(h.dir, ConfigAutomations),
+		filepath.Join(h.dir, ConfigRunbooks),
 	))
 }
 
@@ -98,6 +107,8 @@ func TestConfigDriftFromRealFiles(t *testing.T) {
 		writeConfig(t, filepath.Join(h.dir, ConfigPolicy), "classes: {dangerous: deny}\n")
 		writeConfig(t, filepath.Join(h.dir, ConfigNotify), "channels: {}\n")
 		writeConfig(t, filepath.Join(h.dir, ConfigAutomations, "a.yaml"), "id: a\n")
+		writeConfig(t, filepath.Join(h.dir, ConfigRunbooks, "r1.yaml"), "id: r1\n")
+		writeConfig(t, filepath.Join(h.dir, ConfigRunbooks, "r2.yaml"), "id: r2\n")
 		loadHubFiles(h)
 	}
 	for _, item := range configItems {
@@ -119,4 +130,70 @@ func TestConfigDriftFromRealFiles(t *testing.T) {
 	r = driftOf(t, hubs[0].testNode)
 	wantItem(t, itemOf(t, r, ConfigPolicy), DriftDiffers, split, []string{})
 	wantItem(t, itemOf(t, r, ConfigNotify), DriftDiffers, split, []string{})
+}
+
+// TestRunbookDriftFromRealFiles: hubs with identical runbooks do not warn, and
+// a runbook that differs, one missing on a hub and an extra one on a hub each
+// show up, without touching the other items.
+func TestRunbookDriftFromRealFiles(t *testing.T) {
+	hubs := startHubs(t, hubOpts{offlineAfter: time.Minute, flushEvery: time.Minute})
+	for _, h := range hubs {
+		writeConfig(t, filepath.Join(h.dir, ConfigRunbooks, "r1.yaml"), "id: r1\n")
+		writeConfig(t, filepath.Join(h.dir, ConfigRunbooks, "r2.yaml"), "id: r2\n")
+		loadHubFiles(h)
+	}
+	split := [][]string{{"n1", "n2"}, {"n3"}}
+	check := func(t *testing.T, status string, groups [][]string) {
+		t.Helper()
+		for _, h := range hubs {
+			r := driftOf(t, h.testNode)
+			wantItem(t, itemOf(t, r, ConfigRunbooks), status, groups, []string{})
+			wantItem(t, itemOf(t, r, ConfigAutomations), DriftInSync, allThree, []string{})
+		}
+	}
+	check(t, DriftInSync, allThree)
+
+	n3 := hubs[2]
+	tests := []struct {
+		name  string
+		apply func()
+		undo  func()
+	}{
+		{
+			"differs",
+			func() { writeConfig(t, filepath.Join(n3.dir, ConfigRunbooks, "r2.yaml"), "id: r2\nname: edited\n") },
+			func() { writeConfig(t, filepath.Join(n3.dir, ConfigRunbooks, "r2.yaml"), "id: r2\n") },
+		},
+		{
+			"missing",
+			func() {
+				if err := os.Remove(filepath.Join(n3.dir, ConfigRunbooks, "r2.yaml")); err != nil {
+					t.Fatal(err)
+				}
+			},
+			func() { writeConfig(t, filepath.Join(n3.dir, ConfigRunbooks, "r2.yaml"), "id: r2\n") },
+		},
+		{
+			"extra",
+			func() { writeConfig(t, filepath.Join(n3.dir, ConfigRunbooks, "r3.yml"), "id: r3\n") },
+			func() {
+				if err := os.Remove(filepath.Join(n3.dir, ConfigRunbooks, "r3.yml")); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.apply()
+			check(t, DriftDiffers, split)
+			tc.undo()
+			check(t, DriftInSync, allThree)
+		})
+	}
+
+	// Files Hearth does not load as runbooks do not count.
+	writeConfig(t, filepath.Join(n3.dir, ConfigRunbooks, ".hidden.yaml"), "id: h\n")
+	writeConfig(t, filepath.Join(n3.dir, ConfigRunbooks, "notes.txt"), "x\n")
+	check(t, DriftInSync, allThree)
 }
