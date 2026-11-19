@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -229,6 +230,51 @@ func TestShellEndsWithStream(t *testing.T) {
 	r.h.closeAll() // the stream ended
 	if ex := r.exited(t); ex.GetError() != "session closed" {
 		t.Errorf("exit = %v", ex)
+	}
+}
+
+// TestShellFreesMemoryWhenLastEnds: the agent gives memory back to the OS
+// once its last running shell has ended, not while another still runs.
+func TestShellFreesMemoryWhenLastEnds(t *testing.T) {
+	t.Parallel()
+	r := newShellRig(t, Ceiling{Shell: true})
+	var frees atomic.Int32
+	r.h.freeMemory = func() { frees.Add(1) }
+	req := func(id string, q *agentv1.ShellRequest) {
+		q.Id = id
+		r.h.handle(r.ctx, q)
+	}
+	// wait skips other events (the shells' prompts) up to one of id that
+	// matches.
+	wait := func(id string, match func(*agentv1.ShellEvent) bool) {
+		t.Helper()
+		for {
+			if ev := r.next(t); ev.GetId() == id && match(ev) {
+				return
+			}
+		}
+	}
+	for _, id := range []string{"a", "b"} {
+		req(id, open())
+		wait(id, func(ev *agentv1.ShellEvent) bool { return ev.GetStarted() != nil })
+	}
+	exit := func(id string) {
+		t.Helper()
+		req(id, &agentv1.ShellRequest{Op: &agentv1.ShellRequest_Input{Input: []byte("exit\n")}})
+		wait(id, func(ev *agentv1.ShellEvent) bool { return ev.GetExited() != nil })
+	}
+	exit("a")
+	time.Sleep(50 * time.Millisecond)
+	if n := frees.Load(); n != 0 {
+		t.Fatalf("memory freed %d times while shell b runs", n)
+	}
+	exit("b")
+	deadline := time.Now().Add(5 * time.Second)
+	for frees.Load() != 1 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if n := frees.Load(); n != 1 {
+		t.Fatalf("memory freed %d times after the last shell ended, want 1", n)
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -50,10 +51,14 @@ type shellHost struct {
 	// argv is the shell to start instead of the user's login shell: tests
 	// set it to one that starts fast.
 	argv []string
+	// freeMemory runs once the last running shell has ended:
+	// debug.FreeOSMemory, so the agent idles as small after a terminal
+	// session as before it, instead of keeping what the session grew.
+	freeMemory func()
 }
 
 func newShellHost(c Ceiling, log *slog.Logger, wg *sync.WaitGroup, reply func(*agentv1.AgentMessage)) *shellHost {
-	return &shellHost{ceiling: c, log: log, reply: reply, wg: wg, shells: map[string]*shell{}}
+	return &shellHost{ceiling: c, log: log, reply: reply, wg: wg, shells: map[string]*shell{}, freeMemory: debug.FreeOSMemory}
 }
 
 // shell is one running shell on a PTY.
@@ -177,6 +182,7 @@ func (h *shellHost) run(ctx context.Context, id string, sh *shell) {
 
 	h.mu.Lock()
 	delete(h.shells, id)
+	idle := len(h.shells) == 0
 	h.mu.Unlock()
 	ex := &agentv1.ShellExited{ExitCode: int32(sh.cmd.ProcessState.ExitCode())} //nolint:gosec // exit statuses fit in int32
 	if killed {
@@ -185,6 +191,10 @@ func (h *shellHost) run(ctx context.Context, id string, sh *shell) {
 	h.log.InfoContext(ctx, "shell ended", "id", id, "exit_code", ex.GetExitCode(), "closed", killed,
 		"duration", time.Since(started).Round(time.Second))
 	h.exit(id, ex)
+	if idle {
+		// The session's buffers and goroutines are gone by now.
+		h.freeMemory()
+	}
 }
 
 // pump sends what the PTY writes to the hub, within the window.
