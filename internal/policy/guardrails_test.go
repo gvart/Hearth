@@ -183,6 +183,7 @@ var expected = map[Action]struct {
 	HubRestore:                {Dangerous, []string{ActorAdmin}, true},
 	HubScheduledBackup:        {Dangerous, []string{ActorHub}, true},
 	TelemetrySet:              {Safe, []string{ActorWeb}, false},
+	DeviceShell:               {Dangerous, []string{ActorWeb}, false},
 }
 
 func TestExpectedCoversEveryAction(t *testing.T) {
@@ -340,6 +341,27 @@ func confirmAll(timeout time.Duration) Config {
 	c := uniform(ModeConfirm)
 	c.ApprovalTimeout = timeout
 	return c
+}
+
+// TestAuditedAfterRequesterLeft cancels the request while the action runs:
+// what ran is in the audit log all the same.
+func TestAuditedAfterRequesterLeft(t *testing.T) {
+	s := openStore(t)
+	e := New(s.Audit())
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	err := e.Do(ctx, Request{ActorKind: ActorAdmin, ActorID: "root", Action: DeviceRevoke, Target: "pi"},
+		func(context.Context) error {
+			cancel()
+			return nil
+		})
+	if err != nil {
+		t.Fatalf("Do = %v", err)
+	}
+	entries, err := s.Audit().List(t.Context(), 10)
+	if err != nil || len(entries) != 1 || entries[0].Decision != Allow {
+		t.Fatalf("audit = %v, %v; want the action allowed", entries, err)
+	}
 }
 
 func TestConfirmApprovedRuns(t *testing.T) {

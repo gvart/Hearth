@@ -104,6 +104,8 @@ type hubOptions struct {
 	telemetry telemetryOptions
 	// version is the binary's version, which install commands pin agents to.
 	version string
+	// shellIdle and shellMax limit web terminal sessions.
+	shellIdle, shellMax time.Duration
 }
 
 func newHubCmd() *cobra.Command {
@@ -203,6 +205,10 @@ func newHubCmd() *cobra.Command {
 			"repeatable (env HEARTH_DHCP_LEASES, comma-separated)")
 	addBackupFlags(cmd, &opts.backup)
 	addTelemetryFlags(cmd, &opts.telemetry)
+	cmd.Flags().DurationVar(&opts.shellIdle, "terminal-idle-timeout", hub.DefaultShellIdleTimeout,
+		"end a web terminal session after this long without input")
+	cmd.Flags().DurationVar(&opts.shellMax, "terminal-max-duration", hub.DefaultShellMaxDuration,
+		"end any web terminal session this long after it opened")
 	addClusterFlags(cmd, &opts.cluster)
 	return cmd
 }
@@ -393,6 +399,8 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		Version:           opts.version,
 		Runbooks:          runbooks,
 		TelemetryOff:      telemetryOff,
+		ShellIdleTimeout:  opts.shellIdle,
+		ShellMaxDuration:  opts.shellMax,
 	}
 	if exe, err := os.Executable(); err == nil {
 		cfg.VerifyPassword = hub.ChildVerifier(exe)
@@ -436,6 +444,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	uiMux.Handle("/", webH)
 	uiMux.Handle("GET /api/v1/events", hub.EndOnStop(stopping, webH))
 	uiMux.Handle("GET /api/v1/devices/{id}/logs", hub.EndOnStop(stopping, webH))
+	uiMux.Handle("GET /api/v1/devices/{id}/shell", hub.EndOnStop(stopping, webH))
 	if node != nil {
 		node.SetConfigSource(cluster.FileConfigSource(policyDigest, notifyDigest, automationsDir, runbooksDirOf(opts)))
 	}

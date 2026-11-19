@@ -415,3 +415,28 @@ func TestSpoolAfterShutdown(t *testing.T) {
 		t.Errorf("%d rows after the restart, want 2", n)
 	}
 }
+
+// TestRecordEndIsSpooled: the end of a session, such as a terminal's, that
+// cannot be written while the log is down is spooled and lands once it is back.
+func TestRecordEndIsSpooled(t *testing.T) {
+	ctx := t.Context()
+	f := newSpoolFixture(t)
+	e := New(f.audit)
+	e.SpoolTo(f.sp)
+	req := Request{ActorKind: ActorWeb, ActorID: "10.0.0.1", Action: DeviceShell, Target: "pi"}
+
+	f.audit.down.Store(true)
+	if err := e.RecordEnd(ctx, req, "closed", map[string]any{"reason": "idle"}); err != nil {
+		t.Fatalf("RecordEnd = %v, want nil: the entry is spooled, not lost", err)
+	}
+	if files := f.files(t, "*"+spoolExt); len(files) != 1 {
+		t.Fatalf("spool holds %v, want one entry", files)
+	}
+	f.audit.down.Store(false)
+	if f.sp.Drain(ctx) {
+		t.Error("Drain with the log back left entries")
+	}
+	if n := f.rows(t, string(DeviceShell)); n != 1 {
+		t.Errorf("%d rows, want the one end entry", n)
+	}
+}

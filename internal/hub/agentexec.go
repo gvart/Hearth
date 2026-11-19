@@ -58,6 +58,8 @@ type agentSession struct {
 	sendMu sync.Mutex
 	send   func(*agentv1.HubMessage) error
 	closed bool
+	// abort tears the stream down, for an agent that stopped reading it.
+	abort func()
 	// done is closed when the stream ends.
 	done chan struct{}
 
@@ -65,19 +67,19 @@ type agentSession struct {
 	pending map[string]chan *agentv1.ExecResult
 	probes  map[string]chan *agentv1.ProbeResult
 	// logs are the open log streams, by LogRequest id (see agentlogs.go).
-	logs map[string]*logQueue
+	logs   map[string]*logQueue
+	shells map[string]*Shell
 	// ceiling is the capability ceiling the agent last reported.
 	ceiling *agentv1.Ceiling
 }
 
 // attach records the stream of deviceID. A newer stream of the same device
 // replaces an older one. Call detach when the stream ends.
-func (a *Agents) attach(deviceID string, hello *agentv1.Hello, send func(*agentv1.HubMessage) error) *agentSession {
+func (a *Agents) attach(deviceID string, hello *agentv1.Hello, send func(*agentv1.HubMessage) error, abort func()) *agentSession {
 	s := &agentSession{
-		minor: hello.GetProtocolVersion().GetMinor(), send: send, done: make(chan struct{}),
+		minor: hello.GetProtocolVersion().GetMinor(), send: send, abort: abort, done: make(chan struct{}),
 		pending: map[string]chan *agentv1.ExecResult{}, probes: map[string]chan *agentv1.ProbeResult{},
-		logs:    map[string]*logQueue{},
-		ceiling: hello.GetCeiling(),
+		logs: map[string]*logQueue{}, shells: map[string]*Shell{}, ceiling: hello.GetCeiling(),
 	}
 	a.mu.Lock()
 	a.sessions[deviceID] = s
@@ -97,6 +99,7 @@ func (a *Agents) detach(deviceID string, s *agentSession) {
 	s.closed = true
 	s.sendMu.Unlock()
 	close(s.done)
+	s.endShells()
 }
 
 // setCeiling records the ceiling an agent reported in its facts.

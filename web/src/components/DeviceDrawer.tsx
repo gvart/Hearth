@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import type { Device } from '../api/client.ts';
+import { markTerminalLaunch, terminalHttpsDocs, terminalTransportAllowed } from '../api/terminal.ts';
 import { displayName, formatBytes, formatDateTime, osArch, primaryIP, statusLabel } from '../format.ts';
 import { DeviceCharts } from './DeviceCharts.tsx';
 import { DeviceLogSources } from './DeviceLogSources.tsx';
@@ -23,10 +24,21 @@ export function DeviceDrawer({ device, onClose }: { device: Device; onClose: () 
             {primaryIP(device) ? <span className="mono"> · {primaryIP(device)}</span> : null}
           </p>
         </div>
-        <button className="btn btn-ghost icon-btn" type="button" aria-label="Close" onClick={onClose}>
-          ✕
-        </button>
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <TerminalButton device={device} />
+          <button className="btn btn-ghost icon-btn" type="button" aria-label="Close" onClick={onClose}>
+            ✕
+          </button>
+        </div>
       </header>
+      {device.facts.ceiling?.shell && !terminalTransportAllowed() ? (
+        <p className="small muted">
+          Terminals need HTTPS, or a browser on the hub itself.{' '}
+          <a href={terminalHttpsDocs} target="_blank" rel="noreferrer">
+            Set up HTTPS
+          </a>
+        </p>
+      ) : null}
 
       <Section title="Device">
         <Row k="ID" v={<span className="mono">{device.id}</span>} />
@@ -139,6 +151,39 @@ export function DeviceDrawer({ device, onClose }: { device: Device; onClose: () 
         )}
       </Section>
     </Modal>
+  );
+}
+
+/** Opens the device's web terminal in a new tab, if its agent allows shells. */
+function TerminalButton({ device }: { device: Device }) {
+  const why =
+    device.status !== 'online'
+      ? 'The device is not online'
+      : !device.facts.ceiling?.shell
+        ? 'Its agent does not allow shells: start it with --allow-shell'
+        : !terminalTransportAllowed()
+          ? 'Terminals need HTTPS, or a browser on the hub itself'
+          : '';
+  if (why) {
+    return (
+      <button className="btn" type="button" disabled title={why}>
+        Terminal
+      </button>
+    );
+  }
+  return (
+    <a
+      className="btn"
+      style={{ textDecoration: 'none' }}
+      href={`#/terminal/${encodeURIComponent(device.id)}`}
+      target="_blank"
+      rel="noopener"
+      onClick={() => {
+        markTerminalLaunch(device.id);
+      }}
+    >
+      Terminal
+    </a>
   );
 }
 

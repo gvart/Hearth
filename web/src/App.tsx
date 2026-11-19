@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { useSession } from './api/hooks.ts';
 import { ApproveLinkPage } from './components/ApproveLinkPage.tsx';
 import { Shell } from './components/Shell.tsx';
@@ -7,6 +7,12 @@ import { SecureBanner } from './components/SecureBanner.tsx';
 
 /** The token of an approval link (#/approve/<token>), opened without a session. */
 const approveRoute = '#/approve/';
+
+/** A device's web terminal (#/terminal/<device id>), in a tab of its own. */
+const terminalRoute = '#/terminal/';
+
+// Loaded on demand: xterm.js is most of its weight.
+const TerminalPage = lazy(() => import('./components/TerminalPage.tsx'));
 
 /** The URL hash, kept current. */
 function useHash(): string {
@@ -31,13 +37,13 @@ export function App() {
   }
   return (
     <>
-      <SecureBanner />
-      <Main />
+      {hash.startsWith(terminalRoute) ? null : <SecureBanner />}
+      <Main hash={hash} />
     </>
   );
 }
 
-function Main() {
+function Main({ hash }: { hash: string }) {
   const session = useSession();
 
   if (session.isPending) {
@@ -52,5 +58,16 @@ function Main() {
       </main>
     );
   }
-  return session.data ? <Shell /> : <Login />;
+  if (!session.data) {
+    return <Login />;
+  }
+  if (hash.startsWith(terminalRoute)) {
+    const id = decodeURIComponent(hash.slice(terminalRoute.length));
+    return (
+      <Suspense fallback={null}>
+        <TerminalPage key={id} deviceId={id} />
+      </Suspense>
+    );
+  }
+  return <Shell />;
 }

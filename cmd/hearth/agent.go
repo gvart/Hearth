@@ -35,7 +35,9 @@ func newAgentRunCmd() *cobra.Command {
 			"services the hub (its automations) may run or restart here. Without them it may run nothing.\n" +
 			"--allow-probe lets the hub's http, tcp and dns checks run from here (from: <device>).\n" +
 			"--allow-logs names the logs the hub's UI may stream from here; logs can hold secrets, so none\n" +
-			"are readable without it.",
+			"are readable without it.\n" +
+			"--allow-shell lets an admin open a shell here from the web UI's terminal, as this agent's user\n" +
+			"(Linux and macOS).",
 		Example: "  hearth agent run --allow-restart systemd:pihole-FTL.service --allow-restart docker:jellyfin \\\n" +
 			"    --allow-exec /usr/bin/df --allow-logs 'systemd:pihole-FTL.service' --allow-logs 'docker:*'",
 		Args: cobra.NoArgs,
@@ -49,6 +51,9 @@ func newAgentRunCmd() *cobra.Command {
 				if err := agent.ParseRestart(e); err != nil {
 					return fmt.Errorf("--allow-restart: %w", err)
 				}
+			}
+			if ceiling.Shell && !agent.ShellSupported {
+				return errors.New("--allow-shell: interactive shells are not supported on this platform")
 			}
 			connected, failed, stop := agent.TuneRuntime()
 			defer stop()
@@ -72,6 +77,8 @@ func newAgentRunCmd() *cobra.Command {
 	cmd.Flags().StringArrayVar(&ceiling.Logs, "allow-logs", nil,
 		"log the hub may stream from here, as systemd:UNIT, systemd-user:UNIT or docker:CONTAINER, where the\n"+
 			"name may be a glob (systemd:*, docker:*); repeatable")
+	cmd.Flags().BoolVar(&ceiling.Shell, "allow-shell", false,
+		"let an admin open an interactive shell on this device from the web UI, as this agent's user")
 	return cmd
 }
 

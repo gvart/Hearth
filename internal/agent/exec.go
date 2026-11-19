@@ -33,6 +33,9 @@ type Ceiling struct {
 	// where manager is systemd, systemd-user or docker and pattern a name or
 	// a glob such as *.
 	Logs []string
+	// Shell lets the hub open an interactive shell here, as the agent's
+	// user: the web UI's terminal. It is as much as the agent's user can do.
+	Shell bool
 }
 
 // Service managers a restart may name.
@@ -58,7 +61,7 @@ const (
 
 // proto is the ceiling as the agent reports it to the hub.
 func (c Ceiling) proto() *agentv1.Ceiling {
-	return &agentv1.Ceiling{Exec: slices.Clone(c.Exec), Restart: slices.Clone(c.Restart), Probe: c.Probe, Logs: slices.Clone(c.Logs)}
+	return &agentv1.Ceiling{Exec: slices.Clone(c.Exec), Restart: slices.Clone(c.Restart), Probe: c.Probe, Logs: slices.Clone(c.Logs), Shell: c.Shell}
 }
 
 // command returns the program and arguments req runs, or an error wrapping
