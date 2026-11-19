@@ -344,7 +344,7 @@ pre,
 
 /* Telemetry prompt: asked once, after sign-in. */
 .telemetry-card {
-  max-width: 72rem;
+  max-width: 70rem;
   margin: 1rem auto 0;
   padding: 1rem 1.25rem;
   border: 1px solid var(--border);
@@ -354,7 +354,7 @@ pre,
   overflow-wrap: anywhere;
 }
 
-@media (max-width: 74rem) {
+@media (max-width: 72rem) {
   .telemetry-card {
     margin-inline: 1rem;
   }
@@ -386,6 +386,10 @@ pre,
   margin: 0 auto;
   padding: 0 1rem 1.5rem;
   overflow-wrap: anywhere;
+}
+
+.telemetry-status a {
+  color: inherit;
 }
 
 /* Shell */
