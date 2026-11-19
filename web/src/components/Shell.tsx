@@ -9,6 +9,7 @@ import { Logo } from './Logo.tsx';
 import { NotificationsPage } from './NotificationsPage.tsx';
 import { ProxmoxPage } from './ProxmoxPage.tsx';
 import { RunbooksPage } from './RunbooksPage.tsx';
+import { TelemetryPrompt, TelemetryStatus } from './TelemetryPrompt.tsx';
 
 // Loaded when opened: the editor brings a YAML parser no other page needs.
 const AutomationsPage = lazy(() => import('./AutomationsPage.tsx'));
@@ -133,6 +134,7 @@ export function Shell() {
         </button>
       </header>
       <ConfigDriftBanner />
+      <TelemetryPrompt />
       {page === 'approvals' ? (
         <ApprovalsPage />
       ) : page === 'kubernetes' ? (
@@ -152,6 +154,7 @@ export function Shell() {
       ) : (
         <DevicesPage />
       )}
+      <TelemetryStatus />
     </div>
   );
 }

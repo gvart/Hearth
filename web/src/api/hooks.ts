@@ -39,6 +39,7 @@ export const keys = {
   runbookPlan: (id: string) => ['runbooks', 'plan', id] as const,
   runbookRuns: ['runbooks', 'runs'] as const,
   runbookRun: (id: string) => ['runbooks', 'run', id] as const,
+  telemetry: ['telemetry'] as const,
 };
 
 /** A run moves on by itself on the hub, so it is polled until it has ended. */
@@ -122,6 +123,22 @@ export function useMarkNetworkHost() {
   return useMutation({
     mutationFn: ({ mac, state }: { mac: string; state: NetworkHostState }) => api.markNetworkHost(mac, state),
     onSettled: () => qc.invalidateQueries({ queryKey: keys.networkHosts }),
+  });
+}
+
+/** The admin's answer to the telemetry prompt. */
+export function useTelemetry() {
+  return useQuery({ queryKey: keys.telemetry, queryFn: api.telemetry, staleTime: Infinity });
+}
+
+/** Stores the admin's answer to the telemetry prompt. */
+export function useSetTelemetry() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (enabled: boolean) => api.setTelemetry(enabled),
+    onSuccess: (data) => {
+      qc.setQueryData(keys.telemetry, data);
+    },
   });
 }
 

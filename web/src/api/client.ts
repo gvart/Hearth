@@ -479,6 +479,15 @@ export interface Approval {
   decided_at?: string;
 }
 
+/** The admin's answer to the telemetry prompt; see GET /api/v1/telemetry and docs/telemetry.md. */
+export interface TelemetrySetting {
+  /** False until the admin answers: the UI then asks. */
+  answered: boolean;
+  enabled: boolean;
+  /** HEARTH_TELEMETRY=off on the hub: nothing is sent and the UI does not ask. */
+  disabled_by_env: boolean;
+}
+
 /** ApiError carries the hub's `{"error","code"}` body and the HTTP status. */
 export class ApiError extends Error {
   readonly status: number;
@@ -594,6 +603,9 @@ export const api = {
     request<RunbookRun>('POST', `/runbook-runs/${encodeURIComponent(id)}/rollback`, { version }),
   passOverRunbookStep: (id: string, step: string, version: number) =>
     request<RunbookRun>('POST', `/runbook-runs/${encodeURIComponent(id)}/pass-over`, { step, version }),
+  telemetry: () => request<TelemetrySetting>('GET', '/telemetry'),
+  /** Stores the admin's answer: yes sends anonymous usage stats weekly, no sends nothing. */
+  setTelemetry: (enabled: boolean) => request<TelemetrySetting>('PUT', '/telemetry', { enabled }),
 };
 
 export interface EventHandlers {
