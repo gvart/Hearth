@@ -68,6 +68,27 @@ func TestEngineDo(t *testing.T) {
 			wantResult:   "actor kind not allowed",
 		},
 		{
+			name:         "web session can set telemetry",
+			req:          Request{ActorKind: ActorWeb, ActorID: "192.0.2.1", Action: TelemetrySet, Detail: map[string]any{"enabled": true}},
+			wantRan:      true,
+			wantDecision: Allow,
+			wantResult:   "ok",
+		},
+		{
+			name:         "MCP client cannot set telemetry",
+			req:          Request{ActorKind: ActorMCP, ActorID: "claude", Action: TelemetrySet},
+			wantErr:      ErrDenied,
+			wantDecision: Deny,
+			wantResult:   "actor kind not allowed",
+		},
+		{
+			name:         "automation cannot set telemetry",
+			req:          Request{ActorKind: ActorAutomation, ActorID: "a", Action: TelemetrySet},
+			wantErr:      ErrDenied,
+			wantDecision: Deny,
+			wantResult:   "actor kind not allowed",
+		},
+		{
 			name:         "web session can create a token",
 			req:          Request{ActorKind: ActorWeb, ActorID: "192.0.2.1", Action: TokenCreate},
 			wantRan:      true,

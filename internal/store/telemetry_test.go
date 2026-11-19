@@ -125,4 +125,10 @@ func TestTelemetryBeforeTheSchema(t *testing.T) {
 	if len(proposed) != 0 {
 		t.Errorf("proposed %v before the schema, want nothing", proposed)
 	}
+	// A command that arrives anyway, from a newer leader's log, is refused.
+	for _, cmd := range []Command{SetTelemetry{Enabled: true, InstallID: "id", At: 1}, MarkTelemetrySent{InstallID: "id", At: 2}} {
+		if _, err := s.ApplyLocal(ctx, cmd); !errors.Is(err, ErrSchemaTooOld) {
+			t.Errorf("ApplyLocal(%s) before the schema = %v, want ErrSchemaTooOld", cmd.Op(), err)
+		}
+	}
 }

@@ -181,6 +181,7 @@ var expected = map[Action]struct {
 	HubBackup:                 {Dangerous, []string{ActorAdmin}, false},
 	HubRestore:                {Dangerous, []string{ActorAdmin}, true},
 	HubScheduledBackup:        {Dangerous, []string{ActorHub}, true},
+	TelemetrySet:              {Safe, []string{ActorWeb}, false},
 }
 
 func TestExpectedCoversEveryAction(t *testing.T) {
