@@ -5,6 +5,7 @@ package agent
 import (
 	"bufio"
 	"context"
+	"encoding/binary"
 	"log/slog"
 	"runtime"
 	"slices"
@@ -46,11 +47,11 @@ func TestLogArgv(t *testing.T) {
 	}{
 		{
 			&agentv1.LogSource{Manager: "systemd", Name: "-x.service"},
-			[]string{"journalctl", "--unit=-x.service", "--follow", "--lines=5", "--output=json", "--output-fields=MESSAGE", "--no-pager", "--quiet"},
+			[]string{"journalctl", "--unit=-x.service", "--follow", "--lines=5", "--output=export", "--output-fields=MESSAGE", "--no-pager", "--quiet"},
 		},
 		{
 			&agentv1.LogSource{Manager: "systemd-user", Name: "a.service"},
-			[]string{"journalctl", "--user-unit=a.service", "--follow", "--lines=5", "--output=json", "--output-fields=MESSAGE", "--no-pager", "--quiet"},
+			[]string{"journalctl", "--user-unit=a.service", "--follow", "--lines=5", "--output=export", "--output-fields=MESSAGE", "--no-pager", "--quiet"},
 		},
 		{
 			&agentv1.LogSource{Manager: "docker", Name: "--privileged"},
@@ -64,25 +65,72 @@ func TestLogArgv(t *testing.T) {
 	}
 }
 
-func TestParseJournalLine(t *testing.T) {
+// exportBinary is a binary field of journalctl --output=export.
+func exportBinary(key, value string) string {
+	var n [8]byte
+	binary.LittleEndian.PutUint64(n[:], uint64(len(value)))
+	return key + "\n" + string(n[:]) + value + "\n"
+}
+
+func TestReadJournalEntry(t *testing.T) {
 	t.Parallel()
-	for _, tc := range []struct {
-		in, text string
-		ts       bool
-	}{
-		{`{"__REALTIME_TIMESTAMP":"1700000000123456","MESSAGE":"hello"}`, "hello", true},
-		{`{"__REALTIME_TIMESTAMP":"1700000000123456","MESSAGE":[104,105,255]}`, "hi�", true},
-		{`{"MESSAGE":null}`, "", false},
-		{`not json`, "not json", false},
-	} {
-		got := parseJournalLine([]byte(tc.in))
-		if got.GetText() != tc.text || (got.GetTs() != nil) != tc.ts {
-			t.Errorf("parseJournalLine(%s) = %v, want %q ts=%v", tc.in, got, tc.text, tc.ts)
-		}
+	const cursor = "__CURSOR=s=1;i=2\n__REALTIME_TIMESTAMP=1700000000123456\n__MONOTONIC_TIMESTAMP=9\n_BOOT_ID=b\n"
+	type entry struct {
+		text string
+		ts   bool
 	}
-	got := parseJournalLine([]byte(`{"__REALTIME_TIMESTAMP":"1700000000123456","MESSAGE":"x"}`))
-	if want := time.UnixMicro(1700000000123456); !got.GetTs().AsTime().Equal(want) {
-		t.Errorf("ts = %v, want %v", got.GetTs().AsTime(), want)
+	for _, tc := range []struct {
+		name string
+		in   string
+		want []entry
+	}{
+		{"text", cursor + "MESSAGE=hello\n\n", []entry{{"hello", true}}},
+		{"two entries", cursor + "MESSAGE=a\n\n" + cursor + "MESSAGE=b=c\n\n", []entry{{"a", true}, {"b=c", true}}},
+		{"several lines", cursor + exportBinary("MESSAGE", "one\ntwo") + "\n", []entry{{"one\ntwo", true}}},
+		{"not UTF-8", cursor + exportBinary("MESSAGE", "hi\xff") + "\n", []entry{{"hi�", true}}},
+		{"no message", cursor + "\n", []entry{{"", true}}},
+		{"no timestamp", "MESSAGE=x\n\n", []entry{{"x", false}}},
+		{"cut short", cursor + "MESSAGE=last", []entry{{"last", true}}},
+		{"binary cut short", cursor + "MESSAGE\n\x09\x00", []entry{{"", true}}},
+		{"empty", "", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			r := bufio.NewReader(strings.NewReader(tc.in))
+			var got []entry
+			for {
+				line, err := readJournalEntry(r, maxLogRead)
+				if line != nil {
+					got = append(got, entry{line.GetText(), line.GetTs() != nil})
+				}
+				if err != nil {
+					break
+				}
+			}
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("entries = %+v, want %+v", got, tc.want)
+			}
+		})
+	}
+	line, _ := readJournalEntry(bufio.NewReader(strings.NewReader(cursor+"MESSAGE=x\n\n")), maxLogRead)
+	if want := time.UnixMicro(1700000000123456); !line.GetTs().AsTime().Equal(want) {
+		t.Errorf("ts = %v, want %v", line.GetTs().AsTime(), want)
+	}
+}
+
+// TestReadJournalEntryLimit: a field longer than the limit (a binary value,
+// or a text line with its key) is cut, and the entries after it are still
+// read.
+func TestReadJournalEntryLimit(t *testing.T) {
+	t.Parallel()
+	long := strings.Repeat("x", 100)
+	in := exportBinary("MESSAGE", long) + "\n" + "MESSAGE=" + long + "\n\nMESSAGE=after\n\n"
+	r := bufio.NewReader(strings.NewReader(in))
+	for _, want := range []string{long[:20], long[:20-len("MESSAGE=")], "after"} {
+		line, err := readJournalEntry(r, 20)
+		if line.GetText() != want {
+			t.Fatalf("text = %q (err %v), want %q", line.GetText(), err, want)
+		}
 	}
 }
 
@@ -281,7 +329,7 @@ func TestLogStreamsShareAndStop(t *testing.T) {
 
 func TestLogStreamSourceEnds(t *testing.T) {
 	t.Parallel()
-	l, _ := fakeLogs(t, Ceiling{Logs: []string{"systemd:*"}}, `echo '{"MESSAGE":"bye"}'; echo 'No journal files were found.' >&2; exit 1`)
+	l, _ := fakeLogs(t, Ceiling{Logs: []string{"systemd:*"}}, `printf 'MESSAGE=bye\\n\\n'; echo 'No journal files were found.' >&2; exit 1`)
 	var c logCollector
 	l.stream(t.Context(), &agentv1.LogRequest{Id: "1", Source: &agentv1.LogSource{Manager: "systemd", Name: "x.service"}}, c.send)
 	l.wait()
