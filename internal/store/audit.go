@@ -24,6 +24,12 @@ type AuditEntry struct {
 	Result    string
 	// Detail is an opaque JSON document; nil is stored as {}.
 	Detail json.RawMessage
+	// Key, when set, lands the entry once however often it is appended: an
+	// append whose Key is in the log already adds nothing and returns the
+	// ID of the entry there. It is for an entry retried after a write that
+	// seemed to fail. Before auditKeySchema it is ignored. Query does not
+	// return it.
+	Key string
 }
 
 // Keys of an entry's Detail that tie the entry written before an action to
@@ -43,6 +49,10 @@ const maxAuditDetailDepth = 64
 // auditOpSchema is the schema version whose migration (00018) added the
 // indexed audit_op and audit_outcome_of columns.
 const auditOpSchema = 18
+
+// auditKeySchema is the schema version whose migration (00020) added the
+// audit_key column.
+const auditKeySchema = 20
 
 // The operation an entry starts (audit_op) and the one it reports the outcome
 // of (audit_outcome_of), if any, are read from the detail as
@@ -151,10 +161,23 @@ func (r Audit) Append(ctx context.Context, e AuditEntry) (int64, error) {
 	if e.TS.IsZero() {
 		e.TS = time.Now()
 	}
-	res, err := r.s.apply(ctx, AppendAudit{
+	appendCmd := AppendAudit{
 		TS: toMillis(e.TS), ActorKind: e.ActorKind, ActorID: e.ActorID, Action: e.Action,
 		Target: e.Target, Decision: e.Decision, Result: e.Result, Detail: string(detail),
-	})
+	}
+	var cmd Command = appendCmd
+	if e.Key != "" {
+		// A cluster not yet migrated cannot apply the keyed command: the
+		// entry goes in without its key, and a retry may then add it twice.
+		v, err := schemaVersion(ctx, r.s.db)
+		if err != nil {
+			return 0, fmt.Errorf("append audit %s: %w", e.Action, err)
+		}
+		if v >= auditKeySchema {
+			cmd = AppendAuditOnce{AppendAudit: appendCmd, Key: e.Key}
+		}
+	}
+	res, err := r.s.apply(ctx, cmd)
 	if err != nil {
 		return 0, fmt.Errorf("append audit %s: %w", e.Action, err)
 	}
