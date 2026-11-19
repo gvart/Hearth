@@ -4,6 +4,7 @@ package policy
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -43,7 +44,13 @@ func TestDecidedApprovalKeepsNoPlan(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			<-done
+			wantErr := ErrDenied
+			if outcome == store.ApprovalApproved {
+				wantErr = nil
+			}
+			if err := <-done; !errors.Is(err, wantErr) {
+				t.Errorf("Do = %v, want %v", err, wantErr)
+			}
 			ap, err := s.Approvals().Get(t.Context(), id)
 			if err != nil || ap.Status != outcome {
 				t.Fatalf("approval = %+v, %v; want %s", ap, err, outcome)

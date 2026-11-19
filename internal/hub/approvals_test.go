@@ -4,6 +4,7 @@ package hub
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -107,7 +108,9 @@ func TestAPIDecidedApprovalReturnsNoPlan(t *testing.T) {
 					t.Errorf("pending list = %+v, want the plan", list)
 				}
 				cancel()
-				<-done
+				if err := <-done; !errors.Is(err, policy.ErrDenied) {
+					t.Errorf("cancelled held action = %v, want denied", err)
+				}
 				return
 			}
 			defer cancel()
@@ -117,7 +120,13 @@ func TestAPIDecidedApprovalReturnsNoPlan(t *testing.T) {
 					t.Fatalf("%s = %d %s", verb, resp.StatusCode, resp.body)
 				}
 			}
-			<-done
+			wantErr := policy.ErrDenied
+			if outcome == store.ApprovalApproved {
+				wantErr = nil
+			}
+			if err := <-done; !errors.Is(err, wantErr) {
+				t.Errorf("held action = %v, want %v", err, wantErr)
+			}
 
 			var got *ApprovalJSON
 			list := decode[[]ApprovalJSON](t, f.do(t, http.MethodGet, "/api/v1/approvals?status=all", "", c))
