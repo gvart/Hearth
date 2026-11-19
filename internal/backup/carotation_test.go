@@ -28,6 +28,9 @@ func TestBackupDuringCARotation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := ca.TrustNext(next); err != nil { // the rotation under way, as a cluster hub learns
+		t.Fatal(err)
+	}
 	restore := func(t *testing.T, withoutKey bool) string {
 		t.Helper()
 		opts := createOpts(dir, st, filepath.Join(t.TempDir(), "hub.hbk"))

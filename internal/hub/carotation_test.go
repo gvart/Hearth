@@ -58,6 +58,9 @@ func TestRenewalForCARotation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := ca.TrustNext(next); err != nil { // the rotation under way, as a cluster hub learns
+		t.Fatal(err)
+	}
 	newFP := pki.FingerprintHex(next)
 	if err := st.CARotations().Start(ctx, store.CARotation{
 		NewCAFP: newFP, OldCAFP: oldFP, NewCACert: string(pki.EncodeCertPEM(next)), Pins: map[string]string{},
@@ -136,7 +139,9 @@ func TestRequireClientCertRefusesUntrustedCA(t *testing.T) {
 	if code := serve(); code != http.StatusNoContent {
 		t.Fatalf("before the rotation: %d", code)
 	}
-	if _, err := ca.GenerateNext(time.Now()); err != nil {
+	if next, err := ca.GenerateNext(time.Now()); err != nil {
+		t.Fatal(err)
+	} else if err := ca.TrustNext(next); err != nil {
 		t.Fatal(err)
 	}
 	if code := serve(); code != http.StatusNoContent {

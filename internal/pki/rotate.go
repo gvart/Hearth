@@ -114,7 +114,7 @@ func (c *CA) Pool() *x509.CertPool { return c.state().pool }
 func (c *CA) TrustedCerts() []*x509.Certificate {
 	s := c.state()
 	out := []*x509.Certificate{s.serving().cert}
-	if s.next != nil {
+	if s.active {
 		if s.cutover {
 			out = append(out, s.cur.cert)
 		} else {
@@ -136,6 +136,10 @@ func (c *CA) Next() *x509.Certificate {
 	return nil
 }
 
+// NextActive reports whether this hub trusts, and signs with, its next CA:
+// whether a rotation to it is known to be under way (see TrustNext).
+func (c *CA) NextActive() bool { return c.state().active }
+
 // HasNextKey reports whether this hub holds the next CA's key.
 func (c *CA) HasNextKey() bool {
 	n := c.state().next
@@ -148,8 +152,12 @@ func (c *CA) CutOver() bool { return c.state().cutover }
 // IssuerOf returns the trusted CA certificate that signed cert, or nil.
 func (c *CA) IssuerOf(cert *x509.Certificate) *x509.Certificate {
 	s := c.state()
-	for _, kp := range []*keyPair{&s.cur, s.next} {
-		if kp != nil && cert.CheckSignatureFrom(kp.cert) == nil {
+	candidates := []*keyPair{&s.cur}
+	if s.active {
+		candidates = append(candidates, s.next)
+	}
+	for _, kp := range candidates {
+		if cert.CheckSignatureFrom(kp.cert) == nil {
 			return kp.cert
 		}
 	}
@@ -209,7 +217,7 @@ func (c *CA) GenerateNext(now time.Time) (*x509.Certificate, error) {
 		err = c.writeNext(kp)
 	}
 	if err == nil {
-		c.st.Store(newState(s.cur, &kp, false))
+		c.st.Store(newState(s.cur, &kp, false, false))
 	}
 	c.mu.Unlock()
 	if err != nil {
@@ -219,15 +227,24 @@ func (c *CA) GenerateNext(now time.Time) (*x509.Certificate, error) {
 	return kp.cert, nil
 }
 
-// TrustNext trusts cert as the next CA before this hub holds its key, so it
-// accepts certificates the next CA signed. Trusting the next CA it has is a
-// no-op; another one fails with ErrOtherNextCA.
+// TrustNext trusts cert as the next CA, before this hub holds its key or for
+// the one it holds: the replicated store shows a rotation to it under way.
+// Only then does the next CA sign, and are certificates it signed accepted.
+// A next CA GenerateNext made, or LoadOrCreateCA loaded, waits for it.
+// Another next CA than the one it has fails with ErrOtherNextCA.
 func (c *CA) TrustNext(cert *x509.Certificate) error {
 	c.mu.Lock()
 	s := c.state()
 	switch {
-	case s.next != nil && s.next.cert.Equal(cert):
+	case s.next != nil && s.next.cert.Equal(cert) && s.active:
 		c.mu.Unlock()
+		return nil
+	case s.next != nil && s.next.cert.Equal(cert):
+		// A next CA this hub made, or loaded, whose rotation is now known
+		// to be under way.
+		c.st.Store(newState(s.cur, s.next, true, false))
+		c.mu.Unlock()
+		c.changed()
 		return nil
 	case s.next != nil:
 		c.mu.Unlock()
@@ -236,7 +253,7 @@ func (c *CA) TrustNext(cert *x509.Certificate) error {
 		c.mu.Unlock()
 		return errors.New("next CA: not a CA certificate")
 	}
-	c.st.Store(newState(s.cur, &keyPair{cert: cert}, false))
+	c.st.Store(newState(s.cur, &keyPair{cert: cert}, true, false))
 	c.mu.Unlock()
 	c.changed()
 	return nil
@@ -272,7 +289,7 @@ func (c *CA) InstallNextKey(keyDER []byte) error {
 		c.mu.Unlock()
 		return err
 	}
-	c.st.Store(newState(s.cur, &kp, false))
+	c.st.Store(newState(s.cur, &kp, s.active, false))
 	c.mu.Unlock()
 	c.changed()
 	return nil
@@ -298,7 +315,7 @@ func (c *CA) writeNext(kp keyPair) error {
 func (c *CA) Cutover() error {
 	c.mu.Lock()
 	s := c.state()
-	if s.next == nil || s.next.key == nil {
+	if s.next == nil || s.next.key == nil || !s.active {
 		c.mu.Unlock()
 		return ErrNoNextCA
 	}
@@ -306,7 +323,7 @@ func (c *CA) Cutover() error {
 		c.mu.Unlock()
 		return nil
 	}
-	c.st.Store(newState(s.cur, s.next, true))
+	c.st.Store(newState(s.cur, s.next, true, true))
 	c.mu.Unlock()
 	c.changed()
 	return nil
@@ -340,7 +357,7 @@ func (c *CA) Finish() error {
 		}
 	}
 	syncDir(c.dir)
-	c.st.Store(newState(*s.next, nil, false))
+	c.st.Store(newState(*s.next, nil, false, false))
 	c.mu.Unlock()
 	c.changed()
 	return nil
@@ -380,7 +397,7 @@ func (c *CA) Abandon(cert *x509.Certificate) error {
 		}
 	}
 	syncDir(c.dir)
-	c.st.Store(newState(keyPair{cert: cert}, nil, false))
+	c.st.Store(newState(keyPair{cert: cert}, nil, false, false))
 	c.mu.Unlock()
 	c.changed()
 	return nil
@@ -403,7 +420,7 @@ func (c *CA) DropNext() error {
 			}
 		}
 	}
-	c.st.Store(newState(s.cur, nil, false))
+	c.st.Store(newState(s.cur, nil, false, false))
 	c.mu.Unlock()
 	c.changed()
 	return nil

@@ -5,11 +5,13 @@ package cluster
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/store"
 )
 
@@ -80,6 +82,62 @@ func TestFetchRefusalsAuditedOncePerMinute(t *testing.T) {
 	t.Error("no entry counts the refusals left out")
 }
 
+// A hub records its node certificate with the CA that issued it, not the one
+// it serves: after a cutover an old-CA node certificate names the old CA.
+func TestIssuerFingerprintIsTheIssuers(t *testing.T) {
+	ca := newTestCA(t)
+	oldFP := pki.FingerprintHex(ca.Cert())
+	old, err := loadOrIssueNodeCert(t.TempDir(), ca, "n1", epochA, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, err := ca.GenerateNext(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ca.TrustNext(next); err != nil {
+		t.Fatal(err)
+	}
+	if err := ca.Cutover(); err != nil {
+		t.Fatal(err)
+	}
+	if fp, err := issuerFingerprint(ca, old.Leaf); err != nil || fp != oldFP {
+		t.Errorf("issuer of the old node certificate = %s, %v; want the old CA %s, not the served %s",
+			fp, err, oldFP, pki.FingerprintHex(ca.Cert()))
+	}
+	renewed, err := loadOrIssueNodeCert(t.TempDir(), ca, "n1", epochA, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fp, err := issuerFingerprint(ca, renewed.Leaf); err != nil || fp != pki.FingerprintHex(next) {
+		t.Errorf("issuer of a new-CA node certificate = %s, %v", fp, err)
+	}
+}
+
+// Callers that pick a new node ID for each refusal still get no more than
+// fetchRefusalBurst audit entries a minute in all, and the next entry counts
+// what was left out.
+func TestFetchRefusalsBoundedOverCallers(t *testing.T) {
+	var f fetchRefusals
+	now := time.Now()
+	admitted := 0
+	for i := range 1000 {
+		if ok, _ := f.admit(fmt.Sprintf("forged-%d", i), now); ok {
+			admitted++
+		}
+	}
+	if admitted != fetchRefusalBurst {
+		t.Errorf("%d refusals of distinct callers admitted in a minute, want %d", admitted, fetchRefusalBurst)
+	}
+	if len(f.last) > fetchRefusalCallers {
+		t.Errorf("%d callers remembered, want at most %d", len(f.last), fetchRefusalCallers)
+	}
+	ok, suppressed := f.admit("forged-again", now.Add(fetchRefusalEvery))
+	if !ok || suppressed != 1000-fetchRefusalBurst {
+		t.Errorf("the next minute: admitted %v, counting %d left out; want true, %d", ok, suppressed, 1000-fetchRefusalBurst)
+	}
+}
+
 // During a rotation the Raft transport refuses an old-CA hub certificate it
 // cannot check against its pin, and still accepts a new-CA one.
 func TestRefuseRevokedFailsClosedInRotation(t *testing.T) {
@@ -98,7 +156,9 @@ func TestRefuseRevokedFailsClosedInRotation(t *testing.T) {
 	if err := n.refuseRevoked(oldPeer.Leaf); err != nil {
 		t.Fatalf("outside a rotation a read error refused the peer: %v", err)
 	}
-	if _, err := ca.GenerateNext(time.Now()); err != nil {
+	if next, err := ca.GenerateNext(time.Now()); err != nil {
+		t.Fatal(err)
+	} else if err := ca.TrustNext(next); err != nil {
 		t.Fatal(err)
 	}
 	if err := n.refuseRevoked(oldPeer.Leaf); err == nil {

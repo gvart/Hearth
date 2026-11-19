@@ -74,19 +74,24 @@ type keyPair struct {
 
 // caState is the CA's state at one moment; it is never modified once stored.
 type caState struct {
-	cur     keyPair
-	next    *keyPair
+	cur  keyPair
+	next *keyPair
+	// active: a rotation to next is under way, as the replicated store
+	// shows. Until then next is neither trusted nor signs: a next CA whose
+	// rotation never started is known to no other hub.
+	active  bool
 	cutover bool
 	pool    *x509.CertPool
 }
 
-func newState(cur keyPair, next *keyPair, cutover bool) *caState {
+func newState(cur keyPair, next *keyPair, active, cutover bool) *caState {
+	active = active && next != nil
 	pool := x509.NewCertPool()
 	pool.AddCert(cur.cert)
-	if next != nil {
+	if active {
 		pool.AddCert(next.cert)
 	}
-	return &caState{cur: cur, next: next, cutover: cutover && next != nil && next.key != nil, pool: pool}
+	return &caState{cur: cur, next: next, active: active, cutover: cutover && active && next.key != nil, pool: pool}
 }
 
 // serving is the key pair that signs the hub's TLS server certificates and
@@ -99,9 +104,10 @@ func (s *caState) serving() keyPair {
 }
 
 // signer is the key pair that signs new client and hub node certificates:
-// the next CA as soon as this hub holds its key.
+// the next CA as soon as this hub holds its key and the rotation to it is
+// under way.
 func (s *caState) signer() keyPair {
-	if s.next != nil && s.next.key != nil {
+	if s.active && s.next.key != nil {
 		return *s.next
 	}
 	return s.cur
@@ -109,7 +115,7 @@ func (s *caState) signer() keyPair {
 
 func caFrom(dir string, cur keyPair, next *keyPair) *CA {
 	c := &CA{dir: dir}
-	c.st.Store(newState(cur, next, false))
+	c.st.Store(newState(cur, next, false, false))
 	return c
 }
 

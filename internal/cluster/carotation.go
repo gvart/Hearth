@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -206,6 +207,10 @@ func (n *Node) RotateCA(ctx context.Context, opts RotateOptions) (RotatePlan, er
 			n.log.ErrorContext(ctx, "drop the next CA of a rotation that did not start", "err", dropErr)
 		}
 		return plan, fmt.Errorf("rotate the hub CA: %w", err)
+	}
+	// The start committed: the new CA is trusted and signs from now on.
+	if err := ca.TrustNext(next); err != nil {
+		n.log.ErrorContext(ctx, "trust the new hub CA", "err", err)
 	}
 	n.log.InfoContext(ctx, "started a hub CA rotation", "new_ca", plan.NewCAFP)
 	n.kickCA()
@@ -909,18 +914,27 @@ func (n *Node) reconcileCA(ctx context.Context) {
 	}
 }
 
-// resumeCutover, at Start, serves the new CA at once if this hub's store has
-// the rotation at its cutover: the CA's cutover is not kept on disk, and a
-// hub that restarted must not seal a secret, or present a certificate, of
-// the old CA until the reconcile loop runs.
-func (n *Node) resumeCutover(ctx context.Context) {
+// resumeRotation, at Start, applies this hub's store to the next CA it
+// loaded, which waits for that: it is trusted, and signs, if the store has a
+// rotation to it under way, and is served at once if that rotation is at its
+// cutover. The CA's cutover is not kept on disk, and a hub that restarted
+// must not seal a secret, or present a certificate, of the old CA until the
+// reconcile loop runs.
+func (n *Node) resumeRotation(ctx context.Context) {
 	rot, err := n.store.CARotations().Active(ctx)
-	if err != nil || rot.Stage != store.CAStageCutover {
+	if err != nil {
 		return
 	}
 	ca := n.cfg.CA
 	next, nextCert := ca.Next(), n.nextCert.Load()
-	if next == nil || pki.FingerprintHex(next) != rot.NewCAFP || !ca.HasNextKey() || nextCert == nil {
+	if next == nil || pki.FingerprintHex(next) != rot.NewCAFP {
+		return
+	}
+	if err := ca.TrustNext(next); err != nil {
+		n.log.ErrorContext(ctx, "trust the new hub CA", "err", err)
+		return
+	}
+	if rot.Stage != store.CAStageCutover || !ca.HasNextKey() || nextCert == nil {
 		return // the reconcile loop fetches what is missing first
 	}
 	if err := ca.Cutover(); err != nil {
@@ -1114,17 +1128,59 @@ func (n *Node) finishLocal(ctx context.Context, rot store.CARotation) {
 		"closed_connections", k)
 }
 
-// dropLeftoverNext drops, on the leader, a next CA no rotation under way
-// uses, once the log shows its start cannot commit any more. It skips a run
-// while RotateCA, FinishCA or AbortCA holds rotMu.
+// dropLeftoverNext drops a next CA no rotation under way uses, once the log
+// shows its start cannot commit any more: on the leader after a barrier, on
+// a follower once it has applied every entry of its log and the leader
+// committed them all. Until then the next CA neither signs nor is trusted
+// (pki.CA.TrustNext). It skips a run while RotateCA, FinishCA or AbortCA
+// holds rotMu.
 func (n *Node) dropLeftoverNext(ctx context.Context) {
-	if n.cfg.CA.Next() == nil || !n.IsLeader() || !n.rotMu.TryLock() {
+	if n.cfg.CA.Next() == nil || !n.rotMu.TryLock() {
 		return
 	}
 	defer n.rotMu.Unlock()
-	if err := n.dropUncommittedNext(ctx); err != nil && ctx.Err() == nil {
+	var err error
+	if n.IsLeader() {
+		err = n.dropUncommittedNext(ctx)
+	} else if n.caughtUp() {
+		err = n.dropOrphanNext(ctx)
+	}
+	if err != nil && ctx.Err() == nil {
 		n.log.WarnContext(ctx, "drop a leftover next CA; retrying", "err", err)
 	}
+}
+
+// caughtUp reports whether this follower has a leader, and has applied every
+// entry of its log, all of them committed: an entry this hub appended as an
+// earlier leader is then either applied or gone.
+func (n *Node) caughtUp() bool {
+	if n.raft == nil || n.Leader().ID == "" {
+		return false
+	}
+	commit, err := strconv.ParseUint(n.raft.Stats()["commit_index"], 10, 64)
+	if err != nil {
+		return false
+	}
+	last, applied := n.raft.LastIndex(), n.raft.AppliedIndex()
+	return commit > 0 && last == commit && applied == commit
+}
+
+// dropOrphanNext drops this follower's next CA unless the store, caught up,
+// has a rotation to it that is not aborted.
+func (n *Node) dropOrphanNext(ctx context.Context) error {
+	next := n.cfg.CA.Next()
+	if next == nil {
+		return nil
+	}
+	rot, err := n.store.CARotations().Latest(ctx)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+	case err != nil:
+		return err
+	case rot.NewCAFP == pki.FingerprintHex(next) && rot.Stage != store.CAStageAborted:
+		return nil
+	}
+	return n.dropNextLocal(ctx)
 }
 
 // errMissedRotation stops a hub that a hub CA rotation finished without: it

@@ -73,8 +73,22 @@ func TestCARotation(t *testing.T) {
 	if _, err := leader.GenerateNext(now); !errors.Is(err, ErrOtherNextCA) {
 		t.Errorf("GenerateNext twice = %v, want ErrOtherNextCA", err)
 	}
-	if !leader.Cert().Equal(oldCert) || !leader.SignerCert().Equal(next) || !leader.HasNextKey() {
-		t.Fatal("after GenerateNext: want the old CA serving and the next one signing")
+	// Until the rotation is known to be under way the next CA is neither
+	// trusted nor signs.
+	if !leader.SignerCert().Equal(oldCert) || leader.NextActive() || len(leader.TrustedCerts()) != 1 {
+		t.Fatal("after GenerateNext: want the next CA pending")
+	}
+	if leader.Cutover() == nil {
+		t.Fatal("a pending next CA was cut over to")
+	}
+	if err := leader.TrustNext(next); err != nil {
+		t.Fatal(err)
+	}
+	if changes != 2 {
+		t.Errorf("OnChange called %d times, want 2", changes)
+	}
+	if !leader.Cert().Equal(oldCert) || !leader.SignerCert().Equal(next) || !leader.HasNextKey() || !leader.NextActive() {
+		t.Fatal("after TrustNext: want the old CA serving and the next one signing")
 	}
 	srv, err := leader.IssueServerCert([]string{"hub"}, now)
 	if err != nil {

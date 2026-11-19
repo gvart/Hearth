@@ -148,7 +148,7 @@ func (n *Node) checkPeerCert(cert *x509.Certificate) error {
 func (n *Node) refuseRevoked(cert *x509.Certificate) error {
 	err := n.checkPeerCert(cert)
 	if err != nil && !errors.Is(err, store.ErrCertRevoked) && !errors.Is(err, errNotPinned) {
-		if ca := n.cfg.CA; ca != nil && ca.Next() != nil && cert.CheckSignatureFrom(ca.Next()) != nil {
+		if ca := n.cfg.CA; ca != nil && ca.NextActive() && cert.CheckSignatureFrom(ca.Next()) != nil {
 			n.log.Warn("cannot check a peer's old-CA hub certificate against its pin during a hub CA rotation; refusing it",
 				"err", err)
 			return fmt.Errorf("check the pin of an old-CA hub certificate: %w", err)
@@ -167,6 +167,16 @@ func (n *Node) closeRevokedConns() {
 	if k > 0 {
 		n.log.Info("closed raft connections of revoked hub certificates", "count", k)
 	}
+}
+
+// issuerFingerprint is the fingerprint of the CA that issued cert, which in a
+// hub CA rotation need not be the one ca serves.
+func issuerFingerprint(ca *pki.CA, cert *x509.Certificate) (string, error) {
+	issuer := ca.IssuerOf(cert)
+	if issuer == nil {
+		return "", errors.New("the node certificate is of no CA this hub trusts")
+	}
+	return pki.FingerprintHex(issuer), nil
 }
 
 // RecordNodeCert records this node's hub node certificate in the replicated
@@ -213,10 +223,15 @@ func (n *Node) RecordNodeCert(ctx context.Context) {
 			// A certificate recorded before its fingerprint could be gets
 			// it filled in. Below the schema that records fingerprints it
 			// is recorded without, and the loop waits for the migration.
-			if err = n.store.Hubs().Record(ctx, store.HubCert{
-				Serial: serial, NodeID: n.cfg.NodeID,
-				Fingerprint: pki.FingerprintHex(n.cert), CAFP: pki.FingerprintHex(n.cfg.CA.Cert()),
-			}); err == nil {
+			// The CA recorded is the one that issued it, which in a rotation
+			// need not be the one served.
+			var caFP string
+			if caFP, err = issuerFingerprint(n.cfg.CA, n.cert); err == nil {
+				err = n.store.Hubs().Record(ctx, store.HubCert{
+					Serial: serial, NodeID: n.cfg.NodeID, Fingerprint: pki.FingerprintHex(n.cert), CAFP: caFP,
+				})
+			}
+			if err == nil {
 				if i < 0 {
 					n.log.InfoContext(ctx, "recorded this hub's node certificate in the cluster", "serial", serial)
 				}

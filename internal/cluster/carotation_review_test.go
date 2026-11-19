@@ -420,3 +420,46 @@ func TestCARotationMissedHubStops(t *testing.T) {
 		t.Error("the hub that missed the rotation can start again")
 	}
 }
+
+// A next CA whose rotation never started (a leader made it, its start was
+// lost with its leadership) is never trusted or used to sign on the hub, now
+// a follower, that holds it, and that hub drops it once it has caught up.
+func TestCARotationOrphanNextOnFollower(t *testing.T) {
+	ctx := t.Context()
+	hubs, _ := startRotationHubs(t)
+	leader := rotLeader(t, hubs)
+	follower := otherHubs(hubs, leader)[0]
+	oldCA := follower.ca.Cert()
+	orphan, err := follower.ca.GenerateNext(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := pki.NewKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	signed, err := follower.ca.SignClientKey(key.Public(), "pi", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if signed.CheckSignatureFrom(oldCA) != nil || signed.CheckSignatureFrom(orphan) == nil {
+		t.Error("the orphan next CA signed a certificate")
+	}
+	if follower.ca.NextActive() || len(follower.ca.TrustedCerts()) != 1 {
+		t.Error("the orphan next CA is trusted")
+	}
+	follower.kickCA()
+	eventually(t, "the follower to drop the orphan next CA", func() bool { return follower.ca.Next() == nil })
+	for _, f := range []string{pki.NextCACertFile, pki.NextCAKeyFile} {
+		if _, err := os.Stat(filepath.Join(follower.dir, f)); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("%s left after the drop: %v", f, err)
+		}
+	}
+	// A rotation still works afterwards.
+	recordHubCerts(t, hubs)
+	plan, err := leader.RotateCA(ctx, RotateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitNext(t, hubs, plan.NewCAFP)
+}

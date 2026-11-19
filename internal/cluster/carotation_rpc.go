@@ -51,6 +51,10 @@ func (s *JoinServer) FetchCAKey(ctx context.Context, req *connect.Request[cluste
 		case next == nil || pki.FingerprintHex(next) != rot.NewCAFP || !s.ca.HasNextKey():
 			return errNoNextKey
 		}
+		// The store shows the rotation to it under way: it may sign.
+		if err := s.ca.TrustNext(next); err != nil {
+			return err
+		}
 		if keyDER, err = s.ca.NextKeyDER(); err != nil {
 			return err
 		}
@@ -79,43 +83,52 @@ func (s *JoinServer) FetchCAKey(ctx context.Context, req *connect.Request[cluste
 	return connect.NewResponse(&clusterv1.FetchCAKeyResponse{CaKey: keyDER, Certificate: certDER}), nil
 }
 
-// fetchRefusalEvery bounds the audit entries of refused FetchCAKey calls:
-// one per caller per interval, which counts the refusals it left out.
-const fetchRefusalEvery = time.Minute
+// Refused FetchCAKey calls get at most one audit entry per caller, and
+// fetchRefusalBurst in all, per fetchRefusalEvery; an entry counts the
+// refusals left out since the one before. The caller's node ID is its
+// certificate's, which whoever minted it chose, so the bound on all callers
+// and on the callers remembered (fetchRefusalCallers) is what holds.
+const (
+	fetchRefusalEvery   = time.Minute
+	fetchRefusalBurst   = 10
+	fetchRefusalCallers = 64
+)
 
 // fetchRefusals rate-limits the audit entries of refused FetchCAKey calls.
 type fetchRefusals struct {
-	mu   sync.Mutex
-	last map[string]refusalWindow
-}
-
-type refusalWindow struct {
-	at         time.Time
+	mu         sync.Mutex
+	last       map[string]time.Time // the last entry per caller
+	windowAt   time.Time
+	windowN    int
 	suppressed int
 }
 
 // admit reports whether a refusal of caller at now gets an audit entry and,
-// if so, how many refusals of it were left out since the last entry.
+// if so, how many refusals were left out since the last entry.
 func (f *fetchRefusals) admit(caller string, now time.Time) (bool, int) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.last == nil {
-		f.last = map[string]refusalWindow{}
+		f.last = map[string]time.Time{}
 	}
-	if w, ok := f.last[caller]; ok && now.Sub(w.at) < fetchRefusalEvery {
-		w.suppressed++
-		f.last[caller] = w
-		return false, 0
-	}
-	if len(f.last) >= 256 {
-		for k, w := range f.last {
-			if now.Sub(w.at) >= fetchRefusalEvery {
+	if now.Sub(f.windowAt) >= fetchRefusalEvery {
+		f.windowAt, f.windowN = now, 0
+		for k, at := range f.last {
+			if now.Sub(at) >= fetchRefusalEvery {
 				delete(f.last, k)
 			}
 		}
 	}
-	suppressed := f.last[caller].suppressed
-	f.last[caller] = refusalWindow{at: now}
+	at, seen := f.last[caller]
+	if (seen && now.Sub(at) < fetchRefusalEvery) || f.windowN >= fetchRefusalBurst ||
+		(!seen && len(f.last) >= fetchRefusalCallers) {
+		f.suppressed++
+		return false, 0
+	}
+	f.last[caller] = now
+	f.windowN++
+	suppressed := f.suppressed
+	f.suppressed = 0
 	return true, suppressed
 }
 

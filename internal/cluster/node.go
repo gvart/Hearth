@@ -248,7 +248,7 @@ func (n *Node) Start(ctx context.Context) error {
 		_ = stream.Close()
 		return fmt.Errorf("cluster: %w", err)
 	}
-	n.resumeCutover(ctx)
+	n.resumeRotation(ctx)
 	n.fwdHTTP = newForwardClient(n.cfg.CA, stream.currentCert, n.epoch)
 	n.trans = raft.NewNetworkTransportWithLogger(stream, maxPool, dialTimeout, logger)
 	n.bolt, err = raftboltdb.NewBoltStore(filepath.Join(n.dir, boltFile))
