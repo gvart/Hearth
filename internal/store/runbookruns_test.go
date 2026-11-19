@@ -154,8 +154,10 @@ func TestRunbookRunCommandsReplay(t *testing.T) {
 		_, err = src.ApplyLocal(ctx, dec)
 		return err
 	}
-	if err := apply(CreateRunbookRun{ID: "r", RunbookID: "rb", Status: "running", StartedBy: "web/x", StartedAt: 1,
-		Source: []byte{0, 1, 2}, State: "{}", Keep: 10}); err != nil {
+	if err := apply(CreateRunbookRun{
+		ID: "r", RunbookID: "rb", Status: "running", StartedBy: "web/x", StartedAt: 1,
+		Source: []byte{0, 1, 2}, State: "{}", Keep: 10,
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := apply(SaveRunbookRun{ID: "r", Version: 1, Status: "failed", UpdatedAt: 2, State: `{"a":1}`}); err != nil {

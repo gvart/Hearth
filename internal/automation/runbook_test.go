@@ -687,10 +687,14 @@ func TestRunbookStepInterruptedByTheHubIsNeverRepeatedOnItsOwn(t *testing.T) {
 		status  string
 		want    []string
 	}{
-		{"operator retries", func(h *rbHarness, id string) { h.retry(id) }, RunbookSucceeded,
-			[]string{"one", "two", "two", "three"}},
-		{"operator rolls back", func(h *rbHarness, id string) { h.rollback(id) }, RunbookRolledBack,
-			[]string{"one", "two", "undo-two", "undo-one"}},
+		{
+			"operator retries", func(h *rbHarness, id string) { h.retry(id) }, RunbookSucceeded,
+			[]string{"one", "two", "two", "three"},
+		},
+		{
+			"operator rolls back", func(h *rbHarness, id string) { h.rollback(id) }, RunbookRolledBack,
+			[]string{"one", "two", "undo-two", "undo-one"},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newRBHarness(t, threeSteps, policy.Config{})
