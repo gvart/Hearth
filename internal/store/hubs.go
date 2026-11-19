@@ -138,7 +138,7 @@ func (r Hubs) Certs(ctx context.Context, nodeID string) ([]HubCert, error) {
 		return nil, fmt.Errorf("list certs of hub %s: %w", nodeID, err)
 	}
 	fps := `'', ''`
-	if ok, err := atSchema(ctx, r.s.db, CARotationSchema); err != nil {
+	if ok, err := atSchema(ctx, r.s.db, CertPinsSchema); err != nil {
 		return nil, fmt.Errorf("list certs of hub %s: %w", nodeID, err)
 	} else if ok {
 		fps = `COALESCE(fingerprint, ''), COALESCE(ca_fp, '')`

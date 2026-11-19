@@ -4,6 +4,7 @@ package hub
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
 	"io"
 	"log/slog"
@@ -26,8 +27,12 @@ import (
 type revokeFixture struct {
 	st     *store.Store
 	reg    *Registry
+	as     *AgentStream
 	h      http.Handler
 	events <-chan Event
+	// chains are the verified client certificate chains open puts into
+	// the request context, by device ID; none by default.
+	chains map[string][]*x509.Certificate
 }
 
 // newRevokeFixture enrolls dev-1 (serial 0a) and dev-2 (serial 0b). A
@@ -59,7 +64,7 @@ func newRevokeFixture(t *testing.T, replicated bool, authority func() error) *re
 	_, h := agentv1connect.NewAgentServiceHandler(as)
 	events, unsubscribe := reg.Subscribe()
 	t.Cleanup(unsubscribe)
-	return &revokeFixture{st: st, reg: reg, h: reg.endOnStepDown(h), events: events}
+	return &revokeFixture{st: st, reg: reg, as: as, h: reg.endOnStepDown(h), events: events}
 }
 
 // open starts a stream authenticated as deviceID with serial and returns it
@@ -69,6 +74,9 @@ func (f *revokeFixture) open(ctx context.Context, t *testing.T, deviceID, serial
 	mux := http.NewServeMux()
 	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(withDeviceID(r.Context(), deviceID), serialKey{}, serial)
+		if chain := f.chains[deviceID]; chain != nil {
+			ctx = context.WithValue(ctx, chainKey{}, chain)
+		}
 		f.h.ServeHTTP(w, r.WithContext(ctx))
 	}))
 	srv := httptest.NewUnstartedServer(mux)

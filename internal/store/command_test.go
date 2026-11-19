@@ -38,7 +38,7 @@ func allCommands() []Command {
 		CreateJoinToken{Hash: []byte{7, 8}, ExpiresAt: 12},
 		ConsumeJoinToken{Hash: []byte{7, 8}, Now: 13},
 		CreateCert{Serial: "0a", DeviceID: "pi", Fingerprint: "f1", CAFP: "c0"},
-		PinCert{Serial: "0a", DeviceID: "pi", Fingerprint: "f1"},
+		PinCert{Serial: "0a", DeviceID: "pi", Fingerprint: "f1", CAFP: "c0", Now: 19},
 		RevokeDevice{DeviceID: "pi", Now: 8},
 		AppendAudit{
 			TS: 9, ActorKind: "agent", ActorID: "pi", Action: "agent.enroll", Target: "pi",
@@ -297,8 +297,8 @@ func runScenario(t *testing.T, s *Store) {
 	// A recorded hub certificate gets its fingerprint filled in, and a
 	// device certificate is pinned on first use.
 	must(s.Hubs().Record(ctx, HubCert{Serial: "0b", NodeID: "hub-a", Fingerprint: "f0b", CAFP: "ca"}))
-	if pinned, err := s.Certs().Pin(ctx, "serial-pi", "pi", "f-pi"); err != nil || !pinned {
-		t.Fatalf("Pin = %v, %v; want true", pinned, err)
+	if got, err := s.Certs().Pin(ctx, "serial-pi", "pi", "f-pi", "ca", at(6*time.Minute)); err != nil || got != Pinned {
+		t.Fatalf("Pin = %v, %v; want Pinned", got, err)
 	}
 	n, err = s.Hubs().RevokeCerts(ctx, "hub-b", at(6*time.Minute))
 	must(err)

@@ -44,21 +44,25 @@ func TestCertFingerprints(t *testing.T) {
 	}
 
 	// Trust on first use: only a certificate without a fingerprint is
-	// pinned, and only once.
+	// pinned, and only once; another certificate is a mismatch, recorded the
+	// first time it is seen.
 	pins := []struct {
 		serial, dev, fp string
-		want            bool
+		want            PinOutcome
+		err             error
 		recorded        string
 	}{
-		{"02", "nas", "fp2", true, "fp2"},
-		{"02", "nas", "forged", false, "fp2"},
-		{"01", "pi", "forged", false, "fp1"},
-		{"01", "nas", "fp1", false, ""}, // another device's certificate
+		{"02", "nas", "fp2", Pinned, nil, "fp2"},
+		{"02", "nas", "fp2", PinKept, nil, "fp2"},
+		{"02", "nas", "forged", PinMismatch, nil, "fp2"},
+		{"02", "nas", "forged", PinKept, nil, "fp2"},
+		{"01", "pi", "fp1", PinKept, nil, "fp1"},
+		{"01", "nas", "fp1", PinKept, ErrNotFound, ""}, // another device's certificate
 	}
 	for _, p := range pins {
-		got, err := certs.Pin(ctx, p.serial, p.dev, p.fp)
-		if err != nil || got != p.want {
-			t.Errorf("Pin(%s, %s, %s) = %v, %v; want %v", p.serial, p.dev, p.fp, got, err, p.want)
+		got, err := certs.Pin(ctx, p.serial, p.dev, p.fp, "ca2", now)
+		if !errors.Is(err, p.err) || got != p.want {
+			t.Errorf("Pin(%s, %s, %s) = %v, %v; want %v, %v", p.serial, p.dev, p.fp, got, err, p.want, p.err)
 		}
 		if p.recorded == "" {
 			continue
@@ -67,7 +71,17 @@ func TestCertFingerprints(t *testing.T) {
 			t.Errorf("after Pin(%s, %s): fingerprint %q, want %q", p.serial, p.dev, fp, p.recorded)
 		}
 	}
-	if _, err := certs.Pin(ctx, "02", "nas", ""); err == nil {
+	if got, err := certs.PinMismatches(ctx, "nas"); err != nil || len(got) != 1 || got[0] != "02" {
+		t.Errorf("PinMismatches(nas) = %v, %v; want [02]", got, err)
+	}
+	if got, err := certs.PinMismatches(ctx, "pi"); err != nil || len(got) != 0 {
+		t.Errorf("PinMismatches(pi) = %v, %v; want none", got, err)
+	}
+	var caFP string
+	if err := s.db.QueryRowContext(ctx, `SELECT ca_fp FROM certs WHERE serial = '02'`).Scan(&caFP); err != nil || caFP != "ca2" {
+		t.Errorf("pinned certificate's ca_fp = %q, %v; want ca2", caFP, err)
+	}
+	if _, err := certs.Pin(ctx, "02", "nas", "", "", now); err == nil {
 		t.Error("Pin with no fingerprint: want error")
 	}
 }
@@ -128,7 +142,7 @@ func TestCertFingerprintsBeforeSchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := p.DownTo(ctx, CARotationSchema-1); err != nil {
+	if _, err := p.DownTo(ctx, CertPinsSchema-1); err != nil {
 		t.Fatal(err)
 	}
 	_ = s.Close()
@@ -144,7 +158,7 @@ func TestCertFingerprintsBeforeSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = s.Close() })
-	if s.AtSchema(ctx, CARotationSchema) {
+	if s.AtSchema(ctx, CertPinsSchema) {
 		t.Fatal("AtSchema(23) at schema 22 = true")
 	}
 
@@ -178,8 +192,13 @@ func TestCertFingerprintsBeforeSchema(t *testing.T) {
 	if _, err := s.Certs().Fingerprint(ctx, "01", "pi"); !errors.Is(err, ErrSchemaTooOld) {
 		t.Errorf("Fingerprint before the schema = %v, want ErrSchemaTooOld", err)
 	}
-	if _, err := s.Certs().Pin(ctx, "01", "pi", "fp"); !errors.Is(err, ErrSchemaTooOld) {
+	if _, err := s.Certs().Pin(ctx, "01", "pi", "fp", "ca", now); !errors.Is(err, ErrSchemaTooOld) {
 		t.Errorf("Pin before the schema = %v, want ErrSchemaTooOld", err)
+	}
+	for _, cmd := range proposed {
+		if _, ok := cmd.(PinCert); ok {
+			t.Error("Pin proposed pin_cert before the schema")
+		}
 	}
 	if got, err := s.Hubs().Certs(ctx, "hub-a"); err != nil || len(got) != 1 || got[0].Fingerprint != "" {
 		t.Errorf("Hubs.Certs before the schema = %+v, %v; want 0a without a fingerprint", got, err)

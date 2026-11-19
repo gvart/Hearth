@@ -54,6 +54,8 @@ type Result struct {
 	// the first time, and back after an absence.
 	NewHosts      []NetworkHost
 	ReturnedHosts []NetworkHost
+	// PinMismatch is true when PinCert recorded a mismatch.
+	PinMismatch bool
 }
 
 // UpsertDevice inserts a device or replaces every field but first_seen.
@@ -304,7 +306,7 @@ func (RecordHubCert) Op() string { return "record_hub_cert" }
 func (RecordHubCert) minSchema() int64 { return hubCertsSchema }
 
 func (c RecordHubCert) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	pinned, err := atSchema(ctx, tx, CARotationSchema)
+	pinned, err := atSchema(ctx, tx, CertPinsSchema)
 	if err != nil {
 		return Result{}, err
 	}
@@ -492,7 +494,7 @@ type CreateCert struct {
 func (CreateCert) Op() string { return "create_cert" }
 
 func (c CreateCert) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	pinned, err := atSchema(ctx, tx, CARotationSchema)
+	pinned, err := atSchema(ctx, tx, CertPinsSchema)
 	if err != nil {
 		return Result{}, err
 	}

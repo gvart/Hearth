@@ -104,12 +104,14 @@ func (s *Sealer) Open(id string, sealed []byte) ([]byte, error) {
 
 // open is Open that also reports whether the key Seal uses opened it.
 func (s *Sealer) open(id string, sealed []byte) ([]byte, bool, error) {
+	keys := *s.keys.Load()
+	// Every key is AES-256-GCM: one nonce size and overhead.
+	n := keys[0].NonceSize()
+	if len(sealed) < n+keys[0].Overhead() {
+		return nil, false, errors.New("open sealed secret: too short")
+	}
 	var last error
-	for i, aead := range *s.keys.Load() {
-		n := aead.NonceSize()
-		if len(sealed) < n+aead.Overhead() {
-			return nil, false, errors.New("open sealed secret: too short")
-		}
+	for i, aead := range keys {
 		out, err := aead.Open(nil, sealed[:n], sealed[n:], []byte(id))
 		if err == nil {
 			return out, i == 0, nil

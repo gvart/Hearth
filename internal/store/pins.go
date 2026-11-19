@@ -7,12 +7,13 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 )
 
-// CARotationSchema is the schema version whose migration (00023) added the
-// certificate fingerprints and the ca_rotations table. Below it no
-// fingerprint is recorded and the hub CA cannot be rotated.
-const CARotationSchema = 23
+// CertPinsSchema is the schema version whose migration (00023) added the
+// certificate fingerprints. Below it no fingerprint is recorded and no
+// device certificate is pinned.
+const CertPinsSchema = 23
 
 // atSchema reports whether the database behind q is at schema min or newer.
 func atSchema(ctx context.Context, q querier, minVersion int64) (bool, error) {
@@ -48,7 +49,7 @@ func (r Certs) Record(ctx context.Context, c CertRecord) error {
 		return errors.New("create cert: serial and device ID are required")
 	}
 	cmd := CreateCert{Serial: c.Serial, DeviceID: c.DeviceID}
-	if ok, err := atSchema(ctx, r.s.db, CARotationSchema); err != nil {
+	if ok, err := atSchema(ctx, r.s.db, CertPinsSchema); err != nil {
 		return fmt.Errorf("create cert %s for %s: %w", c.Serial, c.DeviceID, err)
 	} else if ok {
 		cmd.Fingerprint, cmd.CAFP = c.Fingerprint, c.CAFP
@@ -64,7 +65,7 @@ func (r Certs) Record(ctx context.Context, c CertRecord) error {
 // before schema 23 and not pinned since. It fails with ErrNotFound for an
 // unknown certificate and with ErrSchemaTooOld below schema 23.
 func (r Certs) Fingerprint(ctx context.Context, serial, deviceID string) (string, error) {
-	if ok, err := atSchema(ctx, r.s.db, CARotationSchema); err != nil {
+	if ok, err := atSchema(ctx, r.s.db, CertPinsSchema); err != nil {
 		return "", fmt.Errorf("cert fingerprint %s: %w", serial, err)
 	} else if !ok {
 		return "", fmt.Errorf("cert fingerprint %s: %w", serial, ErrSchemaTooOld)
@@ -81,47 +82,114 @@ func (r Certs) Fingerprint(ctx context.Context, serial, deviceID string) (string
 	return fp.String, nil
 }
 
-// Pin records fingerprint for the certificate with serial issued to
-// deviceID, unless one is recorded already: trust on first use, for a
-// certificate issued before schema 23. It reports whether it pinned it. Below
-// schema 23 it fails with ErrSchemaTooOld.
-func (r Certs) Pin(ctx context.Context, serial, deviceID, fingerprint string) (bool, error) {
+// PinOutcome is what Certs.Pin did.
+type PinOutcome int
+
+// Pin outcomes.
+const (
+	// PinKept: the presented certificate is the one recorded, or another
+	// one whose mismatch was recorded already.
+	PinKept PinOutcome = iota
+	// Pinned: the certificate had no fingerprint and now has this one.
+	Pinned
+	// PinMismatch: the certificate has another fingerprint, and the
+	// mismatch was recorded now, the first time it was seen.
+	PinMismatch
+)
+
+// Pin records fingerprint and caFP, the fingerprint of the CA that issued it,
+// for the certificate with serial issued to deviceID, unless a fingerprint is
+// recorded already: trust on first use, for a certificate issued before
+// schema 23. A recorded fingerprint that differs is a certificate someone
+// minted with the CA key: the first such sighting is recorded with its time,
+// now. It fails with ErrNotFound for an unknown certificate and with
+// ErrSchemaTooOld below schema 23, before proposing anything.
+func (r Certs) Pin(ctx context.Context, serial, deviceID, fingerprint, caFP string, now time.Time) (PinOutcome, error) {
 	if serial == "" || deviceID == "" || fingerprint == "" {
-		return false, errors.New("pin cert: serial, device ID and fingerprint are required")
+		return PinKept, errors.New("pin cert: serial, device ID and fingerprint are required")
 	}
-	res, err := r.s.apply(ctx, PinCert{Serial: serial, DeviceID: deviceID, Fingerprint: fingerprint})
+	if ok, err := atSchema(ctx, r.s.db, CertPinsSchema); err != nil {
+		return PinKept, fmt.Errorf("pin cert %s of %s: %w", serial, deviceID, err)
+	} else if !ok {
+		return PinKept, fmt.Errorf("pin cert %s of %s: %w", serial, deviceID, ErrSchemaTooOld)
+	}
+	res, err := r.s.apply(ctx, PinCert{Serial: serial, DeviceID: deviceID, Fingerprint: fingerprint, CAFP: caFP, Now: toMillis(now)})
 	if err != nil {
-		return false, fmt.Errorf("pin cert %s of %s: %w", serial, deviceID, err)
+		return PinKept, fmt.Errorf("pin cert %s of %s: %w", serial, deviceID, err)
 	}
-	return res.Count > 0, nil
+	switch {
+	case res.Count > 0:
+		return Pinned, nil
+	case res.PinMismatch:
+		return PinMismatch, nil
+	}
+	return PinKept, nil
+}
+
+// PinMismatches returns the serials of device deviceID's certificates whose
+// mismatch was recorded (see Pin); none below schema 23.
+func (r Certs) PinMismatches(ctx context.Context, deviceID string) ([]string, error) {
+	if ok, err := atSchema(ctx, r.s.db, CertPinsSchema); err != nil || !ok {
+		return nil, err
+	}
+	rows, err := r.s.db.QueryContext(ctx,
+		`SELECT serial FROM certs WHERE device_id = ? AND pin_mismatch_at IS NOT NULL ORDER BY serial`, deviceID)
+	if err != nil {
+		return nil, fmt.Errorf("list pin mismatches of %s: %w", deviceID, err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, fmt.Errorf("list pin mismatches of %s: %w", deviceID, err)
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
 }
 
 // PinCert records the fingerprint of a device certificate recorded without
-// one. A certificate that has a fingerprint keeps it. Result: Count, 1 when
-// it pinned the certificate and 0 otherwise.
+// one, and its CA's unless that is recorded. A certificate with another
+// fingerprint keeps it and gets pin_mismatch_at set to Now, once. Result:
+// Count, 1 when it pinned the certificate; PinMismatch, true when it recorded
+// a mismatch. It fails with ErrNotFound for an unknown certificate.
 type PinCert struct {
 	Serial      string `json:"serial"`
 	DeviceID    string `json:"device_id"`
 	Fingerprint string `json:"fingerprint"`
+	CAFP        string `json:"ca_fp,omitempty"`
+	Now         int64  `json:"now"`
 }
 
 // Op implements Command.
 func (PinCert) Op() string { return "pin_cert" }
 
-func (PinCert) minSchema() int64 { return CARotationSchema }
+func (PinCert) minSchema() int64 { return CertPinsSchema }
 
 func (c PinCert) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	res, err := tx.ExecContext(ctx,
-		`UPDATE certs SET fingerprint = ? WHERE serial = ? AND device_id = ? AND fingerprint IS NULL`,
-		c.Fingerprint, c.Serial, c.DeviceID)
-	if err != nil {
+	var (
+		fp       sql.NullString
+		mismatch sql.NullInt64
+	)
+	err := tx.QueryRowContext(ctx, `SELECT fingerprint, pin_mismatch_at FROM certs WHERE serial = ? AND device_id = ?`,
+		c.Serial, c.DeviceID).Scan(&fp, &mismatch)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return Result{}, ErrNotFound
+	case err != nil:
 		return Result{}, err
+	case !fp.Valid:
+		_, err := tx.ExecContext(ctx,
+			`UPDATE certs SET fingerprint = ?, ca_fp = COALESCE(ca_fp, ?) WHERE serial = ? AND device_id = ?`,
+			c.Fingerprint, nullString(c.CAFP), c.Serial, c.DeviceID)
+		return Result{Count: 1}, err
+	case fp.String == c.Fingerprint || mismatch.Valid:
+		return Result{}, nil
 	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return Result{}, err
-	}
-	return Result{Count: int(n)}, nil
+	_, err = tx.ExecContext(ctx, `UPDATE certs SET pin_mismatch_at = ? WHERE serial = ? AND device_id = ?`,
+		c.Now, c.Serial, c.DeviceID)
+	return Result{PinMismatch: true}, err
 }
 
 // Record records a hub node certificate issued to c.NodeID, as RecordCert
@@ -133,7 +201,7 @@ func (r Hubs) Record(ctx context.Context, c HubCert) error {
 		return errors.New("record hub cert: serial and node ID are required")
 	}
 	cmd := RecordHubCert{Serial: c.Serial, NodeID: c.NodeID}
-	if ok, err := atSchema(ctx, r.s.db, CARotationSchema); err != nil {
+	if ok, err := atSchema(ctx, r.s.db, CertPinsSchema); err != nil {
 		return fmt.Errorf("record hub cert %s of %s: %w", c.Serial, c.NodeID, err)
 	} else if ok {
 		cmd.Fingerprint, cmd.CAFP = c.Fingerprint, c.CAFP

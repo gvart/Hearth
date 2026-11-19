@@ -4,6 +4,7 @@ package kubernetes
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 )
 
@@ -95,6 +96,9 @@ func TestSealerKeyring(t *testing.T) {
 	}
 	if _, _, err := s.Reseal("r2", byOld); err == nil {
 		t.Error("Reseal under another ID succeeded")
+	}
+	if _, err := s.Open("r1", byOld[:5]); err == nil || !strings.Contains(err.Error(), "too short") {
+		t.Errorf("Open(truncated) with two keys = %v, want too short", err)
 	}
 
 	// Once the old key is gone only the new one opens.
