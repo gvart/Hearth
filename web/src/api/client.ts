@@ -500,6 +500,70 @@ export interface TelemetrySetting {
   disabled_by_env: boolean;
 }
 
+/** An action a panel widget allows its guests; see docs/panels.md. */
+export interface PanelAction {
+  /** Set by the hub: the action's key within its widget. */
+  id: string;
+  action: string;
+  /** For device.restart: the service, as manager:name. */
+  service?: string;
+  /** Set by the hub: read or safe, never dangerous. */
+  class: ActionClass;
+}
+
+export interface PanelWidget {
+  /** Set by the hub when empty; kept across edits. */
+  id: string;
+  kind: 'device';
+  /** The device ID. */
+  entity: string;
+  actions: PanelAction[];
+}
+
+export interface PanelLink {
+  id: string;
+  created_at: string;
+  expires_at: string | null;
+  revoked_at: string | null;
+  status: 'active' | 'expired' | 'revoked';
+}
+
+export interface Panel {
+  id: string;
+  name: string;
+  widgets: PanelWidget[];
+  links: PanelLink[];
+  created_at: string;
+  updated_at: string;
+}
+
+/** What a panel save sends: IDs and classes are filled in by the hub. */
+export interface PanelInput {
+  name: string;
+  widgets: { id?: string; kind: 'device'; entity: string; actions: { action: string; service?: string }[] }[];
+}
+
+/** A new share link: the only time its token is shown. */
+export interface CreatedPanelLink {
+  link: PanelLink;
+  token: string;
+  /** /p/<token> */
+  path: string;
+}
+
+/** A panel as its guests see it: names and states, nothing else. */
+export interface GuestPanel {
+  name: string;
+  widgets: {
+    id: string;
+    kind: 'device';
+    name: string;
+    status: DeviceStatus;
+    last_seen: string | null;
+    actions: { id: string; label: string }[];
+  }[];
+}
+
 /** ApiError carries the hub's `{"error","code"}` body and the HTTP status. */
 export class ApiError extends Error {
   readonly status: number;
@@ -618,7 +682,41 @@ export const api = {
   telemetry: () => request<TelemetrySetting>('GET', '/telemetry'),
   /** Stores the admin's answer: yes sends anonymous usage stats weekly, no sends nothing. */
   setTelemetry: (enabled: boolean) => request<TelemetrySetting>('PUT', '/telemetry', { enabled }),
+  panels: async () => (await request<{ panels: Panel[] }>('GET', '/panels')).panels,
+  createPanel: (p: PanelInput) => request<Panel>('POST', '/panels', p),
+  updatePanel: (id: string, p: PanelInput) => request<Panel>('PUT', `/panels/${encodeURIComponent(id)}`, p),
+  deletePanel: (id: string) => request<undefined>('DELETE', `/panels/${encodeURIComponent(id)}`),
+  /** expiresIn is a duration such as "24h"; empty for a link that never expires. */
+  createPanelLink: (id: string, expiresIn: string) =>
+    request<CreatedPanelLink>('POST', `/panels/${encodeURIComponent(id)}/links`, expiresIn ? { expires_in: expiresIn } : {}),
+  revokePanelLink: (id: string, link: string) =>
+    request<undefined>('DELETE', `/panels/${encodeURIComponent(id)}/links/${encodeURIComponent(link)}`),
+  /** A panel through its share link; needs no session. */
+  guestPanel: (token: string) => request<GuestPanel>('GET', `/guest/${encodeURIComponent(token)}`),
+  guestAction: (token: string, widget: string, action: string) =>
+    request<{ ok: boolean }>('POST', `/guest/${encodeURIComponent(token)}/actions`, { widget, action }),
 };
+
+/**
+ * Subscribes to a share link's change notices: onChange runs whenever an
+ * entity on the panel changes. Returns a closer.
+ */
+export function subscribeGuestEvents(token: string, h: { onOpen: () => void; onChange: () => void; onError: () => void }): () => void {
+  const es = new EventSource(`${base}/guest/${encodeURIComponent(token)}/events`);
+  es.onopen = () => {
+    h.onOpen();
+  };
+  es.onerror = () => {
+    es.close();
+    h.onError();
+  };
+  es.addEventListener('changed', () => {
+    h.onChange();
+  });
+  return () => {
+    es.close();
+  };
+}
 
 export interface EventHandlers {
   onOpen: () => void;

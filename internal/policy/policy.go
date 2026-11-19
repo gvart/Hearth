@@ -108,7 +108,8 @@ const (
 	// MCP client.
 	DeviceMetrics Action = "device.metrics"
 	// DeviceRestart restarts a systemd unit or Docker container on a device,
-	// through its agent, for an MCP client.
+	// through its agent, for an MCP client or the guest of a panel whose
+	// widget allows it.
 	DeviceRestart Action = "device.restart"
 	// DeviceExec runs a command on a device, through its agent, for an MCP
 	// client.
@@ -186,6 +187,16 @@ const (
 	// DeviceShell opens an interactive shell on a device, on a terminal in
 	// the web UI, through its agent.
 	DeviceShell Action = "device.shell"
+	// PanelSave creates or changes a guest or kiosk panel: its widgets and
+	// the actions they allow its guests.
+	PanelSave Action = "panel.save"
+	// PanelDelete deletes a panel and every share link of it.
+	PanelDelete Action = "panel.delete"
+	// PanelLinkCreate creates a share link that opens a panel without a
+	// login.
+	PanelLinkCreate Action = "panel.link.create"
+	// PanelLinkRevoke revokes a panel's share link.
+	PanelLinkRevoke Action = "panel.link.revoke"
 )
 
 // Actor kinds.
@@ -215,6 +226,11 @@ const (
 	// identified by the name of its MCP token. The token's scope caps the
 	// classes it may request (see WithScope).
 	ActorMCP = "mcp"
+	// ActorGuest is the holder of a panel's share link, identified as
+	// panel/<panel id>. The link is the credential, for that one panel: a
+	// guest may take only the actions the panel's widgets allow, which are
+	// never dangerous.
+	ActorGuest = "guest"
 )
 
 // Decisions recorded in the audit log.
@@ -315,7 +331,8 @@ var rules = map[Action]rule{
 	DeviceMetrics: {class: Read, actors: []string{ActorMCP}},
 	KubeRead:      {class: Read, actors: []string{ActorMCP}},
 	// As automation.restart and automation.exec, for an MCP client.
-	DeviceRestart: {class: Safe, actors: []string{ActorMCP}},
+	// A panel's guest restarts only the service a widget names.
+	DeviceRestart: {class: Safe, actors: []string{ActorMCP, ActorGuest}},
 	DeviceExec:    {class: Dangerous, actors: []string{ActorMCP}},
 	// Logs may carry secrets, so every stream opened is audited, and the
 	// device's agent streams only the sources its ceiling names.
@@ -380,6 +397,13 @@ var rules = map[Action]rule{
 	// web UI, behind an admin session, may open one: never an automation
 	// or an MCP client.
 	DeviceShell: {class: Dangerous, actors: []string{ActorWeb}},
+	// A panel shows a few entities and allows only read and safe actions on
+	// them, each decided again when a guest takes it. Sharing it hands out
+	// that much, and revoking or deleting only takes it away.
+	PanelSave:       {class: Safe, actors: []string{ActorWeb}},
+	PanelDelete:     {class: Safe, actors: []string{ActorWeb}},
+	PanelLinkCreate: {class: Safe, actors: []string{ActorWeb}},
+	PanelLinkRevoke: {class: Safe, actors: []string{ActorWeb}},
 }
 
 // Actions returns every known action, sorted.
@@ -393,6 +417,14 @@ func Actions() []Action {
 func ClassOf(a Action) (Class, bool) {
 	r, ok := rules[a]
 	return r.class, ok
+}
+
+// Admits reports whether the rule of action a admits actor kind at all,
+// before any configuration: a panel offers its guests only the actions that
+// admit ActorGuest.
+func Admits(a Action, kind string) bool {
+	r, ok := rules[a]
+	return ok && slices.Contains(r.actors, kind)
 }
 
 // ErrDenied is returned when policy denies an action.

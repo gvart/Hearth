@@ -11,6 +11,7 @@ const actorKinds: { id: string; label: string }[] = [
   { id: 'join_token', label: 'Joining hub' },
   { id: 'hub', label: 'Cluster hub' },
   { id: 'approval_link', label: 'Approval link' },
+  { id: 'guest', label: 'Panel guest' },
 ];
 
 const ranges: { id: string; label: string; ms?: number }[] = [

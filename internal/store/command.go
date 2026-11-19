@@ -780,6 +780,16 @@ func DecodeCommand(b []byte) (Command, error) {
 		cmd, err = decodeAs[SetTelemetry](env.Cmd)
 	case MarkTelemetrySent{}.Op():
 		cmd, err = decodeAs[MarkTelemetrySent](env.Cmd)
+	case CreatePanel{}.Op():
+		cmd, err = decodeAs[CreatePanel](env.Cmd)
+	case UpdatePanel{}.Op():
+		cmd, err = decodeAs[UpdatePanel](env.Cmd)
+	case DeletePanel{}.Op():
+		cmd, err = decodeAs[DeletePanel](env.Cmd)
+	case CreatePanelLink{}.Op():
+		cmd, err = decodeAs[CreatePanelLink](env.Cmd)
+	case RevokePanelLink{}.Op():
+		cmd, err = decodeAs[RevokePanelLink](env.Cmd)
 	default:
 		return nil, fmt.Errorf("decode command: unknown op %q", env.Op)
 	}

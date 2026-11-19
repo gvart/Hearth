@@ -1,9 +1,11 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { useSession } from './api/hooks.ts';
 import { ApproveLinkPage } from './components/ApproveLinkPage.tsx';
+import { GuestPanelPage } from './components/GuestPanelPage.tsx';
 import { Shell } from './components/Shell.tsx';
 import { Login } from './components/Login.tsx';
 import { SecureBanner } from './components/SecureBanner.tsx';
+import { isKiosk, panelToken } from './panels.ts';
 
 /** The token of an approval link (#/approve/<token>), opened without a session. */
 const approveRoute = '#/approve/';
@@ -31,6 +33,11 @@ function useHash(): string {
 
 export function App() {
   const hash = useHash();
+  // A panel's share link (/p/<token>) needs no session: the link is the credential.
+  const panel = panelToken(window.location.pathname);
+  if (panel !== null) {
+    return <GuestPanelPage token={panel} kiosk={isKiosk(window.location.search)} />;
+  }
   if (hash.startsWith(approveRoute)) {
     const token = hash.slice(approveRoute.length);
     return <ApproveLinkPage key={token} token={token} />;

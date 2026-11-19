@@ -7,6 +7,7 @@ import { DevicesPage } from './DevicesPage.tsx';
 import { KubernetesPage } from './KubernetesPage.tsx';
 import { Logo } from './Logo.tsx';
 import { NotificationsPage } from './NotificationsPage.tsx';
+import { PanelsPage } from './PanelsPage.tsx';
 import { ProxmoxPage } from './ProxmoxPage.tsx';
 import { RunbooksPage } from './RunbooksPage.tsx';
 import { TelemetryPrompt, TelemetryStatus } from './TelemetryPrompt.tsx';
@@ -21,6 +22,7 @@ type Page =
   | 'runbooks'
   | 'automations'
   | 'notifications'
+  | 'panels'
   | 'audit'
   | 'approvals';
 
@@ -30,6 +32,7 @@ const pages: { id: Page; label: string; hash: string }[] = [
   { id: 'proxmox', label: 'Proxmox', hash: '#/proxmox' },
   { id: 'runbooks', label: 'Runbooks', hash: '#/runbooks' },
   { id: 'automations', label: 'Automations', hash: '#/automations' },
+  { id: 'panels', label: 'Panels', hash: '#/panels' },
   { id: 'notifications', label: 'Notifications', hash: '#/notifications' },
   { id: 'audit', label: 'Audit', hash: '#/audit' },
   { id: 'approvals', label: 'Approvals', hash: '#/approvals' },
@@ -41,6 +44,9 @@ function pageOf(hash: string): Page {
   }
   if (hash.startsWith('#/runbooks')) {
     return 'runbooks';
+  }
+  if (hash.startsWith('#/panels')) {
+    return 'panels';
   }
   if (hash.startsWith('#/notifications')) {
     return 'notifications';
@@ -147,6 +153,8 @@ export function Shell() {
         <Suspense fallback={<main className="content muted">Loading automations…</main>}>
           <AutomationsPage />
         </Suspense>
+      ) : page === 'panels' ? (
+        <PanelsPage />
       ) : page === 'notifications' ? (
         <NotificationsPage />
       ) : page === 'audit' ? (
