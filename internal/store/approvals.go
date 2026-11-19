@@ -129,6 +129,20 @@ func (r Approvals) List(ctx context.Context, status string, limit int) ([]Approv
 	return out, nil
 }
 
+// Overdue returns up to limit pending approvals whose expiry is at or before
+// at, oldest first. Before schema 9 there are none.
+func (r Approvals) Overdue(ctx context.Context, at time.Time, limit int) ([]Approval, error) {
+	if limit <= 0 {
+		return nil, errors.New("overdue approvals: limit must be positive")
+	}
+	out, err := r.query(ctx, approvalSelect+` WHERE status = ? AND expires_at <= ? ORDER BY expires_at, id LIMIT ?`,
+		ApprovalPending, toMillis(at), limit)
+	if err != nil {
+		return nil, fmt.Errorf("overdue approvals: %w", err)
+	}
+	return out, nil
+}
+
 const approvalSelect = `SELECT id, created_at, expires_at, actor_kind, actor_id, action, class, target,
 	detail, status, decided_by, decided_at FROM approvals`
 

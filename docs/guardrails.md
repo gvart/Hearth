@@ -71,6 +71,27 @@ Every decision is in the audit log as `approval.approve` or `approval.deny`, by 
 actor kind says the channel (`admin` for the CLI, `web` for the UI, `approval_link` for a link) and
 the id says who (the local user, or the remote address). The approval records it as `decided_by`.
 
+An approval whose requester is gone, because the hub stopped or crashed while it waited, would stay
+pending for good. The hub (in a cluster, its leader, as soon as it leads) expires every pending
+approval past its expiry at startup and then every minute, through the same replicated write as any
+expiry: its plan is cleared and the denial is in the audit log. A sweep that fails, for example
+without a quorum, is logged and tried again a minute later; it never delays startup.
+
+### Where a plan survives
+
+The plan of a held request, which can quote command arguments, is removed from the approval row when
+it is decided or expires. Copies outside the row stay for a while:
+
+- The Raft log entry that created the approval and the retained Raft snapshots hold the plan until
+  Raft compacts the log and replaces the snapshots. Hearth cannot scrub them sooner, and every hub
+  of a cluster keeps its own copies.
+- SQLite has `secure_delete` on, so the pages the plan is removed from are overwritten with zeros
+  rather than left in the file's free pages. The write-ahead log may still hold an older copy of a
+  page until its next checkpoint.
+- Backups and snapshots of the data directory taken while the approval was pending keep the plan.
+
+Treat the data directory as holding secrets: keep it readable by the hub's user only.
+
 After a rolling upgrade, nothing can be held until `hearth cluster migrate` brings the cluster to
 schema 9: until then `confirm` actions are denied.
 

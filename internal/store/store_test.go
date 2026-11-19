@@ -84,6 +84,7 @@ func TestOpenPragmas(t *testing.T) {
 		{"journal_mode", "wal"},
 		{"foreign_keys", "1"},
 		{"busy_timeout", "5000"},
+		{"secure_delete", "1"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.pragma, func(t *testing.T) {
