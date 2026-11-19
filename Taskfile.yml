@@ -137,7 +137,5 @@ tasks:
     internal: true
     deps: [web:build]
     cmds:
-      - rm -rf {{.WEBUI_DIST}}
-      - mkdir -p {{.WEBUI_DIST}}
-      - cp -R web/dist/. {{.WEBUI_DIST}}/
-      - touch {{.WEBUI_DIST}}/.gitkeep
+      # Copies web/dist with text assets gzipped; the hub serves them as is.
+      - node scripts/embed-webui.mjs web/dist {{.WEBUI_DIST}}

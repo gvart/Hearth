@@ -14,10 +14,7 @@ before:
     # is embedded into the binary, so it has to exist before `go build`.
     - npm --prefix web ci --no-audit --no-fund
     - npm --prefix web run build
-    - rm -rf internal/hub/webui/dist
-    - mkdir -p internal/hub/webui/dist
-    - cp -R web/dist/. internal/hub/webui/dist/
-    - touch internal/hub/webui/dist/.gitkeep
+    - node scripts/embed-webui.mjs web/dist internal/hub/webui/dist
 
 snapshot:
   version_template: "{{ incpatch .Version }}-snapshot"
