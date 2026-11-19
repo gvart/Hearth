@@ -3,7 +3,9 @@
 package store
 
 import (
+	"bytes"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -213,6 +215,39 @@ func TestApprovalsPlanMigration(t *testing.T) {
 	}
 	if got, _ := s.Approvals().Get(ctx, "p"); string(got.Detail) != detail {
 		t.Errorf("pending detail = %s, want it untouched", got.Detail)
+	}
+}
+
+// The plan of a decided approval does not stay in the -wal file: once a
+// checkpoint has copied it and the next write restarts the log, the file is
+// truncated (journal_size_limit), while the store is still open.
+func TestDecidedPlanLeavesTheWAL(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	base := time.Now()
+	if err := s.Approvals().Create(ctx, Approval{
+		ID: "x", CreatedAt: base, ExpiresAt: base.Add(time.Minute), ActorKind: "a", ActorID: "b",
+		Action: "c", Class: "dangerous", Detail: []byte(`{"plan":"MARKERSECRET"}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Approvals().Decide(ctx, "x", ApprovalDenied, "w/w", base); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.ExecContext(ctx, "PRAGMA wal_checkpoint(PASSIVE)"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Approvals().Create(ctx, Approval{
+		ID: "y", CreatedAt: base, ExpiresAt: base, ActorKind: "a", ActorID: "b", Action: "c", Class: "dangerous",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	wal, err := os.ReadFile(s.path + "-wal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(wal, []byte("MARKERSECRET")) {
+		t.Errorf("the -wal file (%d bytes) still holds the plan of a decided approval", len(wal))
 	}
 }
 

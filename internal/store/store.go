@@ -46,6 +46,7 @@ func Open(ctx context.Context, path string, opts ...Option) (*Store, error) {
 		"&_pragma=busy_timeout(5000)" +
 		"&_pragma=foreign_keys(1)" +
 		"&_pragma=secure_delete(1)" +
+		"&_pragma=journal_size_limit(0)" +
 		"&_txlock=immediate"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {

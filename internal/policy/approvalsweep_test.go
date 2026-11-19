@@ -44,7 +44,7 @@ func TestSweepApprovals(t *testing.T) {
 		t.Fatal(err)
 	}
 	e := NewWithConfig(s.Audit(), s.Approvals(), confirmAll(time.Minute))
-	e.now = func() time.Time { return base.Add(2 * time.Minute) }
+	e.now = func() time.Time { return base.Add(time.Minute + SweepGrace) }
 
 	n, err := e.SweepApprovals(ctx)
 	if err != nil || n != 1 {
@@ -93,21 +93,82 @@ func TestSweepApprovals(t *testing.T) {
 	}
 }
 
-// A hold whose requester is waiting is left to it: the sweep may race its
-// expiry, and either way the approval is expired and audited once.
+// A live hold is not swept by a hub whose clock runs ahead by less than the
+// grace; one ahead by more than it is the documented limit.
+func TestSweepApprovalsClockSkew(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	real := time.Now()
+	// The requester's hub holds it for ten minutes on its own clock.
+	if err := s.Approvals().Create(ctx, store.Approval{
+		ID: "live", CreatedAt: real, ExpiresAt: real.Add(10 * time.Minute), ActorKind: ActorAutomation, ActorID: "a",
+		Action: string(AutomationExec), Class: string(Dangerous), Target: "pi", Detail: []byte(sweepPlan),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	leader := func(ahead time.Duration) *Engine {
+		e := NewWithConfig(s.Audit(), s.Approvals(), confirmAll(10*time.Minute))
+		e.now = func() time.Time { return real.Add(ahead) }
+		return e
+	}
+	// 11 minutes ahead would have expired it at once without the grace.
+	if n, err := leader(11 * time.Minute).SweepApprovals(ctx); err != nil || n != 0 {
+		t.Fatalf("SweepApprovals, clock 11m ahead = %d, %v; want 0, nil", n, err)
+	}
+	ap, err := s.Approvals().Get(ctx, "live")
+	if err != nil || ap.Status != store.ApprovalPending {
+		t.Fatalf("approval = %+v, %v; want still pending", ap, err)
+	}
+	if entries, _ := s.Audit().List(ctx, 10); len(entries) != 0 {
+		t.Errorf("audit = %+v, want none", entries)
+	}
+	// Past the grace, a clock that far ahead does expire it.
+	if n, err := leader(10*time.Minute + SweepGrace).SweepApprovals(ctx); err != nil || n != 1 {
+		t.Errorf("SweepApprovals, clock beyond the grace = %d, %v; want 1, nil", n, err)
+	}
+}
+
+// The denial is audited before the approval is expired, so a crash between
+// the two leaves an entry and a pending approval for the next sweep, never an
+// expired approval with no entry.
+func TestSweepApprovalsAuditsFirst(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	base := time.UnixMilli(1_700_000_000_000).UTC()
+	orphan(t, s, "x", base, time.Minute)
+	crash := errors.New("crash")
+	f := &failingDecide{Approvals: s.Approvals(), err: crash}
+	e := NewWithConfig(s.Audit(), f, confirmAll(time.Minute))
+	e.now = func() time.Time { return base.Add(time.Minute + SweepGrace) }
+	if _, err := e.SweepApprovals(ctx); !errors.Is(err, crash) {
+		t.Fatalf("SweepApprovals = %v, want the decide failure", err)
+	}
+	entries, err := s.Audit().List(ctx, 10)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("audit = %+v, %v; want the entry written before the decision", entries, err)
+	}
+}
+
+type failingDecide struct {
+	Approvals
+	err error
+}
+
+func (f *failingDecide) Decide(context.Context, string, string, string, time.Time) error {
+	return f.err
+}
+
+// An approval its requester expired meanwhile is skipped, and not counted.
 func TestSweepApprovalsAfterWaiterExpired(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()
 	base := time.UnixMilli(1_700_000_000_000).UTC()
 	orphan(t, s, "x", base, time.Minute)
 	e := NewWithConfig(s.Audit(), s.Approvals(), confirmAll(time.Minute))
-	e.now = func() time.Time { return base.Add(2 * time.Minute) }
+	e.now = func() time.Time { return base.Add(time.Minute + SweepGrace) }
 	e.expire(ctx, "x") // the waiter got there first
 	if n, err := e.SweepApprovals(ctx); err != nil || n != 0 {
 		t.Errorf("SweepApprovals = %d, %v; want 0, nil", n, err)
-	}
-	if entries, _ := s.Audit().List(ctx, 10); len(entries) != 0 {
-		t.Errorf("audit = %+v, want none: the waiter audits its own expiry", entries)
 	}
 }
 

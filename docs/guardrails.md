@@ -73,9 +73,15 @@ the id says who (the local user, or the remote address). The approval records it
 
 An approval whose requester is gone, because the hub stopped or crashed while it waited, would stay
 pending for good. The hub (in a cluster, its leader, as soon as it leads) expires every pending
-approval past its expiry at startup and then every minute, through the same replicated write as any
-expiry: its plan is cleared and the denial is in the audit log. A sweep that fails, for example
+approval more than 5 minutes past its expiry at startup and then every minute, through the same
+replicated write as any expiry: its plan is cleared and the denial is in the audit log (written just
+before the expiry, so a crash between the two never leaves an unaudited expiry; an approval its own
+requester closes at the same moment can leave one extra entry). A sweep that fails, for example
 without a quorum, is logged and tried again a minute later; it never delays startup.
+
+The 5 minutes of grace keep a sweep from expiring a live hold when the leader's clock is ahead of
+the hub that holds it. Keep the hubs' clocks within it: a leader whose clock runs more than 5
+minutes ahead can still expire a hold before its timeout.
 
 ### Where a plan survives
 
@@ -86,8 +92,11 @@ it is decided or expires. Copies outside the row stay for a while:
   Raft compacts the log and replaces the snapshots. Hearth cannot scrub them sooner, and every hub
   of a cluster keeps its own copies.
 - SQLite has `secure_delete` on, so the pages the plan is removed from are overwritten with zeros
-  rather than left in the file's free pages. The write-ahead log may still hold an older copy of a
-  page until its next checkpoint.
+  rather than left in the file's free pages. The write-ahead log (`-wal`) can hold an older copy of
+  a page: Hearth sets `journal_size_limit` to 0, so once a checkpoint has copied the frames and the
+  next write restarts the log, the file is truncated. A test shows this for an idle store; a
+  long-lived reader can hold the log open, and copies remain until the frames are overwritten or the
+  store is closed.
 - Backups and snapshots of the data directory taken while the approval was pending keep the plan.
 
 Treat the data directory as holding secrets: keep it readable by the hub's user only.

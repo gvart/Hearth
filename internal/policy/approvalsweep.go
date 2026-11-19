@@ -13,10 +13,19 @@ import (
 	"github.com/gvart/hearth/internal/store"
 )
 
+// SweepGrace is how long past its expiry an approval must be before a sweep
+// expires it. Only the sweeping hub's clock says when that is, and expiring
+// skips the check approving does, so a hub whose clock runs ahead would
+// otherwise expire a live hold. A clock ahead by more than the grace still
+// does; the requester's own timer, which is never behind the expiry, handles
+// every other hold.
+const SweepGrace = 5 * time.Minute
+
 // sweepBatch is how many overdue approvals one read of a sweep returns.
 const sweepBatch = 100
 
-// SweepApprovals expires the pending approvals whose expiry has passed, as
+// SweepApprovals expires the pending approvals whose expiry passed more than
+// SweepGrace ago, as
 // the requester of each would have, and returns how many it expired. It is
 // for the holds that outlive their requester: a hub that stops while an
 // action waits for approval leaves it pending, with its plan, for good.
@@ -37,7 +46,7 @@ func (e *Engine) SweepApprovals(ctx context.Context) (int, error) {
 	)
 	for {
 		now := e.now()
-		due, err := e.approvals.Overdue(ctx, now, sweepBatch)
+		due, err := e.approvals.Overdue(ctx, now.Add(-SweepGrace), sweepBatch)
 		if err != nil {
 			return total, errors.Join(append(errs, fmt.Errorf("list overdue approvals: %w", err))...)
 		}
@@ -61,15 +70,13 @@ func (e *Engine) SweepApprovals(ctx context.Context) (int, error) {
 	}
 }
 
-// expireOrphan expires ap, a pending approval past its expiry, and audits it.
-// It reports false for one that was no longer pending.
+// expireOrphan audits and then expires ap, a pending approval past its expiry
+// and the grace. The entry comes first, as run's does: a crash between the two
+// leaves an entry and a pending approval the next sweep takes up, never an
+// expired approval nobody audited. An approval closed meanwhile, by its own
+// requester, leaves a stray entry. It reports false for one that was no
+// longer pending.
 func (e *Engine) expireOrphan(ctx context.Context, ap store.Approval, now time.Time) (bool, error) {
-	if err := e.approvals.Decide(ctx, ap.ID, store.ApprovalExpired, "timeout", now); err != nil {
-		if errors.Is(err, store.ErrApprovalClosed) {
-			return false, nil
-		}
-		return false, fmt.Errorf("expire approval %s: %w", ap.ID, err)
-	}
 	// The plan is only for the approver, and is not audited.
 	var detail map[string]any
 	if len(ap.Detail) > 0 {
@@ -82,7 +89,13 @@ func (e *Engine) expireOrphan(ctx context.Context, ap store.Approval, now time.T
 		ActorKind: ap.ActorKind, ActorID: ap.ActorID, Action: Action(ap.Action), Target: ap.Target, Detail: detail,
 	}
 	if err := e.record(ctx, req, Deny, "approval expired: its requester was gone", map[string]any{"approval": ap.ID}); err != nil {
-		return true, fmt.Errorf("expired approval %s, but its audit entry was not written: %w", ap.ID, err)
+		return false, fmt.Errorf("expire approval %s: %w", ap.ID, err)
+	}
+	if err := e.approvals.Decide(ctx, ap.ID, store.ApprovalExpired, "timeout", now); err != nil {
+		if errors.Is(err, store.ErrApprovalClosed) {
+			return false, nil
+		}
+		return false, fmt.Errorf("expire approval %s: %w", ap.ID, err)
 	}
 	return true, nil
 }
