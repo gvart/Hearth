@@ -1,0 +1,69 @@
+internal/store/proxmox_test.go
+  s_344993999c180f::t_6bee2c1203d7e3 1-49
+internal/integrations/proxmox/pvemock/pvemock.go
+  s_344993999c180f::t_bb1015c85ab216 24
+  s_344993999c180f::t_5624d13548cf5b 1-23,25-233
+internal/store/command_test.go
+  s_344993999c180f::t_004cd5c23b025d 317-323
+internal/hub/proxmox.go
+  s_344993999c180f::t_99d105328862b5 1-117
+internal/integrations/proxmox/manager.go
+  s_344993999c180f::t_6f9f24bfa56973 1-641
+internal/store/migrations/00015_proxmox_servers.sql
+  s_344993999c180f::t_3f4f61d0b8f84d 1-16
+internal/integrations/proxmox/client.go
+  s_344993999c180f::t_2039164a044da7 329
+  s_344993999c180f::t_327ef7fd8c9369 1-203,205-328,330-403
+  s_344993999c180f::t_bb1015c85ab216 204
+internal/hub/proxmox_test.go
+  s_344993999c180f::t_6338c99856f352 1-179
+internal/policy/policy.go
+  s_344993999c180f::t_556d5f2b53e45c 285-295
+  s_344993999c180f::t_b82fcf2e269538 132-143
+internal/hub/server.go
+  s_344993999c180f::t_d1fcd78ba59557 78-80
+  s_344993999c180f::t_2039164a044da7 18
+internal/store/command.go
+  s_344993999c180f::t_1edd187667a696 683-686
+internal/policy/guardrails_test.go
+  s_344993999c180f::t_2039164a044da7 140-144
+internal/integrations/proxmox/manager_test.go
+  s_344993999c180f::t_3542162f9f06d5 1-122,124-405,413-626
+  s_344993999c180f::t_23eacede5b713c 123
+  s_344993999c180f::t_63984d5e927f45 406-412
+internal/hub/api.go
+  s_344993999c180f::t_08f3aab3ea7fd7 176
+  s_344993999c180f::t_22f60e942af1f6 77
+  s_344993999c180f::t_29e8d61355f97e 23,75-76,78-79,106,177
+internal/store/proxmox.go
+  s_344993999c180f::t_284a311812161a 1-133
+cmd/hearth/hub.go
+  s_344993999c180f::t_292713ac37cc1a 303
+  s_344993999c180f::t_100ab960845e71 452-453
+  s_344993999c180f::t_3f3738d2891226 535-548
+  s_344993999c180f::t_b4aa3302a904f4 269-272
+  s_344993999c180f::t_2039164a044da7 30
+internal/integrations/proxmox/client_test.go
+  s_344993999c180f::t_64b2ca1ed0ff58 1-43,45-71,73-200
+  s_344993999c180f::t_bb1015c85ab216 44,72
+internal/integrations/kubernetes/seal.go
+  s_344993999c180f::t_43aa6c85b7811f 30-36,40,69,73
+internal/store/store_test.go
+  s_344993999c180f::t_51698b1b0d0f1b 54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "af5cd7e84fecf0a24c22c72050d75e77d205f53e",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
