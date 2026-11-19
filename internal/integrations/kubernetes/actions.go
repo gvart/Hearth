@@ -27,6 +27,9 @@ const (
 	ActionCordon    = "cordon"
 	ActionUncordon  = "uncordon"
 	ActionDrain     = "drain"
+	// ActionDeleteNode deletes a Node object: for automations and runbooks
+	// only, as policy says.
+	ActionDeleteNode = "delete_node"
 )
 
 const (
@@ -355,6 +358,11 @@ func (m *Manager) action(r *running, req ActionRequest) (*kubeAction, error) {
 			detail: map[string]any{"timeout": timeout.String()},
 			plan:   func(ctx context.Context) (*plan, error) { return m.planDrain(ctx, c(), req.Name, timeout) },
 		}, nil
+	case ActionDeleteNode:
+		return &kubeAction{
+			policy: policy.KubeNodeDelete, target: req.Name, timeout: actionTimeout,
+			plan: func(ctx context.Context) (*plan, error) { return planDeleteNode(ctx, c(), req.Name) },
+		}, nil
 	}
 	return nil, badAction("unknown action %q", req.Action)
 }
@@ -524,6 +532,98 @@ func planCordon(ctx context.Context, c *apiClient, name string, cordon bool) (*p
 		return done, setUnschedulable(ctx, c, name, cordon)
 	}
 	return p, nil
+}
+
+// nodeReady reports whether n's Ready condition is True, and says what it is.
+func nodeReady(n *node) (bool, string) {
+	for _, c := range n.Status.Conditions {
+		if c.Type == "Ready" {
+			return c.Status == "True", "Ready is " + c.Status
+		}
+	}
+	return false, "it reports no Ready condition yet"
+}
+
+// planDeleteNode plans deleting the Node object name. A node that is not
+// there leaves nothing to do: a rollback deletes a node that may never have
+// registered.
+func planDeleteNode(ctx context.Context, c *apiClient, name string) (*plan, error) {
+	var n node
+	err := c.getObject(ctx, nodePath(name), &n)
+	if hasCode(err, http.StatusNotFound) {
+		return &plan{summary: fmt.Sprintf("Node %s is not in the cluster: nothing to delete.", name)}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	pods, _, err := c.listSelected(ctx, "/api/v1/pods", "spec.nodeName="+name)
+	if err != nil {
+		return nil, err
+	}
+	p := &plan{
+		summary: fmt.Sprintf("Delete the Node object %s from the cluster, as kubectl delete node does.", name),
+		steps:   []string{"Delete the Node object"},
+	}
+	if ready, _ := nodeReady(&n); ready {
+		p.warnings = append(p.warnings, "It is Ready: its kubelet is running and registers it again, "+
+			"unless the machine is reset or its Kubernetes uninstalled first.")
+	}
+	if len(pods) > 0 {
+		p.warnings = append(p.warnings, fmt.Sprintf("%s bound to it are deleted with it.", plural(len(pods), "pod")))
+	}
+	p.apply = func(ctx context.Context) (string, error) {
+		err := c.deleteObject(ctx, nodePath(name))
+		switch {
+		case hasCode(err, http.StatusNotFound):
+			return fmt.Sprintf("Node %s was already gone.", name), nil
+		case err != nil:
+			return "", err
+		}
+		return fmt.Sprintf("Deleted node %s.", name), nil
+	}
+	return p, nil
+}
+
+// ErrNodeNotReady is the failure of NodeReady for a node that is there and
+// not Ready.
+var ErrNodeNotReady = errors.New("the node is not Ready")
+
+// ValidNodeName reports whether s can be a Node's name.
+func ValidNodeName(s string) bool { return validObjectName(s) }
+
+// NodeReady reads the Node name of the cluster named cluster, live from its
+// API server, and returns nil if it is Ready. A node that is not Ready fails
+// with ErrNodeNotReady, one that is not there with ErrObjectNotFound, and an
+// unknown cluster with ErrNotFound. It is a read the caller decides and
+// audits: it runs only in a context policy granted policy.KubeNodeReady, and
+// fails with ErrNotGranted otherwise, before anything is sent.
+func (m *Manager) NodeReady(ctx context.Context, cluster, name string) error {
+	if !policy.Granted(ctx, policy.KubeNodeReady) {
+		return fmt.Errorf("%s: %w", policy.KubeNodeReady, ErrNotGranted)
+	}
+	if !validObjectName(name) {
+		return badAction("node must be a Kubernetes object name")
+	}
+	r, info, err := m.getNamed(cluster)
+	if err != nil {
+		return err
+	}
+	if r.w == nil {
+		return fmt.Errorf("cluster %s: %s", info.Name, r.err)
+	}
+	ctx, cancel := context.WithTimeout(ctx, actionTimeout)
+	defer cancel()
+	var n node
+	if err := r.w.c.getObject(ctx, nodePath(name), &n); err != nil {
+		if hasCode(err, http.StatusNotFound) {
+			return fmt.Errorf("node %s: %w", name, ErrObjectNotFound)
+		}
+		return fmt.Errorf("node %s: %w", name, err)
+	}
+	if ready, why := nodeReady(&n); !ready {
+		return fmt.Errorf("node %s: %w: %s", name, ErrNodeNotReady, why)
+	}
+	return nil
 }
 
 // podExtra is the part of a pod only a drain reads.

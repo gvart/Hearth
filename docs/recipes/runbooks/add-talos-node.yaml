@@ -8,21 +8,29 @@
 #     /etc/talos/talosconfig (client config with the cluster endpoints) exist on
 #     that machine. Hearth never sees their content, so no secret is in this file.
 #   - The new node is booted from the Talos image and waits in maintenance mode.
-#   - Edit the placeholders below (192.0.2.50 is the new node, `workstation` is
-#     the device with talosctl) in every step before you start the run.
+#   - The cluster is adopted on the hub's Kubernetes page, so the hub can check
+#     the node and delete its Node object on a rollback.
+#   - Edit the vars below: the device with talosctl, the new node's address and
+#     the name it registers with (its hostname, as worker.yaml sets it), and the
+#     cluster's name on the Kubernetes page.
 #
-# apply-config is an exec action, which is dangerous: it is held or denied until
-# the hub grants it, for example:
+# apply-config, the reset and the Node deletion are dangerous: they are held or
+# denied until the hub grants them, for example:
 #   hearth hub --allow-dangerous-automation runbook/add-talos-node
 id: add-talos-node
-description: Join a Talos worker node, check it comes up, undo with a node reset.
+description: Join a Talos worker node, check it is Ready, undo with a node reset and a Node deletion.
+vars:
+  talosctl-device: workstation
+  node-ip: 192.0.2.50
+  node-name: talos-worker-1
+  cluster: homelab
 steps:
   - id: ready
     type: prompt
     prompt: confirm
     message: >-
       Is the new node booted from the Talos image, are worker.yaml and talosconfig
-      in place on the talosctl device, and are the placeholders in this runbook edited?
+      in place on ${{ vars.talosctl-device }}, and are the vars in this runbook edited?
     timeout: 30m
 
   - id: maintenance-api
@@ -30,35 +38,48 @@ steps:
     description: The node's Talos API answers in maintenance mode.
     check:
       type: tcp
-      address: "192.0.2.50:50000"
+      address: "${{ vars.node-ip }}:50000"
     within: 10m
     every: 10s
+
+  - id: forget-node
+    type: action
+    description: >-
+      Nothing to do on the way forward. On a rollback, this runs after the node is
+      reset and deletes the Node object it left in the cluster.
+    action:
+      type: log
+      message: On a rollback, the Node ${{ vars.node-name }} is deleted after the reset.
+    rollback:
+      type: kube_node_delete
+      cluster: ${{ vars.cluster }}
+      node: ${{ vars.node-name }}
 
   - id: apply-config
     type: action
     description: Send the worker machine config to the node; it installs and reboots.
     action:
       type: exec
-      device: workstation
+      device: ${{ vars.talosctl-device }}
       command:
         - /usr/local/bin/talosctl
         - apply-config
         - --insecure
         - --nodes
-        - 192.0.2.50
+        - ${{ vars.node-ip }}
         - --file
         - /etc/talos/worker.yaml
       timeout: 5m
     rollback:
       type: exec
-      device: workstation
+      device: ${{ vars.talosctl-device }}
       command:
         - /usr/local/bin/talosctl
         - --talosconfig
         - /etc/talos/talosconfig
         - reset
         - --nodes
-        - 192.0.2.50
+        - ${{ vars.node-ip }}
         - --graceful=false
         - --reboot
       timeout: 5m
@@ -68,26 +89,18 @@ steps:
     description: Give the node time to install Talos and reboot.
     duration: 2m
 
-  - id: kubelet
+  - id: node-ready
     type: check
-    description: The kubelet of the joined node answers.
+    description: The node registered and is Ready.
     check:
-      type: tcp
-      address: "192.0.2.50:10250"
+      type: kube_node
+      cluster: ${{ vars.cluster }}
+      node: ${{ vars.node-name }}
     within: 15m
     every: 15s
-
-  - id: node-ready
-    type: prompt
-    prompt: confirm
-    message: >-
-      Does the node show as Ready on the Kubernetes page? Answer no to stop the run,
-      then roll back to reset the node. After a rollback, remove the stale Node
-      object by hand: kubectl delete node <name>.
-    timeout: 30m
 
   - id: done
     type: action
     action:
       type: log
-      message: Talos node joined and confirmed Ready.
+      message: Talos node ${{ vars.node-name }} joined and is Ready.

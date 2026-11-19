@@ -70,6 +70,9 @@ func kubeActions(k Kube) map[string]Builder[Action] {
 		},
 		"kube_cordon":   func(p Params) (Action, error) { return buildKubeNode(p, k, kubernetes.ActionCordon) },
 		"kube_uncordon": func(p Params) (Action, error) { return buildKubeNode(p, k, kubernetes.ActionUncordon) },
+		"kube_node_delete": func(p Params) (Action, error) {
+			return buildKubeNode(p, k, kubernetes.ActionDeleteNode)
+		},
 		"kube_drain": func(p Params) (Action, error) {
 			var cfg struct {
 				Cluster string        `yaml:"cluster"`
@@ -180,6 +183,8 @@ func buildKube(p Params, k Kube, f kubeFields) (Action, error) {
 		a.desc = fmt.Sprintf("cordon node %s%s", f.name, in)
 	case kubernetes.ActionUncordon:
 		a.desc = fmt.Sprintf("uncordon node %s%s", f.name, in)
+	case kubernetes.ActionDeleteNode:
+		a.desc = fmt.Sprintf("delete the Node object %s%s", f.name, in)
 	case kubernetes.ActionDrain:
 		timeout := kubernetes.DefaultDrainTimeout
 		if a.req.TimeoutSeconds > 0 {

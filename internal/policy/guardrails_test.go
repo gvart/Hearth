@@ -148,6 +148,8 @@ var expected = map[Action]struct {
 	KubeNodeCordon:            {Safe, []string{ActorWeb, ActorAutomation, ActorMCP}, false},
 	KubeNodeUncordon:          {Safe, []string{ActorWeb, ActorAutomation, ActorMCP}, false},
 	KubeNodeDrain:             {Dangerous, []string{ActorWeb, ActorAutomation, ActorMCP}, false},
+	KubeNodeDelete:            {Dangerous, []string{ActorAutomation}, false},
+	KubeNodeReady:             {Read, []string{ActorAutomation}, false},
 	AutomationNotify:          {Safe, []string{ActorAutomation}, false},
 	NotifyTest:                {Safe, []string{ActorWeb}, false},
 	ApprovalApprove:           {Dangerous, []string{ActorAdmin, ActorWeb, ActorApprovalLink}, true},

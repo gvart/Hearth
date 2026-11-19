@@ -200,6 +200,48 @@ func TestRecipesPlanInADryRun(t *testing.T) {
 	}
 }
 
+// The node recipes wait for the node with a kube_node check and delete its
+// Node object on a rollback, after the step that resets or uninstalls it; every
+// recipe names its targets once, in vars.
+func TestRecipesUseVarsAndTheKubernetesSteps(t *testing.T) {
+	kinds := recipeKinds()
+	for _, f := range recipeFiles(t) {
+		rb, err := LoadRunbookFile(f, kinds)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(rb.Vars) == 0 {
+			t.Errorf("%s has no vars", rb.ID)
+		}
+		if rb.ID == "add-docker-host" {
+			continue
+		}
+		deleteAt, lastExecRollback, kubeCheck := -1, -1, false
+		for i, s := range rb.Steps {
+			if s.Check != nil && s.Check.kubeNode != nil {
+				kubeCheck = true
+			}
+			if s.Rollback == nil {
+				continue
+			}
+			switch s.Rollback.Impl.Policy() {
+			case policy.KubeNodeDelete:
+				deleteAt = i
+			case policy.AutomationExec:
+				lastExecRollback = i
+			}
+		}
+		if !kubeCheck {
+			t.Errorf("%s has no kube_node check", rb.ID)
+		}
+		// Rollback runs last step first: the Node is deleted after the node
+		// is reset or uninstalled, so its kubelet cannot register it again.
+		if deleteAt < 0 || deleteAt > lastExecRollback {
+			t.Errorf("%s: kube_node_delete rollback at step %d, want before the reset at %d", rb.ID, deleteAt, lastExecRollback)
+		}
+	}
+}
+
 // The docs page shows each recipe exactly as the file is: the page is what
 // users read, the file what they copy.
 func TestRecipesPageShowsEveryRecipeVerbatim(t *testing.T) {

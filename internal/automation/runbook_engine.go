@@ -82,7 +82,10 @@ type RunbooksConfig struct {
 	// Probers run the check steps that name a device in from. Without
 	// them, such a step fails.
 	Probers Probers
-	Log     *slog.Logger
+	// KubeNodes runs the kube_node check steps. Without it, such a step
+	// fails.
+	KubeNodes KubeNodes
+	Log       *slog.Logger
 	// Poll is how often the engine looks for work. Default 1s.
 	Poll time.Duration
 	// Now is the clock; default time.Now.
@@ -215,6 +218,9 @@ func (r *Runbooks) planCheck(ctx context.Context, rb *Runbook, c *checkTrigger, 
 func checkAction(c *checkTrigger) (policy.Action, string) {
 	if c.from != "" {
 		return policy.AutomationProbe, c.from
+	}
+	if c.kubeNode != nil {
+		return policy.KubeNodeReady, c.target
 	}
 	return policy.RunbookCheck, c.what
 }
@@ -1027,7 +1033,8 @@ func (r *Runbooks) policedCheck(ctx context.Context, rb *Runbook, run *store.Run
 
 // runCheck repeats a check until it passes or its time is up. A check from a
 // device that cannot run at all (the device is unknown, its agent offline or
-// refusing probes) fails at once: it never falls back to the hub.
+// refusing probes) fails at once: it never falls back to the hub. So does a
+// kube_node check on a cluster the hub has not adopted.
 func (r *Runbooks) runCheck(ctx context.Context, d *RunbookStep) error {
 	c := *d.Check
 	if c.from != "" {
@@ -1036,14 +1043,23 @@ func (r *Runbooks) runCheck(ctx context.Context, d *RunbookStep) error {
 		}
 		c.probers = r.cfg.Probers
 	}
+	once := c.run
+	cannot := "the check cannot run from its device"
+	if c.kubeNode != nil {
+		if r.cfg.KubeNodes == nil {
+			return errNoKubeNodes
+		}
+		once = func(ctx context.Context) (bool, error) { return c.kubeNode.run(ctx, r.cfg.KubeNodes) }
+		cannot = "the check cannot run"
+	}
 	deadline := r.cfg.Now().Add(d.Within)
 	for {
-		ran, err := c.run(ctx)
+		ran, err := once(ctx)
 		if ctx.Err() != nil {
 			return err
 		}
 		if !ran {
-			return fmt.Errorf("the check cannot run from its device: %w", err)
+			return fmt.Errorf("%s: %w", cannot, err)
 		}
 		if err == nil || ctx.Err() != nil {
 			return err
