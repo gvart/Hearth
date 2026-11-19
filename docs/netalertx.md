@@ -50,7 +50,8 @@ On each import the hub sends one request, `GET /devices`, with the token in an
 
 Archived devices are skipped, and so is NetAlertX's `Internet` node, which is not a host. The
 token is never logged, and the hub does not follow redirects, which could carry it to another
-host. An import fails if NetAlertX lists more than 5000 devices.
+host. An import fails if NetAlertX lists more than 4096 devices, the most
+the hub imports from any one source.
 
 A device NetAlertX saw in its last scan counts as seen at the time of the import, so it updates a
 known host's IP and *Last seen*. Hearth does not use NetAlertX's own timestamps, because their time

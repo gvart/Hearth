@@ -3,27 +3,32 @@
 package netalertx_test
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
 
+	"github.com/gvart/hearth/internal/discovery"
 	"github.com/gvart/hearth/internal/integrations/netalertx"
 	"github.com/gvart/hearth/internal/integrations/netalertx/netalertxmock"
+	"github.com/gvart/hearth/internal/policy"
+	"github.com/gvart/hearth/internal/store"
 )
 
 // A device list longer than the cap is refused with an error, instead of
 // growing the hub without bound.
 func TestRecordsCapped(t *testing.T) {
 	m := netalertxmock.New(netalertxmock.Token)
-	m.SetBody(`{"success":true,"devices":[` + strings.TrimSuffix(strings.Repeat(`{},`, 5001), ",") + `]}`)
+	m.SetBody(`{"success":true,"devices":[` + strings.TrimSuffix(strings.Repeat(`{},`, 4097), ",") + `]}`)
 	c, err := netalertx.New(serve(t, m), netalertxmock.Token, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	recs, err := c.Records(t.Context())
-	if err == nil || !strings.Contains(err.Error(), "more than 5000 devices") {
+	if err == nil || !strings.Contains(err.Error(), "more than 4096 devices") {
 		t.Fatalf("err = %v (%d records); want the cap", err, len(recs))
 	}
 }
@@ -32,14 +37,53 @@ func TestRecordsCapped(t *testing.T) {
 func TestRecordsAtCap(t *testing.T) {
 	m := netalertxmock.New(netalertxmock.Token)
 	dev := `{"devMac":"2c:cf:67:00:00:01","devLastIP":"192.168.1.2"},`
-	m.SetBody(`{"success":true,"devices":[` + strings.TrimSuffix(strings.Repeat(dev, 5000), ",") + `]}`)
+	m.SetBody(`{"success":true,"devices":[` + strings.TrimSuffix(strings.Repeat(dev, 4096), ",") + `]}`)
 	c, err := netalertx.New(serve(t, m), netalertxmock.Token, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	recs, err := c.Records(t.Context())
-	if err != nil || len(recs) != 5000 {
-		t.Fatalf("Records = %d, %v; want 5000", len(recs), err)
+	if err != nil || len(recs) != 4096 {
+		t.Fatalf("Records = %d, %v; want 4096", len(recs), err)
+	}
+}
+
+// The most devices the client accepts all pass the importer's own limit on
+// hosts per source, so the two limits agree.
+func TestImportAtCap(t *testing.T) {
+	ctx := t.Context()
+	st, err := store.Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	var b strings.Builder
+	b.WriteString(`{"success":true,"devices":[`)
+	for i := range 4096 {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		fmt.Fprintf(&b, `{"devMac":"02:00:00:00:%02x:%02x","devLastIP":"10.%d.%d.1"}`, i/256, i%256, i/256, i%256)
+	}
+	b.WriteString(`]}`)
+	m := netalertxmock.New(netalertxmock.Token)
+	m.SetBody(b.String())
+	c, err := netalertx.New(serve(t, m), netalertxmock.Token, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	im := discovery.NewImporter(discovery.ImportConfig{
+		Sources: []discovery.Source{c}, Hosts: st.NetworkHosts(), Policy: policy.New(st.Audit()),
+	})
+	if err := im.Import(ctx); err != nil {
+		t.Fatalf("import of the most devices the client accepts: %v", err)
+	}
+	hosts, err := st.NetworkHosts().List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hosts) != 4096 {
+		t.Errorf("hosts = %d; want 4096", len(hosts))
 	}
 }
 

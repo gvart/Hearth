@@ -27,8 +27,10 @@ const (
 	// maxBody caps a response the hub will read.
 	maxBody = 16 << 20
 	// maxDevices caps the device list: a read that finds more fails, so a
-	// server cannot grow the hub without bound.
-	maxDevices = 5000
+	// server cannot grow the hub without bound. It is the importer's limit
+	// on hosts per source (maxHostsPerSource in internal/discovery), which
+	// would refuse a longer list anyway.
+	maxDevices = 4096
 	// maxField caps an error message NetAlertX sends.
 	maxField = 255
 )
