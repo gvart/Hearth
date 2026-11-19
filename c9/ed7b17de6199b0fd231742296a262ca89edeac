@@ -1,0 +1,22 @@
+internal/backup/schedule_test.go
+  s_344993999c180f::t_9f415bd3218607 117-119
+  s_344993999c180f::t_7496dd668571eb 249-282
+internal/backup/schedule.go
+  s_344993999c180f::t_9f415bd3218607 31-33,83-84,101-103,150-151,153-154
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c9ed7b17de6199b0fd231742296a262ca89edeac",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
