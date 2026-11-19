@@ -71,14 +71,15 @@ steps:
 		t.Errorf("log message = %q, %v", msg, err)
 	}
 
-	// The plan shows the values.
+	// The plan shows the steps with the values filled in.
 	h := newRBHarness(t, file, policy.Config{})
 	plan, err := h.rb.Plan(context.Background(), "rb")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(plan.Vars, rb.Vars) || plan.Steps[1].Target != "pi-3" || plan.Steps[1].Rollback.Target != "lab/pi-3" {
-		t.Errorf("plan = vars %v, apply target %q, rollback target %q", plan.Vars, plan.Steps[1].Target, plan.Steps[1].Rollback.Target)
+	if !strings.Contains(plan.Steps[0].What, "192.0.2.50:50000") || plan.Steps[1].Target != "pi-3" ||
+		plan.Steps[1].Rollback.Target != "lab/pi-3" {
+		t.Errorf("plan = check %q, apply target %q, rollback target %q", plan.Steps[0].What, plan.Steps[1].Target, plan.Steps[1].Rollback.Target)
 	}
 }
 

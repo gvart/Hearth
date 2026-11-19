@@ -5,8 +5,8 @@ description: Ready-to-copy runbooks to add a Talos node, a k3s node or a Docker 
 
 Recipes are [runbooks](runbooks.md) for the jobs you do rarely enough to forget how: "how did I add a
 node last time?". Copy one into the hub's runbooks directory, edit its `vars`, and run
-`hearth runbook plan <id>` to see the vars, every step and the policy decision it would get before you
-start.
+`hearth runbook plan <id>` to see every step, with the vars filled in, and the policy decision it would
+get before you start.
 
 ```sh
 cp docs/recipes/runbooks/add-k3s-node.yaml <data-dir>/runbooks/

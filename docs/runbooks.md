@@ -173,8 +173,9 @@ steps:
       command: [/usr/local/bin/talosctl, apply-config, --nodes, "${{ vars.node-ip }}"]
 ```
 
-- Vars are filled in when the file is loaded, from the file only. The plan lists them and shows every
-  step with its values filled in.
+- Vars are filled in when the file is loaded, from the file only. The plan shows every step with its
+  values filled in. A var is used as written, so keep secrets out of vars, as out of the rest of the
+  file.
 - A var's value is a literal: it cannot hold a template (`{{ ... }}`) or another var. A prompt answer can
   never set a var, so a var can name a device, an address or a command where an answer cannot.
 - A step that uses a var that is not declared, and a var that no step uses, are load errors, as is any
