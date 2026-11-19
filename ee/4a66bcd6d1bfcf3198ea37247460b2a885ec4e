@@ -1,0 +1,23 @@
+internal/cluster/auditspool_test.go
+  s_344993999c180f::t_98e7053878dcf9 1-10,14-48,50-73,75-78,89-99,103-127
+  s_344993999c180f::t_a7134520da16a4 74,79-88
+  s_344993999c180f::t_51a6aca0673e5d 11,13
+  s_344993999c180f::t_174dbcbde6df52 100-102
+  s_344993999c180f::t_b01217a4969531 12,49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ee4a66bcd6d1bfcf3198ea37247460b2a885ec4e",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
