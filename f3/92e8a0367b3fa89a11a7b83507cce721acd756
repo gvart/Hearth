@@ -1,0 +1,21 @@
+internal/policy/approvalplan_test.go
+  s_344993999c180f::t_8bfc7b07a59c88 7,47-53
+internal/hub/approvals_test.go
+  s_344993999c180f::t_8bfc7b07a59c88 7,111-113,123-129
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f392e8a0367b3fa89a11a7b83507cce721acd756",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
