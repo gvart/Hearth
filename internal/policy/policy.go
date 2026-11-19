@@ -197,6 +197,13 @@ const (
 	PanelLinkCreate Action = "panel.link.create"
 	// PanelLinkRevoke revokes a panel's share link.
 	PanelLinkRevoke Action = "panel.link.revoke"
+	// DashboardRead is a read of the dashboard summary (device counts and
+	// states) by a dashboard such as Homepage, with a dashboard token.
+	DashboardRead Action = "dashboard.read"
+	// DashboardTokenCreate creates a read-only token for a dashboard.
+	DashboardTokenCreate Action = "dashboard.token.create" //nolint:gosec // an action name
+	// DashboardTokenRevoke revokes a dashboard's token.
+	DashboardTokenRevoke Action = "dashboard.token.revoke" //nolint:gosec // an action name
 )
 
 // Actor kinds.
@@ -231,6 +238,10 @@ const (
 	// guest may take only the actions the panel's widgets allow, which are
 	// never dangerous.
 	ActorGuest = "guest"
+	// ActorDashboard is a dashboard such as Homepage, identified as
+	// token/<token id> by its dashboard token. The token reads the dashboard
+	// summary and nothing else.
+	ActorDashboard = "dashboard"
 )
 
 // Decisions recorded in the audit log.
@@ -404,6 +415,11 @@ var rules = map[Action]rule{
 	PanelDelete:     {class: Safe, actors: []string{ActorWeb}},
 	PanelLinkCreate: {class: Safe, actors: []string{ActorWeb}},
 	PanelLinkRevoke: {class: Safe, actors: []string{ActorWeb}},
+	// A dashboard reads device counts and states, no more than a panel's
+	// guest sees. A token hands out only that, and revoking takes it away.
+	DashboardRead:        {class: Read, actors: []string{ActorDashboard}},
+	DashboardTokenCreate: {class: Safe, actors: []string{ActorWeb}},
+	DashboardTokenRevoke: {class: Safe, actors: []string{ActorWeb}},
 }
 
 // Actions returns every known action, sorted.

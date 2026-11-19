@@ -790,6 +790,10 @@ func DecodeCommand(b []byte) (Command, error) {
 		cmd, err = decodeAs[CreatePanelLink](env.Cmd)
 	case RevokePanelLink{}.Op():
 		cmd, err = decodeAs[RevokePanelLink](env.Cmd)
+	case CreateDashboardToken{}.Op():
+		cmd, err = decodeAs[CreateDashboardToken](env.Cmd)
+	case RevokeDashboardToken{}.Op():
+		cmd, err = decodeAs[RevokeDashboardToken](env.Cmd)
 	default:
 		return nil, fmt.Errorf("decode command: unknown op %q", env.Op)
 	}

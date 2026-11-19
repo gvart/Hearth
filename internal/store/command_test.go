@@ -83,6 +83,8 @@ func allCommands() []Command {
 		DeletePanel{ID: "p1"},
 		CreatePanelLink{ID: "l1", PanelID: "p1", Hash: []byte{1, 2}, CreatedAt: 29, ExpiresAt: &exp},
 		RevokePanelLink{PanelID: "p1", ID: "l1", At: 30},
+		CreateDashboardToken{ID: "d1", Name: "homepage", Hash: []byte{4, 4}, CreatedAt: 31, ExpiresAt: &exp},
+		RevokeDashboardToken{ID: "d1", At: 32},
 		RecordNetworkImport{At: 24, Hosts: []ImportedHost{
 			{
 				MAC: "2c:cf:67:00:00:01", IP: "192.168.2.171", Hostname: "pi5", HostnameSource: SourcePihole,
@@ -393,6 +395,11 @@ func runScenario(t *testing.T, s *Store) {
 	must(s.Panels().CreateLink(ctx, PanelLink{ID: "l4", PanelID: "p2", CreatedAt: at(9 * time.Hour)}, "panel-secret-4"))
 	must(s.Panels().Delete(ctx, "p2"))
 	wantErr(s.Panels().Delete(ctx, "p2"), ErrNotFound)
+	// Two dashboard tokens, one revoked; revoking it again is refused.
+	must(s.DashboardTokens().Create(ctx, DashboardToken{ID: "d1", Name: "homepage", CreatedAt: at(11 * time.Hour)}, "dash-secret-1"))
+	must(s.DashboardTokens().Create(ctx, DashboardToken{ID: "d2", Name: "wall", CreatedAt: at(11 * time.Hour), ExpiresAt: at(12 * time.Hour)}, "dash-secret-2"))
+	must(s.DashboardTokens().Revoke(ctx, "d1", at(11*time.Hour+time.Minute)))
+	wantErr(s.DashboardTokens().Revoke(ctx, "d1", at(11*time.Hour+2*time.Minute)), ErrNotFound)
 }
 
 // dumpTables returns every row of every table (sqlite_sequence included,
