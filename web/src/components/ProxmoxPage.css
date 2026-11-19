@@ -1,0 +1,53 @@
+/* The Proxmox page: its tables on a phone keep the name and the actions. */
+.pve-meta {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.pve-inline-status {
+  display: none;
+}
+
+/* Only the buttons of these rows act: the rows themselves open nothing. */
+.pve-table tbody tr {
+  cursor: default;
+}
+
+.pve-table tbody tr:hover {
+  background: none;
+}
+
+.field select {
+  height: 2.5rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-weight: 400;
+}
+
+@media (max-width: 640px) {
+  .pve-wide {
+    display: none;
+  }
+
+  .pve-inline-status {
+    display: inline;
+  }
+
+  .pve-table th,
+  .pve-table td {
+    padding: 0.7rem 0.6rem;
+  }
+
+  .pve-table .name {
+    display: inline-block;
+    max-width: 11rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: bottom;
+  }
+}

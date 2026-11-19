@@ -361,7 +361,7 @@ export class ApiError extends Error {
 
 const base = '/api/v1';
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+export async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = { Accept: 'application/json' };
   const init: RequestInit = { method, credentials: 'same-origin', headers };
   if (body !== undefined) {
