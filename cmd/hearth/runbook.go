@@ -10,9 +10,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -349,6 +351,12 @@ func (c *runbookClient) plan(ctx context.Context, id string, out io.Writer) erro
 	fmt.Fprintf(&b, "Runbook %s\n", plan.ID)
 	if plan.Description != "" {
 		fmt.Fprintf(&b, "  %s\n", plan.Description)
+	}
+	if len(plan.Vars) > 0 {
+		b.WriteString("vars:\n")
+		for _, k := range slices.Sorted(maps.Keys(plan.Vars)) {
+			fmt.Fprintf(&b, "  %s = %s\n", k, plan.Vars[k])
+		}
 	}
 	for i, s := range plan.Steps {
 		fmt.Fprintf(&b, "%d. %s (%s): %s\n", i+1, s.ID, s.Type, s.What)

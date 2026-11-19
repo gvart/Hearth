@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -60,7 +61,10 @@ const (
 type Runbook struct {
 	ID          string
 	Description string
-	Steps       []RunbookStep
+	// Vars are the values of the file's vars block, which its steps use as
+	// ${{ vars.<name> }}: they are filled in when the file is loaded.
+	Vars  map[string]string
+	Steps []RunbookStep
 	// File is the file it was loaded from.
 	File string
 	// source is the file's content: a run keeps it, sealed, and goes on with
@@ -217,6 +221,7 @@ func ParseRunbook(name string, b []byte, kinds Kinds) (*Runbook, error) {
 	var errs []error
 	checkDuplicateKeys(root, &errs)
 	idLine := root.Line
+	var steps, vars *yaml.Node
 	for i := 0; i+1 < len(root.Content); i += 2 {
 		k, v := root.Content[i], root.Content[i+1]
 		switch k.Value {
@@ -224,11 +229,19 @@ func ParseRunbook(name string, b []byte, kinds Kinds) (*Runbook, error) {
 			rb.ID, idLine = scalar(v, "id", &errs), v.Line
 		case "description":
 			rb.Description = scalar(v, "description", &errs)
+		case "vars":
+			vars = v
 		case "steps":
-			rb.Steps = parseRunbookSteps(v, kinds, &errs)
+			steps = v
 		default:
 			errs = append(errs, lineError(k.Line, "unknown field %q", k.Value))
 		}
+	}
+	// The vars are filled in before the steps are built, wherever the file
+	// declares them, so that every step gets the value as written.
+	rb.Vars = substituteVars(vars, steps, &errs)
+	if steps != nil {
+		rb.Steps = parseRunbookSteps(steps, kinds, &errs)
 	}
 	if !idPattern.MatchString(rb.ID) {
 		errs = append(errs, lineError(idLine,
@@ -532,4 +545,88 @@ func runbookTemplateErr(a Action, err error) string {
 // start at the time the run started.
 func runbookEvent(runbookID string, at time.Time, input map[string]string) Event {
 	return Event{TriggerID: runbookID, TriggerType: "runbook", At: at, Data: map[string]any{}, Input: input}
+}
+
+// varRef is a reference to a var in a runbook's steps.
+var varRef = regexp.MustCompile(`\$\{\{\s*vars\.([A-Za-z0-9_-]*)\s*\}\}`)
+
+// varName is the name of a var.
+var varName = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
+
+// substituteVars reads the vars block n and fills in every ${{ vars.<name> }}
+// in the scalar values of steps, in place. A var's value is a literal: it
+// comes from the file only and holds no template, so nothing an operator
+// answers at run time can reach a field through a var. A reference to a var
+// that is not declared, a var no step uses, and any other ${{ }} are errors.
+func substituteVars(n, steps *yaml.Node, errs *[]error) map[string]string {
+	vars := map[string]string{}
+	lines := map[string]int{}
+	switch {
+	case n == nil:
+	case n.Kind != yaml.MappingNode:
+		*errs = append(*errs, lineError(n.Line, "vars must be a mapping of names to values"))
+	case !checkDuplicateKeys(n, errs):
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			k, v := n.Content[i], n.Content[i+1]
+			switch {
+			case !varName.MatchString(k.Value):
+				*errs = append(*errs, lineError(k.Line,
+					"var name %q must be 1 to 64 lowercase letters, digits, - or _, starting with a letter or digit", k.Value))
+			case v.Kind != yaml.ScalarNode:
+				*errs = append(*errs, lineError(v.Line, "var %s must be a single value, not a list or a mapping", k.Value))
+			case strings.Contains(v.Value, "{{"):
+				*errs = append(*errs, lineError(v.Line,
+					"var %s is a literal value: it cannot hold a template or another var", k.Value))
+			default:
+				vars[k.Value], lines[k.Value] = v.Value, k.Line
+			}
+		}
+	}
+	used := map[string]bool{}
+	var walk func(n *yaml.Node)
+	walk = func(n *yaml.Node) {
+		switch n.Kind {
+		case yaml.MappingNode:
+			// Keys are field names: only values take vars.
+			for i := 1; i < len(n.Content); i += 2 {
+				walk(n.Content[i])
+			}
+		case yaml.SequenceNode:
+			for _, c := range n.Content {
+				walk(c)
+			}
+		case yaml.ScalarNode:
+			if !strings.Contains(n.Value, "${{") {
+				return
+			}
+			if strings.Count(n.Value, "${{") != len(varRef.FindAllString(n.Value, -1)) {
+				*errs = append(*errs, lineError(n.Line, "only ${{ vars.<name> }} can be filled in"))
+				return
+			}
+			n.Value = varRef.ReplaceAllStringFunc(n.Value, func(ref string) string {
+				name := varRef.FindStringSubmatch(ref)[1]
+				v, ok := vars[name]
+				if !ok {
+					*errs = append(*errs, lineError(n.Line, "var %q is not declared in vars", name))
+					return ref
+				}
+				used[name] = true
+				return v
+			})
+			if n.Style == 0 {
+				// A plain value is read again for what it now says, such as
+				// a number or a duration.
+				n.Tag = ""
+			}
+		}
+	}
+	if steps != nil {
+		walk(steps)
+	}
+	for _, name := range slices.Sorted(maps.Keys(vars)) {
+		if !used[name] {
+			*errs = append(*errs, lineError(lines[name], "var %s is not used by any step", name))
+		}
+	}
+	return vars
 }

@@ -127,6 +127,39 @@ only reachable from inside the device's network or on its localhost:
   step at once, without waiting for `within`.
   The check never falls back to running from the hub. Retry or roll back as for any failed step.
 
+## Vars
+
+A runbook can name the values its steps repeat, such as a device, an address or a node, once in a
+`vars` block, and use them in any step as `${{ vars.<name> }}`:
+
+```yaml
+id: add-node
+vars:
+  device: talos-new
+  node-ip: 192.0.2.50
+steps:
+  - id: api
+    type: check
+    check: {type: tcp, address: "${{ vars.node-ip }}:50000"}
+    within: 10m
+  - id: apply
+    type: action
+    action:
+      type: exec
+      device: ${{ vars.device }}
+      command: [/usr/local/bin/talosctl, apply-config, --nodes, "${{ vars.node-ip }}"]
+```
+
+- Vars are filled in when the file is loaded, from the file only. The plan lists them and shows every
+  step with its values filled in.
+- A var's value is a literal: it cannot hold a template (`{{ ... }}`) or another var. A prompt answer can
+  never set a var, so a var can name a device, an address or a command where an answer cannot.
+- A step that uses a var that is not declared, and a var that no step uses, are load errors, as is any
+  other `${{ ... }}`.
+- Var names are lowercase letters, digits, `-` and `_`. Field names are not filled in, only values.
+- Quote a value that starts with `${{` inside `[...]` or `{...}`, such as `["${{ vars.node-ip }}"]`:
+  YAML reads an unquoted `{` there as the start of a mapping.
+
 ## Plan mode
 
 `hearth runbook plan <id>`, or **Plan** on the Runbooks page, lists every step and rollback step with
@@ -178,7 +211,8 @@ An answer is data. It can fill in text with `{{ .Input.<step id> }}`, and it can
 | anything else, such as a device, a cluster or an object name | none |
 
 The webhook `url`, `command` and `service` are not templates at all. A runbook that uses an answer
-where it may not is rejected when it is loaded.
+where it may not is rejected when it is loaded. To name a target once, use a [var](#vars): it comes
+from the file, never from an answer.
 
 Mark a prompt `secret: true` for a password or a token. A secret answer is held only in the memory of
 the hub running the steps. It is never stored, replicated, logged or shown in the run log. So:

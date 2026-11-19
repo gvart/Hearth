@@ -161,9 +161,11 @@ type RunbookPlanStep struct {
 
 // RunbookPlan is what a run of a runbook would do. Making it runs nothing.
 type RunbookPlan struct {
-	ID          string            `json:"id"`
-	Description string            `json:"description,omitempty"`
-	Steps       []RunbookPlanStep `json:"steps"`
+	ID          string `json:"id"`
+	Description string `json:"description,omitempty"`
+	// Vars are the runbook's vars, as filled in its steps.
+	Vars  map[string]string `json:"vars,omitempty"`
+	Steps []RunbookPlanStep `json:"steps"`
 }
 
 // Plan says what a run of the runbook id would do and what policy would decide
@@ -174,7 +176,7 @@ func (r *Runbooks) Plan(ctx context.Context, id string) (*RunbookPlan, error) {
 	if err != nil {
 		return nil, err
 	}
-	plan := &RunbookPlan{ID: rb.ID, Description: rb.Description, Steps: make([]RunbookPlanStep, len(rb.Steps))}
+	plan := &RunbookPlan{ID: rb.ID, Description: rb.Description, Vars: rb.Vars, Steps: make([]RunbookPlanStep, len(rb.Steps))}
 	for i := range rb.Steps {
 		s := &rb.Steps[i]
 		p := RunbookPlanStep{ID: s.ID, Type: s.Type, What: s.What(), Description: s.Description}
