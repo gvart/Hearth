@@ -122,6 +122,11 @@ type HubCert struct {
 	Serial  string
 	NodeID  string
 	Revoked bool
+	// Fingerprint and CAFP are the SHA-256 of the certificate and of the
+	// CA that issued it, as pki.FingerprintHex; empty when not recorded,
+	// as before schema 23.
+	Fingerprint string
+	CAFP        string
 }
 
 // Certs returns the certificates recorded for hub nodeID, ordered by serial:
@@ -132,8 +137,14 @@ func (r Hubs) Certs(ctx context.Context, nodeID string) ([]HubCert, error) {
 	} else if err != nil {
 		return nil, fmt.Errorf("list certs of hub %s: %w", nodeID, err)
 	}
-	rows, err := r.s.db.QueryContext(ctx,
-		`SELECT serial, node_id, revoked_at IS NOT NULL FROM hub_certs WHERE node_id = ? ORDER BY serial`, nodeID)
+	fps := `'', ''`
+	if ok, err := atSchema(ctx, r.s.db, CARotationSchema); err != nil {
+		return nil, fmt.Errorf("list certs of hub %s: %w", nodeID, err)
+	} else if ok {
+		fps = `COALESCE(fingerprint, ''), COALESCE(ca_fp, '')`
+	}
+	rows, err := r.s.db.QueryContext(ctx, `SELECT serial, node_id, revoked_at IS NOT NULL, `+fps+
+		` FROM hub_certs WHERE node_id = ? ORDER BY serial`, nodeID)
 	if err != nil {
 		return nil, fmt.Errorf("list certs of hub %s: %w", nodeID, err)
 	}
@@ -141,7 +152,7 @@ func (r Hubs) Certs(ctx context.Context, nodeID string) ([]HubCert, error) {
 	var out []HubCert
 	for rows.Next() {
 		var c HubCert
-		if err := rows.Scan(&c.Serial, &c.NodeID, &c.Revoked); err != nil {
+		if err := rows.Scan(&c.Serial, &c.NodeID, &c.Revoked, &c.Fingerprint, &c.CAFP); err != nil {
 			return nil, fmt.Errorf("list certs of hub %s: %w", nodeID, err)
 		}
 		out = append(out, c)
