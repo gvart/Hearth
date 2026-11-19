@@ -39,6 +39,9 @@ func TestRunRenewsForCARotation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := h.ca.TrustNext(next); err != nil { // the rotation under way, as a cluster hub learns
+		t.Fatal(err)
+	}
 	newFP := pki.FingerprintHex(next)
 	if err := h.st.CARotations().Start(ctx, store.CARotation{
 		NewCAFP: newFP, OldCAFP: oldFP, NewCACert: string(pki.EncodeCertPEM(next)), Pins: map[string]string{},
