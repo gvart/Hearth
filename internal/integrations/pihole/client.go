@@ -36,6 +36,9 @@ const (
 	// addresses each).
 	maxDevices   = 10000
 	maxAddresses = 16
+	// maxErrMsg clips what a server says in its error body, which goes
+	// into an error and the logs.
+	maxErrMsg = 256
 	// sidHeader carries the session ID.
 	sidHeader = "X-FTL-SID"
 )
@@ -50,7 +53,8 @@ type Client struct {
 
 // New returns a client for the Pi-hole web server at rawURL, e.g.
 // http://pi.hole (the API is under /api). An empty password is for a
-// Pi-hole without one. A nil hc uses a client with a 10 s timeout.
+// Pi-hole without one. A nil hc uses a client with a 10 s timeout. The
+// client never follows a redirect: it would carry the session ID along.
 func New(rawURL, password string, hc *http.Client) (*Client, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
@@ -67,6 +71,9 @@ func New(rawURL, password string, hc *http.Client) (*Client, error) {
 	if hc == nil {
 		hc = &http.Client{Timeout: 10 * time.Second}
 	}
+	noRedirect := *hc
+	noRedirect.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	hc = &noRedirect
 	return &Client{base: u, password: password, hc: hc, now: time.Now}, nil
 }
 
@@ -261,9 +268,9 @@ func (c *Client) do(ctx context.Context, method, path, sid string, body []byte, 
 		_ = json.Unmarshal(b, &e)
 		msg := fmt.Sprintf("HTTP %d", resp.StatusCode)
 		if e.Error.Key != "" {
-			msg += ": " + e.Error.Key
+			msg += ": " + discovery.ClipText(e.Error.Key, maxErrMsg)
 			if e.Error.Message != "" {
-				msg += ": " + e.Error.Message
+				msg += ": " + discovery.ClipText(e.Error.Message, maxErrMsg)
 			}
 		}
 		if resp.StatusCode == http.StatusUnauthorized && path == "/api/auth" && method == http.MethodPost {
