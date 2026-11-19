@@ -196,14 +196,17 @@ func (n *Node) forward(ctx context.Context, leaderID, leaderAddr string, cmd sto
 }
 
 // newForwardClient is the HTTP client a follower forwards writes with: TLS
-// 1.3 to a hub certificate from the CA, presenting this hub's node
-// certificate.
-func newForwardClient(ca *pki.CA, cert tls.Certificate) *http.Client {
+// 1.3 to a hub certificate from the CA and of this hub's cluster epoch,
+// presenting this hub's node certificate.
+func newForwardClient(ca *pki.CA, cert tls.Certificate, epoch string) *http.Client {
 	pool := x509.NewCertPool()
 	pool.AddCert(ca.Cert())
 	return &http.Client{
 		Transport: &http.Transport{
-			TLSClientConfig:   &tls.Config{MinVersion: tls.VersionTLS13, RootCAs: pool, Certificates: []tls.Certificate{cert}},
+			TLSClientConfig: &tls.Config{
+				MinVersion: tls.VersionTLS13, RootCAs: pool, Certificates: []tls.Certificate{cert},
+				VerifyConnection: requireEpoch(epoch),
+			},
 			ForceAttemptHTTP2: true,
 		},
 		Timeout: applyTimeout + 5*time.Second,

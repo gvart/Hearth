@@ -129,6 +129,8 @@ type Node struct {
 	stream  *tlsStream
 	cert    *x509.Certificate
 	members memberWatch
+	// epoch is the cluster epoch of this node's certificate; see epoch.go.
+	epoch string
 
 	// configSource digests this hub's configuration; see SetConfigSource.
 	configSource atomic.Pointer[ConfigSource]
@@ -191,10 +193,15 @@ func (n *Node) Start(ctx context.Context) error {
 	if err := os.MkdirAll(n.dir, 0o700); err != nil {
 		return fmt.Errorf("cluster: create raft dir: %w", err)
 	}
-	cert, err := loadOrIssueNodeCert(n.dir, n.cfg.CA, n.cfg.NodeID, time.Now())
+	epoch, err := readEpoch(n.cfg.DataDir)
+	if err != nil {
+		return fmt.Errorf("cluster: %w", err)
+	}
+	cert, err := loadOrIssueNodeCert(n.dir, n.cfg.CA, n.cfg.NodeID, epoch, time.Now())
 	if err != nil {
 		return fmt.Errorf("cluster: node certificate: %w", err)
 	}
+	n.epoch = pki.HubEpoch(cert.Leaf)
 	logger := hclog.FromStandardLogger(slog.NewLogLogger(n.log.Handler(), slog.LevelInfo),
 		&hclog.LoggerOptions{Name: "raft", Level: hclog.Info})
 
@@ -204,7 +211,7 @@ func (n *Node) Start(ctx context.Context) error {
 		return fmt.Errorf("cluster: %w", err)
 	}
 	n.stream = stream
-	n.fwdHTTP = newForwardClient(n.cfg.CA, cert)
+	n.fwdHTTP = newForwardClient(n.cfg.CA, cert, n.epoch)
 	n.trans = raft.NewNetworkTransportWithLogger(stream, maxPool, dialTimeout, logger)
 	n.bolt, err = raftboltdb.NewBoltStore(filepath.Join(n.dir, boltFile))
 	if err != nil {

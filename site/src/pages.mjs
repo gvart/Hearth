@@ -9,7 +9,7 @@ export const sections = [
 	{ label: 'Start here', pages: ['getting-started', 'concepts', 'comparison'] },
 	{ label: 'Automations', pages: ['automations', 'runbooks', 'runbook-recipes', 'notifications'] },
 	{ label: 'Integrations', pages: ['prometheus', 'kubernetes', 'proxmox', 'discovery', 'pihole', 'netalertx', 'beszel', 'mcp'] },
-	{ label: 'Operating', pages: ['guardrails', 'https', 'cluster', 'security'] },
+	{ label: 'Operating', pages: ['guardrails', 'https', 'cluster', 'backup', 'security'] },
 ];
 
 export const pages = sections.flatMap((s) => s.pages);

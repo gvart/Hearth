@@ -28,7 +28,7 @@ import (
 // hub's TLS listener does (client certificates optional, from the CA).
 func joinServer(t *testing.T, n *testNode, ca *pki.CA) *httptest.Server {
 	t.Helper()
-	cert, err := ca.IssueServerCert([]string{"127.0.0.1"}, time.Now())
+	cert, err := ca.IssueHubServerCert([]string{"127.0.0.1"}, n.Epoch(), time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

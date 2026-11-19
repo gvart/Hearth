@@ -24,6 +24,11 @@ import (
 // hub on the cluster transport.
 const hubURIPrefix = "urn:hearth:hub:"
 
+// hubEpochURIPrefix prefixes the cluster epoch in a hub's certificates. A
+// restore from a backup starts a new epoch, and hubs of different epochs refuse
+// each other.
+const hubEpochURIPrefix = "urn:hearth:hub-epoch:"
+
 // HubCertValidity is how long a hub node certificate is valid. A voter holds
 // the CA key and renews its own certificate before it expires.
 const HubCertValidity = 365 * 24 * time.Hour
@@ -32,6 +37,12 @@ const HubCertValidity = 365 * 24 * time.Hour
 // certificate binding its public key to nodeID. The certificate is valid for
 // both ends of a TLS connection, since cluster peers dial each other.
 func (c *CA) SignHubCSR(csrDER []byte, nodeID string, now time.Time) (*x509.Certificate, error) {
+	return c.SignHubCSRInEpoch(csrDER, nodeID, "", now)
+}
+
+// SignHubCSRInEpoch is SignHubCSR for a hub of cluster epoch epoch. Empty means
+// a cluster that was never restored from a backup.
+func (c *CA) SignHubCSRInEpoch(csrDER []byte, nodeID, epoch string, now time.Time) (*x509.Certificate, error) {
 	csr, err := x509.ParseCertificateRequest(csrDER)
 	if err != nil {
 		return nil, fmt.Errorf("parse CSR: %w", err)
@@ -43,6 +54,14 @@ func (c *CA) SignHubCSR(csrDER []byte, nodeID string, now time.Time) (*x509.Cert
 	if err != nil {
 		return nil, fmt.Errorf("hub URI: %w", err)
 	}
+	uris := []*url.URL{uri}
+	if epoch != "" {
+		e, err := url.Parse(hubEpochURIPrefix + epoch)
+		if err != nil {
+			return nil, fmt.Errorf("hub epoch URI: %w", err)
+		}
+		uris = append(uris, e)
+	}
 	serial, err := newSerial()
 	if err != nil {
 		return nil, err
@@ -50,7 +69,7 @@ func (c *CA) SignHubCSR(csrDER []byte, nodeID string, now time.Time) (*x509.Cert
 	tmpl := &x509.Certificate{
 		SerialNumber: serial,
 		Subject:      pkix.Name{CommonName: "Hearth hub " + nodeID},
-		URIs:         []*url.URL{uri},
+		URIs:         uris,
 		NotBefore:    now.Add(-clockSkew),
 		NotAfter:     now.Add(HubCertValidity),
 		KeyUsage:     x509.KeyUsageDigitalSignature,
@@ -75,6 +94,17 @@ func HubNodeID(cert *x509.Certificate) (string, error) {
 		}
 	}
 	return "", errors.New("certificate carries no hub node ID")
+}
+
+// HubEpoch returns the cluster epoch in a hub's certificate. It is empty for a
+// hub of a cluster that was never restored from a backup.
+func HubEpoch(cert *x509.Certificate) string {
+	for _, u := range cert.URIs {
+		if e, ok := strings.CutPrefix(u.String(), hubEpochURIPrefix); ok {
+			return e
+		}
+	}
+	return ""
 }
 
 // KeyDER returns the CA private key as PKCS#8 DER. It exists only to hand the

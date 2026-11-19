@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"modernc.org/sqlite"
 )
@@ -18,14 +19,14 @@ import (
 // version included, to w. Writes may continue while it runs; the copy is the
 // state at the moment its read transaction started.
 func (s *Store) Snapshot(ctx context.Context, w io.Writer) error {
-	dir, err := s.tempDir()
+	dir, remove, err := s.tempDir()
 	if err != nil {
 		return fmt.Errorf("snapshot: %w", err)
 	}
-	defer func() { _ = os.RemoveAll(dir) }()
+	defer remove()
 	path := filepath.Join(dir, "snapshot.db")
-	if _, err := s.db.ExecContext(ctx, `VACUUM INTO ?`, path); err != nil {
-		return fmt.Errorf("snapshot: %w", err)
+	if err := s.VacuumInto(ctx, path); err != nil {
+		return err
 	}
 	f, err := os.Open(path)
 	if err != nil {
@@ -38,17 +39,26 @@ func (s *Store) Snapshot(ctx context.Context, w io.Writer) error {
 	return nil
 }
 
+// VacuumInto writes a consistent copy of the whole database to a new file at
+// path. Writes may continue while it runs.
+func (s *Store) VacuumInto(ctx context.Context, path string) error {
+	if _, err := s.db.ExecContext(ctx, `VACUUM INTO ?`, path); err != nil {
+		return fmt.Errorf("snapshot: %w", err)
+	}
+	return nil
+}
+
 // Restore replaces the whole database with a snapshot written by Snapshot.
 // The snapshot is staged in a temporary file and checked first, then copied
 // into the live database in one write transaction with SQLite's backup API,
 // so readers see either the old or the new state and the Store stays usable.
 // The caller must not apply writes concurrently (a state machine never does).
 func (s *Store) Restore(ctx context.Context, r io.Reader) error {
-	dir, err := s.tempDir()
+	dir, remove, err := s.tempDir()
 	if err != nil {
 		return fmt.Errorf("restore: %w", err)
 	}
-	defer func() { _ = os.RemoveAll(dir) }()
+	defer remove()
 	path := filepath.Join(dir, "restore.db")
 	if err := writeFile(path, r); err != nil {
 		return fmt.Errorf("restore: %w", err)
@@ -82,10 +92,34 @@ func (s *Store) Restore(ctx context.Context, r io.Reader) error {
 	return nil
 }
 
+// CheckSnapshotFile verifies that the file at path is an intact SQLite database
+// at a schema version this binary supports. It fails with ErrSchemaMismatch for
+// a newer schema.
+func CheckSnapshotFile(ctx context.Context, path string) error {
+	return checkSnapshot(ctx, path, SchemaVersion())
+}
+
+// RetireHubCerts revokes every hub node certificate recorded in the database.
+// A restored hub starts a new cluster, and the hubs of the old one share its CA:
+// this keeps them out if they are still running. It writes the local file
+// directly, so it is only for a restored database no hub runs on yet.
+func (s *Store) RetireHubCerts(ctx context.Context, now time.Time) error {
+	if err := s.Hubs().RequireCerts(ctx); errors.Is(err, ErrSchemaTooOld) {
+		return nil // no hub certificates were recorded at this schema
+	} else if err != nil {
+		return fmt.Errorf("retire hub certs: %w", err)
+	}
+	if _, err := s.db.ExecContext(ctx,
+		`UPDATE hub_certs SET revoked_at = ? WHERE revoked_at IS NULL`, toMillis(now)); err != nil {
+		return fmt.Errorf("retire hub certs: %w", err)
+	}
+	return nil
+}
+
 // tempDir creates a private (0700) directory next to the database, so
 // snapshot copies never leave the data dir and stay on the same filesystem.
-func (s *Store) tempDir() (string, error) {
-	return os.MkdirTemp(filepath.Dir(s.path), ".snapshot-")
+func (s *Store) tempDir() (string, func(), error) {
+	return NewTempDir(filepath.Dir(s.path), snapshotTempPrefix)
 }
 
 func writeFile(path string, r io.Reader) error {
