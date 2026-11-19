@@ -100,7 +100,7 @@ type fixture struct {
 // newFixture serves MCP over a store with one device and the tokens
 // read-token (read), safe-token (safe), dangerous-token (dangerous) and
 // revoked-token (safe, revoked).
-func newFixture(t *testing.T, cfg policy.Config) *fixture {
+func newFixture(t *testing.T, cfg policy.Config, opts ...func(*Config)) *fixture {
 	t.Helper()
 	ctx := t.Context()
 	st, err := store.Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
@@ -128,10 +128,14 @@ func newFixture(t *testing.T, cfg policy.Config) *fixture {
 	f := &fixture{st: st, agents: &fakeAgents{}, dir: filepath.Join(t.TempDir(), "automations")}
 	f.pol = policy.NewWithConfig(st.Audit(), st.Approvals(), cfg)
 	f.kube = &fakeKube{pol: f.pol}
-	srv := httptest.NewServer(Handler(Config{
+	mcfg := Config{
 		Devices: st.Devices(), Tokens: st.MCPTokens(), Policy: f.pol, Agents: f.agents, Kube: f.kube,
 		AutomationsDir: f.dir, Log: slog.New(slog.DiscardHandler),
-	}))
+	}
+	for _, opt := range opts {
+		opt(&mcfg)
+	}
+	srv := httptest.NewServer(Handler(mcfg))
 	t.Cleanup(srv.Close)
 	f.url = srv.URL + Path
 	return f

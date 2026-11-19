@@ -77,6 +77,14 @@ operator sees what they approve: keep secrets out of commands.
 its plan is in the approval, and the audit log names only the file. Every action also takes `dry_run`: the decision is
 audited, and nothing runs.
 
+A file is checked as a save in the web editor is: it must load as the hub would load it (a notification
+channel it names must exist), use no named templates (`define`, `template`, `block`), stay within the
+template render limits and have at most 64 steps. It never replaces a file that is a link, a file named
+after another automation's id, or the file of a different automation, and it is refused while another
+file of the directory does not load. When policy would let the automation run a dangerous action
+without asking, by a grant to its id or by a mode, the apply is held for approval even if `actors.mcp`
+allows dangerous actions. A request that policy denies is refused before the file is read.
+
 ## Approvals
 
 With no policy file, a dangerous MCP request is held for approval: the tool call waits, for up to

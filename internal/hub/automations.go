@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"mime"
 	"net/http"
 	"path/filepath"
@@ -25,9 +24,8 @@ const (
 	maxAutomationBytes = 64 << 10
 	// maxAutomationBody bounds its request: JSON may escape every byte.
 	maxAutomationBody = 6*maxAutomationBytes + 4<<10
-	// maxAutomationSteps bounds a file from the web UI: every action of a dry
-	// run adds a row to the audit log.
-	maxAutomationSteps = 64
+	// maxAutomationSteps bounds a file from the web UI.
+	maxAutomationSteps = automation.MaxSaveSteps
 	// dryRunBurst and dryRunEvery set the per-client rate of dry runs.
 	dryRunBurst = 20
 	dryRunEvery = 3 * time.Second
@@ -258,36 +256,15 @@ func (a *api) saveRequest(r *http.Request, id string) policy.Request {
 	}
 }
 
-// savePolicy is the engine that decides on saving p. When policy would let p
-// run a dangerous action with nobody asked, by a grant to its id or by a mode,
-// saving the file is the last moment a person can see what it does: the save
-// is approved by a person, whatever the modes say about saves.
+// savePolicy is the engine that decides on saving p (see automation.SaveEngine).
 func (a *api) savePolicy(p *automation.Automation) *policy.Engine {
-	for _, s := range p.Actions {
-		if class, _ := policy.ClassOf(s.Impl.Policy()); class != policy.Dangerous {
-			continue
-		}
-		run := policy.Request{ActorKind: policy.ActorAutomation, ActorID: p.ID, Action: s.Impl.Policy()}
-		if decision, _ := a.policy.Check(run); decision == policy.Allow {
-			return a.policy.Holding(policy.ActorWeb, policy.Dangerous)
-		}
-	}
-	return a.policy
+	return automation.SaveEngine(a.policy, policy.ActorWeb, p)
 }
 
 // parseAutomation validates a file from the web UI.
 func (a *api) parseAutomation(id string, content []byte) (*automation.Automation, error) {
 	name := automationFileName(id)
-	parsed, err := automation.ParseForSave(name, content, a.automations.Kinds)
-	if err != nil {
-		return nil, err
-	}
-	if n := len(parsed.Triggers) + len(parsed.Conditions) + len(parsed.Actions); n > maxAutomationSteps {
-		return nil, &automation.LoadError{File: name, Errs: []error{
-			fmt.Errorf("an automation may have at most %d steps, this one has %d", maxAutomationSteps, n),
-		}}
-	}
-	return parsed, nil
+	return automation.ParseForSave(name, content, a.automations.Kinds)
 }
 
 // automationFileName names a file being validated in its problems.

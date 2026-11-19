@@ -16,6 +16,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/gvart/hearth/internal/automation"
 	"github.com/gvart/hearth/internal/integrations/kubernetes"
@@ -71,8 +72,15 @@ type Config struct {
 	Metrics automation.Metrics
 	// AutomationsDir is where apply_automation writes automation files.
 	AutomationsDir string
-	Version        string
-	Log            *slog.Logger
+	// AutomationKinds are the step types with the hub's dependencies, as the
+	// web editor validates a file with them; the zero value validates
+	// without those dependencies.
+	AutomationKinds automation.Kinds
+	Version         string
+	Log             *slog.Logger
+	// AutomationsLock makes each apply's check and write one step: share it
+	// with the web editor's saves. Nil means the server's own.
+	AutomationsLock sync.Locker
 }
 
 // Handler serves MCP over streamable HTTP (see protocol.go). Each request
@@ -80,6 +88,9 @@ type Config struct {
 // tools the token's scope allows. Every request authenticates on its own,
 // so a revoked token stops at once, and there are no sessions to keep.
 func Handler(cfg Config) http.Handler {
+	if cfg.AutomationsLock == nil {
+		cfg.AutomationsLock = new(sync.Mutex)
+	}
 	if cfg.Live == nil {
 		cfg.Live = func(d store.Device) store.Device { return d }
 	}
@@ -139,8 +150,13 @@ func (s *session) offered() []tool {
 // do runs fn through policy as this session's token, capped by its scope.
 // A held request waits for its approval.
 func (s *session) do(ctx context.Context, req policy.Request, fn func(context.Context) error) error {
+	return s.doOn(ctx, s.cfg.Policy, req, fn)
+}
+
+// doOn is do through the engine e, which may hold more than the hub's.
+func (s *session) doOn(ctx context.Context, e *policy.Engine, req policy.Request, fn func(context.Context) error) error {
 	req.ActorKind, req.ActorID = policy.ActorMCP, s.tok.Name
-	return s.cfg.Policy.Do(s.scoped(ctx), req, fn)
+	return e.Do(s.scoped(ctx), req, fn)
 }
 
 // scoped returns ctx capped by the token's scope, for calls that go

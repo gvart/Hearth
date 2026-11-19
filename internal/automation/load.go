@@ -192,7 +192,8 @@ func Parse(name string, b []byte, kinds Kinds) (*Automation, error) {
 
 // ParseForSave validates a new version of a file, written through the web UI.
 // It is stricter than Parse, which must keep loading the files a hub already
-// runs: it also refuses named templates and templates over the render limits.
+// runs: it also refuses named templates, templates over the render limits and
+// more than MaxSaveSteps steps.
 func ParseForSave(name string, b []byte, kinds Kinds) (*Automation, error) {
 	a, err := Parse(name, b, kinds)
 	if err != nil {
@@ -202,11 +203,18 @@ func ParseForSave(name string, b []byte, kinds Kinds) (*Automation, error) {
 	for _, p := range slices.Concat(a.named, a.Warnings) {
 		errs = append(errs, lineError(p.Line, "%s", p.Message))
 	}
+	if n := len(a.Triggers) + len(a.Conditions) + len(a.Actions); n > MaxSaveSteps {
+		errs = append(errs, fmt.Errorf("an automation may have at most %d steps, this one has %d", MaxSaveSteps, n))
+	}
 	if len(errs) > 0 {
 		return nil, &LoadError{File: name, Errs: errs}
 	}
 	return a, nil
 }
+
+// MaxSaveSteps bounds the steps of a file ParseForSave accepts: every action
+// of a dry run adds a row to the audit log.
+const MaxSaveSteps = 64
 
 // checkStepIDs requires every step id to be well formed and unique in its
 // automation.

@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -343,6 +344,9 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	}))
 	maps.Copy(kinds.Actions, automation.Actions(automation.ActionDeps{Agents: agents, Notifier: notifier, Kube: kube}))
 	cfg.AutomationsDir, cfg.AutomationKinds = automationsDir, kinds
+	// The web editor and MCP write the same directory under one lock.
+	var automationsMu sync.Mutex
+	cfg.AutomationsLock = &automationsMu
 	errLog := slog.NewLogLogger(log.Handler(), slog.LevelWarn)
 	baseCtx := func(net.Listener) context.Context { return ctx }
 	// The UI and API, served on both listeners. Over TLS they share the agent
@@ -356,7 +360,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	}
 	uiMux.Handle(mcpserver.Path, hub.EndOnStop(stopping, mcpserver.Handler(mcpserver.Config{
 		Devices: st.Devices(), Live: reg.Live, Tokens: st.MCPTokens(), Policy: pol, Agents: agents, Kube: kube,
-		Metrics: hub.AutomationMetrics(st, prom, ms), AutomationsDir: automationsDir, Version: opts.version, Log: log,
+		Metrics: hub.AutomationMetrics(st, prom, ms), AutomationsDir: automationsDir, AutomationKinds: kinds, AutomationsLock: &automationsMu, Version: opts.version, Log: log,
 	})))
 	var tlsWeb http.Handler = uiMux
 	if node != nil {
