@@ -326,6 +326,101 @@ export interface AuditFilter {
   until?: string;
 }
 
+/** A runbook file the hub loaded; see /api/v1/runbooks. */
+export interface Runbook {
+  id: string;
+  description?: string;
+  steps: number;
+}
+
+export interface RunbookList {
+  runbooks: Runbook[];
+  /** What is wrong with the files that could not be loaded. */
+  errors: string[];
+}
+
+/** One step of a plan, with what policy would decide on it now. */
+export interface RunbookPlanStep {
+  id: string;
+  type: string;
+  what: string;
+  description?: string;
+  target?: string;
+  action?: string;
+  class?: string;
+  decision?: 'allow' | 'confirm' | 'deny';
+  reason?: string;
+  rollback?: RunbookPlanStep;
+}
+
+export interface RunbookPlan {
+  id: string;
+  description?: string;
+  steps: RunbookPlanStep[];
+}
+
+export type RunbookRunStatus =
+  | 'running'
+  | 'waiting'
+  | 'failed'
+  | 'unknown'
+  | 'rolling_back'
+  | 'rollback_failed'
+  | 'succeeded'
+  | 'rolled_back';
+
+export interface RunbookPrompt {
+  kind: 'input' | 'confirm';
+  message: string;
+  secret: boolean;
+  timeout_ms: number;
+}
+
+export interface RunbookRollback {
+  what: string;
+  status: string;
+  attempts: number;
+  error?: string;
+}
+
+export interface RunbookStep {
+  id: string;
+  type: string;
+  what: string;
+  description?: string;
+  status: string;
+  attempts: number;
+  error?: string;
+  prompt?: RunbookPrompt;
+  rollback?: RunbookRollback;
+}
+
+export interface RunbookLogEntry {
+  at: string;
+  step?: string;
+  actor?: string;
+  message: string;
+}
+
+export interface RunbookRun {
+  id: string;
+  runbook_id: string;
+  status: RunbookRunStatus;
+  started_by: string;
+  started_at: string;
+  updated_at: string;
+  finished_at?: string;
+  can_retry: boolean;
+  can_rollback: boolean;
+  phase: 'forward' | 'rollback';
+  /** The prompt step waiting for an answer. */
+  awaiting?: string;
+  deadline?: string;
+  error?: string;
+  steps: RunbookStep[];
+  log: RunbookLogEntry[];
+}
+
 export type ApprovalStatus = 'pending' | 'approved' | 'denied' | 'expired';
 
 /** An action policy holds until someone approves it; see /api/v1/approvals. */
@@ -445,6 +540,16 @@ export const api = {
   /** Approves or denies through an approval link, which this spends. */
   decideApprovalLink: (token: string, approve: boolean) =>
     request<undefined>('POST', `/approval-link/${approve ? 'approve' : 'deny'}`, { token }),
+  runbooks: () => request<RunbookList>('GET', '/runbooks'),
+  /** What a run would do. Nothing is executed. */
+  runbookPlan: (id: string) => request<RunbookPlan>('GET', `/runbooks/${encodeURIComponent(id)}/plan`),
+  startRunbook: (id: string) => request<RunbookRun>('POST', `/runbooks/${encodeURIComponent(id)}/runs`),
+  runbookRuns: () => request<{ runs: RunbookRun[] }>('GET', '/runbook-runs').then((r) => r.runs),
+  runbookRun: (id: string) => request<RunbookRun>('GET', `/runbook-runs/${encodeURIComponent(id)}`),
+  answerRunbookPrompt: (id: string, step: string, value: string) =>
+    request<RunbookRun>('POST', `/runbook-runs/${encodeURIComponent(id)}/answer`, { step, value }),
+  retryRunbookRun: (id: string) => request<RunbookRun>('POST', `/runbook-runs/${encodeURIComponent(id)}/retry`),
+  rollbackRunbookRun: (id: string) => request<RunbookRun>('POST', `/runbook-runs/${encodeURIComponent(id)}/rollback`),
 };
 
 export interface EventHandlers {

@@ -8,13 +8,15 @@ import { KubernetesPage } from './KubernetesPage.tsx';
 import { Logo } from './Logo.tsx';
 import { NotificationsPage } from './NotificationsPage.tsx';
 import { ProxmoxPage } from './ProxmoxPage.tsx';
+import { RunbooksPage } from './RunbooksPage.tsx';
 
-type Page = 'devices' | 'kubernetes' | 'proxmox' | 'notifications' | 'audit' | 'approvals';
+type Page = 'devices' | 'kubernetes' | 'proxmox' | 'runbooks' | 'notifications' | 'audit' | 'approvals';
 
 const pages: { id: Page; label: string; hash: string }[] = [
   { id: 'devices', label: 'Devices', hash: '#/' },
   { id: 'kubernetes', label: 'Kubernetes', hash: '#/kubernetes' },
   { id: 'proxmox', label: 'Proxmox', hash: '#/proxmox' },
+  { id: 'runbooks', label: 'Runbooks', hash: '#/runbooks' },
   { id: 'notifications', label: 'Notifications', hash: '#/notifications' },
   { id: 'audit', label: 'Audit', hash: '#/audit' },
   { id: 'approvals', label: 'Approvals', hash: '#/approvals' },
@@ -23,6 +25,9 @@ const pages: { id: Page; label: string; hash: string }[] = [
 function pageOf(hash: string): Page {
   if (hash.startsWith('#/approvals')) {
     return 'approvals';
+  }
+  if (hash.startsWith('#/runbooks')) {
+    return 'runbooks';
   }
   if (hash.startsWith('#/notifications')) {
     return 'notifications';
@@ -119,6 +124,8 @@ export function Shell() {
         <KubernetesPage />
       ) : page === 'proxmox' ? (
         <ProxmoxPage />
+      ) : page === 'runbooks' ? (
+        <RunbooksPage />
       ) : page === 'notifications' ? (
         <NotificationsPage />
       ) : page === 'audit' ? (
