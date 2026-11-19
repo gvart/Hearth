@@ -1,0 +1,48 @@
+cmd/hearth/hub.go
+  s_344993999c180f::t_d9630053afd3dd 694
+internal/automation/runbook.go
+  s_344993999c180f::t_c5ff74a5c4fe2f 453-454
+  s_344993999c180f::t_cef32cdf3fd147 437-438
+internal/automation/runbook_kube.go
+  s_344993999c180f::t_3d285b951e07d5 1-64
+internal/automation/runbook_kube_test.go
+  s_344993999c180f::t_eb6f5b8b6fd50c 1-249
+internal/automation/trigger_check.go
+  s_344993999c180f::t_739d4cf1b878e4 59-63
+  s_344993999c180f::t_0870b9a2aaf960 64-66
+docs/automations.md
+  s_344993999c180f::t_fb72ac68735eb9 336
+  s_344993999c180f::t_99fe362e062685 367-369
+  s_344993999c180f::t_9837b72fbb20f9 378-381
+internal/automation/action_kube.go
+  s_344993999c180f::t_78c570f66e44f8 186-187
+  s_344993999c180f::t_687640faaabdbd 73-75
+internal/automation/runbook_engine.go
+  s_344993999c180f::t_5d703d71c48129 224-226
+  s_344993999c180f::t_f783f4e906479b 1038-1039,1048-1056,1059,1064
+  s_344993999c180f::t_dd1e1098d0d763 85-88
+internal/automation/runbook_test.go
+  s_344993999c180f::t_4708e86226ecf1 132-133,199
+docs/kubernetes.md
+  s_344993999c180f::t_29de01915cf5e6 76-80
+docs/runbooks.md
+  s_344993999c180f::t_507199b0b3bcf4 130-152
+  s_344993999c180f::t_0daa25bf2fc247 270
+  s_344993999c180f::t_d1f59795faf38f 99-101
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8a6e7c2eb2b62105f43c56175ecb3a70ca91ce73",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
