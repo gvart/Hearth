@@ -171,11 +171,14 @@ func (s *Sender) Tick(ctx context.Context) bool {
 		s.cfg.Log.DebugContext(ctx, "telemetry: build payload", "err", err)
 		return false
 	}
-	if err := s.post(ctx, p); err != nil {
-		s.cfg.Log.DebugContext(ctx, "telemetry: send", "err", err)
-	}
+	// The attempt is recorded first: a hub that cannot record it (a cluster
+	// without quorum) does not send, or it would send every check.
 	if err := s.cfg.Store.Telemetry().MarkSent(ctx, set.InstallID, now); err != nil {
 		s.cfg.Log.DebugContext(ctx, "telemetry: record send", "err", err)
+		return false
+	}
+	if err := s.post(ctx, p); err != nil {
+		s.cfg.Log.DebugContext(ctx, "telemetry: send", "err", err)
 	}
 	return true
 }

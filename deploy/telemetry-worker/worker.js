@@ -24,7 +24,7 @@ export function validate(p) {
     typeof p.install_id === 'string' &&
     /^[A-Z2-7]{26}$/.test(p.install_id) &&
     typeof p.version === 'string' &&
-    /^[0-9A-Za-z.+_-]{1,40}$/.test(p.version) &&
+    /^[0-9A-Za-z.+_-]{1,64}$/.test(p.version) &&
     typeof p.os === 'string' &&
     /^[a-z0-9]{1,16}$/.test(p.os) &&
     typeof p.arch === 'string' &&

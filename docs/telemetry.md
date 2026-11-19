@@ -69,3 +69,6 @@ once that nothing is sent. Builds without a built-in endpoint behave this way un
 Start the hub with `--telemetry=off` or `HEARTH_TELEMETRY=off`. This overrides everything, a stored
 yes included: nothing is sent, the web UI does not ask, and the bottom of the page says telemetry is
 turned off on the hub. `off` is the only value accepted; any other value stops the hub from starting.
+
+In a cluster, set it on every hub: the override is per hub, and whichever hub leads is the one that
+sends.

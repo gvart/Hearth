@@ -4,7 +4,9 @@ package telemetry
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"maps"
 	"net/http"
@@ -190,6 +192,34 @@ func TestLeaderSendsWeekly(t *testing.T) {
 	s.Tick(t.Context())
 	if got := c.count(); got != 4 {
 		t.Errorf("after a new opt-in: %d sends, want 4", got)
+	}
+}
+
+// A hub that cannot record the attempt does not send: it would otherwise send
+// at every check.
+func TestNoSendWithoutRecord(t *testing.T) {
+	ctx := t.Context()
+	st, err := store.Open(ctx, filepath.Join(t.TempDir(), "hearth.db"), store.WithApplier(func(s *store.Store) store.Applier {
+		return store.ApplierFunc(func(ctx context.Context, cmd store.Command) (store.Result, error) {
+			if cmd.Op() == (store.MarkTelemetrySent{}).Op() {
+				return store.Result{}, errors.New("no quorum")
+			}
+			return s.ApplyLocal(ctx, cmd)
+		})
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	f := &fixture{st: st, logs: &bytes.Buffer{}, now: time.UnixMilli(1_800_000_000_000).UTC()}
+	c := newCollector(t, true)
+	f.answer(t, true)
+	s := f.sender(Config{Endpoint: c.srv.URL, Client: c.srv.Client()})
+	for range 3 {
+		if s.Tick(ctx) {
+			t.Error("Tick sent")
+		}
+		f.now = f.now.Add(time.Minute)
 	}
 }
 
