@@ -147,7 +147,23 @@ func TestCARotations(t *testing.T) {
 	if latest, err := rots.Latest(ctx); err != nil || latest.NewCAFP != "newer" {
 		t.Errorf("Latest = %+v, %v; want the one started last", latest, err)
 	}
+	// The abort revokes what the aborted CA issued, and nothing else.
+	must(certs.Record(ctx, CertRecord{Serial: "a1", DeviceID: "pi", CAFP: "newer"}))
+	must(s.Hubs().Record(ctx, HubCert{Serial: "a2", NodeID: "hub-b", Fingerprint: "fa2", CAFP: "newer"}))
+	if renewed, err := rots.RenewedDevices(ctx, "newer"); err != nil || len(renewed) != 1 {
+		t.Fatalf("RenewedDevices = %v, %v", renewed, err)
+	}
 	must(rots.Advance(ctx, "newer", CAStageStarted, CAStageAborted, now))
+	if renewed, err := rots.RenewedDevices(ctx, "newer"); err != nil || len(renewed) != 0 {
+		t.Errorf("devices of the aborted CA after the abort = %v, %v; want their certificates revoked", renewed, err)
+	}
+	hubCerts, err := s.Hubs().Certs(ctx, "hub-b")
+	must(err)
+	for _, c := range hubCerts {
+		if c.Revoked != (c.CAFP == "newer") {
+			t.Errorf("hub certificate %s of CA %s: revoked %v after the abort", c.Serial, c.CAFP, c.Revoked)
+		}
+	}
 	if _, err := rots.Active(ctx); !errors.Is(err, ErrNotFound) {
 		t.Errorf("Active after abort = %v, want ErrNotFound", err)
 	}

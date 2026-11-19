@@ -374,6 +374,18 @@ func (c AdvanceCARotation) apply(ctx context.Context, tx *sql.Tx) (Result, error
 		step != CAStageStarted+">"+CAStageAborted {
 		return Result{}, fmt.Errorf("%w: no step from %q to %q", ErrCARotationConflict, c.From, c.To)
 	}
+	if c.To == CAStageAborted {
+		// Certificates the aborted CA issued, to agents and hubs, are revoked:
+		// nothing trusts that CA any more, and its key may live on in a copy.
+		for _, q := range []string{
+			`UPDATE certs SET revoked_at = ? WHERE ca_fp = ? AND revoked_at IS NULL`,
+			`UPDATE hub_certs SET revoked_at = ? WHERE ca_fp = ? AND revoked_at IS NULL`,
+		} {
+			if _, err := tx.ExecContext(ctx, q, c.Now, c.NewCAFP); err != nil {
+				return Result{}, err
+			}
+		}
+	}
 	if c.To == CAStageFinished {
 		secrets, err := readSealed(ctx, tx)
 		if err != nil {
