@@ -317,7 +317,7 @@ function Result({ result }: { result: string }) {
     return (
       <span
         className="pill pill-warn"
-        title="The action is still running, the hub stopped before it could report the result, or a cluster lost its leader while writing this entry and the action was refused."
+        title="The action is still running, the hub stopped before it could report the result, or a cluster lost its leader while writing this entry and the action was refused. It may also have run with its result unrecorded."
       >
         No outcome recorded
       </span>

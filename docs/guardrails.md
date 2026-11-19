@@ -136,7 +136,7 @@ nothing happens. Its result then replaces the entry, so each action is one row:
 | Result | Meaning |
 | --- | --- |
 | `ok` or `error: ...` | The action ran and this is how it ended. |
-| `started` (**No outcome recorded** in the web UI) | The action is still running, the hub stopped before it could report the result, or a cluster lost its leader while writing the entry and the action was refused. Check the target. |
+| `started` (**No outcome recorded** in the web UI) | The action is still running, the hub stopped before it could report the result, or a cluster lost its leader while writing the entry and the action was refused. It may also have run, with the write of its result failing. Check the target. |
 | `read allowed` | A read was allowed to run. Reads record a result only when they fail, so that frequent reads do not write twice. This row does not prove the read succeeded: a read interrupted by a hub crash, or one that failed while its result could not be written, looks the same. |
 
 `GET /api/v1/audit` serves the same data. It takes the query parameters `actor_kind`, `actor`
