@@ -1137,11 +1137,8 @@ dialog::backdrop {
 
 .tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.25rem;
-  min-width: 0;
-  /* Never wider than the page, whatever the font. */
-  overflow-x: auto;
-  scrollbar-width: none;
 }
 
 .tab {
