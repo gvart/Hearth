@@ -43,7 +43,13 @@ const (
 	// maxLogRead caps the bytes read for one line of the source's output,
 	// or one field of a journald entry: the rest is dropped.
 	maxLogRead = 64 << 10
+	// maxJournalField is the longest binary field of a journald entry
+	// read (and mostly dropped); a longer one means corrupt output.
+	maxJournalField = 1 << 30
 )
+
+// errJournalCorrupt is output of journalctl that is not export format.
+var errJournalCorrupt = errors.New("corrupt journal export")
 
 // Log managers a ceiling entry or a LogRequest may name.
 var logManagers = []string{"systemd", "systemd-user", "docker"}
@@ -346,23 +352,29 @@ func readJournalEntry(r *bufio.Reader, limit int) (*agentv1.LogLine, error) {
 
 // readJournalBinary reads the value of a binary export field after its
 // name: the length, the bytes (at most limit kept, the rest dropped) and
-// the newline after them.
+// the newline after them, if there is one. A length over maxJournalField
+// is an error: journald stores no such field, so the output is corrupt.
 func readJournalBinary(r *bufio.Reader, limit int) ([]byte, error) {
 	var size [8]byte
 	if _, err := io.ReadFull(r, size[:]); err != nil {
 		return nil, err
 	}
 	n := binary.LittleEndian.Uint64(size[:])
-	keep := min(n, uint64(limit)) //nolint:gosec // limit is a small positive constant
+	if n > maxJournalField {
+		return nil, fmt.Errorf("journal field of %d bytes: %w", n, errJournalCorrupt)
+	}
+	keep := min(int(n), limit)
 	value := make([]byte, keep)
 	if _, err := io.ReadFull(r, value); err != nil {
 		return nil, err
 	}
-	if _, err := r.Discard(int(n - keep)); err != nil { //nolint:gosec // what is left of one field
+	if _, err := r.Discard(int(n) - keep); err != nil {
 		return nil, err
 	}
-	if _, err := r.ReadByte(); err != nil { // the newline
+	if b, err := r.ReadByte(); err != nil {
 		return value, err
+	} else if b != '\n' {
+		_ = r.UnreadByte() // no newline: the byte starts the next field
 	}
 	return value, nil
 }

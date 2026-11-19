@@ -4,8 +4,10 @@ package agent
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"log/slog"
 	"runtime"
 	"slices"
@@ -14,6 +16,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
 )
@@ -65,11 +68,17 @@ func TestLogArgv(t *testing.T) {
 	}
 }
 
+// exportLen is the length before a binary field's value in journalctl
+// --output=export.
+func exportLen(n uint64) string {
+	var b [8]byte
+	binary.LittleEndian.PutUint64(b[:], n)
+	return string(b[:])
+}
+
 // exportBinary is a binary field of journalctl --output=export.
 func exportBinary(key, value string) string {
-	var n [8]byte
-	binary.LittleEndian.PutUint64(n[:], uint64(len(value)))
-	return key + "\n" + string(n[:]) + value + "\n"
+	return key + "\n" + exportLen(uint64(len(value))) + value + "\n"
 }
 
 func TestReadJournalEntry(t *testing.T) {
@@ -91,7 +100,11 @@ func TestReadJournalEntry(t *testing.T) {
 		{"no message", cursor + "\n", []entry{{"", true}}},
 		{"no timestamp", "MESSAGE=x\n\n", []entry{{"x", false}}},
 		{"cut short", cursor + "MESSAGE=last", []entry{{"last", true}}},
-		{"binary cut short", cursor + "MESSAGE\n\x09\x00", []entry{{"", true}}},
+		{"binary cut short", cursor + "MESSAGE\n" + exportLen(9) + "abc", []entry{{"", true}}},
+		{"binary length cut short", cursor + "MESSAGE\n\x09\x00", []entry{{"", true}}},
+		{"binary without newline", "MESSAGE\n" + exportLen(2) + "hi" + "_PID=1\n\nMESSAGE=next\n\n", []entry{{"hi", false}, {"next", false}}},
+		{"binary over the field cap", cursor + "MESSAGE\n" + exportLen(1<<62) + "abc", []entry{{"", true}}},
+		{"blank lines between entries", "\n\nMESSAGE=a\n\n\n\nMESSAGE=b\n\n", []entry{{"a", false}, {"b", false}}},
 		{"empty", "", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -132,6 +145,52 @@ func TestReadJournalEntryLimit(t *testing.T) {
 			t.Fatalf("text = %q (err %v), want %q", line.GetText(), err, want)
 		}
 	}
+}
+
+// TestReadJournalEntryCorrupt: a binary field longer than journald allows
+// ends the output with an error rather than reading on to find its end.
+func TestReadJournalEntryCorrupt(t *testing.T) {
+	t.Parallel()
+	r := bufio.NewReader(strings.NewReader("MESSAGE\n" + exportLen(maxJournalField+1) + "MESSAGE=x\n\n"))
+	if _, err := readJournalEntry(r, maxLogRead); !errors.Is(err, errJournalCorrupt) {
+		t.Fatalf("err = %v, want %v", err, errJournalCorrupt)
+	}
+}
+
+// FuzzDecodeExport feeds readJournalEntry arbitrary output, read through a
+// small buffer and with a small limit so that long lines and fields are
+// cut: it never panics, always makes progress, and every line it returns
+// is valid UTF-8 within maxLogLine.
+func FuzzDecodeExport(f *testing.F) {
+	const cursor = "__CURSOR=s=1\n__REALTIME_TIMESTAMP=1700000000123456\n"
+	for _, seed := range []string{
+		"",
+		"\n\n",
+		cursor + "MESSAGE=hello\n\n",
+		cursor + "MESSAGE=a\n\n" + cursor + "MESSAGE=b=c\n\n",
+		cursor + exportBinary("MESSAGE", "one\ntwo") + "\n",
+		cursor + exportBinary("MESSAGE", "hi\xff\xfe") + "\n",
+		"MESSAGE\n" + exportLen(2) + "hiX=1\n\n",
+		"MESSAGE\n" + exportLen(1<<62) + "abc",
+		"MESSAGE\n" + exportLen(100) + strings.Repeat("y", 100) + "\n\n",
+		"MESSAGE=" + strings.Repeat("z", 300) + "\n\n",
+		"__REALTIME_TIMESTAMP=-1\nMESSAGE\n\x01",
+	} {
+		f.Add([]byte(seed))
+	}
+	f.Fuzz(func(t *testing.T, data []byte) {
+		r := bufio.NewReaderSize(bytes.NewReader(data), 16)
+		for range len(data) + 2 {
+			line, err := readJournalEntry(r, 64)
+			if text := line.GetText(); !utf8.ValidString(text) || len(text) > maxLogLine+len("…") {
+				t.Fatalf("text %q: not valid UTF-8 or too long", text)
+			}
+			if err != nil {
+				return
+			}
+		}
+		t.Fatalf("no end after %d entries of %d bytes", len(data)+2, len(data))
+	})
 }
 
 func TestParseDockerLine(t *testing.T) {
