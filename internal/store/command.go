@@ -518,10 +518,34 @@ type AppendAudit struct {
 // Op implements Command.
 func (AppendAudit) Op() string { return "append_audit" }
 
-func (c AppendAudit) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	res, err := tx.ExecContext(ctx, `
+// auditInsertSQL is the insert before auditOpSchema; auditInsertIndexedSQL
+// sets the operation columns from the detail, as audit.go describes. The
+// detail is the last parameter, selected from a one-row subquery to be read
+// by both the column and the expressions.
+const (
+	auditInsertSQL = `
 		INSERT INTO audit_log (ts, actor_kind, actor_id, action, target, decision, result, detail)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	auditInsertIndexedSQL = `
+		INSERT INTO audit_log (ts, actor_kind, actor_id, action, target, decision, result, detail, audit_op, audit_outcome_of)
+		SELECT ?, ?, ?, ?, ?, ?, ?, detail,
+		       CASE WHEN json_valid(detail) THEN json_extract(detail, '$.audit_op') END,
+		       CASE WHEN json_valid(detail) THEN json_extract(detail, '$.audit_outcome_of') END
+		FROM (SELECT ? AS detail)`
+)
+
+func (c AppendAudit) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
+	// The operation columns come from the detail here, so the command is the
+	// same on every binary. A node still before auditOpSchema has no columns.
+	v, err := schemaVersion(ctx, tx)
+	if err != nil {
+		return Result{}, err
+	}
+	insert := auditInsertSQL
+	if v >= auditOpSchema {
+		insert = auditInsertIndexedSQL
+	}
+	res, err := tx.ExecContext(ctx, insert,
 		c.TS, c.ActorKind, c.ActorID, c.Action, c.Target, c.Decision, c.Result, c.Detail)
 	if err != nil {
 		return Result{}, err
