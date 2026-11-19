@@ -103,9 +103,9 @@ func DirDigest(dir string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// Files lists the automation files the hub loads from dir, sorted. A missing
+// FileNames lists the automation files the hub loads from dir, sorted. A missing
 // directory has none.
-func Files(dir string) ([]string, error) { return automationFiles(dir) }
+func FileNames(dir string) ([]string, error) { return automationFiles(dir) }
 
 // automationFiles lists the automation files in dir, sorted.
 func automationFiles(dir string) ([]string, error) {

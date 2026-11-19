@@ -34,8 +34,9 @@ between Hearth processes is mutually authenticated TLS.
 
 The hub CA is created on the first start in the hub's data dir (`ca.crt`, `ca.key`, mode 0600). Its
 private key never leaves that directory, except to a new hub joining a cluster, over the pinned,
-mutually authenticated join channel, and inside a passphrase-encrypted [backup](backup.md) an
-operator takes on the hub host. Whoever can read a hub's data dir can mint certificates the
+mutually authenticated join channel, and inside a passphrase-encrypted [backup](backup.md) archive,
+which only an authenticated admin can create, through policy (`hub.backup`) and with an audit entry.
+Whoever can read a hub's data dir can mint certificates the
 whole installation trusts: protect it like a root password, and wipe the data dir of a hub you
 remove from a cluster.
 

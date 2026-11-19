@@ -110,6 +110,9 @@ The hub returns to the moment of the backup. Whatever happened after it is gone:
   once more, and check the list with `hearth mcp token list`.
 - **Web sessions that ended after the backup work again** until they expire, including sessions you logged
   out of. To end them all, run `hearth admin set-password`: it logs out every session.
+- **Approvals that were pending in the backup** have no one waiting for them any more. The restored hub
+  expires them, and audits it, once they are five minutes past their expiry, as after any restart (see
+  [guardrails](guardrails.md)). The action they held does not run.
 - Admin password changes, approvals and audit entries made after the backup are lost.
 
 ## Restoring a cluster

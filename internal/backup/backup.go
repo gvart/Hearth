@@ -191,7 +191,7 @@ func configFiles(opts CreateOptions) ([]namedFile, error) {
 	if dir == "" {
 		dir = filepath.Join(opts.DataDir, automationsDir)
 	}
-	autos, err := automation.Files(dir)
+	autos, err := automation.FileNames(dir)
 	if err != nil {
 		return nil, fmt.Errorf("backup automations: %w", err)
 	}

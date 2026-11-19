@@ -181,6 +181,39 @@ func TestRestoredAuditShowsTheBackupAsStarted(t *testing.T) {
 	}
 }
 
+// TestRestoredHubExpiresApprovalsLeftPending: the process that waited for an
+// approval in the backup is gone, so the restored hub expires it, and audits it.
+func TestRestoredHubExpiresApprovalsLeftPending(t *testing.T) {
+	t.Setenv(passphraseEnv, testBackupPassphrase)
+	dir, _ := initHub(t)
+	st := openStore(t, dir)
+	now := time.Now()
+	if err := st.Approvals().Create(t.Context(), store.Approval{
+		ID: "held-before-backup", CreatedAt: now.Add(-time.Hour), ExpiresAt: now.Add(-2 * policy.SweepGrace),
+		ActorKind: policy.ActorAdmin, ActorID: "root", Action: string(policy.DeviceRevoke), Class: "dangerous", Target: "pi",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(t.TempDir(), "hub.hbk")
+	if _, err := execute(t, "backup", file, "--data-dir", dir); err != nil {
+		t.Fatal(err)
+	}
+	restored := filepath.Join(t.TempDir(), "restored")
+	if _, err := execute(t, "restore", file, "--data-dir", restored); err != nil {
+		t.Fatal(err)
+	}
+	runBackupTestHub(t, hubOptions{dataDir: restored, listen: freeAddr(t), httpListen: freeAddr(t), hosts: []string{"127.0.0.1"}})
+	rs, err := store.Open(t.Context(), filepath.Join(restored, dbFile), store.WithoutUpgrade())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rs.Close()
+	waitFor(t, "the restored hub to expire the approval", 20*time.Second, func() bool {
+		ap, err := rs.Approvals().Get(t.Context(), "held-before-backup")
+		return err == nil && ap.Status == store.ApprovalExpired
+	})
+}
+
 // abandonTempDir makes a temporary directory whose owner is long gone.
 func abandonTempDir(t *testing.T, dir string) {
 	t.Helper()
