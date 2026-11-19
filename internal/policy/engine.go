@@ -321,8 +321,14 @@ func (e *Engine) record(ctx context.Context, req Request, decision, result strin
 	return nil
 }
 
+// DetailOmitted is the key of the placeholder detail of an entry whose
+// request detail nested too deep for the audit log (see detailJSON).
+const DetailOmitted = "detail_omitted"
+
 // detailJSON encodes detail with extra's keys added, or returns nil when
-// both are nil.
+// both are nil. A detail the audit log would refuse for nesting too deep is
+// replaced by a placeholder that keeps extra: an entry is never lost over its
+// detail, and an outcome still folds with its start.
 func detailJSON(detail, extra map[string]any) (json.RawMessage, error) {
 	if detail == nil && extra == nil {
 		return nil, nil
@@ -333,7 +339,13 @@ func detailJSON(detail, extra map[string]any) (json.RawMessage, error) {
 	delete(m, store.AuditOpKey)
 	delete(m, store.AuditOutcomeOfKey)
 	maps.Copy(m, extra)
-	return json.Marshal(m)
+	b, err := json.Marshal(m)
+	if err == nil && store.AuditDetailTooDeep(b) {
+		m = map[string]any{DetailOmitted: "the request's detail nested deeper than the audit log stores"}
+		maps.Copy(m, extra)
+		return json.Marshal(m)
+	}
+	return b, err
 }
 
 // hold stores req as a pending approval, audits the hold and waits for the

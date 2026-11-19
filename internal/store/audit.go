@@ -44,6 +44,10 @@ const maxAuditDetailDepth = 64
 // A detail SQLite cannot parse has none, instead of failing the whole query.
 const auditOutcomeOfSQL = `CASE WHEN json_valid(detail) THEN json_extract(detail, '$.` + AuditOutcomeOfKey + `') END`
 
+// AuditDetailTooDeep reports whether the valid JSON document detail nests
+// deeper than Audit.Append accepts.
+func AuditDetailTooDeep(detail []byte) bool { return jsonDepth(detail) > maxAuditDetailDepth }
+
 // jsonDepth returns how deep the valid JSON document b nests.
 func jsonDepth(b []byte) int {
 	depth, deepest, inString := 0, 0, false
