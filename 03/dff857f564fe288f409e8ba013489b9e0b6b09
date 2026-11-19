@@ -1,0 +1,31 @@
+cmd/hearth/approval_test.go
+  s_344993999c180f::t_4d13f7722543bf 67-74
+docs/guardrails.md
+  s_344993999c180f::t_82ed938c2168a1 88-91
+  s_344993999c180f::t_ce314ad3d129e9 87
+web/src/components/ApprovalsPage.tsx
+  s_344993999c180f::t_ce314ad3d129e9 173
+internal/hub/approvalreauth_test.go
+  s_344993999c180f::t_5a47a90e99ccc0 74
+  s_344993999c180f::t_92bc950bd4ba6e 52
+  s_344993999c180f::t_417171efa455ec 38
+  s_344993999c180f::t_f6892061eebc22 54-61
+web/src/index.css
+  s_344993999c180f::t_713c5b9c658309 1681-1682
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "03dff857f564fe288f409e8ba013489b9e0b6b09",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
