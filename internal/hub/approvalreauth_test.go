@@ -189,6 +189,39 @@ func TestApproveRateLimited(t *testing.T) {
 	}
 }
 
+// Only a wrong password costs a token: an admin approving many held actions
+// in a row is never limited, nor locked out of login, while wrong passwords
+// still are.
+func TestApproveRightPasswordsNotLimited(t *testing.T) {
+	f := newAPIFixture(t, true, withPolicy(policy.Config{}))
+	c := sessionCookie(t, f.login(t, testPassword))
+	for i := range 2 * loginBurst {
+		id, ran, done := holdRevocation(t, f)
+		if resp := f.do(t, http.MethodPost, "/api/v1/approvals/"+id+"/approve", passwordBody(testPassword), c); resp.StatusCode != http.StatusNoContent {
+			t.Fatalf("approve %d = %d %s", i+1, resp.StatusCode, resp.body)
+		}
+		if err := <-done; err != nil || !ran() {
+			t.Fatalf("held action %d = %v, ran %v", i+1, err, ran())
+		}
+	}
+	if resp := f.do(t, http.MethodPost, "/api/v1/login", passwordBody(testPassword), nil); resp.StatusCode != http.StatusOK {
+		t.Fatalf("login after approvals = %d %s", resp.StatusCode, resp.body)
+	}
+
+	id, ran, _ := holdRevocation(t, f)
+	codes := make([]int, 0, loginBurst+1)
+	for range loginBurst + 1 {
+		resp := f.do(t, http.MethodPost, "/api/v1/approvals/"+id+"/approve", passwordBody("wrong-guess-d4e5f6"), c)
+		codes = append(codes, resp.StatusCode)
+	}
+	if codes[len(codes)-1] != http.StatusTooManyRequests {
+		t.Errorf("wrong passwords = %v, want the last limited (429)", codes)
+	}
+	if ap, err := f.st.Approvals().Get(t.Context(), id); err != nil || ap.Status != store.ApprovalPending || ran() {
+		t.Errorf("approval = %+v, %v, ran %v; want pending", ap, err, ran())
+	}
+}
+
 // Denying needs no password: it can only stop an action.
 func TestDenyNeedsNoPassword(t *testing.T) {
 	f := newAPIFixture(t, true, withPolicy(policy.Config{}))

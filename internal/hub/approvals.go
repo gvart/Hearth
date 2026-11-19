@@ -96,18 +96,27 @@ func (a *api) decideApproval(approve bool) http.HandlerFunc {
 			if !ok {
 				return
 			}
-			// Only a guess costs an argon2 verification, and counts as one.
+			// Only a request with a password costs an argon2 verification and
+			// takes a token, which a password that is not wrong gives back:
+			// wrong passwords are limited as logins are, approvals are not.
 			if password != "" {
 				if ok, wait := a.logins.allow(remoteHost(r)); !ok {
 					writeRetry(w, http.StatusTooManyRequests, wait, "rate_limited", "too many password attempts; try again later")
 					return
 				}
-			}
-			reauth = func(ctx context.Context) error {
-				if password == "" {
-					return errNoPassword
+				wrong := false
+				defer func() {
+					if !wrong {
+						a.logins.refund(remoteHost(r))
+					}
+				}()
+				reauth = func(ctx context.Context) error {
+					err := a.checkAdminPassword(ctx, password)
+					wrong = errors.Is(err, errWrongPassword)
+					return err
 				}
-				return a.checkAdminPassword(ctx, password)
+			} else {
+				reauth = func(context.Context) error { return errNoPassword }
 			}
 		}
 		id := r.PathValue("id")

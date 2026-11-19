@@ -85,7 +85,8 @@ the password once more. Denying needs no password: it can only stop an action.
 
 The password is checked as login checks it: the same argon2id hash and cost, one verification at a
 time, and the same per-address rate limit, which approving and logging in share: a burst of 5
-attempts with a password, right or wrong, then one every 12 s (`429` past it). A refused approval
+attempts, then one every 12 s (`429` past it). Only a wrong password used to approve counts against
+it, so approving many actions in a row is never limited. A refused approval
 stays pending and is in the audit log as a denied `approval.approve` whose result says the approver
 was not re-authenticated. The password itself is never logged, audited, stored or echoed in a
 response.
