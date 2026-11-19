@@ -1,0 +1,70 @@
+cmd/hearth/carotation.go
+  s_344993999c180f::t_468b458019756b 1-115
+internal/cluster/carotation_test.go
+  s_344993999c180f::t_b79a6cd7a8e196 10
+  s_344993999c180f::t_d58bfd3058cbf0 277,501-508,510
+  s_344993999c180f::t_246eb0be8a85eb 79,231
+  s_344993999c180f::t_5e17cde38b3dc7 262-263,268-276
+  s_344993999c180f::t_dd0658a6673365 509,511
+docs/backup.md
+  s_344993999c180f::t_1bd04549c1e39a 14
+internal/pki/rotate.go
+  s_344993999c180f::t_246eb0be8a85eb 386
+internal/automation/runbook_review_test.go
+  s_344993999c180f::t_d24265f6fe414c 324
+internal/automation/runbook_engine.go
+  s_344993999c180f::t_d24265f6fe414c 311
+  s_344993999c180f::t_b66e4129d0f1ca 271,312,765
+cmd/hearth/hub.go
+  s_344993999c180f::t_b6549f5692aeba 322,326-332
+  s_344993999c180f::t_a59a2c0b3413be 356,360,384,475,486,678-679,684-685,690-691
+cmd/hearth/cluster_ca.go
+  s_344993999c180f::t_c6801b676a05c6 1-237
+internal/cluster/control.go
+  s_344993999c180f::t_35239332d17914 481,485-488,493
+  s_344993999c180f::t_36efe7f1ee466c 79-80,136-155,159-173,299-301
+  s_344993999c180f::t_3437c7df19a142 430-471,473-476
+docs/cluster.md
+  s_344993999c180f::t_2a1d5ed93b5d33 324,375-376
+  s_344993999c180f::t_90effdbe12e3fe 261-323,325-340,344-348
+cmd/hearth/cluster_test.go
+  s_344993999c180f::t_0737992d42c22c 33-41
+docs/security.md
+  s_344993999c180f::t_15d216763019b8 49-70
+  s_344993999c180f::t_fb65bbc78fa350 38-41
+  s_344993999c180f::t_a7ee9083d1f4a8 71
+internal/pki/rotate_test.go
+  s_344993999c180f::t_246eb0be8a85eb 48,55,59-60,226
+internal/cluster/transport.go
+  s_344993999c180f::t_246eb0be8a85eb 202-203
+internal/hub/carotation_test.go
+  s_344993999c180f::t_34e74d761d7390 7-8,98,130
+  s_344993999c180f::t_17ad1fa0c168aa 36-37
+  s_344993999c180f::t_54928985a825e0 1-6,9-35,38-97,99-129,131-150
+CLAUDE.md
+  s_344993999c180f::t_ca548bf244e50e 104-106
+internal/store/carotation.go
+  s_344993999c180f::t_246eb0be8a85eb 305
+internal/cluster/carotation.go
+  s_344993999c180f::t_075e53cdf2e62b 56-58
+  s_344993999c180f::t_36efe7f1ee466c 377-379,409-414
+  s_344993999c180f::t_b79a6cd7a8e196 10
+cmd/hearth/cluster.go
+  s_344993999c180f::t_5401811ea17ae0 26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "00d9c58d1057f9c1e908b83ee2b5627f24291d62",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
