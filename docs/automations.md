@@ -187,12 +187,14 @@ The web UI's **Automations** page lists the files of the automations directory, 
 trigger, condition and action blocks or as YAML. Both views change the same file: switch between them
 at any time. The file stays the source of truth, so keep it in git as before.
 
-- **Your file stays yours.** Comments, key order and quoting stay as written through an edit, and so
-  does the spacing of the lines around it.
+- **Your file stays yours.** An edit replaces only the text of what you changed: every other byte of
+  the file, comments, key order, quoting and spacing included, stays as written. An edit that cannot
+  be made that way is refused, and the editor sends you to the YAML view.
 - **What the form cannot show is kept.** A step with a type the editor has no form for, YAML anchors,
   aliases or tags, a key it does not know, or a value of an unexpected shape appears as a read-only
-  YAML block. It is written back untouched; change it in the YAML view. A file that does not parse
-  opens in the YAML view only.
+  YAML block. So does a value the form could change by showing it: a number such as `010` or `0750`,
+  which is not the number it looks like, and a list item or header with spaces around it. It is written
+  back untouched; change it in the YAML view. A file that does not parse opens in the YAML view only.
 - **Dry run** sends the file to the hub, which validates it as it would when loading it, and asks
   policy about saving it and about each action, as the automation would ask when it runs. Each
   decision is shown (allowed, needs approval, denied) and audited with the result `dry-run`. Nothing
@@ -201,11 +203,13 @@ at any time. The file stays the source of truth, so keep it in git as before.
 - **Save** needs a signed-in session. The hub validates the file again, with the notification channels
   and other settings it really has, and refuses it, with the line of each problem, if it would not load.
   It also refuses a save when another file of the directory is invalid, since one invalid file stops
-  the reload of all of them, and when the file changed on disk since you opened it.
+  the reload of all of them, when the file changed on disk since you opened it, and when the file has
+  more than 64 steps. The form is locked until the save is answered.
 
-Saving goes through policy as `automation.apply` (class `dangerous`) with actor `web/<address>`, and is
-in the audit log with the file's name, its SHA-256 and its steps, but not its content, which may hold
-secrets. To require approval for saves, or to forbid them:
+Saving goes through policy as `automation.apply` (class `dangerous`) with actor `web/<address>`. The
+audit log and any approval show the file's name, its SHA-256, its steps and the plan, with each command
+and its device. Of a webhook they show only the site: its URL, headers and body may hold secrets. To
+require approval for saves, or to forbid them:
 
 ```yaml
 actors:
@@ -216,11 +220,17 @@ actors:
 With `confirm`, the save finishes once someone approves it on the **Approvals** page. That setting
 covers every dangerous action from the web UI.
 
+A save of an automation listed in [`dangerous_automations`](guardrails.md) that has a dangerous action
+always waits for approval, whatever the modes say, and is refused if the hub cannot hold approvals: the
+grant belongs to the id, so whoever could rewrite the file would otherwise inherit it. A mode of `deny`
+still denies it.
+
 An automation's id cannot be changed in the editor: create a new one and remove the old file. Files
-that are symbolic links can be opened but not saved. The built-in [new-device
-alerts](discovery.md#new-device-alerts) automation has no file, so it is not listed. In a cluster, a
-save writes to the directory of the hub you are connected to only: copy the file to the other hubs,
-as [configuration drift](cluster.md#configuration-drift) will remind you.
+that are symbolic links are not opened or saved here, and nothing of what they point to is shown. The
+built-in [new-device alerts](discovery.md#new-device-alerts) automation has no file, so it is not
+listed. In a cluster, a save writes to the directory of the hub you are connected to only, and the
+editor names that hub. Only the leader runs automations, so copy the file to the other hubs, as
+[configuration drift](cluster.md#configuration-drift) will remind you.
 
 ## How the hub runs them
 
@@ -418,6 +428,11 @@ Only text/template's built-in functions are there (`printf`, `eq`, `if`, ...): f
 string, and it is caught when the file is loaded: every template is tried against each trigger of
 its automation, so `{{ .Trigger.Device }}` next to a `schedule` trigger is rejected with its line.
 A `device` that renders empty fails the run.
+
+Templates are bounded, so that a file cannot exhaust the hub. A field renders at most 1 MiB, in at most
+100,000 steps and 2 seconds; past that the action fails. `range` goes over a field of the event only.
+`define`, `template`, `block` and variables outside `range` are refused when the file loads, and so is
+a `printf` whose format is not written in the template or has a width or precision over 3 digits.
 
 `hearth automation plan` shows templates as written, and lists the fields each trigger provides.
 Policy decides on, and the audit log records, the rendered device. Run history keeps the trigger's

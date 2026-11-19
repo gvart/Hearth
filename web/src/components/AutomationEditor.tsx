@@ -22,6 +22,7 @@ import {
   setKey,
   stepSpecs,
 } from '../automations/model.ts';
+import { mayEdit, savedNotice } from '../automations/session.ts';
 
 const listRoute = '#/automations';
 
@@ -100,6 +101,10 @@ function Editor({ id, file, initial, revision: initialRevision, problems = [] }:
 
   /** Every change of the file goes here: what was checked no longer holds. */
   const change = (next: string) => {
+    // A save in flight is of the file as it was sent.
+    if (!mayEdit(save.isPending)) {
+      return;
+    }
     setSource(next);
     setDryRunResult(null);
     setSavedNote('');
@@ -135,7 +140,7 @@ function Editor({ id, file, initial, revision: initialRevision, problems = [] }:
         setLoadProblems([]);
         setRevision(res.revision);
         setDryRunResult(null);
-        setSavedNote(`Saved to ${res.file}. The hub loads it within seconds.`);
+        setSavedNote(savedNotice(res));
         if (id === undefined) {
           window.location.hash = `#/automations/edit/${encodeURIComponent(res.id)}`;
         }
@@ -227,24 +232,26 @@ function Editor({ id, file, initial, revision: initialRevision, problems = [] }:
       ) : null}
       {dryRunResult ? <DryRunResult result={dryRunResult} /> : null}
 
-      {view === 'yaml' ? (
-        <YamlView source={source} problems={read.ok ? [] : read.problems} onChange={change} />
-      ) : read.ok ? (
-        <VisualView model={read.model} isNew={id === undefined} edit={edit} />
-      ) : (
-        <>
-          <Problems title="This YAML cannot be shown visually" problems={read.problems} />
-          <button
-            type="button"
-            className="btn"
-            onClick={() => {
-              setView('yaml');
-            }}
-          >
-            Fix it in YAML
-          </button>
-        </>
-      )}
+      <fieldset className="auto-lock" disabled={!mayEdit(save.isPending)}>
+        {view === 'yaml' ? (
+          <YamlView source={source} problems={read.ok ? [] : read.problems} onChange={change} />
+        ) : read.ok ? (
+          <VisualView model={read.model} isNew={id === undefined} edit={edit} />
+        ) : (
+          <>
+            <Problems title="This YAML cannot be shown visually" problems={read.problems} />
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                setView('yaml');
+              }}
+            >
+              Fix it in YAML
+            </button>
+          </>
+        )}
+      </fieldset>
     </main>
   );
 }
@@ -842,7 +849,7 @@ function DryRunResult({ result }: { result: AutomationDryRun }) {
     <section className="auto-card auto-result" aria-labelledby="auto-dry-run" role="status">
       <h2 id="auto-dry-run">Dry run</h2>
       <p className="muted small">Checked by the hub. Nothing was saved and nothing ran.</p>
-      {!result.valid ? <Problems title="The hub would refuse this file" problems={result.problems} /> : null}
+      {result.problems.length > 0 ? <Problems title="The hub would refuse this file" problems={result.problems} /> : null}
       {result.blocked ? (
         <div className="error-box">
           <strong>It could not be saved right now</strong>

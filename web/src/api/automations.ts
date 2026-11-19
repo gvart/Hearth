@@ -55,6 +55,12 @@ export interface SavedAutomation {
   id: string;
   file: string;
   revision: string;
+  /** The address of the hub that holds the file now. */
+  hub: string;
+  /** This hub is one of several. */
+  cluster: boolean;
+  /** This hub runs automations now. */
+  leader: boolean;
 }
 
 export interface SaveAutomation {
