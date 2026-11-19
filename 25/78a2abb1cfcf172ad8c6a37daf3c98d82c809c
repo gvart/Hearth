@@ -1,0 +1,71 @@
+cmd/hearth/hub_import.go
+  s_344993999c180f::t_7aab770fb53c3e 13-14,66-95
+  s_344993999c180f::t_1b3a89661a985d 43-56
+  s_344993999c180f::t_8ec7daf564aeb1 19-21
+  s_344993999c180f::t_1a3f616fc83a72 96,98-116
+  s_344993999c180f::t_30faa530478538 15
+  s_344993999c180f::t_cc2e4300909ffe 97
+internal/integrations/netalertx/netalertx_test.go
+  s_344993999c180f::t_622c7971f2782f 1-163,165-171
+  s_344993999c180f::t_467d89560c155c 164
+cmd/hearth/hub_import_test.go
+  s_344993999c180f::t_b60543a96997fa 39-44,70-106,108
+  s_344993999c180f::t_f7da853f5c2ba2 107,109
+cmd/hearth/hub.go
+  s_344993999c180f::t_f9368dad6910b5 176-187
+  s_344993999c180f::t_1fe07ef4d01195 167
+  s_344993999c180f::t_7aab770fb53c3e 235-238,297-302,349,455-456,512-515
+  s_344993999c180f::t_ea14a88cec7a71 128-129
+  s_344993999c180f::t_90a8d09918eb69 120-122
+  s_344993999c180f::t_e350812859bbc0 29
+  s_344993999c180f::t_212eac89013815 81-93
+internal/integrations/beszel/beszel_test.go
+  s_344993999c180f::t_8abf5760b4bd35 1-5,7-194,197-198,200-201,204-211
+  s_344993999c180f::t_e34db3e4aaf714 6,195-196,199,202-203
+internal/policy/guardrails_test.go
+  s_344993999c180f::t_0cd5fd1b4b38a2 167
+internal/hub/server.go
+  s_344993999c180f::t_17a678e71893a5 71-73
+internal/store/networkhosts.go
+  s_344993999c180f::t_1d3dd95070d5ea 51-52
+  s_344993999c180f::t_d7da76f289a632 70
+internal/policy/policy.go
+  s_344993999c180f::t_0cd5fd1b4b38a2 130-131,133-135,303-304,306-307
+internal/integrations/beszel/beszelmock/beszelmock.go
+  s_344993999c180f::t_1bc7b986de9111 1-196
+internal/integrations/netalertx/client.go
+  s_344993999c180f::t_e350812859bbc0 68-72,74
+  s_344993999c180f::t_6a4ececd454ac9 73,105
+  s_344993999c180f::t_1e486b8a2945a4 1-67,75-104,106-166
+internal/hub/api.go
+  s_344993999c180f::t_17a678e71893a5 78,108,183-184
+internal/hub/beszel.go
+  s_344993999c180f::t_3da5e9a3b2e475 1-179
+internal/hub/network.go
+  s_344993999c180f::t_151d6464b4418f 32-33
+internal/integrations/beszel/client.go
+  s_344993999c180f::t_8453a91f1e9dba 1-237
+internal/integrations/beszel/reader.go
+  s_344993999c180f::t_75fee82b9ffd22 1-154
+internal/integrations/netalertx/netalertxmock/netalertxmock.go
+  s_344993999c180f::t_e5d6250c39f1a0 1-111
+internal/hub/beszel_test.go
+  s_344993999c180f::t_c5aeceab0991d8 76-81
+  s_344993999c180f::t_556859cd373180 1-75,82-102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2578a2abb1cfcf172ad8c6a37daf3c98d82c809c",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
