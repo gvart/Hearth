@@ -340,3 +340,64 @@ func TestManagerFollowsTheStore(t *testing.T) {
 		t.Errorf("undecryptable cluster = %+v", c)
 	}
 }
+
+// TestManagerWaitLoaded: WaitLoaded waits for Run's first read of the stored
+// clusters, after which they are all known; with none stored, as on a hub
+// without Kubernetes, it does not hang.
+func TestManagerWaitLoaded(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		clusters int
+	}{
+		{"no cluster stored", 0},
+		{"one cluster stored", 1},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "hearth.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = st.Close() })
+			sealer, err := NewSealer([]byte("test CA key"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tt.clusters > 0 {
+				api := newFakeAPI(t)
+				sealed, err := sealer.Seal("c1", []byte(api.kubeconfig()))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := st.KubeClusters().Add(t.Context(), store.KubeCluster{
+					ID: "c1", Name: "lab", Sealed: sealed, CreatedAt: time.Now(),
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			m := NewManager(Config{Store: st, Sealer: sealer, Policy: policy.New(st.Audit())})
+
+			// Not running yet: the wait ends with its context.
+			ctx, cancel := context.WithCancel(t.Context())
+			cancel()
+			if err := m.WaitLoaded(ctx); !errors.Is(err, context.Canceled) {
+				t.Fatalf("WaitLoaded before Run = %v, want context.Canceled", err)
+			}
+
+			runCtx, stop := context.WithCancel(context.Background())
+			done := make(chan error, 1)
+			go func() { done <- m.Run(runCtx) }()
+			t.Cleanup(func() {
+				stop()
+				if err := <-done; err != nil {
+					t.Errorf("Run: %v", err)
+				}
+			})
+			if err := m.WaitLoaded(t.Context()); err != nil {
+				t.Fatalf("WaitLoaded: %v", err)
+			}
+			if got := m.Clusters(); len(got) != tt.clusters {
+				t.Errorf("clusters after the load = %+v, want %d", got, tt.clusters)
+			}
+		})
+	}
+}

@@ -134,6 +134,9 @@ type Manager struct {
 
 	kick chan struct{}
 	bus  bus
+	// loaded is closed once Run has read the cluster list the first time.
+	loaded     chan struct{}
+	loadedOnce sync.Once
 
 	mu       sync.Mutex
 	watchers map[string]*running
@@ -156,7 +159,7 @@ func NewManager(cfg Config) *Manager {
 		store: cfg.Store, sealer: cfg.Sealer, policy: cfg.Policy, log: cfg.Log,
 		every: cfg.SyncInterval, now: cfg.Now, connect: newAPIClient,
 		evictRetry: defaultEvictRetry, gonePoll: defaultGonePoll,
-		kick: make(chan struct{}, 1), watchers: map[string]*running{},
+		kick: make(chan struct{}, 1), loaded: make(chan struct{}), watchers: map[string]*running{},
 	}
 	if m.every <= 0 {
 		m.every = DefaultSyncInterval
@@ -178,12 +181,31 @@ func (m *Manager) Run(ctx context.Context) error {
 	defer m.stopAll()
 	for {
 		m.sync(ctx)
+		m.loadedOnce.Do(func() { close(m.loaded) })
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-t.C:
 		case <-m.kick:
 		}
+	}
+}
+
+// WaitLoaded waits until Run has read the stored cluster list the first
+// time, so that a cluster still unknown afterwards is not adopted, or ctx is
+// done. A first read that failed counts too: nothing waits on a store that
+// cannot be read. With no cluster stored, the first read is all it waits for.
+func (m *Manager) WaitLoaded(ctx context.Context) error {
+	select {
+	case <-m.loaded:
+		return nil
+	default:
+	}
+	select {
+	case <-m.loaded:
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("wait for the Kubernetes clusters to load: %w", ctx.Err())
 	}
 }
 

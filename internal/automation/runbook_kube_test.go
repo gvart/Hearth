@@ -19,6 +19,7 @@ import (
 // fakeNodes is cluster lab, whose nodes answer as nodes says: nil for Ready.
 // Like *kubernetes.Manager, it reads only in a context policy granted it.
 type fakeNodes struct {
+	loadGate
 	nodes map[string]error
 
 	mu    sync.Mutex
@@ -132,6 +133,75 @@ func TestRunbookKubeNodeCheck(t *testing.T) {
 	}
 }
 
+// TestRunbookKubeNodeCheckWaitsForLoad: a check started while the hub is
+// still loading its clusters, as right after it starts, waits for the load
+// before it reads; a cluster still unknown then fails it at once.
+func TestRunbookKubeNodeCheckWaitsForLoad(t *testing.T) {
+	for _, tt := range []struct {
+		name, cluster, status, step, errIn string
+	}{
+		{name: "adopted cluster", cluster: "lab", status: RunbookSucceeded, step: stepOK},
+		{name: "unknown cluster", cluster: "nope", status: RunbookFailed, step: stepFailed, errIn: "no such cluster"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes := &fakeNodes{loadGate: newLoadGate(), nodes: map[string]error{"pi-1": nil}}
+			h := newRBHarness(t, fmt.Sprintf(kubeNodeYAML, tt.cluster, "pi-1", "1m"), policy.Config{})
+			h.kubeNodes = nodes
+			h.rb = h.engine()
+			h.run(h.rb)
+			id := h.start("rb")
+			<-nodes.waiting
+			if n := nodes.count(); n != 0 {
+				t.Fatalf("%d reads before the clusters loaded, want none", n)
+			}
+			close(nodes.loaded)
+			run := h.await(id, tt.status)
+			if s := run.Steps[0]; s.Status != tt.step || !strings.Contains(s.Error, tt.errIn) {
+				t.Errorf("step = %s %q, want %s with %q", s.Status, s.Error, tt.step, tt.errIn)
+			}
+			if n := nodes.count(); n != 1 {
+				t.Errorf("%d reads, want 1", n)
+			}
+		})
+	}
+}
+
+// TestRunbookKubeNodeCheckLoadWithin: the wait for the load is bounded by the
+// step's within.
+func TestRunbookKubeNodeCheckLoadWithin(t *testing.T) {
+	nodes := &fakeNodes{loadGate: loadGate{loaded: make(chan struct{})}, nodes: map[string]error{"pi-1": nil}}
+	h := newRBHarness(t, fmt.Sprintf(kubeNodeYAML, "lab", "pi-1", "0s"), policy.Config{})
+	h.kubeNodes = nodes
+	h.rb = h.engine()
+	h.run(h.rb)
+	run := h.await(h.start("rb"), RunbookFailed)
+	if s := run.Steps[0]; s.Status != stepFailed || !strings.Contains(s.Error, "did not load within 0s") {
+		t.Errorf("step = %s %q, want failed: did not load", s.Status, s.Error)
+	}
+	if n := nodes.count(); n != 0 {
+		t.Errorf("%d reads, want none", n)
+	}
+}
+
+// TestRunbookKubeNodeCheckLoadCancelled: a hub stopping while a check waits
+// for the load ends the wait; the run is left to resume.
+func TestRunbookKubeNodeCheckLoadCancelled(t *testing.T) {
+	nodes := &fakeNodes{loadGate: newLoadGate(), nodes: map[string]error{"pi-1": nil}}
+	h := newRBHarness(t, fmt.Sprintf(kubeNodeYAML, "lab", "pi-1", "1h"), policy.Config{})
+	h.kubeNodes = nodes
+	h.rb = h.engine()
+	stop := h.run(h.rb)
+	id := h.start("rb")
+	<-nodes.waiting
+	stop() // returns only once the wait has ended
+	if run := h.get(id); run.Status != RunbookRunning {
+		t.Errorf("run is %s, want %s: %+v", run.Status, RunbookRunning, run.Steps)
+	}
+	if n := nodes.count(); n != 0 {
+		t.Errorf("%d reads, want none", n)
+	}
+}
+
 func TestRunbookKubeNodeCheckPlan(t *testing.T) {
 	h := newRBHarness(t, fmt.Sprintf(kubeNodeYAML, "lab", "pi-1", "1m"), policy.Config{})
 	plan, err := h.rb.Plan(t.Context(), "rb")
@@ -226,6 +296,28 @@ func TestRunbookKubeNodeDelete(t *testing.T) {
 				t.Errorf("audit = %+v", got)
 			}
 		})
+	}
+}
+
+// TestRunbookKubeNodeDeleteWaitsForLoad: a Kubernetes action started while
+// the hub is still loading its clusters waits for the load.
+func TestRunbookKubeNodeDeleteWaitsForLoad(t *testing.T) {
+	kube := &fakeKube{loadGate: newLoadGate()}
+	cfg := policy.Config{DangerousAutomations: []string{RunbookActor("rb")}}
+	h := newRBHarness(t, kubeNodeDeleteYAML, cfg)
+	maps.Copy(h.kinds.Actions, kubeActions(kube))
+	h.cfg = cfg
+	h.rb = h.engine()
+	h.run(h.rb)
+	id := h.start("rb")
+	<-kube.waiting
+	if _, runs := kube.calls(); len(runs) != 0 {
+		t.Fatalf("ran before the clusters loaded: %v", runs)
+	}
+	close(kube.loaded)
+	h.await(id, RunbookSucceeded)
+	if _, runs := kube.calls(); len(runs) != 1 {
+		t.Errorf("runs = %q, want one", runs)
 	}
 }
 
