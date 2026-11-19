@@ -126,7 +126,8 @@ connection before the answer comes, nobody knows whether it happened. The run st
 `unknown`, and Hearth never runs that step again by itself: look at the device, then retry or roll back.
 A roll back includes the rollback of the unknown step, as it may have happened. Only a definite refusal
 or error from the target, or a first hop that could not be reached at all, makes a step `failed`. A node
-drain that stops after cordoning the node, a Kubernetes write that was sent and not answered, and an
+drain that stops after cordoning the node, a Kubernetes write that was sent and not answered or that
+the API server answered with a timeout, a webhook write (POST, PUT, PATCH or DELETE) answered `504`, and an
 action that ran but whose outcome could not be written to the audit log are `unknown` too. An action
 refused because its first audit entry could not be written never ran, so it is `failed`.
 

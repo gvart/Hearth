@@ -123,7 +123,8 @@ func (a *webhookAction) Target() Text          { return Literal(a.site) }
 // Run sends the request. Any 2xx answer is success. Errors name the site
 // only: never the full URL, headers or body, which may hold secrets. An error
 // wraps ErrOutcomeUnknown unless the request certainly did nothing: the first
-// hop could not be reached, or the target itself answered with a refusal.
+// hop could not be reached, or the target itself answered with a refusal. A
+// write answered 504 is not a refusal: the target may still act on it.
 func (a *webhookAction) Run(ctx context.Context, ev Event) error {
 	ctx, cancel := context.WithTimeout(ctx, a.timeout)
 	defer cancel()
@@ -153,9 +154,22 @@ func (a *webhookAction) Run(ctx context.Context, ev Event) error {
 			// An earlier hop took the request before sending it on.
 			return fmt.Errorf("webhook %s %s answered %s after a redirect: %w", a.method, a.site, resp.Status, ErrOutcomeUnknown)
 		}
+		if resp.StatusCode == http.StatusGatewayTimeout && isWrite(a.method) {
+			// A gateway gave up waiting for the target, which may still act.
+			return fmt.Errorf("webhook %s %s answered %s: %w", a.method, a.site, resp.Status, ErrOutcomeUnknown)
+		}
 		return fmt.Errorf("webhook %s %s answered %s", a.method, a.site, resp.Status)
 	}
 	return nil
+}
+
+// isWrite reports whether method changes what it is sent to.
+func isWrite(method string) bool {
+	switch method {
+	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+		return true
+	}
+	return false
 }
 
 // unreachable reports whether err is a failure to find or dial a host.

@@ -62,7 +62,8 @@ func (c *apiClient) get(ctx context.Context, path string, q url.Values) (*http.R
 
 // do sends method path?q with body, of contentType, and returns the
 // response of a 2xx answer; the caller closes its body. A write that got a
-// connection and no answer fails with an error wrapping ErrWriteOutcomeUnknown.
+// connection and no answer, or an answer that it timed out, fails with an
+// error wrapping ErrWriteOutcomeUnknown.
 func (c *apiClient) do(ctx context.Context, method, path string, q url.Values, contentType string, body []byte) (*http.Response, error) {
 	var connected atomic.Bool
 	ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
@@ -102,7 +103,18 @@ func (c *apiClient) do(ctx context.Context, method, path string, q url.Values, c
 			st.Message = st.Message[:200]
 		}
 	}
-	return nil, &apiError{Code: resp.StatusCode, Message: st.Message}
+	err = &apiError{Code: resp.StatusCode, Message: st.Message}
+	if method != http.MethodGet && timedOut(resp.StatusCode, st.Reason) {
+		return nil, fmt.Errorf("%w: %w", err, ErrWriteOutcomeUnknown)
+	}
+	return nil, err
+}
+
+// timedOut reports whether an answer says the API server gave up waiting
+// rather than refusing: the write may still complete.
+func timedOut(code int, reason string) bool {
+	return code == http.StatusGatewayTimeout || reason == "Timeout" ||
+		(code == http.StatusInternalServerError && reason == "ServerTimeout")
 }
 
 // listPage is one page of a list.
