@@ -1,0 +1,109 @@
+# Prepare a new machine as a Docker host that Hearth can restart containers on.
+#
+# Prerequisites:
+#   - A Debian, Ubuntu or Raspberry Pi OS machine (any hardware) with internet
+#     access, running a Hearth agent that is enrolled with the hub and runs as
+#     root. Allow the programs this runbook runs:
+#       hearth agent run --allow-exec /usr/bin/curl --allow-exec /bin/sh \
+#         --allow-exec /usr/bin/systemctl --allow-exec /usr/bin/docker \
+#         --allow-exec /usr/bin/apt-get --allow-exec /bin/rm
+#     Allowing sh is a wide grant: remove it from the agent again after the run.
+#   - Edit the placeholders below (`docker-new` is the new device, 192.0.2.70 its
+#     address) in every step before you start.
+#   - Afterwards, add --allow-restart docker:<container> to the agent for every
+#     container Hearth should be able to restart.
+#
+# The exec actions are dangerous: they are held or denied until the hub grants
+# them, for example:
+#   hearth hub --allow-dangerous-automation runbook/add-docker-host
+id: add-docker-host
+description: Install Docker Engine on a machine, start it, verify it, undo with a purge.
+steps:
+  - id: ready
+    type: prompt
+    prompt: confirm
+    message: >-
+      Is the agent on the new machine enrolled and allowed to run the programs listed
+      in this runbook, and are the placeholders edited?
+    timeout: 30m
+
+  - id: host-up
+    type: check
+    description: The machine answers on SSH, so it is on the network.
+    check:
+      type: tcp
+      address: "192.0.2.70:22"
+    within: 2m
+    every: 10s
+
+  - id: fetch-installer
+    type: action
+    description: Download Docker's convenience install script.
+    action:
+      type: exec
+      device: docker-new
+      command: [/usr/bin/curl, -fsSL, -o, /tmp/get-docker.sh, "https://get.docker.com"]
+      timeout: 2m
+    rollback:
+      type: exec
+      device: docker-new
+      command: [/bin/rm, -f, /tmp/get-docker.sh]
+
+  - id: install
+    type: action
+    description: Install Docker Engine from Docker's apt repository.
+    action:
+      type: exec
+      device: docker-new
+      command: [/bin/sh, /tmp/get-docker.sh]
+      timeout: 10m
+    rollback:
+      type: exec
+      device: docker-new
+      command:
+        - /usr/bin/apt-get
+        - purge
+        - -y
+        - docker-ce
+        - docker-ce-cli
+        - containerd.io
+        - docker-buildx-plugin
+        - docker-compose-plugin
+      timeout: 5m
+
+  - id: enable
+    type: action
+    description: Start Docker now and at every boot.
+    action:
+      type: exec
+      device: docker-new
+      command: [/usr/bin/systemctl, enable, --now, docker.service]
+      timeout: 2m
+    rollback:
+      type: exec
+      device: docker-new
+      command: [/usr/bin/systemctl, disable, --now, docker.service, docker.socket]
+      timeout: 2m
+
+  - id: verify
+    type: action
+    description: Ask the daemon for its version, which fails if it is not running. Changes nothing.
+    action:
+      type: exec
+      device: docker-new
+      command: [/usr/bin/docker, version, --format, "{{.Server.Version}}"]
+      timeout: 1m
+
+  - id: allow-restarts
+    type: prompt
+    prompt: confirm
+    message: >-
+      Did you add --allow-restart docker:<container> to the agent for the containers
+      Hearth should restart? Answer no to stop here; the host itself is ready.
+    timeout: 30m
+
+  - id: done
+    type: action
+    action:
+      type: log
+      message: Docker host is ready.

@@ -1,0 +1,93 @@
+# Add a Talos worker node to an existing cluster.
+#
+# Prerequisites:
+#   - A Hearth agent runs on the machine that has talosctl and your Talos
+#     configs (a workstation or the hub host). Its flags let it run talosctl:
+#       hearth agent run --allow-exec /usr/local/bin/talosctl
+#   - /etc/talos/worker.yaml (the worker machine config) and
+#     /etc/talos/talosconfig (client config with the cluster endpoints) exist on
+#     that machine. Hearth never sees their content, so no secret is in this file.
+#   - The new node is booted from the Talos image and waits in maintenance mode.
+#   - Edit the placeholders below (192.0.2.50 is the new node, `workstation` is
+#     the device with talosctl) in every step before you start the run.
+#
+# apply-config is an exec action, which is dangerous: it is held or denied until
+# the hub grants it, for example:
+#   hearth hub --allow-dangerous-automation runbook/add-talos-node
+id: add-talos-node
+description: Join a Talos worker node, check it comes up, undo with a node reset.
+steps:
+  - id: ready
+    type: prompt
+    prompt: confirm
+    message: >-
+      Is the new node booted from the Talos image, are worker.yaml and talosconfig
+      in place on the talosctl device, and are the placeholders in this runbook edited?
+    timeout: 30m
+
+  - id: maintenance-api
+    type: check
+    description: The node's Talos API answers in maintenance mode.
+    check:
+      type: tcp
+      address: "192.0.2.50:50000"
+    within: 10m
+    every: 10s
+
+  - id: apply-config
+    type: action
+    description: Send the worker machine config to the node; it installs and reboots.
+    action:
+      type: exec
+      device: workstation
+      command:
+        - /usr/local/bin/talosctl
+        - apply-config
+        - --insecure
+        - --nodes
+        - 192.0.2.50
+        - --file
+        - /etc/talos/worker.yaml
+      timeout: 5m
+    rollback:
+      type: exec
+      device: workstation
+      command:
+        - /usr/local/bin/talosctl
+        - --talosconfig
+        - /etc/talos/talosconfig
+        - reset
+        - --nodes
+        - 192.0.2.50
+        - --graceful=false
+        - --reboot
+      timeout: 5m
+
+  - id: install-settle
+    type: wait
+    description: Give the node time to install Talos and reboot.
+    duration: 2m
+
+  - id: kubelet
+    type: check
+    description: The kubelet of the joined node answers.
+    check:
+      type: tcp
+      address: "192.0.2.50:10250"
+    within: 15m
+    every: 15s
+
+  - id: node-ready
+    type: prompt
+    prompt: confirm
+    message: >-
+      Does the node show as Ready on the Kubernetes page? Answer no to stop the run,
+      then roll back to reset the node. After a rollback, remove the stale Node
+      object by hand: kubectl delete node <name>.
+    timeout: 30m
+
+  - id: done
+    type: action
+    action:
+      type: log
+      message: Talos node joined and confirmed Ready.

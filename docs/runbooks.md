@@ -68,6 +68,9 @@ steps:
     every: 5s
 ```
 
+Ready-to-copy runbooks for adding a Talos node, a k3s node or a Docker host are in
+[Runbook recipes](runbook-recipes.md).
+
 See what it would do, then start it:
 
 ```sh
