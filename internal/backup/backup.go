@@ -179,12 +179,17 @@ func configFiles(opts CreateOptions) ([]namedFile, error) {
 		out = append(out, namedFile{name: name, data: b})
 		return nil
 	}
-	ca := []string{pki.CACertFile, pki.CAKeyFile}
+	// During a hub CA rotation the next CA is there too, and both are needed:
+	// the store holds secrets sealed with either key.
+	ca := []struct {
+		name     string
+		optional bool
+	}{{pki.CACertFile, false}, {pki.NextCACertFile, true}, {pki.CAKeyFile, false}, {pki.NextCAKeyFile, true}}
 	if opts.WithoutCAKey {
-		ca = ca[:1]
+		ca = ca[:2]
 	}
-	for _, name := range ca {
-		if err := add(name, filepath.Join(opts.DataDir, name), false); err != nil {
+	for _, f := range ca {
+		if err := add(f.name, filepath.Join(opts.DataDir, f.name), f.optional); err != nil {
 			return nil, err
 		}
 	}
@@ -534,8 +539,9 @@ func unpack(ctx context.Context, o *opener, stage string) (Manifest, error) {
 			return Manifest{}, ErrCorrupt
 		}
 	}
-	// The manifest says whether the CA key is in, and the entries agree.
-	if seen[pki.CAKeyFile] == m.NoCAKey {
+	// The manifest says whether the CA key is in, and the entries agree; the
+	// next CA of a rotation has a key only with its certificate and the CA key.
+	if seen[pki.CAKeyFile] == m.NoCAKey || seen[pki.NextCAKeyFile] && (!seen[pki.NextCACertFile] || m.NoCAKey) {
 		return Manifest{}, ErrCorrupt
 	}
 	// The final chunk must follow the end of the entries, with nothing after.
@@ -592,7 +598,7 @@ func validName(name string) bool {
 		return false
 	}
 	switch name {
-	case dbName, pki.CACertFile, pki.CAKeyFile, policy.ConfigFile, notifyName:
+	case dbName, pki.CACertFile, pki.CAKeyFile, pki.NextCACertFile, pki.NextCAKeyFile, policy.ConfigFile, notifyName:
 		return true
 	}
 	dir, base := path.Split(name)
@@ -609,7 +615,7 @@ func unpackFile(r io.Reader, stage, name string, size int64) error {
 		return fmt.Errorf("restore %s: %w", name, err)
 	}
 	mode := os.FileMode(0o600)
-	if name == pki.CACertFile {
+	if name == pki.CACertFile || name == pki.NextCACertFile {
 		mode = 0o644
 	}
 	f, err := os.OpenFile(dst, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
@@ -651,6 +657,9 @@ func verifyStage(ctx context.Context, stage string, withKey bool, beforeCommit f
 		}
 	} else if _, err := pki.ParseCertPEM(certPEM); err != nil {
 		return fmt.Errorf("restore CA: %w", err)
+	}
+	if err := verifyNextCA(stage); err != nil {
+		return err
 	}
 	dbPath := filepath.Join(stage, dbName)
 	if err := store.CheckSnapshotFile(ctx, dbPath); err != nil {
@@ -741,5 +750,29 @@ func commit(stage, dataDir string) (err error) {
 		return fmt.Errorf("restore: %w", err)
 	}
 	syncDir(dataDir)
+	return nil
+}
+
+// verifyNextCA checks the next CA of a hub CA rotation in the stage, if the
+// backup holds one: its certificate, and that its key matches it.
+func verifyNextCA(stage string) error {
+	certPEM, err := os.ReadFile(filepath.Join(stage, pki.NextCACertFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("restore next CA: %w", err)
+	}
+	if _, err := pki.ParseCertPEM(certPEM); err != nil {
+		return fmt.Errorf("restore next CA: %w", err)
+	}
+	keyPEM, err := os.ReadFile(filepath.Join(stage, pki.NextCAKeyFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("restore next CA: %w", err)
+	}
+	if _, err := tls.X509KeyPair(certPEM, keyPEM); err != nil {
+		return errors.New("restore next CA: the certificate and key in the backup do not match") // never echo key material
+	}
 	return nil
 }
