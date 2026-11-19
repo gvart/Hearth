@@ -92,7 +92,20 @@ function lineOf(source: string, offset: number): number {
 }
 
 function parse(source: string): Document.Parsed {
-  return parseDocument(source, { prettyErrors: false });
+  const doc = parseDocument(source, { prettyErrors: false });
+  if (!source.endsWith('\n')) {
+    // A block scalar that runs to the end of a file with no final newline has
+    // no line break to keep: the hub reads "a" where this reader says "a\n".
+    visit(doc, {
+      Scalar(_, node) {
+        const isBlock = node.type === Scalar.BLOCK_LITERAL || node.type === Scalar.BLOCK_FOLDED;
+        if (isBlock && typeof node.value === 'string' && node.value.endsWith('\n') && node.range?.[2] === source.length) {
+          node.value = node.value.slice(0, -1);
+        }
+      },
+    });
+  }
+  return doc;
 }
 
 /**
