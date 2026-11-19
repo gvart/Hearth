@@ -214,6 +214,28 @@ func TestRestoredHubExpiresApprovalsLeftPending(t *testing.T) {
 	})
 }
 
+// TestBackupTakesRunbooksFromTheHubsDir: a hub started with --runbooks-dir
+// is backed up with the same flag, and its runbooks restore into the data dir.
+func TestBackupTakesRunbooksFromTheHubsDir(t *testing.T) {
+	t.Setenv(passphraseEnv, testBackupPassphrase)
+	dir, _ := initHub(t)
+	runbooks := t.TempDir()
+	if err := os.WriteFile(filepath.Join(runbooks, "restart-web.yaml"), []byte("id: restart-web\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(t.TempDir(), "hub.hbk")
+	if _, err := execute(t, "backup", file, "--data-dir", dir, "--runbooks-dir", runbooks); err != nil {
+		t.Fatal(err)
+	}
+	restored := filepath.Join(t.TempDir(), "restored")
+	if _, err := execute(t, "restore", file, "--data-dir", restored); err != nil {
+		t.Fatal(err)
+	}
+	if b, err := os.ReadFile(filepath.Join(restored, "runbooks", "restart-web.yaml")); err != nil || string(b) != "id: restart-web\n" {
+		t.Errorf("restored runbook = %q, %v", b, err)
+	}
+}
+
 // abandonTempDir makes a temporary directory whose owner is long gone.
 func abandonTempDir(t *testing.T, dir string) {
 	t.Helper()

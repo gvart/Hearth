@@ -33,6 +33,7 @@ const (
 	dbName         = "hearth.db"
 	notifyName     = "notify.yaml"
 	automationsDir = "automations"
+	runbooksDir    = "runbooks"
 	maxManifest    = 1 << 20
 	// maxEntryName is the longest entry name a backup can hold.
 	maxEntryName = 255
@@ -76,6 +77,8 @@ type CreateOptions struct {
 	// AutomationsDir is the automations directory; empty means
 	// <DataDir>/automations.
 	AutomationsDir string
+	// RunbooksDir is the runbooks directory; empty means <DataDir>/runbooks.
+	RunbooksDir string
 	// HearthVersion and Clustered go into the manifest.
 	HearthVersion string
 	Clustered     bool
@@ -187,17 +190,22 @@ func configFiles(opts CreateOptions) ([]namedFile, error) {
 	if err := add(notifyName, notify, opts.NotifyConfig == ""); err != nil {
 		return nil, err
 	}
-	dir := opts.AutomationsDir
-	if dir == "" {
-		dir = filepath.Join(opts.DataDir, automationsDir)
-	}
-	autos, err := automation.FileNames(dir)
-	if err != nil {
-		return nil, fmt.Errorf("backup automations: %w", err)
-	}
-	for _, f := range autos {
-		if err := add(automationsDir+"/"+filepath.Base(f), f, false); err != nil {
-			return nil, err
+	// Runbooks are listed as the hub loads them, the same way as automations.
+	for _, d := range []struct{ entry, dir string }{
+		{automationsDir, opts.AutomationsDir}, {runbooksDir, opts.RunbooksDir},
+	} {
+		dir := d.dir
+		if dir == "" {
+			dir = filepath.Join(opts.DataDir, d.entry)
+		}
+		files, err := automation.FileNames(dir)
+		if err != nil {
+			return nil, fmt.Errorf("backup %s: %w", d.entry, err)
+		}
+		for _, f := range files {
+			if err := add(d.entry+"/"+filepath.Base(f), f, false); err != nil {
+				return nil, err
+			}
 		}
 	}
 	return out, nil
@@ -565,7 +573,7 @@ func readEntryHead(r io.Reader) (string, int64, error) {
 }
 
 // validName reports whether an entry may be unpacked: a fixed set of files, and
-// automation files directly in the automations directory.
+// YAML files directly in the automations or runbooks directory.
 func validName(name string) bool {
 	if len(name) > maxEntryName {
 		return false
@@ -576,7 +584,7 @@ func validName(name string) bool {
 	}
 	dir, base := path.Split(name)
 	ext := path.Ext(base)
-	return dir == automationsDir+"/" && base != "" && !strings.HasPrefix(base, ".") &&
+	return (dir == automationsDir+"/" || dir == runbooksDir+"/") && base != "" && !strings.HasPrefix(base, ".") &&
 		!strings.ContainsAny(base, `/\`) && (ext == ".yaml" || ext == ".yml")
 }
 

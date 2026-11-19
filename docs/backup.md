@@ -16,6 +16,7 @@ already have: nothing has to be enrolled again.
 | `policy.yaml`         | If there is one                                                             |
 | `notify.yaml`         | Including the credentials in it                                             |
 | The automations       | The `.yaml` and `.yml` files the hub loads                                  |
+| The runbooks          | The `.yaml` and `.yml` files the hub loads                                  |
 
 It does **not** hold:
 
@@ -49,6 +50,7 @@ There is no passphrase flag, because other users on the host can read command li
 | `--data-dir`        | The hub does not use the default data dir (or `HEARTH_DATA_DIR`)          |
 | `--notify-config`   | The hub runs with `--notify-config` pointing outside the data dir         |
 | `--automations-dir` | The hub runs with `--automations-dir` pointing outside the data dir       |
+| `--runbooks-dir`    | The hub runs with `--runbooks-dir` pointing outside the data dir          |
 
 The file is written with mode `0600` and appears only when it is complete. An existing file is never
 overwritten, so give each backup its own name.
@@ -83,8 +85,9 @@ service runs as, so that the hub can read the restored files.
 `--host` names and port, or point the old DNS name at the new machine. The hub's certificate is issued
 again at every start, from the restored CA, so agents trust it.
 
-If the hub ran with `--notify-config` or `--automations-dir` outside the data dir, those files are
-restored into the data dir as `notify.yaml` and `automations/`. Drop the flags, or move the files back.
+If the hub ran with `--notify-config`, `--automations-dir` or `--runbooks-dir` outside the data dir, those
+files are restored into the data dir as `notify.yaml`, `automations/` and `runbooks/`. Drop the flags, or
+move the files back.
 
 Restore refuses, and leaves the data dir as it found it, when:
 
@@ -152,8 +155,8 @@ so a member without a working majority refuses the backup. Take backups before y
    Every hub must run a Hearth version that supports restored clusters, so use the same version as the
    restored hub. An older hub is refused with a message to upgrade it first, and its join token stays valid.
 
-6. **Copy the configuration** to the hubs that joined: `policy.yaml`, `notify.yaml` and the automations
-   directory are not replicated. `hearth cluster status` shows `in_sync` when they match (see
+6. **Copy the configuration** to the hubs that joined: `policy.yaml`, `notify.yaml`, the automations
+   directory and the runbooks directory are not replicated. `hearth cluster status` shows `in_sync` when they match (see
    [Configuration drift](cluster.md#configuration-drift)).
 
 Agents need nothing: they try the hubs they know, and learn the new list once they reach one.

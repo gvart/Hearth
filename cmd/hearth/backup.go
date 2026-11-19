@@ -28,6 +28,7 @@ type backupOptions struct {
 	dataDir        string
 	notifyConfig   string
 	automationsDir string
+	runbooksDir    string
 }
 
 func newBackupCmd() *cobra.Command {
@@ -35,7 +36,7 @@ func newBackupCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "backup <file>",
 		Short: "Write an encrypted backup of this hub",
-		Long: "Write the hub's CA, database, policy.yaml, notify.yaml and automations to an encrypted file.\n" +
+		Long: "Write the hub's CA, database, policy.yaml, notify.yaml, automations and runbooks to an encrypted file.\n" +
 			"Run it on the hub host; the hub may keep running. On a cluster member the hub must be running.\n\n" +
 			"The file holds the CA private key and every credential, so it is always encrypted. The passphrase\n" +
 			"comes from " + passphraseEnv + " or a prompt, and is needed to restore: without it the backup\n" +
@@ -63,6 +64,8 @@ func newBackupCmd() *cobra.Command {
 		"the hub's notification channels file, if not <data-dir>/notify.yaml (env HEARTH_NOTIFY_CONFIG)")
 	cmd.Flags().StringVar(&opts.automationsDir, "automations-dir", "",
 		"the hub's automations directory, if not <data-dir>/automations")
+	cmd.Flags().StringVar(&opts.runbooksDir, "runbooks-dir", "",
+		"the hub's runbooks directory, if not <data-dir>/runbooks")
 	return cmd
 }
 
@@ -91,7 +94,7 @@ func runBackup(ctx context.Context, opts backupOptions, output, passphrase, vers
 		var err error
 		m, err = backup.Create(ctx, backup.CreateOptions{
 			DataDir: opts.dataDir, Store: st, Output: output, Passphrase: passphrase,
-			NotifyConfig: opts.notifyConfig, AutomationsDir: opts.automationsDir,
+			NotifyConfig: opts.notifyConfig, AutomationsDir: opts.automationsDir, RunbooksDir: opts.runbooksDir,
 			HearthVersion: version, Clustered: cluster.IsMember(opts.dataDir),
 		})
 		created = err == nil

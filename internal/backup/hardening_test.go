@@ -28,6 +28,28 @@ func abandonedDir(t *testing.T, dir string) {
 	}
 }
 
+// TestRunbooksRoundTrip: runbooks come back like automations, into the data dir.
+func TestRunbooksRoundTrip(t *testing.T) {
+	dir, st := newHub(t)
+	writeTestFile(t, filepath.Join(dir, "runbooks", "restart-web.yaml"), "id: restart-web\n")
+	writeTestFile(t, filepath.Join(dir, "runbooks", "notes.txt"), "not a runbook")
+	out := filepath.Join(t.TempDir(), "hub.hbk")
+	if _, err := Create(t.Context(), createOpts(dir, st, out)); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(t.TempDir(), "restored")
+	if _, err := Restore(t.Context(), RestoreOptions{Input: out, Passphrase: testPassphrase, DataDir: target}); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(target, "runbooks", "restart-web.yaml"))
+	if err != nil || string(b) != "id: restart-web\n" {
+		t.Errorf("restored runbook = %q, %v", b, err)
+	}
+	if _, err := os.Stat(filepath.Join(target, "runbooks", "notes.txt")); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("a file the hub does not load was restored: %v", err)
+	}
+}
+
 func TestCreateRefusesNamesItCouldNotRestore(t *testing.T) {
 	names := map[string]string{"too long": strings.Repeat("x", 250) + ".yaml"}
 	if runtime.GOOS != "windows" {
