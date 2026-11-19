@@ -1,0 +1,75 @@
+web/test/automation-roundtrip.test.mjs
+  s_344993999c180f::t_58be32fdb9a7bc 98
+  s_344993999c180f::t_939093e2df5f3e 11
+  s_344993999c180f::t_54e712ad3f8e11 1-10,12-97,99-124,135-201,205-313
+  s_344993999c180f::t_adb79a5468c08d 125-134
+  s_344993999c180f::t_3b7dad2efd0c09 202-204
+web/package-lock.json
+  s_344993999c180f::t_c3a3af38d83c09 15-16,2857-2871
+internal/hub/automations_test.go
+  s_344993999c180f::t_5c30144c8ec5aa 175-176
+Taskfile.yml
+  s_344993999c180f::t_60f4e627740900 35-41
+CLAUDE.md
+  s_344993999c180f::t_1ef9b8204a172b 72
+web/src/components/Shell.tsx
+  s_344993999c180f::t_e79da91628d0c8 40-42
+  s_344993999c180f::t_c214507b007e0e 12-15
+  s_344993999c180f::t_9291e40e19872e 129-132
+  s_344993999c180f::t_79dfc5e7ec9dd1 1
+  s_344993999c180f::t_338b6e9076a96f 21
+web/src/automations/model.ts
+  s_344993999c180f::t_2eb90a27ffa775 274-276
+  s_344993999c180f::t_a54f2201bd07ca 1-233,235-264,266-273,277-337,340-344,346-364,366-431,470-523,525-606
+  s_344993999c180f::t_61d60ad8fb9f31 338-339,345,365
+  s_344993999c180f::t_b9c16b687e7a9e 432-469
+  s_344993999c180f::t_8701ef3f2f7158 524
+  s_344993999c180f::t_b5cedc00d69db5 234,265
+web/package.json
+  s_344993999c180f::t_4672a772de04e9 11
+  s_344993999c180f::t_e72a7f20274dde 19-20
+web/src/components/AutomationEditor.tsx
+  s_344993999c180f::t_1a3485c26b6bf3 1
+  s_344993999c180f::t_407787f4ea1fc9 383-385
+  s_344993999c180f::t_cf863e49f64dc7 125-130,135
+  s_344993999c180f::t_b9727bd9d0ac0e 81
+  s_344993999c180f::t_d11c297cabfca3 2-80,82-124,131-134,136-193,195-199,203-355,357-362,366,368-382,386-889
+  s_344993999c180f::t_ab6c8a6e8947ec 200-202
+  s_344993999c180f::t_65100ba189a9b6 363-365,367
+  s_344993999c180f::t_02b584f192d447 356
+  s_344993999c180f::t_f7141a88cb8d29 194
+internal/automation/editorschema_test.go
+  s_344993999c180f::t_e35aaccc9a563b 1-109
+docs/automations.md
+  s_344993999c180f::t_79d5065772259e 184-189,192-222,224
+  s_344993999c180f::t_a6445d82e60c8c 190-191
+  s_344993999c180f::t_727d9a317ef844 223
+web/src/components/AutomationsPage.css
+  s_344993999c180f::t_fa11bcf946f8b6 1-339
+.github/workflows/ci.yml
+  s_344993999c180f::t_3cff02d79a1163 44
+web/src/components/AutomationsPage.tsx
+  s_344993999c180f::t_c189bc1ea3d782 1-96
+docs/guardrails.md
+  s_344993999c180f::t_3160e2d808987f 125-126
+web/src/api/automations.ts
+  s_344993999c180f::t_e64e4507e4f31f 1-113
+web/src/automations/schema.json
+  s_344993999c180f::t_a87fe1d8ef956f 1-160
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cb4948b1fc4182beb3fcf20308ea30e4bcaef896",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": null
+    }
+  }
+}
