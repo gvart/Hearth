@@ -27,13 +27,17 @@ type Sealer struct {
 	aead cipher.AEAD
 }
 
-// NewSealer derives the sealing key from secret, the hub CA's private key
-// in PKCS #8 DER.
-func NewSealer(secret []byte) (*Sealer, error) {
+// NewSealer derives the kubeconfig sealing key from secret, the hub CA's
+// private key in PKCS #8 DER.
+func NewSealer(secret []byte) (*Sealer, error) { return NewPurposeSealer(secret, sealInfo) }
+
+// NewPurposeSealer is NewSealer for another kind of secret: info names the
+// purpose, so each purpose seals with a key of its own.
+func NewPurposeSealer(secret []byte, info string) (*Sealer, error) {
 	if len(secret) == 0 {
 		return nil, errors.New("new sealer: empty secret")
 	}
-	key, err := hkdf.Key(sha256.New, secret, nil, sealInfo, 32)
+	key, err := hkdf.Key(sha256.New, secret, nil, info, 32)
 	if err != nil {
 		return nil, fmt.Errorf("new sealer: derive key: %w", err)
 	}
@@ -62,11 +66,11 @@ func (s *Sealer) Seal(id string, plaintext []byte) ([]byte, error) {
 func (s *Sealer) Open(id string, sealed []byte) ([]byte, error) {
 	n := s.aead.NonceSize()
 	if len(sealed) < n+s.aead.Overhead() {
-		return nil, errors.New("open sealed kubeconfig: too short")
+		return nil, errors.New("open sealed secret: too short")
 	}
 	out, err := s.aead.Open(nil, sealed[:n], sealed[n:], []byte(id))
 	if err != nil {
-		return nil, fmt.Errorf("open sealed kubeconfig: %w", err)
+		return nil, fmt.Errorf("open sealed secret: %w", err)
 	}
 	return out, nil
 }

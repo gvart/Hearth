@@ -8,7 +8,7 @@
 export const sections = [
 	{ label: 'Start here', pages: ['getting-started', 'concepts', 'comparison'] },
 	{ label: 'Automations', pages: ['automations', 'notifications'] },
-	{ label: 'Integrations', pages: ['prometheus', 'kubernetes', 'discovery', 'pihole', 'mcp'] },
+	{ label: 'Integrations', pages: ['prometheus', 'kubernetes', 'proxmox', 'discovery', 'pihole', 'mcp'] },
 	{ label: 'Operating', pages: ['guardrails', 'https', 'cluster', 'security'] },
 ];
 

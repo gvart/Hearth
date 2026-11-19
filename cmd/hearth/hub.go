@@ -27,6 +27,7 @@ import (
 	"github.com/gvart/hearth/internal/hub"
 	"github.com/gvart/hearth/internal/integrations/kubernetes"
 	"github.com/gvart/hearth/internal/integrations/prometheus"
+	"github.com/gvart/hearth/internal/integrations/proxmox"
 	"github.com/gvart/hearth/internal/mcpserver"
 	"github.com/gvart/hearth/internal/metrics"
 	"github.com/gvart/hearth/internal/notify"
@@ -265,6 +266,10 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	pve, err := newProxmoxManager(st, ca, pol, log)
+	if err != nil {
+		return err
+	}
 	notifier, err := loadNotifier(opts, log)
 	if err != nil {
 		return err
@@ -295,6 +300,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		Metrics:           ms,
 		Agents:            agents,
 		Kube:              kube,
+		Proxmox:           pve,
 		Notify:            notifier,
 		Version:           opts.version,
 	}
@@ -443,6 +449,8 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	}
 	// Every hub of a cluster watches the Kubernetes clusters itself.
 	g.Go(func() error { return kube.Run(gctx) })
+	// And reads the Proxmox servers itself.
+	g.Go(func() error { return pve.Run(gctx) })
 	// Every hub prunes its own metrics.
 	g.Go(func() error { return ms.Run(gctx) })
 	g.Go(func() error { return serve(gctx, agentSrv, func() error { return agentSrv.ServeTLS(agentLn, "", "") }) })
@@ -522,6 +530,20 @@ func newKubeManager(st *store.Store, ca *pki.CA, pol *policy.Engine, log *slog.L
 		return nil, err
 	}
 	return kubernetes.NewManager(kubernetes.Config{Store: st, Sealer: sealer, Policy: pol, Log: log}), nil
+}
+
+// newProxmoxManager returns the manager of adopted Proxmox VE servers. Their
+// API tokens are sealed with a key of their own, derived from the hub CA key.
+func newProxmoxManager(st *store.Store, ca *pki.CA, pol *policy.Engine, log *slog.Logger) (*proxmox.Manager, error) {
+	secret, err := ca.KeyDER()
+	if err != nil {
+		return nil, err
+	}
+	sealer, err := kubernetes.NewPurposeSealer(secret, proxmox.SealInfo)
+	if err != nil {
+		return nil, err
+	}
+	return proxmox.NewManager(proxmox.Config{Store: st, Sealer: sealer, Policy: pol, Log: log}), nil
 }
 
 // serve runs srv until ctx is done, then shuts it down gracefully (forcibly

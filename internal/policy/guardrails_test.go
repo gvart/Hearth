@@ -137,6 +137,11 @@ var expected = map[Action]struct {
 	NetworkScan:               {Read, []string{ActorHub}, false},
 	NetworkHostMark:           {Safe, []string{ActorWeb}, false},
 	NetworkImport:             {Read, []string{ActorHub}, false},
+	ProxmoxServerAdd:          {Safe, []string{ActorWeb}, false},
+	ProxmoxServerRemove:       {Safe, []string{ActorWeb}, false},
+	ProxmoxGuestStart:         {Safe, []string{ActorWeb}, false},
+	ProxmoxGuestStop:          {Dangerous, []string{ActorWeb}, false},
+	ProxmoxGuestReboot:        {Dangerous, []string{ActorWeb}, false},
 }
 
 func TestExpectedCoversEveryAction(t *testing.T) {

@@ -91,6 +91,9 @@ running it.
   they reach the database. Credential plugins (`exec`, `auth-provider`) and `tokenFile` are refused,
   as they would run programs or read files on the hub. Each Kubernetes action is a policy decision;
   draining a node is dangerous. See [Kubernetes](kubernetes.md).
+- **Proxmox VE**: API tokens only, sealed with AES-256-GCM under a key of their own. TLS is always
+  verified, against a configured CA, a pinned certificate fingerprint or the system roots. Starting a
+  guest is safe; stopping and rebooting one are dangerous. See [Proxmox VE](proxmox.md).
 - **Prometheus**: read only. Hearth never writes to Prometheus.
 - **MCP clients** (AI assistants): each has its own bearer token, stored as a SHA-256 hash and
   checked on every request, so a revocation takes effect at once. The token's scope caps the class

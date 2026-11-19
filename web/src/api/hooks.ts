@@ -73,6 +73,7 @@ export function useLogout() {
       qc.removeQueries({ queryKey: keys.devices });
       qc.removeQueries({ queryKey: ['network'] });
       qc.removeQueries({ queryKey: ['kube'] });
+      qc.removeQueries({ queryKey: ['proxmox'] });
       qc.removeQueries({ queryKey: ['audit'] });
       qc.removeQueries({ queryKey: ['approvals'] });
       qc.setQueryData(keys.session, null);
