@@ -26,6 +26,7 @@ import (
 	"github.com/gvart/hearth/internal/cluster"
 	"github.com/gvart/hearth/internal/discovery"
 	"github.com/gvart/hearth/internal/hub"
+	"github.com/gvart/hearth/internal/integrations/beszel"
 	"github.com/gvart/hearth/internal/integrations/kubernetes"
 	"github.com/gvart/hearth/internal/integrations/prometheus"
 	"github.com/gvart/hearth/internal/integrations/proxmox"
@@ -77,6 +78,19 @@ type hubOptions struct {
 	piholeURL          string
 	piholePassword     string
 	piholePasswordFile string
+	// netalertxURL is a NetAlertX API server whose devices are imported;
+	// empty means none. Its API token is HEARTH_NETALERTX_TOKEN
+	// (netalertxToken) or the file netalertxTokenFile.
+	netalertxURL       string
+	netalertxToken     string
+	netalertxTokenFile string
+	// beszelURL is a Beszel hub whose systems the hub reads; empty means
+	// none. It logs in as beszelEmail with HEARTH_BESZEL_PASSWORD
+	// (beszelPassword) or the file beszelPasswordFile.
+	beszelURL          string
+	beszelEmail        string
+	beszelPassword     string
+	beszelPasswordFile string
 	// dhcpLeases are DHCP lease files (dnsmasq, ISC dhcpd) to import.
 	dhcpLeases []string
 	cluster    clusterOptions
@@ -103,12 +117,16 @@ func newHubCmd() *cobra.Command {
 			"--discover-subnet turns on network discovery: hosts without an agent show up as\n" +
 			"unmanaged devices (see docs/discovery.md). --new-device-alerts CHANNEL then sends a\n" +
 			"notification for every new host (see docs/discovery.md). --pihole-url and --dhcp-leases add\n" +
-			"the hosts a Pi-hole or a DHCP server knows, with their names, on every VLAN (see docs/pihole.md).",
+			"the hosts a Pi-hole or a DHCP server knows, with their names, on every VLAN (see docs/pihole.md);\n" +
+			"--netalertx-url adds the devices a NetAlertX knows (see docs/netalertx.md).\n\n" +
+			"--beszel-url reads the systems a Beszel hub monitors, with their status and usage (see docs/beszel.md).",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			opts.adminPassword = os.Getenv("HEARTH_ADMIN_PASSWORD")
 			opts.joinTokenEnv = os.Getenv("HEARTH_JOIN_TOKEN")
 			opts.piholePassword = os.Getenv("HEARTH_PIHOLE_PASSWORD")
+			opts.netalertxToken = os.Getenv("HEARTH_NETALERTX_TOKEN")
+			opts.beszelPassword = os.Getenv("HEARTH_BESZEL_PASSWORD")
 			opts.version = cmd.Root().Version
 			if v := os.Getenv("HEARTH_DISCOVER_INTERVAL"); v != "" && !cmd.Flags().Changed("discover-interval") {
 				d, err := time.ParseDuration(v)
@@ -146,7 +164,7 @@ func newHubCmd() *cobra.Command {
 		"IPv4 subnet to discover hosts on with an ARP sweep and mDNS, e.g. 192.168.1.0/24, or \"auto\" for the hub's own LANs; "+
 			"repeatable (env HEARTH_DISCOVER_SUBNETS, comma-separated; default: off; see docs/discovery.md)")
 	cmd.Flags().DurationVar(&opts.discoverInterval, "discover-interval", discovery.DefaultInterval,
-		"time between network discovery scans and Pi-hole/DHCP lease imports (env HEARTH_DISCOVER_INTERVAL)")
+		"time between network discovery scans, Pi-hole/DHCP lease/NetAlertX imports and Beszel reads (env HEARTH_DISCOVER_INTERVAL)")
 	cmd.Flags().StringVar(&opts.newDeviceAlerts, "new-device-alerts", os.Getenv("HEARTH_NEW_DEVICE_ALERTS"),
 		"notification channel to tell about every new host network discovery finds (env HEARTH_NEW_DEVICE_ALERTS; "+
 			"default: off; see docs/discovery.md)")
@@ -155,6 +173,18 @@ func newHubCmd() *cobra.Command {
 			"password from env HEARTH_PIHOLE_PASSWORD or --pihole-password-file; see docs/pihole.md)")
 	cmd.Flags().StringVar(&opts.piholePasswordFile, "pihole-password-file", os.Getenv("HEARTH_PIHOLE_PASSWORD_FILE"),
 		"file holding the Pi-hole app password, mode 0600 (env HEARTH_PIHOLE_PASSWORD_FILE)")
+	cmd.Flags().StringVar(&opts.netalertxURL, "netalertx-url", os.Getenv("HEARTH_NETALERTX_URL"),
+		"NetAlertX API server to import devices from, e.g. http://netalertx.lan:20212 (env HEARTH_NETALERTX_URL; "+
+			"API token from env HEARTH_NETALERTX_TOKEN or --netalertx-token-file; see docs/netalertx.md)")
+	cmd.Flags().StringVar(&opts.netalertxTokenFile, "netalertx-token-file", os.Getenv("HEARTH_NETALERTX_TOKEN_FILE"),
+		"file holding the NetAlertX API token, mode 0600 (env HEARTH_NETALERTX_TOKEN_FILE)")
+	cmd.Flags().StringVar(&opts.beszelURL, "beszel-url", os.Getenv("HEARTH_BESZEL_URL"),
+		"Beszel hub to read systems from, e.g. http://beszel.lan:8090 (env HEARTH_BESZEL_URL; needs --beszel-email "+
+			"and a password from env HEARTH_BESZEL_PASSWORD or --beszel-password-file; see docs/beszel.md)")
+	cmd.Flags().StringVar(&opts.beszelEmail, "beszel-email", os.Getenv("HEARTH_BESZEL_EMAIL"),
+		"email of the Beszel user the hub logs in as; a read-only user is enough (env HEARTH_BESZEL_EMAIL)")
+	cmd.Flags().StringVar(&opts.beszelPasswordFile, "beszel-password-file", os.Getenv("HEARTH_BESZEL_PASSWORD_FILE"),
+		"file holding the Beszel user's password, mode 0600 (env HEARTH_BESZEL_PASSWORD_FILE)")
 	cmd.Flags().StringArrayVar(&opts.dhcpLeases, "dhcp-leases", splitList(os.Getenv("HEARTH_DHCP_LEASES")),
 		"DHCP lease file to import hosts from, dnsmasq (/var/lib/misc/dnsmasq.leases) or ISC dhcpd (dhcpd.leases); "+
 			"repeatable (env HEARTH_DHCP_LEASES, comma-separated)")
@@ -199,6 +229,10 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		}
 	}
 	importSources, err := leaseSources(opts)
+	if err != nil {
+		return err
+	}
+	beszelClient, err := beszelSource(opts)
 	if err != nil {
 		return err
 	}
@@ -260,6 +294,12 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	}
 
 	pol := policy.NewWithConfig(st.Audit(), st.Approvals(), polCfg)
+	var beszelReader *beszel.Reader
+	if beszelClient != nil {
+		beszelReader = beszel.NewReader(beszel.ReaderConfig{
+			Client: beszelClient, Interval: opts.discoverInterval, Policy: pol, Log: log.With("component", "beszel"),
+		})
+	}
 	if node == nil {
 		if err := ensureAdminPassword(ctx, st, pol, opts, log); err != nil {
 			return err
@@ -306,6 +346,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		AgentPort:         agentPort,
 		Stopping:          stopping,
 		Prometheus:        prom,
+		Beszel:            beszelSnapshotter(beszelReader),
 		Metrics:           ms,
 		Agents:            agents,
 		Kube:              kube,
@@ -411,7 +452,8 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if node != nil {
 		logAttrs = append(logAttrs, "node_id", node.ID(), "raft_addr", node.Addr())
 	}
-	logAttrs = append(logAttrs, "prometheus", prom != nil, "pihole", opts.piholeURL != "", "dhcp_lease_files", len(opts.dhcpLeases))
+	logAttrs = append(logAttrs, "prometheus", prom != nil, "pihole", opts.piholeURL != "", "netalertx", opts.netalertxURL != "",
+		"beszel", opts.beszelURL != "", "dhcp_lease_files", len(opts.dhcpLeases))
 	log.InfoContext(ctx, "hub listening", logAttrs...)
 
 	var builtin []*automation.Automation
@@ -467,6 +509,10 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	g.Go(func() error { return kube.Run(gctx) })
 	// And reads the Proxmox servers itself.
 	g.Go(func() error { return pve.Run(gctx) })
+	// And reads Beszel itself: what it found is kept in memory, not stored.
+	if beszelReader != nil {
+		g.Go(func() error { return beszelReader.Run(gctx) })
+	}
 	// Every hub prunes its own metrics.
 	g.Go(func() error { return ms.Run(gctx) })
 	g.Go(func() error { return serve(gctx, agentSrv, func() error { return agentSrv.ServeTLS(agentLn, "", "") }) })

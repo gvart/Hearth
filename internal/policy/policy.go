@@ -127,9 +127,12 @@ const (
 	// ignored, or neither again, which silences or restores its new-device
 	// alerts.
 	NetworkHostMark Action = "network.host.mark"
-	// NetworkImport is one import of the hosts a Pi-hole and DHCP lease
-	// files know, by the hub.
+	// NetworkImport is one import of the hosts a Pi-hole, a NetAlertX and
+	// DHCP lease files know, by the hub.
 	NetworkImport Action = "network.import"
+	// BeszelRead is one read by the hub of the systems a Beszel hub
+	// monitors.
+	BeszelRead Action = "beszel.read"
 	// ProxmoxServerAdd adopts a Proxmox VE server: the hub stores its API
 	// token, sealed, and starts reading it.
 	ProxmoxServerAdd Action = "proxmox.server.add"
@@ -297,8 +300,11 @@ var rules = map[Action]rule{
 	NetworkScan: {class: Read, actors: []string{ActorHub}},
 	// Marking a host changes only which alerts the operator gets about it.
 	NetworkHostMark: {class: Safe, actors: []string{ActorWeb}},
-	// An import reads Pi-hole's API and lease files; it changes nothing.
+	// An import reads Pi-hole's and NetAlertX's APIs and lease files; it
+	// changes nothing.
 	NetworkImport: {class: Read, actors: []string{ActorHub}},
+	// A Beszel read lists the systems Beszel monitors; it changes nothing.
+	BeszelRead: {class: Read, actors: []string{ActorHub}},
 	// Adding a server hands the hub a credential to it; the hub only reads
 	// with it, except for the proxmox.guest actions below, each decided and
 	// audited on its own.
