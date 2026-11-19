@@ -354,25 +354,25 @@ func TestDeviceLogsLinesBeforeTheReader(t *testing.T) {
 	}
 }
 
-// failingOpenAudit cannot write the audit entry of an opened stream.
+// failingOpenAudit cannot write the audit entry of a stream about to open.
 type failingOpenAudit struct{ policy.Auditor }
 
 func (a failingOpenAudit) Append(ctx context.Context, e store.AuditEntry) (int64, error) {
-	if e.Result == "ok" {
+	if e.Result == policy.ReadAllowed {
 		return 0, errors.New("disk full")
 	}
 	return a.Auditor.Append(ctx, e)
 }
 
 // TestDeviceLogsAuditFails: a stream whose audit entry cannot be written is
-// refused, and the agent is told to stop the stream it already started.
+// refused, and the agent is never asked to start it.
 func TestDeviceLogsAuditFails(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	f := newLogsFixtureAudit(t, func(a policy.Auditor) policy.Auditor { return failingOpenAudit{a} })
 	stream := connectAgent(ctx, t, f.client, minLogsMinor, &agentv1.Ceiling{Logs: []string{"systemd:*"}})
-	reqs, cancels := fakeLogAgent(stream, "")
+	reqs, _ := fakeLogAgent(stream, "")
 	var resp *http.Response
 	for range 100 {
 		resp = f.open(ctx, t, "systemd:a.service")
@@ -385,14 +385,11 @@ func TestDeviceLogsAuditFails(t *testing.T) {
 	if resp.StatusCode == http.StatusOK {
 		t.Fatal("stream opened without an audit entry")
 	}
-	req := <-reqs
+	_ = resp.Body.Close()
 	select {
-	case id := <-cancels:
-		if id != req.GetId() {
-			t.Errorf("cancel of %s, want %s", id, req.GetId())
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("agent got no LogCancel")
+	case req := <-reqs:
+		t.Fatalf("agent asked to stream %v without an audit entry", req.GetSource())
+	case <-time.After(500 * time.Millisecond):
 	}
 }
 
