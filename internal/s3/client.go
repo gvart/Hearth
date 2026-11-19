@@ -14,8 +14,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -28,7 +30,18 @@ const (
 	maxErrorBody = 64 << 10
 	// maxListPages bounds a listing at a million keys.
 	maxListPages = 1000
+	// maxErrorCode bounds the S3 error code put into an error.
+	maxErrorCode = 64
 )
+
+// bucketName is an S3 bucket name: 3 to 63 lowercase letters, digits, dots
+// and hyphens, starting and ending with a letter or a digit.
+var bucketName = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$`)
+
+// validBucket applies the S3 bucket naming rules.
+func validBucket(name string) bool {
+	return bucketName.MatchString(name) && !strings.Contains(name, "..") && net.ParseIP(name) == nil
+}
 
 // ErrHTTP is the error of a request S3 answered with a failure status.
 var ErrHTTP = errors.New("s3 request failed")
@@ -66,16 +79,17 @@ type Client struct {
 
 // New checks cfg and returns its client.
 func New(cfg Config) (*Client, error) {
+	// Neither error quotes the endpoint as given: it may hold credentials.
 	u, err := url.Parse(cfg.Endpoint)
 	if err != nil {
-		return nil, fmt.Errorf("endpoint: %w", err)
+		return nil, errors.New("endpoint: not a URL; want http(s)://host[:port]")
 	}
 	if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil ||
 		(u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
-		return nil, fmt.Errorf("endpoint %q: want http(s)://host[:port], with no path", cfg.Endpoint)
+		return nil, fmt.Errorf("endpoint %s: want http(s)://host[:port], with no credentials and no path", u.Redacted())
 	}
-	if cfg.Bucket == "" || strings.ContainsAny(cfg.Bucket, "/?#") {
-		return nil, fmt.Errorf("bucket %q: want a bucket name", cfg.Bucket)
+	if !validBucket(cfg.Bucket) {
+		return nil, fmt.Errorf("bucket %q: not a valid S3 bucket name (3 to 63 lowercase letters, digits, dots and hyphens)", cfg.Bucket)
 	}
 	if cfg.AccessKeyID == "" || cfg.SecretAccessKey == "" {
 		return nil, errors.New("an access key ID and a secret access key are needed")
@@ -151,6 +165,9 @@ func errorCode(r io.Reader) string {
 	}
 	if xml.NewDecoder(io.LimitReader(r, maxErrorBody)).Decode(&doc) != nil || doc.Code == "" {
 		return ""
+	}
+	if len(doc.Code) > maxErrorCode {
+		doc.Code = doc.Code[:maxErrorCode]
 	}
 	return " " + doc.Code
 }

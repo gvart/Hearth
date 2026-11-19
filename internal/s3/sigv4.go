@@ -111,14 +111,25 @@ func canonicalQuery(raw string) string {
 		// Only this package builds queries, and it builds valid ones.
 		return raw
 	}
-	var pairs []string
+	var pairs [][2]string
 	for k, vs := range vals {
 		for _, v := range vs {
-			pairs = append(pairs, uriEncode(k, false)+"="+uriEncode(v, false))
+			pairs = append(pairs, [2]string{uriEncode(k, false), uriEncode(v, false)})
 		}
 	}
-	sort.Strings(pairs)
-	return strings.Join(pairs, "&")
+	// By key, then by value: not by the joined pair, which would put "a-b"
+	// before "a".
+	sort.Slice(pairs, func(i, j int) bool {
+		if pairs[i][0] != pairs[j][0] {
+			return pairs[i][0] < pairs[j][0]
+		}
+		return pairs[i][1] < pairs[j][1]
+	})
+	out := make([]string, len(pairs))
+	for i, p := range pairs {
+		out[i] = p[0] + "=" + p[1]
+	}
+	return strings.Join(out, "&")
 }
 
 // uriEncode percent-encodes every byte but the unreserved characters, and

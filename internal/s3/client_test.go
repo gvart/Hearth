@@ -287,7 +287,7 @@ func TestUnreachableEndpoint(t *testing.T) {
 	srv := httptest.NewServer(http.NotFoundHandler())
 	endpoint := srv.URL
 	srv.Close()
-	c, err := New(Config{Endpoint: endpoint, Bucket: "b", AccessKeyID: rand.Text(), SecretAccessKey: rand.Text()})
+	c, err := New(Config{Endpoint: endpoint, Bucket: "bkt", AccessKeyID: rand.Text(), SecretAccessKey: rand.Text()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -306,7 +306,7 @@ func TestRedirectIsNotFollowed(t *testing.T) {
 		http.Redirect(w, r, other.URL+"/steal", http.StatusTemporaryRedirect)
 	}))
 	t.Cleanup(srv.Close)
-	c, err := New(Config{Endpoint: srv.URL, Bucket: "b", AccessKeyID: rand.Text(), SecretAccessKey: rand.Text()})
+	c, err := New(Config{Endpoint: srv.URL, Bucket: "bkt", AccessKeyID: rand.Text(), SecretAccessKey: rand.Text()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -324,14 +324,18 @@ func TestNewRefusesBadConfig(t *testing.T) {
 		name string
 		cfg  Config
 	}{
-		{"no scheme", Config{Endpoint: "minio.lan:9000", Bucket: "b", AccessKeyID: id, SecretAccessKey: secret}},
-		{"ftp", Config{Endpoint: "ftp://minio.lan", Bucket: "b", AccessKeyID: id, SecretAccessKey: secret}},
-		{"path", Config{Endpoint: "http://minio.lan/bucket", Bucket: "b", AccessKeyID: id, SecretAccessKey: secret}},
-		{"user info", Config{Endpoint: "http://user@minio.lan", Bucket: "b", AccessKeyID: id, SecretAccessKey: secret}},
+		{"no scheme", Config{Endpoint: "minio.lan:9000", Bucket: "bkt", AccessKeyID: id, SecretAccessKey: secret}},
+		{"ftp", Config{Endpoint: "ftp://minio.lan", Bucket: "bkt", AccessKeyID: id, SecretAccessKey: secret}},
+		{"path", Config{Endpoint: "http://minio.lan/bucket", Bucket: "bkt", AccessKeyID: id, SecretAccessKey: secret}},
+		{"user info", Config{Endpoint: "http://user@minio.lan", Bucket: "bkt", AccessKeyID: id, SecretAccessKey: secret}},
 		{"no bucket", Config{Endpoint: "http://minio.lan", AccessKeyID: id, SecretAccessKey: secret}},
 		{"bucket with slash", Config{Endpoint: "http://minio.lan", Bucket: "a/b", AccessKeyID: id, SecretAccessKey: secret}},
-		{"no access key", Config{Endpoint: "http://minio.lan", Bucket: "b", SecretAccessKey: secret}},
-		{"no secret", Config{Endpoint: "http://minio.lan", Bucket: "b", AccessKeyID: id}},
+		{"no access key", Config{Endpoint: "http://minio.lan", Bucket: "bkt", SecretAccessKey: secret}},
+		{"no secret", Config{Endpoint: "http://minio.lan", Bucket: "bkt", AccessKeyID: id}},
+		// Credentials in the endpoint never reach the error.
+		{"credentials in the endpoint", Config{Endpoint: "https://" + id + ":" + secret + "@minio.lan", Bucket: "bkt", AccessKeyID: id, SecretAccessKey: secret}},
+		{"unparsable endpoint with credentials", Config{Endpoint: "https://" + id + ":" + secret + "@[::1", Bucket: "bkt", AccessKeyID: id, SecretAccessKey: secret}},
+		{"bucket name with capitals", Config{Endpoint: "http://minio.lan", Bucket: "Backups", AccessKeyID: id, SecretAccessKey: secret}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if _, err := New(tc.cfg); err == nil {
