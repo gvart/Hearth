@@ -62,24 +62,15 @@ func TestOverDeepDetailKeepsItsEntry(t *testing.T) {
 		wantResult string // prefix of the result of the one row the log shows
 		wantTag    string // decision of that row
 	}{
-		{"denied", Config{}, "", with(func(r *Request) { r.ActorKind = "nobody" }),
-			false, true, false, "actor kind not allowed", Deny},
-		{"denied by the configuration", uniform(ModeDeny), "", with(func(*Request) {}),
-			false, true, false, "dangerous actions by admin are denied", Deny},
-		{"dry run", Config{}, "", with(func(r *Request) { r.DryRun = true }),
-			false, false, false, DryRun, Allow},
-		{"dry run of a denied request", Config{}, "", with(func(r *Request) { r.DryRun = true; r.ActorKind = "nobody" }),
-			false, true, false, DryRun, Deny},
-		{"allowed", Config{}, "", with(func(*Request) {}),
-			false, false, true, "ok", Allow},
-		{"allowed, detail grows during the action", Config{}, "", growing,
-			true, false, true, "ok", Allow},
-		{"held and approved", uniform(ModeConfirm), store.ApprovalApproved, with(func(*Request) {}),
-			false, false, true, "ok", Allow},
-		{"held and approved, detail grows during the action", uniform(ModeConfirm), store.ApprovalApproved, growing,
-			true, false, true, "ok", Allow},
-		{"held and denied", uniform(ModeConfirm), store.ApprovalDenied, with(func(*Request) {}),
-			false, true, false, "approval denied", Deny},
+		{"denied", Config{}, "", with(func(r *Request) { r.ActorKind = "nobody" }), false, true, false, "actor kind not allowed", Deny},
+		{"denied by the configuration", uniform(ModeDeny), "", with(func(*Request) {}), false, true, false, "dangerous actions by admin are denied", Deny},
+		{"dry run", Config{}, "", with(func(r *Request) { r.DryRun = true }), false, false, false, DryRun, Allow},
+		{"dry run of a denied request", Config{}, "", with(func(r *Request) { r.DryRun = true; r.ActorKind = "nobody" }), false, true, false, DryRun, Deny},
+		{"allowed", Config{}, "", with(func(*Request) {}), false, false, true, "ok", Allow},
+		{"allowed, detail grows during the action", Config{}, "", growing, true, false, true, "ok", Allow},
+		{"held and approved", uniform(ModeConfirm), store.ApprovalApproved, with(func(*Request) {}), false, false, true, "ok", Allow},
+		{"held and approved, detail grows during the action", uniform(ModeConfirm), store.ApprovalApproved, growing, true, false, true, "ok", Allow},
+		{"held and denied", uniform(ModeConfirm), store.ApprovalDenied, with(func(*Request) {}), false, true, false, "approval denied", Deny},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
