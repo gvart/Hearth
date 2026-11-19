@@ -81,6 +81,8 @@ func TestCheckRenewal(t *testing.T) {
 		{"the renewal over a hub serving the new CA", pemOf(oldCA), pemOf(newCA, oldCA), renewed, original, newCA, true},
 		{"the finish drops the old CA", pemOf(oldCA, newCA), pemOf(newCA), nil, renewed, newCA, true},
 		{"a hub drops the CA of the agent's certificate", pemOf(oldCA, newCA), pemOf(oldCA), nil, renewed, oldCA, false},
+		// An old-key holder mints an old-CA certificate for the agent's key.
+		{"a hub drops the CA of the agent's certificate with a forged one", pemOf(oldCA, newCA), pemOf(oldCA), original, renewed, oldCA, false},
 		{"the abort drops the new CA of an agent not renewed", pemOf(oldCA, newCA), pemOf(oldCA), nil, original, oldCA, true},
 		{"the same CAs in another order", pemOf(oldCA, newCA), pemOf(newCA, oldCA), nil, renewed, oldCA, true},
 		{"a renewal alone", pemOf(oldCA, newCA), nil, renewed, original, newCA, true},

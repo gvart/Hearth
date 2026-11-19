@@ -89,10 +89,10 @@ const maxTrusted = 2
 // PEM, from a hub its TLS handshake verified against the CA root. A bundle
 // that adds a CA is taken only with a renewal: at most two CAs, root among
 // them, and a certificate for key that one of them issued. Any other bundle
-// must only drop CAs of cur. A certificate must be for key; the one the agent
-// holds after the change, cert or else held, must be of a CA it trusts then,
-// so a hub cannot make it drop the CA of its own certificate. Whatever
-// fails refuses both.
+// must only drop CAs of cur. Any new bundle must keep the CA of held, the
+// certificate the agent holds now, so a hub cannot make it drop that CA.
+// A certificate must be for key and of a CA trusted after the change.
+// Whatever fails refuses both.
 func checkRenewal(cur, bundle, cert, key, held []byte, root *x509.Certificate) error {
 	curCAs, err := parseCerts(cur)
 	if err != nil {
@@ -117,32 +117,45 @@ func checkRenewal(cur, bundle, cert, key, held []byte, root *x509.Certificate) e
 			return errors.New("the hub's CAs leave out the CA that verified it")
 		}
 	}
-	var leaf *x509.Certificate
-	if len(cert) > 0 {
-		pair, err := tls.X509KeyPair(cert, key)
-		if err != nil {
-			return fmt.Errorf("the renewed certificate: %w", err)
-		}
-		if leaf, err = x509.ParseCertificate(pair.Certificate[0]); err != nil {
-			return fmt.Errorf("the renewed certificate: %w", err)
-		}
-	} else if len(bundle) == 0 {
-		return nil
-	} else {
+	if len(bundle) > 0 {
+		// The CA of the certificate the agent holds now stays trusted: the
+		// hub chooses any certificate it hands out, not this one.
 		b, _ := pem.Decode(held)
 		if b == nil {
 			return errors.New("the agent certificate: no PEM certificate")
 		}
-		if leaf, err = x509.ParseCertificate(b.Bytes); err != nil {
+		now, err := x509.ParseCertificate(b.Bytes)
+		if err != nil {
 			return fmt.Errorf("the agent certificate: %w", err)
 		}
-	}
-	for _, ca := range trusted {
-		if leaf.CheckSignatureFrom(ca) == nil {
-			return nil
+		if !issuedByOne(now, trusted) {
+			return errors.New("the hub's CAs leave out the CA of the agent's certificate")
 		}
 	}
-	return errors.New("the agent certificate would not be of a CA to trust")
+	if len(cert) == 0 {
+		return nil
+	}
+	pair, err := tls.X509KeyPair(cert, key)
+	if err != nil {
+		return fmt.Errorf("the renewed certificate: %w", err)
+	}
+	leaf, err := x509.ParseCertificate(pair.Certificate[0])
+	if err != nil {
+		return fmt.Errorf("the renewed certificate: %w", err)
+	}
+	if !issuedByOne(leaf, trusted) {
+		return errors.New("the renewed certificate is not of a CA to trust")
+	}
+	return nil
+}
+
+func issuedByOne(c *x509.Certificate, cas []*x509.Certificate) bool {
+	for _, ca := range cas {
+		if c.CheckSignatureFrom(ca) == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // parseCerts parses every certificate of PEM data, which must hold one or
