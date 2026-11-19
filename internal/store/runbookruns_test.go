@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 )
@@ -134,6 +135,65 @@ func TestRunbookRunsPruneOnlyFinishedRuns(t *testing.T) {
 	}
 	if _, err := runs.Get(ctx, "r000"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("the oldest finished run was kept: %v", err)
+	}
+}
+
+// TestRunbookRunOpenLeavesOutRunsStoppedForAnOperator: nothing happens to them
+// until someone decides, so the engine has no reason to read them every poll.
+func TestRunbookRunOpenLeavesOutRunsStoppedForAnOperator(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	runs := s.RunbookRuns()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	for i, status := range []string{"running", "waiting", "rolling_back", "failed", "unknown", "rollback_failed"} {
+		r := testRunbookRun(status, now.Add(time.Duration(i)*time.Second))
+		r.Status = status
+		if err := runs.Create(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	open, err := runs.Open(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, r := range open {
+		got = append(got, r.Status)
+	}
+	if want := []string{"running", "waiting", "rolling_back"}; !slices.Equal(got, want) {
+		t.Errorf("Open = %v, want %v", got, want)
+	}
+}
+
+func TestRunbookRunsBoundRunsStoppedForAnOperator(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	runs := s.RunbookRuns()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	waiting := testRunbookRun("waiting", now.Add(-time.Hour))
+	waiting.Status = "waiting"
+	if err := runs.Create(ctx, waiting); err != nil {
+		t.Fatal(err)
+	}
+	for i := range RunbookRunsKept + 5 {
+		r := testRunbookRun(fmt.Sprintf("r%03d", i), now.Add(time.Duration(i)*time.Second))
+		r.Status = []string{"failed", "unknown", "rollback_failed"}[i%3]
+		if err := runs.Create(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	all, err := runs.List(ctx, "rb", 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != RunbookRunsKept+1 {
+		t.Errorf("%d runs kept, want %d", len(all), RunbookRunsKept+1)
+	}
+	if _, err := runs.Get(ctx, "waiting"); err != nil {
+		t.Errorf("a run waiting for an answer was pruned: %v", err)
+	}
+	if _, err := runs.Get(ctx, "r000"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("the oldest stopped run was kept: %v", err)
 	}
 }
 

@@ -21,8 +21,8 @@ const (
 	// retries it or rolls the run back.
 	RunbookFailed = "failed"
 	// RunbookUnknown stopped at a step whose outcome nobody knows, because the
-	// hub running it went away: it may or may not have happened. Only an
-	// operator can say what to do next.
+	// hub running it went away or the answer to it never came: it may or may
+	// not have happened. Only an operator can say what to do next.
 	RunbookUnknown = "unknown"
 	// RunbookRollingBack runs the rollback steps, last completed step first.
 	RunbookRollingBack = "rolling_back"
@@ -216,25 +216,33 @@ func runbookStopped(status string) bool {
 
 // RunbookRunJSON is a run as the API serves it.
 type RunbookRunJSON struct {
-	ID         string     `json:"id"`
-	RunbookID  string     `json:"runbook_id"`
-	Status     string     `json:"status"`
+	ID        string `json:"id"`
+	RunbookID string `json:"runbook_id"`
+	Status    string `json:"status"`
+	// Version is what an operator's decision names, so that it applies to the
+	// run as they saw it and to nothing that happened since.
+	Version    int64      `json:"version"`
 	StartedBy  string     `json:"started_by"`
 	StartedAt  time.Time  `json:"started_at"`
 	UpdatedAt  time.Time  `json:"updated_at"`
 	FinishedAt *time.Time `json:"finished_at,omitempty"`
-	// CanRetry and CanRollback say what an operator may do now.
+	// CanRetry, CanRollback and CanPassOver say what an operator may do now.
 	CanRetry    bool `json:"can_retry"`
 	CanRollback bool `json:"can_rollback"`
+	CanPassOver bool `json:"can_pass_over"`
 	RunbookState
 }
 
 // runbookRunJSON is run with its decoded state.
 func runbookRunJSON(run store.RunbookRun, st *RunbookState) RunbookRunJSON {
 	out := RunbookRunJSON{
-		ID: run.ID, RunbookID: run.RunbookID, Status: run.Status, StartedBy: run.StartedBy,
+		ID: run.ID, RunbookID: run.RunbookID, Status: run.Status, Version: run.Version, StartedBy: run.StartedBy,
 		StartedAt: run.StartedAt, UpdatedAt: run.UpdatedAt, RunbookState: *st,
-		CanRetry: runbookStopped(run.Status), CanRollback: runbookStopped(run.Status),
+		CanRetry: runbookStopped(run.Status),
+	}
+	if runbookStopped(run.Status) {
+		out.CanRollback = st.Phase != phaseRollback
+		out.CanPassOver = st.Phase == phaseRollback && st.stoppedRollback() != nil
 	}
 	if !run.FinishedAt.IsZero() {
 		out.FinishedAt = &run.FinishedAt

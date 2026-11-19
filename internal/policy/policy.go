@@ -151,6 +151,12 @@ const (
 	// RunbookRollback rolls a stopped runbook run back, or passes over the
 	// rollback step it stopped at.
 	RunbookRollback Action = "runbook.rollback"
+	// RunbookPassOver gives up on the rollback step a run stopped at and goes
+	// on with the others: what that step should have undone stays as it is.
+	RunbookPassOver Action = "runbook.pass_over" //nolint:gosec // an action name, not a credential
+	// RunbookCheck is a check step of a runbook run: the hub reads a service
+	// over the network and changes nothing.
+	RunbookCheck Action = "runbook.check"
 )
 
 // Actor kinds.
@@ -306,11 +312,16 @@ var rules = map[Action]rule{
 	// Starting a run does nothing by itself: each action step goes through
 	// policy again, as the runbook.
 	RunbookStart: {class: Safe, actors: []string{ActorWeb}},
-	// An operator's answer to a run that stopped to ask: holding it in turn
-	// would leave the run stuck. What they lead to is decided step by step.
-	RunbookAnswer:   {class: Safe, actors: []string{ActorWeb}, fixed: true},
-	RunbookRetry:    {class: Safe, actors: []string{ActorWeb}, fixed: true},
-	RunbookRollback: {class: Safe, actors: []string{ActorWeb}, fixed: true},
+	// An answer to a run that stopped to ask: holding it for approval in turn
+	// would leave the run stuck, and the steps it leads to are decided anyway.
+	RunbookAnswer: {class: Safe, actors: []string{ActorWeb}, fixed: true},
+	// Deciding what a stopped run does next follows the hub's policy file;
+	// each step that follows is decided on its own as well.
+	RunbookRetry:    {class: Safe, actors: []string{ActorWeb}},
+	RunbookRollback: {class: Safe, actors: []string{ActorWeb}},
+	RunbookPassOver: {class: Safe, actors: []string{ActorWeb}},
+	// A check reads a service and changes nothing.
+	RunbookCheck: {class: Read, actors: []string{ActorAutomation}},
 }
 
 // Actions returns every known action, sorted.

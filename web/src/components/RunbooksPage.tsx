@@ -281,7 +281,7 @@ function RunDetail({ run }: { run: RunbookRun }) {
         <Status status={run.status} />
       </div>
 
-      {run.can_retry || run.can_rollback ? <Stopped run={run} /> : null}
+      {run.can_retry || run.can_rollback || run.can_pass_over ? <Stopped run={run} /> : null}
       {awaiting?.prompt ? <Prompt key={awaiting.id} run={run} step={awaiting} /> : null}
       {run.error ? (
         <div className="error-box" role="alert">
@@ -338,17 +338,18 @@ function Step({ step }: { step: RunbookStep }) {
 
 /** What an operator can do with a run that stopped. */
 function Stopped({ run }: { run: RunbookRun }) {
-  const retry = useRunbookRunAction(run.id, () => api.retryRunbookRun(run.id));
-  const rollback = useRunbookRunAction(run.id, () => api.rollbackRunbookRun(run.id));
-  const busy = retry.isPending || rollback.isPending;
+  const retry = useRunbookRunAction(run.id, () => api.retryRunbookRun(run.id, run.version));
+  const rollback = useRunbookRunAction(run.id, () => api.rollbackRunbookRun(run.id, run.version));
+  const passOver = useRunbookRunAction(run.id, () => api.passOverRunbookStep(run.id, run.version));
+  const busy = retry.isPending || rollback.isPending || passOver.isPending;
   const inRollback = run.phase === 'rollback';
-  const failure = retry.error ?? rollback.error;
+  const failure = retry.error ?? rollback.error ?? passOver.error;
   return (
     <section className="runbook-stopped" aria-label="Run stopped">
       <strong>{inRollback ? 'The rollback stopped' : 'The run stopped'}</strong>
       <p className="small">
         {run.status === 'unknown'
-          ? 'The hub went away during this step, so it may or may not have happened. Check the device, then choose.'
+          ? 'No answer came back from this step, so it may or may not have happened. Check the device, then choose.'
           : inRollback
             ? 'Retry the rollback step, or pass over it and go on rolling back.'
             : 'Retry the step, or undo the completed steps through their rollback steps.'}
@@ -369,16 +370,29 @@ function Stopped({ run }: { run: RunbookRun }) {
         >
           {inRollback ? 'Retry rollback step' : 'Retry step'}
         </button>
-        <button
-          className="btn"
-          type="button"
-          disabled={busy || !run.can_rollback}
-          onClick={() => {
-            rollback.mutate(undefined);
-          }}
-        >
-          {inRollback ? 'Pass over and continue' : 'Roll back'}
-        </button>
+        {inRollback ? (
+          <button
+            className="btn"
+            type="button"
+            disabled={busy || !run.can_pass_over}
+            onClick={() => {
+              passOver.mutate(undefined);
+            }}
+          >
+            Pass over and continue
+          </button>
+        ) : (
+          <button
+            className="btn"
+            type="button"
+            disabled={busy || !run.can_rollback}
+            onClick={() => {
+              rollback.mutate(undefined);
+            }}
+          >
+            Roll back
+          </button>
+        )}
       </div>
     </section>
   );

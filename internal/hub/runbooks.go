@@ -3,6 +3,7 @@
 package hub
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -35,6 +36,7 @@ func (a *api) runbookRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /api/v1/runbook-runs/{id}/answer", a.auth(a.answerRunbookRun))
 	mux.Handle("POST /api/v1/runbook-runs/{id}/retry", a.auth(a.retryRunbookRun))
 	mux.Handle("POST /api/v1/runbook-runs/{id}/rollback", a.auth(a.rollbackRunbookRun))
+	mux.Handle("POST /api/v1/runbook-runs/{id}/pass-over", a.auth(a.passOverRunbookRun))
 }
 
 // RunbookJSON is a runbook in the list.
@@ -125,22 +127,37 @@ func (a *api) answerRunbookRun(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, run)
 }
 
-func (a *api) retryRunbookRun(w http.ResponseWriter, r *http.Request) {
-	run, err := a.runbooks.Retry(r.Context(), policy.ActorWeb, remoteHost(r), r.PathValue("id"))
+// decideRunbookRun serves an operator's decision on a stopped run. The body
+// names the version of the run it was made on, so that a repeated or late
+// request never applies to what the run has become since.
+func (a *api) decideRunbookRun(w http.ResponseWriter, r *http.Request, what string,
+	decide func(ctx context.Context, actorKind, actorID, runID string, version int64) (automation.RunbookRunJSON, error),
+) {
+	var body struct {
+		Version int64 `json:"version"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxRunbookAnswerBody)).Decode(&body); err != nil || body.Version <= 0 {
+		writeError(w, http.StatusBadRequest, "bad_request", `body must be {"version": <the run's version>}`)
+		return
+	}
+	run, err := decide(r.Context(), policy.ActorWeb, remoteHost(r), r.PathValue("id"), body.Version)
 	if err != nil {
-		a.writeRunbookError(w, r, "retry runbook step", err)
+		a.writeRunbookError(w, r, what, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, run)
 }
 
+func (a *api) retryRunbookRun(w http.ResponseWriter, r *http.Request) {
+	a.decideRunbookRun(w, r, "retry runbook step", a.runbooks.Retry)
+}
+
 func (a *api) rollbackRunbookRun(w http.ResponseWriter, r *http.Request) {
-	run, err := a.runbooks.Rollback(r.Context(), policy.ActorWeb, remoteHost(r), r.PathValue("id"))
-	if err != nil {
-		a.writeRunbookError(w, r, "roll back runbook run", err)
-		return
-	}
-	writeJSON(w, http.StatusOK, run)
+	a.decideRunbookRun(w, r, "roll back runbook run", a.runbooks.Rollback)
+}
+
+func (a *api) passOverRunbookRun(w http.ResponseWriter, r *http.Request) {
+	a.decideRunbookRun(w, r, "pass over runbook rollback step", a.runbooks.PassOver)
 }
 
 // writeRunbookError answers a failed runbook request.

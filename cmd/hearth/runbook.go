@@ -107,7 +107,7 @@ func newRunbookCmd() *cobra.Command {
 		},
 		&cobra.Command{
 			Use:   "answer <run> <step> [value]",
-			Short: "Answer a prompt; without a value it is asked for, unechoed on a terminal",
+			Short: "Answer a prompt; without a value it is asked for, unechoed on a terminal. A secret is never taken as an argument",
 			Args:  cobra.RangeArgs(2, 3),
 			RunE: func(cmd *cobra.Command, args []string) error {
 				c, err := client(cmd)
@@ -116,6 +116,17 @@ func newRunbookCmd() *cobra.Command {
 				}
 				var value string
 				if len(args) == 3 {
+					// An argument stays in the shell's history and shows in the
+					// process list, so the prompt has to be looked up first.
+					var run automation.RunbookRunJSON
+					if err := c.do(cmd.Context(), http.MethodGet, runbookRunPath(args[0], ""), nil, &run); err != nil {
+						return err
+					}
+					for _, s := range run.Steps {
+						if s.ID == args[1] && s.Prompt != nil && s.Prompt.Secret {
+							return fmt.Errorf("step %s asks for a secret: leave the value out and enter it when asked", s.ID)
+						}
+					}
 					value = args[2]
 				} else if value, err = lines.read("Answer: "); err != nil {
 					return err
@@ -131,19 +142,29 @@ func newRunbookCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				return c.act(cmd.Context(), runbookRunPath(args[0], "/retry"), nil, cmd.OutOrStdout())
+				return c.decide(cmd.Context(), args[0], "/retry", cmd.OutOrStdout())
 			},
 		},
 		&cobra.Command{
-			Use:   "rollback <run>",
-			Short: "Roll a stopped run back; during a rollback, pass over the step it stopped at",
+			Use: "rollback <run>", Short: "Roll a stopped run back", Args: cobra.ExactArgs(1),
+			RunE: func(cmd *cobra.Command, args []string) error {
+				c, err := client(cmd)
+				if err != nil {
+					return err
+				}
+				return c.decide(cmd.Context(), args[0], "/rollback", cmd.OutOrStdout())
+			},
+		},
+		&cobra.Command{
+			Use:   "pass-over <run>",
+			Short: "Give up on the rollback step a run stopped at and go on with the others",
 			Args:  cobra.ExactArgs(1),
 			RunE: func(cmd *cobra.Command, args []string) error {
 				c, err := client(cmd)
 				if err != nil {
 					return err
 				}
-				return c.act(cmd.Context(), runbookRunPath(args[0], "/rollback"), nil, cmd.OutOrStdout())
+				return c.decide(cmd.Context(), args[0], "/pass-over", cmd.OutOrStdout())
 			},
 		},
 	)
@@ -281,6 +302,15 @@ func (c *runbookClient) act(ctx context.Context, path string, body any, out io.W
 	return printRunbookRun(out, run)
 }
 
+// decide posts an operator's decision on the run as it stands now.
+func (c *runbookClient) decide(ctx context.Context, runID, suffix string, out io.Writer) error {
+	var run automation.RunbookRunJSON
+	if err := c.do(ctx, http.MethodGet, runbookRunPath(runID, ""), nil, &run); err != nil {
+		return err
+	}
+	return c.act(ctx, runbookRunPath(runID, suffix), map[string]int64{"version": run.Version}, out)
+}
+
 func (c *runbookClient) list(ctx context.Context, out io.Writer) error {
 	var res struct {
 		Runbooks []hub.RunbookJSON `json:"runbooks"`
@@ -383,8 +413,13 @@ func printRunbookRun(out io.Writer, run automation.RunbookRunJSON) error {
 	if run.Awaiting != "" {
 		fmt.Fprintf(&b, "\nWaiting for an answer: hearth runbook answer %s %s\n", run.ID, run.Awaiting)
 	}
-	if run.CanRetry {
+	switch {
+	case run.CanRetry && run.CanRollback:
 		fmt.Fprintf(&b, "\nStopped: hearth runbook retry %s, or hearth runbook rollback %s\n", run.ID, run.ID)
+	case run.CanRetry && run.CanPassOver:
+		fmt.Fprintf(&b, "\nStopped: hearth runbook retry %s, or hearth runbook pass-over %s\n", run.ID, run.ID)
+	case run.CanRetry:
+		fmt.Fprintf(&b, "\nStopped: hearth runbook retry %s\n", run.ID)
 	}
 	b.WriteString("\nLog:\n")
 	for _, l := range run.Log {

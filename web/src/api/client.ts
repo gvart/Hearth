@@ -406,12 +406,15 @@ export interface RunbookRun {
   id: string;
   runbook_id: string;
   status: RunbookRunStatus;
+  /** Named by an operator's decision, so it applies to the run as they saw it. */
+  version: number;
   started_by: string;
   started_at: string;
   updated_at: string;
   finished_at?: string;
   can_retry: boolean;
   can_rollback: boolean;
+  can_pass_over: boolean;
   phase: 'forward' | 'rollback';
   /** The prompt step waiting for an answer. */
   awaiting?: string;
@@ -548,8 +551,12 @@ export const api = {
   runbookRun: (id: string) => request<RunbookRun>('GET', `/runbook-runs/${encodeURIComponent(id)}`),
   answerRunbookPrompt: (id: string, step: string, value: string) =>
     request<RunbookRun>('POST', `/runbook-runs/${encodeURIComponent(id)}/answer`, { step, value }),
-  retryRunbookRun: (id: string) => request<RunbookRun>('POST', `/runbook-runs/${encodeURIComponent(id)}/retry`),
-  rollbackRunbookRun: (id: string) => request<RunbookRun>('POST', `/runbook-runs/${encodeURIComponent(id)}/rollback`),
+  retryRunbookRun: (id: string, version: number) =>
+    request<RunbookRun>('POST', `/runbook-runs/${encodeURIComponent(id)}/retry`, { version }),
+  rollbackRunbookRun: (id: string, version: number) =>
+    request<RunbookRun>('POST', `/runbook-runs/${encodeURIComponent(id)}/rollback`, { version }),
+  passOverRunbookStep: (id: string, version: number) =>
+    request<RunbookRun>('POST', `/runbook-runs/${encodeURIComponent(id)}/pass-over`, { version }),
 };
 
 export interface EventHandlers {

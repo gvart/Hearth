@@ -16,9 +16,14 @@ import (
 // `hearth cluster migrate`; until then no run can start.
 const runbookRunsSchema = 16
 
-// RunbookRunsKept is how many finished runs each runbook keeps. Runs that
-// have not finished are never pruned.
+// RunbookRunsKept is how many finished runs each runbook keeps, and how many
+// runs stopped for an operator's decision. Runs still under way are never
+// pruned.
 const RunbookRunsKept = 100
+
+// runbookRunsStopped are the statuses of runs stopped for an operator's
+// decision: nothing happens to them until someone decides.
+const runbookRunsStopped = `'failed', 'unknown', 'rollback_failed'`
 
 // ErrRunbookRunConflict is returned when saving a runbook run that changed
 // since it was read: another hub or operator got there first.
@@ -138,11 +143,11 @@ func (r RunbookRuns) List(ctx context.Context, runbookID string, limit int) ([]R
 	return out, nil
 }
 
-// Open returns every run that has not finished, oldest first. Before schema
-// 15 there are none.
+// Open returns every run the engine has work on, oldest first: not finished,
+// and not stopped for an operator's decision. Before schema 16 there are none.
 func (r RunbookRuns) Open(ctx context.Context) ([]RunbookRun, error) {
 	out, err := r.query(ctx, `SELECT `+runbookRunColumns+`, x'' FROM runbook_runs
-		WHERE finished_at = 0 ORDER BY started_at, rowid`)
+		WHERE finished_at = 0 AND status NOT IN (`+runbookRunsStopped+`) ORDER BY started_at, rowid`)
 	if err != nil {
 		return nil, fmt.Errorf("list open runbook runs: %w", err)
 	}
@@ -152,7 +157,7 @@ func (r RunbookRuns) Open(ctx context.Context) ([]RunbookRun, error) {
 const runbookRunColumns = `id, runbook_id, status, version, started_by, started_at, updated_at, finished_at, state`
 
 // query runs q, which selects runbookRunColumns and the source; before schema
-// 15 it finds none.
+// 16 it finds none.
 func (r RunbookRuns) query(ctx context.Context, q string, args ...any) ([]RunbookRun, error) {
 	v, err := schemaVersion(ctx, r.s.db)
 	if err != nil {
@@ -188,7 +193,8 @@ func (r RunbookRuns) query(ctx context.Context, q string, args ...any) ([]Runboo
 }
 
 // CreateRunbookRun inserts a run at version 1, then deletes all but the newest
-// Keep finished runs of that runbook.
+// Keep finished runs of that runbook, and all but the newest Keep of its runs
+// stopped for an operator's decision.
 type CreateRunbookRun struct {
 	ID        string `json:"id"`
 	RunbookID string `json:"runbook_id"`
@@ -215,6 +221,14 @@ func (c CreateRunbookRun) apply(ctx context.Context, tx *sql.Tx) (Result, error)
 	_, err := tx.ExecContext(ctx, `
 		DELETE FROM runbook_runs WHERE runbook_id = ? AND finished_at != 0 AND rowid NOT IN (
 			SELECT rowid FROM runbook_runs WHERE runbook_id = ? AND finished_at != 0
+			ORDER BY started_at DESC, rowid DESC LIMIT ?)`, c.RunbookID, c.RunbookID, c.Keep)
+	if err != nil {
+		return Result{}, err
+	}
+	_, err = tx.ExecContext(ctx, `
+		DELETE FROM runbook_runs WHERE runbook_id = ? AND finished_at = 0 AND status IN (`+runbookRunsStopped+`)
+		AND rowid NOT IN (
+			SELECT rowid FROM runbook_runs WHERE runbook_id = ? AND finished_at = 0 AND status IN (`+runbookRunsStopped+`)
 			ORDER BY started_at DESC, rowid DESC LIMIT ?)`, c.RunbookID, c.RunbookID, c.Keep)
 	return Result{}, err
 }

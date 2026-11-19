@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -116,6 +117,11 @@ func (f *runbookFixture) audited(t *testing.T, action policy.Action) []store.Aud
 	return all
 }
 
+// versionBody is the body of an operator's decision on a run at version.
+func versionBody(version int64) string {
+	return fmt.Sprintf(`{"version":%d}`, version)
+}
+
 func retryYAML(url string) string {
 	return `id: rb
 description: Calls a webhook.
@@ -140,6 +146,7 @@ func TestRunbookAPINeedsASession(t *testing.T) {
 		{http.MethodPost, "/api/v1/runbook-runs/" + run.ID + "/answer"},
 		{http.MethodPost, "/api/v1/runbook-runs/" + run.ID + "/retry"},
 		{http.MethodPost, "/api/v1/runbook-runs/" + run.ID + "/rollback"},
+		{http.MethodPost, "/api/v1/runbook-runs/" + run.ID + "/pass-over"},
 	} {
 		if resp := f.do(t, tc.method, tc.path, "", nil); resp.StatusCode != http.StatusUnauthorized {
 			t.Errorf("%s %s without a session = %d, want 401", tc.method, tc.path, resp.StatusCode)
@@ -189,16 +196,35 @@ func TestRunbookAPIRetryAndRollback(t *testing.T) {
 
 	f.fail.Store(false)
 	path := "/api/v1/runbook-runs/" + run.ID
-	if resp := f.do(t, http.MethodPost, path+"/retry", "", f.cookie); resp.StatusCode != http.StatusOK {
+	// A decision has to name the version of the run it was made on.
+	for _, tc := range []struct {
+		op, body string
+		want     int
+	}{
+		{"/retry", "", http.StatusBadRequest},
+		{"/rollback", "{}", http.StatusBadRequest},
+		{"/pass-over", "", http.StatusBadRequest},
+		{"/retry", versionBody(got.Version - 1), http.StatusConflict},
+		{"/rollback", versionBody(got.Version + 1), http.StatusConflict},
+		{"/pass-over", versionBody(got.Version), http.StatusConflict}, // it is not rolling back
+	} {
+		if resp := f.do(t, http.MethodPost, path+tc.op, tc.body, f.cookie); resp.StatusCode != tc.want {
+			t.Errorf("%s with %q = %d, want %d", tc.op, tc.body, resp.StatusCode, tc.want)
+		}
+	}
+	if n := f.hits.Load(); n != 1 {
+		t.Fatalf("refused decisions called the webhook: %d calls, want 1", n)
+	}
+	if resp := f.do(t, http.MethodPost, path+"/retry", versionBody(got.Version), f.cookie); resp.StatusCode != http.StatusOK {
 		t.Fatalf("retry = %d %s", resp.StatusCode, resp.body)
 	}
-	f.await(t, run.ID, automation.RunbookSucceeded)
+	done := f.await(t, run.ID, automation.RunbookSucceeded)
 	if n := f.hits.Load(); n != 2 {
 		t.Errorf("webhook called %d times, want 2", n)
 	}
 	// Nothing to retry or roll back any more.
 	for _, op := range []string{"/retry", "/rollback"} {
-		if resp := f.do(t, http.MethodPost, path+op, "", f.cookie); resp.StatusCode != http.StatusConflict {
+		if resp := f.do(t, http.MethodPost, path+op, versionBody(done.Version), f.cookie); resp.StatusCode != http.StatusConflict {
 			t.Errorf("%s of a finished run = %d, want 409", op, resp.StatusCode)
 		}
 	}
@@ -219,8 +245,8 @@ func TestRunbookAPIRetryAndRollback(t *testing.T) {
 	// A second run fails and is rolled back from the API.
 	f.fail.Store(true)
 	second := f.start(t)
-	f.await(t, second.ID, automation.RunbookFailed)
-	if resp := f.do(t, http.MethodPost, "/api/v1/runbook-runs/"+second.ID+"/rollback", "", f.cookie); resp.StatusCode != http.StatusOK {
+	stopped := f.await(t, second.ID, automation.RunbookFailed)
+	if resp := f.do(t, http.MethodPost, "/api/v1/runbook-runs/"+second.ID+"/rollback", versionBody(stopped.Version), f.cookie); resp.StatusCode != http.StatusOK {
 		t.Fatalf("rollback = %d %s", resp.StatusCode, resp.body)
 	}
 	f.await(t, second.ID, automation.RunbookRolledBack)

@@ -16,7 +16,10 @@ import (
 func fakeRunbookHub(t *testing.T, answers *[]map[string]string) *httptest.Server {
 	t.Helper()
 	const run = `{"id":"r1","runbook_id":"rb","status":"failed","can_retry":true,"can_rollback":true,
-		"steps":[{"id":"s","type":"action","what":"do it","status":"failed","error":"boom"}],
+		"version":7,
+		"steps":[{"id":"s","type":"action","what":"do it","status":"failed","error":"boom"},
+			{"id":"token","type":"prompt","what":"ask","status":"waiting",
+			 "prompt":{"kind":"input","message":"The token?","secret":true,"timeout_ms":1000}}],
 		"log":[{"at":"2026-01-01T00:00:00Z","step":"s","message":"failed: boom"}]}`
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/v1/login", func(w http.ResponseWriter, r *http.Request) {
@@ -133,6 +136,27 @@ func TestRunbookAnswerFromPipedInput(t *testing.T) {
 	}
 	if strings.Contains(out.String(), "s3cret-answer") {
 		t.Errorf("the answer was printed:\n%s", out.String())
+	}
+}
+
+// TestRunbookAnswerRefusesASecretOnTheCommandLine: an argument ends up in the
+// shell's history and the process list.
+func TestRunbookAnswerRefusesASecretOnTheCommandLine(t *testing.T) {
+	t.Setenv("HEARTH_ADMIN_PASSWORD", "")
+	var answers []map[string]string
+	srv := fakeRunbookHub(t, &answers)
+	cmd := newRunbookCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetIn(strings.NewReader("pw\n"))
+	cmd.SetArgs([]string{"answer", "r1", "token", "s3cret-answer", "--hub-url", srv.URL})
+	err := cmd.ExecuteContext(t.Context())
+	if err == nil || !strings.Contains(err.Error(), "secret") {
+		t.Fatalf("err = %v, want a refusal", err)
+	}
+	if len(answers) != 0 {
+		t.Errorf("the answer was sent: %v", answers)
 	}
 }
 

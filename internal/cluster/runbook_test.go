@@ -158,7 +158,11 @@ func TestRunbookSurvivesALeaderChange(t *testing.T) {
 
 	// The operator retries: the step runs again, and the run finishes.
 	close(release)
-	if _, err := second.Retry(t.Context(), policy.ActorWeb, "10.0.0.1", run.ID); err != nil {
+	stopped, err := second.GetRun(t.Context(), run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := second.Retry(t.Context(), policy.ActorWeb, "10.0.0.1", run.ID, stopped.Version); err != nil {
 		t.Fatal(err)
 	}
 	eventually(t, "the run to finish", func() bool {

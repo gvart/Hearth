@@ -112,13 +112,21 @@ A run that stops can be continued in two ways:
 - **Roll back** runs the declared rollback steps of the completed steps, last step first.
 
 If a rollback step fails, the rollback stops too. Retry that rollback step, or pass over it and go on
-with the rest (`hearth runbook rollback <run>`, **Pass over and continue** on the page).
+with the rest (`hearth runbook pass-over <run>`, **Pass over and continue** on the page). Passing over
+is its own audited decision: what that step should have undone stays as it is.
+
+Each decision names the version of the run it was made on. A repeated or late request is refused, and
+the run is left as it is.
 
 ### A step with an unknown outcome
 
-If the hub dies while an action or a check is running, nobody knows whether it happened. The run stops
-with the status `unknown`, and Hearth never runs that step again by itself: look at the device, then
-retry or roll back. A roll back includes the rollback of the unknown step, as it may have happened.
+If the hub dies while a step is running, or an action or rollback step times out or loses its
+connection before the answer comes, nobody knows whether it happened. The run stops with the status
+`unknown`, and Hearth never runs that step again by itself: look at the device, then retry or roll back.
+A roll back includes the rollback of the unknown step, as it may have happened. Only a definite refusal
+or error from the target, or a target that could not be reached at all, makes a step `failed`.
+
+Secret answers are dropped from the hub's memory when a run stops, so a retry asks for them again.
 
 Completed steps are never repeated after a restart or a leader change. A wait or a prompt carries on
 where it was.
@@ -162,6 +170,8 @@ People act through a signed-in session. These actions are audited with who took 
 | `runbook.answer`   | safe  | answer a prompt         |
 | `runbook.retry`    | safe  | retry a stopped step    |
 | `runbook.rollback` | safe  | roll a stopped run back |
+| `runbook.pass_over` | safe | pass over a stopped rollback step |
+| `runbook.check`    | read  | run a check step        |
 
 ## A run keeps its definition
 
@@ -183,9 +193,10 @@ hearth runbook plan <runbook>             # what a run would do
 hearth runbook start <runbook>            # start a run
 hearth runbook runs [runbook]             # recent runs
 hearth runbook show <run>                 # a run's steps and log
-hearth runbook answer <run> <step> [value] # answer a prompt; without a value it is asked for, unechoed
+hearth runbook answer <run> <step> [value] # answer a prompt; a secret is only ever asked for, unechoed
 hearth runbook retry <run>                # run the stopped step again
-hearth runbook rollback <run>             # roll back, or pass over a stopped rollback step
+hearth runbook rollback <run>             # roll a stopped run back
+hearth runbook pass-over <run>            # give up on a stopped rollback step and go on
 ```
 
 The commands use the hub's API (`--hub-url`, default `http://127.0.0.1:7080`) and sign in with the admin

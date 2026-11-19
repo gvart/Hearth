@@ -253,14 +253,21 @@ func (h *rbHarness) answer(id, step, value string) {
 
 func (h *rbHarness) retry(id string) {
 	h.t.Helper()
-	if _, err := h.rb.Retry(context.Background(), policy.ActorWeb, "10.0.0.9", id); err != nil {
+	if _, err := h.rb.Retry(context.Background(), policy.ActorWeb, "10.0.0.9", id, runVersion(h.t, h, id)); err != nil {
 		h.t.Fatal(err)
 	}
 }
 
 func (h *rbHarness) rollback(id string) {
 	h.t.Helper()
-	if _, err := h.rb.Rollback(context.Background(), policy.ActorWeb, "10.0.0.9", id); err != nil {
+	if _, err := h.rb.Rollback(context.Background(), policy.ActorWeb, "10.0.0.9", id, runVersion(h.t, h, id)); err != nil {
+		h.t.Fatal(err)
+	}
+}
+
+func (h *rbHarness) passOver(id string) {
+	h.t.Helper()
+	if _, err := h.rb.PassOver(context.Background(), policy.ActorWeb, "10.0.0.9", id, runVersion(h.t, h, id)); err != nil {
 		h.t.Fatal(err)
 	}
 }
@@ -519,7 +526,7 @@ func TestRunbookRetryRunsTheFailedStepAgain(t *testing.T) {
 	if len(retries) != 1 || retries[0].ActorKind != policy.ActorWeb || retries[0].ActorID != "10.0.0.9" || retries[0].Target != id {
 		t.Errorf("retry audit = %+v", retries)
 	}
-	if _, err := h.rb.Retry(context.Background(), policy.ActorWeb, "x", id); !errors.Is(err, ErrRunbookState) {
+	if _, err := h.rb.Retry(context.Background(), policy.ActorWeb, "x", id, runVersion(t, h, id)); !errors.Is(err, ErrRunbookState) {
 		t.Errorf("retrying a finished run: %v", err)
 	}
 }
@@ -590,7 +597,7 @@ func TestRunbookFailingRollbackStepCanBePassedOver(t *testing.T) {
 	h.rollback(id)
 	h.await(id, RunbookRollbackFailed)
 
-	h.rollback(id)
+	h.passOver(id)
 	run := h.await(id, RunbookRolledBack)
 	if run.Steps[1].Rollback.Status != stepSkipped {
 		t.Errorf("rollback of two = %+v", run.Steps[1].Rollback)

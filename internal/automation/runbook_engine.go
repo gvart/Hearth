@@ -8,10 +8,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"net"
+	"os"
 	"slices"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/gvart/hearth/internal/policy"
@@ -34,6 +38,9 @@ var (
 	// ErrRunbookNotLeading refuses a secret answer on a hub that is not
 	// running the engine: it must never travel through the replicated store.
 	ErrRunbookNotLeading = errors.New("a secret answer must be given on the cluster's leader")
+	// ErrOutcomeUnknown marks an action that was handed over and never
+	// answered: it may or may not have happened.
+	ErrOutcomeUnknown = errors.New("its outcome is not known")
 )
 
 // RunbookActor is the policy actor id of a runbook's action steps. The prefix
@@ -93,8 +100,12 @@ type Runbooks struct {
 	// leading is true while Run runs.
 	leading bool
 	// secrets are the answers to secret prompts, by run and step. They live
-	// here only: a restart or a new leader asks for them again.
+	// here only, while the run goes on: a run that stops, a restart or a new
+	// leader asks for them again.
 	secrets map[string]map[string]string
+	// answering is held while an answer is saved and remembered, so that the
+	// engine never finds a saved answer it does not hold yet.
+	answering sync.RWMutex
 }
 
 // NewRunbooks returns the engine. Run starts it.
@@ -165,6 +176,12 @@ func (r *Runbooks) Plan(ctx context.Context, id string) (*RunbookPlan, error) {
 		p := RunbookPlanStep{ID: s.ID, Type: s.Type, What: s.What(), Description: s.Description}
 		if s.Action != nil {
 			r.planAction(ctx, rb, s.Action, &p)
+		}
+		if s.Check != nil {
+			p.Target, p.Action, p.Class = s.Check.what, string(policy.RunbookCheck), string(policy.Read)
+			p.Decision, p.Reason = r.cfg.Policy.Check(policy.Request{
+				ActorKind: policy.ActorAutomation, ActorID: RunbookActor(rb.ID), Action: policy.RunbookCheck, Target: p.Target,
+			})
 		}
 		if s.Rollback != nil {
 			rp := RunbookPlanStep{ID: s.ID, Type: RunbookStepAction, What: s.Rollback.Impl.Describe()}
@@ -302,9 +319,11 @@ func (r *Runbooks) operate(ctx context.Context, actorKind, actorID string, actio
 }
 
 // Answer answers the prompt step of a run. The answer is never audited, and a
-// secret one stays in this hub's memory.
+// secret one stays in this hub's memory, once the run has accepted it.
 func (r *Runbooks) Answer(ctx context.Context, actorKind, actorID, runID, step, value string) (RunbookRunJSON, error) {
-	remembered := false
+	r.answering.Lock()
+	defer r.answering.Unlock()
+	secret := false
 	out, err := r.operate(ctx, actorKind, actorID, policy.RunbookAnswer, runID, map[string]any{"step": step},
 		func(run *store.RunbookRun, st *RunbookState, actor string) error {
 			ps := st.step(step)
@@ -316,10 +335,10 @@ func (r *Runbooks) Answer(ctx context.Context, actorKind, actorID, runID, step, 
 			}
 			now := r.cfg.Now()
 			if ps.Prompt.Secret {
-				if !r.remember(runID, step, value) {
+				if !r.isLeading() {
 					return ErrRunbookNotLeading
 				}
-				remembered = true
+				secret = true
 				st.log(now, step, actor, "answered (secret)")
 			} else {
 				st.log(now, step, actor, "answered: %s", value)
@@ -350,8 +369,8 @@ func (r *Runbooks) Answer(ctx context.Context, actorKind, actorID, runID, step, 
 			run.Status = RunbookRunning
 			return nil
 		})
-	if err != nil && remembered {
-		r.forget(runID, step)
+	if err == nil && secret {
+		r.remember(runID, step, value)
 	}
 	return out, err
 }
@@ -370,12 +389,24 @@ func checkAnswer(p *RunbookPromptJSON, value string) error {
 	return nil
 }
 
-// Retry runs the step a run stopped at again.
-func (r *Runbooks) Retry(ctx context.Context, actorKind, actorID, runID string) (RunbookRunJSON, error) {
-	return r.operate(ctx, actorKind, actorID, policy.RunbookRetry, runID, map[string]any{},
+// decidable refuses an operator's decision on a run that has not stopped, or
+// that changed since the operator saw it at version.
+func decidable(run *store.RunbookRun, version int64) error {
+	if !runbookStopped(run.Status) {
+		return fmt.Errorf("%w: it has not stopped at a step", ErrRunbookState)
+	}
+	if run.Version != version {
+		return fmt.Errorf("%w: it changed since version %d", ErrRunbookState, version)
+	}
+	return nil
+}
+
+// Retry runs the step a run stopped at again, if the run is still at version.
+func (r *Runbooks) Retry(ctx context.Context, actorKind, actorID, runID string, version int64) (RunbookRunJSON, error) {
+	return r.operate(ctx, actorKind, actorID, policy.RunbookRetry, runID, map[string]any{"version": version},
 		func(run *store.RunbookRun, st *RunbookState, actor string) error {
-			if !runbookStopped(run.Status) {
-				return fmt.Errorf("%w: it has not stopped at a step", ErrRunbookState)
+			if err := decidable(run, version); err != nil {
+				return err
 			}
 			now := r.cfg.Now()
 			st.Error = ""
@@ -398,25 +429,40 @@ func (r *Runbooks) Retry(ctx context.Context, actorKind, actorID, runID string) 
 }
 
 // Rollback rolls a stopped run back through the rollback steps of the steps
-// that happened, the latest first. On a run stopped during its rollback it
-// passes over the rollback step it stopped at and goes on with the others.
-func (r *Runbooks) Rollback(ctx context.Context, actorKind, actorID, runID string) (RunbookRunJSON, error) {
-	return r.operate(ctx, actorKind, actorID, policy.RunbookRollback, runID, map[string]any{},
+// that happened, the latest first, if the run is still at version. A run
+// already rolling back is not rolled back again: see Retry and PassOver.
+func (r *Runbooks) Rollback(ctx context.Context, actorKind, actorID, runID string, version int64) (RunbookRunJSON, error) {
+	return r.operate(ctx, actorKind, actorID, policy.RunbookRollback, runID, map[string]any{"version": version},
 		func(run *store.RunbookRun, st *RunbookState, actor string) error {
-			if !runbookStopped(run.Status) {
-				return fmt.Errorf("%w: it has not stopped at a step", ErrRunbookState)
+			if err := decidable(run, version); err != nil {
+				return err
 			}
-			now := r.cfg.Now()
-			st.Error = ""
 			if st.Phase == phaseRollback {
-				if rs := st.stoppedRollback(); rs != nil {
-					rs.Status = stepSkipped
-				}
-				st.log(now, "", actor, "passed over the rollback step that stopped the run")
-			} else {
-				st.Phase = phaseRollback
-				st.log(now, "", actor, "started the rollback")
+				return fmt.Errorf("%w: it is already rolling back", ErrRunbookState)
 			}
+			st.Error = ""
+			st.Phase = phaseRollback
+			st.log(r.cfg.Now(), "", actor, "started the rollback")
+			run.Status = RunbookRollingBack
+			return nil
+		})
+}
+
+// PassOver gives up on the rollback step a run stopped at, if the run is still
+// at version, and goes on with the other rollback steps.
+func (r *Runbooks) PassOver(ctx context.Context, actorKind, actorID, runID string, version int64) (RunbookRunJSON, error) {
+	return r.operate(ctx, actorKind, actorID, policy.RunbookPassOver, runID, map[string]any{"version": version},
+		func(run *store.RunbookRun, st *RunbookState, actor string) error {
+			if err := decidable(run, version); err != nil {
+				return err
+			}
+			rs := st.stoppedRollback()
+			if st.Phase != phaseRollback || rs == nil {
+				return fmt.Errorf("%w: it has not stopped at a rollback step", ErrRunbookState)
+			}
+			st.Error = ""
+			rs.Status = stepSkipped
+			st.log(r.cfg.Now(), "", actor, "passed over the rollback step that stopped the run")
 			run.Status = RunbookRollingBack
 			return nil
 		})
@@ -437,7 +483,7 @@ func (r *Runbooks) save(ctx context.Context, run *store.RunbookRun, st *RunbookS
 		return err
 	}
 	run.Version = v
-	if runbookFinished(run.Status) {
+	if runbookFinished(run.Status) || runbookStopped(run.Status) {
 		r.forgetRun(run.ID)
 	}
 	return nil
@@ -450,24 +496,25 @@ func (r *Runbooks) poke() {
 	}
 }
 
-// remember keeps a secret answer, on the hub running the engine only.
-func (r *Runbooks) remember(runID, step, value string) bool {
+// isLeading reports whether this hub is running the engine.
+func (r *Runbooks) isLeading() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.leading
+}
+
+// remember keeps a secret answer, on the hub running the engine only. If this
+// hub just lost the lead, the new leader asks for the answer again.
+func (r *Runbooks) remember(runID, step, value string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if !r.leading {
-		return false
+		return
 	}
 	if r.secrets[runID] == nil {
 		r.secrets[runID] = map[string]string{}
 	}
 	r.secrets[runID][step] = value
-	return true
-}
-
-func (r *Runbooks) forget(runID, step string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	delete(r.secrets[runID], step)
 }
 
 func (r *Runbooks) forgetRun(runID string) {
@@ -527,13 +574,14 @@ func (r *Runbooks) Run(ctx context.Context) error {
 					continue
 				}
 				wg.Go(func() {
-					defer func() {
-						mu.Lock()
-						delete(active, run.ID)
-						mu.Unlock()
+					progressed := r.drive(ctx, run.ID)
+					mu.Lock()
+					delete(active, run.ID)
+					mu.Unlock()
+					// A run that got nowhere waits for the next tick.
+					if progressed {
 						r.poke()
-					}()
-					r.drive(ctx, run.ID)
+					}
 				})
 			}
 		}
@@ -584,28 +632,29 @@ func (r *Runbooks) expirePrompt(ctx context.Context, run store.RunbookRun) {
 	}
 }
 
-// drive carries a run forward until it stops, finishes, or ctx is done.
-func (r *Runbooks) drive(ctx context.Context, runID string) {
+// drive carries a run forward until it stops, finishes, or ctx is done. It
+// reports whether the run got anywhere.
+func (r *Runbooks) drive(ctx context.Context, runID string) (progressed bool) {
 	log := r.cfg.Log.With("run", runID)
 	var rb *Runbook
 	for ctx.Err() == nil {
 		run, err := r.cfg.Runs.Get(ctx, runID)
 		if err != nil {
 			log.WarnContext(ctx, "runbook run not read", "err", err)
-			return
+			return progressed
 		}
 		st, err := decodeRunbookState(run)
 		if err != nil {
 			log.ErrorContext(ctx, "runbook run not readable", "err", err)
-			return
+			return progressed
 		}
 		if run.Status != RunbookRunning && run.Status != RunbookRollingBack {
-			return
+			return progressed
 		}
 		if rb == nil {
 			if rb, err = r.definition(run); err != nil {
 				r.stopUnreadable(ctx, &run, st, err)
-				return
+				return progressed
 			}
 		}
 		var again bool
@@ -620,12 +669,14 @@ func (r *Runbooks) drive(ctx context.Context, runID string) {
 			if ctx.Err() == nil && !errors.Is(err, store.ErrRunbookRunConflict) {
 				log.WarnContext(ctx, "runbook run not saved", "err", err)
 			}
-			return
+			return progressed
 		}
+		progressed = true
 		if !again {
-			return
+			return progressed
 		}
 	}
+	return progressed
 }
 
 // definition reads the runbook file a run started from.
@@ -717,6 +768,9 @@ func (r *Runbooks) stepForward(ctx context.Context, rb *Runbook, run *store.Runb
 	}
 	s.Status, s.Error = failedStatus(stepErr), truncateError(stepErr.Error())
 	run.Status = RunbookFailed
+	if d.Type == RunbookStepAction && outcomeUncertain(stepErr) {
+		s.Status, run.Status = stepUnknown, RunbookUnknown
+	}
 	st.log(done, s.ID, "", "%s: %s", s.Status, s.Error)
 	return false, r.save(wctx, run, st)
 }
@@ -730,6 +784,33 @@ func failedStatus(err error) string {
 		return stepDenied
 	}
 	return stepFailed
+}
+
+// outcomeUncertain reports whether an action that ended with err may have
+// happened all the same: it was handed over and the answer never came. A
+// refusal, or a target that could not be reached at all, is a definite failure.
+func outcomeUncertain(err error) bool {
+	if errors.Is(err, policy.ErrDenied) {
+		return false
+	}
+	var op *net.OpError
+	if errors.As(err, &op) && op.Op == "dial" {
+		return false
+	}
+	var dns *net.DNSError
+	if errors.As(err, &dns) {
+		return false
+	}
+	for _, target := range []error{
+		ErrOutcomeUnknown, context.DeadlineExceeded, context.Canceled, os.ErrDeadlineExceeded,
+		io.EOF, io.ErrUnexpectedEOF, net.ErrClosed, syscall.ECONNRESET, syscall.ECONNABORTED, syscall.EPIPE,
+	} {
+		if errors.Is(err, target) {
+			return true
+		}
+	}
+	var timeout net.Error
+	return errors.As(err, &timeout) && timeout.Timeout()
 }
 
 // stepRollback takes one step of a run rolling back.
@@ -773,12 +854,17 @@ func (r *Runbooks) stepRollback(ctx context.Context, rb *Runbook, run *store.Run
 	}
 	rs.Status, rs.Error = failedStatus(stepErr), truncateError(stepErr.Error())
 	run.Status = RunbookRollbackFailed
+	if outcomeUncertain(stepErr) {
+		rs.Status, run.Status = stepUnknown, RunbookUnknown
+	}
 	st.log(done, s.ID, "", "rollback %s: %s", rs.Status, rs.Error)
 	return false, r.save(wctx, run, st)
 }
 
 // missingSecret is the first of needs this hub does not hold an answer to.
 func (r *Runbooks) missingSecret(runID string, needs []string) string {
+	r.answering.RLock()
+	defer r.answering.RUnlock()
 	have := r.secretsOf(runID)
 	for _, id := range needs {
 		if _, ok := have[id]; !ok {
@@ -800,7 +886,7 @@ func (r *Runbooks) askAgain(ctx context.Context, rb *Runbook, run *store.Runbook
 	deadline := now.Add(timeout)
 	st.Awaiting, st.Deadline = id, &deadline
 	run.Status = RunbookWaiting
-	st.log(now, id, "", "this secret answer is needed again: secret answers are not kept across a hub restart")
+	st.log(now, id, "", "this secret answer is needed again: secret answers are not kept once a run stops or the hub restarts")
 	return r.save(ctx, run, st)
 }
 
@@ -810,7 +896,7 @@ func (r *Runbooks) execute(ctx context.Context, rb *Runbook, run *store.RunbookR
 	case RunbookStepAction:
 		return r.runAction(ctx, rb, run, st, d.Action, phaseForward, st.step(d.ID).Attempts)
 	case RunbookStepCheck:
-		return r.runCheck(ctx, d)
+		return r.policedCheck(ctx, rb, run, d, st.step(d.ID).Attempts)
 	case RunbookStepWait:
 		deadline := st.step(d.ID).Deadline
 		if deadline == nil {
@@ -826,6 +912,19 @@ func (r *Runbooks) execute(ctx context.Context, rb *Runbook, run *store.RunbookR
 		}
 	}
 	return fmt.Errorf("step %s of type %s cannot run", d.ID, d.Type)
+}
+
+// policedCheck takes a check step through policy, as the runbook: one decision
+// and one audit entry for each attempt at the step, however often it polls.
+func (r *Runbooks) policedCheck(ctx context.Context, rb *Runbook, run *store.RunbookRun, d *RunbookStep, attempt int) error {
+	decideCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	defer cancel()
+	return r.cfg.Policy.Do(decideCtx, policy.Request{
+		ActorKind: policy.ActorAutomation, ActorID: RunbookActor(rb.ID), Action: policy.RunbookCheck, Target: d.Check.what,
+		Detail: map[string]any{"run": run.ID, "step": d.ID, "attempt": attempt, "started_by": run.StartedBy},
+		DryRun: r.cfg.DryRun,
+		OnHold: func(string, time.Time) { context.AfterFunc(ctx, cancel) },
+	}, func(granted context.Context) error { return r.runCheck(policy.WithGrant(ctx, granted), d) })
 }
 
 // runCheck repeats a check until it passes or its time is up.
