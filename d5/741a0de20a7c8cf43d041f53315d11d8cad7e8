@@ -1,0 +1,28 @@
+cmd/hearth/backup.go
+  s_344993999c180f::t_a280f99aa0941b 31,39,67-68,97
+internal/backup/hardening_test.go
+  s_344993999c180f::t_f2cec7f46742e6 31-52
+docs/backup.md
+  s_344993999c180f::t_cffc5e2b38afe3 158-159
+  s_344993999c180f::t_a280f99aa0941b 19,53,88-90
+cmd/hearth/backup_cluster_test.go
+  s_344993999c180f::t_2dd0c1cc00310d 217-238
+internal/backup/backup.go
+  s_344993999c180f::t_a280f99aa0941b 36,80-81,193-208,576,587
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d5741a0de20a7c8cf43d041f53315d11d8cad7e8",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
