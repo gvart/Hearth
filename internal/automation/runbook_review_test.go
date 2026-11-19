@@ -65,6 +65,102 @@ steps:
 	}
 }
 
+// TestRunbookStepReadingInputWaitsForAnAbsentSecret: what a template reads
+// cannot always be told from what it renders, so any use of .Input counts.
+func TestRunbookStepReadingInputWaitsForAnAbsentSecret(t *testing.T) {
+	for _, tc := range []struct{ name, body string }{
+		{"a comparison", `{{ if eq (index .Input "api-token") "abc" }}yes{{ else }}no{{ end }}`},
+		{"a computed key", `{{ index .Input (printf "%s-%s" "api" "token") }}`},
+		{"a key from another answer", `{{ index .Input (index .Input "pause") }}`},
+		{"the answers as a whole", `{{ len .Input }}`},
+		{"a with block", `{{ with .Input }}set{{ end }}`},
+		{"the root variable", `{{ len $.Input }}`},
+		{"the data as a whole", `{{ len (index . "Input") }}`},
+		{"a branch not taken", `{{ if false }}{{ .Input }}{{ end }}done`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := newBodyServer(t)
+			h := newRBHarness(t, fmt.Sprintf(`id: rb
+steps:
+  - id: api-token
+    type: prompt
+    message: The token?
+    secret: true
+  - id: pause
+    type: prompt
+    prompt: confirm
+    message: Carry on?
+  - id: use
+    type: action
+    action: {type: webhook, url: %s/hook, body: '%s'}
+`, srv.URL, tc.body), policy.Config{})
+			stop := h.run(h.rb)
+			id := h.start("rb")
+			h.await(id, RunbookWaiting)
+			h.answer(id, "api-token", "first-secret-value")
+			eventually(t, "the second prompt", func() bool { return h.get(id).Awaiting == "pause" })
+
+			stop()
+			h.rb = h.engine()
+			h.run(h.rb)
+			h.answer(id, "pause", ConfirmYes)
+			eventually(t, "the secret asked for again", func() bool {
+				run := h.get(id)
+				return run.Awaiting == "api-token" || runbookFinished(run.Status) || runbookStopped(run.Status)
+			})
+			if got := srv.got(); len(got) != 0 {
+				t.Fatalf("the step ran without the secret: %q", got)
+			}
+			if run := h.get(id); run.Awaiting != "api-token" {
+				t.Fatalf("run is %s, awaiting %q", run.Status, run.Awaiting)
+			}
+			h.answer(id, "api-token", "second-secret-value")
+			h.await(id, RunbookSucceeded)
+			if got := srv.got(); len(got) != 1 {
+				t.Errorf("webhook got %q", got)
+			}
+		})
+	}
+}
+
+func TestParseRunbookRejectsAMistypedAnswerID(t *testing.T) {
+	h := newRBHarness(t, "id: rb\nsteps:\n  - {id: w, type: wait, duration: 1ms}\n", policy.Config{})
+	const format = `id: rb
+steps:
+  - id: api-token
+    type: prompt
+    message: Token?
+    secret: true
+  - id: call
+    type: action
+    action: {type: webhook, url: "http://127.0.0.1:9/x", body: '%s'}
+`
+	for _, tc := range []struct {
+		name, body string
+		ok         bool
+	}{
+		{"the right id", `{{ index .Input "api-token" }}`, true},
+		{"a computed key cannot be checked", `{{ index .Input (printf "%s" "api-token") }}`, true},
+		{"a mistyped id", `{{ index .Input "api-tokn" }}`, false},
+		{"a mistyped id in a comparison", `{{ if eq (index .Input "api-tokn") "abc" }}x{{ end }}`, false},
+		{"a mistyped id in a branch not taken", `{{ if false }}{{ index .Input "api-tokn" }}{{ end }}`, false},
+		{"a mistyped id through the root variable", `{{ index $.Input "api-tokn" }}`, false},
+		{"a mistyped id in parentheses", `{{ index (.Input) "api-tokn" }}`, false},
+		{"a mistyped id piped in", `{{ "api-tokn" | index .Input }}`, false},
+		{"a mistyped field in a branch not taken", `{{ if false }}{{ .Input.tokn }}{{ end }}`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := ParseRunbook("rb.yaml", fmt.Appendf(nil, format, tc.body), h.kinds)
+			if tc.ok && err != nil {
+				t.Fatalf("err = %v", err)
+			}
+			if !tc.ok && (err == nil || !strings.Contains(err.Error(), "earlier prompt")) {
+				t.Fatalf("err = %v, want it to name the earlier prompts", err)
+			}
+		})
+	}
+}
+
 func TestParseRunbookRejectsAnswersOutOfReach(t *testing.T) {
 	h := newRBHarness(t, "id: rb\nsteps:\n  - {id: w, type: wait, duration: 1ms}\n", policy.Config{})
 	for _, tc := range []struct{ name, yaml, want string }{

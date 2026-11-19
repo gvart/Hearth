@@ -147,7 +147,8 @@ where it may not is rejected when it is loaded.
 Mark a prompt `secret: true` for a password or a token. A secret answer is held only in the memory of
 the hub running the steps. It is never stored, replicated, logged or shown in the run log. So:
 
-- After a hub restart or a leader change, the run asks for the secret again before the step that needs it.
+- After a hub restart or a leader change, the run asks for the secret again before any later step whose
+  templates use `.Input` in any form, even one that never reads that secret.
 - In a cluster, send a secret answer to the leading hub. Other hubs refuse it and name the leader.
 
 ## Policy and audit

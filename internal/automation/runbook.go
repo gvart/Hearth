@@ -87,7 +87,8 @@ type RunbookStep struct {
 	// Wait is how long a wait step lasts.
 	Wait time.Duration
 	// needs and rollbackNeeds are the secret prompts the action and its
-	// rollback use: answers that only this hub's memory holds.
+	// rollback wait for, all those before a step that reads .Input: answers
+	// that only this hub's memory holds.
 	needs, rollbackNeeds []string
 }
 
@@ -450,14 +451,10 @@ func parseRunbookCheck(n *yaml.Node, s *RunbookStep, errs *[]error) *checkTrigge
 // checkRunbookTemplates renders every template of a runbook's actions with the
 // answers of the prompts before it, each action seeing only what inputScope
 // allows, so that a template using an answer it may not have fails the load
-// at its line. It also notes which secret answers each action needs.
+// at its line. An action whose templates read .Input in any form needs every
+// secret answer given before it: it does not run until the hub holds them.
 func checkRunbookTemplates(rb *Runbook, errs *[]error) {
-	plain, secrets, every := map[string]string{}, map[string]string{}, map[string]string{}
-	for i := range rb.Steps {
-		if rb.Steps[i].Type == RunbookStepPrompt {
-			every[rb.Steps[i].ID] = "sample"
-		}
-	}
+	plain, secrets := map[string]string{}, map[string]string{}
 	check := func(a *Step[Action]) []string {
 		if a == nil {
 			return nil
@@ -474,31 +471,30 @@ func checkRunbookTemplates(rb *Runbook, errs *[]error) {
 				*errs = append(*errs, lineError(x.line, "step %s: %s", a.ID, runbookTemplateErr(a.Impl, err)))
 			}
 		}
-		data, secret := inputScope(a.Impl)
-		if failed || !data {
+		if failed {
 			return nil
 		}
-		// index gives "" for an answer it cannot see, without an error: what
-		// a template reads shows in whether its output follows the answer.
-		var needs []string
-		for _, id := range slices.Sorted(maps.Keys(every)) {
-			if !followsAnswer(rb.ID, tx.texts(), every, id) {
-				continue
-			}
-			_, isPlain := plain[id]
-			_, isSecret := secrets[id]
-			line := tx.texts()[0].line
-			switch {
-			case !isPlain && !isSecret:
-				*errs = append(*errs, lineError(line, "step %s: answer %s must come from an earlier prompt", a.ID, id))
-			case isSecret && !secret:
-				*errs = append(*errs, lineError(line,
-					"step %s: secret answer %s can only be used in a webhook's body or headers", a.ID, id))
-			case isSecret:
-				needs = append(needs, id)
+		_, secret := inputScope(a.Impl)
+		reads := false
+		for _, x := range tx.texts() {
+			use := x.inputUse()
+			reads = reads || use.reads
+			for _, id := range use.ids {
+				_, isPlain := plain[id]
+				_, isSecret := secrets[id]
+				switch {
+				case !isPlain && !isSecret:
+					*errs = append(*errs, lineError(x.line, "step %s: answer %s must come from an earlier prompt", a.ID, id))
+				case isSecret && !secret:
+					*errs = append(*errs, lineError(x.line,
+						"step %s: secret answer %s can only be used in a webhook's body or headers", a.ID, id))
+				}
 			}
 		}
-		return needs
+		if !reads {
+			return nil
+		}
+		return slices.Sorted(maps.Keys(secrets))
 	}
 	for i := range rb.Steps {
 		s := &rb.Steps[i]
@@ -513,35 +509,6 @@ func checkRunbookTemplates(rb *Runbook, errs *[]error) {
 			}
 		}
 	}
-}
-
-// followsAnswer reports whether what texts render to depends on the answer id,
-// given answers to every prompt.
-func followsAnswer(runbookID string, texts []Text, answers map[string]string, id string) bool {
-	render := func(input map[string]string) (string, bool) {
-		ev := runbookEvent(runbookID, time.Time{}, input)
-		var b strings.Builder
-		for _, x := range texts {
-			s, err := x.Render(ev)
-			if err != nil {
-				return "", false
-			}
-			b.WriteString(s)
-			b.WriteByte(0)
-		}
-		return b.String(), true
-	}
-	with := func(value string) map[string]string {
-		input := maps.Clone(answers)
-		input[id] = value
-		return input
-	}
-	without := maps.Clone(answers)
-	delete(without, id)
-	first, _ := render(with("first-sample"))
-	second, _ := render(with("the-second-sample"))
-	absent, ok := render(without)
-	return first != second || !ok || first != absent
 }
 
 // runbookTemplateErr says why an action's template cannot use .Input.
