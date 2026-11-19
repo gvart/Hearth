@@ -53,6 +53,9 @@ var (
 	// ErrDrainIncomplete marks a drain that stopped after it cordoned the node:
 	// some of its work is done and some is not.
 	ErrDrainIncomplete = errors.New("the drain is incomplete")
+	// ErrWriteOutcomeUnknown marks a write that was sent and never answered:
+	// the cluster may have carried it out.
+	ErrWriteOutcomeUnknown = errors.New("the request may have reached the cluster")
 )
 
 // ActionRequest is a Kubernetes action on one object of a cluster.

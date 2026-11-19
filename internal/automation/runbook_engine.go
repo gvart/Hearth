@@ -809,15 +809,26 @@ func failedStatus(err error) string {
 	return stepFailed
 }
 
+// definiteFailure is the error of an action known not to have happened,
+// whatever the error it wraps would otherwise suggest.
+type definiteFailure struct{ error }
+
+func (e definiteFailure) Unwrap() error { return e.error }
+
 // outcomeUncertain reports whether an action that ended with err may have
 // happened all the same, in whole or in part: it was handed over and the answer
-// never came. A refusal, or a target that could not be reached at all, is a
-// definite failure.
+// never came, or nobody could record how it ended. A refusal, or a target that
+// could not be reached at all, is a definite failure.
 func outcomeUncertain(err error) bool {
-	if errors.Is(err, policy.ErrDenied) {
+	if errors.Is(err, policy.ErrOutcomeNotRecorded) {
+		return true
+	}
+	var definite definiteFailure
+	if errors.As(err, &definite) || errors.Is(err, policy.ErrDenied) {
 		return false
 	}
-	if errors.Is(err, ErrOutcomeUnknown) || errors.Is(err, kubernetes.ErrDrainIncomplete) {
+	if errors.Is(err, ErrOutcomeUnknown) || errors.Is(err, kubernetes.ErrDrainIncomplete) ||
+		errors.Is(err, kubernetes.ErrWriteOutcomeUnknown) {
 		return true
 	}
 	var op *net.OpError
@@ -997,9 +1008,16 @@ func (r *Runbooks) runAction(ctx context.Context, rb *Runbook, run *store.Runboo
 		DryRun: r.cfg.DryRun,
 		OnHold: func(string, time.Time) { context.AfterFunc(ctx, cancel) },
 	}
-	return doAction(decideCtx, ctx, r.cfg.Policy, req, a.Impl, ev, func(ctx context.Context, ev Event) error {
+	ran := false
+	err = doAction(decideCtx, ctx, r.cfg.Policy, req, a.Impl, ev, func(ctx context.Context, ev Event) error {
+		ran = true
 		return scrubSecrets(a.Impl.Run(ctx, ev), secrets)
 	})
+	if err != nil && !ran {
+		// Policy refused it, or could not write the entry that comes first.
+		return definiteFailure{err}
+	}
+	return err
 }
 
 // scrubbedError is an error whose text had secret answers taken out.

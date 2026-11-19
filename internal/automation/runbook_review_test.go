@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -522,7 +523,7 @@ steps:
 		h.run(h.rb)
 		h.await(h.start("rb"), RunbookSucceeded)
 		got := h.audited(action)
-		if len(got) != 1 || got[0].Decision != policy.Allow || got[0].ActorID != RunbookActor("rb") || got[0].Result != "ok" {
+		if len(got) != 1 || got[0].Decision != policy.Allow || got[0].ActorID != RunbookActor("rb") || got[0].Result != policy.ReadAllowed {
 			t.Errorf("audit = %+v", got)
 		}
 		plan, err := h.rb.Plan(t.Context(), "rb")
@@ -804,4 +805,154 @@ steps:
 	}
 	h.await(id, RunbookFailed)
 	eventually(t, "the secret dropped", func() bool { return len(h.rb.secretsOf(id)) == 0 })
+}
+
+// failingAudit refuses the entries of an action that fail says to.
+type failingAudit struct {
+	auditLog
+	fail func(store.AuditEntry) error
+}
+
+func (a *failingAudit) Append(ctx context.Context, e store.AuditEntry) (int64, error) {
+	if err := a.fail(e); err != nil {
+		return 0, err
+	}
+	return a.auditLog.Append(ctx, e)
+}
+
+// engineAuditingTo is the harness's engine with its audit entries going to audit.
+func (h *rbHarness) engineAuditingTo(audit policy.Auditor) *Runbooks {
+	return NewRunbooks(RunbooksConfig{
+		Dir: h.dir, Kinds: h.kinds, Runs: h.st.RunbookRuns(), Sealer: xorSealer{}, Poll: 5 * time.Millisecond,
+		Policy: policy.NewWithConfig(audit, nil, h.cfg),
+	})
+}
+
+// TestRunbookActionWhoseOutcomeWasNotRecorded: the action ran, so a retry must
+// not look like the safe thing to do.
+func TestRunbookActionWhoseOutcomeWasNotRecorded(t *testing.T) {
+	urls := outcomeServers(t)
+	outcomeEntry := func(e store.AuditEntry) error {
+		if e.Action == string(policy.AutomationWebhook) && e.Result != policy.Started {
+			return errors.New("the audit log is unavailable")
+		}
+		return nil
+	}
+	for _, tc := range []struct{ name, url string }{
+		{"the action succeeded", urls["ok"]},
+		{"the target refused it", urls["refuse"]},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newRBHarness(t, fmt.Sprintf(`id: rb
+steps:
+  - id: call
+    type: action
+    action: {type: webhook, url: %s}
+`, tc.url), policy.Config{})
+			h.rb = h.engineAuditingTo(&failingAudit{fail: outcomeEntry})
+			h.run(h.rb)
+			run := h.await(h.start("rb"), RunbookUnknown)
+			if run.Steps[0].Status != stepUnknown {
+				t.Errorf("step = %+v, want unknown", run.Steps[0])
+			}
+		})
+	}
+	t.Run("a rollback step", func(t *testing.T) {
+		h := newRBHarness(t, fmt.Sprintf(`id: rb
+steps:
+  - id: call
+    type: action
+    action: {type: log, message: done}
+    rollback: {type: webhook, url: %s}
+  - id: bad
+    type: action
+    action: {type: script, name: bad}
+`, urls["ok"]), policy.Config{})
+		h.script.failNext("bad", 1)
+		h.rb = h.engineAuditingTo(&failingAudit{fail: outcomeEntry})
+		h.run(h.rb)
+		id := h.start("rb")
+		h.await(id, RunbookFailed)
+		h.rollback(id)
+		if run := h.await(id, RunbookUnknown); run.Steps[0].Rollback.Status != stepUnknown {
+			t.Errorf("rollback = %+v, want unknown", run.Steps[0].Rollback)
+		}
+	})
+}
+
+// TestRunbookActionRefusedBeforeItRan: without its first audit entry the action
+// never starts, whatever the audit write failed with.
+func TestRunbookActionRefusedBeforeItRan(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{"the audit log is unavailable", store.ErrUnavailable},
+		{"the audit write timed out", context.DeadlineExceeded},
+		{"the audit write lost its connection", io.ErrUnexpectedEOF},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := newBodyServer(t)
+			h := newRBHarness(t, fmt.Sprintf(`id: rb
+steps:
+  - id: call
+    type: action
+    action: {type: webhook, url: %s/hook}
+`, srv.URL), policy.Config{})
+			h.rb = h.engineAuditingTo(&failingAudit{fail: func(e store.AuditEntry) error {
+				if e.Action == string(policy.AutomationWebhook) && e.Result == policy.Started {
+					return tc.err
+				}
+				return nil
+			}})
+			h.run(h.rb)
+			run := h.await(h.start("rb"), RunbookFailed)
+			if run.Steps[0].Status != stepFailed {
+				t.Errorf("step = %+v, want failed", run.Steps[0])
+			}
+			if got := srv.got(); len(got) != 0 {
+				t.Errorf("the refused action ran: %q", got)
+			}
+		})
+	}
+}
+
+// scriptedKube ends every action with err.
+type scriptedKube struct {
+	Kube
+	err error
+}
+
+func (k scriptedKube) RunAction(context.Context, string, kubernetes.ActionRequest) (kubernetes.ActionResult, error) {
+	return kubernetes.ActionResult{}, k.err
+}
+
+// TestRunbookKubeActionOutcome: only a write that was sent can have happened.
+// The reads an action starts with change nothing, however they end.
+func TestRunbookKubeActionOutcome(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		err       error
+		uncertain bool
+	}{
+		{"a write that lost its connection", fmt.Errorf("restart web: stream error: %w", kubernetes.ErrWriteOutcomeUnknown), true},
+		{"a drain that stopped", fmt.Errorf("drain pi-1: %w", kubernetes.ErrDrainIncomplete), true},
+		{"a read that timed out", fmt.Errorf("restart web: %w", context.DeadlineExceeded), false},
+		{"a read that lost its connection", fmt.Errorf("restart web: %w", io.ErrUnexpectedEOF), false},
+		{"an answer from the API server", errors.New("restart web: kubernetes API: forbidden (HTTP 403)"), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := &kubeAction{kube: scriptedKube{err: tc.err}, cluster: Literal("lab"), namespace: Literal("default"), name: Literal("web")}
+			err := a.Run(t.Context(), Event{})
+			if err == nil {
+				t.Fatal("the action succeeded")
+			}
+			if got := outcomeUncertain(err); got != tc.uncertain {
+				t.Errorf("outcomeUncertain(%v) = %v, want %v", err, got, tc.uncertain)
+			}
+			if err.Error() != tc.err.Error() {
+				t.Errorf("error = %q, want the text unchanged", err)
+			}
+		})
+	}
 }

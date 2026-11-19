@@ -10,9 +10,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 )
 
 // apiClient talks to a Kubernetes API server: lists, watches and pod logs,
@@ -59,8 +61,13 @@ func (c *apiClient) get(ctx context.Context, path string, q url.Values) (*http.R
 }
 
 // do sends method path?q with body, of contentType, and returns the
-// response of a 2xx answer; the caller closes its body.
+// response of a 2xx answer; the caller closes its body. A write that got a
+// connection and no answer fails with an error wrapping ErrWriteOutcomeUnknown.
 func (c *apiClient) do(ctx context.Context, method, path string, q url.Values, contentType string, body []byte) (*http.Response, error) {
+	var connected atomic.Bool
+	ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
+		GotConn: func(httptrace.GotConnInfo) { connected.Store(true) },
+	})
 	u := *c.base
 	u.Path += path
 	u.RawQuery = q.Encode()
@@ -78,6 +85,9 @@ func (c *apiClient) do(ctx context.Context, method, path string, q url.Values, c
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
+		if method != http.MethodGet && connected.Load() {
+			return nil, fmt.Errorf("%w: %w", err, ErrWriteOutcomeUnknown)
+		}
 		return nil, err
 	}
 	if resp.StatusCode/100 == 2 {
