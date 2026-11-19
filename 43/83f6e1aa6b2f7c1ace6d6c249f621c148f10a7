@@ -1,0 +1,26 @@
+internal/automation/runbook_vars_test.go
+  s_344993999c180f::t_8604e2755f43bb 74,80-82
+docs/runbooks.md
+  s_344993999c180f::t_8a35ec6920929c 176-178
+docs/runbook-recipes.md
+  s_344993999c180f::t_8a35ec6920929c 8-9
+internal/automation/runbook_engine.go
+  s_344993999c180f::t_f0fbbc1d70dad8 167-169
+  s_344993999c180f::t_2b2d63589c8c46 180
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4383f6e1aa6b2f7c1ace6d6c249f621c148f10a7",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
