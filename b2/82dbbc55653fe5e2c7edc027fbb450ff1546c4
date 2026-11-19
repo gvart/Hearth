@@ -21,6 +21,8 @@ cmd/hearth/backup.go
 internal/backup/backup_test.go
   s_344993999c180f::t_eb357610ca5a0e 1-652
   s_344993999c180f::t_75be8ab6e6193c 653-654
+cmd/hearth/root.go
+  s_344993999c180f::t_accd2b121c414d 18
 ---
 {
   "schema_version": "authorship/3.0.0",
