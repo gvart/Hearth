@@ -324,7 +324,10 @@ hub's CA, delete `ca.crt` and `ca.key` and enroll every agent again.
    key, and every hub then drops the old CA and deletes its key. Connections that still use an old-CA
    certificate are closed. A finish that stopped part way, say because a hub restarted, resumes when
    you run it again: a hub that restarts after the switch serves the new CA from its start. The finish
-   names the sealed secrets it checked, and is refused, and checks again, if any changed since.
+   names the sealed secrets it checked, and is refused, and checks again, if any changed since. A
+   sealed secret that opens with neither key (a corrupt row) stops the finish, which names it: remove that
+   Kubernetes cluster or Proxmox server (in the UI, or `DELETE /api/v1/kube/clusters/{id}` or
+   `DELETE /api/v1/proxmox/servers/{id}`), run the finish again, then add it back.
 
 **Giving up.** Until the finish has begun to switch the hubs over, a rotation can be abandoned:
 
@@ -333,7 +336,8 @@ hearth cluster ca abort --dry-run   # lists the agents already renewed, which ha
 hearth cluster ca abort
 ```
 
-Every hub drops the new CA, its key and its node certificate of it, and hubs can join again. It is
+Every hub drops the new CA, its key and its node certificate of it, the certificates the new CA issued
+are revoked, and hubs can join again. It is
 also the way out when the leader that made the new CA is lost before another hub fetched its key:
 nothing else holds that key, and a new leader cannot finish. Once the switch has begun, abort is
 refused: finish the rotation instead.
