@@ -148,6 +148,13 @@
         { "key": "node", "label": "Node", "kind": "text", "required": true }
       ]
     },
+    "kube_node_delete": {
+      "label": "Delete a node",
+      "fields": [
+        { "key": "cluster", "label": "Cluster", "kind": "text", "required": true },
+        { "key": "node", "label": "Node", "kind": "text", "required": true }
+      ]
+    },
     "kube_drain": {
       "label": "Drain a node",
       "fields": [

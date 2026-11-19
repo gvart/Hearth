@@ -364,6 +364,9 @@ actions:
     cluster: homelab
     node: pi-2
     timeout: 5m                  # optional, default 2m, at most 10m
+  - type: kube_node_delete       # dangerous, like kube_drain
+    cluster: homelab
+    node: pi-2
 ```
 
 - Policy decides on each one before anything is sent to the cluster, with actor `automation/<id>`
