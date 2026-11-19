@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// CertPinsSchema is the schema version whose migration (00024_cert_pins.sql) added the
+// CertPinsSchema is the schema version whose migration (cert_pins) added the
 // certificate fingerprints. Below it no fingerprint is recorded and no
 // device certificate is pinned.
 const CertPinsSchema = 24
