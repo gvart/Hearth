@@ -131,6 +131,11 @@ func loadCA(certPath, keyPath string) (*CA, error) {
 	if err != nil {
 		return nil, err
 	}
+	// A key copied in by hand, as after a restore without it, must be this
+	// CA's.
+	if pub, ok := cert.PublicKey.(interface{ Equal(crypto.PublicKey) bool }); !ok || !pub.Equal(key.Public()) {
+		return nil, fmt.Errorf("CA key %s does not match the CA certificate %s: copy the ca.key of this hub's CA", keyPath, certPath)
+	}
 	return &CA{cert: cert, key: key}, nil
 }
 
