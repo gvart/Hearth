@@ -61,8 +61,9 @@ func TestNoRedirect(t *testing.T) {
 		leaked.Add(1)
 	}))
 	t.Cleanup(other.Close)
-	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, other.URL+r.URL.Path, http.StatusTemporaryRedirect)
+	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Location", other.URL+"/api/collections/users/auth-with-password")
+		w.WriteHeader(http.StatusTemporaryRedirect)
 	}))
 	t.Cleanup(redirect.Close)
 	c, err := beszel.New(redirect.URL, beszelmock.Email, beszelmock.Password, nil)

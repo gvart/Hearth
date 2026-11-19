@@ -48,8 +48,9 @@ func TestNoRedirect(t *testing.T) {
 	var reached atomic.Int32
 	other := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { reached.Add(1) }))
 	t.Cleanup(other.Close)
-	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, other.URL+r.URL.Path, http.StatusPermanentRedirect)
+	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Location", other.URL+"/devices")
+		w.WriteHeader(http.StatusPermanentRedirect)
 	}))
 	t.Cleanup(redirect.Close)
 	c, err := netalertx.New(redirect.URL, netalertxmock.Token, nil)
