@@ -23,8 +23,15 @@ import (
 	"github.com/gvart/hearth/internal/store"
 )
 
-// maxBody caps a response the hub will read.
-const maxBody = 16 << 20
+const (
+	// maxBody caps a response the hub will read.
+	maxBody = 16 << 20
+	// maxDevices caps the device list: a read that finds more fails, so a
+	// server cannot grow the hub without bound.
+	maxDevices = 5000
+	// maxField caps an error message NetAlertX sends.
+	maxField = 255
+)
 
 // Client reads one NetAlertX. It implements discovery.Source.
 type Client struct {
@@ -52,7 +59,11 @@ func New(rawURL, token string, hc *http.Client) (*Client, error) {
 	}
 	u.Path = strings.TrimSuffix(u.Path, "/")
 	if hc == nil {
-		hc = &http.Client{Timeout: 10 * time.Second}
+		hc = &http.Client{
+			Timeout: 10 * time.Second,
+			// A redirect could carry the token elsewhere.
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		}
 	}
 	return &Client{base: u, token: token, hc: hc, now: time.Now}, nil
 }
@@ -74,18 +85,80 @@ type device struct {
 	Archived        *int   `json:"devIsArchived"`
 }
 
+// devicesResponse is the body of GET /devices.
 type devicesResponse struct {
-	Success bool     `json:"success"`
-	Devices []device `json:"devices"`
+	Success bool
+	Devices []device
+}
+
+// errTooMany is returned for a device list longer than maxDevices.
+var errTooMany = fmt.Errorf("more than %d devices", maxDevices)
+
+// decode reads the body from r. It decodes the devices one at a time and
+// fails at the one past maxDevices, so a longer list costs no more memory
+// than maxDevices devices.
+func (res *devicesResponse) decode(r io.Reader) error {
+	dec := json.NewDecoder(r)
+	if err := delim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := dec.Token()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "success":
+			if err := dec.Decode(&res.Success); err != nil {
+				return err
+			}
+		case "devices":
+			if err := delim(dec, '['); err != nil {
+				return err
+			}
+			for dec.More() {
+				if len(res.Devices) == maxDevices {
+					return errTooMany
+				}
+				var d device
+				if err := dec.Decode(&d); err != nil {
+					return err
+				}
+				res.Devices = append(res.Devices, d)
+			}
+			if err := delim(dec, ']'); err != nil {
+				return err
+			}
+		default:
+			var skip json.RawMessage
+			if err := dec.Decode(&skip); err != nil {
+				return err
+			}
+		}
+	}
+	return delim(dec, '}')
+}
+
+// delim reads the next token of dec and fails unless it is d.
+func delim(dec *json.Decoder, d json.Delim) error {
+	t, err := dec.Token()
+	if err != nil {
+		return err
+	}
+	if t != d {
+		return fmt.Errorf("want %v, got %v", d, t)
+	}
+	return nil
 }
 
 // Records implements discovery.Source: every device NetAlertX has not
 // archived. A device present in NetAlertX's last scan counts as seen now;
 // NetAlertX's own timestamps are not used, as their time zone depends on
-// its version and settings.
+// its version and settings. It fails if NetAlertX lists more than
+// maxDevices devices.
 func (c *Client) Records(ctx context.Context) ([]discovery.Record, error) {
 	var res devicesResponse
-	if err := c.get(ctx, "/devices", &res); err != nil {
+	if err := c.get(ctx, "/devices", res.decode); err != nil {
 		return nil, fmt.Errorf("netalertx devices: %w", err)
 	}
 	if !res.Success {
@@ -127,9 +200,10 @@ type apiError struct {
 	Error   string `json:"error"`
 }
 
-// get sends one GET and decodes a 2xx JSON response into out. Errors name
-// the status and NetAlertX's message, never the token.
-func (c *Client) get(ctx context.Context, path string, out any) error {
+// get sends one GET and hands a 2xx response, at most maxBody of it, to
+// decode. Errors name the status and NetAlertX's message, clipped, never the
+// token.
+func (c *Client) get(ctx context.Context, path string, decode func(io.Reader) error) error {
 	u := *c.base
 	u.Path += path
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
@@ -143,23 +217,30 @@ func (c *Client) get(ctx context.Context, path string, out any) error {
 		return err
 	}
 	defer resp.Body.Close()
-	b, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
-	if err != nil {
-		return fmt.Errorf("read response: %w", err)
-	}
 	if resp.StatusCode/100 != 2 {
+		b, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
+		if err != nil {
+			return fmt.Errorf("read response: %w", err)
+		}
 		var e apiError
 		_ = json.Unmarshal(b, &e)
 		msg := fmt.Sprintf("HTTP %d", resp.StatusCode)
-		if e.Message != "" {
-			msg += ": " + e.Message
+		if m := strings.TrimSpace(e.Message); m != "" {
+			if len(m) > maxField {
+				m = m[:maxField]
+			}
+			msg += ": " + m
 		}
 		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
 			msg += " (wrong API token?)"
 		}
 		return errors.New(msg)
 	}
-	if err := json.Unmarshal(b, out); err != nil {
+	err = decode(io.LimitReader(resp.Body, maxBody))
+	if errors.Is(err, errTooMany) {
+		return err
+	}
+	if err != nil {
 		return fmt.Errorf("decode response: %w", err)
 	}
 	return nil

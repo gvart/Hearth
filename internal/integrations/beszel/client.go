@@ -28,10 +28,12 @@ import (
 const (
 	// maxBody caps a response the hub will read.
 	maxBody = 16 << 20
-	// perPage is the page size of a systems listing.
+	// perPage is the page size of a systems listing; items a page holds
+	// beyond it are not read.
 	perPage = 200
-	// maxPages caps a listing: 20 000 systems.
-	maxPages = 100
+	// maxSystems caps a listing: a read that finds more fails, so a server
+	// that never stops paging cannot grow the hub without bound.
+	maxSystems = 5000
 	// maxField caps a name or other text Beszel reports.
 	maxField = 255
 )
@@ -90,7 +92,11 @@ func New(rawURL, email, password string, hc *http.Client) (*Client, error) {
 	}
 	u.Path = strings.TrimSuffix(strings.TrimSuffix(u.Path, "/"), "/api")
 	if hc == nil {
-		hc = &http.Client{Timeout: 10 * time.Second}
+		hc = &http.Client{
+			Timeout: 10 * time.Second,
+			// A redirect could carry the password or the token elsewhere.
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		}
 	}
 	return &Client{base: u, email: email, password: password, hc: hc}, nil
 }
@@ -114,28 +120,90 @@ type record struct {
 	} `json:"info"`
 }
 
+// listResponse is a page of a listing: its totalPages and at most perPage
+// items.
 type listResponse struct {
-	Page       int      `json:"page"`
-	TotalPages int      `json:"totalPages"`
-	Items      []record `json:"items"`
+	TotalPages int
+	Items      []record
 }
 
-// Systems logs in and returns every system the user can see, by name.
+// decode reads a page from r. It decodes the items one at a time and stops
+// at perPage of them, so a page holding more costs no more memory than
+// perPage items.
+func (p *listResponse) decode(r io.Reader) error {
+	dec := json.NewDecoder(r)
+	if err := delim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := dec.Token()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "totalPages":
+			if err := dec.Decode(&p.TotalPages); err != nil {
+				return err
+			}
+		case "items":
+			if err := delim(dec, '['); err != nil {
+				return err
+			}
+			for dec.More() {
+				if len(p.Items) == perPage {
+					return nil // the rest of the page is not read
+				}
+				var rec record
+				if err := dec.Decode(&rec); err != nil {
+					return err
+				}
+				p.Items = append(p.Items, rec)
+			}
+			if err := delim(dec, ']'); err != nil {
+				return err
+			}
+		default:
+			var skip json.RawMessage
+			if err := dec.Decode(&skip); err != nil {
+				return err
+			}
+		}
+	}
+	return delim(dec, '}')
+}
+
+// delim reads the next token of dec and fails unless it is d.
+func delim(dec *json.Decoder, d json.Delim) error {
+	t, err := dec.Token()
+	if err != nil {
+		return err
+	}
+	if t != d {
+		return fmt.Errorf("want %v, got %v", d, t)
+	}
+	return nil
+}
+
+// Systems logs in and returns every system the user can see. It fails if
+// there are more than maxSystems.
 func (c *Client) Systems(ctx context.Context) ([]System, error) {
 	token, err := c.login(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var out []System
-	for page := 1; page <= maxPages; page++ {
+	for page := 1; ; page++ {
 		q := url.Values{
 			"page":    {strconv.Itoa(page)},
 			"perPage": {strconv.Itoa(perPage)},
 			"fields":  {"id,name,host,status,info"},
 		}
 		var res listResponse
-		if err := c.do(ctx, http.MethodGet, "/api/collections/systems/records", q, token, nil, &res); err != nil {
+		if err := c.do(ctx, http.MethodGet, "/api/collections/systems/records", q, token, nil, res.decode); err != nil {
 			return nil, fmt.Errorf("beszel systems: %w", err)
+		}
+		if len(out)+len(res.Items) > maxSystems {
+			return nil, fmt.Errorf("beszel systems: more than %d systems", maxSystems)
 		}
 		for _, r := range res.Items {
 			out = append(out, System{
@@ -172,7 +240,7 @@ func (c *Client) login(ctx context.Context) (string, error) {
 	var res struct {
 		Token string `json:"token"`
 	}
-	if err := c.do(ctx, http.MethodPost, "/api/collections/users/auth-with-password", nil, "", body, &res); err != nil {
+	if err := c.do(ctx, http.MethodPost, "/api/collections/users/auth-with-password", nil, "", body, jsonInto(&res)); err != nil {
 		return "", fmt.Errorf("beszel login: %w", err)
 	}
 	if res.Token == "" {
@@ -187,9 +255,15 @@ type apiError struct {
 	Message string `json:"message"`
 }
 
-// do sends one request and decodes a 2xx JSON response into out. Errors
-// name the status and PocketBase's message, never the request.
-func (c *Client) do(ctx context.Context, method, path string, q url.Values, token string, body []byte, out any) error {
+// jsonInto returns a decode function for do that unmarshals into out.
+func jsonInto(out any) func(io.Reader) error {
+	return func(r io.Reader) error { return json.NewDecoder(r).Decode(out) }
+}
+
+// do sends one request and hands a 2xx response, at most maxBody of it, to
+// decode. Errors name the status and PocketBase's message, never the
+// request.
+func (c *Client) do(ctx context.Context, method, path string, q url.Values, token string, body []byte, decode func(io.Reader) error) error {
 	u := *c.base
 	u.Path = strings.TrimSuffix(u.Path, "/") + path
 	u.RawQuery = q.Encode()
@@ -214,11 +288,11 @@ func (c *Client) do(ctx context.Context, method, path string, q url.Values, toke
 		return err
 	}
 	defer resp.Body.Close()
-	b, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
-	if err != nil {
-		return fmt.Errorf("read response: %w", err)
-	}
 	if resp.StatusCode/100 != 2 {
+		b, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
+		if err != nil {
+			return fmt.Errorf("read response: %w", err)
+		}
 		var e apiError
 		_ = json.Unmarshal(b, &e)
 		msg := fmt.Sprintf("HTTP %d", resp.StatusCode)
@@ -230,7 +304,7 @@ func (c *Client) do(ctx context.Context, method, path string, q url.Values, toke
 		}
 		return errors.New(msg)
 	}
-	if err := json.Unmarshal(b, out); err != nil {
+	if err := decode(io.LimitReader(resp.Body, maxBody)); err != nil {
 		return fmt.Errorf("decode response: %w", err)
 	}
 	return nil

@@ -45,6 +45,8 @@ every `--discover-interval` (default 5 minutes). Each read:
 From each system it keeps the name, the host Beszel reaches its agent at, the status (`up`,
 `down`, `paused`, `pending`), and from its latest stats the CPU, memory and root disk use in
 percent, the uptime and the agent version. Neither the password nor the auth token is logged.
+The hub does not follow redirects, which could carry the password to another host. A read that
+finds more than 5000 systems fails.
 
 What a read finds is kept in memory only: the hub stores nothing from Beszel, and a restarted hub
 shows the systems again after its first read. Beszel keeps the history; open Beszel for charts.
