@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Hearth's telemetry collector. See README.md before deploying.
+name = "hearth-telemetry"
+main = "worker.js"
+compatibility_date = "2025-11-01"
+# No request logs: the collector keeps nothing but the payload.
+workers_dev = true
+
+[observability]
+enabled = false
+
+[[d1_databases]]
+binding = "DB"
+database_name = "hearth-telemetry"
+# Fill in after `wrangler d1 create hearth-telemetry` (see README.md).
+database_id = "REPLACE_WITH_DATABASE_ID"
