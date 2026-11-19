@@ -114,6 +114,14 @@ func (s *JoinServer) Join(ctx context.Context, req *connect.Request[clusterv1.Jo
 				"upgrade this hub to the cluster's hearth version, then join again"
 			return errNoEpochs
 		}
+		// A joiner gets the CA key it is handed, and its certificate would
+		// be neither pinned nor of the new CA: no joining mid-rotation.
+		if _, err := s.store.CARotations().Active(ctx); err == nil {
+			refused = "a hub CA rotation is under way; join once it has finished (`hearth cluster ca finish`)"
+			return store.ErrCARotationActive
+		} else if !errors.Is(err, store.ErrNotFound) && !errors.Is(err, store.ErrSchemaTooOld) {
+			return err
+		}
 		have, err := s.store.SchemaVersion(ctx)
 		if err != nil {
 			return err

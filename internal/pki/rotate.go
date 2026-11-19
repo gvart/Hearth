@@ -157,15 +157,15 @@ func (c *CA) IssuerOf(cert *x509.Certificate) *x509.Certificate {
 }
 
 // KeyDERs returns the private keys of the CAs this hub holds as PKCS#8 DER,
-// the signer's first: the secrets sealing keys are derived from. Never log or
-// persist them.
+// the serving CA's first: the secrets sealing keys are derived from. Secrets
+// are sealed with the serving CA's key, which every hub holds by the cutover,
+// and opened with either. Never log or persist them.
 func (c *CA) KeyDERs() ([][]byte, error) {
 	s := c.state()
-	signer := s.signer()
-	pairs := []keyPair{signer}
+	pairs := []keyPair{s.serving()}
 	switch {
 	case s.next == nil || s.next.key == nil:
-	case signer.cert == s.next.cert:
+	case s.cutover:
 		pairs = append(pairs, s.cur)
 	default:
 		pairs = append(pairs, *s.next)

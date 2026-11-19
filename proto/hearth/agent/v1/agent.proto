@@ -158,6 +158,13 @@ message Welcome {
   // cluster, the leader included. Agents keep them to fail over between hubs.
   // A single hub lists only itself, or nothing when it does not know its URL.
   repeated string hubs = 3;
+  // certificate, set during a hub CA rotation, is a client certificate of the
+  // new CA for the key the agent connected with (PEM). The agent saves
+  // ca_bundle first, then this, and reconnects with it.
+  bytes certificate = 4;
+  // ca_bundle, when set, is every hub CA the agent should trust (PEM): both
+  // during a hub CA rotation, the new one alone after it.
+  bytes ca_bundle = 5;
 }
 
 // NotLeader is the error detail a hub that is not the cluster leader attaches

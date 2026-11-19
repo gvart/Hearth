@@ -122,26 +122,30 @@ func (w *memberWatch) isFailing(id raft.ServerID) bool {
 	return w.failing[id]
 }
 
-// checkPeerCert refuses a hub node certificate of another cluster epoch, and a
-// revoked one. It reads the local replica of the revocation table and returns
-// any read error.
+// checkPeerCert refuses a hub node certificate of another cluster epoch, a
+// revoked one, and during a hub CA rotation an old-CA one other than the
+// one pinned for its hub (errNotPinned). It reads the local replica of the
+// store and returns any read error.
 func (n *Node) checkPeerCert(cert *x509.Certificate) error {
 	if pki.HubEpoch(cert) != n.epoch {
 		return errOtherEpoch
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	return n.store.Hubs().CheckCert(ctx, pki.SerialString(cert))
+	if err := n.store.Hubs().CheckCert(ctx, pki.SerialString(cert)); err != nil {
+		return err
+	}
+	return n.checkRotationPin(ctx, cert)
 }
 
 // refuseRevoked is the Raft transport's peer check. It refuses a revoked
-// certificate only: when the revocation table cannot be read, it accepts the
-// CA-issued hub certificate and logs the failure, so a store problem on this
-// node halts it through the FSM, as before, rather than cutting it off from
-// its peers.
+// certificate, and an unpinned one during a hub CA rotation, only: when the
+// store cannot be read, it accepts the CA-issued hub certificate and logs
+// the failure, so a store problem on this node halts it through the FSM, as
+// before, rather than cutting it off from its peers.
 func (n *Node) refuseRevoked(cert *x509.Certificate) error {
 	err := n.checkPeerCert(cert)
-	if err != nil && !errors.Is(err, store.ErrCertRevoked) {
+	if err != nil && !errors.Is(err, store.ErrCertRevoked) && !errors.Is(err, errNotPinned) {
 		n.log.Warn("cannot check a peer's hub certificate for revocation; accepting it", "err", err)
 		return nil
 	}

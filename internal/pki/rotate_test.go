@@ -133,14 +133,17 @@ func TestCARotation(t *testing.T) {
 		t.Fatal("reloaded member: want the old CA serving and the next one with its key")
 	}
 
-	// Sealing secrets: the signer's key first, then the other.
+	// Sealing secrets: the serving CA's key first, then the other.
 	ders, err := member.KeyDERs()
-	if err != nil || len(ders) != 2 || !bytes.Equal(ders[0], keyDER) {
-		t.Fatalf("KeyDERs = %d keys, %v; want the next CA's first", len(ders), err)
+	if err != nil || len(ders) != 2 || !bytes.Equal(ders[1], keyDER) {
+		t.Fatalf("KeyDERs = %d keys, %v; want the next CA's second before the cutover", len(ders), err)
 	}
 
 	if err := member.Cutover(); err != nil {
 		t.Fatal(err)
+	}
+	if ders, err := member.KeyDERs(); err != nil || len(ders) != 2 || !bytes.Equal(ders[0], keyDER) {
+		t.Fatalf("KeyDERs after the cutover = %d keys, %v; want the next CA's first", len(ders), err)
 	}
 	if !member.Cert().Equal(next) || !member.TrustedCerts()[0].Equal(next) {
 		t.Error("after the cutover the next CA is not the one served")

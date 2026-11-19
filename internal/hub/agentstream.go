@@ -48,6 +48,12 @@ type AgentStream struct {
 	// audit, when set, records a client certificate that is not the one
 	// recorded for its serial.
 	audit auditAppender
+	// ca, rotations and renew, when set, renew agents during a hub CA
+	// rotation (carotation.go), and end streams of certificates of a CA no
+	// longer trusted.
+	ca        *pki.CA
+	rotations rotationReader
+	renew     certRecorder
 	// agents tracks open streams so exec requests can be sent over them.
 	agents *Agents
 	// metrics, when set, records the agents' MetricsBatches.
@@ -109,11 +115,14 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 		return connect.NewError(connect.CodeUnavailable, errors.New("cannot record device facts"))
 	}
 	pinned := s.pinCert(ctx, log, deviceID)
+	cert, bundle := s.renewal(ctx, log, deviceID)
 
 	welcome := &agentv1.HubMessage{Payload: &agentv1.HubMessage_Welcome{Welcome: &agentv1.Welcome{
 		ServerTime:        timestamppb.New(s.now()),
 		HeartbeatInterval: durationpb.New(s.heartbeatInterval),
 		Hubs:              s.leadership.AgentURLs(),
+		Certificate:       cert,
+		CaBundle:          bundle,
 	}}}
 	// Bounded as every send to an agent is (see agentSession.sendMsg).
 	stalled := time.AfterFunc(s.agents.sendTimeout, streamAbort(ctx))
@@ -188,6 +197,13 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 // the stream: a follower or a hub catching up must not kick agents on stale
 // data, and the next heartbeat checks again.
 func (s *AgentStream) recheckCert(ctx context.Context, log *slog.Logger, deviceID string) error {
+	if !trustedLeaf(ctx, s.ca) {
+		log.InfoContext(ctx, "agent stream ended: its certificate is of a hub CA no longer trusted")
+		if err := s.registry.markOffline(ctx, deviceID); err != nil {
+			log.WarnContext(ctx, "mark device offline", "err", err)
+		}
+		return errUntrustedCA
+	}
 	serial, ok := serialFrom(ctx)
 	if s.certs == nil || !ok {
 		return nil
@@ -307,6 +323,14 @@ func (s *AgentStream) pinCert(ctx context.Context, log *slog.Logger, deviceID st
 	var caFP string
 	if len(chain) > 1 {
 		caFP = pki.FingerprintHex(chain[len(chain)-1])
+	}
+	if recorded == "" {
+		// During a hub CA rotation an old-CA certificate is not pinned on
+		// first use: renewal needs a pin from before the rotation, which a
+		// certificate minted with a stolen old key cannot have.
+		if rot, ok := s.activeRotation(ctx); ok && caFP != rot.NewCAFP {
+			return true
+		}
 	}
 	outcome, err := s.pins.Pin(ctx, serial, deviceID, fp, caFP, s.now())
 	switch {

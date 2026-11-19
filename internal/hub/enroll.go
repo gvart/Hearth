@@ -85,7 +85,7 @@ func (e *Enroller) Enroll(ctx context.Context, req *connect.Request[agentv1.Enro
 		}
 		if err := e.store.Certs().Record(ctx, store.CertRecord{
 			Serial: pki.SerialString(c), DeviceID: deviceID,
-			Fingerprint: pki.FingerprintHex(c), CAFP: pki.FingerprintHex(e.ca.Cert()),
+			Fingerprint: pki.FingerprintHex(c), CAFP: issuerFP(e.ca, c),
 		}); err != nil {
 			return err
 		}

@@ -42,6 +42,15 @@ service ClusterService {
   // hubs can notice that they disagree. Every member serves it, to members
   // presenting their hub node certificate. Digests never leave this channel.
   rpc ConfigDigests(ConfigDigestsRequest) returns (ConfigDigestsResponse);
+  // FetchCAKey hands a member the new CA's key during a hub CA rotation and,
+  // from the leader, a node certificate of the new CA for the CSR. The
+  // caller authenticates with its hub node certificate, which must be the
+  // one the rotation pinned for it or one of the new CA. Decided by policy
+  // and audited on the serving hub, refusals included.
+  rpc FetchCAKey(FetchCAKeyRequest) returns (FetchCAKeyResponse);
+  // CAInfo reports this hub's side of a hub CA rotation. Every member serves
+  // it, to members presenting their hub node certificate.
+  rpc CAInfo(CAInfoRequest) returns (CAInfoResponse);
 }
 
 // JoinRequest describes the hub that wants to join.
@@ -164,4 +173,40 @@ message ConfigDigestsResponse {
   // digests maps a configuration item to its SHA-256 digest, in hex. An item
   // the hub could not read is left out.
   map<string, string> digests = 1;
+}
+
+// FetchCAKeyRequest names the rotation and carries the caller's CSR.
+message FetchCAKeyRequest {
+  // new_ca_fingerprint is the SHA-256 of the new CA's certificate, hex.
+  string new_ca_fingerprint = 1;
+  // csr is a DER certificate request for the caller's node certificate of
+  // the new CA; empty asks for the key only.
+  bytes csr = 2;
+}
+
+// FetchCAKeyResponse carries the new CA's key and a node certificate.
+message FetchCAKeyResponse {
+  // ca_key is the new CA's private key, PKCS #8 DER.
+  bytes ca_key = 1;
+  // certificate is the caller's node certificate of the new CA, DER. Only
+  // the leader issues one.
+  bytes certificate = 2;
+}
+
+// CAInfoRequest is empty.
+message CAInfoRequest {}
+
+// CAInfoResponse is a hub's side of a hub CA rotation.
+message CAInfoResponse {
+  // serving_ca_fingerprint is the CA whose certificates the hub serves.
+  string serving_ca_fingerprint = 1;
+  // next_ca_fingerprint is the new CA the hub trusts; empty outside a rotation.
+  string next_ca_fingerprint = 2;
+  // has_next_key is true once the hub holds the new CA's key.
+  bool has_next_key = 3;
+  // has_next_node_certificate is true once the hub holds a node certificate
+  // of the new CA.
+  bool has_next_node_certificate = 4;
+  // cut_over is true once the hub serves the new CA.
+  bool cut_over = 5;
 }

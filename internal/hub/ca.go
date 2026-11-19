@@ -21,8 +21,15 @@ const caContentType = "application/x-x509-ca-cert"
 // iOS tools prefer. It belongs on the plain-HTTP listener: a device that does
 // not trust the CA yet cannot fetch it over HTTPS without a warning.
 func RegisterCARoute(mux *http.ServeMux, ca *x509.Certificate) {
-	pemBytes, derBytes := pki.EncodeCertPEM(ca), ca.Raw
+	RegisterCARouteFunc(mux, func() *x509.Certificate { return ca })
+}
+
+// RegisterCARouteFunc is RegisterCARoute serving the certificate ca returns
+// at each request: the CA the hub serves, which a hub CA rotation changes.
+func RegisterCARouteFunc(mux *http.ServeMux, ca func() *x509.Certificate) {
 	mux.HandleFunc("GET /ca.crt", func(w http.ResponseWriter, r *http.Request) {
+		cert := ca()
+		pemBytes, derBytes := pki.EncodeCertPEM(cert), cert.Raw
 		body := pemBytes
 		switch r.URL.Query().Get("format") {
 		case "", "pem":
