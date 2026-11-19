@@ -314,7 +314,9 @@ func (c *CA) Cutover() error {
 
 // Finish ends the rotation on this hub: the next CA becomes the only one,
 // and its files replace ca.crt and ca.key, which deletes the current key.
-// A crash between the two renames is completed by LoadOrCreateCA.
+// A crash between the two renames is completed by LoadOrCreateCA, and a
+// Finish that failed between them is completed by calling it again: a
+// rename whose source is gone is done when its target is the next CA's.
 func (c *CA) Finish() error {
 	c.mu.Lock()
 	s := c.state()
@@ -327,13 +329,58 @@ func (c *CA) Finish() error {
 		return errors.New("finish CA rotation: the CA has no data dir")
 	}
 	for _, f := range [][2]string{{NextCACertFile, CACertFile}, {NextCAKeyFile, CAKeyFile}} {
-		if err := os.Rename(filepath.Join(c.dir, f[0]), filepath.Join(c.dir, f[1])); err != nil {
+		src, dst := filepath.Join(c.dir, f[0]), filepath.Join(c.dir, f[1])
+		err := os.Rename(src, dst)
+		if errors.Is(err, os.ErrNotExist) && c.holdsNext(dst, s.next) {
+			continue
+		}
+		if err != nil {
 			c.mu.Unlock()
 			return fmt.Errorf("finish CA rotation: %w", err)
 		}
 	}
 	syncDir(c.dir)
 	c.st.Store(newState(*s.next, nil, false))
+	c.mu.Unlock()
+	c.changed()
+	return nil
+}
+
+// holdsNext reports whether path, ca.crt or ca.key, already holds next's
+// certificate or key: what a rename of Finish left there.
+func (c *CA) holdsNext(path string, next *keyPair) bool {
+	if filepath.Base(path) == CACertFile {
+		cert, err := LoadCACert(c.dir)
+		return err == nil && cert.Equal(next.cert)
+	}
+	key, err := ReadKey(path)
+	return err == nil && keyMatches(next.cert, key)
+}
+
+// Abandon ends a rotation this hub missed (it lacks the new CA's key, or a
+// node certificate of it): cert, the new CA, becomes the only CA, without a
+// key, and every CA key file in the data dir is deleted. ca.crt is replaced
+// first, so a crash leaves a certificate and key that do not match, which
+// LoadOrCreateCA refuses. The hub can then sign nothing and trust nothing
+// of the old CA.
+func (c *CA) Abandon(cert *x509.Certificate) error {
+	c.mu.Lock()
+	if c.dir == "" {
+		c.mu.Unlock()
+		return errors.New("abandon CA: the CA has no data dir")
+	}
+	if err := replaceFile(filepath.Join(c.dir, CACertFile), EncodeCertPEM(cert), 0o644); err != nil {
+		c.mu.Unlock()
+		return fmt.Errorf("abandon CA: %w", err)
+	}
+	for _, f := range []string{CAKeyFile, NextCAKeyFile, NextCACertFile} {
+		if err := os.Remove(filepath.Join(c.dir, f)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			c.mu.Unlock()
+			return fmt.Errorf("abandon CA: %w", err)
+		}
+	}
+	syncDir(c.dir)
+	c.st.Store(newState(keyPair{cert: cert}, nil, false))
 	c.mu.Unlock()
 	c.changed()
 	return nil
@@ -363,14 +410,27 @@ func (c *CA) DropNext() error {
 }
 
 // replaceFile writes data to path with mode perm through a temporary file in
-// the same directory, so path is either the old or the new content.
+// the same directory, so path is either the old or the new content. The
+// content reaches the disk before the rename.
 func replaceFile(path string, data []byte, perm os.FileMode) error {
 	tmp := path + ".tmp"
 	if err := os.Remove(tmp); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
-	if err := writeFile(tmp, data, perm); err != nil {
-		return err
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm)
+	if err != nil {
+		return fmt.Errorf("create %s: %w", tmp, err)
+	}
+	_, err = f.Write(data)
+	if err == nil {
+		err = f.Sync()
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("write %s: %w", path, err)
 	}
 	if err := os.Rename(tmp, path); err != nil {
 		_ = os.Remove(tmp)
