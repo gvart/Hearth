@@ -177,7 +177,8 @@ export interface BeszelSystem {
 }
 
 export interface BeszelSystems {
-  status: 'not_configured' | 'connecting' | 'ok' | 'unavailable';
+  /** standby: a hub of a cluster that does not lead it; only the leader reads Beszel. */
+  status: 'not_configured' | 'connecting' | 'ok' | 'unavailable' | 'standby';
   /** Why the last read failed. */
   error?: string;
   /** When the last read that succeeded finished; null if none has. */

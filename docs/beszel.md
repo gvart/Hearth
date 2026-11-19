@@ -63,6 +63,10 @@ unrelated things:
 Loopback and link-local addresses never match. The **In Hearth** column shows the device, which
 opens its drawer, or *On your network*. A system that matches nothing is still listed.
 
+Systems are linked, not merged: Beszel knows no MAC address, which is what network hosts are keyed
+by, so a system never becomes a network host of its own, and a machine that is both a network host
+and a Beszel system shows in both tables, linked by the **In Hearth** column.
+
 ## When there is nothing to show
 
 `GET /api/v1/beszel/systems` always answers 200 with a `status`:
@@ -73,6 +77,7 @@ opens its drawer, or *On your network*. A system that matches nothing is still l
 | `connecting` | the first read has not finished |
 | `ok` | the systems follow |
 | `unavailable` | the last read failed, for example a wrong password; `error` says why, and the systems of the last good read, if any, follow |
+| `standby` | a hub of a [cluster](#in-a-cluster) that does not lead it |
 
 ```json
 {"status": "ok", "read_at": "2026-11-19T07:45:46Z", "systems": [
@@ -89,5 +94,8 @@ denies the `read` class stops reads before the hub contacts Beszel.
 
 ## In a cluster
 
-Every hub reads Beszel itself and serves what it read, like [Prometheus](prometheus.md): set the
-flags and the password on every hub. Each hub's reads are audited.
+Only the leader reads Beszel, because only the leader can write the audit entry each read needs.
+What it read stays in the leader's memory: open the leader's UI to see the systems. The other
+hubs answer `standby` and show a note instead. Set the flags and the password on every hub, so
+that a new leader starts reading after a failover. Cluster mode has not been tested with Beszel
+yet.

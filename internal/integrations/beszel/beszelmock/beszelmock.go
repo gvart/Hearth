@@ -7,11 +7,13 @@
 // (internal/migrations, internal/entities/system/system.go):
 //
 //   - POST /api/collections/users/auth-with-password {"identity", "password"}
-//     answers {"token", "record"}, or 400 "Failed to authenticate.";
+//     answers {"token", "record"}, or 400 with a {"status", "message",
+//     "data"} error body (the message here is the mock's own wording);
 //   - GET /api/collections/systems/records?page=&perPage= with the token as
 //     the Authorization header answers {"page", "perPage", "totalItems",
-//     "totalPages", "items"}; a missing or wrong token sees no systems, as
-//     the collection's list rule hides them.
+//     "totalPages", "items"}; a missing or wrong token sees no systems: a
+//     request that does not satisfy a list rule gets "200 empty items"
+//     (https://pocketbase.io/docs/api-rules-and-filters/).
 //
 // It has never been compared with a real server.
 //

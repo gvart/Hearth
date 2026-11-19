@@ -30,6 +30,9 @@ const (
 	// StateUnavailable is after a read that failed: Systems are those of
 	// the last read that succeeded, if any.
 	StateUnavailable = "unavailable"
+	// StateStandby is a hub of a cluster that does not lead it: only the
+	// leader reads.
+	StateStandby = "standby"
 )
 
 // Snapshot is what the last reads found.
@@ -61,6 +64,9 @@ type ReaderConfig struct {
 	Interval time.Duration
 	Policy   Policy
 	Log      *slog.Logger
+	// Standby starts the reader in StateStandby, for a hub of a cluster,
+	// which reads only while it leads.
+	Standby bool
 }
 
 // Reader reads a Beszel hub every Interval and keeps what it found in
@@ -83,14 +89,23 @@ func NewReader(cfg ReaderConfig) *Reader {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	return &Reader{cfg: cfg, log: log, now: time.Now, snap: Snapshot{State: StateConnecting}}
+	state := StateConnecting
+	if cfg.Standby {
+		state = StateStandby
+	}
+	return &Reader{cfg: cfg, log: log, now: time.Now, snap: Snapshot{State: state}}
 }
 
 // Run reads at once and then every Interval until ctx is done. A failed
-// read is logged; the next one runs on schedule.
+// read is logged; the next one runs on schedule. A Standby reader is in
+// StateStandby again, with no systems, once Run returns.
 func (r *Reader) Run(ctx context.Context) error {
 	t := time.NewTicker(r.cfg.Interval)
 	defer t.Stop()
+	if r.cfg.Standby {
+		r.setSnapshot(Snapshot{State: StateConnecting})
+		defer r.setSnapshot(Snapshot{State: StateStandby})
+	}
 	for {
 		if err := r.Read(ctx); err != nil && ctx.Err() == nil {
 			r.log.WarnContext(ctx, "beszel read failed", "err", err)
@@ -142,6 +157,12 @@ func (r *Reader) Read(ctx context.Context) error {
 		return fmt.Errorf("beszel read: %w", err)
 	}
 	return nil
+}
+
+func (r *Reader) setSnapshot(s Snapshot) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.snap = s
 }
 
 // Snapshot returns what the last reads found. Its Systems are a copy.

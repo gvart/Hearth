@@ -51,7 +51,9 @@ export function BeszelSystems({ now, onSelect }: { now: number; onSelect: (devic
         <p className="muted">
           {data.status === 'connecting'
             ? 'Reading Beszel…'
-            : `${String(up)} of ${String(data.systems.length)} up${data.read_at ? `, read ${relativeTime(data.read_at, now)}` : ''}`}
+            : data.status === 'standby'
+              ? 'The cluster leader reads Beszel: open its UI to see the systems'
+              : `${String(up)} of ${String(data.systems.length)} up${data.read_at ? `, read ${relativeTime(data.read_at, now)}` : ''}`}
         </p>
       </div>
       {data.status === 'unavailable' ? (

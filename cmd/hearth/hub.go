@@ -298,6 +298,8 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if beszelClient != nil {
 		beszelReader = beszel.NewReader(beszel.ReaderConfig{
 			Client: beszelClient, Interval: opts.discoverInterval, Policy: pol, Log: log.With("component", "beszel"),
+			// In a cluster only the leader reads, as only it can audit.
+			Standby: node != nil,
 		})
 	}
 	if node == nil {
@@ -504,15 +506,15 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		if importer != nil {
 			g.Go(func() error { return importer.Run(gctx) })
 		}
+		// What a Beszel read finds is kept in memory, not stored.
+		if beszelReader != nil {
+			g.Go(func() error { return beszelReader.Run(gctx) })
+		}
 	}
 	// Every hub of a cluster watches the Kubernetes clusters itself.
 	g.Go(func() error { return kube.Run(gctx) })
 	// And reads the Proxmox servers itself.
 	g.Go(func() error { return pve.Run(gctx) })
-	// And reads Beszel itself: what it found is kept in memory, not stored.
-	if beszelReader != nil {
-		g.Go(func() error { return beszelReader.Run(gctx) })
-	}
 	// Every hub prunes its own metrics.
 	g.Go(func() error { return ms.Run(gctx) })
 	g.Go(func() error { return serve(gctx, agentSrv, func() error { return agentSrv.ServeTLS(agentLn, "", "") }) })
@@ -523,10 +525,10 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		// Presence, automations and network discovery run on the leader
 		// only and follow leadership.
 		changed, automationsChanged, discoveryChanged := make(chan struct{}, 1), make(chan struct{}, 1), make(chan struct{}, 1)
-		importChanged, runbooksChanged := make(chan struct{}, 1), make(chan struct{}, 1)
+		importChanged, runbooksChanged, beszelChanged := make(chan struct{}, 1), make(chan struct{}, 1), make(chan struct{}, 1)
 		approvalsChanged := make(chan struct{}, 1)
 		node.OnLeaderChange(func(cluster.LeaderInfo) {
-			for _, c := range []chan struct{}{changed, automationsChanged, discoveryChanged, importChanged, runbooksChanged, approvalsChanged} {
+			for _, c := range []chan struct{}{changed, automationsChanged, discoveryChanged, importChanged, runbooksChanged, approvalsChanged, beszelChanged} {
 				select {
 				case c <- struct{}{}:
 				default:
@@ -549,6 +551,11 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		if importer != nil {
 			g.Go(func() error {
 				return automation.RunWhileLeading(gctx, node, importChanged, log.With("component", "network-import"), importer.Run)
+			})
+		}
+		if beszelReader != nil {
+			g.Go(func() error {
+				return automation.RunWhileLeading(gctx, node, beszelChanged, log.With("component", "beszel"), beszelReader.Run)
 			})
 		}
 		g.Go(func() error {

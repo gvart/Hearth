@@ -33,7 +33,8 @@ type BeszelSystemJSON struct {
 
 // BeszelSystemsJSON is the body of GET /api/v1/beszel/systems.
 type BeszelSystemsJSON struct {
-	// Status is "not_configured", "connecting", "ok" or "unavailable".
+	// Status is "not_configured", "connecting", "ok", "unavailable" or
+	// "standby" (a hub of a cluster it does not lead: only the leader reads).
 	Status string `json:"status"`
 	// Error is why the last read failed.
 	Error string `json:"error,omitempty"`

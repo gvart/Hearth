@@ -50,8 +50,8 @@ restart a service or run a command. Hearth's automations can: a check fails, the
 the systemd unit or Docker container, and ntfy or Telegram tells you it did.
 
 **Together.** Run both. Beszel for history and graphs, Hearth for the automations that respond.
-Hearth cannot read Beszel today; importing its systems and metrics is **planned**
-([#66](https://github.com/gvart/hearth/issues/66)).
+Hearth can [read Beszel](beszel.md): the systems it monitors, with their status and current CPU,
+memory and disk use, show on Hearth's Devices page, linked to the devices Hearth knows.
 
 ## Komodo
 
@@ -105,10 +105,8 @@ discovery and router support.
 node. NetAlertX's workflows act on its own inventory; besides the Wake-on-LAN plugin, it does not
 change anything on the devices.
 
-**Together.** NetAlertX maps the whole network; Hearth manages the machines you own. Importing
-NetAlertX's devices into Hearth is **planned** ([#66](https://github.com/gvart/hearth/issues/66)).
-Until then, a NetAlertX webhook or notification and a Hearth automation work side by side, not
-together.
+**Together.** NetAlertX maps the whole network; Hearth manages the machines you own. Hearth
+[imports NetAlertX's devices](netalertx.md), with their names, into its hosts on your network.
 
 ## Homepage
 
@@ -127,7 +125,7 @@ devices, not for a start page.
 red tile on Homepage can be a Hearth automation that already restarted the service.
 
 **Together.** Keep Homepage as your front door. Exporting Hearth's devices and services to Homepage
-is **planned** ([#66](https://github.com/gvart/hearth/issues/66)).
+is **planned** ([#185](https://github.com/gvart/hearth/issues/185)).
 
 ## When Hearth is the wrong tool
 
