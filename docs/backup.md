@@ -11,7 +11,7 @@ already have: nothing has to be enrolled again.
 
 | Item                  | Notes                                                                       |
 | --------------------- | --------------------------------------------------------------------------- |
-| The CA                | `ca.crt` and `ca.key`. Agents trust this CA, and it seals stored kubeconfigs |
+| The CA                | `ca.crt` and `ca.key` (a scheduled backup leaves `ca.key` out by default). Agents trust this CA, and it seals stored kubeconfigs |
 | The database          | Devices, certificates, tokens, audit log, admin password hash, sessions     |
 | `policy.yaml`         | If there is one                                                             |
 | `notify.yaml`         | Including the credentials in it                                             |
@@ -101,6 +101,7 @@ hearth hub --data-dir /var/lib/hearth/hub \
 | `--backup-s3-access-key-id`  | `HEARTH_BACKUP_S3_ACCESS_KEY_ID`     |             | The access key ID                                              |
 | `--backup-s3-secret-key-file`| `HEARTH_BACKUP_S3_SECRET_KEY_FILE`   |             | File holding the secret access key, mode `0600`                |
 |                              | `HEARTH_BACKUP_S3_SECRET_ACCESS_KEY` |             | The secret access key, instead of the file                     |
+| `--backup-include-ca`        | `HEARTH_BACKUP_INCLUDE_CA`           | off         | Put the CA private key into the backups (see below)            |
 | `--backup-notify`            | `HEARTH_BACKUP_NOTIFY`               | none        | [Notification channel](notifications.md) told about failures  |
 
 The hub refuses to start when the interval is set and something else is missing, the passphrase is too
@@ -108,13 +109,31 @@ short, or a secret file is readable by other users.
 
 **Keep the passphrase away from the bucket.** It is read from its file at start and held in memory only.
 It is not in the hub's database, in the audit log, in the logs or in the bucket. Anyone who has both a
-backup and its passphrase has the hub's CA key and every credential. The secret access key is treated the
-same way. Back the passphrase up somewhere else, such as a password manager: without it, the bucket holds
-nothing you can restore.
+backup and its passphrase has every credential of the hub, and its CA key with `--backup-include-ca`. The
+secret access key is treated the same way. Back the passphrase up somewhere else, such as a password
+manager: without it, the bucket holds nothing you can restore.
+
+### The CA key stays out by default
+
+A scheduled backup holds everything a `hearth backup` file holds **except the CA private key**
+(`ca.key`): the bucket is a copy of your hub on someone else's disk, and the CA key lets whoever has it
+and the passphrase mint certificates every agent trusts. The CA certificate (`ca.crt`) is in.
+
+Restoring such a backup therefore needs the CA key from somewhere else:
+
+- **From a `hearth backup` file.** Take one now and then, and keep it apart from the bucket. The CA
+  never changes, so any such backup has the right key, however old it is.
+- **Or not at all**, and every agent enrolls again (see [Restoring from the bucket](#restoring-from-the-bucket)).
+
+Start the hub with `--backup-include-ca` (or `HEARTH_BACKUP_INCLUDE_CA=true`) to put the CA key into
+the scheduled backups too. A backup from the bucket then restores the hub on its own, as a
+`hearth backup` file does. The audit entry of each scheduled backup records whether the key was in
+(`ca_key`).
 
 ### What the hub does
 
-- Each backup is the same encrypted file `hearth backup` writes, named
+- Each backup is the encrypted format `hearth backup` writes, without `ca.key` unless
+  `--backup-include-ca` is set, named
   `<prefix>hearth-<UTC time>.hbk`, such as `hearth/hearth-20261119T120000Z.hbk`. It is written to a
   working directory in the data dir, uploaded, and deleted locally.
 - The first backup is due one interval after the newest backup already in the bucket. A restart, or a new
@@ -125,7 +144,7 @@ nothing you can restore.
   the prefix are never touched. If the bucket has versioning on, deleted backups stay as noncurrent
   versions until a lifecycle rule removes them.
 - Each run is the policy action `hub.scheduled_backup` (dangerous), run by `hub/backup` and audited
-  with the bucket, the key, the size and how many old backups were deleted. It is never held for approval:
+  with the bucket, the key, the size, whether the CA key was in, and how many old backups were deleted. It is never held for approval:
   you turned it on with the hub's flags and files, and no one is there to approve each run.
 - Uploads are a single `PUT`, so a backup can be at most 5 GiB, far more than a homelab hub's database.
 
@@ -163,7 +182,26 @@ mc cp minio/hearth-backups/hearth/hearth-20261119T120000Z.hbk /tmp/
 hearth restore --data-dir /var/lib/hearth/hub /tmp/hearth-20261119T120000Z.hbk
 ```
 
-The passphrase is the content of `--backup-passphrase-file`, without the spaces and line breaks around it. A restored hub shows the scheduled backup it
+The passphrase is the content of `--backup-passphrase-file`, without the spaces and line breaks around it.
+
+A backup made without `--backup-include-ca` restores everything but `ca.key`, and `hearth restore` says
+so. The hub does not start until the key is there (`CA … is incomplete`). Then either:
+
+- **Bring the key back** from a `hearth backup` file: restore that file into an empty temporary dir and
+  copy its `ca.key` into the restored data dir, mode `0600`. Start the hub: agents reconnect as after any
+  restore.
+
+  ```sh
+  hearth restore --data-dir /tmp/hearth-ca /mnt/nas/hearth-2026-01-02.hbk
+  install -m 600 /tmp/hearth-ca/ca.key /var/lib/hearth/hub/ca.key
+  rm -rf /tmp/hearth-ca
+  ```
+
+- **Or start with a new CA**: delete `ca.crt` from the restored data dir. The hub creates a new CA, so
+  every browser must trust it again (see [HTTPS](https.md)), every agent has to enroll again with a new
+  token, every other hub of a cluster has to join again, and Kubernetes clusters and Proxmox servers have
+  to be added again: their credentials are sealed with a key derived from the CA key. Devices, the audit
+  log, automations and the rest of the configuration are kept. A restored hub shows the scheduled backup it
 came from as `started` in its audit log, like a backup taken with `hearth backup`.
 
 ## Restoring a hub
