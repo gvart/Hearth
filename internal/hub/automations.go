@@ -197,6 +197,8 @@ func (a *api) saveAutomation(w http.ResponseWriter, r *http.Request, body automa
 	}
 	revision := automation.Revision(content)
 	req.Target, req.Detail = parsed.ID, automationAuditDetail(parsed, path, revision, create)
+	req.ApprovalDetail = map[string]any{policy.DetailPlan: automationPlan(parsed)}
+	written := false
 	err = a.savePolicy(parsed).Do(ctx, req, func(context.Context) error {
 		a.automationsMu.Lock()
 		defer a.automationsMu.Unlock()
@@ -205,8 +207,17 @@ func (a *api) saveAutomation(w http.ResponseWriter, r *http.Request, body automa
 		if err != nil {
 			return err
 		}
-		return automation.WriteFile(a.automations.Dir, path, content)
+		err = automation.WriteFile(a.automations.Dir, path, content)
+		written = err == nil
+		return err
 	})
+	warning := ""
+	if written && errors.Is(err, policy.ErrOutcomeNotRecorded) {
+		// The file is on disk and the audit log shows the save as started.
+		a.log.WarnContext(ctx, "automation saved, but its audit outcome was not recorded", "automation", parsed.ID, "err", err)
+		warning = "The audit log did not record how this save ended."
+		err = nil
+	}
 	if err != nil {
 		a.writeAutomationError(w, r, "save automation", err)
 		return
@@ -217,7 +228,7 @@ func (a *api) saveAutomation(w http.ResponseWriter, r *http.Request, body automa
 	}
 	writeJSON(w, status, AutomationSavedJSON{
 		ID: parsed.ID, File: filepath.Base(path), Revision: revision,
-		Hub: r.Host, Cluster: len(a.leadership.AgentURLs()) > 0, Leader: a.leadership.IsLeader(),
+		Hub: r.Host, Cluster: len(a.leadership.AgentURLs()) > 0, Leader: a.leadership.IsLeader(), Warning: warning,
 	})
 }
 
@@ -233,6 +244,8 @@ type AutomationSavedJSON struct {
 	Cluster bool `json:"cluster"`
 	// Leader says this hub runs automations now.
 	Leader bool `json:"leader"`
+	// Warning is what the person saving should know about a save that worked.
+	Warning string `json:"warning,omitempty"`
 }
 
 // saveRequest is the policy request to save the automation id.
@@ -245,15 +258,17 @@ func (a *api) saveRequest(r *http.Request, id string) policy.Request {
 	}
 }
 
-// savePolicy is the engine that decides on saving p. A grant of dangerous
-// actions belongs to an id, so a file that uses one is approved by a person
-// whatever the modes say: its author would otherwise inherit the grant.
+// savePolicy is the engine that decides on saving p. When policy would let p
+// run a dangerous action with nobody asked, by a grant to its id or by a mode,
+// saving the file is the last moment a person can see what it does: the save
+// is approved by a person, whatever the modes say about saves.
 func (a *api) savePolicy(p *automation.Automation) *policy.Engine {
-	if !a.policy.GrantedDangerous(p.ID) {
-		return a.policy
-	}
 	for _, s := range p.Actions {
-		if class, _ := policy.ClassOf(s.Impl.Policy()); class == policy.Dangerous {
+		if class, _ := policy.ClassOf(s.Impl.Policy()); class != policy.Dangerous {
+			continue
+		}
+		run := policy.Request{ActorKind: policy.ActorAutomation, ActorID: p.ID, Action: s.Impl.Policy()}
+		if decision, _ := a.policy.Check(run); decision == policy.Allow {
 			return a.policy.Holding(policy.ActorWeb, policy.Dangerous)
 		}
 	}
@@ -283,20 +298,22 @@ func automationFileName(id string) string {
 	return id + ".yaml"
 }
 
-// automationAuditDetail says what is being saved. The plan is what an approver
-// decides on: it shows each command and its device, and of a webhook only the
-// site, never its URL, headers or body, which may be secrets.
+// automationAuditDetail says what is being saved, for the audit log and the
+// approval: steps by id and type, never their commands, messages or queries,
+// which may hold secrets.
 func automationAuditDetail(p *automation.Automation, path, revision string, create bool) map[string]any {
 	steps := make([]map[string]string, 0, len(p.Actions))
 	for _, s := range p.Actions {
 		steps = append(steps, map[string]string{"id": s.ID, "type": s.Type, "policy": string(s.Impl.Policy())})
 	}
 	return map[string]any{
-		"file": filepath.Base(path), "sha256": revision, "create": create, "actions": steps, "plan": automationPlan(p),
+		"file": filepath.Base(path), "sha256": revision, "create": create, "actions": steps,
 	}
 }
 
-// automationPlan describes p for someone deciding whether to save it.
+// automationPlan describes p for someone deciding whether to save it: each
+// command and its device, and of a webhook only the site. It goes in the
+// approval alone (see policy.DetailPlan).
 func automationPlan(p *automation.Automation) string {
 	var b strings.Builder
 	if err := automation.Plan(&b, p); err != nil {

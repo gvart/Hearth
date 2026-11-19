@@ -2,17 +2,7 @@
 
 package policy
 
-import (
-	"maps"
-	"slices"
-)
-
-// GrantedDangerous reports whether the configuration lets the automation id
-// take dangerous actions without approval. The grant follows the id, not the
-// file's content: whoever can rewrite that file inherits it.
-func (e *Engine) GrantedDangerous(id string) bool {
-	return slices.Contains(e.cfg.DangerousAutomations, id)
-}
+import "maps"
 
 // Holding returns an engine like e that holds for approval the requests of
 // class by actor kind that e would allow. What e denies stays denied, and

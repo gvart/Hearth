@@ -389,11 +389,12 @@ func (s *session) applyAutomation(ctx context.Context, in applyIn) (any, error) 
 		return nil, err
 	}
 	path := filepath.Join(s.cfg.AutomationsDir, a.ID+".yaml")
-	// The plan, in the approval and the audit log, is what the operator
-	// approves.
+	// The plan is what the operator approves. It quotes commands and messages,
+	// so it stays out of the audit log.
 	err = s.do(ctx, policy.Request{
 		Action: policy.AutomationApply, Target: a.ID, DryRun: in.DryRun,
-		Detail: map[string]any{"file": path, "plan": desc},
+		Detail:         map[string]any{"file": path},
+		ApprovalDetail: map[string]any{policy.DetailPlan: desc},
 	}, func(context.Context) error { return s.writeAutomation(a.ID, path, []byte(in.YAML)) })
 	if err != nil {
 		return nil, err

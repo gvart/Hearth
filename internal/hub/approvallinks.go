@@ -71,15 +71,32 @@ func NewApprovalNotifier(cfg ApprovalNotifierConfig) func(ctx context.Context, a
 	}
 }
 
-// approvalMessage describes a held action. The detail is the request's
-// audit detail, which never holds secrets.
+// withoutPlan is an approval's detail without its plan, and whether it had one.
+// A plan is for a signed-in approver: a notification leaves the hub, and an
+// approval link is as good as the channel it was sent through.
+func withoutPlan(detail json.RawMessage) (map[string]json.RawMessage, bool) {
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(detail, &m); err != nil {
+		return nil, false
+	}
+	_, had := m[policy.DetailPlan]
+	delete(m, policy.DetailPlan)
+	return m, had
+}
+
+// approvalMessage describes a held action. The detail is the request's audit
+// detail, which never holds secrets; the plan is left out.
 func approvalMessage(ap store.Approval) notify.Message {
 	body := fmt.Sprintf("%s/%s wants to run %s", ap.ActorKind, ap.ActorID, ap.Action)
 	if ap.Target != "" {
 		body += " on " + ap.Target
 	}
 	body += fmt.Sprintf(" (%s).", ap.Class)
-	if d := string(ap.Detail); d != "" && d != "{}" {
+	detail := ap.Detail
+	if m, had := withoutPlan(detail); had {
+		detail, _ = json.Marshal(m) // raw messages that were just read
+	}
+	if d := string(detail); d != "" && d != "{}" {
 		if len(d) > 300 {
 			d = d[:300] + "…"
 		}
@@ -129,7 +146,12 @@ func (a *api) peekApprovalLink(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		var ap store.Approval
 		if ap, err = a.store.Approvals().Get(r.Context(), id); err == nil {
-			writeJSON(w, http.StatusOK, approvalJSON(ap))
+			out := approvalJSON(ap)
+			if m, had := withoutPlan(ap.Detail); had {
+				m["plan_withheld"] = json.RawMessage("true")
+				out.Detail, _ = json.Marshal(m) // raw messages that were just read
+			}
+			writeJSON(w, http.StatusOK, out)
 			return
 		}
 	}
