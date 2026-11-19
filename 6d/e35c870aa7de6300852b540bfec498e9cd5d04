@@ -1,0 +1,53 @@
+internal/cluster/carotation_review_test.go
+  s_344993999c180f::t_2bbd50defdb3c7 423-465
+internal/cluster/carotation_unit_test.go
+  s_344993999c180f::t_9e891bd82db263 14
+  s_344993999c180f::t_9b6b823a6fd94c 117-140
+  s_344993999c180f::t_0a4a4a10cc34da 159-161
+  s_344993999c180f::t_0600488cefbefb 8
+  s_344993999c180f::t_71465c92f1b948 85-116
+internal/pki/rotate.go
+  s_344993999c180f::t_20e7dc0f9cec50 117,139-142,155-160,230-234
+  s_344993999c180f::t_4bbb8f94725e1a 220,239-241,243-245,247,256,292,318,326,360,400,423
+internal/hub/carotation_test.go
+  s_344993999c180f::t_3457420f39ab07 61-63
+  s_344993999c180f::t_0a4a4a10cc34da 142-144
+internal/cluster/node.go
+  s_344993999c180f::t_17095490dd1c6c 251
+internal/cluster/members.go
+  s_344993999c180f::t_21960bd635e762 172-181
+  s_344993999c180f::t_17095490dd1c6c 151
+  s_344993999c180f::t_60650903e76ddf 226-227,230,232-234
+  s_344993999c180f::t_2f71fc66552ca9 228-229,231
+internal/pki/rotate_test.go
+  s_344993999c180f::t_41cd49032de959 76-77,79-91
+  s_344993999c180f::t_9ff255c9c6a555 78
+internal/pki/ca.go
+  s_344993999c180f::t_4bbb8f94725e1a 77-82,87-88,91,94,107-108,110,118
+internal/cluster/carotation_rpc.go
+  s_344993999c180f::t_f99b4de13c3726 86-95,99-102,107,112,114-117,122-131
+  s_344993999c180f::t_55e5389cded0ce 54-57
+internal/cluster/carotation.go
+  s_344993999c180f::t_675082ea2cfff0 18
+  s_344993999c180f::t_17095490dd1c6c 211-214,917-923,925,930-937
+  s_344993999c180f::t_eb2e462905968e 1131-1136,1138,1142-1148,1153-1184
+  s_344993999c180f::t_660cd1bb3290b2 1185
+internal/backup/carotation_test.go
+  s_344993999c180f::t_3457420f39ab07 31-33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6de35c870aa7de6300852b540bfec498e9cd5d04",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
