@@ -401,7 +401,7 @@ func TestGuestIsolation(t *testing.T) {
 
 	// The guest view holds no facts, labels or addresses.
 	r := f.raw(t, http.MethodGet, "/api/v1/guest/"+token, "", nil)
-	for _, leak := range []string{"attic", "labels", "facts", "hostname", "nas", other.Name} {
+	for _, leak := range []string{"attic", `"labels"`, `"facts"`, `"hostname"`, `"os"`, `"boot_time"`, `"nas"`, other.Name} {
 		if strings.Contains(string(r.body), leak) {
 			t.Errorf("guest view %s holds %q", r.body, leak)
 		}
@@ -518,6 +518,12 @@ func TestGuestActionRuns(t *testing.T) {
 	second := f.share(t, p.ID, "")
 	if r := f.raw(t, http.MethodPost, "/api/v1/guest/"+second.Token+"/actions", body, nil); r.StatusCode != http.StatusOK {
 		t.Fatalf("second link = %d %s", r.StatusCode, r.body)
+	}
+	// Tokens travel in paths: none reached the logs.
+	for _, s := range []string{link.Token, second.Token} {
+		if strings.Contains(f.logs.String(), s) {
+			t.Error("a link's secret is in the logs")
+		}
 	}
 }
 
@@ -648,6 +654,12 @@ func TestGuestEvents(t *testing.T) {
 	if got := await("event: changed"); strings.Contains(got, "nas") || strings.Contains(got, "pi-name") {
 		t.Errorf("stream %q names a device", got)
 	}
+	// An edit of the panel is a change too, seen at the next keepalive.
+	time.Sleep(5 * time.Millisecond) // a later updated_at
+	if r := f.do(t, http.MethodPut, "/api/v1/panels/"+p.ID, `{"name": "Renamed", "widgets": []}`, f.cookie); r.StatusCode != http.StatusOK {
+		t.Fatal(r.StatusCode)
+	}
+	await("event: changed")
 	// Revoking the link ends the stream.
 	if r := f.do(t, http.MethodDelete, "/api/v1/panels/"+p.ID+"/links/"+link.Link.ID, "", f.cookie); r.StatusCode != http.StatusNoContent {
 		t.Fatal(r.StatusCode)

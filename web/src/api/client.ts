@@ -559,9 +559,7 @@ export interface GuestPanel {
     kind: 'device';
     name: string;
     status: DeviceStatus;
-    os?: string;
     last_seen: string | null;
-    boot_time: string | null;
     actions: { id: string; label: string }[];
   }[];
 }

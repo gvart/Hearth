@@ -68,9 +68,7 @@ type GuestWidgetJSON struct {
 	// Status is online, offline or unknown; unknown for a device that is
 	// gone.
 	Status   string            `json:"status"`
-	OS       string            `json:"os,omitempty"`
 	LastSeen *time.Time        `json:"last_seen"`
-	BootTime *time.Time        `json:"boot_time"`
 	Actions  []GuestActionJSON `json:"actions"`
 }
 
@@ -210,12 +208,9 @@ func (a *api) guestWidget(ctx context.Context, wd PanelWidgetJSON) (GuestWidgetJ
 		return GuestWidgetJSON{}, err
 	}
 	d = a.registry.Live(d)
-	out.Name, out.Status, out.OS = d.Name, d.Status, d.OS
+	out.Name, out.Status = d.Name, d.Status
 	if !d.LastSeen.IsZero() {
 		out.LastSeen = &d.LastSeen
-	}
-	if !d.BootTime.IsZero() {
-		out.BootTime = &d.BootTime
 	}
 	return out, nil
 }
@@ -345,16 +340,18 @@ func (a *api) runGuestAction(ctx context.Context, p store.Panel, l store.PanelLi
 }
 
 // guestEvents streams a bare "changed" event whenever a device on the
-// link's panel changes, so the page refetches the panel. The link is
+// link's panel changes, or, seen at a keepalive, the panel itself, so the
+// page refetches the panel. The link is
 // checked again on every event and keepalive: a revoked or expired link, or
 // a deleted panel, ends the stream.
 func (a *api) guestEvents(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	token := r.PathValue("token")
-	_, _, ws, ok := a.guestLink(w, r)
+	p, _, ws, ok := a.guestLink(w, r)
 	if !ok {
 		return
 	}
+	updated := p.UpdatedAt
 	rc := http.NewResponseController(w)
 	ch, unsubscribe := a.registry.Subscribe()
 	defer unsubscribe()
@@ -385,10 +382,15 @@ func (a *api) guestEvents(w http.ResponseWriter, r *http.Request) {
 			}
 			_, err = fmt.Fprint(w, "event: changed\ndata: {}\n\n")
 		case <-keepalive.C:
-			if _, _, ws, err = a.checkGuestLink(ctx, token); err != nil {
+			if p, _, ws, err = a.checkGuestLink(ctx, token); err != nil {
 				return
 			}
-			_, err = fmt.Fprint(w, ": keepalive\n\n")
+			if p.UpdatedAt.Equal(updated) {
+				_, err = fmt.Fprint(w, ": keepalive\n\n")
+			} else {
+				updated = p.UpdatedAt
+				_, err = fmt.Fprint(w, "event: changed\ndata: {}\n\n")
+			}
 		}
 		if err != nil || rc.Flush() != nil {
 			return

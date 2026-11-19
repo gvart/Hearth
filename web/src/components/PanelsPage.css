@@ -192,6 +192,15 @@
   min-height: 2.75rem;
 }
 
+/* Running or held for approval, maybe for minutes: it must stay readable. */
+.guest-btn:disabled,
+.guest-btn:disabled:hover {
+  opacity: 1;
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text);
+}
+
 .guest-result {
   font-size: 0.9rem;
 }
