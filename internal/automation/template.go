@@ -237,8 +237,9 @@ func (b *renderBudget) funcs() template.FuncMap {
 		"js":       wrap(template.JSEscaper),
 		"urlquery": wrap(template.URLQueryEscaper),
 		"printf": func(format string, args ...any) (string, error) {
-			// %% is a percent sign, and starts no verb.
-			if printfSize.MatchString(strings.ReplaceAll(format, "%%", "")) {
+			// Every percent sign is checked, %% included: fmt reads %5% as one
+			// verb, so dropping %% first would hide the verb after it.
+			if printfSize.MatchString(format) {
 				return "", errRenderLimit
 			}
 			return b.build(args, func() string { return fmt.Sprintf(format, args...) })

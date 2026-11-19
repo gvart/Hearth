@@ -57,11 +57,10 @@ func TestPrintfArgumentIndexesAreRefused(t *testing.T) {
 
 func TestPrintfBracketsOutsideVerbsStillWork(t *testing.T) {
 	for raw, want := range map[string]string{
-		`{{printf "100%%[x]"}}`: "100%[x]",
+		`{{printf "100%%"}}`:    "100%",
 		`{{printf "%d[1]" 5}}`:  "5[1]",
 		`{{printf "[%s]" "x"}}`: "[x]",
 		`{{printf "%5s|" "x"}}`: "    x|",
-		`{{printf "%%1000d"}}`:  "%1000d",
 	} {
 		text, err := parseTestText(raw)
 		if err != nil {
@@ -94,14 +93,16 @@ func TestRenderTimeLimit(t *testing.T) {
 
 func TestRenderStopsWhatItCannotBound(t *testing.T) {
 	for name, raw := range map[string]string{
-		"range over a number":  `{{range 2000000000}}{{end}}`,
-		"output in a loop":     `{{range 2000000}}xxxxxxxxxx{{end}}`,
-		"wide printf":          `{{printf "%999999d" 1}}`,
-		"precise printf":       `{{printf "%.999999f" 1.0}}`,
-		"starred printf":       `{{printf "%*d" 999999 1}}`,
-		"printf format piped":  `{{"%999999d" | printf}}`,
-		"nested wide printf":   `{{print (printf "%999999d" 1)}}`,
-		"computed wide printf": `{{printf (print "%" "999999d") 1}}`,
+		"range over a number":     `{{range 2000000000}}{{end}}`,
+		"output in a loop":        `{{range 2000000}}xxxxxxxxxx{{end}}`,
+		"wide printf":             `{{printf "%999999d" 1}}`,
+		"precise printf":          `{{printf "%.999999f" 1.0}}`,
+		"starred printf":          `{{printf "%*d" 999999 1}}`,
+		"printf format piped":     `{{"%999999d" | printf}}`,
+		"nested wide printf":      `{{print (printf "%999999d" 1)}}`,
+		"computed wide printf":    `{{printf (print "%" "999999d") 1}}`,
+		"after a wide percent":    `{{printf "%5%%*d" 999999 1}}`,
+		"after a precise percent": `{{printf "%.5%%*d" 999999 1}}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			text, err := parseTestText(raw)
