@@ -176,6 +176,8 @@ var expected = map[Action]struct {
 	RunbookRollback:           {Safe, []string{ActorWeb}, false},
 	RunbookPassOver:           {Safe, []string{ActorWeb}, false},
 	RunbookCheck:              {Read, []string{ActorAutomation}, false},
+	HubBackup:                 {Dangerous, []string{ActorAdmin}, false},
+	HubRestore:                {Dangerous, []string{ActorAdmin}, true},
 }
 
 func TestExpectedCoversEveryAction(t *testing.T) {
