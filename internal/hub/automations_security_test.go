@@ -238,7 +238,6 @@ func (failingAudit) Append(context.Context, store.AuditEntry) (int64, error) {
 // TestAutomationSaveNeedsItsAuditEntry: a save the audit log cannot record
 // must not reach the disk.
 func TestAutomationSaveNeedsItsAuditEntry(t *testing.T) {
-	t.Skip("policy.Engine.Do runs the action before auditing it: enable once #156 lands")
 	f := newAutomationFixtureWith(t, func(st *store.Store) *policy.Engine {
 		return policy.NewWithConfig(failingAudit{}, st.Approvals(), policy.Config{})
 	})
