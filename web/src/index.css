@@ -342,6 +342,56 @@ pre,
   border-bottom-color: var(--border);
 }
 
+/* Telemetry prompt: asked once, after sign-in. */
+.telemetry-card {
+  max-width: 70rem;
+  margin: 1rem auto 0;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: var(--surface);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 72rem) {
+  .telemetry-card {
+    margin-inline: 1rem;
+  }
+}
+
+.telemetry-card h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.05rem;
+}
+
+.telemetry-card p,
+.telemetry-card ul {
+  margin: 0 0 0.5rem;
+}
+
+.telemetry-card ul {
+  padding-left: 1.25rem;
+}
+
+.telemetry-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.telemetry-status {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 0 1rem 1.5rem;
+  overflow-wrap: anywhere;
+}
+
+.telemetry-status a {
+  color: inherit;
+}
+
 /* Shell */
 .topbar {
   position: sticky;

@@ -776,6 +776,10 @@ func DecodeCommand(b []byte) (Command, error) {
 		cmd, err = decodeAs[CreateRunbookRun](env.Cmd)
 	case SaveRunbookRun{}.Op():
 		cmd, err = decodeAs[SaveRunbookRun](env.Cmd)
+	case SetTelemetry{}.Op():
+		cmd, err = decodeAs[SetTelemetry](env.Cmd)
+	case MarkTelemetrySent{}.Op():
+		cmd, err = decodeAs[MarkTelemetrySent](env.Cmd)
 	default:
 		return nil, fmt.Errorf("decode command: unknown op %q", env.Op)
 	}

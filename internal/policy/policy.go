@@ -177,6 +177,9 @@ const (
 	// backup, without the CA key unless the operator opts in, uploaded to
 	// S3-compatible storage, with the oldest backups there pruned.
 	HubScheduledBackup Action = "hub.scheduled_backup"
+	// TelemetrySet stores the admin's answer to "Share anonymous usage
+	// stats?": opting in or out of the hub's weekly anonymous telemetry.
+	TelemetrySet Action = "telemetry.set"
 )
 
 // Actor kinds.
@@ -360,6 +363,10 @@ var rules = map[Action]rule{
 	// passphrase file and the bucket's credentials: that is the grant. No one
 	// is there to approve each run.
 	HubScheduledBackup: {class: Dangerous, actors: []string{ActorHub}, fixed: true},
+	// The answer changes only whether the hub sends a few anonymous counts a
+	// week (docs/telemetry.md); it touches no device. Only a signed-in admin
+	// answers.
+	TelemetrySet: {class: Safe, actors: []string{ActorWeb}},
 }
 
 // Actions returns every known action, sorted.
