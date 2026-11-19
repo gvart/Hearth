@@ -229,7 +229,8 @@ A save of a file with a dangerous action that policy would let the automation ru
 anyone, through [`dangerous_automations`](guardrails.md) or an `allow` mode for automations, always
 waits for approval, whatever the modes say about saves, and is refused if the hub cannot hold
 approvals: saving is the last moment a person sees what the file does. A mode of `deny` for the web UI
-still denies it. The person who made the save may approve it.
+still denies it. The person who made the save may approve it, with the admin password: approving
+always asks for it again, so a session alone cannot approve its own save.
 
 An automation's id cannot be changed in the editor: create a new one and remove the old file. Files
 that are symbolic links are not opened or saved here, and nothing of what they point to is shown. The

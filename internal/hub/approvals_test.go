@@ -56,7 +56,7 @@ func TestAPIApprovals(t *testing.T) {
 	if resp := f.do(t, http.MethodPost, "/api/v1/approvals/nope/approve", "", c); resp.StatusCode != http.StatusNotFound {
 		t.Errorf("approve unknown = %d", resp.StatusCode)
 	}
-	if resp := f.do(t, http.MethodPost, "/api/v1/approvals/"+id+"/approve", "", c); resp.StatusCode != http.StatusNoContent {
+	if resp := f.do(t, http.MethodPost, "/api/v1/approvals/"+id+"/approve", passwordBody(testPassword), c); resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("approve = %d %s", resp.StatusCode, resp.body)
 	}
 	if err := <-done; err != nil || !ran {
@@ -116,7 +116,7 @@ func TestAPIDecidedApprovalReturnsNoPlan(t *testing.T) {
 			defer cancel()
 			if outcome != store.ApprovalExpired {
 				verb := map[string]string{store.ApprovalApproved: "approve", store.ApprovalDenied: "deny"}[outcome]
-				if resp := f.do(t, http.MethodPost, "/api/v1/approvals/"+id+"/"+verb, "", c); resp.StatusCode != http.StatusNoContent {
+				if resp := f.do(t, http.MethodPost, "/api/v1/approvals/"+id+"/"+verb, passwordBody(testPassword), c); resp.StatusCode != http.StatusNoContent {
 					t.Fatalf("%s = %d %s", verb, resp.StatusCode, resp.body)
 				}
 			}

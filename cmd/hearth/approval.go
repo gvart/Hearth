@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/gvart/hearth/internal/hub"
 	"github.com/gvart/hearth/internal/policy"
 	"github.com/gvart/hearth/internal/store"
 )
@@ -81,23 +83,33 @@ func runApprovalList(ctx context.Context, dataDir string, all bool, limit int, o
 
 func newApprovalDecideCmd(approve bool) *cobra.Command {
 	var dataDir string
-	use, short := "deny <id>", "Deny an action held for approval"
-	if approve {
-		use, short = "approve <id>", "Approve an action held for approval: it runs at once"
-	}
 	cmd := &cobra.Command{
-		Use:   use,
-		Short: short,
+		Use:   "deny <id>",
+		Short: "Deny an action held for approval",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runApprovalDecide(cmd.Context(), dataDir, args[0], approve, cmd.OutOrStdout())
+			return runApprovalDecide(cmd.Context(), dataDir, args[0], false, "", cmd.OutOrStdout())
 		},
+	}
+	if approve {
+		cmd.Use, cmd.Short = "approve <id>", "Approve an action held for approval: it runs at once"
+		cmd.Long = "Approve an action held for approval: it runs at once. Approving takes the admin password\n" +
+			"again, prompted without echo on a terminal, or else the first line of stdin."
+		cmd.RunE = func(cmd *cobra.Command, args []string) error {
+			lines := &lineReader{in: cmd.InOrStdin(), buf: bufio.NewReader(cmd.InOrStdin()), prompt: cmd.ErrOrStderr()}
+			pw, err := lines.read("Admin password: ")
+			if err != nil {
+				return err
+			}
+			return runApprovalDecide(cmd.Context(), dataDir, args[0], true, pw, cmd.OutOrStdout())
+		}
 	}
 	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir("hub"), "hub data directory (env HEARTH_DATA_DIR)")
 	return cmd
 }
 
-func runApprovalDecide(ctx context.Context, dataDir, id string, approve bool, out io.Writer) error {
+// runApprovalDecide approves, with the admin password, or denies approval id.
+func runApprovalDecide(ctx context.Context, dataDir, id string, approve bool, password string, out io.Writer) error {
 	st, err := openExistingHubStore(ctx, dataDir)
 	if err != nil {
 		return err
@@ -107,7 +119,8 @@ func runApprovalDecide(ctx context.Context, dataDir, id string, approve bool, ou
 	if err != nil {
 		return err
 	}
-	err = pol.Decide(ctx, policy.ActorAdmin, adminActor(), id, approve)
+	reauth := func(ctx context.Context) error { return hub.CheckAdminPassword(ctx, st, password) }
+	err = pol.Decide(ctx, policy.ActorAdmin, adminActor(), id, approve, reauth)
 	if errors.Is(err, store.ErrNotFound) {
 		return fmt.Errorf("no approval %s", id)
 	}

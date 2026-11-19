@@ -368,7 +368,7 @@ func TestConfirmModeHoldsTheAction(t *testing.T) {
 		if got := f.mock.Posts(); len(got) != 0 {
 			t.Fatalf("a held action reached the API: %v", got)
 		}
-		if err := f.pol.Decide(t.Context(), policy.ActorAdmin, "admin", held.ID, true); err != nil {
+		if err := f.pol.Decide(t.Context(), policy.ActorAdmin, "admin", held.ID, true, func(context.Context) error { return nil }); err != nil {
 			t.Fatal(err)
 		}
 		if err := waitResult(t, done); err != nil {
@@ -392,7 +392,7 @@ func TestConfirmModeHoldsTheAction(t *testing.T) {
 		info := f.add(t)
 		done := act(t.Context(), f, info.ID)
 		held := f.waitHeld(t)
-		if err := f.pol.Decide(t.Context(), policy.ActorAdmin, "admin", held.ID, false); err != nil {
+		if err := f.pol.Decide(t.Context(), policy.ActorAdmin, "admin", held.ID, false, nil); err != nil {
 			t.Fatal(err)
 		}
 		if err := waitResult(t, done); !errors.Is(err, policy.ErrDenied) {
@@ -442,7 +442,7 @@ func TestConfirmModeHoldsTheAction(t *testing.T) {
 			}
 			time.Sleep(5 * time.Millisecond)
 		}
-		if err := f.pol.Decide(t.Context(), policy.ActorAdmin, "admin", held.ID, true); err != nil {
+		if err := f.pol.Decide(t.Context(), policy.ActorAdmin, "admin", held.ID, true, func(context.Context) error { return nil }); err != nil {
 			t.Fatal(err)
 		}
 		if err := waitResult(t, done); !errors.Is(err, ErrGuestNotFound) {

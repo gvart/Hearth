@@ -402,7 +402,7 @@ func TestDangerousActionNeedsApproval(t *testing.T) {
 					approved <- errors.New("the command ran before it was approved")
 					return
 				}
-				approved <- f.pol.Decide(ctx, policy.ActorAdmin, "root", aps[0].ID, true)
+				approved <- f.pol.Decide(ctx, policy.ActorAdmin, "root", aps[0].ID, true, func(context.Context) error { return nil })
 				return
 			}
 			time.Sleep(20 * time.Millisecond)

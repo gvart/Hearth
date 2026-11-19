@@ -311,10 +311,12 @@ export function useApprovals(status: 'pending' | 'all') {
   });
 }
 
+/** Approves (with the admin password) or denies (without) a held action. */
 export function useDecideApproval() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, approve }: { id: string; approve: boolean }) => api.decideApproval(id, approve),
+    mutationFn: (d: { id: string; approve: true; password: string } | { id: string; approve: false }) =>
+      d.approve ? api.approveApproval(d.id, d.password) : api.denyApproval(d.id),
     onSettled: () => qc.invalidateQueries({ queryKey: ['approvals'] }),
   });
 }
@@ -329,8 +331,8 @@ export function useApprovalLink(token: string) {
   });
 }
 
-export function useDecideApprovalLink(token: string) {
-  return useMutation({ mutationFn: (approve: boolean) => api.decideApprovalLink(token, approve) });
+export function useDenyApprovalLink(token: string) {
+  return useMutation({ mutationFn: () => api.denyApprovalLink(token) });
 }
 
 export function useRunbooks() {

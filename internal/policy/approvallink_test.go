@@ -42,8 +42,9 @@ func TestOnHeldSeesEveryHold(t *testing.T) {
 	}
 }
 
-// TestDecideLink approves a held action through its link once; every
-// other use of a link is denied and audited.
+// TestDecideLink denies a held action through its link once. A link never
+// approves: its approve is refused without spending it, and every other use
+// of a link is denied and audited.
 func TestDecideLink(t *testing.T) {
 	s := openStore(t)
 	e := NewWithConfig(s.Audit(), s.Approvals(), confirmAll(time.Minute))
@@ -72,28 +73,30 @@ func TestDecideLink(t *testing.T) {
 	}()
 	id := <-held
 
+	// A link cannot approve, and trying does not spend it.
+	if err := e.DecideLink(t.Context(), "198.51.100.7", true, use("secret-"+id)); !errors.Is(err, ErrLinkApprove) || !errors.Is(err, ErrDenied) {
+		t.Fatalf("approve by link = %v, want ErrLinkApprove and ErrDenied", err)
+	}
+	if ap, err := s.Approvals().Get(t.Context(), id); err != nil || ap.Status != store.ApprovalPending {
+		t.Fatalf("approval after approve by link = %+v, %v; want pending", ap, err)
+	}
 	// A wrong link is refused before anything is decided.
-	if err := e.DecideLink(t.Context(), "198.51.100.7", true, use("guess")); !errors.Is(err, store.ErrNotFound) || !errors.Is(err, ErrDenied) {
+	if err := e.DecideLink(t.Context(), "198.51.100.7", false, use("guess")); !errors.Is(err, store.ErrNotFound) || !errors.Is(err, ErrDenied) {
 		t.Fatalf("wrong link = %v, want ErrNotFound and ErrDenied", err)
 	}
-	if err := e.DecideLink(t.Context(), "198.51.100.7", true, use("secret-"+id)); err != nil {
+	if err := e.DecideLink(t.Context(), "198.51.100.7", false, use("secret-"+id)); err != nil {
 		t.Fatal(err)
 	}
-	if err := <-done; err != nil || runs != 1 {
-		t.Fatalf("Do = %v, runs %d; want approved and run once", err, runs)
+	if err := <-done; !errors.Is(err, ErrDenied) || runs != 0 {
+		t.Fatalf("Do = %v, runs %d; want denied", err, runs)
 	}
-	// Reusing the link, to approve or deny, is refused.
-	for _, approve := range []bool{true, false} {
-		if err := e.DecideLink(t.Context(), "198.51.100.7", approve, use("secret-"+id)); !errors.Is(err, store.ErrTokenUsed) || !errors.Is(err, ErrDenied) {
-			t.Errorf("reused link (approve %v) = %v, want ErrTokenUsed", approve, err)
-		}
-	}
-	if runs != 1 {
-		t.Errorf("runs = %d after reuse, want 1", runs)
+	// Reusing the link is refused.
+	if err := e.DecideLink(t.Context(), "198.51.100.7", false, use("secret-"+id)); !errors.Is(err, store.ErrTokenUsed) || !errors.Is(err, ErrDenied) {
+		t.Errorf("reused link = %v, want ErrTokenUsed", err)
 	}
 
 	ap, err := s.Approvals().Get(t.Context(), id)
-	if err != nil || ap.Status != store.ApprovalApproved || ap.DecidedBy != "approval_link/198.51.100.7" {
+	if err != nil || ap.Status != store.ApprovalDenied || ap.DecidedBy != "approval_link/198.51.100.7" {
 		t.Errorf("approval = %+v, %v", ap, err)
 	}
 	entries, _ := s.Audit().List(t.Context(), 10)
@@ -103,11 +106,11 @@ func TestDecideLink(t *testing.T) {
 	}
 	want := []string{
 		"automation:automation.exec:confirm",
-		"approval_link:approval.approve:deny", // the wrong link
-		"approval_link:approval.approve:allow",
-		"automation:automation.exec:allow",
-		"approval_link:approval.approve:deny", // reused
-		"approval_link:approval.deny:deny",    // reused
+		"approval_link:approval.approve:deny", // a link cannot approve
+		"approval_link:approval.deny:deny",    // the wrong link
+		"approval_link:approval.deny:allow",
+		"automation:automation.exec:deny",
+		"approval_link:approval.deny:deny", // reused
 	}
 	if !slices.Equal(trail, want) {
 		t.Errorf("audit trail = %v\nwant %v", trail, want)
@@ -141,7 +144,7 @@ func TestDecideLinkExpired(t *testing.T) {
 	if !errors.Is(err, ErrDenied) || ran {
 		t.Fatalf("Do = %v, ran %v; want denied on expiry", err, ran)
 	}
-	err = e.DecideLink(t.Context(), "198.51.100.7", true, func(ctx context.Context) (string, error) {
+	err = e.DecideLink(t.Context(), "198.51.100.7", false, func(ctx context.Context) (string, error) {
 		return s.ApprovalLinks().Use(ctx, "secret", time.Now())
 	})
 	if !errors.Is(err, store.ErrTokenExpired) || !errors.Is(err, ErrDenied) {

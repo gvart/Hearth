@@ -3,8 +3,11 @@
 package hub
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"mime"
 	"net/http"
 	"time"
 
@@ -58,10 +61,66 @@ func (a *api) listApprovals(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// errNoPassword is the re-authentication error of an approve request that
+// carries no password.
+var errNoPassword = errors.New("no password given")
+
+// approvePassword reads the approver's password from an approve request's
+// {"password": "..."} body. A request without one, or without a JSON body,
+// gets "": refused and audited like a wrong password.
+func approvePassword(w http.ResponseWriter, r *http.Request) (string, bool) {
+	if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" {
+		return "", true
+	}
+	var body struct {
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxLoginBody)).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+		writeError(w, http.StatusBadRequest, "bad_request", "body must be {\"password\": \"...\"}")
+		return "", false
+	}
+	return body.Password, true
+}
+
 // decideApproval approves or denies a held action, as the web session.
+// Approving re-authenticates the approver: the request carries the admin
+// password, checked as login checks it and under login's rate limit, so a
+// session alone, such as a stolen cookie, cannot approve. Denying needs no
+// password.
 func (a *api) decideApproval(approve bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		err := a.policy.Decide(r.Context(), policy.ActorWeb, remoteHost(r), r.PathValue("id"), approve)
+		ctx := r.Context()
+		var reauth func(context.Context) error
+		if approve {
+			password, ok := approvePassword(w, r)
+			if !ok {
+				return
+			}
+			// Only a request with a password costs an argon2 verification and
+			// takes a token, which a password that is not wrong gives back:
+			// wrong passwords are limited as logins are, approvals are not.
+			if password != "" {
+				if ok, wait := a.logins.allow(remoteHost(r)); !ok {
+					writeRetry(w, http.StatusTooManyRequests, wait, "rate_limited", "too many password attempts; try again later")
+					return
+				}
+				wrong := false
+				defer func() {
+					if !wrong {
+						a.logins.refund(remoteHost(r))
+					}
+				}()
+				reauth = func(ctx context.Context) error {
+					err := a.checkAdminPassword(ctx, password)
+					wrong = errors.Is(err, errWrongPassword)
+					return err
+				}
+			} else {
+				reauth = func(context.Context) error { return errNoPassword }
+			}
+		}
+		id := r.PathValue("id")
+		err := a.policy.Decide(ctx, policy.ActorWeb, remoteHost(r), id, approve, reauth)
 		switch {
 		case err == nil:
 			w.WriteHeader(http.StatusNoContent)
@@ -69,12 +128,22 @@ func (a *api) decideApproval(approve bool) http.HandlerFunc {
 			writeError(w, http.StatusNotFound, "not_found", "no such approval")
 		case errors.Is(err, store.ErrApprovalClosed):
 			writeError(w, http.StatusConflict, "closed", "the approval is no longer pending")
-		case errors.Is(err, policy.ErrDenied):
-			writeError(w, http.StatusForbidden, "forbidden", "denied by policy")
+		case errors.Is(err, errWrongPassword), errors.Is(err, errNoPassword):
+			a.log.WarnContext(ctx, "approval refused: wrong or missing password", "approval", id, "remote", remoteHost(r))
+			writeError(w, http.StatusForbidden, "reauth_failed", "approving needs your password, and it was missing or wrong")
+		case errors.Is(err, errVerifyBusy):
+			writeRetry(w, http.StatusServiceUnavailable, a.verifyWait, "busy", "the hub is busy checking other passwords; try again shortly")
 		case errors.Is(err, store.ErrUnavailable):
 			writeUnavailable(w)
+		case ctx.Err() != nil:
+			return // the client went away
+		case errors.Is(err, policy.ErrReauth):
+			a.log.ErrorContext(ctx, "approval refused: cannot check the password", "approval", id, "err", err)
+			writeError(w, http.StatusInternalServerError, "internal", "cannot check the password")
+		case errors.Is(err, policy.ErrDenied):
+			writeError(w, http.StatusForbidden, "forbidden", "denied by policy")
 		default:
-			a.log.ErrorContext(r.Context(), "decide approval", "err", err)
+			a.log.ErrorContext(ctx, "decide approval", "err", err)
 			writeError(w, http.StatusInternalServerError, "internal", "cannot decide the approval")
 		}
 	}

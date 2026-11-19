@@ -93,7 +93,7 @@ var paths = []struct {
 		if err := approvals.Create(context.Background(), ap); err != nil {
 			t.Fatal(err)
 		}
-		return NewWithConfig(audit, approvals, Config{}).Decide(ctx, ActorWeb, "192.0.2.1", ap.ID, true)
+		return NewWithConfig(audit, approvals, Config{}).Decide(ctx, ActorWeb, "192.0.2.1", ap.ID, true, reauthed)
 	}},
 }
 
@@ -218,7 +218,7 @@ func TestDecisionThatTookEffectIsASuccess(t *testing.T) {
 	approvals := &decisionLog{audit: &memAudit{}}
 	id := heldApproval(t, approvals)
 	audit := &scriptedAudit{failFrom: 2, err: store.ErrUnavailable}
-	if err := NewWithConfig(audit, approvals, Config{}).Decide(t.Context(), ActorWeb, "192.0.2.1", id, true); err != nil {
+	if err := NewWithConfig(audit, approvals, Config{}).Decide(t.Context(), ActorWeb, "192.0.2.1", id, true, reauthed); err != nil {
 		t.Errorf("Decide = %v, want success: the approval took effect", err)
 	}
 	ap, err := approvals.Get(t.Context(), id)
@@ -236,7 +236,7 @@ func TestDecisionThatFailedStaysAFailure(t *testing.T) {
 	approvals := &decisionLog{audit: &memAudit{}, decideErr: store.ErrApprovalClosed}
 	id := heldApproval(t, approvals)
 	audit := &scriptedAudit{failFrom: 2, err: store.ErrUnavailable}
-	err := NewWithConfig(audit, approvals, Config{}).Decide(t.Context(), ActorWeb, "192.0.2.1", id, true)
+	err := NewWithConfig(audit, approvals, Config{}).Decide(t.Context(), ActorWeb, "192.0.2.1", id, true, reauthed)
 	if !errors.Is(err, store.ErrApprovalClosed) || !errors.Is(err, ErrOutcomeNotRecorded) {
 		t.Errorf("Decide = %v, want ErrApprovalClosed and ErrOutcomeNotRecorded", err)
 	}

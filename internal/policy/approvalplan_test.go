@@ -40,7 +40,7 @@ func TestDecidedApprovalKeepsNoPlan(t *testing.T) {
 				if err != nil || !strings.Contains(string(ap.Detail), "s3cret") {
 					t.Fatalf("pending detail = %s, %v; want the plan", ap.Detail, err)
 				}
-				if err := e.Decide(t.Context(), ActorWeb, "w", id, outcome == store.ApprovalApproved); err != nil {
+				if err := e.Decide(t.Context(), ActorWeb, "w", id, outcome == store.ApprovalApproved, reauthed); err != nil {
 					t.Fatal(err)
 				}
 			}

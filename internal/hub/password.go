@@ -84,6 +84,30 @@ func verifyPassword(encoded, password string) (bool, error) {
 	return subtle.ConstantTimeCompare(got, want) == 1, nil
 }
 
+// CheckAdminPassword returns nil if password is the admin password stored in
+// st, and otherwise an error that never holds the password. It is for the
+// CLI on the hub host: the hub itself checks through its verification gate.
+func CheckAdminPassword(ctx context.Context, st *store.Store, password string) error {
+	if password == "" {
+		return errNoPassword
+	}
+	hash, err := st.Admin().PasswordHash(ctx)
+	if errors.Is(err, store.ErrNotFound) {
+		return errors.New("admin password not set: run `hearth admin set-password` first")
+	}
+	if err != nil {
+		return fmt.Errorf("read admin password: %w", err)
+	}
+	ok, err := verifyPassword(hash, password)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return errWrongPassword
+	}
+	return nil
+}
+
 // SetAdminPassword validates and hashes password and stores it as the admin
 // password, through policy, as the local admin actorID. It ends all sessions.
 func SetAdminPassword(ctx context.Context, st *store.Store, pol *policy.Engine, actorID, password string) error {

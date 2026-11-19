@@ -277,7 +277,7 @@ func TestAutomationSaveHeldForApproval(t *testing.T) {
 		if got := f.read(t, "hello.yaml"); got != helloYAML {
 			t.Fatalf("written before approval:\n%s", got)
 		}
-		if err := f.api.policy.Decide(t.Context(), policy.ActorAdmin, "op", id, true); err != nil {
+		if err := f.api.policy.Decide(t.Context(), policy.ActorAdmin, "op", id, true, reauthed); err != nil {
 			t.Fatal(err)
 		}
 		if resp := <-done; resp.StatusCode != http.StatusOK {
@@ -292,7 +292,7 @@ func TestAutomationSaveHeldForApproval(t *testing.T) {
 		f := newAutomationFixture(t, confirm)
 		f.write(t, "hello.yaml", helloYAML)
 		id, done := heldSave(t, f, http.MethodPut, "/api/v1/automations/hello", saveBody(t, edited, revision))
-		if err := f.api.policy.Decide(t.Context(), policy.ActorAdmin, "op", id, false); err != nil {
+		if err := f.api.policy.Decide(t.Context(), policy.ActorAdmin, "op", id, false, nil); err != nil {
 			t.Fatal(err)
 		}
 		if resp := <-done; resp.StatusCode != http.StatusForbidden {
@@ -309,7 +309,7 @@ func TestAutomationSaveHeldForApproval(t *testing.T) {
 		id, done := heldSave(t, f, http.MethodPut, "/api/v1/automations/hello", saveBody(t, edited, revision))
 		theirs := strings.Replace(helloYAML, "hi", "theirs", 1)
 		f.write(t, "hello.yaml", theirs)
-		if err := f.api.policy.Decide(t.Context(), policy.ActorAdmin, "op", id, true); err != nil {
+		if err := f.api.policy.Decide(t.Context(), policy.ActorAdmin, "op", id, true, reauthed); err != nil {
 			t.Fatal(err)
 		}
 		if resp := <-done; resp.StatusCode != http.StatusConflict {

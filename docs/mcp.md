@@ -93,7 +93,7 @@ UI. The held request shows as `mcp/<token name>`:
 
 ```sh
 hearth approval list
-hearth approval approve <id>      # the held action runs, and the tool call returns
+hearth approval approve <id>      # asks for the admin password; the tool call then returns
 ```
 
 The policy file sets it like any other actor kind ([guardrails.md](guardrails.md)):

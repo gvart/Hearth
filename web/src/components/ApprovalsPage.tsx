@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import type { Approval, ApprovalStatus } from '../api/client.ts';
+import { useEffect, useState, type SubmitEvent } from 'react';
+import { ApiError, type Approval, type ApprovalStatus } from '../api/client.ts';
 import { useApprovals, useDecideApproval } from '../api/hooks.ts';
 import { approvalDetail } from '../automations/session.ts';
 import { formatDateTime, relativeTime, timeLeft } from '../format.ts';
@@ -164,8 +164,35 @@ export function ApprovalsPage() {
   );
 }
 
+/** What went wrong deciding, in words for the approver. */
+function decideError(err: Error): string {
+  if (err instanceof ApiError && err.code === 'reauth_failed') {
+    return 'Wrong password. Nothing was approved: the action is still waiting.';
+  }
+  if (err instanceof ApiError && err.code === 'rate_limited') {
+    return 'Too many password attempts. Wait a few seconds, then try again.';
+  }
+  return err.message;
+}
+
 function PendingCard({ approval, now }: { approval: Approval; now: number }) {
   const decide = useDecideApproval();
+  // Approving asks for the admin password again, below the plan it approves.
+  const [confirming, setConfirming] = useState(false);
+  const [password, setPassword] = useState('');
+  const wrongPassword = decide.error instanceof ApiError && decide.error.code === 'reauth_failed';
+
+  const approve = (e: SubmitEvent) => {
+    e.preventDefault();
+    decide.mutate(
+      { id: approval.id, approve: true, password },
+      {
+        onError: () => {
+          setPassword('');
+        },
+      },
+    );
+  };
 
   return (
     <section className="approval-card" aria-label={`Approval for ${approval.action}`}>
@@ -178,31 +205,69 @@ function PendingCard({ approval, now }: { approval: Approval; now: number }) {
       <ApprovalDetails approval={approval} />
       {decide.isError ? (
         <p className="error" role="alert">
-          {decide.error.message}
+          {decideError(decide.error)}
         </p>
       ) : null}
-      <div className="approval-actions">
-        <button
-          className="btn"
-          type="button"
-          disabled={decide.isPending}
-          onClick={() => {
-            decide.mutate({ id: approval.id, approve: false });
-          }}
-        >
-          Deny
-        </button>
-        <button
-          className="btn btn-primary"
-          type="button"
-          disabled={decide.isPending}
-          onClick={() => {
-            decide.mutate({ id: approval.id, approve: true });
-          }}
-        >
-          Approve
-        </button>
-      </div>
+      {confirming ? (
+        <form className="approval-reauth" aria-label="Confirm approval" onSubmit={approve}>
+          <label className="field">
+            <span>Admin password</span>
+            <input
+              type="password"
+              autoComplete="current-password"
+              autoFocus
+              required
+              value={password}
+              aria-invalid={wrongPassword}
+              onChange={(e) => {
+                setPassword(e.target.value);
+              }}
+            />
+          </label>
+          <p className="muted small">Approving runs the action at once. Enter your password to confirm it is you.</p>
+          <div className="approval-actions">
+            <button
+              className="btn"
+              type="button"
+              disabled={decide.isPending}
+              onClick={() => {
+                setConfirming(false);
+                setPassword('');
+                decide.reset();
+              }}
+            >
+              Cancel
+            </button>
+            <button className="btn btn-primary" type="submit" disabled={decide.isPending || password === ''}>
+              {decide.isPending ? 'Approving…' : 'Approve'}
+            </button>
+          </div>
+        </form>
+      ) : (
+        <div className="approval-actions">
+          <button
+            className="btn"
+            type="button"
+            disabled={decide.isPending}
+            onClick={() => {
+              decide.mutate({ id: approval.id, approve: false });
+            }}
+          >
+            Deny
+          </button>
+          <button
+            className="btn btn-primary"
+            type="button"
+            disabled={decide.isPending}
+            onClick={() => {
+              decide.reset();
+              setConfirming(true);
+            }}
+          >
+            Approve…
+          </button>
+        </div>
+      )}
     </section>
   );
 }

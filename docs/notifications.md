@@ -70,8 +70,8 @@ plain text.
 
 ## Approvals
 
-A channel can also get every action policy holds for approval, with a single-use link to approve
-or deny it from the phone: `approval_notify` in `policy.yaml`, see
+A channel can also get every action policy holds for approval, with a single-use link to deny
+it from the phone (approving takes your password, in the web UI): `approval_notify` in `policy.yaml`, see
 [Approve from your phone](guardrails.md#approve-from-your-phone).
 
 ## Test-send

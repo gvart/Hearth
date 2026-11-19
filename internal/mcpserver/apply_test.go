@@ -166,7 +166,7 @@ func TestApplyOfDangerousActionIsHeld(t *testing.T) {
 		t.Fatal("the apply was not held for approval")
 	}
 	wantNoFile(t, f)
-	if err := f.pol.Decide(t.Context(), policy.ActorAdmin, "op", id, false); err != nil {
+	if err := f.pol.Decide(t.Context(), policy.ActorAdmin, "op", id, false, nil); err != nil {
 		t.Fatal(err)
 	}
 	if r := <-done; !r.isErr {

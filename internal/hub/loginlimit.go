@@ -89,6 +89,16 @@ func (l *loginLimiter) allow(client string) (bool, time.Duration) {
 	return true, 0
 }
 
+// refund gives back the token an attempt took, for an attempt that turned
+// out not to be a guess.
+func (l *loginLimiter) refund(client string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if b, ok := l.clients[client]; ok {
+		b.tokens = min(l.burst, b.tokens+1)
+	}
+}
+
 func (l *loginLimiter) refill(b *loginBucket, now time.Time) {
 	if el := now.Sub(b.at); el > 0 {
 		b.tokens = min(l.burst, b.tokens+float64(el)/float64(l.every))

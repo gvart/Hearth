@@ -113,18 +113,18 @@ func tokenBody(secret string) string {
 	return string(b)
 }
 
-func TestApprovalLinkApprovesOnce(t *testing.T) {
+func TestApprovalLinkDeniesOnce(t *testing.T) {
 	f, pol, ntfy := linkFixture(t, time.Minute)
 	secret, runs, done := holdExec(t, pol, ntfy)
 
 	// Bad requests and wrong links decide nothing.
-	if resp := f.send(t, http.MethodPost, "/api/v1/approval-link/approve", "text/plain", tokenBody(secret), nil); resp.StatusCode != http.StatusUnsupportedMediaType {
-		t.Errorf("approve as text/plain = %d", resp.StatusCode)
+	if resp := f.send(t, http.MethodPost, "/api/v1/approval-link/deny", "text/plain", tokenBody(secret), nil); resp.StatusCode != http.StatusUnsupportedMediaType {
+		t.Errorf("deny as text/plain = %d", resp.StatusCode)
 	}
-	if resp := f.do(t, http.MethodPost, "/api/v1/approval-link/approve", `{}`, nil); resp.StatusCode != http.StatusBadRequest {
-		t.Errorf("approve without a token = %d", resp.StatusCode)
+	if resp := f.do(t, http.MethodPost, "/api/v1/approval-link/deny", `{}`, nil); resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("deny without a token = %d", resp.StatusCode)
 	}
-	for _, path := range []string{"/api/v1/approval-link", "/api/v1/approval-link/approve", "/api/v1/approval-link/deny"} {
+	for _, path := range []string{"/api/v1/approval-link", "/api/v1/approval-link/deny"} {
 		if resp := f.do(t, http.MethodPost, path, tokenBody(secret+"x"), nil); resp.StatusCode != http.StatusGone {
 			t.Errorf("%s with a wrong token = %d, want 410", path, resp.StatusCode)
 		}
@@ -142,37 +142,37 @@ func TestApprovalLinkApprovesOnce(t *testing.T) {
 		t.Fatal("ran before approval")
 	}
 
-	if resp := f.do(t, http.MethodPost, "/api/v1/approval-link/approve", tokenBody(secret), nil); resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("approve = %d %s", resp.StatusCode, resp.body)
+	if resp := f.do(t, http.MethodPost, "/api/v1/approval-link/deny", tokenBody(secret), nil); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("deny = %d %s", resp.StatusCode, resp.body)
 	}
-	if err := <-done; err != nil || runs() != 1 {
-		t.Fatalf("held action = %v, runs %d; want run once", err, runs())
+	if err := <-done; !errors.Is(err, policy.ErrDenied) || runs() != 0 {
+		t.Fatalf("held action = %v, runs %d; want denied", err, runs())
 	}
-	// The link is spent: no second approve, no deny, no peek.
-	for _, path := range []string{"/api/v1/approval-link/approve", "/api/v1/approval-link/deny", "/api/v1/approval-link"} {
+	// The link is spent: no second deny, no peek.
+	for _, path := range []string{"/api/v1/approval-link/deny", "/api/v1/approval-link"} {
 		if resp := f.do(t, http.MethodPost, path, tokenBody(secret), nil); resp.StatusCode != http.StatusGone {
 			t.Errorf("%s after use = %d, want 410", path, resp.StatusCode)
 		}
 	}
-	if runs() != 1 {
-		t.Errorf("runs = %d, want 1", runs())
+	if runs() != 0 {
+		t.Errorf("runs = %d, want 0", runs())
 	}
 
 	entries, err := f.st.Audit().List(t.Context(), 20)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var approved bool
+	var deniedByLink bool
 	for _, e := range entries {
-		if e.ActorKind == policy.ActorApprovalLink && e.Action == string(policy.ApprovalApprove) && e.Decision == policy.Allow {
-			approved = e.ActorID == "127.0.0.1"
+		if e.ActorKind == policy.ActorApprovalLink && e.Action == string(policy.ApprovalDeny) && e.Decision == policy.Allow {
+			deniedByLink = e.ActorID == "127.0.0.1"
 		}
 		if strings.Contains(e.Result+e.Target+string(e.Detail), secret) {
 			t.Errorf("audit entry holds the link secret: %+v", e)
 		}
 	}
-	if !approved {
-		t.Error("no audit entry for the approval by link")
+	if !deniedByLink {
+		t.Error("no audit entry for the denial by link")
 	}
 	if strings.Contains(f.logs.String(), secret) {
 		t.Error("the link secret is in the logs")
@@ -188,8 +188,8 @@ func TestApprovalLinkDenies(t *testing.T) {
 	if err := <-done; !errors.Is(err, policy.ErrDenied) || runs() != 0 {
 		t.Fatalf("held action = %v, runs %d; want denied", err, runs())
 	}
-	if resp := f.do(t, http.MethodPost, "/api/v1/approval-link/approve", tokenBody(secret), nil); resp.StatusCode != http.StatusGone {
-		t.Errorf("approve after deny = %d, want 410", resp.StatusCode)
+	if resp := f.do(t, http.MethodPost, "/api/v1/approval-link/deny", tokenBody(secret), nil); resp.StatusCode != http.StatusGone {
+		t.Errorf("deny after deny = %d, want 410", resp.StatusCode)
 	}
 }
 
@@ -212,8 +212,8 @@ func TestApprovalLinkAfterUIDecision(t *testing.T) {
 	if ap := decode[ApprovalJSON](t, resp); resp.StatusCode != http.StatusOK || ap.Status != store.ApprovalDenied {
 		t.Errorf("peek after UI deny = %d %+v", resp.StatusCode, ap)
 	}
-	if resp := f.do(t, http.MethodPost, "/api/v1/approval-link/approve", tokenBody(secret), nil); resp.StatusCode != http.StatusConflict {
-		t.Errorf("approve after UI deny = %d, want 409", resp.StatusCode)
+	if resp := f.do(t, http.MethodPost, "/api/v1/approval-link/deny", tokenBody(secret), nil); resp.StatusCode != http.StatusConflict {
+		t.Errorf("deny after UI deny = %d, want 409", resp.StatusCode)
 	}
 }
 
@@ -223,7 +223,7 @@ func TestApprovalLinkExpires(t *testing.T) {
 	if err := <-done; !errors.Is(err, policy.ErrDenied) || runs() != 0 {
 		t.Fatalf("unapproved action = %v, runs %d; want denied on expiry", err, runs())
 	}
-	for _, path := range []string{"/api/v1/approval-link", "/api/v1/approval-link/approve"} {
+	for _, path := range []string{"/api/v1/approval-link", "/api/v1/approval-link/deny"} {
 		if resp := f.do(t, http.MethodPost, path, tokenBody(secret), nil); resp.StatusCode != http.StatusGone {
 			t.Errorf("%s after expiry = %d, want 410", path, resp.StatusCode)
 		}

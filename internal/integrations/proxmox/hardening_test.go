@@ -89,7 +89,7 @@ func TestApprovedActionRefusesAnotherGuest(t *testing.T) {
 
 			f.mock.ReplaceGuest(100, tc.kind, tc.guest, tc.node)
 			f.waitGuest(t, info.ID, 100, func(g Guest) bool { return g.Name == tc.guest && g.Kind == tc.kind })
-			if err := f.pol.Decide(t.Context(), policy.ActorAdmin, "admin", held.ID, true); err != nil {
+			if err := f.pol.Decide(t.Context(), policy.ActorAdmin, "admin", held.ID, true, func(context.Context) error { return nil }); err != nil {
 				t.Fatal(err)
 			}
 
@@ -113,7 +113,7 @@ func TestApprovedActionFollowsAMigration(t *testing.T) {
 
 	f.mock.ReplaceGuest(100, KindVM, "home-assistant", "pve2")
 	f.waitGuest(t, info.ID, 100, func(g Guest) bool { return g.Node == "pve2" })
-	if err := f.pol.Decide(t.Context(), policy.ActorAdmin, "admin", held.ID, true); err != nil {
+	if err := f.pol.Decide(t.Context(), policy.ActorAdmin, "admin", held.ID, true, func(context.Context) error { return nil }); err != nil {
 		t.Fatal(err)
 	}
 	if err := actResult(t, done); err != nil {
