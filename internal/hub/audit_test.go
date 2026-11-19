@@ -13,7 +13,8 @@ import (
 
 func TestAPIAudit(t *testing.T) {
 	f := newAPIFixture(t, true)
-	c := sessionCookie(t, f.login(t, testPassword)) // audits admin.set_password (1) and admin.login (2)
+	// Audits admin.set_password (1, its outcome 2) and admin.login (3, its outcome 4).
+	c := sessionCookie(t, f.login(t, testPassword))
 	if err := f.st.Devices().Upsert(t.Context(), store.Device{
 		ID: "d1", Name: "pi", Hostname: "pi.lan", Status: store.StatusUnknown,
 	}); err != nil {
@@ -21,10 +22,10 @@ func TestAPIAudit(t *testing.T) {
 	}
 	base := time.Now().Add(-time.Hour).UTC().Truncate(time.Second)
 	for i, e := range []store.AuditEntry{
-		{ActorKind: "admin", ActorID: "root", Action: "device.revoke", Target: "d1", Decision: "deny", Result: "nope"},  // 3
-		{ActorKind: "automation", ActorID: "fix-dns", Action: "automation.restart", Target: "pi", Decision: "allow"},    // 4
-		{ActorKind: "automation", ActorID: "fix-dns", Action: "automation.exec", Target: "pi.lan", Decision: "confirm"}, // 5
-		{ActorKind: "automation", ActorID: "other", Action: "automation.log", Decision: "allow"},                        // 6
+		{ActorKind: "admin", ActorID: "root", Action: "device.revoke", Target: "d1", Decision: "deny", Result: "nope"},  // 5
+		{ActorKind: "automation", ActorID: "fix-dns", Action: "automation.restart", Target: "pi", Decision: "allow"},    // 6
+		{ActorKind: "automation", ActorID: "fix-dns", Action: "automation.exec", Target: "pi.lan", Decision: "confirm"}, // 7
+		{ActorKind: "automation", ActorID: "other", Action: "automation.log", Decision: "allow"},                        // 8
 	} {
 		e.TS = base.Add(time.Duration(i) * time.Minute)
 		if _, err := f.st.Audit().Append(t.Context(), e); err != nil {
@@ -47,19 +48,20 @@ func TestAPIAudit(t *testing.T) {
 		want  []int64
 		next  int64
 	}{
-		{"", []int64{6, 5, 4, 3, 2, 1}, 0},
-		{"?limit=2", []int64{6, 5}, 5},
-		{"?limit=2&before=5", []int64{4, 3}, 3},
-		{"?actor_kind=automation&actor=fix", []int64{5, 4}, 0},
-		{"?class=dangerous", []int64{5, 3, 1}, 0},
-		{"?class=read", []int64{6}, 0},
-		{"?action=automation.restart", []int64{4}, 0},
+		{"", []int64{8, 7, 6, 5, 3, 1}, 0},
+		{"?limit=2", []int64{8, 7}, 7},
+		{"?limit=2&before=7", []int64{6, 5}, 5},
+		{"?limit=2&before=5", []int64{3, 1}, 0}, // the outcomes 4 and 2 take no place on a page
+		{"?actor_kind=automation&actor=fix", []int64{7, 6}, 0},
+		{"?class=dangerous", []int64{7, 5, 1}, 0},
+		{"?class=read", []int64{8}, 0},
+		{"?action=automation.restart", []int64{6}, 0},
 		{"?action=automation.restart&class=dangerous", nil, 0},
-		{"?decision=deny", []int64{3}, 0},
-		{"?device=d1", []int64{5, 4, 3}, 0}, // by id, name and hostname
+		{"?decision=deny", []int64{5}, 0},
+		{"?device=d1", []int64{7, 6, 5}, 0}, // by id, name and hostname
 		{"?device=unknown", nil, 0},
-		{"?since=" + base.Add(2*time.Minute).Format(time.RFC3339), []int64{6, 5, 2, 1}, 0},
-		{"?until=" + base.Add(time.Minute).Format(time.RFC3339), []int64{3}, 0},
+		{"?since=" + base.Add(2*time.Minute).Format(time.RFC3339), []int64{8, 7, 3, 1}, 0},
+		{"?until=" + base.Add(time.Minute).Format(time.RFC3339), []int64{5}, 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.query, func(t *testing.T) {

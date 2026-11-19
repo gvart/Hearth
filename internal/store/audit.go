@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"time"
 )
 
@@ -22,6 +24,45 @@ type AuditEntry struct {
 	Result    string
 	// Detail is an opaque JSON document; nil is stored as {}.
 	Detail json.RawMessage
+}
+
+// Keys of an entry's Detail that tie the entry written before an action to
+// the one reporting its outcome. Query folds the two into one and removes them.
+const (
+	// AuditOpKey is set on the entry written before the action, to an id
+	// unique to the operation.
+	AuditOpKey = "audit_op"
+	// AuditOutcomeOfKey is set on the outcome entry, to the same id.
+	AuditOutcomeOfKey = "audit_outcome_of"
+)
+
+// maxAuditDetailDepth is how deep an entry's Detail may nest. SQLite's JSON
+// functions give up at 1000 levels; no entry comes close to this.
+const maxAuditDetailDepth = 64
+
+// auditOutcomeOfSQL is the operation an entry reports the outcome of, if any.
+// A detail SQLite cannot parse has none, instead of failing the whole query.
+const auditOutcomeOfSQL = `CASE WHEN json_valid(detail) THEN json_extract(detail, '$.` + AuditOutcomeOfKey + `') END`
+
+// jsonDepth returns how deep the valid JSON document b nests.
+func jsonDepth(b []byte) int {
+	depth, deepest, inString := 0, 0, false
+	for i := 0; i < len(b); i++ {
+		switch c := b[i]; {
+		case inString && c == '\\':
+			i++
+		case inString:
+			inString = c != '"'
+		case c == '"':
+			inString = true
+		case c == '[' || c == '{':
+			depth++
+			deepest = max(deepest, depth)
+		case c == ']' || c == '}':
+			depth--
+		}
+	}
+	return deepest
 }
 
 // Audit is the repository for the audit log. Append is the only write path:
@@ -42,6 +83,9 @@ func (r Audit) Append(ctx context.Context, e AuditEntry) (int64, error) {
 	}
 	if !json.Valid(detail) {
 		return 0, errors.New("append audit: detail is not valid JSON")
+	}
+	if jsonDepth(detail) > maxAuditDetailDepth {
+		return 0, fmt.Errorf("append audit: detail nests deeper than %d levels", maxAuditDetailDepth)
 	}
 	if e.TS.IsZero() {
 		e.TS = time.Now()
@@ -78,7 +122,11 @@ func (r Audit) List(ctx context.Context, limit int) ([]AuditEntry, error) {
 	return r.Query(ctx, AuditFilter{}, limit)
 }
 
-// Query returns up to limit entries matching f, newest first.
+// Query returns up to limit entries matching f, newest first, one per action:
+// an entry written before an action runs carries the result and detail of the
+// entry reporting its outcome, and keeps its own place in the log, so an
+// action stays ordered by when it started. Without an outcome entry it is
+// returned as written.
 func (r Audit) Query(ctx context.Context, f AuditFilter, limit int) ([]AuditEntry, error) {
 	if limit <= 0 {
 		return nil, errors.New("list audit: limit must be positive")
@@ -99,9 +147,11 @@ func (r Audit) Query(ctx context.Context, f AuditFilter, limit int) ([]AuditEntr
 		until = toMillis(f.Until)
 	}
 	rows, err := r.s.db.QueryContext(ctx, `
-		SELECT id, ts, actor_kind, actor_id, action, target, decision, result, detail
+		SELECT id, ts, actor_kind, actor_id, action, target, decision, result, detail,
+		       coalesce(CASE WHEN json_valid(detail) THEN json_extract(detail, '$.`+AuditOpKey+`') END, '')
 		FROM audit_log
-		WHERE (?1 = '' OR actor_kind = ?1)
+		WHERE `+auditOutcomeOfSQL+` IS NULL
+		  AND (?1 = '' OR actor_kind = ?1)
 		  AND (?2 = '' OR instr(actor_id, ?2) > 0)
 		  AND (?3 = '[]' OR action IN (SELECT value FROM json_each(?3)))
 		  AND (?4 = '[]' OR target IN (SELECT value FROM json_each(?4)))
@@ -116,24 +166,89 @@ func (r Audit) Query(ctx context.Context, f AuditFilter, limit int) ([]AuditEntr
 	}
 	defer rows.Close()
 	var out []AuditEntry
+	ops := map[string]int{} // operation id to its index in out
+	var oldest int64
 	for rows.Next() {
 		var (
 			e      AuditEntry
 			ts     int64
 			detail string
+			op     string
 		)
 		if err := rows.Scan(&e.ID, &ts, &e.ActorKind, &e.ActorID, &e.Action, &e.Target,
-			&e.Decision, &e.Result, &detail); err != nil {
+			&e.Decision, &e.Result, &detail, &op); err != nil {
 			return nil, fmt.Errorf("list audit: %w", err)
 		}
 		e.TS = fromMillis(ts)
 		e.Detail = json.RawMessage(detail)
+		if op != "" {
+			ops[op] = len(out)
+			oldest = e.ID
+		}
 		out = append(out, e)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("list audit: %w", err)
 	}
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("list audit: %w", err)
+	}
+	if len(ops) == 0 {
+		return out, nil
+	}
+	if err := r.foldOutcomes(ctx, out, ops, oldest); err != nil {
+		return nil, fmt.Errorf("list audit: %w", err)
+	}
 	return out, nil
+}
+
+// foldOutcomes gives the entries of out named by ops the result and detail of
+// their outcome entries, all of them newer than the entry with ID oldest, and
+// removes the keys that tie the two from every detail.
+func (r Audit) foldOutcomes(ctx context.Context, out []AuditEntry, ops map[string]int, oldest int64) error {
+	ids, err := json.Marshal(slices.Collect(maps.Keys(ops)))
+	if err != nil {
+		return err
+	}
+	rows, err := r.s.db.QueryContext(ctx, `
+		SELECT `+auditOutcomeOfSQL+`, result, detail
+		FROM audit_log
+		WHERE id > ?1 AND `+auditOutcomeOfSQL+` IN (SELECT value FROM json_each(?2))`,
+		oldest, string(ids))
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var op, result, detail string
+		if err := rows.Scan(&op, &result, &detail); err != nil {
+			return err
+		}
+		out[ops[op]].Result, out[ops[op]].Detail = result, json.RawMessage(detail)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, i := range ops {
+		out[i].Detail = withoutOpKeys(out[i].Detail)
+	}
+	return nil
+}
+
+// withoutOpKeys returns detail without the keys that tie an action's entries,
+// or as it is if it cannot be read: one odd row must not hide the log.
+func withoutOpKeys(detail json.RawMessage) json.RawMessage {
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(detail, &m); err != nil {
+		return detail
+	}
+	delete(m, AuditOpKey)
+	delete(m, AuditOutcomeOfKey)
+	out, err := json.Marshal(m)
+	if err != nil {
+		return detail
+	}
+	return out
 }
 
 func nonNilStrings(s []string) []string {

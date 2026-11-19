@@ -48,10 +48,41 @@ type Request struct {
 	// OnHold, when set, is called once the request is held for approval,
 	// with the approval's id and expiry.
 	OnHold func(id string, expires time.Time)
-	// auditFirst records an allowed request before fn runs instead of after,
-	// for an fn whose effect others act on at once; see runAuditedFirst.
-	auditFirst bool
+	// RecordOutcome makes a read-class request write its outcome even when it
+	// succeeds, as every other class does: for a rare read whose fn adds to
+	// Detail what the audit log should show. See Engine.run.
+	RecordOutcome bool
 }
+
+// Results of the entry written before an allowed action runs. The entry that
+// reports the action's outcome, "ok" or "error: ...", replaces it for readers
+// of the audit log (see store.Audit.Query).
+const (
+	// Started means the action was about to run. Alone in the log, it means
+	// the action is still running, the hub stopped before it could report, or
+	// the write seemed to fail, refusing the action, and committed after all.
+	Started = "started"
+	// ReadAllowed is the one entry of a read that did not fail: reads are the
+	// frequent actions and change nothing, so success adds no second write.
+	ReadAllowed = "read allowed"
+)
+
+// ErrOutcomeNotRecorded is returned when an action ran but the audit entry
+// reporting how it ended could not be written. The entry written before it
+// exists, so the audit log shows the action as Started.
+//
+// The action must not be taken for one that did not run, and retrying it
+// repeats it. An error matching only ErrOutcomeNotRecorded means the action's
+// function returned nil; one that also matches another error carries the
+// function's own failure. It deliberately does not match the audit write's
+// error: store.ErrUnavailable means nothing happened and a retry is safe,
+// which is not true here. A caller that cannot tell how a step ended, such as
+// a runbook, should treat it as unknown.
+var ErrOutcomeNotRecorded = errors.New("its outcome was not recorded")
+
+// outcomeTimeout bounds the write of an action's outcome, which outlives the
+// request. It covers waiting for a cluster leader and the Raft apply.
+const outcomeTimeout = 20 * time.Second
 
 type scopeKey struct{}
 
@@ -113,10 +144,9 @@ func NewWithConfig(audit Auditor, approvals Approvals, cfg Config) *Engine {
 // Do decides on req and, if allowed, runs fn. A request the configuration
 // says to confirm is first held as a pending approval, and Do waits until
 // it is approved, denied or expires, or ctx is done. Every decision is in
-// the audit log: one entry for a request allowed, denied or dry-run, two for
-// a held one (the hold, then its outcome) and for a decision on an approval
-// that fails after it was audited (see Decide). A denied request returns an
-// error wrapping ErrDenied; an allowed one returns fn's error.
+// the audit log, and fn never runs unless its entry was written first (see
+// run). A denied request returns an error wrapping ErrDenied; an allowed one
+// returns fn's error.
 func (e *Engine) Do(ctx context.Context, req Request, fn func(context.Context) error) error {
 	decision, reason, class := e.decide(req)
 	if decision != Deny {
@@ -147,7 +177,8 @@ func (e *Engine) Do(ctx context.Context, req Request, fn func(context.Context) e
 
 	var extra map[string]any
 	auditCtx := ctx
-	if decision == Confirm {
+	held := decision == Confirm
+	if held {
 		var err error
 		if decision, reason, extra, err = e.hold(ctx, req, class); err != nil {
 			return err
@@ -156,43 +187,87 @@ func (e *Engine) Do(ctx context.Context, req Request, fn func(context.Context) e
 		auditCtx = context.WithoutCancel(ctx)
 	}
 
-	if decision == Allow && req.auditFirst {
-		return e.runAuditedFirst(ctx, req, fn)
+	if decision == Allow {
+		return e.run(ctx, req, class, held, extra, fn)
+	}
+	if err := e.record(auditCtx, req, decision, reason, extra); err != nil {
+		return err
+	}
+	return denied(req, reason, precheckErr)
+}
+
+// run runs the allowed req with its audit entry written first: fn is not
+// called unless the entry exists. A second entry, tied to the first by an
+// operation id, records the outcome on a context that survives ctx being
+// cancelled. A read that succeeds writes no second entry, unless it was held
+// for approval or asks to with RecordOutcome.
+func (e *Engine) run(ctx context.Context, req Request, class Class, held bool, extra map[string]any, fn func(context.Context) error) error {
+	op := strings.ToLower(rand.Text())
+	failureOnly := class == Read && !req.RecordOutcome && !held
+	first := Started
+	if failureOnly {
+		first = ReadAllowed
+	}
+	if err := e.record(ctx, req, Allow, first, withDetail(extra, store.AuditOpKey, op)); err != nil {
+		if held {
+			// The hold has to end in an outcome, if one can still be written.
+			_ = e.recordOutcome(ctx, req, Deny, "approved, but not run: "+err.Error(), extra)
+		}
+		return refused(ctx, req, err)
 	}
 
-	var runErr error
-	result := reason
-	if decision == Allow {
-		runErr = fn(context.WithValue(ctx, grantKey{}, req.Action))
-		result = "ok"
-		if runErr != nil {
-			result = "error: " + runErr.Error()
-		}
+	runErr := fn(context.WithValue(ctx, grantKey{}, req.Action))
+	if runErr == nil && failureOnly {
+		return nil
 	}
-	if err := e.record(auditCtx, req, decision, result, extra); err != nil {
-		return withAuditErr(runErr, err)
+	result := "ok"
+	if runErr != nil {
+		result = "error: " + runErr.Error()
 	}
-	if decision == Deny {
-		return denied(req, reason, precheckErr)
+	if err := e.recordOutcome(ctx, req, Allow, result, withDetail(extra, store.AuditOutcomeOfKey, op)); err != nil {
+		return outcomeNotRecorded(req, runErr, err)
 	}
 	return runErr
 }
 
-// runAuditedFirst runs the allowed req with its audit entry written first:
-// fn does not run unless the entry exists. If fn then fails, a second entry
-// records the failure.
-func (e *Engine) runAuditedFirst(ctx context.Context, req Request, fn func(context.Context) error) error {
-	if err := e.record(ctx, req, Allow, "ok", nil); err != nil {
-		return err
+// outcomeNotRecorded is the error of an action that ran, with runErr its own
+// failure if it had one, whose outcome could not be written because of
+// auditErr. It matches ErrOutcomeNotRecorded and runErr, never auditErr. When
+// both failed for the same root cause (typically the store or the cluster
+// being unavailable), the cause is reported once.
+func outcomeNotRecorded(req Request, runErr, auditErr error) error {
+	switch {
+	case runErr == nil:
+		return fmt.Errorf("%s ran, but %w: %v", req.Action, ErrOutcomeNotRecorded, auditErr) //nolint:errorlint // see ErrOutcomeNotRecorded
+	case rootCause(runErr).Error() == rootCause(auditErr).Error():
+		return fmt.Errorf("%w (%w either)", runErr, ErrOutcomeNotRecorded)
 	}
-	runErr := fn(context.WithValue(ctx, grantKey{}, req.Action))
-	if runErr == nil {
-		return nil
+	return fmt.Errorf("%w (%w: %v)", runErr, ErrOutcomeNotRecorded, auditErr) //nolint:errorlint // see ErrOutcomeNotRecorded
+}
+
+// recordOutcome is record on a context that ctx being cancelled cannot stop.
+func (e *Engine) recordOutcome(ctx context.Context, req Request, decision, result string, extra map[string]any) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), outcomeTimeout)
+	defer cancel()
+	return e.record(ctx, req, decision, result, extra)
+}
+
+// withDetail returns a copy of extra with key set to value.
+func withDetail(extra map[string]any, key, value string) map[string]any {
+	out := make(map[string]any, len(extra)+1)
+	maps.Copy(out, extra)
+	out[key] = value
+	return out
+}
+
+// refused is the error of an action that did not run because its audit entry
+// could not be written. It still matches the write's error.
+func refused(ctx context.Context, req Request, err error) error {
+	if ctx.Err() != nil {
+		return fmt.Errorf("%s refused, nothing was run: the request ended before its audit entry was written: %w", req.Action, err)
 	}
-	if err := e.record(ctx, req, Allow, "error: "+runErr.Error(), nil); err != nil {
-		return withAuditErr(runErr, err)
-	}
-	return runErr
+	return fmt.Errorf("%s refused, nothing was run: its audit entry could not be written "+
+		"(a hub cluster refuses every action while most of its hubs are unreachable): %w", req.Action, err)
 }
 
 // grantKey is the context key of the action Do allowed: the context it
@@ -254,6 +329,9 @@ func detailJSON(detail, extra map[string]any) (json.RawMessage, error) {
 	}
 	m := make(map[string]any, len(detail)+len(extra))
 	maps.Copy(m, detail)
+	// These tie an action's entries together: only the engine sets them.
+	delete(m, store.AuditOpKey)
+	delete(m, store.AuditOutcomeOfKey)
 	maps.Copy(m, extra)
 	return json.Marshal(m)
 }
@@ -363,16 +441,23 @@ func (e *Engine) Decide(ctx context.Context, actorKind, actorID, id string, appr
 	if approve {
 		action, status = ApprovalApprove, store.ApprovalApproved
 	}
-	return e.Do(ctx, Request{
+	decided := false
+	err = e.Do(ctx, Request{
 		ActorKind: actorKind, ActorID: actorID, Action: action, Target: id,
 		Detail: map[string]any{
 			"action": held.Action, "actor": held.ActorKind + "/" + held.ActorID, "target": held.Target,
 		},
-		// A closed approval will refuse the decision: one entry says so.
-		auditFirst: held.Status == store.ApprovalPending && e.now().Before(held.ExpiresAt),
 	}, func(ctx context.Context) error {
-		return e.approvals.Decide(ctx, id, status, actorKind+"/"+actorID, e.now())
+		err := e.approvals.Decide(ctx, id, status, actorKind+"/"+actorID, e.now())
+		decided = err == nil
+		return err
 	})
+	if decided && errors.Is(err, ErrOutcomeNotRecorded) {
+		// The decision took effect and its started entry is in the log: a
+		// retry could only be told that the approval is closed.
+		return nil
+	}
+	return err
 }
 
 // DecideLink approves or denies, as the holder of an approval link from
@@ -396,21 +481,6 @@ func (e *Engine) DecideLink(ctx context.Context, actorID string, approve bool, u
 		return fmt.Errorf("%s by %s/%s: %w (%w)", action, ActorApprovalLink, orUnknown(actorID), err, ErrDenied)
 	}
 	return e.Decide(ctx, ActorApprovalLink, actorID, id, approve)
-}
-
-// withAuditErr combines a failed action with its failed audit append. When
-// both failed for the same root cause (typically the store or the cluster
-// being unavailable, which fails every write the same way), the cause is
-// reported once instead of twice. The result still matches both errors with
-// errors.Is when they differ.
-func withAuditErr(runErr, auditErr error) error {
-	if runErr == nil {
-		return auditErr
-	}
-	if rootCause(runErr).Error() == rootCause(auditErr).Error() {
-		return fmt.Errorf("%w (the audit entry was not written either)", runErr)
-	}
-	return errors.Join(runErr, auditErr)
 }
 
 // rootCause follows a chain of single wrapped errors to its end.

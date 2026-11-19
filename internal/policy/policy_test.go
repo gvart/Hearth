@@ -184,7 +184,7 @@ func TestEngineDo(t *testing.T) {
 			req:          Request{ActorKind: ActorAutomation, ActorID: "hello", Action: AutomationLog},
 			wantRan:      true,
 			wantDecision: Allow,
-			wantResult:   "ok",
+			wantResult:   ReadAllowed,
 		},
 		{
 			name:         "web session cannot run an automation's action",
@@ -268,7 +268,7 @@ func TestEngineDo(t *testing.T) {
 			req:          Request{ActorKind: ActorWeb, ActorID: "192.0.2.1", Action: KubePodLogs, Target: "lab/default/web"},
 			wantRan:      true,
 			wantDecision: Allow,
-			wantResult:   "ok",
+			wantResult:   ReadAllowed,
 		},
 		{
 			name:         "automation cannot read pod logs",
@@ -369,7 +369,9 @@ type failingAudit struct{ err error }
 
 func (f failingAudit) Append(context.Context, store.AuditEntry) (int64, error) { return 0, f.err }
 
-func TestEngineDoAuditFailure(t *testing.T) {
+// TestEngineDoOutcomeAuditFailure: an action that ran reports what happened
+// to it and that its outcome is missing from the audit log.
+func TestEngineDoOutcomeAuditFailure(t *testing.T) {
 	req := Request{ActorKind: ActorAdmin, ActorID: "root", Action: TokenCreate}
 	unavailable := fmt.Errorf("forward: %w", store.ErrUnavailable)
 	disk := errors.New("disk full")
@@ -378,26 +380,40 @@ func TestEngineDoAuditFailure(t *testing.T) {
 		runErr   error
 		auditErr error
 		wantIs   []error
+		wantNot  []error
 		wantMsg  string
 	}{
-		{"action ok, audit fails", nil, disk, []error{disk}, "audit token.create: disk full"},
+		{
+			"action ok, audit fails", nil, disk,
+			[]error{ErrOutcomeNotRecorded},
+			[]error{disk},
+			"token.create ran, but its outcome was not recorded: audit token.create: disk full",
+		},
 		{
 			"same cause reported once", fmt.Errorf("create token: %w", unavailable), unavailable,
-			[]error{store.ErrUnavailable},
-			"create token: forward: " + store.ErrUnavailable.Error() + " (the audit entry was not written either)",
+			[]error{store.ErrUnavailable, ErrOutcomeNotRecorded},
+			nil,
+			"create token: forward: " + store.ErrUnavailable.Error() + " (its outcome was not recorded either)",
 		},
 		{
 			"different causes both kept", store.ErrTokenUsed, disk,
-			[]error{store.ErrTokenUsed, disk},
-			store.ErrTokenUsed.Error() + "\naudit token.create: disk full",
+			[]error{store.ErrTokenUsed, ErrOutcomeNotRecorded},
+			[]error{disk},
+			store.ErrTokenUsed.Error() + " (its outcome was not recorded: audit token.create: disk full)",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := New(failingAudit{tt.auditErr}).Do(t.Context(), req, func(context.Context) error { return tt.runErr })
+			audit := &scriptedAudit{failFrom: 2, err: tt.auditErr}
+			err := New(audit).Do(t.Context(), req, func(context.Context) error { return tt.runErr })
 			for _, target := range tt.wantIs {
 				if !errors.Is(err, target) {
 					t.Errorf("err = %v, want it to match %v", err, target)
+				}
+			}
+			for _, target := range tt.wantNot {
+				if errors.Is(err, target) {
+					t.Errorf("err = %v, want it not to match %v", err, target)
 				}
 			}
 			if err == nil || err.Error() != tt.wantMsg {

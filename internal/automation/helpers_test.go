@@ -142,10 +142,27 @@ func (a *auditLog) Append(_ context.Context, e store.AuditEntry) (int64, error) 
 	return int64(len(a.entries)), nil
 }
 
+// all returns the entries as store.Audit.Query shows them: one per action.
 func (a *auditLog) all() []store.AuditEntry {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return slices.Clone(a.entries)
+	var out []store.AuditEntry
+	started := map[string]int{}
+	for _, e := range a.entries {
+		var d map[string]any
+		_ = json.Unmarshal(e.Detail, &d)
+		if op, ok := d[store.AuditOutcomeOfKey].(string); ok {
+			if i, ok := started[op]; ok {
+				out[i].Result, out[i].Detail = e.Result, e.Detail
+				continue
+			}
+		}
+		if op, ok := d[store.AuditOpKey].(string); ok {
+			started[op] = len(out)
+		}
+		out = append(out, e)
+	}
+	return out
 }
 
 func eventually(t *testing.T, what string, cond func() bool) {

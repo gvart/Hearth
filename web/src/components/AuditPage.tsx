@@ -304,7 +304,34 @@ function Row({ entry: e, now, open, onToggle }: { entry: AuditEntry; now: number
           {e.result.startsWith('dry-run') ? <span className="pill pill-muted">dry run</span> : null}
         </span>
       </td>
-      <td className="wrap audit-result">{e.result || <span className="muted">—</span>}</td>
+      <td className="wrap audit-result">
+        <Result result={e.result} />
+      </td>
     </tr>
   );
+}
+
+/** What became of an action. The hub records a started action before it runs. */
+function Result({ result }: { result: string }) {
+  if (result === 'started') {
+    return (
+      <span
+        className="pill pill-warn"
+        title="The action is still running, the hub stopped before it could report the result, or a cluster lost its leader while writing this entry and the action was refused."
+      >
+        No outcome recorded
+      </span>
+    );
+  }
+  if (result === 'read allowed') {
+    return (
+      <span
+        className="muted"
+        title="Reads are recorded before they run, and only a read that fails records a result. This does not prove the read succeeded: an interrupted read looks the same."
+      >
+        Read allowed
+      </span>
+    );
+  }
+  return result || <span className="muted">—</span>;
 }

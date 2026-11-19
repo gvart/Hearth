@@ -60,7 +60,7 @@ func TestRunSucceedsThroughPolicy(t *testing.T) {
 	}
 	e := entries[0]
 	if e.ActorKind != policy.ActorAutomation || e.ActorID != "fake" || e.Action != string(policy.AutomationLog) ||
-		e.Target != "fake-target" || e.Decision != policy.Allow || e.Result != "ok" ||
+		e.Target != "fake-target" || e.Decision != policy.Allow || e.Result != policy.ReadAllowed ||
 		!strings.Contains(string(e.Detail), `"run":"`+run.ID+`"`) {
 		t.Errorf("audit entry = %+v (%s)", e, e.Detail)
 	}
