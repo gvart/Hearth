@@ -85,6 +85,12 @@ const (
 	// KubeNodeDrain cordons a node and evicts its pods, honouring their
 	// PodDisruptionBudgets.
 	KubeNodeDrain Action = "kube.node.drain"
+	// KubeNodeDelete deletes a Node object from the cluster, such as one
+	// left behind by a machine that was reset or uninstalled.
+	KubeNodeDelete Action = "kube.node.delete"
+	// KubeNodeReady reads whether a Node is Ready: a runbook's kube_node
+	// check.
+	KubeNodeReady Action = "kube.node.ready"
 	// AutomationNotify is an automation's notify action: a message to a
 	// notification channel (ntfy, Telegram) configured on the hub.
 	AutomationNotify Action = "automation.notify"
@@ -279,6 +285,12 @@ var rules = map[Action]rule{
 	// that can be most of the capacity. Being dangerous, an automation's
 	// drain is denied unless it is granted or approved.
 	KubeNodeDrain: {class: Dangerous, actors: []string{ActorWeb, ActorAutomation, ActorMCP}},
+	// Deleting a Node object cannot be undone by Hearth: its pods are
+	// deleted with it, and only the node's kubelet can register it again.
+	// It is for runbooks and automations, the clean-up after a rollback.
+	KubeNodeDelete: {class: Dangerous, actors: []string{ActorAutomation}},
+	// Reading one Node's conditions changes nothing.
+	KubeNodeReady: {class: Read, actors: []string{ActorAutomation}},
 	// A notification touches no device: it tells a person something, on a
 	// channel the operator configured.
 	AutomationNotify: {class: Safe, actors: []string{ActorAutomation}},
