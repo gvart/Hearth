@@ -361,8 +361,16 @@ func (n *Node) propose(ctx context.Context, cmd store.Command) (store.Result, ui
 	if dl, ok := ctx.Deadline(); ok {
 		timeout = time.Until(dl)
 	}
+	n.fsm.writes.begin(b)
 	f := n.raft.Apply(b, timeout)
-	if err := f.Error(); err != nil {
+	err = f.Error()
+	claimed, wasClaimed := n.fsm.writes.end(b)
+	if err != nil {
+		if wasClaimed {
+			// The entry committed after all, and observers were told it is
+			// this caller's: it has to see the write as done.
+			return claimed, 0, nil
+		}
 		if errors.Is(err, raft.ErrNotLeader) {
 			return store.Result{}, 0, n.notLeader()
 		}

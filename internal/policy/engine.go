@@ -48,6 +48,9 @@ type Request struct {
 	// OnHold, when set, is called once the request is held for approval,
 	// with the approval's id and expiry.
 	OnHold func(id string, expires time.Time)
+	// auditFirst records an allowed request before fn runs instead of after,
+	// for an fn whose effect others act on at once; see runAuditedFirst.
+	auditFirst bool
 }
 
 type scopeKey struct{}
@@ -111,7 +114,8 @@ func NewWithConfig(audit Auditor, approvals Approvals, cfg Config) *Engine {
 // says to confirm is first held as a pending approval, and Do waits until
 // it is approved, denied or expires, or ctx is done. Every decision is in
 // the audit log: one entry for a request allowed, denied or dry-run, two for
-// a held one (the hold, then its outcome). A denied request returns an
+// a held one (the hold, then its outcome) and for a decision on an approval
+// that fails after it was audited (see Decide). A denied request returns an
 // error wrapping ErrDenied; an allowed one returns fn's error.
 func (e *Engine) Do(ctx context.Context, req Request, fn func(context.Context) error) error {
 	decision, reason, class := e.decide(req)
@@ -152,6 +156,10 @@ func (e *Engine) Do(ctx context.Context, req Request, fn func(context.Context) e
 		auditCtx = context.WithoutCancel(ctx)
 	}
 
+	if decision == Allow && req.auditFirst {
+		return e.runAuditedFirst(ctx, req, fn)
+	}
+
 	var runErr error
 	result := reason
 	if decision == Allow {
@@ -166,6 +174,23 @@ func (e *Engine) Do(ctx context.Context, req Request, fn func(context.Context) e
 	}
 	if decision == Deny {
 		return denied(req, reason, precheckErr)
+	}
+	return runErr
+}
+
+// runAuditedFirst runs the allowed req with its audit entry written first:
+// fn does not run unless the entry exists. If fn then fails, a second entry
+// records the failure.
+func (e *Engine) runAuditedFirst(ctx context.Context, req Request, fn func(context.Context) error) error {
+	if err := e.record(ctx, req, Allow, "ok", nil); err != nil {
+		return err
+	}
+	runErr := fn(context.WithValue(ctx, grantKey{}, req.Action))
+	if runErr == nil {
+		return nil
+	}
+	if err := e.record(ctx, req, Allow, "error: "+runErr.Error(), nil); err != nil {
+		return withAuditErr(runErr, err)
 	}
 	return runErr
 }
@@ -322,6 +347,10 @@ func (e *Engine) expire(ctx context.Context, id string) {
 // action that goes through policy itself (ApprovalApprove or ApprovalDeny).
 // It fails with store.ErrNotFound for an unknown approval and with
 // store.ErrApprovalClosed for one no longer pending.
+//
+// A decision on an open approval is audited before it takes effect: the held
+// request acts as soon as it reads the decision, on any hub, and the audit
+// log must show the approval before the action it allowed.
 func (e *Engine) Decide(ctx context.Context, actorKind, actorID, id string, approve bool) error {
 	if e.approvals == nil {
 		return errors.New("decide approval: this hub holds no approvals")
@@ -339,6 +368,8 @@ func (e *Engine) Decide(ctx context.Context, actorKind, actorID, id string, appr
 		Detail: map[string]any{
 			"action": held.Action, "actor": held.ActorKind + "/" + held.ActorID, "target": held.Target,
 		},
+		// A closed approval will refuse the decision: one entry says so.
+		auditFirst: held.Status == store.ApprovalPending && e.now().Before(held.ExpiresAt),
 	}, func(ctx context.Context) error {
 		return e.approvals.Decide(ctx, id, status, actorKind+"/"+actorID, e.now())
 	})

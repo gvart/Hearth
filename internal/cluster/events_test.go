@@ -327,7 +327,9 @@ func TestSlowSubscriberDoesNotBlockApplies(t *testing.T) {
 // every hub publishes the device's transitions exactly once, in order, and
 // its events follow the agent to the new leader.
 func TestLeadershipChangeMidStream(t *testing.T) {
-	hubs := startHubs(t, hubOpts{offlineAfter: testOffline, flushEvery: 200 * time.Millisecond})
+	// Writes wait for an election as long as they do on a real hub: this test
+	// logs in on followers, and an election under load outlasts a shorter wait.
+	hubs := startHubs(t, hubOpts{offlineAfter: testOffline, flushEvery: 200 * time.Millisecond, forwardWait: defaultForwardWait})
 	leader := leaderHub(t, hubs)
 	setPassword(t, hubs, leader)
 	streams := map[*testHub]*sseStream{}
@@ -339,7 +341,17 @@ func TestLeadershipChangeMidStream(t *testing.T) {
 	for _, h := range hubs {
 		streams[h].waitFor(t, hub.EventDeviceOnline, 1, eventWithin)
 	}
-	eventually(t, "the agent on the leader", func() bool { return agent.url() == leader.url })
+	// Under load an election can move leadership before this point, and the
+	// agent follows it: the leader to transfer from is the one it reached.
+	eventually(t, "the agent on the leader", func() bool {
+		for _, h := range hubs {
+			if h.IsLeader() && agent.url() == h.url {
+				leader = h
+				return true
+			}
+		}
+		return false
+	})
 	before := map[*testHub]int{}
 	for _, h := range hubs {
 		before[h] = len(streams[h].of(hub.EventDeviceUpdated))
