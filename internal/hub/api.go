@@ -71,7 +71,7 @@ func newAPI(cfg Config) *api {
 	if verifier == nil {
 		verifier = verifyInProcess
 	}
-	return &api{
+	a := &api{
 		store: cfg.Store, policy: cfg.Policy, registry: reg, log: cfg.Log, now: time.Now, keepalive: sseKeepalive,
 		ca: cfg.CA, agentHosts: cfg.AgentHosts, agentPort: agentPort, httpPort: httpPort, ready: cfg.Ready, readyWait: readyWait,
 		prom:    cfg.Prometheus,
@@ -97,6 +97,10 @@ func newAPI(cfg Config) *api {
 		runner:         runnerOf(cfg.Agents),
 		guestActions:   newLoginLimiter(time.Now, guestActionBurst, guestActionEvery),
 	}
+	now := func() time.Time { return a.now() }
+	a.guestActions = newLoginLimiter(now, guestActionBurst, guestActionEvery)
+	a.guestReads = newLoginLimiter(now, guestReadBurst, guestReadEvery)
+	return a
 }
 
 // runnerOf is agents as an agentRunner, nil when there are none.
@@ -235,8 +239,13 @@ type api struct {
 	runner agentRunner
 	// guestActions limits the actions of each panel share link.
 	guestActions *loginLimiter
-	// guestBusy bounds each share link's actions running at once.
-	guestBusy guestInflight
+	// guestReads limits the panel reads of each panel share link.
+	guestReads *loginLimiter
+	// guestBusy bounds each share link's actions running at once, and
+	// guestHeld those held for approval.
+	guestBusy, guestHeld guestInflight
+	// guestStreams counts the guest event streams and wakes them.
+	guestStreams guestStreams
 }
 
 // orDefault is d, or def when d is not positive.

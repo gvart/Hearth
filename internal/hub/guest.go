@@ -37,9 +37,19 @@ const (
 	// guestActionEvery.
 	guestActionBurst = 5
 	guestActionEvery = 10 * time.Second
+	// guestReadBurst and guestReadEvery set the per-link rate of panel
+	// reads: a page refetches only when told something changed.
+	guestReadBurst = 30
+	guestReadEvery = time.Second
 	// maxGuestInflight bounds the actions of one link running or held for
-	// approval at once: each hold may notify the operator.
+	// approval at once, and maxGuestHeld those held: each hold may notify
+	// the operator.
 	maxGuestInflight = 2
+	maxGuestHeld     = 1
+	// maxGuestStreamsPerLink bounds the event streams of one link, and
+	// maxGuestStreams those of all links.
+	maxGuestStreamsPerLink = 6
+	maxGuestStreams        = 64
 	// guestActionTimeout is how long a guest's restart may take.
 	guestActionTimeout = time.Minute
 	// guestAnswerGrace is how long the hub waits past the timeout for the
@@ -92,14 +102,14 @@ type guestInflight struct {
 	n  map[string]int
 }
 
-// acquire takes a slot for link, unless it has maxGuestInflight already.
-func (g *guestInflight) acquire(link string) bool {
+// acquire takes a slot for link, unless it has limit already.
+func (g *guestInflight) acquire(link string, limit int) bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if g.n == nil {
 		g.n = map[string]int{}
 	}
-	if g.n[link] >= maxGuestInflight {
+	if g.n[link] >= limit {
 		return false
 	}
 	g.n[link]++
@@ -111,6 +121,54 @@ func (g *guestInflight) release(link string) {
 	defer g.mu.Unlock()
 	if g.n[link]--; g.n[link] <= 0 {
 		delete(g.n, link)
+	}
+}
+
+// guestStreams counts the open guest event streams, per link and in all,
+// and wakes them to check their link again when a panel or link changes.
+type guestStreams struct {
+	mu    sync.Mutex
+	n     map[string]int
+	total int
+	wake  map[chan struct{}]struct{}
+}
+
+// open takes a stream slot for link and returns its wake channel and the
+// func that frees the slot, or false when link or the hub has no slot left.
+func (g *guestStreams) open(link string) (<-chan struct{}, func(), bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.total >= maxGuestStreams || g.n[link] >= maxGuestStreamsPerLink {
+		return nil, nil, false
+	}
+	if g.n == nil {
+		g.n, g.wake = map[string]int{}, map[chan struct{}]struct{}{}
+	}
+	g.n[link]++
+	g.total++
+	ch := make(chan struct{}, 1)
+	g.wake[ch] = struct{}{}
+	return ch, func() {
+		g.mu.Lock()
+		defer g.mu.Unlock()
+		delete(g.wake, ch)
+		g.total--
+		if g.n[link]--; g.n[link] <= 0 {
+			delete(g.n, link)
+		}
+	}, true
+}
+
+// recheck wakes every stream to check its link and panel again: one was
+// changed, revoked or deleted on this hub.
+func (g *guestStreams) recheck() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	for ch := range g.wake {
+		select {
+		case ch <- struct{}{}:
+		default: // it has a wake pending already
+		}
 	}
 }
 
@@ -176,8 +234,12 @@ func (a *api) guestPage(ui http.Handler) http.Handler {
 }
 
 func (a *api) guestPanel(w http.ResponseWriter, r *http.Request) {
-	p, _, ws, ok := a.guestLink(w, r)
+	p, l, ws, ok := a.guestLink(w, r)
 	if !ok {
+		return
+	}
+	if ok, wait := a.guestReads.allow(l.ID); !ok {
+		writeRetry(w, http.StatusTooManyRequests, wait, "rate_limited", "too many requests; try again later")
 		return
 	}
 	out := GuestPanelJSON{Name: p.Name, Widgets: make([]GuestWidgetJSON, 0, len(ws))}
@@ -236,6 +298,12 @@ func (a *api) guestAction(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// Before anything else: a guest probing for widgets and actions spends
+	// its budget too.
+	if ok, wait := a.guestActions.allow(l.ID); !ok {
+		writeRetry(w, http.StatusTooManyRequests, wait, "rate_limited", "too many actions; try again later")
+		return
+	}
 	if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" {
 		writeError(w, http.StatusUnsupportedMediaType, "bad_request", "content type must be application/json")
 		return
@@ -253,17 +321,13 @@ func (a *api) guestAction(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "this panel has no such action")
 		return
 	}
-	if ok, wait := a.guestActions.allow(l.ID); !ok {
-		writeRetry(w, http.StatusTooManyRequests, wait, "rate_limited", "too many actions; try again later")
-		return
-	}
-	if !a.guestBusy.acquire(l.ID) {
+	if !a.guestBusy.acquire(l.ID, maxGuestInflight) {
 		writeError(w, http.StatusTooManyRequests, "busy", "an action of this panel is still running or waiting for approval")
 		return
 	}
 	defer a.guestBusy.release(l.ID)
 
-	err := a.runGuestAction(r.Context(), p, l, wd, act)
+	err := a.runGuestAction(r.Context(), r.PathValue("token"), p, l, wd, act)
 	switch {
 	case err == nil:
 		writeJSON(w, http.StatusOK, GuestActionResultJSON{OK: true})
@@ -271,6 +335,8 @@ func (a *api) guestAction(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "denied", "not allowed right now")
 	case errors.Is(err, ErrAgentNotConnected):
 		writeError(w, http.StatusServiceUnavailable, "device_offline", "the device is not connected")
+	case errors.Is(err, errGuestHeld):
+		writeError(w, http.StatusTooManyRequests, "pending", "an action of this panel is waiting for approval")
 	case errors.Is(err, errGuestActionsOff):
 		writeError(w, http.StatusServiceUnavailable, "unavailable", "this hub runs no actions")
 	case r.Context().Err() != nil:
@@ -299,11 +365,17 @@ func findGuestAction(ws []PanelWidgetJSON, widgetID, actionID string) (PanelWidg
 	return PanelWidgetJSON{}, PanelActionJSON{}, false
 }
 
-var errGuestActionsOff = errors.New("this hub runs no agent actions")
+var (
+	errGuestActionsOff = errors.New("this hub runs no agent actions")
+	errGuestHeld       = errors.New("an action of this panel link is held for approval already")
+)
 
 // runGuestAction runs act on wd's entity through policy, as the panel's
-// guest. The class is capped at safe whatever the stored panel says.
-func (a *api) runGuestAction(ctx context.Context, p store.Panel, l store.PanelLink, wd PanelWidgetJSON, act PanelActionJSON) error {
+// guest, whose link is token. The class is capped at safe whatever the
+// stored panel says. A link has at most maxGuestHeld actions held for
+// approval, and a held one runs only if, once approved, the link and the
+// action are still there.
+func (a *api) runGuestAction(ctx context.Context, token string, p store.Panel, l store.PanelLink, wd PanelWidgetJSON, act PanelActionJSON) error {
 	action := policy.Action(act.Action)
 	if action != policy.DeviceRestart || wd.Kind != widgetDevice {
 		// checkPanel stores no other: refuse rather than guess.
@@ -317,11 +389,23 @@ func (a *api) runGuestAction(ctx context.Context, p store.Panel, l store.PanelLi
 		Restart: &agentv1.RestartService{Manager: manager, Name: name},
 	}}
 	device := wd.Entity
-	return a.policy.Do(policy.WithScope(ctx, policy.Safe), policy.Request{
+	preq := policy.Request{
 		ActorKind: policy.ActorGuest, ActorID: "panel/" + p.ID, Action: action, Target: device,
 		Detail:   map[string]any{"service": act.Service, "panel": p.ID, "link": l.ID, "widget": wd.ID},
 		Precheck: func(ctx context.Context) error { return a.runner.Check(ctx, device, req) },
-	}, func(ctx context.Context) error {
+	}
+	if decision, _ := a.policy.Check(preq); decision == policy.Confirm {
+		if !a.guestHeld.acquire(l.ID, maxGuestHeld) {
+			return errGuestHeld
+		}
+		defer a.guestHeld.release(l.ID)
+	}
+	return a.policy.Do(policy.WithScope(ctx, policy.Safe), preq, func(ctx context.Context) error {
+		// Approval may come long after the request: the link may be revoked
+		// or the panel changed by then.
+		if err := a.stillOffered(ctx, token, p.ID, wd, act); err != nil {
+			return err
+		}
 		req.Timeout = durationpb.New(guestActionTimeout)
 		ctx, cancel := context.WithTimeout(ctx, guestActionTimeout+guestAnswerGrace)
 		defer cancel()
@@ -339,18 +423,43 @@ func (a *api) runGuestAction(ctx context.Context, p store.Panel, l store.PanelLi
 	})
 }
 
+// stillOffered checks that token still opens panel panelID and that it
+// still offers act on wd, as it did when the guest asked; it returns an
+// error matching policy.ErrDenied when not.
+func (a *api) stillOffered(ctx context.Context, token, panelID string, wd PanelWidgetJSON, act PanelActionJSON) error {
+	p, _, ws, err := a.checkGuestLink(ctx, token)
+	if isGuestLinkGone(err) {
+		return fmt.Errorf("panel link no longer valid: %w", policy.ErrDenied)
+	}
+	if err != nil {
+		return err
+	}
+	nwd, nact, found := findGuestAction(ws, wd.ID, act.ID)
+	if p.ID != panelID || !found || nwd.Kind != wd.Kind || nwd.Entity != wd.Entity || nact != act {
+		return fmt.Errorf("panel %s no longer offers this action: %w", panelID, policy.ErrDenied)
+	}
+	return nil
+}
+
 // guestEvents streams a bare "changed" event whenever a device on the
-// link's panel changes, or, seen at a keepalive, the panel itself, so the
-// page refetches the panel. The link is
-// checked again on every event and keepalive: a revoked or expired link, or
-// a deleted panel, ends the stream.
+// link's panel changes, or the panel itself, so the page refetches the
+// panel. The link is checked again on every event and keepalive, and when
+// a panel or link changes on this hub: a revoked or expired link, or a
+// deleted panel, ends the stream. A link has at most
+// maxGuestStreamsPerLink streams open, and the hub maxGuestStreams.
 func (a *api) guestEvents(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	token := r.PathValue("token")
-	p, _, ws, ok := a.guestLink(w, r)
+	p, l, ws, ok := a.guestLink(w, r)
 	if !ok {
 		return
 	}
+	wake, closeStream, ok := a.guestStreams.open(l.ID)
+	if !ok {
+		writeRetry(w, http.StatusTooManyRequests, a.keepalive, "too_many_streams", "too many open pages of this panel")
+		return
+	}
+	defer closeStream()
 	updated := p.UpdatedAt
 	rc := http.NewResponseController(w)
 	ch, unsubscribe := a.registry.Subscribe()
@@ -381,7 +490,17 @@ func (a *api) guestEvents(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			_, err = fmt.Fprint(w, "event: changed\ndata: {}\n\n")
+		case <-wake:
+			if p, _, ws, err = a.checkGuestLink(ctx, token); err != nil {
+				return
+			}
+			if p.UpdatedAt.Equal(updated) {
+				continue
+			}
+			updated = p.UpdatedAt
+			_, err = fmt.Fprint(w, "event: changed\ndata: {}\n\n")
 		case <-keepalive.C:
+			// A change on another hub of the cluster wakes no stream here.
 			if p, _, ws, err = a.checkGuestLink(ctx, token); err != nil {
 				return
 			}

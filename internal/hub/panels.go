@@ -363,6 +363,7 @@ func (a *api) updatePanel(w http.ResponseWriter, r *http.Request) {
 		a.writePanelError(w, r, "update panel", err)
 		return
 	}
+	a.guestStreams.recheck()
 	a.writePanel(w, r, http.StatusOK, id)
 }
 
@@ -375,6 +376,7 @@ func (a *api) deletePanel(w http.ResponseWriter, r *http.Request) {
 		a.writePanelError(w, r, "delete panel", err)
 		return
 	}
+	a.guestStreams.recheck()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -389,6 +391,10 @@ func (a *api) createPanelLink(w http.ResponseWriter, r *http.Request) {
 		// ExpiresIn is a Go duration, as "24h"; empty for a link that never
 		// expires.
 		ExpiresIn string `json:"expires_in"`
+	}
+	if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" {
+		writeError(w, http.StatusUnsupportedMediaType, "bad_request", "content type must be application/json")
+		return
 	}
 	if r.ContentLength != 0 {
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<10)).Decode(&body); err != nil {
@@ -433,6 +439,7 @@ func (a *api) revokePanelLink(w http.ResponseWriter, r *http.Request) {
 		a.writePanelError(w, r, "revoke panel link", err)
 		return
 	}
+	a.guestStreams.recheck()
 	w.WriteHeader(http.StatusNoContent)
 }
 

@@ -28,7 +28,8 @@ addresses, labels, facts or anything else.
 
 Only restarts (`device.restart`, class `safe`) can be offered. A panel can never allow a dangerous
 action: the hub refuses to save one that lists one (`400 dangerous_action`), and policy admits the
-`guest` actor to no dangerous action.
+`guest` actor to no dangerous action. A `policy.yaml` that sets `actors: {guest: {dangerous: ...}}`
+to anything but `deny` fails to load.
 
 Saving, deleting and sharing a panel are the policy actions `panel.save`, `panel.delete`,
 `panel.link.create` and `panel.link.revoke` (class `safe`, signed-in admin only), each in the audit
@@ -49,7 +50,8 @@ You get two forms of it:
 A panel can have several links, for example one per screen and one for a visitor. Each lists its
 status on the panel (active, expired or revoked). **Revoke** one when it is no longer needed: from
 then on, as for an expired link or a deleted panel, the page and every guest request answer `404`,
-and an open page stops updating.
+and an open page stops updating at once. A restart still waiting for approval no longer runs, even
+if you approve it; nor does one whose action you removed from the panel meanwhile.
 
 Anyone who has the link can use it, so treat it like a key: share it only with whom should see the
 panel, and prefer an expiry for visitors. Over plain HTTP the link crosses your LAN in the clear; use
@@ -65,8 +67,12 @@ the hub's [HTTPS address](https.md) where that matters.
     restart is **held for approval** and runs only once you approve it (the button says it is
     waiting); `deny` refuses them all;
   - the device's capability ceiling is checked again, by the hub and by the agent;
-  - a link takes at most 5 actions in a burst, then one every 10 seconds, with at most 2 running or
-    waiting for approval at a time (`429` past either).
+  - a link takes at most 5 actions in a burst, then one every 10 seconds, counting requests for
+    actions the panel does not have, with at most 2 running or waiting for approval at a time and
+    at most 1 waiting for approval (`429` past any of them).
+
+A link may also read its panel 30 times in a burst, then once a second, and keep at most 6 pages
+open on the change stream; the hub keeps at most 64 open for all links (`429` past either).
 
 A guest never names a device or a service: the page sends the IDs of the widget and the action the
 hub gave them, and the hub takes the device and service from the saved panel.
@@ -100,7 +106,7 @@ The admin's endpoints, behind the session cookie:
 | `GET /api/v1/panels`                       | Every panel, with its links (never a token)   |
 | `POST /api/v1/panels`                      | Create a panel: `{"name", "widgets"}`         |
 | `GET`, `PUT`, `DELETE /api/v1/panels/{id}` | Read, replace or delete one                   |
-| `POST /api/v1/panels/{id}/links`           | Create a link: `{"expires_in": "24h"}` or `{}`; the answer holds the token, once |
+| `POST /api/v1/panels/{id}/links`           | Create a link, as JSON: `{"expires_in": "24h"}` or `{}`; the answer holds the token, once |
 | `DELETE /api/v1/panels/{id}/links/{link}`  | Revoke a link                                 |
 
 A widget is `{"kind": "device", "entity": "<device id>", "actions": [{"action": "device.restart",

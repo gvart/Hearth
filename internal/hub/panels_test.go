@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -86,6 +87,9 @@ func (f *panelFixture) createPanel(t *testing.T, body string) PanelJSON {
 // share creates a share link of panel id and returns its secret.
 func (f *panelFixture) share(t *testing.T, id, body string) CreatedPanelLinkJSON {
 	t.Helper()
+	if body == "" {
+		body = "{}"
+	}
 	resp := f.do(t, http.MethodPost, "/api/v1/panels/"+id+"/links", body, f.cookie)
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create link = %d %s", resp.StatusCode, resp.body)
@@ -222,8 +226,14 @@ func TestPanelAdminLifecycle(t *testing.T) {
 	if r := f.do(t, http.MethodPost, "/api/v1/panels/"+p.ID+"/links", `{"expires_in": "-1h"}`, f.cookie); r.StatusCode != http.StatusBadRequest {
 		t.Errorf("negative expiry = %d", r.StatusCode)
 	}
-	if r := f.do(t, http.MethodPost, "/api/v1/panels/nope/links", "", f.cookie); r.StatusCode != http.StatusNotFound {
+	if r := f.do(t, http.MethodPost, "/api/v1/panels/nope/links", "{}", f.cookie); r.StatusCode != http.StatusNotFound {
 		t.Errorf("link of an unknown panel = %d", r.StatusCode)
+	}
+	// A link is made by JSON only, as a panel is: no form post makes one.
+	for _, ct := range []string{"", "text/plain", "application/x-www-form-urlencoded"} {
+		if r := f.send(t, http.MethodPost, "/api/v1/panels/"+p.ID+"/links", ct, "{}", f.cookie); r.StatusCode != http.StatusUnsupportedMediaType {
+			t.Errorf("link with content type %q = %d, want 415", ct, r.StatusCode)
+		}
 	}
 
 	if r := f.do(t, http.MethodDelete, "/api/v1/panels/"+p.ID+"/links/"+created.Link.ID, "", f.cookie); r.StatusCode != http.StatusNoContent {
@@ -590,15 +600,12 @@ func awaitApproval(t *testing.T, st *store.Store) store.Approval {
 	return store.Approval{}
 }
 
-func TestGuestEvents(t *testing.T) {
-	f := newPanelFixture(t)
-	f.api.keepalive = 50 * time.Millisecond
-	p := f.createPanel(t, restartPanel)
-	link := f.share(t, p.ID, "")
-
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, f.srv.URL+"/api/v1/guest/"+link.Token+"/events", nil)
+// stream opens the event stream of share link token and returns a func that
+// waits until the stream has said want, or "<EOF>" for its end, and returns
+// what it said.
+func (f *panelFixture) stream(ctx context.Context, t *testing.T, token string) func(want string) string {
+	t.Helper()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, f.srv.URL+"/api/v1/guest/"+token+"/events", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -606,7 +613,7 @@ func TestGuestEvents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	t.Cleanup(func() { _ = resp.Body.Close() })
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d", resp.StatusCode)
 	}
@@ -625,24 +632,39 @@ func TestGuestEvents(t *testing.T) {
 			}
 		}
 	}()
-	await := func(want string) string {
+	var got strings.Builder
+	return func(want string) string {
 		t.Helper()
-		var got strings.Builder
 		for {
+			if strings.Contains(got.String(), want) {
+				out := got.String()
+				got.Reset()
+				return out
+			}
 			select {
 			case s, ok := <-lines:
 				if !ok {
-					return got.String() + "<EOF>"
+					got.WriteString("<EOF>")
+					lines = nil
+					continue
 				}
 				got.WriteString(s)
-				if strings.Contains(got.String(), want) {
-					return got.String()
-				}
 			case <-ctx.Done():
 				t.Fatalf("waiting for %q, got %q", want, got.String())
 			}
 		}
 	}
+}
+
+func TestGuestEvents(t *testing.T) {
+	f := newPanelFixture(t)
+	f.api.keepalive = 50 * time.Millisecond
+	p := f.createPanel(t, restartPanel)
+	link := f.share(t, p.ID, "")
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	await := f.stream(ctx, t, link.Token)
 	await(": subscribed")
 	// A device not on the panel says nothing; one on it says "changed".
 	if err := f.api.registry.Heartbeat(ctx, "nas", time.Hour); err != nil {
@@ -666,5 +688,255 @@ func TestGuestEvents(t *testing.T) {
 	}
 	if got := await("<EOF>"); !strings.HasSuffix(got, "<EOF>") {
 		t.Errorf("stream did not end: %q", got)
+	}
+}
+
+// TestGuestStreamsEndAtOnce: revoking a link or deleting a panel ends its
+// open streams at once, and an edit says "changed" at once, not at the next
+// keepalive.
+func TestGuestStreamsEndAtOnce(t *testing.T) {
+	f := newPanelFixture(t)
+	f.api.keepalive = time.Hour
+	p := f.createPanel(t, restartPanel)
+	revoked, kept := f.share(t, p.ID, ""), f.share(t, p.ID, "")
+	other := f.createPanel(t, restartPanel)
+	deleted := f.share(t, other.ID, "")
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	awaitRevoked, awaitKept, awaitDeleted := f.stream(ctx, t, revoked.Token), f.stream(ctx, t, kept.Token), f.stream(ctx, t, deleted.Token)
+	for _, await := range []func(string) string{awaitRevoked, awaitKept, awaitDeleted} {
+		await(": subscribed")
+	}
+
+	time.Sleep(5 * time.Millisecond) // a later updated_at
+	if r := f.do(t, http.MethodPut, "/api/v1/panels/"+p.ID, `{"name": "Renamed", "widgets": []}`, f.cookie); r.StatusCode != http.StatusOK {
+		t.Fatal(r.StatusCode)
+	}
+	awaitKept("event: changed")
+	awaitRevoked("event: changed")
+
+	if r := f.do(t, http.MethodDelete, "/api/v1/panels/"+p.ID+"/links/"+revoked.Link.ID, "", f.cookie); r.StatusCode != http.StatusNoContent {
+		t.Fatal(r.StatusCode)
+	}
+	awaitRevoked("<EOF>")
+	if r := f.do(t, http.MethodDelete, "/api/v1/panels/"+other.ID, "", f.cookie); r.StatusCode != http.StatusNoContent {
+		t.Fatal(r.StatusCode)
+	}
+	awaitDeleted("<EOF>")
+	// The other link's stream goes on.
+	time.Sleep(5 * time.Millisecond)
+	if r := f.do(t, http.MethodPut, "/api/v1/panels/"+p.ID, `{"name": "Again", "widgets": []}`, f.cookie); r.StatusCode != http.StatusOK {
+		t.Fatal(r.StatusCode)
+	}
+	if got := awaitKept("event: changed"); strings.Contains(got, "<EOF>") {
+		t.Errorf("the other link's stream ended: %q", got)
+	}
+}
+
+// TestGuestStreamCaps: a link has at most maxGuestStreamsPerLink streams, and
+// the hub maxGuestStreams.
+func TestGuestStreamCaps(t *testing.T) {
+	f := newPanelFixture(t)
+	p := f.createPanel(t, restartPanel)
+	link, other := f.share(t, p.ID, ""), f.share(t, p.ID, "")
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	for range maxGuestStreamsPerLink {
+		f.stream(ctx, t, link.Token)
+	}
+	r := f.raw(t, http.MethodGet, "/api/v1/guest/"+link.Token+"/events", "", nil)
+	if r.StatusCode != http.StatusTooManyRequests || r.Header.Get("Retry-After") == "" {
+		t.Fatalf("stream past the cap = %d %s", r.StatusCode, r.body)
+	}
+	// Another link of the same panel has its own.
+	f.stream(ctx, t, other.Token)
+
+	// The hub's cap holds across links, and a closed stream frees its slot.
+	var g guestStreams
+	var closers []func()
+	for i := range maxGuestStreams {
+		_, done, ok := g.open(fmt.Sprintf("link-%d", i/maxGuestStreamsPerLink))
+		if !ok {
+			t.Fatalf("stream %d refused", i)
+		}
+		closers = append(closers, done)
+	}
+	if _, _, ok := g.open("fresh"); ok {
+		t.Fatal("a stream past the hub's cap was opened")
+	}
+	closers[0]()
+	if _, _, ok := g.open("fresh"); !ok {
+		t.Fatal("a freed slot was not reused")
+	}
+}
+
+// TestGuestHeldActionRechecked: a held action runs once approved only if its
+// link still opens the panel and the panel still offers it.
+func TestGuestHeldActionRechecked(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		change func(t *testing.T, f *panelFixture, p PanelJSON, link CreatedPanelLinkJSON)
+		want   int
+	}{
+		{"unchanged", func(*testing.T, *panelFixture, PanelJSON, CreatedPanelLinkJSON) {}, http.StatusOK},
+		{"link revoked", func(t *testing.T, f *panelFixture, p PanelJSON, link CreatedPanelLinkJSON) {
+			if r := f.do(t, http.MethodDelete, "/api/v1/panels/"+p.ID+"/links/"+link.Link.ID, "", f.cookie); r.StatusCode != http.StatusNoContent {
+				t.Fatal(r.StatusCode)
+			}
+		}, http.StatusForbidden},
+		{"panel deleted", func(t *testing.T, f *panelFixture, p PanelJSON, _ CreatedPanelLinkJSON) {
+			if r := f.do(t, http.MethodDelete, "/api/v1/panels/"+p.ID, "", f.cookie); r.StatusCode != http.StatusNoContent {
+				t.Fatal(r.StatusCode)
+			}
+		}, http.StatusForbidden},
+		{"action removed", func(t *testing.T, f *panelFixture, p PanelJSON, _ CreatedPanelLinkJSON) {
+			body := `{"name": "p", "widgets": [{"id": "` + p.Widgets[0].ID + `", "kind": "device", "entity": "pi", "actions": []}]}`
+			if r := f.do(t, http.MethodPut, "/api/v1/panels/"+p.ID, body, f.cookie); r.StatusCode != http.StatusOK {
+				t.Fatal(r.StatusCode)
+			}
+		}, http.StatusForbidden},
+		{"widget moved to another device", func(t *testing.T, f *panelFixture, p PanelJSON, _ CreatedPanelLinkJSON) {
+			body := `{"name": "p", "widgets": [{"id": "` + p.Widgets[0].ID + `", "kind": "device", "entity": "nas",
+				"actions": [{"action": "device.restart", "service": "docker:nginx"}]}]}`
+			if r := f.do(t, http.MethodPut, "/api/v1/panels/"+p.ID, body, f.cookie); r.StatusCode != http.StatusOK {
+				t.Fatal(r.StatusCode)
+			}
+		}, http.StatusForbidden},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newPanelFixture(t, func(c *Config) {
+				c.Policy = policy.NewWithConfig(c.Store.Audit(), c.Store.Approvals(), policy.Config{
+					Actors: map[string]map[policy.Class]policy.Mode{policy.ActorGuest: {policy.Safe: policy.ModeConfirm}},
+				})
+			})
+			p := f.createPanel(t, restartPanel)
+			link := f.share(t, p.ID, "")
+			w := p.Widgets[0]
+			body := `{"widget": "` + w.ID + `", "action": "` + w.Actions[0].ID + `"}`
+
+			done := make(chan apiResp, 1)
+			go func() { done <- f.raw(t, http.MethodPost, "/api/v1/guest/"+link.Token+"/actions", body, nil) }()
+			ap := awaitApproval(t, f.st)
+			tt.change(t, f, p, link)
+			if err := f.st.Approvals().Decide(t.Context(), ap.ID, store.ApprovalApproved, "web/test", time.Now()); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case r := <-done:
+				if r.StatusCode != tt.want {
+					t.Fatalf("status = %d %s, want %d", r.StatusCode, r.body, tt.want)
+				}
+			case <-time.After(10 * time.Second):
+				t.Fatal("the action never answered")
+			}
+			runs := f.runner.runs()
+			if want := tt.want == http.StatusOK; (len(runs) == 1) != want {
+				t.Fatalf("ran %v", runs)
+			}
+		})
+	}
+}
+
+// TestGuestOneHeldPerLink: a link has at most one action waiting for
+// approval; another link of the same panel has its own.
+func TestGuestOneHeldPerLink(t *testing.T) {
+	f := newPanelFixture(t, func(c *Config) {
+		c.Policy = policy.NewWithConfig(c.Store.Audit(), c.Store.Approvals(), policy.Config{
+			Actors: map[string]map[policy.Class]policy.Mode{policy.ActorGuest: {policy.Safe: policy.ModeConfirm}},
+		})
+	})
+	p := f.createPanel(t, restartPanel)
+	link, other := f.share(t, p.ID, ""), f.share(t, p.ID, "")
+	w := p.Widgets[0]
+	body := `{"widget": "` + w.ID + `", "action": "` + w.Actions[0].ID + `"}`
+
+	done := make(chan apiResp, 2)
+	go func() { done <- f.raw(t, http.MethodPost, "/api/v1/guest/"+link.Token+"/actions", body, nil) }()
+	awaitApproval(t, f.st)
+	r := f.raw(t, http.MethodPost, "/api/v1/guest/"+link.Token+"/actions", body, nil)
+	if r.StatusCode != http.StatusTooManyRequests || !strings.Contains(string(r.body), `"pending"`) {
+		t.Fatalf("second hold = %d %s, want 429 pending", r.StatusCode, r.body)
+	}
+	go func() { done <- f.raw(t, http.MethodPost, "/api/v1/guest/"+other.Token+"/actions", body, nil) }()
+	deadline := time.Now().Add(5 * time.Second)
+	var aps []store.Approval
+	for len(aps) < 2 && time.Now().Before(deadline) {
+		var err error
+		if aps, err = f.st.Approvals().List(t.Context(), store.ApprovalPending, 10); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if len(aps) != 2 {
+		t.Fatalf("pending approvals = %d, want 2", len(aps))
+	}
+	for _, ap := range aps {
+		if err := f.st.Approvals().Decide(t.Context(), ap.ID, store.ApprovalDenied, "web/test", time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for range 2 {
+		if r := <-done; r.StatusCode != http.StatusForbidden {
+			t.Errorf("denied hold = %d %s", r.StatusCode, r.body)
+		}
+	}
+	// The slot is free again.
+	go func() { done <- f.raw(t, http.MethodPost, "/api/v1/guest/"+link.Token+"/actions", body, nil) }()
+	ap := awaitApproval(t, f.st)
+	if err := f.st.Approvals().Decide(t.Context(), ap.ID, store.ApprovalDenied, "web/test", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if r := <-done; r.StatusCode != http.StatusForbidden {
+		t.Errorf("third hold = %d %s", r.StatusCode, r.body)
+	}
+}
+
+// TestGuestRateLimits: probes for unknown widgets spend a link's action
+// budget, panel reads have a budget too, and both refill on the api's clock.
+func TestGuestRateLimits(t *testing.T) {
+	f := newPanelFixture(t)
+	var mu sync.Mutex
+	now := time.Now()
+	f.api.now = func() time.Time { mu.Lock(); defer mu.Unlock(); return now }
+	advance := func(d time.Duration) { mu.Lock(); defer mu.Unlock(); now = now.Add(d) }
+	p := f.createPanel(t, restartPanel)
+	link, other := f.share(t, p.ID, ""), f.share(t, p.ID, "")
+	actions := "/api/v1/guest/" + link.Token + "/actions"
+
+	probe := `{"widget": "nope", "action": "nope"}`
+	for i := range guestActionBurst {
+		if r := f.raw(t, http.MethodPost, actions, probe, nil); r.StatusCode != http.StatusNotFound {
+			t.Fatalf("probe %d = %d", i, r.StatusCode)
+		}
+	}
+	if r := f.raw(t, http.MethodPost, actions, probe, nil); r.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("probe past the burst = %d", r.StatusCode)
+	}
+	w := p.Widgets[0]
+	take := `{"widget": "` + w.ID + `", "action": "` + w.Actions[0].ID + `"}`
+	if r := f.raw(t, http.MethodPost, actions, take, nil); r.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("action past the burst = %d", r.StatusCode)
+	}
+	if r := f.raw(t, http.MethodPost, "/api/v1/guest/"+other.Token+"/actions", probe, nil); r.StatusCode != http.StatusNotFound {
+		t.Fatalf("another link's probe = %d, want its own budget", r.StatusCode)
+	}
+	advance(guestActionEvery)
+	if r := f.raw(t, http.MethodPost, actions, take, nil); r.StatusCode != http.StatusOK {
+		t.Fatalf("action after a refill = %d %s", r.StatusCode, r.body)
+	}
+
+	read := "/api/v1/guest/" + link.Token
+	for i := range guestReadBurst {
+		if r := f.raw(t, http.MethodGet, read, "", nil); r.StatusCode != http.StatusOK {
+			t.Fatalf("read %d = %d", i, r.StatusCode)
+		}
+	}
+	if r := f.raw(t, http.MethodGet, read, "", nil); r.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("read past the burst = %d", r.StatusCode)
+	}
+	advance(guestReadEvery)
+	if r := f.raw(t, http.MethodGet, read, "", nil); r.StatusCode != http.StatusOK {
+		t.Fatalf("read after a refill = %d", r.StatusCode)
 	}
 }
