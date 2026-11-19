@@ -103,6 +103,10 @@ running it.
 - **MCP clients** (AI assistants): each has its own bearer token, stored as a SHA-256 hash and
   checked on every request, so a revocation takes effect at once. The token's scope caps the class
   of action it may request; dangerous actions are held for approval by default. See [MCP](mcp.md).
+- **Dashboards** (Homepage): a dashboard token is read-only. It is a bearer token for the
+  dashboard summary alone (device counts and states, no addresses, facts or labels), stored as a
+  SHA-256 hash, and created and revoked by a signed-in admin through policy. See
+  [Homepage](homepage.md).
 - **Notifications**: channel credentials (ntfy tokens, Telegram bot tokens) stay in the channels
   file on the hub; automations, the UI, run history and the audit log name a channel only.
 - **Webhooks**: errors and the audit log name only a webhook URL's scheme and host, as URLs and

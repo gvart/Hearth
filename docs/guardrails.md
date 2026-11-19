@@ -18,10 +18,13 @@ of automations, which are denied unless granted, and dangerous actions of MCP cl
 for approval ([mcp.md](mcp.md)). The holder of a panel's share link is the actor `guest`
 ([panels.md](panels.md)): it may only take the read and safe actions a panel allows, and setting
 `actors: {guest: {safe: confirm}}` holds each of them for approval. A file that sets
-`actors.guest.dangerous` to anything but `deny` fails to load.
+`actors.guest.dangerous` to anything but `deny` fails to load. A dashboard such as Homepage is
+the actor `dashboard` ([homepage.md](homepage.md)): its token reads the dashboard summary
+(`dashboard.read`, class `read`) and nothing else, and `actors: {dashboard: {read: deny}}` turns
+dashboards off.
 
 ```yaml
-classes:                 # for every operator client: admin (CLI), web (UI), automation, mcp, guest
+classes:                 # for every operator client: admin (CLI), web (UI), automation, mcp, guest, dashboard
   read: allow
   safe: allow
   dangerous: confirm     # allow | confirm | deny
