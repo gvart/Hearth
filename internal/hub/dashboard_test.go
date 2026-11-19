@@ -401,4 +401,17 @@ func TestDashboardIsolation(t *testing.T) {
 			})
 		}
 	}
+	// Nor does the dashboard token itself, other than as a bearer token.
+	for how, h := range map[string]http.Header{
+		"as session cookie":        {"Cookie": {SessionCookie + "=" + dash}},
+		"as secure session cookie": {"Cookie": {SecureSessionCookie + "=" + dash}},
+		"as api key header":        {"X-Api-Key": {dash}},
+		"as basic auth":            {"Authorization": {"Basic " + dash}},
+	} {
+		t.Run("dashboard token "+how, func(t *testing.T) {
+			if r := f.raw(t, http.MethodGet, dashboardPath, "", h); r.StatusCode != http.StatusUnauthorized {
+				t.Fatalf("summary = %d %s, want 401", r.StatusCode, r.body)
+			}
+		})
+	}
 }

@@ -51,9 +51,8 @@ Add this to Homepage's `services.yaml`. Put in your hub's address and the token:
 Homepage sends the request from its own server, not from your browser, so the hub's address must be
 reachable from the Homepage container. If Homepage runs in Docker on the hub's host, use
 `host.docker.internal`, not `localhost`. On Linux, also add
-`extra_hosts: ["host.docker.internal:host-gateway"]` to the Homepage container. The hub's HTTPS address (`https://hearth.lan:7443`) also
-works if Homepage trusts the hub CA (see [HTTPS](https.md)). The screenshot above is from Homepage
-v2.7.0.
+`extra_hosts: ["host.docker.internal:host-gateway"]` to the Homepage container. The screenshot
+above is from Homepage v2.7.0, reading a hub over plain HTTP.
 
 ## The summary
 
