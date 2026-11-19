@@ -197,7 +197,7 @@ func (c *Client) do(ctx context.Context, method, path string, q url.Values, toke
 	if body != nil {
 		rd = bytes.NewReader(body)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, u.String(), rd) //nolint:gosec // the operator-configured Beszel URL
+	req, err := http.NewRequestWithContext(ctx, method, u.String(), rd)
 	if err != nil {
 		return err
 	}
@@ -209,7 +209,7 @@ func (c *Client) do(ctx context.Context, method, path string, q url.Values, toke
 		// PocketBase takes the token as is, without a scheme.
 		req.Header.Set("Authorization", token)
 	}
-	resp, err := c.hc.Do(req) //nolint:gosec // as above
+	resp, err := c.hc.Do(req)
 	if err != nil {
 		return err
 	}

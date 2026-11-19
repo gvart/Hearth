@@ -132,13 +132,13 @@ type apiError struct {
 func (c *Client) get(ctx context.Context, path string, out any) error {
 	u := *c.base
 	u.Path += path
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil) //nolint:gosec // the operator-configured NetAlertX URL
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.token)
-	resp, err := c.hc.Do(req) //nolint:gosec // as above
+	resp, err := c.hc.Do(req)
 	if err != nil {
 		return err
 	}

@@ -30,7 +30,7 @@ import (
 // Credentials the mock accepts by default.
 const (
 	Email    = "hearth@example.com"
-	Password = "correct horse battery staple" //nolint:gosec // a made-up password for the mock
+	Password = "correct horse battery staple"
 )
 
 // token is the auth token the mock hands out.
