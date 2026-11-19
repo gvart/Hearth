@@ -1,0 +1,27 @@
+cmd/hearth/hub_backup_test.go
+  s_344993999c180f::t_5e223c52568e8e 64-67
+internal/policy/policy.go
+  s_344993999c180f::t_5e223c52568e8e 170-171
+internal/backup/schedule.go
+  s_344993999c180f::t_5e223c52568e8e 34-35,136-138,140-141,151,176,224-225,232-234,239,241
+cmd/hearth/hub_backup.go
+  s_344993999c180f::t_5e223c52568e8e 23-26,122-123
+internal/backup/schedule_bounds_test.go
+  s_344993999c180f::t_53185786fcdbc5 1-90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2da432ae71517dfc056ea1de3d78cd1b0d5c8111",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
