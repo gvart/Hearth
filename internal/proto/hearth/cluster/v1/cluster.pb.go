@@ -37,6 +37,9 @@ type JoinRequest struct {
 	// schema_version is the newest store schema version the joining binary
 	// supports. It must be at least the cluster's current schema version.
 	SchemaVersion int64 `protobuf:"varint,5,opt,name=schema_version,json=schemaVersion,proto3" json:"schema_version,omitempty"`
+	// cluster_epochs is true when the joining binary keeps a cluster epoch in its
+	// certificates. A cluster restored from a backup refuses a hub without it.
+	ClusterEpochs bool `protobuf:"varint,6,opt,name=cluster_epochs,json=clusterEpochs,proto3" json:"cluster_epochs,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -104,6 +107,13 @@ func (x *JoinRequest) GetSchemaVersion() int64 {
 		return x.SchemaVersion
 	}
 	return 0
+}
+
+func (x *JoinRequest) GetClusterEpochs() bool {
+	if x != nil {
+		return x.ClusterEpochs
+	}
+	return false
 }
 
 // JoinResponse is the new hub's identity and the cluster's CA.
@@ -846,13 +856,14 @@ var File_hearth_cluster_v1_cluster_proto protoreflect.FileDescriptor
 
 const file_hearth_cluster_v1_cluster_proto_rawDesc = "" +
 	"\n" +
-	"\x1fhearth/cluster/v1/cluster.proto\x12\x11hearth.cluster.v1\"\xa5\x01\n" +
+	"\x1fhearth/cluster/v1/cluster.proto\x12\x11hearth.cluster.v1\"\xcc\x01\n" +
 	"\vJoinRequest\x12!\n" +
 	"\ftoken_secret\x18\x01 \x01(\tR\vtokenSecret\x12\x17\n" +
 	"\anode_id\x18\x02 \x01(\tR\x06nodeId\x12!\n" +
 	"\fraft_address\x18\x03 \x01(\tR\vraftAddress\x12\x10\n" +
 	"\x03csr\x18\x04 \x01(\fR\x03csr\x12%\n" +
-	"\x0eschema_version\x18\x05 \x01(\x03R\rschemaVersion\"\xaa\x01\n" +
+	"\x0eschema_version\x18\x05 \x01(\x03R\rschemaVersion\x12%\n" +
+	"\x0ecluster_epochs\x18\x06 \x01(\bR\rclusterEpochs\"\xaa\x01\n" +
 	"\fJoinResponse\x12 \n" +
 	"\vcertificate\x18\x01 \x01(\fR\vcertificate\x12%\n" +
 	"\x0eca_certificate\x18\x02 \x01(\fR\rcaCertificate\x12\x15\n" +

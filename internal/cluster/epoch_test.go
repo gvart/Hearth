@@ -10,8 +10,11 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"connectrpc.com/connect"
 
 	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/store"
@@ -148,6 +151,81 @@ func TestForwardClientRefusesAnotherEpoch(t *testing.T) {
 			}
 		})
 	}
+}
+
+// restoredLeader starts a one-hub cluster the way a restored hub starts it.
+func restoredLeader(t *testing.T, ca *pki.CA) *testNode {
+	t.Helper()
+	dir := t.TempDir()
+	if err := WriteNewEpoch(dir); err != nil {
+		t.Fatal(err)
+	}
+	n := startNode(t, ca, "n1", dir, "", true)
+	leaderOf(t, n)
+	return n
+}
+
+// TestRestoredClusterRefusesAHubWithoutEpochs: such a hub would get a server
+// certificate without the epoch, and writes would stop once it led the cluster.
+func TestRestoredClusterRefusesAHubWithoutEpochs(t *testing.T) {
+	ca := newTestCA(t)
+	n1 := restoredLeader(t, ca)
+	srv := joinServer(t, n1, ca)
+	token := joinToken(t, n1, ca, time.Now().Add(time.Hour))
+	params := JoinParams{URL: srv.URL, Token: token, DataDir: t.TempDir(), NodeID: "old", RaftAddress: freeAddr(t), noClusterEpochs: true}
+	err := Join(t.Context(), params)
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "upgrade") {
+		t.Fatalf("Join = %v, want a failed precondition telling the operator to upgrade", err)
+	}
+	st, err := n1.Status()
+	if err != nil || len(st.Peers) != 1 {
+		t.Fatalf("peers = %+v, %v; the refused hub must not be added", st.Peers, err)
+	}
+	// The refusal did not burn the token: the upgraded hub uses it.
+	params.DataDir, params.noClusterEpochs = t.TempDir(), false
+	if err := Join(t.Context(), params); err != nil {
+		t.Fatalf("Join after the upgrade: %v", err)
+	}
+}
+
+func TestNeverRestoredClusterAcceptsOlderHubs(t *testing.T) {
+	ca := newTestCA(t)
+	n1 := startNode(t, ca, "n1", "", "", true)
+	leaderOf(t, n1)
+	srv := joinServer(t, n1, ca)
+	dir := t.TempDir()
+	err := Join(t.Context(), JoinParams{
+		URL: srv.URL, Token: joinToken(t, n1, ca, time.Now().Add(time.Hour)),
+		DataDir: dir, NodeID: "old", RaftAddress: freeAddr(t), noClusterEpochs: true,
+	})
+	if err != nil {
+		t.Fatalf("Join: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, EpochFile)); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("a hub of a never-restored cluster got an epoch file: %v", err)
+	}
+}
+
+// TestJoinedHubKeepsItsEpochWithoutItsCertificate: a hub that lost node.crt
+// issues itself a new one, which must stay in the cluster's epoch.
+func TestJoinedHubKeepsItsEpochWithoutItsCertificate(t *testing.T) {
+	ca := newTestCA(t)
+	n1 := restoredLeader(t, ca)
+	srv := joinServer(t, n1, ca)
+	n2 := joinAndStart(t, srv.URL, joinToken(t, n1, ca, time.Now().Add(time.Hour)), "n2")
+	dir, addr := n2.dir, n2.Addr()
+	n2.stop()
+	for _, name := range []string{nodeCertFile, nodeKeyFile} {
+		if err := os.Remove(filepath.Join(dir, RaftDir, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	again := startNode(t, ca, "n2", dir, addr, false)
+	if again.Epoch() != n1.Epoch() {
+		t.Fatalf("epoch after losing node.crt = %q, want the cluster's %q", again.Epoch(), n1.Epoch())
+	}
+	upsert(t, n1, "after-renewal")
+	eventually(t, "n2 to replicate again", func() bool { return hasDevice(again, "after-renewal") })
 }
 
 func TestReadEpoch(t *testing.T) {

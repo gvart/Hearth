@@ -55,7 +55,8 @@ overwritten, so give each backup its own name.
 
 A backup is the policy action `hub.backup` (dangerous), run by the local admin and audited like any
 other. If your `policy.yaml` holds dangerous actions for approval, the command waits for that approval.
-The audit entry is written after the copy is taken, so it is on the running hub and not in the backup.
+The audit log records the backup before the copy is taken and its outcome afterwards, so a restored hub
+shows that backup as `started`. The outcome is on the hub that took it.
 
 ### The passphrase
 
@@ -144,6 +145,9 @@ so a member without a working majority refuses the backup. Take backups before y
    HEARTH_JOIN_TOKEN=hearthj1.… hearth hub --join https://hub-a.lan:7443 \
      --host hub-b.lan --advertise hub-b.lan:7444
    ```
+
+   Every hub must run a Hearth version that supports restored clusters, so use the same version as the
+   restored hub. An older hub is refused with a message to upgrade it first, and its join token stays valid.
 
 6. **Copy the configuration** to the hubs that joined: `policy.yaml`, `notify.yaml` and the automations
    directory are not replicated. `hearth cluster status` shows `in_sync` when they match (see

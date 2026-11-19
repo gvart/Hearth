@@ -221,7 +221,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if err := os.MkdirAll(opts.dataDir, 0o700); err != nil {
 		return fmt.Errorf("create data dir: %w", err)
 	}
-	if err := backup.PrepareDataDir(opts.dataDir, true); err != nil {
+	if err := backup.PrepareDataDir(opts.dataDir); err != nil {
 		return err
 	}
 	var subnets []netip.Prefix

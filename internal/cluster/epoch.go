@@ -23,7 +23,9 @@ import (
 //
 // A restore writes a new random epoch to EpochFile. The first node certificate
 // of the restored hub carries it, every hub that joins gets it from the hub
-// that signs its certificate, and a renewed certificate keeps it. Hubs compare
+// that signs its certificate and keeps it in EpochFile too, and a renewed
+// certificate keeps it. A restored cluster refuses to admit a binary that does
+// not know epochs, since it could not serve as leader. Hubs compare
 // epochs on the Raft transport and on hub-to-hub calls, in both directions. A
 // cluster that was never restored has no epoch, so nothing changes for it.
 //
@@ -45,8 +47,12 @@ func WriteNewEpoch(dir string) error {
 	if _, err := rand.Read(b); err != nil {
 		return fmt.Errorf("new cluster epoch: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, EpochFile), []byte(hex.EncodeToString(b)+"\n"), 0o600); err != nil {
-		return fmt.Errorf("new cluster epoch: %w", err)
+	return writeEpoch(dir, hex.EncodeToString(b))
+}
+
+func writeEpoch(dir, epoch string) error {
+	if err := os.WriteFile(filepath.Join(dir, EpochFile), []byte(epoch+"\n"), 0o600); err != nil {
+		return fmt.Errorf("write cluster epoch: %w", err)
 	}
 	return nil
 }

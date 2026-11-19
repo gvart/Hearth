@@ -109,7 +109,7 @@ func Create(ctx context.Context, opts CreateOptions) (Manifest, error) {
 	if err := CheckSource(opts.DataDir, opts.Output); err != nil {
 		return Manifest{}, err
 	}
-	if err := PrepareDataDir(opts.DataDir, false); err != nil {
+	if err := PrepareDataDir(opts.DataDir); err != nil {
 		return Manifest{}, err
 	}
 	files, err := configFiles(opts)
@@ -117,11 +117,11 @@ func Create(ctx context.Context, opts CreateOptions) (Manifest, error) {
 		return Manifest{}, err
 	}
 	// The copy stays in the data dir, as private as the database it comes from.
-	tmp, err := store.NewTempDir(opts.DataDir, store.BackupTempPrefix)
+	tmp, removeTmp, err := store.NewTempDir(opts.DataDir, store.BackupTempPrefix)
 	if err != nil {
 		return Manifest{}, fmt.Errorf("backup: %w", err)
 	}
-	defer func() { _ = os.RemoveAll(tmp) }()
+	defer removeTmp()
 	snapshot := filepath.Join(tmp, dbName)
 	if err := opts.Store.VacuumInto(ctx, snapshot); err != nil {
 		return Manifest{}, fmt.Errorf("backup store: %w", err)
@@ -357,7 +357,7 @@ func CheckDataDir(dir string) error {
 	}
 	abandoned, other := false, false
 	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), store.RestoreTempPrefix) && store.AbandonedTempDir(e, true) {
+		if strings.HasPrefix(e.Name(), store.RestoreTempPrefix) && store.AbandonedTempDir(dir, e) {
 			abandoned = true
 		} else {
 			other = true
@@ -374,8 +374,8 @@ func CheckDataDir(dir string) error {
 
 // PrepareDataDir readies a hub data dir for use. It refuses one that a restore
 // is still writing or left half done, and deletes the plaintext working files
-// of operations that were killed. See store.AbandonedTempDir for selfStale.
-func PrepareDataDir(dir string, selfStale bool) error {
+// of operations that were killed.
+func PrepareDataDir(dir string) error {
 	entries, err := os.ReadDir(dir)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil
@@ -389,7 +389,7 @@ func PrepareDataDir(dir string, selfStale bool) error {
 		case e.Name() == completeMarker:
 			complete = true
 		case strings.HasPrefix(e.Name(), store.RestoreTempPrefix):
-			if store.AbandonedTempDir(e, selfStale) {
+			if store.AbandonedTempDir(dir, e) {
 				abandoned = true
 			} else {
 				restoring = true
@@ -404,7 +404,7 @@ func PrepareDataDir(dir string, selfStale bool) error {
 	case abandoned && content && !complete:
 		return fmt.Errorf("%w: %s", ErrIncompleteRestore, dir)
 	}
-	return store.RemoveAbandonedTempDirs(dir, selfStale)
+	return store.RemoveAbandonedTempDirs(dir)
 }
 
 // Restore unpacks the backup into a staging directory inside opts.DataDir,
@@ -441,15 +441,20 @@ func Restore(ctx context.Context, opts RestoreOptions) (m Manifest, err error) {
 	if err := os.Chmod(opts.DataDir, 0o700); err != nil { //nolint:gosec // a directory needs its search bit
 		return Manifest{}, fmt.Errorf("create data dir: %w", err)
 	}
-	if err := store.RemoveAbandonedTempDirs(opts.DataDir, true); err != nil {
+	if err := store.RemoveAbandonedTempDirs(opts.DataDir); err != nil {
 		return Manifest{}, fmt.Errorf("restore: %w", err)
 	}
-	stage, err := store.NewTempDir(opts.DataDir, store.RestoreTempPrefix)
+	tmp, removeTmp, err := store.NewTempDir(opts.DataDir, store.RestoreTempPrefix)
 	if err != nil {
 		return Manifest{}, fmt.Errorf("restore: %w", err)
 	}
 	// Runs before the deferred call above, which removes an empty data dir.
-	defer func() { _ = os.RemoveAll(stage) }()
+	defer removeTmp()
+	// A directory of its own: commit moves everything in it, and the lock stays.
+	stage := filepath.Join(tmp, "stage")
+	if err := os.Mkdir(stage, 0o700); err != nil {
+		return Manifest{}, fmt.Errorf("restore: %w", err)
+	}
 
 	if m, err = unpack(ctx, o, stage); err != nil {
 		return Manifest{}, err

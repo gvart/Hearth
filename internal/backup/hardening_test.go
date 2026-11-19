@@ -4,28 +4,28 @@ package backup
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gvart/hearth/internal/cluster"
 	"github.com/gvart/hearth/internal/pki"
+	"github.com/gvart/hearth/internal/store"
 )
 
-// deadPID returns the process ID of a process that has exited.
-func deadPID(t *testing.T) int {
+// abandonedDir makes a temporary directory whose owner is long gone.
+func abandonedDir(t *testing.T, dir string) {
 	t.Helper()
-	cmd := exec.Command(os.Args[0], "-test.run=^$") //nolint:gosec // this test binary
-	if err := cmd.Run(); err != nil {
+	writeTestFile(t, filepath.Join(dir, dbName), "plaintext left by a killed process")
+	old := time.Now().Add(-24 * time.Hour)
+	if err := os.Chtimes(dir, old, old); err != nil {
 		t.Fatal(err)
 	}
-	return cmd.Process.Pid
 }
 
 func TestCreateRefusesNamesItCouldNotRestore(t *testing.T) {
@@ -127,8 +127,8 @@ func TestRestoreStartsANewClusterEpoch(t *testing.T) {
 
 func TestAbandonedRestoreDoesNotBlockTheRetry(t *testing.T) {
 	target := t.TempDir()
-	stale := filepath.Join(target, fmt.Sprintf(".restore-%d-abc", deadPID(t)))
-	writeTestFile(t, filepath.Join(stale, pki.CAKeyFile), "plaintext left by a killed restore")
+	stale := filepath.Join(target, ".restore-abc")
+	abandonedDir(t, stale)
 	if err := CheckDataDir(target); err != nil {
 		t.Fatalf("CheckDataDir = %v", err)
 	}
@@ -142,7 +142,11 @@ func TestAbandonedRestoreDoesNotBlockTheRetry(t *testing.T) {
 
 func TestRunningRestoreStillBlocks(t *testing.T) {
 	target := t.TempDir()
-	writeTestFile(t, filepath.Join(target, fmt.Sprintf(".restore-%d-abc", os.Getppid()), "x"), "in use")
+	_, remove, err := store.NewTempDir(target, store.RestoreTempPrefix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer remove()
 	if err := CheckDataDir(target); !errors.Is(err, ErrDataDirNotEmpty) {
 		t.Fatalf("CheckDataDir = %v, want ErrDataDirNotEmpty", err)
 	}
@@ -151,7 +155,7 @@ func TestRunningRestoreStillBlocks(t *testing.T) {
 // TestRestoreStoppedMidCommitIsDetected: some files were moved, no marker.
 func TestRestoreStoppedMidCommitIsDetected(t *testing.T) {
 	target := t.TempDir()
-	writeTestFile(t, filepath.Join(target, fmt.Sprintf(".restore-%d-abc", deadPID(t)), dbName), "x")
+	abandonedDir(t, filepath.Join(target, ".restore-abc"))
 	writeTestFile(t, filepath.Join(target, pki.CACertFile), "moved already")
 	err := CheckDataDir(target)
 	if !errors.Is(err, ErrIncompleteRestore) || !errors.Is(err, ErrDataDirNotEmpty) {
@@ -161,17 +165,17 @@ func TestRestoreStoppedMidCommitIsDetected(t *testing.T) {
 
 func TestCreateRemovesAbandonedTempDirs(t *testing.T) {
 	dir, st := newHub(t)
-	dead := deadPID(t)
-	stale := []string{
-		fmt.Sprintf(".snapshot-%d-a", dead), fmt.Sprintf(".backup-%d-b", dead), fmt.Sprintf(".restore-%d-c", dead),
-	}
+	stale := []string{".snapshot-a", ".backup-b", ".restore-c"}
 	for _, name := range stale {
-		writeTestFile(t, filepath.Join(dir, name, dbName), "plaintext")
+		abandonedDir(t, filepath.Join(dir, name))
 	}
 	// A restore that finished, but was killed before it removed its stage.
 	writeTestFile(t, filepath.Join(dir, completeMarker), "")
-	live := fmt.Sprintf(".snapshot-%d-d", os.Getppid())
-	writeTestFile(t, filepath.Join(dir, live, dbName), "in use by a running hub")
+	live, remove, err := store.NewTempDir(dir, store.BackupTempPrefix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer remove()
 	if _, err := Create(t.Context(), createOpts(dir, st, filepath.Join(t.TempDir(), "hub.hbk"))); err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +184,7 @@ func TestCreateRemovesAbandonedTempDirs(t *testing.T) {
 			t.Errorf("%s is still there: %v", name, err)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(dir, live)); err != nil {
+	if _, err := os.Stat(live); err != nil {
 		t.Errorf("a directory in use was removed: %v", err)
 	}
 }

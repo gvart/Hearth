@@ -57,6 +57,9 @@ message JoinRequest {
   // schema_version is the newest store schema version the joining binary
   // supports. It must be at least the cluster's current schema version.
   int64 schema_version = 5;
+  // cluster_epochs is true when the joining binary keeps a cluster epoch in its
+  // certificates. A cluster restored from a backup refuses a hub without it.
+  bool cluster_epochs = 6;
 }
 
 // JoinResponse is the new hub's identity and the cluster's CA.

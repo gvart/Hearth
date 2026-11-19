@@ -74,6 +74,7 @@ var (
 	errSchema    = errors.New("schema mismatch")
 	errNodeTaken = errors.New("node ID or raft address already in the cluster")
 	errBadCSR    = errors.New("invalid CSR")
+	errNoEpochs  = errors.New("joining binary has no cluster epochs")
 )
 
 // Join admits a new hub as a non-voter and hands it its identity and the CA.
@@ -93,8 +94,8 @@ func (s *JoinServer) Join(ctx context.Context, req *connect.Request[clusterv1.Jo
 	}
 
 	var (
-		cert      *x509.Certificate
-		schemaErr string
+		cert    *x509.Certificate
+		refused string
 	)
 	err := s.policy.Do(ctx, policy.Request{
 		ActorKind: policy.ActorJoinToken,
@@ -105,6 +106,14 @@ func (s *JoinServer) Join(ctx context.Context, req *connect.Request[clusterv1.Jo
 	}, func(ctx context.Context) error {
 		// Every check that does not need the token runs first, so a
 		// rejected attempt does not burn it.
+		//
+		// A hub without epochs would serve a certificate outside this cluster's
+		// epoch, and the other hubs could not forward writes to it as leader.
+		if s.node.epoch != "" && !msg.GetClusterEpochs() {
+			refused = "this cluster was restored from a backup and this hub's hearth version does not support that; " +
+				"upgrade this hub to the cluster's hearth version, then join again"
+			return errNoEpochs
+		}
 		have, err := s.store.SchemaVersion(ctx)
 		if err != nil {
 			return err
@@ -112,7 +121,7 @@ func (s *JoinServer) Join(ctx context.Context, req *connect.Request[clusterv1.Jo
 		// A newer binary joins at the cluster's schema and waits for the
 		// cluster to migrate; an older one could not apply it.
 		if msg.GetSchemaVersion() < have {
-			schemaErr = fmt.Sprintf("this hub's binary supports store schema up to %d but the cluster is at %d; "+
+			refused = fmt.Sprintf("this hub's binary supports store schema up to %d but the cluster is at %d; "+
 				"run the cluster's hearth version or a newer one", msg.GetSchemaVersion(), have)
 			return fmt.Errorf("%w: joining binary supports %d, cluster at %d", errSchema, msg.GetSchemaVersion(), have)
 		}
@@ -155,8 +164,8 @@ func (s *JoinServer) Join(ctx context.Context, req *connect.Request[clusterv1.Jo
 		return nil
 	})
 	if err != nil {
-		if schemaErr != "" {
-			return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New(schemaErr))
+		if refused != "" {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New(refused))
 		}
 		return nil, s.toConnectError(ctx, "join", err)
 	}
@@ -271,6 +280,9 @@ type JoinParams struct {
 	// zero means store.SchemaVersion(). Tests set it to stand in for
 	// another binary.
 	MaxSchema int64
+
+	// noClusterEpochs stands in for a binary older than cluster epochs, in tests.
+	noClusterEpochs bool
 }
 
 // maxRedirects bounds how often Join and Promote follow a follower to the leader.
@@ -309,6 +321,7 @@ func Join(ctx context.Context, p JoinParams) error {
 		RaftAddress:   p.RaftAddress,
 		Csr:           csr,
 		SchemaVersion: p.MaxSchema,
+		ClusterEpochs: !p.noClusterEpochs,
 	}
 	var resp *connect.Response[clusterv1.JoinResponse]
 	target := p.URL
@@ -331,6 +344,12 @@ func Join(ctx context.Context, p JoinParams) error {
 	}
 	if err := writeNodeCert(dir, cert, key); err != nil {
 		return fmt.Errorf("join: %w", err)
+	}
+	// Kept apart from the certificate, so a hub that loses it stays in the epoch.
+	if epoch := pki.HubEpoch(cert); epoch != "" {
+		if err := writeEpoch(p.DataDir, epoch); err != nil {
+			return fmt.Errorf("join: %w", err)
+		}
 	}
 	if err := os.WriteFile(filepath.Join(dir, joinURLFile), []byte(target+"\n"), 0o600); err != nil {
 		return fmt.Errorf("join: %w", err)

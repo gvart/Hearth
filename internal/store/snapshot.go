@@ -19,11 +19,11 @@ import (
 // version included, to w. Writes may continue while it runs; the copy is the
 // state at the moment its read transaction started.
 func (s *Store) Snapshot(ctx context.Context, w io.Writer) error {
-	dir, err := s.tempDir()
+	dir, remove, err := s.tempDir()
 	if err != nil {
 		return fmt.Errorf("snapshot: %w", err)
 	}
-	defer func() { _ = os.RemoveAll(dir) }()
+	defer remove()
 	path := filepath.Join(dir, "snapshot.db")
 	if err := s.VacuumInto(ctx, path); err != nil {
 		return err
@@ -54,11 +54,11 @@ func (s *Store) VacuumInto(ctx context.Context, path string) error {
 // so readers see either the old or the new state and the Store stays usable.
 // The caller must not apply writes concurrently (a state machine never does).
 func (s *Store) Restore(ctx context.Context, r io.Reader) error {
-	dir, err := s.tempDir()
+	dir, remove, err := s.tempDir()
 	if err != nil {
 		return fmt.Errorf("restore: %w", err)
 	}
-	defer func() { _ = os.RemoveAll(dir) }()
+	defer remove()
 	path := filepath.Join(dir, "restore.db")
 	if err := writeFile(path, r); err != nil {
 		return fmt.Errorf("restore: %w", err)
@@ -118,7 +118,7 @@ func (s *Store) RetireHubCerts(ctx context.Context, now time.Time) error {
 
 // tempDir creates a private (0700) directory next to the database, so
 // snapshot copies never leave the data dir and stay on the same filesystem.
-func (s *Store) tempDir() (string, error) {
+func (s *Store) tempDir() (string, func(), error) {
 	return NewTempDir(filepath.Dir(s.path), snapshotTempPrefix)
 }
 

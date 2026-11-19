@@ -5,11 +5,9 @@ package main
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"testing"
@@ -157,19 +155,51 @@ func TestRestoredHubIsNotAbsorbedByHubsThatJoinedAfterTheBackup(t *testing.T) {
 	})
 }
 
+// TestRestoredAuditShowsTheBackupAsStarted: the copy is taken after the audit
+// log records the action and before it records the outcome.
+func TestRestoredAuditShowsTheBackupAsStarted(t *testing.T) {
+	t.Setenv(passphraseEnv, testBackupPassphrase)
+	dir, _ := initHub(t)
+	file := filepath.Join(t.TempDir(), "hub.hbk")
+	if _, err := execute(t, "backup", file, "--data-dir", dir); err != nil {
+		t.Fatal(err)
+	}
+	restored := filepath.Join(t.TempDir(), "restored")
+	if _, err := execute(t, "restore", file, "--data-dir", restored); err != nil {
+		t.Fatal(err)
+	}
+	for want, from := range map[string]string{"ok": dir, policy.Started: restored} {
+		st, err := store.Open(t.Context(), filepath.Join(from, dbFile), store.WithoutUpgrade())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer st.Close()
+		entries, err := st.Audit().Query(t.Context(), store.AuditFilter{Actions: []string{string(policy.HubBackup)}}, 10)
+		if err != nil || len(entries) != 1 || entries[0].Result != want {
+			t.Errorf("hub.backup in %s = %+v, %v; want one entry with result %q", from, entries, err, want)
+		}
+	}
+}
+
+// abandonTempDir makes a temporary directory whose owner is long gone.
+func abandonTempDir(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "snapshot.db"), []byte("plaintext"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-24 * time.Hour)
+	if err := os.Chtimes(dir, old, old); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestHubStartRemovesAbandonedTempDirs(t *testing.T) {
 	dir := t.TempDir()
-	cmd := exec.Command(os.Args[0], "-test.run=^$") //nolint:gosec // this test binary
-	if err := cmd.Run(); err != nil {
-		t.Fatal(err)
-	}
-	stale := filepath.Join(dir, fmt.Sprintf(".snapshot-%d-abc", cmd.Process.Pid))
-	if err := os.MkdirAll(stale, 0o700); err != nil { //nolint:gosec // a path under t.TempDir
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(stale, "snapshot.db"), []byte("plaintext"), 0o600); err != nil { //nolint:gosec // a path under t.TempDir
-		t.Fatal(err)
-	}
+	stale := filepath.Join(dir, ".snapshot-abc")
+	abandonTempDir(t, stale)
 	listen := freeAddr(t)
 	runBackupTestHub(t, hubOptions{dataDir: dir, listen: listen, httpListen: freeAddr(t), hosts: []string{"127.0.0.1"}})
 	waitFor(t, "the hub to listen", 10*time.Second, func() bool {
@@ -180,20 +210,14 @@ func TestHubStartRemovesAbandonedTempDirs(t *testing.T) {
 		}
 		return err == nil
 	})
-	if _, err := os.Stat(stale); !os.IsNotExist(err) { //nolint:gosec // a path under t.TempDir
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
 		t.Errorf("the abandoned snapshot is still there: %v", err)
 	}
 }
 
 func TestHubRefusesARestoreStoppedMidCommit(t *testing.T) {
 	dir := t.TempDir()
-	cmd := exec.Command(os.Args[0], "-test.run=^$") //nolint:gosec // this test binary
-	if err := cmd.Run(); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Join(dir, fmt.Sprintf(".restore-%d-abc", cmd.Process.Pid)), 0o700); err != nil { //nolint:gosec // a path under t.TempDir
-		t.Fatal(err)
-	}
+	abandonTempDir(t, filepath.Join(dir, ".restore-abc"))
 	if err := os.WriteFile(filepath.Join(dir, "ca.crt"), []byte("moved already"), 0o600); err != nil {
 		t.Fatal(err)
 	}
