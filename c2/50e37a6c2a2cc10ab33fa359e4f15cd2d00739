@@ -1,0 +1,100 @@
+web/src/api/client.ts
+  s_344993999c180f::t_58248cd7b09dc8 575-578,581-582
+internal/hub/approvallinks_test.go
+  s_344993999c180f::t_a24d71b6f78b52 121-122,124-125
+  s_344993999c180f::t_bb40c98183aea7 116,127,145-146,148-149,151-152,157-158,165,167-168,174-175,191-192,215-216,226
+web/src/components/ApproveLinkPage.tsx
+  s_344993999c180f::t_68fbf1a2057cf4 81,86-88,90-93
+  s_344993999c180f::t_71ac4edc96ce0b 3,25-26,30,56-57
+docs/mcp.md
+  s_344993999c180f::t_4e5dacf71eab8e 96
+internal/hub/approvals_test.go
+  s_344993999c180f::t_bb40c98183aea7 59,119
+docs/guardrails.md
+  s_344993999c180f::t_d07f9319887d30 59,70-91,143-150,153,160
+internal/hub/automations_test.go
+  s_344993999c180f::t_0ca74ae56f541d 280,295,312
+internal/hub/automations_security_test.go
+  s_344993999c180f::t_0ca74ae56f541d 58,76,93,213
+internal/mcpserver/apply_test.go
+  s_344993999c180f::t_0ca74ae56f541d 169
+internal/policy/policy.go
+  s_344993999c180f::t_0c6f6f5e560ecd 355
+  s_344993999c180f::t_350d0a2f70ae09 356-365
+internal/integrations/proxmox/manager_test.go
+  s_344993999c180f::t_0ca74ae56f541d 371,395,445
+web/src/api/hooks.ts
+  s_344993999c180f::t_aa7679f475f655 314,318-319
+  s_344993999c180f::t_dca672f8d40a29 334-335
+docs/notifications.md
+  s_344993999c180f::t_d07f9319887d30 73
+  s_344993999c180f::t_4e5dacf71eab8e 74
+web/src/components/ApprovalsPage.tsx
+  s_344993999c180f::t_9a14a90b3aa391 1-2
+  s_344993999c180f::t_3c77ad93f38e49 167-177,180-195,208,211-270
+internal/policy/hold_test.go
+  s_344993999c180f::t_0ca74ae56f541d 77
+internal/policy/engine.go
+  s_344993999c180f::t_350d0a2f70ae09 453-458,462,474,479-484,497-517,520-524,526,536
+internal/hub/automations_review_test.go
+  s_344993999c180f::t_0ca74ae56f541d 37,119
+internal/policy/approvalplan_test.go
+  s_344993999c180f::t_0ca74ae56f541d 43
+internal/policy/reauth_test.go
+  s_344993999c180f::t_223031b74d61a8 1-95
+internal/policy/auditfirst_test.go
+  s_344993999c180f::t_0ca74ae56f541d 96,221,239
+internal/integrations/proxmox/hardening_test.go
+  s_344993999c180f::t_0ca74ae56f541d 92,116
+internal/hub/approvalreauth_test.go
+  s_344993999c180f::t_bb40c98183aea7 18-20
+  s_344993999c180f::t_4ff54c8048b8ee 1-17,21-248
+internal/automation/runbook_policy_test.go
+  s_344993999c180f::t_0ca74ae56f541d 126
+internal/mcpserver/server_test.go
+  s_344993999c180f::t_0ca74ae56f541d 405
+internal/hub/approvals.go
+  s_344993999c180f::t_5116d6aefbd205 64-84,86-89,92-114,122-126,129-135,137
+  s_344993999c180f::t_fd7729dfecdc8c 6,9-10
+web/src/index.css
+  s_344993999c180f::t_20a28e81eec0ea 1667-1678
+internal/policy/approvallink_test.go
+  s_344993999c180f::t_7543360d76587a 45-47,76-82,84,87,90-91,93-95,99,109-113,147
+internal/integrations/proxmox/freshread_test.go
+  s_344993999c180f::t_0ca74ae56f541d 48
+internal/policy/guardrails_test.go
+  s_344993999c180f::t_0ca74ae56f541d 355,362,381,442,492,511,527
+cmd/hearth/approval.go
+  s_344993999c180f::t_ddfffa484f6902 87-88,91,94-106,111-112,122-123
+  s_344993999c180f::t_b1729b083fd8b0 18
+  s_344993999c180f::t_e1259f4dcc9ec4 6
+internal/hub/approvallinks.go
+  s_344993999c180f::t_c6c6569ce3a68a 25-29
+  s_344993999c180f::t_1ad546bdff1213 168-170
+  s_344993999c180f::t_32e5b07baee245 191-193
+cmd/hearth/approval_test.go
+  s_344993999c180f::t_0a1e77d03aca61 16-18,31-33,70-84
+docs/automations.md
+  s_344993999c180f::t_4e5dacf71eab8e 232-233
+internal/hub/password.go
+  s_344993999c180f::t_ede3f0894ca09d 87-110
+internal/hub/api.go
+  s_344993999c180f::t_a7fc37e4d6001b 294
+  s_344993999c180f::t_1dbf5b1a0b991e 340-365
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c250e37a6c2a2cc10ab33fa359e4f15cd2d00739",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
