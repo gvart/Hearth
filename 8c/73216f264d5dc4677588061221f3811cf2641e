@@ -1,0 +1,40 @@
+internal/automation/plan_test.go
+  s_344993999c180f::t_a85e4ade1a6f2b 52
+internal/automation/runbook.go
+  s_344993999c180f::t_04a8e60092313c 6
+  s_344993999c180f::t_bcde32bfdc79ad 470-472
+internal/automation/template_limits_test.go
+  s_344993999c180f::t_20c6a33c6e1036 60-64
+  s_344993999c180f::t_fea47b1db1e354 37-59,65-76
+internal/automation/template.go
+  s_344993999c180f::t_f191bbe8c34b39 240-241
+  s_344993999c180f::t_93422584cfae61 191-194
+internal/automation/plan_forgery_test.go
+  s_344993999c180f::t_9faf963c2ee169 1-70
+internal/automation/plan.go
+  s_344993999c180f::t_e59b92327d8457 33
+  s_344993999c180f::t_de0fdab8a774b4 27
+  s_344993999c180f::t_f359c56c72877c 23
+  s_344993999c180f::t_3581e7aaf5ee2b 62-71,77
+  s_344993999c180f::t_e5eb5990260dbf 72
+  s_344993999c180f::t_82a0aaaa91fdb2 41,44
+  s_344993999c180f::t_75b6087d1e0d24 10
+internal/automation/runbook_engine.go
+  s_344993999c180f::t_fa959fbb04a0ed 994
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8c73216f264d5dc4677588061221f3811cf2641e",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
