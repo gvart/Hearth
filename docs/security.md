@@ -48,18 +48,28 @@ remove from a cluster.
 
 ### Rotating the hub CA
 
-A cluster can replace its CA (`hearth cluster ca rotate`, then `hearth cluster ca finish`; see
-[Rotating the hub CA](cluster.md#rotating-the-hub-ca)). Both are dangerous policy actions for the
-local admin, audited. What it does and does not protect against:
+A cluster can replace its CA (`hearth cluster ca rotate`, then `hearth cluster ca finish`, or
+`hearth cluster ca abort` before the finish; see [Rotating the hub CA](cluster.md#rotating-the-hub-ca)).
+All three are dangerous policy actions for the local admin, audited. What it does and does not protect against:
 
 - Until the finish, both CAs are trusted, and whoever holds the old key can still pose as a hub to
   browsers and agents and mint agent certificates. Old-CA hub certificates are accepted only if they
   are exactly the ones pinned when the rotation started, so the old key cannot mint a new hub
-  identity, and fetching the new key with a forged one is refused and audited. After the finish,
+  identity, and fetching the new key with a forged one is refused and audited. A hub whose node
+  certificate has no recorded fingerprint is never pinned, `--accept-unpinned` or not. While the
+  rotation is under way, a hub that cannot read its store to check a pin refuses old-CA hub
+  certificates, and a hub asked whether it serves the new CA must show a certificate of it. After the finish,
   nothing of the old CA is trusted, including connections opened before it.
 - An agent is renewed only for the exact certificate the hub recorded for it, on its own key. Agents
   that were offline, or run a Hearth older than the rotation, are cut off at the finish and enroll
   again.
+- An agent adds a CA to trust only with a renewed certificate of it for its own key, at most two
+  CAs, and only if they include the CA that verified the hub; otherwise it only drops CAs. Whoever
+  held the old key could still, until the finish, pose as a hub and hand an agent a CA of their own
+  with a certificate of it: if you suspect that, check `ca.crt` on the agents connected during the
+  rotation, or enroll them again.
+- A hub left behind by the finish deletes its CA key, stops trusting the old CA and stops; remove it
+  and join it again.
 - A hub that is still a member gets the new key. Remove and re-join a member you suspect before you
   rotate.
 - Backups taken before the finish with the CA key still hold the old key. Destroy them if its leak is

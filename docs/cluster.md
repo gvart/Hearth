@@ -294,6 +294,9 @@ hub's CA, delete `ca.crt` and `ca.key` and enroll every agent again.
    and never into the database, the Raft log or a snapshot. The rotation refuses, and lists them, while
    any certificate has no recorded fingerprint or someone presented another certificate with its serial:
    reconnect those agents, revoke them, or pass `--accept-unpinned` to cut them off at the finish.
+   `--accept-unpinned` covers agents only: a hub whose node certificate has no recorded fingerprint is
+   never given the new key, so the rotation refuses until you restart that hub (it records its
+   certificate when it starts) or remove it.
 
 2. **Let the agents renew.** Every agent that connects with the certificate the hub recorded for it
    gets a certificate of the new CA for its own key, and both CAs to trust. It reconnects with them at
@@ -303,6 +306,11 @@ hub's CA, delete `ca.crt` and `ca.key` and enroll every agent again.
    hearth cluster ca status   # every hub's side, and the devices not renewed yet
    ```
 
+   An agent adds a CA to trust only together with a certificate of it for its own key, and only if the
+   CAs it is handed include the one that verified the hub it is connected to; otherwise it only drops
+   CAs. Whoever held the old key during the rotation could still have posed as a hub to an agent and
+   handed it a CA of their own this way: if you suspect that, check `ca.crt` in the data dir of the
+   agents connected during the rotation, or enroll them again.
 3. **Finish:**
 
    ```sh
@@ -315,12 +323,29 @@ hub's CA, delete `ca.crt` and `ca.key` and enroll every agent again.
    secrets in the database (kubeconfigs, Proxmox connections, runbook runs) are re-sealed with the new
    key, and every hub then drops the old CA and deletes its key. Connections that still use an old-CA
    certificate are closed. A finish that stopped part way, say because a hub restarted, resumes when
-   you run it again.
+   you run it again: a hub that restarts after the switch serves the new CA from its start. The finish
+   names the sealed secrets it checked, and is refused, and checks again, if any changed since.
+
+**Giving up.** Until the finish has begun to switch the hubs over, a rotation can be abandoned:
+
+```sh
+hearth cluster ca abort --dry-run   # lists the agents already renewed, which have to enroll again
+hearth cluster ca abort
+```
+
+Every hub drops the new CA, its key and its node certificate of it, and hubs can join again. It is
+also the way out when the leader that made the new CA is lost before another hub fetched its key:
+nothing else holds that key, and a new leader cannot finish. Once the switch has begun, abort is
+refused: finish the rotation instead.
 
 **After the finish:**
 
 - **An agent that was offline throughout is cut off** and has to enroll again, with a new token.
-- **Browsers and phones** that trusted the old CA must trust the new one: fetch it again from
+- **A hub the finish left behind** (with `--force`, or one that never got the new key) deletes its
+  copy of the CA key, stops trusting the old CA and stops: it never serves the old CA again. Remove it
+  (`hearth cluster remove`), wipe its data dir, and join it again with a new token. One cut off before the
+  finish reached it keeps running, outside the cluster, with the old key: remove and wipe it all the
+  same.- **Browsers and phones** that trusted the old CA must trust the new one: fetch it again from
   `http://<hub>:<port>/ca.crt` (see [HTTPS for the web UI](https.md)).
 - **Enroll and join tokens** made before the finish name the old CA and stop working: create new ones.
   No hub can join while a rotation is under way.
@@ -337,17 +362,18 @@ match the certificate pinned when the rotation started). A leaked database also 
 and Proxmox credentials sealed in it: rotate those at their source, as re-sealing them with a new key
 does not make the leaked copies useless.
 
-Both commands are policy actions run by the local admin, `cluster.ca.rotate` and `cluster.ca.finish`
-(dangerous), and audited. A hub fetching the new key is the action `cluster.ca.fetch_key`, decided and
-audited by the hub that serves it, refusals included.
+The commands are policy actions run by the local admin, `cluster.ca.rotate`, `cluster.ca.finish` and
+`cluster.ca.abort` (dangerous), and audited. A hub fetching the new key is the action `cluster.ca.fetch_key`, decided and
+audited by the hub that serves it, refusals included (at most one entry a minute per caller for
+refusals before the decision, counting those left out).
 
 ## CLI on a member's host
 
 `hearth token create`, `hearth device revoke`, `hearth admin set-password`,
 `hearth cluster token create`, `hearth cluster remove`, `hearth cluster transfer-leadership`,
 `hearth cluster migrate` and `hearth cluster ca status` work on any member while its hub runs: they go
-through the hub's local control socket and, on a follower, on to the leader. `hearth cluster ca rotate`
-and `finish` run on the leader's host only. With the hub stopped they refuse, since writing the local
+through the hub's local control socket and, on a follower, on to the leader. `hearth cluster ca rotate`,
+`finish` and `abort` run on the leader's host only. With the hub stopped they refuse, since writing the local
 database directly would diverge from the cluster.
 
 ## Policy and audit
