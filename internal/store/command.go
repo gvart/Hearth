@@ -557,6 +557,50 @@ func (c AppendAudit) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
 	return Result{ID: id}, nil
 }
 
+// AppendAuditOnce is AppendAudit for an entry that may be written more than
+// once, such as one retried after a write that seemed to fail: an entry
+// whose Key is in the log already is not appended again, and its ID is the
+// result. An empty Key appends as AppendAudit does. Result: ID.
+type AppendAuditOnce struct {
+	AppendAudit
+	Key string `json:"key"`
+}
+
+// Op implements Command.
+func (AppendAuditOnce) Op() string { return "append_audit_once" }
+
+func (AppendAuditOnce) minSchema() int64 { return auditKeySchema }
+
+// auditInsertKeyedSQL is auditInsertIndexedSQL setting the key too, the last
+// parameter.
+const auditInsertKeyedSQL = `
+	INSERT INTO audit_log (ts, actor_kind, actor_id, action, target, decision, result, detail, audit_op, audit_outcome_of, audit_key)
+	SELECT ?, ?, ?, ?, ?, ?, ?, detail,
+	       CASE WHEN json_valid(detail) THEN json_extract(detail, '$.audit_op') END,
+	       CASE WHEN json_valid(detail) THEN json_extract(detail, '$.audit_outcome_of') END,
+	       nullif(k, '')
+	FROM (SELECT ? AS detail, ? AS k)`
+
+func (c AppendAuditOnce) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
+	var id int64
+	err := tx.QueryRowContext(ctx, `SELECT id FROM audit_log WHERE audit_key = ?`, c.Key).Scan(&id)
+	if err == nil {
+		return Result{ID: id}, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return Result{}, err
+	}
+	res, err := tx.ExecContext(ctx, auditInsertKeyedSQL,
+		c.TS, c.ActorKind, c.ActorID, c.Action, c.Target, c.Decision, c.Result, c.Detail, c.Key)
+	if err != nil {
+		return Result{}, err
+	}
+	if id, err = res.LastInsertId(); err != nil {
+		return Result{}, err
+	}
+	return Result{ID: id}, nil
+}
+
 // SetPasswordHash sets the admin password hash and ends every session.
 type SetPasswordHash struct {
 	Hash string `json:"hash"`
@@ -690,6 +734,8 @@ func DecodeCommand(b []byte) (Command, error) {
 		cmd, err = decodeAs[RevokeDevice](env.Cmd)
 	case AppendAudit{}.Op():
 		cmd, err = decodeAs[AppendAudit](env.Cmd)
+	case AppendAuditOnce{}.Op():
+		cmd, err = decodeAs[AppendAuditOnce](env.Cmd)
 	case SetPasswordHash{}.Op():
 		cmd, err = decodeAs[SetPasswordHash](env.Cmd)
 	case CreateSession{}.Op():

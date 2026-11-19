@@ -42,6 +42,13 @@ func allCommands() []Command {
 			TS: 9, ActorKind: "agent", ActorID: "pi", Action: "agent.enroll", Target: "pi",
 			Decision: "allow", Result: "ok", Detail: `{"a": 1}`,
 		},
+		AppendAuditOnce{
+			AppendAudit: AppendAudit{
+				TS: 9, ActorKind: "hub", ActorID: "n1", Action: "device.revoke", Target: "pi",
+				Decision: "allow", Result: "ok", Detail: `{"audit_outcome_of":"op1"}`,
+			},
+			Key: "k1",
+		},
 		SetPasswordHash{Hash: "$argon2id$..."},
 		CreateSession{Hash: []byte{4, 5}, Now: 10, ExpiresAt: 11},
 		DeleteSession{Hash: []byte{4, 5}},
@@ -180,6 +187,14 @@ func runScenario(t *testing.T, s *Store) {
 		Action: "admin.login", Decision: "allow", Result: "ok",
 	})
 	must(err)
+	// An entry retried with its key lands once.
+	for range 2 {
+		_, err = s.Audit().Append(ctx, AuditEntry{
+			TS: at(0), ActorKind: "user", ActorID: "admin",
+			Action: "admin.logout", Decision: "allow", Result: "ok", Key: "logout-1",
+		})
+		must(err)
+	}
 
 	// Tokens: one used, one left to expire.
 	must(s.Tokens().Create(ctx, "tok-1", map[string]string{"room": "attic"}, at(10*time.Minute)))

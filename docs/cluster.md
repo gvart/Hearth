@@ -279,6 +279,14 @@ refuses every action, reads included, and says why. Agent heartbeats, the check 
 session and what the web UI reads from a hub's own database write no audit entry, so this refusal
 does not affect them. Actions work again once a majority of hubs is back.
 
+An action that was already running when the quorum went keeps the entry reporting how it ended.
+The same goes for a held request that ends in a denial. The hub keeps that entry in the
+`audit-spool` folder of its data dir and writes it once a majority is back, also after a restart.
+The entry keeps the time it was made and lands only once. If a spooled entry cannot be read back,
+the hub writes an `audit.entry_lost` entry in its place, so the gap shows in the audit log. The
+entry lands only once on a cluster at schema 20 or later (see `hearth cluster migrate`). Below that,
+a retried entry can show up twice.
+
 ## Limits
 
 - **A removed member's data dir still holds the CA key.** Every member receives the hub CA's private

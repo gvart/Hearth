@@ -23,6 +23,9 @@ const (
 	dbFile          = "hearth.db"
 	// metricsDBFile holds the hub's own host metrics; not replicated.
 	metricsDBFile = "metrics.db"
+	// auditSpoolDir holds the audit entries the hub could not write yet;
+	// not replicated.
+	auditSpoolDir = "audit-spool"
 )
 
 // defaultDataDir is HEARTH_DATA_DIR if set, /var/lib/hearth/<role> for root,
