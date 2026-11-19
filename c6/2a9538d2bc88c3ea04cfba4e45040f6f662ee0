@@ -1,0 +1,33 @@
+web/src/components/Shell.tsx
+  s_344993999c180f::t_f9f5497eb1d521 12,137,157
+web/src/index.css
+  s_344993999c180f::t_f9f5497eb1d521 345-390
+web/src/components/TelemetryPrompt.tsx
+  s_344993999c180f::t_741c73f497d92f 1-75,77-93
+  s_344993999c180f::t_f9f5497eb1d521 76
+web/src/api/client.ts
+  s_344993999c180f::t_c98e727d7bb05d 482-490,606-608
+web/src/telemetry.ts
+  s_344993999c180f::t_3555c9cd1a3a5c 1-35
+web/test/telemetry.test.mjs
+  s_344993999c180f::t_571742ba30d197 1-62
+web/src/api/hooks.ts
+  s_344993999c180f::t_c98e727d7bb05d 42,129-141,143
+  s_344993999c180f::t_cc713c583c71db 142,144
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c62a9538d2bc88c3ea04cfba4e45040f6f662ee0",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
