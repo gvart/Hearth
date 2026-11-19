@@ -14,10 +14,12 @@ import (
 const collectionDelay = 30 * time.Second
 
 // failureGap is the least time between two collections after failed attempts
-// to reach a hub. Retries back off to about one a minute, so during a long
-// outage the agent collects after nearly every attempt, and the quick retries
-// at the start of an outage share one collection.
-const failureGap = 30 * time.Second
+// to reach a hub. Backoff already spaces the attempts of one hub at least half
+// a second apart; the gap bounds the agent that cycles through several
+// unreachable hubs without waiting. Sharing one collection among the quick
+// retries at the start of an outage is not enough: on the Pi 5 those first
+// 30 s of retries left about 600 kB of garbage.
+const failureGap = time.Second
 
 // TuneRuntime keeps the long-running agent under its 20 MB idle limit. Only
 // `hearth agent run` calls it, as it changes the whole process. Pass connected
