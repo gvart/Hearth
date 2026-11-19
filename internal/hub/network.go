@@ -29,7 +29,8 @@ type NetworkHostJSON struct {
 	LastSeen  time.Time `json:"last_seen"`
 	// State is "" (not reviewed), "known" or "ignored".
 	State string `json:"state"`
-	// Sources are where the host was learned: "scan", "pihole", "dhcp".
+	// Sources are where the host was learned: "scan", "pihole", "dhcp",
+	// "netalertx".
 	Sources []string `json:"sources"`
 	// HostnameSource is the source that gave Hostname; "" if none did.
 	HostnameSource string `json:"hostname_source"`

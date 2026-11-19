@@ -48,6 +48,8 @@ const (
 	SourcePihole = "pihole"
 	// SourceDHCP is a DHCP server's lease file (dnsmasq, ISC dhcpd).
 	SourceDHCP = "dhcp"
+	// SourceNetAlertX is a NetAlertX's device list.
+	SourceNetAlertX = "netalertx"
 )
 
 // NetworkHost is a host network discovery found, keyed by its MAC address.
@@ -65,7 +67,7 @@ type NetworkHost struct {
 	// State is HostUnreviewed, HostKnown or HostIgnored.
 	State string
 	// Sources are where the host was learned (SourceScan, SourcePihole,
-	// SourceDHCP), sorted; none before schema 14.
+	// SourceDHCP, SourceNetAlertX), sorted; none before schema 14.
 	Sources []string
 	// HostnameSource is the source that gave Hostname; "" if none did.
 	HostnameSource string

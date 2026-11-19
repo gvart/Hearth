@@ -68,6 +68,9 @@ type Config struct {
 	// Prometheus reads device chart series from an existing Prometheus
 	// server. Nil means none is configured: charts report not_configured.
 	Prometheus *prometheus.Reader
+	// Beszel holds what the hub last read from a Beszel hub. Nil means none
+	// is configured: GET /api/v1/beszel/systems reports not_configured.
+	Beszel BeszelSnapshotter
 	// Metrics stores the host metrics agents send and serves device charts
 	// when no Prometheus is configured. Nil drops the metrics.
 	Metrics *metrics.Store

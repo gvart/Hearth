@@ -75,6 +75,7 @@ func newAPI(cfg Config) *api {
 		store: cfg.Store, policy: cfg.Policy, registry: reg, log: cfg.Log, now: time.Now, keepalive: sseKeepalive,
 		ca: cfg.CA, agentHosts: cfg.AgentHosts, agentPort: agentPort, httpPort: httpPort, ready: cfg.Ready, readyWait: readyWait,
 		prom:    cfg.Prometheus,
+		beszel:  cfg.Beszel,
 		kube:    cfg.Kube,
 		proxmox: cfg.Proxmox,
 		notify:  cfg.Notify,
@@ -104,6 +105,7 @@ func (a *api) routes() http.Handler {
 	mux.Handle("GET /api/v1/devices/{id}/metrics", a.auth(a.deviceMetrics))
 	mux.Handle("GET /api/v1/metrics/sparklines", a.auth(a.metricsSparklines))
 	mux.Handle("GET /api/v1/network/hosts", a.auth(a.listNetworkHosts))
+	mux.Handle("GET /api/v1/beszel/systems", a.auth(a.listBeszelSystems))
 	mux.Handle("POST /api/v1/network/hosts/{mac}/known", a.auth(a.markNetworkHost(store.HostKnown)))
 	mux.Handle("POST /api/v1/network/hosts/{mac}/ignore", a.auth(a.markNetworkHost(store.HostIgnored)))
 	mux.Handle("POST /api/v1/network/hosts/{mac}/unmark", a.auth(a.markNetworkHost(store.HostUnreviewed)))
@@ -178,6 +180,8 @@ type api struct {
 	logins *loginLimiter
 	// prom is Config.Prometheus; nil when no Prometheus is configured.
 	prom *prometheus.Reader
+	// beszel is Config.Beszel; nil when no Beszel is configured.
+	beszel BeszelSnapshotter
 	// metrics is Config.Metrics; nil when the hub keeps no metrics.
 	metrics *metrics.Store
 	// kube is Config.Kube; nil when Kubernetes clusters are not served.
