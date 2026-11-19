@@ -380,13 +380,17 @@ func TestRunUnreachableHub(t *testing.T) {
 	_, dataDir := h.join(t)
 	h.stop()
 
-	a := startAgent(t, dataDir)
+	var failures atomic.Int32
+	a := startAgentWith(t, agent.Config{DataDir: dataDir, Failed: func() { failures.Add(1) }})
 	// Delays are 0.5–1 s then 1–2 s, so two failures fit in 2.5 s.
 	waitFor(t, 5*time.Second, "two failed attempts", func() bool {
 		return strings.Count(a.logs.String(), "reconnecting") >= 2
 	})
 	a.assertRunning(t)
 	a.stop(t)
+	if n := failures.Load(); n < 2 {
+		t.Errorf("Config.Failed ran %d times for at least two failed attempts, want at least 2", n)
+	}
 }
 
 // wait waits up to timeout for Run to return on its own and returns its error.

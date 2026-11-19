@@ -36,7 +36,7 @@ func TestTuneRuntimeGOMAXPROCS(t *testing.T) {
 			restoreGOMAXPROCS(t)
 			t.Setenv("GOMAXPROCS", tt.env)
 			runtime.GOMAXPROCS(tt.start)
-			_, stop := tuneRuntime(time.Hour, func() {})
+			_, _, stop := tuneRuntime(time.Hour, time.Hour, time.Now, func() {})
 			defer stop()
 			if got := runtime.GOMAXPROCS(0); got != tt.want {
 				t.Errorf("GOMAXPROCS = %d, want %d", got, tt.want)
@@ -49,7 +49,7 @@ func TestTuneRuntimeCollectsOnce(t *testing.T) {
 	restoreGOMAXPROCS(t)
 	var runs atomic.Int32
 	done := make(chan struct{}, 2)
-	connected, stop := tuneRuntime(time.Millisecond, func() {
+	connected, _, stop := tuneRuntime(time.Millisecond, time.Hour, time.Now, func() {
 		runs.Add(1)
 		done <- struct{}{}
 	})
@@ -78,11 +78,45 @@ func TestTuneRuntimeCollectsOnce(t *testing.T) {
 func TestTuneRuntimeStopCancelsCollection(t *testing.T) {
 	restoreGOMAXPROCS(t)
 	var runs atomic.Int32
-	_, stop := tuneRuntime(20*time.Millisecond, func() { runs.Add(1) })
+	_, _, stop := tuneRuntime(20*time.Millisecond, time.Hour, time.Now, func() { runs.Add(1) })
 	stop()
 	time.Sleep(60 * time.Millisecond)
 	if got := runs.Load(); got != 0 {
 		t.Errorf("collections after stop = %d, want 0", got)
+	}
+}
+
+// TestTuneRuntimeCollectsAfterFailures checks that failed collects after a
+// failed attempt at most once per gap, on an injected clock.
+func TestTuneRuntimeCollectsAfterFailures(t *testing.T) {
+	restoreGOMAXPROCS(t)
+	const gap = 30 * time.Second
+	start := time.Date(2026, 11, 19, 12, 0, 0, 0, time.UTC)
+	steps := []struct {
+		at   time.Duration // since start, when the attempt failed
+		want int           // collections so far
+	}{
+		{at: 0, want: 1},           // the first failure collects
+		{at: time.Second, want: 1}, // quick retries share it
+		{at: 3 * time.Second, want: 1},
+		{at: 29 * time.Second, want: 1}, // just under the gap
+		{at: 30 * time.Second, want: 2}, // the gap has passed
+		{at: 45 * time.Second, want: 2},
+		{at: 100 * time.Second, want: 3}, // backed-off retries each collect
+		{at: 150 * time.Second, want: 4},
+		{at: 179 * time.Second, want: 4},
+		{at: 1800 * time.Second, want: 5}, // a long outage
+	}
+	var now time.Time
+	runs := 0
+	_, failed, stop := tuneRuntime(time.Hour, gap, func() time.Time { return now }, func() { runs++ })
+	defer stop()
+	for _, s := range steps {
+		now = start.Add(s.at)
+		failed()
+		if runs != s.want {
+			t.Errorf("after a failure at +%v: %d collections, want %d", s.at, runs, s.want)
+		}
 	}
 }
 
