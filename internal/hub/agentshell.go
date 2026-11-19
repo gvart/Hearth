@@ -28,10 +28,6 @@ const maxShellBuffer = 4 << 20
 const maxDeviceShells = 4
 
 const (
-	// shellSendTimeout bounds one send to the agent. A stream that takes
-	// longer has an agent that stopped reading it, and is torn down: the
-	// limits of a session must not depend on that agent.
-	shellSendTimeout = 3 * time.Second
 	// shellCloseWait is how long Close lets the agent report the session's
 	// end. An agent ends a shell within about three seconds (the hangup's
 	// grace, then the last output). One that does not has its stream torn
@@ -218,20 +214,12 @@ func (a *Agents) OpenShell(ctx context.Context, device string, rows, cols uint32
 	return sh, nil
 }
 
-// send sends a request of this session to the agent. It returns within
-// shellSendTimeout or so: a send that takes longer, waiting for its turn
-// included, tears the stream down, which ends the send that blocks it.
+// send sends a request of this session to the agent, within sendTimeout or
+// so however stalled the stream is (see agentSession.sendMsg): the limits of
+// a session must not depend on the agent.
 func (sh *Shell) send(req *agentv1.ShellRequest) error {
 	req.Id = sh.id
-	s := sh.sess
-	stalled := time.AfterFunc(shellSendTimeout, s.abort)
-	defer stalled.Stop()
-	s.sendMu.Lock()
-	defer s.sendMu.Unlock()
-	if s.closed {
-		return ErrAgentNotConnected
-	}
-	return s.send(&agentv1.HubMessage{Payload: &agentv1.HubMessage_ShellRequest{ShellRequest: req}})
+	return sh.sess.sendMsg(&agentv1.HubMessage{Payload: &agentv1.HubMessage_ShellRequest{ShellRequest: req}})
 }
 
 func (sh *Shell) forget() {
@@ -280,7 +268,7 @@ func (sh *Shell) Resize(rows, cols uint32) error {
 // Close ends the session: the agent kills the shell's session. The end is
 // then reported to Read and Exit, within shellCloseWait even if the agent
 // never confirms it. Close does not wait for that, and returns within
-// shellSendTimeout or so however stalled the agent's stream is.
+// sendTimeout or so however stalled the agent's stream is.
 func (sh *Shell) Close() {
 	sh.mu.Lock()
 	skip := sh.exit != nil || sh.closing

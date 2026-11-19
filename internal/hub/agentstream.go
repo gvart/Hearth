@@ -105,7 +105,11 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 		HeartbeatInterval: durationpb.New(s.heartbeatInterval),
 		Hubs:              s.leadership.AgentURLs(),
 	}}}
-	if err := stream.Send(welcome); err != nil {
+	// Bounded as every send to an agent is (see agentSession.sendMsg).
+	stalled := time.AfterFunc(s.agents.sendTimeout, streamAbort(ctx))
+	err = stream.Send(welcome)
+	stalled.Stop()
+	if err != nil {
 		return fmt.Errorf("send welcome to %s: %w", deviceID, err)
 	}
 	// From here on only Agents.Exec, Agents.Probe and Shells send on the stream.

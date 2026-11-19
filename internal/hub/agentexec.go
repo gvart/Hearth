@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/gvart/hearth/internal/automation"
 	"github.com/gvart/hearth/internal/policy"
@@ -29,6 +31,12 @@ const minCeilingMinor = 2
 // ProbeRequest and reports whether its ceiling allows probes.
 const minProbeMinor = 3
 
+// sendTimeout bounds one send to an agent, waiting for its turn included. A
+// send that takes longer has an agent that stopped reading its stream (HTTP/2
+// flow control holds the send), and the stream is torn down: the agent
+// reconnects, and no caller waits on it for ever.
+const sendTimeout = 3 * time.Second
+
 // ErrAgentNotConnected is returned by Agents.Exec for a device whose agent has
 // no open stream to this hub.
 var ErrAgentNotConnected = errors.New("agent not connected")
@@ -39,6 +47,8 @@ var ErrAgentNotConnected = errors.New("agent not connected")
 // it, and the agent enforces its ceiling again.
 type Agents struct {
 	devices store.Devices
+	// sendTimeout is sendTimeout, shorter in tests.
+	sendTimeout time.Duration
 
 	mu       sync.Mutex
 	sessions map[string]*agentSession
@@ -46,12 +56,19 @@ type Agents struct {
 
 // NewAgents returns an Agents that resolves device references in devices.
 func NewAgents(devices store.Devices) *Agents {
-	return &Agents{devices: devices, sessions: map[string]*agentSession{}}
+	return &Agents{devices: devices, sendTimeout: sendTimeout, sessions: map[string]*agentSession{}}
 }
 
 // agentSession is one open agent stream.
 type agentSession struct {
-	minor uint32
+	// device is the id of the stream's device.
+	device string
+	minor  uint32
+	// sendTimeout bounds each send (see sendMsg).
+	sendTimeout time.Duration
+	// stalled is set once a send outlasted sendTimeout and tore the stream
+	// down.
+	stalled atomic.Bool
 	// sendMu serialises sends: a stream allows one sender at a time. It
 	// also guards closed: once the handler is done with the stream, nothing
 	// may send on it.
@@ -77,6 +94,7 @@ type agentSession struct {
 // replaces an older one. Call detach when the stream ends.
 func (a *Agents) attach(deviceID string, hello *agentv1.Hello, send func(*agentv1.HubMessage) error, abort func()) *agentSession {
 	s := &agentSession{
+		device: deviceID, sendTimeout: a.sendTimeout,
 		minor: hello.GetProtocolVersion().GetMinor(), send: send, abort: abort, done: make(chan struct{}),
 		pending: map[string]chan *agentv1.ExecResult{}, probes: map[string]chan *agentv1.ProbeResult{},
 		logs: map[string]*logQueue{}, shells: map[string]*Shell{}, ceiling: hello.GetCeiling(),
@@ -258,15 +276,7 @@ func roundTrip[R any](ctx context.Context, s *agentSession, device string, pendi
 		s.mu.Unlock()
 	}()
 
-	var err error
-	s.sendMu.Lock()
-	if s.closed {
-		err = ErrAgentNotConnected
-	} else {
-		err = s.send(msg)
-	}
-	s.sendMu.Unlock()
-	if err != nil {
+	if err := s.sendMsg(msg); err != nil {
 		return zero, fmt.Errorf("send request to device %s: %w", device, err)
 	}
 	select {
@@ -277,6 +287,29 @@ func roundTrip[R any](ctx context.Context, s *agentSession, device string, pendi
 	case <-ctx.Done():
 		return zero, fmt.Errorf("device %s: %w", device, context.Cause(ctx))
 	}
+}
+
+// sendMsg sends msg on the stream, the one way anything is sent to an agent.
+// It returns within s.sendTimeout or so: a send that takes longer, waiting
+// for its turn included, tears the stream down, which ends the send that
+// blocks it, and fails with an error saying the agent is not reading.
+func (s *agentSession) sendMsg(msg *agentv1.HubMessage) error {
+	timer := time.AfterFunc(s.sendTimeout, func() {
+		s.stalled.Store(true)
+		s.abort()
+	})
+	s.sendMu.Lock()
+	err := ErrAgentNotConnected
+	if !s.closed {
+		err = s.send(msg)
+	}
+	s.sendMu.Unlock()
+	timer.Stop()
+	if err != nil && s.stalled.Load() {
+		return fmt.Errorf("agent %s is not reading: its stream was torn down after a send took over %s: %w",
+			s.device, s.sendTimeout, ErrAgentNotConnected)
+	}
+	return err
 }
 
 // resolve returns the id of the device named by ref: its id, or else its

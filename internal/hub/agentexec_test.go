@@ -30,9 +30,13 @@ func newExecClient(t *testing.T, st *store.Store) (agentv1connect.AgentServiceCl
 
 // newExecClientWindow is newExecClient for an agent that takes at most window
 // unread bytes from the hub (0: the default), as one that stops reading does.
-func newExecClientWindow(t *testing.T, st *store.Store, window int) (agentv1connect.AgentServiceClient, *Agents) {
+// opts change the Agents before the server starts.
+func newExecClientWindow(t *testing.T, st *store.Store, window int, opts ...func(*Agents)) (agentv1connect.AgentServiceClient, *Agents) {
 	t.Helper()
 	as := NewAgentStream(slog.New(slog.DiscardHandler), 5*time.Second, NewRegistry(RegistryConfig{Store: st}))
+	for _, o := range opts {
+		o(as.agents)
+	}
 	path, h := agentv1connect.NewAgentServiceHandler(as)
 	mux := http.NewServeMux()
 	mux.Handle(path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

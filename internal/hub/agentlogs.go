@@ -130,11 +130,7 @@ func (s *agentSession) deliverLogs(m *agentv1.LogLines) {
 // sendNoWait sends msg unless the stream is closed; a failure only means
 // the stream is ending.
 func (s *agentSession) sendNoWait(msg *agentv1.HubMessage) {
-	s.sendMu.Lock()
-	defer s.sendMu.Unlock()
-	if !s.closed {
-		_ = s.send(msg)
-	}
+	_ = s.sendMsg(msg)
 }
 
 // LogStream is an open stream of a device's log source.
@@ -202,14 +198,7 @@ func (a *Agents) Logs(ctx context.Context, device string, src *agentv1.LogSource
 	req := &agentv1.HubMessage{Payload: &agentv1.HubMessage_LogRequest{LogRequest: &agentv1.LogRequest{
 		Id: l.id, Source: src, Tail: tail,
 	}}}
-	s.sendMu.Lock()
-	if s.closed {
-		err = ErrAgentNotConnected
-	} else {
-		err = s.send(req)
-	}
-	s.sendMu.Unlock()
-	if err != nil {
+	if err = s.sendMsg(req); err != nil {
 		l.Close()
 		return nil, fmt.Errorf("send log request to device %s: %w", device, err)
 	}
