@@ -40,9 +40,28 @@ const (
 // functions give up at 1000 levels; no entry comes close to this.
 const maxAuditDetailDepth = 64
 
-// auditOutcomeOfSQL is the operation an entry reports the outcome of, if any.
-// A detail SQLite cannot parse has none, instead of failing the whole query.
-const auditOutcomeOfSQL = `CASE WHEN json_valid(detail) THEN json_extract(detail, '$.` + AuditOutcomeOfKey + `') END`
+// auditOpSchema is the schema version whose migration (00018) added the
+// indexed audit_op and audit_outcome_of columns.
+const auditOpSchema = 18
+
+// auditOpSQL and auditOutcomeOfSQL are the operation an entry starts and the
+// one it reports the outcome of, if any, read from the detail. A detail SQLite
+// cannot parse has none, instead of failing the whole query. A write sets the
+// columns from them (see AppendAudit), and a database before auditOpSchema is
+// read with them.
+const (
+	auditOpSQL        = `CASE WHEN json_valid(detail) THEN json_extract(detail, '$.` + AuditOpKey + `') END`
+	auditOutcomeOfSQL = `CASE WHEN json_valid(detail) THEN json_extract(detail, '$.` + AuditOutcomeOfKey + `') END`
+)
+
+// auditOpExprs returns the SQL for an entry's operation and outcome-of: the
+// indexed columns, or the detail JSON on a database before auditOpSchema.
+func auditOpExprs(indexed bool) (op, outcomeOf string) {
+	if indexed {
+		return "audit_op", "audit_outcome_of"
+	}
+	return auditOpSQL, auditOutcomeOfSQL
+}
 
 // AuditDetailTooDeep reports whether the valid JSON document detail nests
 // deeper than Audit.Append accepts.
@@ -132,6 +151,16 @@ func (r Audit) List(ctx context.Context, limit int) ([]AuditEntry, error) {
 // action stays ordered by when it started. Without an outcome entry it is
 // returned as written.
 func (r Audit) Query(ctx context.Context, f AuditFilter, limit int) ([]AuditEntry, error) {
+	v, err := schemaVersion(ctx, r.s.db)
+	if err != nil {
+		return nil, fmt.Errorf("list audit: %w", err)
+	}
+	return r.query(ctx, f, limit, v >= auditOpSchema)
+}
+
+// query is Query reading operation ids from the indexed columns, or from the
+// detail JSON when indexed is false.
+func (r Audit) query(ctx context.Context, f AuditFilter, limit int, indexed bool) ([]AuditEntry, error) {
 	if limit <= 0 {
 		return nil, errors.New("list audit: limit must be positive")
 	}
@@ -150,11 +179,12 @@ func (r Audit) Query(ctx context.Context, f AuditFilter, limit int) ([]AuditEntr
 	if !f.Until.IsZero() {
 		until = toMillis(f.Until)
 	}
+	opSQL, outcomeOfSQL := auditOpExprs(indexed)
 	rows, err := r.s.db.QueryContext(ctx, `
 		SELECT id, ts, actor_kind, actor_id, action, target, decision, result, detail,
-		       coalesce(CASE WHEN json_valid(detail) THEN json_extract(detail, '$.`+AuditOpKey+`') END, '')
+		       coalesce(`+opSQL+`, '')
 		FROM audit_log
-		WHERE `+auditOutcomeOfSQL+` IS NULL
+		WHERE +`+outcomeOfSQL+` IS NULL -- the +: scan by id and stop at the limit, not by the index, which holds nearly every row as NULL
 		  AND (?1 = '' OR actor_kind = ?1)
 		  AND (?2 = '' OR instr(actor_id, ?2) > 0)
 		  AND (?3 = '[]' OR action IN (SELECT value FROM json_each(?3)))
@@ -200,7 +230,7 @@ func (r Audit) Query(ctx context.Context, f AuditFilter, limit int) ([]AuditEntr
 	if len(ops) == 0 {
 		return out, nil
 	}
-	if err := r.foldOutcomes(ctx, out, ops, oldest); err != nil {
+	if err := r.foldOutcomes(ctx, out, ops, oldest, indexed); err != nil {
 		return nil, fmt.Errorf("list audit: %w", err)
 	}
 	return out, nil
@@ -209,16 +239,12 @@ func (r Audit) Query(ctx context.Context, f AuditFilter, limit int) ([]AuditEntr
 // foldOutcomes gives the entries of out named by ops the result and detail of
 // their outcome entries, all of them newer than the entry with ID oldest, and
 // removes the keys that tie the two from every detail.
-func (r Audit) foldOutcomes(ctx context.Context, out []AuditEntry, ops map[string]int, oldest int64) error {
+func (r Audit) foldOutcomes(ctx context.Context, out []AuditEntry, ops map[string]int, oldest int64, indexed bool) error {
 	ids, err := json.Marshal(slices.Collect(maps.Keys(ops)))
 	if err != nil {
 		return err
 	}
-	rows, err := r.s.db.QueryContext(ctx, `
-		SELECT `+auditOutcomeOfSQL+`, result, detail
-		FROM audit_log
-		WHERE id > ?1 AND `+auditOutcomeOfSQL+` IN (SELECT value FROM json_each(?2))`,
-		oldest, string(ids))
+	rows, err := r.s.db.QueryContext(ctx, auditFoldSQL(indexed), oldest, string(ids))
 	if err != nil {
 		return err
 	}
@@ -237,6 +263,15 @@ func (r Audit) foldOutcomes(ctx context.Context, out []AuditEntry, ops map[strin
 		out[i].Detail = withoutOpKeys(out[i].Detail)
 	}
 	return nil
+}
+
+// auditFoldSQL selects the outcome entries newer than ?1 that report one of
+// the operations in the JSON array ?2.
+func auditFoldSQL(indexed bool) string {
+	_, outcomeOf := auditOpExprs(indexed)
+	return `SELECT ` + outcomeOf + `, result, detail
+		FROM audit_log
+		WHERE id > ?1 AND ` + outcomeOf + ` IN (SELECT value FROM json_each(?2))`
 }
 
 // withoutOpKeys returns detail without the keys that tie an action's entries,

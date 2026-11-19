@@ -519,9 +519,20 @@ type AppendAudit struct {
 func (AppendAudit) Op() string { return "append_audit" }
 
 func (c AppendAudit) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
+	// The operation columns come from the detail here, so the command is the
+	// same on every binary. A node still before auditOpSchema has no columns.
+	v, err := schemaVersion(ctx, tx)
+	if err != nil {
+		return Result{}, err
+	}
+	cols, vals := "", ""
+	if v >= auditOpSchema {
+		cols, vals = ", audit_op, audit_outcome_of", ", "+auditOpSQL+", "+auditOutcomeOfSQL
+	}
 	res, err := tx.ExecContext(ctx, `
-		INSERT INTO audit_log (ts, actor_kind, actor_id, action, target, decision, result, detail)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		INSERT INTO audit_log (ts, actor_kind, actor_id, action, target, decision, result, detail`+cols+`)
+		SELECT ?, ?, ?, ?, ?, ?, ?, detail`+vals+`
+		FROM (SELECT ? AS detail)`,
 		c.TS, c.ActorKind, c.ActorID, c.Action, c.Target, c.Decision, c.Result, c.Detail)
 	if err != nil {
 		return Result{}, err
