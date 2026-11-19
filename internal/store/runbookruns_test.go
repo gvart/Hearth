@@ -165,19 +165,25 @@ func TestRunbookRunOpenLeavesOutRunsStoppedForAnOperator(t *testing.T) {
 	}
 }
 
-func TestRunbookRunsBoundRunsStoppedForAnOperator(t *testing.T) {
+func TestRunbookRunsPruneOnlyFailedRuns(t *testing.T) {
 	s := openTest(t)
 	ctx := t.Context()
 	runs := s.RunbookRuns()
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	waiting := testRunbookRun("waiting", now.Add(-time.Hour))
 	waiting.Status = "waiting"
-	if err := runs.Create(ctx, waiting); err != nil {
-		t.Fatal(err)
+	unknown := testRunbookRun("unknown", now.Add(-time.Hour))
+	unknown.Status = "unknown"
+	broken := testRunbookRun("broken", now.Add(-time.Hour))
+	broken.Status = "rollback_failed"
+	for _, r := range []RunbookRun{waiting, unknown, broken} {
+		if err := runs.Create(ctx, r); err != nil {
+			t.Fatal(err)
+		}
 	}
 	for i := range RunbookRunsKept + 5 {
 		r := testRunbookRun(fmt.Sprintf("r%03d", i), now.Add(time.Duration(i)*time.Second))
-		r.Status = []string{"failed", "unknown", "rollback_failed"}[i%3]
+		r.Status = "failed"
 		if err := runs.Create(ctx, r); err != nil {
 			t.Fatal(err)
 		}
@@ -186,14 +192,65 @@ func TestRunbookRunsBoundRunsStoppedForAnOperator(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(all) != RunbookRunsKept+1 {
-		t.Errorf("%d runs kept, want %d", len(all), RunbookRunsKept+1)
+	if len(all) != RunbookRunsKept+3 {
+		t.Errorf("%d runs kept, want %d", len(all), RunbookRunsKept+3)
 	}
-	if _, err := runs.Get(ctx, "waiting"); err != nil {
-		t.Errorf("a run waiting for an answer was pruned: %v", err)
+	for _, id := range []string{"waiting", "unknown", "broken"} {
+		if _, err := runs.Get(ctx, id); err != nil {
+			t.Errorf("run %s was pruned: %v", id, err)
+		}
 	}
 	if _, err := runs.Get(ctx, "r000"); !errors.Is(err, ErrNotFound) {
-		t.Errorf("the oldest stopped run was kept: %v", err)
+		t.Errorf("the oldest failed run was kept: %v", err)
+	}
+}
+
+func TestRunbookRunsRefuseAStartOverTooManyUnresolvedRuns(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	runs := s.RunbookRuns()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	for i := range RunbookRunsKept {
+		r := testRunbookRun(fmt.Sprintf("r%03d", i), now.Add(time.Duration(i)*time.Second))
+		r.Status = []string{"unknown", "rollback_failed"}[i%2]
+		if err := runs.Create(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	next := testRunbookRun("next", now.Add(time.Hour))
+	if err := runs.Create(ctx, next); !errors.Is(err, ErrRunbookRunsUnresolved) {
+		t.Fatalf("Create = %v, want ErrRunbookRunsUnresolved", err)
+	}
+	if !IsDomainError(fmt.Errorf("start: %w", ErrRunbookRunsUnresolved)) {
+		t.Error("the refusal would halt a cluster")
+	}
+	if _, err := runs.Get(ctx, "next"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("the refused run was stored: %v", err)
+	}
+	all, err := runs.List(ctx, "rb", 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != RunbookRunsKept {
+		t.Errorf("%d runs kept, want all %d", len(all), RunbookRunsKept)
+	}
+
+	// Another runbook is not held up, and resolving one run makes room.
+	other := testRunbookRun("other", now)
+	other.RunbookID = "another"
+	if err := runs.Create(ctx, other); err != nil {
+		t.Errorf("another runbook: %v", err)
+	}
+	first, err := runs.Get(ctx, "r000")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first.Status, first.FinishedAt = "rolled_back", now
+	if _, err := runs.Save(ctx, first); err != nil {
+		t.Fatal(err)
+	}
+	if err := runs.Create(ctx, next); err != nil {
+		t.Errorf("after resolving a run: %v", err)
 	}
 }
 

@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gvart/hearth/internal/integrations/kubernetes"
 	"github.com/gvart/hearth/internal/policy"
 	"github.com/gvart/hearth/internal/store"
 )
@@ -448,10 +449,11 @@ func (r *Runbooks) Rollback(ctx context.Context, actorKind, actorID, runID strin
 		})
 }
 
-// PassOver gives up on the rollback step a run stopped at, if the run is still
-// at version, and goes on with the other rollback steps.
-func (r *Runbooks) PassOver(ctx context.Context, actorKind, actorID, runID string, version int64) (RunbookRunJSON, error) {
-	return r.operate(ctx, actorKind, actorID, policy.RunbookPassOver, runID, map[string]any{"version": version},
+// PassOver gives up on the rollback of step, which must be the one the run
+// stopped at, if the run is still at version, and goes on with the other
+// rollback steps.
+func (r *Runbooks) PassOver(ctx context.Context, actorKind, actorID, runID, step string, version int64) (RunbookRunJSON, error) {
+	return r.operate(ctx, actorKind, actorID, policy.RunbookPassOver, runID, map[string]any{"version": version, "step": step},
 		func(run *store.RunbookRun, st *RunbookState, actor string) error {
 			if err := decidable(run, version); err != nil {
 				return err
@@ -460,9 +462,12 @@ func (r *Runbooks) PassOver(ctx context.Context, actorKind, actorID, runID strin
 			if st.Phase != phaseRollback || rs == nil {
 				return fmt.Errorf("%w: it has not stopped at a rollback step", ErrRunbookState)
 			}
+			if st.stoppedRollbackStep() != step {
+				return fmt.Errorf("%w: its rollback did not stop at step %s", ErrRunbookState, step)
+			}
 			st.Error = ""
 			rs.Status = stepSkipped
-			st.log(r.cfg.Now(), "", actor, "passed over the rollback step that stopped the run")
+			st.log(r.cfg.Now(), step, actor, "passed over the rollback step that stopped the run")
 			run.Status = RunbookRollingBack
 			return nil
 		})
@@ -517,6 +522,18 @@ func (r *Runbooks) remember(runID, step, value string) {
 	r.secrets[runID][step] = value
 }
 
+// keepSecretsOf drops the secret answers of every run but those in open. A run
+// can stop on another hub, which holds no secrets to drop.
+func (r *Runbooks) keepSecretsOf(open []store.RunbookRun) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for id := range r.secrets {
+		if !slices.ContainsFunc(open, func(run store.RunbookRun) bool { return run.ID == id }) {
+			delete(r.secrets, id)
+		}
+	}
+}
+
 func (r *Runbooks) forgetRun(runID string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -557,7 +574,13 @@ func (r *Runbooks) Run(ctx context.Context) error {
 	tick := time.NewTicker(r.cfg.Poll)
 	defer tick.Stop()
 	for {
+		// Held so that an answer being saved is either in runs or not yet kept.
+		r.answering.RLock()
 		runs, err := r.cfg.Runs.Open(ctx)
+		if err == nil {
+			r.keepSecretsOf(runs)
+		}
+		r.answering.RUnlock()
 		if err != nil && ctx.Err() == nil {
 			r.cfg.Log.WarnContext(ctx, "runbook runs not read", "err", err)
 		}
@@ -787,11 +810,15 @@ func failedStatus(err error) string {
 }
 
 // outcomeUncertain reports whether an action that ended with err may have
-// happened all the same: it was handed over and the answer never came. A
-// refusal, or a target that could not be reached at all, is a definite failure.
+// happened all the same, in whole or in part: it was handed over and the answer
+// never came. A refusal, or a target that could not be reached at all, is a
+// definite failure.
 func outcomeUncertain(err error) bool {
 	if errors.Is(err, policy.ErrDenied) {
 		return false
+	}
+	if errors.Is(err, ErrOutcomeUnknown) || errors.Is(err, kubernetes.ErrDrainIncomplete) {
+		return true
 	}
 	var op *net.OpError
 	if errors.As(err, &op) && op.Op == "dial" {
@@ -802,7 +829,7 @@ func outcomeUncertain(err error) bool {
 		return false
 	}
 	for _, target := range []error{
-		ErrOutcomeUnknown, context.DeadlineExceeded, context.Canceled, os.ErrDeadlineExceeded,
+		context.DeadlineExceeded, context.Canceled, os.ErrDeadlineExceeded,
 		io.EOF, io.ErrUnexpectedEOF, net.ErrClosed, syscall.ECONNRESET, syscall.ECONNABORTED, syscall.EPIPE,
 	} {
 		if errors.Is(err, target) {

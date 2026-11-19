@@ -54,6 +54,18 @@ func fakeRunbookHub(t *testing.T, answers *[]map[string]string) *httptest.Server
 		w.WriteHeader(http.StatusConflict)
 		_, _ = w.Write([]byte(`{"error":"the run has moved on: reload it and try again","code":"conflict"}`))
 	}))
+	mux.HandleFunc("POST /api/v1/runbook-runs/r1/pass-over", authed(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Version int64  `json:"version"`
+			Step    string `json:"step"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Version != 7 || body.Step != "s" {
+			w.WriteHeader(http.StatusConflict)
+			_, _ = w.Write([]byte(`{"error":"the run has moved on: reload it and try again","code":"conflict"}`))
+			return
+		}
+		_, _ = w.Write([]byte(run))
+	}))
 	mux.HandleFunc("POST /api/v1/runbook-runs/r1/answer", authed(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]string
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -84,6 +96,9 @@ func TestRunbookCommands(t *testing.T) {
 			want: []string{"error: boom", "hearth runbook retry r1", "failed: boom"},
 		},
 		{name: "a refused retry is an error", args: []string{"retry", "r1"}, stdin: "pw\n", wantErr: "the run has moved on"},
+		{name: "pass-over names the step", args: []string{"pass-over", "r1", "s"}, stdin: "pw\n", want: []string{"Run r1"}},
+		{name: "pass-over of another step is refused", args: []string{"pass-over", "r1", "other"}, stdin: "pw\n", wantErr: "the run has moved on"},
+		{name: "pass-over needs the step", args: []string{"pass-over", "r1"}, stdin: "pw\n", wantErr: "accepts 2 arg"},
 		{name: "a wrong password is an error", args: []string{"show", "r1"}, stdin: "nope\n", wantErr: "wrong password"},
 	}
 	for _, tt := range tests {

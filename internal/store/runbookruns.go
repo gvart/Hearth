@@ -16,18 +16,27 @@ import (
 // `hearth cluster migrate`; until then no run can start.
 const runbookRunsSchema = 16
 
-// RunbookRunsKept is how many finished runs each runbook keeps, and how many
-// runs stopped for an operator's decision. Runs still under way are never
-// pruned.
+// RunbookRunsKept is how many finished runs each runbook keeps, how many failed
+// ones, and how many runs of unknown outcome or stopped rollback it may have.
+// Those last are never pruned: only an operator can resolve them, so a runbook
+// that has this many starts no more runs. Runs under way are never pruned.
 const RunbookRunsKept = 100
 
 // runbookRunsStopped are the statuses of runs stopped for an operator's
 // decision: nothing happens to them until someone decides.
 const runbookRunsStopped = `'failed', 'unknown', 'rollback_failed'`
 
+// runbookRunsUnresolved are the stopped statuses that leave a device in a state
+// nobody knows, or half rolled back.
+const runbookRunsUnresolved = `'unknown', 'rollback_failed'`
+
 // ErrRunbookRunConflict is returned when saving a runbook run that changed
 // since it was read: another hub or operator got there first.
 var ErrRunbookRunConflict = errors.New("runbook run changed since it was read")
+
+// ErrRunbookRunsUnresolved is returned when starting a run of a runbook that
+// already has RunbookRunsKept runs only an operator can resolve.
+var ErrRunbookRunsUnresolved = errors.New("too many runs of this runbook await an operator's decision")
 
 // RunbookRun is one run of a runbook.
 type RunbookRun struct {
@@ -193,8 +202,9 @@ func (r RunbookRuns) query(ctx context.Context, q string, args ...any) ([]Runboo
 }
 
 // CreateRunbookRun inserts a run at version 1, then deletes all but the newest
-// Keep finished runs of that runbook, and all but the newest Keep of its runs
-// stopped for an operator's decision.
+// Keep finished runs of that runbook, and all but the newest Keep of its failed
+// runs. It fails with ErrRunbookRunsUnresolved, inserting nothing, when the
+// runbook already has Keep unresolved runs.
 type CreateRunbookRun struct {
 	ID        string `json:"id"`
 	RunbookID string `json:"runbook_id"`
@@ -212,6 +222,14 @@ func (CreateRunbookRun) Op() string { return "create_runbook_run" }
 func (CreateRunbookRun) minSchema() int64 { return runbookRunsSchema }
 
 func (c CreateRunbookRun) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
+	var unresolved int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM runbook_runs
+		WHERE runbook_id = ? AND finished_at = 0 AND status IN (`+runbookRunsUnresolved+`)`, c.RunbookID).Scan(&unresolved); err != nil {
+		return Result{}, err
+	}
+	if c.Keep > 0 && unresolved >= c.Keep {
+		return Result{}, ErrRunbookRunsUnresolved
+	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO runbook_runs (id, runbook_id, status, version, started_by, started_at, updated_at, source, state)
 		VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?)`,
@@ -226,9 +244,9 @@ func (c CreateRunbookRun) apply(ctx context.Context, tx *sql.Tx) (Result, error)
 		return Result{}, err
 	}
 	_, err = tx.ExecContext(ctx, `
-		DELETE FROM runbook_runs WHERE runbook_id = ? AND finished_at = 0 AND status IN (`+runbookRunsStopped+`)
+		DELETE FROM runbook_runs WHERE runbook_id = ? AND finished_at = 0 AND status = 'failed'
 		AND rowid NOT IN (
-			SELECT rowid FROM runbook_runs WHERE runbook_id = ? AND finished_at = 0 AND status IN (`+runbookRunsStopped+`)
+			SELECT rowid FROM runbook_runs WHERE runbook_id = ? AND finished_at = 0 AND status = 'failed'
 			ORDER BY started_at DESC, rowid DESC LIMIT ?)`, c.RunbookID, c.RunbookID, c.Keep)
 	return Result{}, err
 }

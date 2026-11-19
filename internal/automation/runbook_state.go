@@ -194,13 +194,22 @@ func (st *RunbookState) nextRollback() int {
 
 // stoppedRollback is the rollback step the run stopped at, or nil.
 func (st *RunbookState) stoppedRollback() *RunbookRollbackState {
+	if s := st.step(st.stoppedRollbackStep()); s != nil {
+		return s.Rollback
+	}
+	return nil
+}
+
+// stoppedRollbackStep is the id of the step whose rollback the run stopped at,
+// or "".
+func (st *RunbookState) stoppedRollbackStep() string {
 	for i := len(st.Steps) - 1; i >= 0; i-- {
 		r := st.Steps[i].Rollback
 		if r != nil && (r.Status == stepFailed || r.Status == stepDenied || r.Status == stepUnknown) {
-			return r
+			return st.Steps[i].ID
 		}
 	}
-	return nil
+	return ""
 }
 
 // runbookFinished reports whether a run in status has ended for good.
@@ -230,6 +239,8 @@ type RunbookRunJSON struct {
 	CanRetry    bool `json:"can_retry"`
 	CanRollback bool `json:"can_rollback"`
 	CanPassOver bool `json:"can_pass_over"`
+	// PassOverStep is the step whose rollback a pass-over has to name.
+	PassOverStep string `json:"pass_over_step,omitempty"`
 	RunbookState
 }
 
@@ -242,7 +253,10 @@ func runbookRunJSON(run store.RunbookRun, st *RunbookState) RunbookRunJSON {
 	}
 	if runbookStopped(run.Status) {
 		out.CanRollback = st.Phase != phaseRollback
-		out.CanPassOver = st.Phase == phaseRollback && st.stoppedRollback() != nil
+		if st.Phase == phaseRollback {
+			out.PassOverStep = st.stoppedRollbackStep()
+			out.CanPassOver = out.PassOverStep != ""
+		}
 	}
 	if !run.FinishedAt.IsZero() {
 		out.FinishedAt = &run.FinishedAt

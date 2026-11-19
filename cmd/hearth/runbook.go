@@ -142,7 +142,7 @@ func newRunbookCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				return c.decide(cmd.Context(), args[0], "/retry", cmd.OutOrStdout())
+				return c.decide(cmd.Context(), args[0], "/retry", "", cmd.OutOrStdout())
 			},
 		},
 		&cobra.Command{
@@ -152,19 +152,19 @@ func newRunbookCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				return c.decide(cmd.Context(), args[0], "/rollback", cmd.OutOrStdout())
+				return c.decide(cmd.Context(), args[0], "/rollback", "", cmd.OutOrStdout())
 			},
 		},
 		&cobra.Command{
-			Use:   "pass-over <run>",
-			Short: "Give up on the rollback step a run stopped at and go on with the others",
-			Args:  cobra.ExactArgs(1),
+			Use:   "pass-over <run> <step>",
+			Short: "Give up on the rollback of the step a run stopped at and go on with the others",
+			Args:  cobra.ExactArgs(2),
 			RunE: func(cmd *cobra.Command, args []string) error {
 				c, err := client(cmd)
 				if err != nil {
 					return err
 				}
-				return c.decide(cmd.Context(), args[0], "/pass-over", cmd.OutOrStdout())
+				return c.decide(cmd.Context(), args[0], "/pass-over", args[1], cmd.OutOrStdout())
 			},
 		},
 	)
@@ -302,13 +302,18 @@ func (c *runbookClient) act(ctx context.Context, path string, body any, out io.W
 	return printRunbookRun(out, run)
 }
 
-// decide posts an operator's decision on the run as it stands now.
-func (c *runbookClient) decide(ctx context.Context, runID, suffix string, out io.Writer) error {
+// decide posts an operator's decision on the run as it stands now, naming step
+// if the decision is about one.
+func (c *runbookClient) decide(ctx context.Context, runID, suffix, step string, out io.Writer) error {
 	var run automation.RunbookRunJSON
 	if err := c.do(ctx, http.MethodGet, runbookRunPath(runID, ""), nil, &run); err != nil {
 		return err
 	}
-	return c.act(ctx, runbookRunPath(runID, suffix), map[string]int64{"version": run.Version}, out)
+	body := map[string]any{"version": run.Version}
+	if step != "" {
+		body["step"] = step
+	}
+	return c.act(ctx, runbookRunPath(runID, suffix), body, out)
 }
 
 func (c *runbookClient) list(ctx context.Context, out io.Writer) error {
@@ -417,7 +422,7 @@ func printRunbookRun(out io.Writer, run automation.RunbookRunJSON) error {
 	case run.CanRetry && run.CanRollback:
 		fmt.Fprintf(&b, "\nStopped: hearth runbook retry %s, or hearth runbook rollback %s\n", run.ID, run.ID)
 	case run.CanRetry && run.CanPassOver:
-		fmt.Fprintf(&b, "\nStopped: hearth runbook retry %s, or hearth runbook pass-over %s\n", run.ID, run.ID)
+		fmt.Fprintf(&b, "\nStopped: hearth runbook retry %s, or hearth runbook pass-over %s %s\n", run.ID, run.ID, run.PassOverStep)
 	case run.CanRetry:
 		fmt.Fprintf(&b, "\nStopped: hearth runbook retry %s\n", run.ID)
 	}

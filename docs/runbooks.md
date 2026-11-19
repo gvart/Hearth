@@ -112,7 +112,8 @@ A run that stops can be continued in two ways:
 - **Roll back** runs the declared rollback steps of the completed steps, last step first.
 
 If a rollback step fails, the rollback stops too. Retry that rollback step, or pass over it and go on
-with the rest (`hearth runbook pass-over <run>`, **Pass over and continue** on the page). Passing over
+with the rest (`hearth runbook pass-over <run> <step>`, **Pass over and continue** on the page). The
+step named has to be the one the rollback stopped at. Passing over
 is its own audited decision: what that step should have undone stays as it is.
 
 Each decision names the version of the run it was made on. A repeated or late request is refused, and
@@ -124,7 +125,11 @@ If the hub dies while a step is running, or an action or rollback step times out
 connection before the answer comes, nobody knows whether it happened. The run stops with the status
 `unknown`, and Hearth never runs that step again by itself: look at the device, then retry or roll back.
 A roll back includes the rollback of the unknown step, as it may have happened. Only a definite refusal
-or error from the target, or a target that could not be reached at all, makes a step `failed`.
+or error from the target, or a first hop that could not be reached at all, makes a step `failed`. A node
+drain that stops after cordoning the node is `unknown` too.
+
+Each runbook keeps its newest 100 `failed` runs. Runs that are `unknown` or `rollback_failed` are kept until
+you resolve them, and a runbook with 100 of those refuses new runs until you do.
 
 Secret answers are dropped from the hub's memory when a run stops, so a retry asks for them again.
 
@@ -197,7 +202,7 @@ hearth runbook show <run>                 # a run's steps and log
 hearth runbook answer <run> <step> [value] # answer a prompt; a secret is only ever asked for, unechoed
 hearth runbook retry <run>                # run the stopped step again
 hearth runbook rollback <run>             # roll a stopped run back
-hearth runbook pass-over <run>            # give up on a stopped rollback step and go on
+hearth runbook pass-over <run> <step>     # give up on a stopped rollback step and go on
 ```
 
 The commands use the hub's API (`--hub-url`, default `http://127.0.0.1:7080`) and sign in with the admin

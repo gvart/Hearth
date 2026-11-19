@@ -415,6 +415,8 @@ export interface RunbookRun {
   can_retry: boolean;
   can_rollback: boolean;
   can_pass_over: boolean;
+  /** The step whose rollback a pass-over has to name. */
+  pass_over_step?: string;
   phase: 'forward' | 'rollback';
   /** The prompt step waiting for an answer. */
   awaiting?: string;
@@ -555,8 +557,8 @@ export const api = {
     request<RunbookRun>('POST', `/runbook-runs/${encodeURIComponent(id)}/retry`, { version }),
   rollbackRunbookRun: (id: string, version: number) =>
     request<RunbookRun>('POST', `/runbook-runs/${encodeURIComponent(id)}/rollback`, { version }),
-  passOverRunbookStep: (id: string, version: number) =>
-    request<RunbookRun>('POST', `/runbook-runs/${encodeURIComponent(id)}/pass-over`, { version }),
+  passOverRunbookStep: (id: string, step: string, version: number) =>
+    request<RunbookRun>('POST', `/runbook-runs/${encodeURIComponent(id)}/pass-over`, { step, version }),
 };
 
 export interface EventHandlers {

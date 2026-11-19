@@ -340,7 +340,7 @@ function Step({ step }: { step: RunbookStep }) {
 function Stopped({ run }: { run: RunbookRun }) {
   const retry = useRunbookRunAction(run.id, () => api.retryRunbookRun(run.id, run.version));
   const rollback = useRunbookRunAction(run.id, () => api.rollbackRunbookRun(run.id, run.version));
-  const passOver = useRunbookRunAction(run.id, () => api.passOverRunbookStep(run.id, run.version));
+  const passOver = useRunbookRunAction(run.id, () => api.passOverRunbookStep(run.id, run.pass_over_step ?? '', run.version));
   const busy = retry.isPending || rollback.isPending || passOver.isPending;
   const inRollback = run.phase === 'rollback';
   const failure = retry.error ?? rollback.error ?? passOver.error;

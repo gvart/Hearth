@@ -204,9 +204,10 @@ func TestRunbookAPIRetryAndRollback(t *testing.T) {
 		{"/retry", "", http.StatusBadRequest},
 		{"/rollback", "{}", http.StatusBadRequest},
 		{"/pass-over", "", http.StatusBadRequest},
+		{"/pass-over", versionBody(got.Version), http.StatusBadRequest}, // it names no step
 		{"/retry", versionBody(got.Version - 1), http.StatusConflict},
 		{"/rollback", versionBody(got.Version + 1), http.StatusConflict},
-		{"/pass-over", versionBody(got.Version), http.StatusConflict}, // it is not rolling back
+		{"/pass-over", fmt.Sprintf(`{"version":%d,"step":"call"}`, got.Version), http.StatusConflict}, // it is not rolling back
 	} {
 		if resp := f.do(t, http.MethodPost, path+tc.op, tc.body, f.cookie); resp.StatusCode != tc.want {
 			t.Errorf("%s with %q = %d, want %d", tc.op, tc.body, resp.StatusCode, tc.want)
@@ -264,6 +265,26 @@ func TestRunbookAPIRetryAndRollback(t *testing.T) {
 	}
 	if resp := f.do(t, http.MethodGet, "/api/v1/runbook-runs/none", "", f.cookie); resp.StatusCode != http.StatusNotFound {
 		t.Errorf("unknown run = %d", resp.StatusCode)
+	}
+}
+
+func TestRunbookAPIRefusesAStartOverTooManyUnresolvedRuns(t *testing.T) {
+	f := newRunbookFixture(t, retryYAML)
+	now := time.Now()
+	for i := range store.RunbookRunsKept {
+		if err := f.st.RunbookRuns().Create(t.Context(), store.RunbookRun{
+			ID: fmt.Sprintf("r%03d", i), RunbookID: "rb", Status: automation.RunbookUnknown, StartedBy: "web/x",
+			StartedAt: now, UpdatedAt: now, Source: []byte("x"), State: []byte(`{}`),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	resp := f.do(t, http.MethodPost, "/api/v1/runbooks/rb/runs", "", f.cookie)
+	if resp.StatusCode != http.StatusConflict || !strings.Contains(string(resp.body), "retry them, roll them back") {
+		t.Errorf("start = %d %s, want a refusal that says what to do", resp.StatusCode, resp.body)
+	}
+	if n := f.hits.Load(); n != 0 {
+		t.Errorf("the refused run called the webhook %d times", n)
 	}
 }
 

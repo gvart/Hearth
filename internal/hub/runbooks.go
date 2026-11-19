@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -157,7 +158,21 @@ func (a *api) rollbackRunbookRun(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *api) passOverRunbookRun(w http.ResponseWriter, r *http.Request) {
-	a.decideRunbookRun(w, r, "pass over runbook rollback step", a.runbooks.PassOver)
+	var body struct {
+		Version int64  `json:"version"`
+		Step    string `json:"step"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxRunbookAnswerBody)).Decode(&body); err != nil ||
+		body.Version <= 0 || body.Step == "" {
+		writeError(w, http.StatusBadRequest, "bad_request", `body must be {"version": <the run's version>, "step": <the step passed over>}`)
+		return
+	}
+	run, err := a.runbooks.PassOver(r.Context(), policy.ActorWeb, remoteHost(r), r.PathValue("id"), body.Step, body.Version)
+	if err != nil {
+		a.writeRunbookError(w, r, "pass over runbook rollback step", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, run)
 }
 
 // writeRunbookError answers a failed runbook request.
@@ -175,6 +190,10 @@ func (a *api) writeRunbookError(w http.ResponseWriter, r *http.Request, what str
 		writeError(w, http.StatusConflict, "not_leader", msg)
 	case errors.Is(err, automation.ErrRunbookState), errors.Is(err, store.ErrRunbookRunConflict):
 		writeError(w, http.StatusConflict, "conflict", "the run has moved on: reload it and try again")
+	case errors.Is(err, store.ErrRunbookRunsUnresolved):
+		writeError(w, http.StatusConflict, "runs_unresolved", fmt.Sprintf(
+			"this runbook has %d runs of unknown outcome or with a stopped rollback: retry them, roll them back or pass over their rollback step before starting another",
+			store.RunbookRunsKept))
 	case errors.Is(err, store.ErrSchemaTooOld):
 		writeError(w, http.StatusConflict, "schema_too_old", "run `hearth cluster migrate` to use runbooks on this cluster")
 	case errors.Is(err, policy.ErrDenied):

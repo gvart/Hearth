@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gvart/hearth/internal/integrations/kubernetes"
 	"github.com/gvart/hearth/internal/policy"
 	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
 	"github.com/gvart/hearth/internal/store"
@@ -359,10 +360,19 @@ func TestRunbookRepeatedRollbackDoesNotPassOverAFailedStep(t *testing.T) {
 	}
 
 	// A stale pass-over is refused too; the current one is audited as such.
-	if _, err := h.rb.PassOver(t.Context(), policy.ActorWeb, "10.0.0.9", id, version); !errors.Is(err, ErrRunbookState) {
+	if _, err := h.rb.PassOver(t.Context(), policy.ActorWeb, "10.0.0.9", id, "two", version); !errors.Is(err, ErrRunbookState) {
 		t.Errorf("stale pass-over = %v, want ErrRunbookState", err)
 	}
-	if _, err := h.rb.PassOver(t.Context(), policy.ActorWeb, "10.0.0.9", id, runVersion(t, h, id)); err != nil {
+	// The step named has to be the one that failed.
+	for _, step := range []string{"", "one", "three", "nope"} {
+		if _, err := h.rb.PassOver(t.Context(), policy.ActorWeb, "10.0.0.9", id, step, runVersion(t, h, id)); !errors.Is(err, ErrRunbookState) {
+			t.Errorf("pass-over naming %q = %v, want ErrRunbookState", step, err)
+		}
+	}
+	if got := h.get(id); got.Status != RunbookRollbackFailed || got.PassOverStep != "two" {
+		t.Fatalf("after the refusals: %s, pass-over step %q", got.Status, got.PassOverStep)
+	}
+	if _, err := h.rb.PassOver(t.Context(), policy.ActorWeb, "10.0.0.9", id, "two", runVersion(t, h, id)); err != nil {
 		t.Fatal(err)
 	}
 	h.await(id, RunbookRolledBack)
@@ -716,4 +726,82 @@ steps:
 	if run.Steps[1].Status != stepUnknown || strings.Contains(run.Steps[1].Error, secret) {
 		t.Errorf("step = %+v", run.Steps[1])
 	}
+}
+
+// TestRunbookDrainThatStoppedIsUnknown: a drain that stopped has cordoned the
+// node and evicted some of its pods, so its rollback has to stay possible.
+func TestRunbookDrainThatStoppedIsUnknown(t *testing.T) {
+	err := fmt.Errorf("drain pi-1: node stays cordoned: %w: pod refused", kubernetes.ErrDrainIncomplete)
+	if !outcomeUncertain(err) {
+		t.Errorf("outcomeUncertain(%v) = false", err)
+	}
+}
+
+func TestWebhookOutcome(t *testing.T) {
+	urls := outcomeServers(t)
+	h2 := httptest.NewUnstartedServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		panic(http.ErrAbortHandler) // resets the stream, having read the request
+	}))
+	h2.EnableHTTP2 = true
+	h2.StartTLS()
+	t.Cleanup(h2.Close)
+	redirect := func(to string) string {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, to, http.StatusTemporaryRedirect)
+		}))
+		t.Cleanup(srv.Close)
+		return srv.URL
+	}
+	for _, tc := range []struct {
+		name, url string
+		client    *http.Client
+		uncertain bool
+	}{
+		{"a stream reset after the request arrived", h2.URL, h2.Client(), true},
+		{"accepted, and its redirect target is down", redirect(urls["closed"]), http.DefaultClient, true},
+		{"accepted, and its redirect target refused", redirect(urls["refuse"]), http.DefaultClient, true},
+		{"a timeout", urls["hang"], http.DefaultClient, true},
+		{"a connection lost", urls["drop"], http.DefaultClient, true},
+		{"a refusal by the target", urls["refuse"], http.DefaultClient, false},
+		{"a first hop that cannot be reached", urls["closed"], http.DefaultClient, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := &webhookAction{client: tc.client, method: http.MethodPost, url: tc.url, timeout: 200 * time.Millisecond, site: "site"}
+			err := a.Run(t.Context(), Event{})
+			if err == nil {
+				t.Fatal("the webhook succeeded")
+			}
+			if got := outcomeUncertain(err); got != tc.uncertain {
+				t.Errorf("outcomeUncertain(%v) = %v, want %v", err, got, tc.uncertain)
+			}
+		})
+	}
+}
+
+// TestRunbookLeaderDropsSecretsOfARunStoppedElsewhere: a prompt that is not
+// secret can be answered on any hub, and the leader only sees the result.
+func TestRunbookLeaderDropsSecretsOfARunStoppedElsewhere(t *testing.T) {
+	h := newRBHarness(t, `id: rb
+steps:
+  - id: token
+    type: prompt
+    message: The token?
+    secret: true
+  - id: pause
+    type: prompt
+    prompt: confirm
+    message: Carry on?
+`, policy.Config{})
+	h.run(h.rb)
+	id := h.start("rb")
+	h.await(id, RunbookWaiting)
+	h.answer(id, "token", "the-secret-answer")
+	eventually(t, "the second prompt", func() bool { return h.get(id).Awaiting == "pause" })
+
+	follower := h.engine()
+	if _, err := follower.Answer(t.Context(), policy.ActorWeb, "10.0.0.9", id, "pause", ConfirmNo); err != nil {
+		t.Fatal(err)
+	}
+	h.await(id, RunbookFailed)
+	eventually(t, "the secret dropped", func() bool { return len(h.rb.secretsOf(id)) == 0 })
 }

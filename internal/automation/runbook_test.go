@@ -267,7 +267,7 @@ func (h *rbHarness) rollback(id string) {
 
 func (h *rbHarness) passOver(id string) {
 	h.t.Helper()
-	if _, err := h.rb.PassOver(context.Background(), policy.ActorWeb, "10.0.0.9", id, runVersion(h.t, h, id)); err != nil {
+	if _, err := h.rb.PassOver(context.Background(), policy.ActorWeb, "10.0.0.9", id, h.get(id).PassOverStep, runVersion(h.t, h, id)); err != nil {
 		h.t.Fatal(err)
 	}
 }
