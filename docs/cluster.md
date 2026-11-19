@@ -272,6 +272,11 @@ hub node certificate (never with a device or admin credential), and the leader a
 without a second decision. The audit entry is itself a write through the same path, so it lands in
 the replicated log in order with the action.
 
+An action's audit entry is written before the action runs, so a cluster that has lost its quorum
+refuses every action, reads included, and says why. Agent heartbeats, the check of a signed-in
+session and what the web UI reads from a hub's own database write no audit entry, so this refusal
+does not affect them. Actions work again once a majority of hubs is back.
+
 ## Limits
 
 - **A removed member's data dir still holds the CA key.** Every member receives the hub CA's private

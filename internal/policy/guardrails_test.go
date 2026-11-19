@@ -4,6 +4,7 @@ package policy
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -30,10 +31,32 @@ func (m *memAudit) Append(_ context.Context, e store.AuditEntry) (int64, error) 
 	return int64(len(m.entries)), nil
 }
 
-func (m *memAudit) all() []store.AuditEntry {
+// raw returns the entries as they were written.
+func (m *memAudit) raw() []store.AuditEntry {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return slices.Clone(m.entries)
+}
+
+// all returns the entries as store.Audit.Query shows them: one per action.
+func (m *memAudit) all() []store.AuditEntry {
+	var out []store.AuditEntry
+	started := map[string]int{}
+	for _, e := range m.raw() {
+		var d map[string]any
+		_ = json.Unmarshal(e.Detail, &d)
+		if op, ok := d[store.AuditOutcomeOfKey].(string); ok {
+			if i, ok := started[op]; ok {
+				out[i].Result, out[i].Detail = e.Result, e.Detail
+				continue
+			}
+		}
+		if op, ok := d[store.AuditOpKey].(string); ok {
+			started[op] = len(out)
+		}
+		out = append(out, e)
+	}
+	return out
 }
 
 // autoApprovals holds approvals in memory and decides each one with
@@ -458,7 +481,7 @@ func TestDecisionAuditedBeforeItTakesEffect(t *testing.T) {
 			if err := e.Decide(t.Context(), ActorWeb, "192.0.2.1", id, tt.approve); err != nil {
 				t.Fatal(err)
 			}
-			if got := approvals.atDecide; len(got) != 1 || got[0].Action != string(tt.action) || got[0].Decision != Allow || got[0].Result != "ok" {
+			if got := approvals.atDecide; len(got) != 1 || got[0].Action != string(tt.action) || got[0].Decision != Allow || got[0].Result != Started {
 				t.Errorf("audit when the decision took effect = %+v, want the %s entry", got, tt.action)
 			}
 			if got := audit.all(); len(got) != 1 {
@@ -484,7 +507,7 @@ func TestDecisionNotAuditedDoesNotTakeEffect(t *testing.T) {
 }
 
 // TestDecisionLostRaceIsAudited: a decision that loses to another one after
-// it was audited is followed by an entry saying it failed.
+// it was audited ends with an outcome saying it failed.
 func TestDecisionLostRaceIsAudited(t *testing.T) {
 	audit := &memAudit{}
 	approvals := &decisionLog{audit: audit, decideErr: store.ErrApprovalClosed}
@@ -494,8 +517,8 @@ func TestDecisionLostRaceIsAudited(t *testing.T) {
 		t.Fatalf("Decide = %v, want ErrApprovalClosed", err)
 	}
 	got := audit.all()
-	if len(got) != 2 || got[0].Result != "ok" || !strings.HasPrefix(got[1].Result, "error: ") {
-		t.Errorf("audit = %+v, want the decision and then its failure", got)
+	if len(got) != 1 || !strings.HasPrefix(got[0].Result, "error: ") {
+		t.Errorf("audit = %+v, want the decision showing its failure", got)
 	}
 }
 

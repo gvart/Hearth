@@ -130,6 +130,15 @@ Every decision above lands in the audit log. The web UI's **Audit** page lists i
 with filters for time range, actor kind and id, action, class, decision and device. Click a row
 for its detail (approval id, automation run, step). Dry runs carry a "dry run" tag.
 
+An action is written to the audit log before it runs: if that write fails, the action is refused and
+nothing happens. Its result then replaces the entry, so each action is one row:
+
+| Result | Meaning |
+| --- | --- |
+| `ok` or `error: ...` | The action ran and this is how it ended. |
+| `started` (**No outcome recorded** in the web UI) | The action is still running, the hub stopped before it could report the result, or a cluster lost its leader while writing the entry and the action was refused. Check the target. |
+| `read allowed` | A read was allowed to run. Reads record a result only when they fail, so that frequent reads do not write twice. |
+
 `GET /api/v1/audit` serves the same data. It takes the query parameters `actor_kind`, `actor`
 (part of the actor id), `action`, `class` (`read` / `safe` / `dangerous`), `decision`, `device` (a
 device id; matches entries that target its id, name or hostname), `since` and `until` (RFC 3339),

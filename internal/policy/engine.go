@@ -48,10 +48,28 @@ type Request struct {
 	// OnHold, when set, is called once the request is held for approval,
 	// with the approval's id and expiry.
 	OnHold func(id string, expires time.Time)
-	// auditFirst records an allowed request before fn runs instead of after,
-	// for an fn whose effect others act on at once; see runAuditedFirst.
-	auditFirst bool
+	// RecordOutcome makes a read-class request write its outcome even when it
+	// succeeds, as every other class does: for a rare read whose fn adds to
+	// Detail what the audit log should show. See Engine.run.
+	RecordOutcome bool
 }
+
+// Results of the entry written before an allowed action runs. The entry that
+// reports the action's outcome, "ok" or "error: ...", replaces it for readers
+// of the audit log (see store.Audit.Query).
+const (
+	// Started means the action was about to run. Alone in the log, it means
+	// the action is still running, the hub stopped before it could report, or
+	// the write seemed to fail, refusing the action, and committed after all.
+	Started = "started"
+	// ReadAllowed is the one entry of a read that did not fail: reads are the
+	// frequent actions and change nothing, so success adds no second write.
+	ReadAllowed = "read allowed"
+)
+
+// outcomeTimeout bounds the write of an action's outcome, which outlives the
+// request. It covers waiting for a cluster leader and the Raft apply.
+const outcomeTimeout = 20 * time.Second
 
 type scopeKey struct{}
 
@@ -113,10 +131,9 @@ func NewWithConfig(audit Auditor, approvals Approvals, cfg Config) *Engine {
 // Do decides on req and, if allowed, runs fn. A request the configuration
 // says to confirm is first held as a pending approval, and Do waits until
 // it is approved, denied or expires, or ctx is done. Every decision is in
-// the audit log: one entry for a request allowed, denied or dry-run, two for
-// a held one (the hold, then its outcome) and for a decision on an approval
-// that fails after it was audited (see Decide). A denied request returns an
-// error wrapping ErrDenied; an allowed one returns fn's error.
+// the audit log, and fn never runs unless its entry was written first (see
+// run). A denied request returns an error wrapping ErrDenied; an allowed one
+// returns fn's error.
 func (e *Engine) Do(ctx context.Context, req Request, fn func(context.Context) error) error {
 	decision, reason, class := e.decide(req)
 	if decision != Deny {
@@ -147,7 +164,8 @@ func (e *Engine) Do(ctx context.Context, req Request, fn func(context.Context) e
 
 	var extra map[string]any
 	auditCtx := ctx
-	if decision == Confirm {
+	held := decision == Confirm
+	if held {
 		var err error
 		if decision, reason, extra, err = e.hold(ctx, req, class); err != nil {
 			return err
@@ -156,43 +174,72 @@ func (e *Engine) Do(ctx context.Context, req Request, fn func(context.Context) e
 		auditCtx = context.WithoutCancel(ctx)
 	}
 
-	if decision == Allow && req.auditFirst {
-		return e.runAuditedFirst(ctx, req, fn)
+	if decision == Allow {
+		return e.run(ctx, req, class, held, extra, fn)
+	}
+	if err := e.record(auditCtx, req, decision, reason, extra); err != nil {
+		return err
+	}
+	return denied(req, reason, precheckErr)
+}
+
+// run runs the allowed req with its audit entry written first: fn is not
+// called unless the entry exists. A second entry, tied to the first by an
+// operation id, records the outcome on a context that survives ctx being
+// cancelled. A read that succeeds writes no second entry, unless it was held
+// for approval or asks to with RecordOutcome.
+func (e *Engine) run(ctx context.Context, req Request, class Class, held bool, extra map[string]any, fn func(context.Context) error) error {
+	op := strings.ToLower(rand.Text())
+	failureOnly := class == Read && !req.RecordOutcome && !held
+	first := Started
+	if failureOnly {
+		first = ReadAllowed
+	}
+	if err := e.record(ctx, req, Allow, first, withDetail(extra, store.AuditOpKey, op)); err != nil {
+		if held {
+			// The hold has to end in an outcome, if one can still be written.
+			_ = e.recordOutcome(ctx, req, Deny, "approved, but not run: "+err.Error(), extra)
+		}
+		return refused(ctx, req, err)
 	}
 
-	var runErr error
-	result := reason
-	if decision == Allow {
-		runErr = fn(context.WithValue(ctx, grantKey{}, req.Action))
-		result = "ok"
-		if runErr != nil {
-			result = "error: " + runErr.Error()
-		}
+	runErr := fn(context.WithValue(ctx, grantKey{}, req.Action))
+	if runErr == nil && failureOnly {
+		return nil
 	}
-	if err := e.record(auditCtx, req, decision, result, extra); err != nil {
-		return withAuditErr(runErr, err)
+	result := "ok"
+	if runErr != nil {
+		result = "error: " + runErr.Error()
 	}
-	if decision == Deny {
-		return denied(req, reason, precheckErr)
+	if err := e.recordOutcome(ctx, req, Allow, result, withDetail(extra, store.AuditOutcomeOfKey, op)); err != nil {
+		return withAuditErr(runErr, fmt.Errorf("%s ran, but its outcome was not recorded: %w", req.Action, err))
 	}
 	return runErr
 }
 
-// runAuditedFirst runs the allowed req with its audit entry written first:
-// fn does not run unless the entry exists. If fn then fails, a second entry
-// records the failure.
-func (e *Engine) runAuditedFirst(ctx context.Context, req Request, fn func(context.Context) error) error {
-	if err := e.record(ctx, req, Allow, "ok", nil); err != nil {
-		return err
+// recordOutcome is record on a context that ctx being cancelled cannot stop.
+func (e *Engine) recordOutcome(ctx context.Context, req Request, decision, result string, extra map[string]any) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), outcomeTimeout)
+	defer cancel()
+	return e.record(ctx, req, decision, result, extra)
+}
+
+// withDetail returns a copy of extra with key set to value.
+func withDetail(extra map[string]any, key, value string) map[string]any {
+	out := make(map[string]any, len(extra)+1)
+	maps.Copy(out, extra)
+	out[key] = value
+	return out
+}
+
+// refused is the error of an action that did not run because its audit entry
+// could not be written. It still matches the write's error.
+func refused(ctx context.Context, req Request, err error) error {
+	if ctx.Err() != nil {
+		return fmt.Errorf("%s refused, nothing was run: the request ended before its audit entry was written: %w", req.Action, err)
 	}
-	runErr := fn(context.WithValue(ctx, grantKey{}, req.Action))
-	if runErr == nil {
-		return nil
-	}
-	if err := e.record(ctx, req, Allow, "error: "+runErr.Error(), nil); err != nil {
-		return withAuditErr(runErr, err)
-	}
-	return runErr
+	return fmt.Errorf("%s refused, nothing was run: its audit entry could not be written "+
+		"(a hub cluster refuses every action while most of its hubs are unreachable): %w", req.Action, err)
 }
 
 // grantKey is the context key of the action Do allowed: the context it
@@ -368,8 +415,6 @@ func (e *Engine) Decide(ctx context.Context, actorKind, actorID, id string, appr
 		Detail: map[string]any{
 			"action": held.Action, "actor": held.ActorKind + "/" + held.ActorID, "target": held.Target,
 		},
-		// A closed approval will refuse the decision: one entry says so.
-		auditFirst: held.Status == store.ApprovalPending && e.now().Before(held.ExpiresAt),
 	}, func(ctx context.Context) error {
 		return e.approvals.Decide(ctx, id, status, actorKind+"/"+actorID, e.now())
 	})

@@ -157,6 +157,8 @@ func (s *Scanner) Scan(ctx context.Context) error {
 		Action:    policy.NetworkScan,
 		Target:    strings.Join(names, ","),
 		Detail:    detail,
+		// The counts filled in below are what this entry is for.
+		RecordOutcome: true,
 	}, func(ctx context.Context) error {
 		start := s.now()
 		hosts, err := s.find(ctx, subnets, nets)

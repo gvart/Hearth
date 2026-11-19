@@ -37,10 +37,11 @@ func TestNotifyActions(t *testing.T) {
 			audit := &memAudit{}
 			ran := false
 			err := New(audit).Do(t.Context(), tt.req, func(context.Context) error { ran = true; return nil })
-			if len(audit.entries) != 1 {
-				t.Fatalf("audit entries = %d", len(audit.entries))
+			entries := audit.all()
+			if len(entries) != 1 {
+				t.Fatalf("audit entries = %d", len(entries))
 			}
-			e := audit.entries[0]
+			e := entries[0]
 			if tt.wantDeny == "" {
 				if err != nil || !ran || e.Decision != Allow {
 					t.Errorf("err %v ran %v entry %+v, want allowed", err, ran, e)

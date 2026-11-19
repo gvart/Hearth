@@ -113,6 +113,8 @@ func (im *Importer) Import(ctx context.Context) error {
 		Action:    policy.NetworkImport,
 		Target:    strings.Join(targets, ","),
 		Detail:    detail,
+		// What the import found is what this entry is for.
+		RecordOutcome: true,
 	}, func(ctx context.Context) error {
 		start := im.now()
 		var (
