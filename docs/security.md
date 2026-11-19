@@ -55,7 +55,10 @@ All three are dangerous policy actions for the local admin, audited. What it doe
 - Until the finish, both CAs are trusted, and whoever holds the old key can still pose as a hub to
   browsers and agents and mint agent certificates. Old-CA hub certificates are accepted only if they
   are exactly the ones pinned when the rotation started, so the old key cannot mint a new hub
-  identity, and fetching the new key with a forged one is refused and audited. A hub whose node
+  identity, and fetching the new key with a forged one is refused and audited. The same holds when a
+  hub calls another (forwarded writes, fetching the new key, rotation status): the hub called must
+  present its pinned node certificate or one of the new CA, not just any certificate of a trusted CA,
+  so the old key cannot stand in for a member on the path. A hub whose node
   certificate has no recorded fingerprint is never pinned, `--accept-unpinned` or not. While the
   rotation is under way, a hub that cannot read its store to check a pin refuses old-CA hub
   certificates, and a hub asked whether it serves the new CA must show a certificate of it. After the finish,

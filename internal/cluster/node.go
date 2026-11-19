@@ -122,6 +122,10 @@ type Node struct {
 	fsm   *fsm
 	// fwdHTTP forwards writes to the leader with this hub's node certificate.
 	fwdHTTP *http.Client
+	// pinHTTP replaces fwdHTTP for ClusterService calls during a hub CA
+	// rotation: the server must show its pinned node certificate or one of
+	// the new CA (see clusterHTTP).
+	pinHTTP *http.Client
 
 	obsCh   chan raft.Observation
 	obs     *raft.Observer
@@ -250,6 +254,7 @@ func (n *Node) Start(ctx context.Context) error {
 	}
 	n.resumeRotation(ctx)
 	n.fwdHTTP = newForwardClient(n.cfg.CA, stream.currentCert, n.epoch)
+	n.pinHTTP = newNodeCertClient(n.cfg.CA, stream.currentCert, n.checkPeerCert)
 	n.trans = raft.NewNetworkTransportWithLogger(stream, maxPool, dialTimeout, logger)
 	n.bolt, err = raftboltdb.NewBoltStore(filepath.Join(n.dir, boltFile))
 	if err != nil {
@@ -350,6 +355,7 @@ func (n *Node) Shutdown() error {
 	n.stopMembers()
 	n.closeStores()
 	n.fwdHTTP.CloseIdleConnections()
+	n.pinHTTP.CloseIdleConnections()
 	if err != nil {
 		return fmt.Errorf("cluster: shutdown: %w", err)
 	}

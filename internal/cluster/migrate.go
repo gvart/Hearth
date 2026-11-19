@@ -102,9 +102,13 @@ func (n *Node) hubSchema(ctx context.Context, urls map[string]string, id, addr s
 	if base == "" {
 		return SchemaInfo{}, errors.New("its URL is unknown")
 	}
+	hc, err := n.clusterHTTP(ctx)
+	if err != nil {
+		return SchemaInfo{}, err
+	}
 	ctx, cancel := context.WithTimeout(ctx, schemaInfoTimeout)
 	defer cancel()
-	resp, err := clusterv1connect.NewClusterServiceClient(n.fwdHTTP, base).
+	resp, err := clusterv1connect.NewClusterServiceClient(hc, base).
 		SchemaInfo(ctx, connect.NewRequest(&clusterv1.SchemaInfoRequest{}))
 	if err != nil {
 		var ce *connect.Error

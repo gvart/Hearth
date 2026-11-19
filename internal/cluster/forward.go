@@ -169,7 +169,13 @@ func (n *Node) forward(ctx context.Context, leaderID, leaderAddr string, cmd sto
 	if err != nil {
 		return store.Result{}, 0, false, err
 	}
-	client := clusterv1connect.NewClusterServiceClient(n.fwdHTTP, base)
+	hc, err := n.clusterHTTP(ctx)
+	if err != nil {
+		// Nothing was sent, so nothing was applied.
+		n.log.DebugContext(ctx, "forward to the leader not attempted; retrying", "op", cmd.Op(), "err", err)
+		return store.Result{}, 0, true, nil
+	}
+	client := clusterv1connect.NewClusterServiceClient(hc, base)
 	resp, err := client.Forward(ctx, connect.NewRequest(&clusterv1.ForwardRequest{Command: b}))
 	if err != nil {
 		var (
@@ -228,6 +234,86 @@ func newForwardClientServedBy(ca *pki.CA, cert func() *tls.Certificate, epoch, c
 						return errors.New("the hub does not serve a certificate of the expected hub CA")
 					}
 					return inEpoch(cs)
+				},
+			},
+			ForceAttemptHTTP2: true,
+		},
+		Timeout: applyTimeout + 5*time.Second,
+	}
+}
+
+// nodeCertSNI is the server name a hub asks another hub's listener for to
+// be answered with that hub's node certificate instead of its server
+// certificate (see ServeNodeCert). It never resolves: it names no host.
+const nodeCertSNI = "node.hearth-hub.invalid"
+
+// ServeNodeCert wraps the hub listener's TLS config: a handshake for
+// nodeCertSNI is answered with this hub's node certificate, the one it
+// presents on the Raft transport, which a hub CA rotation pins. Every other
+// handshake is left to base. Call it after Start.
+func (n *Node) ServeNodeCert(base *tls.Config) *tls.Config {
+	cfg := base.Clone()
+	cfg.GetConfigForClient = func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
+		c := base
+		if base.GetConfigForClient != nil {
+			got, err := base.GetConfigForClient(hello)
+			if err != nil {
+				return nil, err
+			}
+			if got != nil {
+				c = got
+			}
+		}
+		if hello.ServerName != nodeCertSNI {
+			return c, nil
+		}
+		c = c.Clone()
+		c.GetConfigForClient, c.GetCertificate = nil, nil
+		c.Certificates = []tls.Certificate{*n.stream.currentCert()}
+		return c, nil
+	}
+	return cfg
+}
+
+// clusterHTTP is the client for a ClusterService call to another hub. During
+// a hub CA rotation both CAs are trusted, and whoever holds the old CA key
+// could mint a server certificate fwdHTTP accepts; the call then goes over
+// pinHTTP, which requires the hub's node certificate pinned for the
+// rotation, or one of the new CA. Outside a rotation it is fwdHTTP. It fails
+// when the store cannot say whether a rotation is under way.
+func (n *Node) clusterHTTP(ctx context.Context) (*http.Client, error) {
+	_, err := n.store.CARotations().Active(ctx)
+	switch {
+	case errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrSchemaTooOld):
+		return n.fwdHTTP, nil
+	case err != nil:
+		return nil, fmt.Errorf("cluster: read the hub CA rotation: %w", err)
+	}
+	return n.pinHTTP, nil
+}
+
+// newNodeCertClient is newForwardClient for a server that presents its hub
+// node certificate (see ServeNodeCert): it asks for nodeCertSNI and accepts
+// a hub node certificate from a CA trusted now that check accepts, in place
+// of a server certificate for the host name.
+func newNodeCertClient(ca *pki.CA, cert func() *tls.Certificate, check peerCheck) *http.Client {
+	return &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				MinVersion: tls.VersionTLS13,
+				ServerName: nodeCertSNI,
+				GetClientCertificate: func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
+					return cert(), nil
+				},
+				// Standard verification is replaced, not skipped:
+				// VerifyConnection verifies the chain against the CAs
+				// trusted now, and the hub certificate with check.
+				InsecureSkipVerify: true, //nolint:gosec // see VerifyConnection
+				VerifyConnection: func(cs tls.ConnectionState) error {
+					if err := verifyChain(ca, cs, ""); err != nil {
+						return err
+					}
+					return requireHubCert(ca, cs.PeerCertificates, check)
 				},
 			},
 			ForceAttemptHTTP2: true,

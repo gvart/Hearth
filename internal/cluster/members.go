@@ -425,8 +425,9 @@ func (n *Node) onLeader(ctx context.Context, what string, local func() error,
 			}
 		} else if l := n.Leader(); l.ID != "" && l.ID != n.cfg.NodeID {
 			if base := n.agentURL(n.hubURLs(ctx), l.ID, l.Addr); base != "" {
-				err := remote(ctx, clusterv1connect.NewClusterServiceClient(n.fwdHTTP, base))
-				if !retryOnLeader(err) {
+				if hc, err := n.clusterHTTP(ctx); err != nil {
+					n.log.DebugContext(ctx, "call to the leader not attempted; retrying", "what", what, "err", err)
+				} else if err := remote(ctx, clusterv1connect.NewClusterServiceClient(hc, base)); !retryOnLeader(err) {
 					return fromConnect(err)
 				}
 			}

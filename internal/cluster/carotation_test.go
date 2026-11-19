@@ -175,7 +175,7 @@ func (h *rotHub) serve(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.Handle(NewJoinServer(h.Node, h.st, h.ca, pol, log).Handler())
 	srv := httptest.NewUnstartedServer(mux)
-	srv.TLS = hub.TLSConfigFunc(h.ca, h.srvCert.Load)
+	srv.TLS = h.ServeNodeCert(hub.TLSConfigFunc(h.ca, h.srvCert.Load))
 	srv.EnableHTTP2 = true
 	srv.StartTLS()
 	t.Cleanup(srv.Close)
