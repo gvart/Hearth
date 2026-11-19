@@ -11,6 +11,12 @@ export interface SaveAnswer {
   leader: boolean;
 }
 
+/** Splits an approval's plan, which is read as text, from its other details. */
+export function approvalDetail(detail: Record<string, unknown>): { planText: string; rest: Record<string, unknown> } {
+  const { plan, ...rest } = detail;
+  return typeof plan === 'string' ? { planText: plan, rest } : { planText: '', rest: detail };
+}
+
 /** A pending save is of the file as it was sent: nothing may change under it. */
 export function mayEdit(savePending: boolean): boolean {
   return !savePending;

@@ -17,7 +17,7 @@ import {
   setKey,
   stepSpecs,
 } from '../src/automations/model.ts';
-import { mayEdit, savedNotice } from '../src/automations/session.ts';
+import { approvalDetail, mayEdit, savedNotice } from '../src/automations/session.ts';
 
 const repo = new URL('../../', import.meta.url).pathname;
 
@@ -292,6 +292,20 @@ describe('while a save is pending', () => {
   test('the form is locked', () => {
     assert.equal(mayEdit(true), false);
     assert.equal(mayEdit(false), true);
+  });
+});
+
+describe('what an approver reads', () => {
+  test('the plan is text of its own, apart from the other details', () => {
+    const plan = 'Automation a\n  1. run ["/bin/sh"] on pi4\n';
+    const { planText, rest } = approvalDetail({ file: 'a.yaml', plan });
+    assert.equal(planText, plan);
+    assert.deepEqual(rest, { file: 'a.yaml' });
+  });
+
+  test('details without a plan stay as they are', () => {
+    assert.deepEqual(approvalDetail({ file: 'a.yaml' }), { planText: '', rest: { file: 'a.yaml' } });
+    assert.deepEqual(approvalDetail({ plan: 3 }), { planText: '', rest: { plan: 3 } });
   });
 });
 

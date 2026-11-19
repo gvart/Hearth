@@ -85,6 +85,14 @@ function Editor({ id, file, initial, revision: initialRevision, problems = [] }:
   const dryRun = useDryRunAutomation();
   const read = useMemo(() => readAutomation(source), [source]);
   const dirty = source !== saved;
+  const editErrorBox = useRef<HTMLDivElement>(null);
+
+  // The field that was refused may be far below this message.
+  useEffect(() => {
+    if (editError) {
+      editErrorBox.current?.scrollIntoView({ block: 'center' });
+    }
+  }, [editError]);
 
   useEffect(() => {
     if (!dirty) {
@@ -206,7 +214,7 @@ function Editor({ id, file, initial, revision: initialRevision, problems = [] }:
         <Problems title="The hub cannot load this file" problems={loadProblems} />
       ) : null}
       {editError ? (
-        <div className="error-box" role="alert">
+        <div ref={editErrorBox} className="error-box" role="alert">
           That edit was not applied: {editError}
         </div>
       ) : null}
