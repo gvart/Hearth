@@ -56,6 +56,11 @@ const (
 	// ClusterServiceConfigDigestsProcedure is the fully-qualified name of the ClusterService's
 	// ConfigDigests RPC.
 	ClusterServiceConfigDigestsProcedure = "/hearth.cluster.v1.ClusterService/ConfigDigests"
+	// ClusterServiceFetchCAKeyProcedure is the fully-qualified name of the ClusterService's FetchCAKey
+	// RPC.
+	ClusterServiceFetchCAKeyProcedure = "/hearth.cluster.v1.ClusterService/FetchCAKey"
+	// ClusterServiceCAInfoProcedure is the fully-qualified name of the ClusterService's CAInfo RPC.
+	ClusterServiceCAInfoProcedure = "/hearth.cluster.v1.ClusterService/CAInfo"
 )
 
 // ClusterServiceClient is a client for the hearth.cluster.v1.ClusterService service.
@@ -94,6 +99,15 @@ type ClusterServiceClient interface {
 	// hubs can notice that they disagree. Every member serves it, to members
 	// presenting their hub node certificate. Digests never leave this channel.
 	ConfigDigests(context.Context, *connect.Request[v1.ConfigDigestsRequest]) (*connect.Response[v1.ConfigDigestsResponse], error)
+	// FetchCAKey hands a member the new CA's key during a hub CA rotation and,
+	// from the leader, a node certificate of the new CA for the CSR. The
+	// caller authenticates with its hub node certificate, which must be the
+	// one the rotation pinned for it or one of the new CA. Decided by policy
+	// and audited on the serving hub, refusals included.
+	FetchCAKey(context.Context, *connect.Request[v1.FetchCAKeyRequest]) (*connect.Response[v1.FetchCAKeyResponse], error)
+	// CAInfo reports this hub's side of a hub CA rotation. Every member serves
+	// it, to members presenting their hub node certificate.
+	CAInfo(context.Context, *connect.Request[v1.CAInfoRequest]) (*connect.Response[v1.CAInfoResponse], error)
 }
 
 // NewClusterServiceClient constructs a client for the hearth.cluster.v1.ClusterService service. By
@@ -155,6 +169,18 @@ func NewClusterServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(clusterServiceMethods.ByName("ConfigDigests")),
 			connect.WithClientOptions(opts...),
 		),
+		fetchCAKey: connect.NewClient[v1.FetchCAKeyRequest, v1.FetchCAKeyResponse](
+			httpClient,
+			baseURL+ClusterServiceFetchCAKeyProcedure,
+			connect.WithSchema(clusterServiceMethods.ByName("FetchCAKey")),
+			connect.WithClientOptions(opts...),
+		),
+		cAInfo: connect.NewClient[v1.CAInfoRequest, v1.CAInfoResponse](
+			httpClient,
+			baseURL+ClusterServiceCAInfoProcedure,
+			connect.WithSchema(clusterServiceMethods.ByName("CAInfo")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -168,6 +194,8 @@ type clusterServiceClient struct {
 	schemaInfo         *connect.Client[v1.SchemaInfoRequest, v1.SchemaInfoResponse]
 	migrateSchema      *connect.Client[v1.MigrateSchemaRequest, v1.MigrateSchemaResponse]
 	configDigests      *connect.Client[v1.ConfigDigestsRequest, v1.ConfigDigestsResponse]
+	fetchCAKey         *connect.Client[v1.FetchCAKeyRequest, v1.FetchCAKeyResponse]
+	cAInfo             *connect.Client[v1.CAInfoRequest, v1.CAInfoResponse]
 }
 
 // Join calls hearth.cluster.v1.ClusterService.Join.
@@ -210,6 +238,16 @@ func (c *clusterServiceClient) ConfigDigests(ctx context.Context, req *connect.R
 	return c.configDigests.CallUnary(ctx, req)
 }
 
+// FetchCAKey calls hearth.cluster.v1.ClusterService.FetchCAKey.
+func (c *clusterServiceClient) FetchCAKey(ctx context.Context, req *connect.Request[v1.FetchCAKeyRequest]) (*connect.Response[v1.FetchCAKeyResponse], error) {
+	return c.fetchCAKey.CallUnary(ctx, req)
+}
+
+// CAInfo calls hearth.cluster.v1.ClusterService.CAInfo.
+func (c *clusterServiceClient) CAInfo(ctx context.Context, req *connect.Request[v1.CAInfoRequest]) (*connect.Response[v1.CAInfoResponse], error) {
+	return c.cAInfo.CallUnary(ctx, req)
+}
+
 // ClusterServiceHandler is an implementation of the hearth.cluster.v1.ClusterService service.
 type ClusterServiceHandler interface {
 	// Join consumes a join token, signs the new hub's CSR and hands it the CA,
@@ -246,6 +284,15 @@ type ClusterServiceHandler interface {
 	// hubs can notice that they disagree. Every member serves it, to members
 	// presenting their hub node certificate. Digests never leave this channel.
 	ConfigDigests(context.Context, *connect.Request[v1.ConfigDigestsRequest]) (*connect.Response[v1.ConfigDigestsResponse], error)
+	// FetchCAKey hands a member the new CA's key during a hub CA rotation and,
+	// from the leader, a node certificate of the new CA for the CSR. The
+	// caller authenticates with its hub node certificate, which must be the
+	// one the rotation pinned for it or one of the new CA. Decided by policy
+	// and audited on the serving hub, refusals included.
+	FetchCAKey(context.Context, *connect.Request[v1.FetchCAKeyRequest]) (*connect.Response[v1.FetchCAKeyResponse], error)
+	// CAInfo reports this hub's side of a hub CA rotation. Every member serves
+	// it, to members presenting their hub node certificate.
+	CAInfo(context.Context, *connect.Request[v1.CAInfoRequest]) (*connect.Response[v1.CAInfoResponse], error)
 }
 
 // NewClusterServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -303,6 +350,18 @@ func NewClusterServiceHandler(svc ClusterServiceHandler, opts ...connect.Handler
 		connect.WithSchema(clusterServiceMethods.ByName("ConfigDigests")),
 		connect.WithHandlerOptions(opts...),
 	)
+	clusterServiceFetchCAKeyHandler := connect.NewUnaryHandler(
+		ClusterServiceFetchCAKeyProcedure,
+		svc.FetchCAKey,
+		connect.WithSchema(clusterServiceMethods.ByName("FetchCAKey")),
+		connect.WithHandlerOptions(opts...),
+	)
+	clusterServiceCAInfoHandler := connect.NewUnaryHandler(
+		ClusterServiceCAInfoProcedure,
+		svc.CAInfo,
+		connect.WithSchema(clusterServiceMethods.ByName("CAInfo")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/hearth.cluster.v1.ClusterService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ClusterServiceJoinProcedure:
@@ -321,6 +380,10 @@ func NewClusterServiceHandler(svc ClusterServiceHandler, opts ...connect.Handler
 			clusterServiceMigrateSchemaHandler.ServeHTTP(w, r)
 		case ClusterServiceConfigDigestsProcedure:
 			clusterServiceConfigDigestsHandler.ServeHTTP(w, r)
+		case ClusterServiceFetchCAKeyProcedure:
+			clusterServiceFetchCAKeyHandler.ServeHTTP(w, r)
+		case ClusterServiceCAInfoProcedure:
+			clusterServiceCAInfoHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -360,4 +423,12 @@ func (UnimplementedClusterServiceHandler) MigrateSchema(context.Context, *connec
 
 func (UnimplementedClusterServiceHandler) ConfigDigests(context.Context, *connect.Request[v1.ConfigDigestsRequest]) (*connect.Response[v1.ConfigDigestsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hearth.cluster.v1.ClusterService.ConfigDigests is not implemented"))
+}
+
+func (UnimplementedClusterServiceHandler) FetchCAKey(context.Context, *connect.Request[v1.FetchCAKeyRequest]) (*connect.Response[v1.FetchCAKeyResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hearth.cluster.v1.ClusterService.FetchCAKey is not implemented"))
+}
+
+func (UnimplementedClusterServiceHandler) CAInfo(context.Context, *connect.Request[v1.CAInfoRequest]) (*connect.Response[v1.CAInfoResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hearth.cluster.v1.ClusterService.CAInfo is not implemented"))
 }

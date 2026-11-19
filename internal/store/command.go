@@ -763,6 +763,12 @@ func DecodeCommand(b []byte) (Command, error) {
 		cmd, err = decodeAs[RevokeHubCerts](env.Cmd)
 	case PinCert{}.Op():
 		cmd, err = decodeAs[PinCert](env.Cmd)
+	case StartCARotation{}.Op():
+		cmd, err = decodeAs[StartCARotation](env.Cmd)
+	case AdvanceCARotation{}.Op():
+		cmd, err = decodeAs[AdvanceCARotation](env.Cmd)
+	case ResealSecrets{}.Op():
+		cmd, err = decodeAs[ResealSecrets](env.Cmd)
 	case CreateToken{}.Op():
 		cmd, err = decodeAs[CreateToken](env.Cmd)
 	case ConsumeToken{}.Op():

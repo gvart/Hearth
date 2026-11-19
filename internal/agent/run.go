@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -111,16 +110,8 @@ func Run(ctx context.Context, cfg Config) error {
 	if err != nil {
 		return err
 	}
-	dialer := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
-	tr := &http.Transport{
-		DialContext:         dialer.DialContext,
-		TLSClientConfig:     id.tls,
-		TLSHandshakeTimeout: 10 * time.Second,
-		ForceAttemptHTTP2:   true,
-		// The hub sends nothing between messages; pings detect a dead peer.
-		HTTP2: &http.HTTP2Config{SendPingTimeout: 30 * time.Second, PingTimeout: 15 * time.Second},
-	}
-	defer tr.CloseIdleConnections()
+	tr := newTransport(id)
+	defer func() { tr.CloseIdleConnections() }()
 
 	log := cfg.Log.With("device_id", id.deviceID)
 	r := &runner{
@@ -144,6 +135,17 @@ func Run(ctx context.Context, cfg Config) error {
 		started := time.Now()
 		welcomed, err := r.session(ctx, hub)
 		tr.CloseIdleConnections()
+		if errors.Is(err, errRenewed) {
+			// The hub CA rotation renewed the certificate: reconnect with it.
+			if id, err := loadIdentity(cfg.DataDir); err != nil {
+				log.ErrorContext(ctx, "load the renewed identity", "err", err)
+			} else {
+				tr = newTransport(id)
+				r.id, r.httpClient = id, &http.Client{Transport: tr}
+				log.InfoContext(ctx, "reconnecting with the certificate renewed for the hub CA rotation")
+				continue
+			}
+		}
 		if ctx.Err() != nil {
 			log.InfoContext(ctx, "agent stopped")
 			return nil
@@ -290,6 +292,12 @@ func (r *runner) session(ctx context.Context, hub string) (welcomed bool, err er
 	interval := heartbeatInterval(welcome.GetHeartbeatInterval())
 	r.log.InfoContext(ctx, "connected to hub", "hub", hostOf(hub), "heartbeat_interval", interval)
 	r.learnHubs(ctx, hub, welcome.GetHubs())
+	if renewed, err := r.saveRenewal(welcome); err != nil {
+		r.log.ErrorContext(ctx, "save the certificate renewed for the hub CA rotation", "err", err)
+	} else if renewed {
+		_ = stream.CloseRequest()
+		return true, errRenewed
+	}
 	if r.cfg.Connected != nil {
 		r.cfg.Connected()
 	}

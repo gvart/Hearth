@@ -134,12 +134,13 @@ func NewHandler(cfg Config) http.Handler {
 	stream := NewAgentStream(cfg.Log, cfg.HeartbeatInterval, reg)
 	stream.leadership = lead
 	stream.certs, stream.authority, stream.pins, stream.audit = cfg.Store.Certs(), authority, cfg.Store.Certs(), cfg.Store.Audit()
+	stream.ca, stream.rotations, stream.renew = cfg.CA, cfg.Store.CARotations(), cfg.Store.Certs()
 	stream.metrics = cfg.Metrics
 	if cfg.Agents != nil {
 		stream.agents = cfg.Agents
 	}
 	path, h := agentv1connect.NewAgentServiceHandler(stream)
-	mux.Handle(path, requireClientCert(cfg.Store.Certs(), cfg.Log, authority,
+	mux.Handle(path, requireClientCert(cfg.Store.Certs(), cfg.CA, cfg.Log, authority,
 		EndOnStop(cfg.Stopping, reg.endOnStepDown(abortableStream(h)))))
 	return mux
 }
@@ -269,14 +270,34 @@ func endOn(done context.Context, cause error, next http.Handler) http.Handler {
 // the TLS layer (enrollment and browsers have none) but, when given, must chain
 // to the CA; AgentService then insists on one.
 func TLSConfig(ca *pki.CA, serverCert tls.Certificate) *tls.Config {
-	pool := x509.NewCertPool()
-	pool.AddCert(ca.Cert())
+	return TLSConfigFunc(ca, func() *tls.Certificate { return &serverCert })
+}
+
+// TLSConfigFunc is TLSConfig serving the certificate serverCert returns at
+// each handshake. The CAs client certificates must chain to are ca's at each
+// handshake, so a hub CA rotation reaches new connections without a restart.
+func TLSConfigFunc(ca *pki.CA, serverCert func() *tls.Certificate) *tls.Config {
+	protos := []string{"h2", "http/1.1"}
 	return &tls.Config{
-		MinVersion:   tls.VersionTLS13,
-		Certificates: []tls.Certificate{serverCert},
-		ClientAuth:   tls.VerifyClientCertIfGiven,
-		ClientCAs:    pool,
-		NextProtos:   []string{"h2", "http/1.1"},
+		MinVersion: tls.VersionTLS13,
+		NextProtos: protos,
+		GetConfigForClient: func(*tls.ClientHelloInfo) (*tls.Config, error) {
+			return &tls.Config{
+				MinVersion:   tls.VersionTLS13,
+				Certificates: []tls.Certificate{*serverCert()},
+				ClientAuth:   tls.VerifyClientCertIfGiven,
+				ClientCAs:    ca.Pool(),
+				NextProtos:   protos,
+				// A resumed session skips chain verification: one from
+				// before a hub CA rotation finished must not outlive it.
+				VerifyConnection: func(cs tls.ConnectionState) error {
+					if len(cs.PeerCertificates) > 0 && ca.IssuerOf(cs.PeerCertificates[0]) == nil {
+						return errors.New("client certificate is not from a trusted hub CA")
+					}
+					return nil
+				},
+			}, nil
+		},
 	}
 }
 
@@ -293,7 +314,7 @@ type certChecker interface {
 // certificate the store does not know or has revoked is rejected only when
 // authority returns nil; otherwise its error is the answer (see
 // Registry.certAuthority).
-func requireClientCert(certs certChecker, log *slog.Logger, authority func() error, next http.Handler) http.Handler {
+func requireClientCert(certs certChecker, ca *pki.CA, log *slog.Logger, authority func() error, next http.Handler) http.Handler {
 	errWriter := connect.NewErrorWriter()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -306,6 +327,11 @@ func requireClientCert(certs certChecker, log *slog.Logger, authority func() err
 			return
 		}
 		leaf := r.TLS.VerifiedChains[0][0]
+		// The connection may predate the end of a hub CA rotation.
+		if ca != nil && ca.IssuerOf(leaf) == nil {
+			deny("client certificate of a hub CA no longer trusted")
+			return
+		}
 		deviceID, err := pki.DeviceID(leaf)
 		if err != nil {
 			deny("client certificate has no device identity")

@@ -852,6 +852,238 @@ func (x *ConfigDigestsResponse) GetDigests() map[string]string {
 	return nil
 }
 
+// FetchCAKeyRequest names the rotation and carries the caller's CSR.
+type FetchCAKeyRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// new_ca_fingerprint is the SHA-256 of the new CA's certificate, hex.
+	NewCaFingerprint string `protobuf:"bytes,1,opt,name=new_ca_fingerprint,json=newCaFingerprint,proto3" json:"new_ca_fingerprint,omitempty"`
+	// csr is a DER certificate request for the caller's node certificate of
+	// the new CA; empty asks for the key only.
+	Csr           []byte `protobuf:"bytes,2,opt,name=csr,proto3" json:"csr,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FetchCAKeyRequest) Reset() {
+	*x = FetchCAKeyRequest{}
+	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FetchCAKeyRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FetchCAKeyRequest) ProtoMessage() {}
+
+func (x *FetchCAKeyRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FetchCAKeyRequest.ProtoReflect.Descriptor instead.
+func (*FetchCAKeyRequest) Descriptor() ([]byte, []int) {
+	return file_hearth_cluster_v1_cluster_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *FetchCAKeyRequest) GetNewCaFingerprint() string {
+	if x != nil {
+		return x.NewCaFingerprint
+	}
+	return ""
+}
+
+func (x *FetchCAKeyRequest) GetCsr() []byte {
+	if x != nil {
+		return x.Csr
+	}
+	return nil
+}
+
+// FetchCAKeyResponse carries the new CA's key and a node certificate.
+type FetchCAKeyResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// ca_key is the new CA's private key, PKCS #8 DER.
+	CaKey []byte `protobuf:"bytes,1,opt,name=ca_key,json=caKey,proto3" json:"ca_key,omitempty"`
+	// certificate is the caller's node certificate of the new CA, DER. Only
+	// the leader issues one.
+	Certificate   []byte `protobuf:"bytes,2,opt,name=certificate,proto3" json:"certificate,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FetchCAKeyResponse) Reset() {
+	*x = FetchCAKeyResponse{}
+	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FetchCAKeyResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FetchCAKeyResponse) ProtoMessage() {}
+
+func (x *FetchCAKeyResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FetchCAKeyResponse.ProtoReflect.Descriptor instead.
+func (*FetchCAKeyResponse) Descriptor() ([]byte, []int) {
+	return file_hearth_cluster_v1_cluster_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *FetchCAKeyResponse) GetCaKey() []byte {
+	if x != nil {
+		return x.CaKey
+	}
+	return nil
+}
+
+func (x *FetchCAKeyResponse) GetCertificate() []byte {
+	if x != nil {
+		return x.Certificate
+	}
+	return nil
+}
+
+// CAInfoRequest is empty.
+type CAInfoRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CAInfoRequest) Reset() {
+	*x = CAInfoRequest{}
+	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CAInfoRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CAInfoRequest) ProtoMessage() {}
+
+func (x *CAInfoRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CAInfoRequest.ProtoReflect.Descriptor instead.
+func (*CAInfoRequest) Descriptor() ([]byte, []int) {
+	return file_hearth_cluster_v1_cluster_proto_rawDescGZIP(), []int{18}
+}
+
+// CAInfoResponse is a hub's side of a hub CA rotation.
+type CAInfoResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// serving_ca_fingerprint is the CA whose certificates the hub serves.
+	ServingCaFingerprint string `protobuf:"bytes,1,opt,name=serving_ca_fingerprint,json=servingCaFingerprint,proto3" json:"serving_ca_fingerprint,omitempty"`
+	// next_ca_fingerprint is the new CA the hub trusts; empty outside a rotation.
+	NextCaFingerprint string `protobuf:"bytes,2,opt,name=next_ca_fingerprint,json=nextCaFingerprint,proto3" json:"next_ca_fingerprint,omitempty"`
+	// has_next_key is true once the hub holds the new CA's key.
+	HasNextKey bool `protobuf:"varint,3,opt,name=has_next_key,json=hasNextKey,proto3" json:"has_next_key,omitempty"`
+	// has_next_node_certificate is true once the hub holds a node certificate
+	// of the new CA.
+	HasNextNodeCertificate bool `protobuf:"varint,4,opt,name=has_next_node_certificate,json=hasNextNodeCertificate,proto3" json:"has_next_node_certificate,omitempty"`
+	// cut_over is true once the hub serves the new CA.
+	CutOver       bool `protobuf:"varint,5,opt,name=cut_over,json=cutOver,proto3" json:"cut_over,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CAInfoResponse) Reset() {
+	*x = CAInfoResponse{}
+	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CAInfoResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CAInfoResponse) ProtoMessage() {}
+
+func (x *CAInfoResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CAInfoResponse.ProtoReflect.Descriptor instead.
+func (*CAInfoResponse) Descriptor() ([]byte, []int) {
+	return file_hearth_cluster_v1_cluster_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *CAInfoResponse) GetServingCaFingerprint() string {
+	if x != nil {
+		return x.ServingCaFingerprint
+	}
+	return ""
+}
+
+func (x *CAInfoResponse) GetNextCaFingerprint() string {
+	if x != nil {
+		return x.NextCaFingerprint
+	}
+	return ""
+}
+
+func (x *CAInfoResponse) GetHasNextKey() bool {
+	if x != nil {
+		return x.HasNextKey
+	}
+	return false
+}
+
+func (x *CAInfoResponse) GetHasNextNodeCertificate() bool {
+	if x != nil {
+		return x.HasNextNodeCertificate
+	}
+	return false
+}
+
+func (x *CAInfoResponse) GetCutOver() bool {
+	if x != nil {
+		return x.CutOver
+	}
+	return false
+}
+
 var File_hearth_cluster_v1_cluster_proto protoreflect.FileDescriptor
 
 const file_hearth_cluster_v1_cluster_proto_rawDesc = "" +
@@ -902,7 +1134,21 @@ const file_hearth_cluster_v1_cluster_proto_rawDesc = "" +
 	"\adigests\x18\x01 \x03(\v25.hearth.cluster.v1.ConfigDigestsResponse.DigestsEntryR\adigests\x1a:\n" +
 	"\fDigestsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x012\xf4\x05\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"S\n" +
+	"\x11FetchCAKeyRequest\x12,\n" +
+	"\x12new_ca_fingerprint\x18\x01 \x01(\tR\x10newCaFingerprint\x12\x10\n" +
+	"\x03csr\x18\x02 \x01(\fR\x03csr\"M\n" +
+	"\x12FetchCAKeyResponse\x12\x15\n" +
+	"\x06ca_key\x18\x01 \x01(\fR\x05caKey\x12 \n" +
+	"\vcertificate\x18\x02 \x01(\fR\vcertificate\"\x0f\n" +
+	"\rCAInfoRequest\"\xee\x01\n" +
+	"\x0eCAInfoResponse\x124\n" +
+	"\x16serving_ca_fingerprint\x18\x01 \x01(\tR\x14servingCaFingerprint\x12.\n" +
+	"\x13next_ca_fingerprint\x18\x02 \x01(\tR\x11nextCaFingerprint\x12 \n" +
+	"\fhas_next_key\x18\x03 \x01(\bR\n" +
+	"hasNextKey\x129\n" +
+	"\x19has_next_node_certificate\x18\x04 \x01(\bR\x16hasNextNodeCertificate\x12\x19\n" +
+	"\bcut_over\x18\x05 \x01(\bR\acutOver2\x9e\a\n" +
 	"\x0eClusterService\x12G\n" +
 	"\x04Join\x12\x1e.hearth.cluster.v1.JoinRequest\x1a\x1f.hearth.cluster.v1.JoinResponse\x12P\n" +
 	"\aPromote\x12!.hearth.cluster.v1.PromoteRequest\x1a\".hearth.cluster.v1.PromoteResponse\x12P\n" +
@@ -912,7 +1158,10 @@ const file_hearth_cluster_v1_cluster_proto_rawDesc = "" +
 	"\n" +
 	"SchemaInfo\x12$.hearth.cluster.v1.SchemaInfoRequest\x1a%.hearth.cluster.v1.SchemaInfoResponse\x12b\n" +
 	"\rMigrateSchema\x12'.hearth.cluster.v1.MigrateSchemaRequest\x1a(.hearth.cluster.v1.MigrateSchemaResponse\x12b\n" +
-	"\rConfigDigests\x12'.hearth.cluster.v1.ConfigDigestsRequest\x1a(.hearth.cluster.v1.ConfigDigestsResponseB\xcf\x01\n" +
+	"\rConfigDigests\x12'.hearth.cluster.v1.ConfigDigestsRequest\x1a(.hearth.cluster.v1.ConfigDigestsResponse\x12Y\n" +
+	"\n" +
+	"FetchCAKey\x12$.hearth.cluster.v1.FetchCAKeyRequest\x1a%.hearth.cluster.v1.FetchCAKeyResponse\x12M\n" +
+	"\x06CAInfo\x12 .hearth.cluster.v1.CAInfoRequest\x1a!.hearth.cluster.v1.CAInfoResponseB\xcf\x01\n" +
 	"\x15com.hearth.cluster.v1B\fClusterProtoP\x01ZBgithub.com/gvart/hearth/internal/proto/hearth/cluster/v1;clusterv1\xa2\x02\x03HCX\xaa\x02\x11Hearth.Cluster.V1\xca\x02\x11Hearth\\Cluster\\V1\xe2\x02\x1dHearth\\Cluster\\V1\\GPBMetadata\xea\x02\x13Hearth::Cluster::V1b\x06proto3"
 
 var (
@@ -927,7 +1176,7 @@ func file_hearth_cluster_v1_cluster_proto_rawDescGZIP() []byte {
 	return file_hearth_cluster_v1_cluster_proto_rawDescData
 }
 
-var file_hearth_cluster_v1_cluster_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
+var file_hearth_cluster_v1_cluster_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_hearth_cluster_v1_cluster_proto_goTypes = []any{
 	(*JoinRequest)(nil),                // 0: hearth.cluster.v1.JoinRequest
 	(*JoinResponse)(nil),               // 1: hearth.cluster.v1.JoinResponse
@@ -945,10 +1194,14 @@ var file_hearth_cluster_v1_cluster_proto_goTypes = []any{
 	(*MigrateSchemaResponse)(nil),      // 13: hearth.cluster.v1.MigrateSchemaResponse
 	(*ConfigDigestsRequest)(nil),       // 14: hearth.cluster.v1.ConfigDigestsRequest
 	(*ConfigDigestsResponse)(nil),      // 15: hearth.cluster.v1.ConfigDigestsResponse
-	nil,                                // 16: hearth.cluster.v1.ConfigDigestsResponse.DigestsEntry
+	(*FetchCAKeyRequest)(nil),          // 16: hearth.cluster.v1.FetchCAKeyRequest
+	(*FetchCAKeyResponse)(nil),         // 17: hearth.cluster.v1.FetchCAKeyResponse
+	(*CAInfoRequest)(nil),              // 18: hearth.cluster.v1.CAInfoRequest
+	(*CAInfoResponse)(nil),             // 19: hearth.cluster.v1.CAInfoResponse
+	nil,                                // 20: hearth.cluster.v1.ConfigDigestsResponse.DigestsEntry
 }
 var file_hearth_cluster_v1_cluster_proto_depIdxs = []int32{
-	16, // 0: hearth.cluster.v1.ConfigDigestsResponse.digests:type_name -> hearth.cluster.v1.ConfigDigestsResponse.DigestsEntry
+	20, // 0: hearth.cluster.v1.ConfigDigestsResponse.digests:type_name -> hearth.cluster.v1.ConfigDigestsResponse.DigestsEntry
 	0,  // 1: hearth.cluster.v1.ClusterService.Join:input_type -> hearth.cluster.v1.JoinRequest
 	2,  // 2: hearth.cluster.v1.ClusterService.Promote:input_type -> hearth.cluster.v1.PromoteRequest
 	4,  // 3: hearth.cluster.v1.ClusterService.Forward:input_type -> hearth.cluster.v1.ForwardRequest
@@ -957,16 +1210,20 @@ var file_hearth_cluster_v1_cluster_proto_depIdxs = []int32{
 	10, // 6: hearth.cluster.v1.ClusterService.SchemaInfo:input_type -> hearth.cluster.v1.SchemaInfoRequest
 	12, // 7: hearth.cluster.v1.ClusterService.MigrateSchema:input_type -> hearth.cluster.v1.MigrateSchemaRequest
 	14, // 8: hearth.cluster.v1.ClusterService.ConfigDigests:input_type -> hearth.cluster.v1.ConfigDigestsRequest
-	1,  // 9: hearth.cluster.v1.ClusterService.Join:output_type -> hearth.cluster.v1.JoinResponse
-	3,  // 10: hearth.cluster.v1.ClusterService.Promote:output_type -> hearth.cluster.v1.PromoteResponse
-	5,  // 11: hearth.cluster.v1.ClusterService.Forward:output_type -> hearth.cluster.v1.ForwardResponse
-	7,  // 12: hearth.cluster.v1.ClusterService.RemoveMember:output_type -> hearth.cluster.v1.RemoveMemberResponse
-	9,  // 13: hearth.cluster.v1.ClusterService.TransferLeadership:output_type -> hearth.cluster.v1.TransferLeadershipResponse
-	11, // 14: hearth.cluster.v1.ClusterService.SchemaInfo:output_type -> hearth.cluster.v1.SchemaInfoResponse
-	13, // 15: hearth.cluster.v1.ClusterService.MigrateSchema:output_type -> hearth.cluster.v1.MigrateSchemaResponse
-	15, // 16: hearth.cluster.v1.ClusterService.ConfigDigests:output_type -> hearth.cluster.v1.ConfigDigestsResponse
-	9,  // [9:17] is the sub-list for method output_type
-	1,  // [1:9] is the sub-list for method input_type
+	16, // 9: hearth.cluster.v1.ClusterService.FetchCAKey:input_type -> hearth.cluster.v1.FetchCAKeyRequest
+	18, // 10: hearth.cluster.v1.ClusterService.CAInfo:input_type -> hearth.cluster.v1.CAInfoRequest
+	1,  // 11: hearth.cluster.v1.ClusterService.Join:output_type -> hearth.cluster.v1.JoinResponse
+	3,  // 12: hearth.cluster.v1.ClusterService.Promote:output_type -> hearth.cluster.v1.PromoteResponse
+	5,  // 13: hearth.cluster.v1.ClusterService.Forward:output_type -> hearth.cluster.v1.ForwardResponse
+	7,  // 14: hearth.cluster.v1.ClusterService.RemoveMember:output_type -> hearth.cluster.v1.RemoveMemberResponse
+	9,  // 15: hearth.cluster.v1.ClusterService.TransferLeadership:output_type -> hearth.cluster.v1.TransferLeadershipResponse
+	11, // 16: hearth.cluster.v1.ClusterService.SchemaInfo:output_type -> hearth.cluster.v1.SchemaInfoResponse
+	13, // 17: hearth.cluster.v1.ClusterService.MigrateSchema:output_type -> hearth.cluster.v1.MigrateSchemaResponse
+	15, // 18: hearth.cluster.v1.ClusterService.ConfigDigests:output_type -> hearth.cluster.v1.ConfigDigestsResponse
+	17, // 19: hearth.cluster.v1.ClusterService.FetchCAKey:output_type -> hearth.cluster.v1.FetchCAKeyResponse
+	19, // 20: hearth.cluster.v1.ClusterService.CAInfo:output_type -> hearth.cluster.v1.CAInfoResponse
+	11, // [11:21] is the sub-list for method output_type
+	1,  // [1:11] is the sub-list for method input_type
 	1,  // [1:1] is the sub-list for extension type_name
 	1,  // [1:1] is the sub-list for extension extendee
 	0,  // [0:1] is the sub-list for field type_name
@@ -983,7 +1240,7 @@ func file_hearth_cluster_v1_cluster_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_hearth_cluster_v1_cluster_proto_rawDesc), len(file_hearth_cluster_v1_cluster_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   17,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

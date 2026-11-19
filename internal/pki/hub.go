@@ -75,7 +75,8 @@ func (c *CA) SignHubCSRInEpoch(csrDER []byte, nodeID, epoch string, now time.Tim
 		KeyUsage:     x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
 	}
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, c.cert, csr.PublicKey, c.key)
+	ca := c.state().signer()
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, ca.cert, csr.PublicKey, ca.key)
 	if err != nil {
 		return nil, fmt.Errorf("sign hub cert: %w", err)
 	}
@@ -107,11 +108,12 @@ func HubEpoch(cert *x509.Certificate) string {
 	return ""
 }
 
-// KeyDER returns the CA private key as PKCS#8 DER. It exists only to hand the
-// key to a joining hub over the pinned join channel: never log or persist the
-// result anywhere but a voter's data dir.
+// KeyDER returns the private key of the CA Cert returns as PKCS#8 DER. It
+// exists only to hand the key to a joining hub over the pinned join channel,
+// and to derive sealing keys: never log or persist the result anywhere but a
+// voter's data dir.
 func (c *CA) KeyDER() ([]byte, error) {
-	der, err := x509.MarshalPKCS8PrivateKey(c.key)
+	der, err := x509.MarshalPKCS8PrivateKey(c.state().serving().key)
 	if err != nil {
 		return nil, fmt.Errorf("encode CA key: %w", err)
 	}

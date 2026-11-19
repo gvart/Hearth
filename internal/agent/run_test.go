@@ -77,10 +77,18 @@ func startClusterHub(t *testing.T, heartbeat time.Duration, peer *restartableHub
 			t.Fatal(err)
 		}
 	}
-	cert, err := ca.IssueServerCert([]string{"127.0.0.1"}, time.Now())
-	if err != nil {
-		t.Fatal(err)
+	// The server certificate follows the CA the hub serves, as in `hearth hub`.
+	var cert atomic.Pointer[tls.Certificate]
+	issue := func() {
+		c, err := ca.IssueServerCert([]string{"127.0.0.1"}, time.Now())
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		cert.Store(&c)
 	}
+	issue()
+	ca.OnChange(issue)
 	logs := &syncBuffer{}
 	log := slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	agents := hub.NewAgents(st.Devices())
@@ -97,7 +105,7 @@ func startClusterHub(t *testing.T, heartbeat time.Duration, peer *restartableHub
 			Store: st, CA: ca, Policy: policy.New(st.Audit()), Log: log, HeartbeatInterval: heartbeat,
 			Leadership: lead, Agents: agents, Metrics: ms,
 		}),
-		tls:  hub.TLSConfig(ca, cert),
+		tls:  hub.TLSConfigFunc(ca, cert.Load),
 		st:   st,
 		ca:   ca,
 		logs: logs,

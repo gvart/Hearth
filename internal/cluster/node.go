@@ -4,6 +4,7 @@ package cluster
 
 import (
 	"context"
+	"crypto/tls"
 	"crypto/x509"
 	"errors"
 	"fmt"
@@ -95,6 +96,10 @@ type Config struct {
 	// leader; zero means 5 s.
 	ForwardWait time.Duration
 
+	// CAReconcileEvery is how often the hub reconciles its CA with a hub CA
+	// rotation (carotation.go); zero means 1 s.
+	CAReconcileEvery time.Duration
+
 	// Tuning; zero values use raft's defaults. Tests shorten them.
 	HeartbeatTimeout   time.Duration
 	ElectionTimeout    time.Duration
@@ -139,6 +144,23 @@ type Node struct {
 
 	// configSource digests this hub's configuration; see SetConfigSource.
 	configSource atomic.Pointer[ConfigSource]
+
+	// Hub CA rotation (carotation.go): nextCert is this hub's node
+	// certificate of the new CA, presented from the cutover; rotMu
+	// serializes the rotation steps; caKick wakes the reconcile loop, which
+	// caStop stops; resealer re-seals secrets with the new CA's key.
+	nextCert atomic.Pointer[tls.Certificate]
+	rotMu    sync.Mutex
+	caKick   chan struct{}
+	caStop   chan struct{}
+	caDone   chan struct{}
+	resealer atomic.Pointer[Resealer]
+	// recMu serializes reconcileCA; halted is set once this hub missed a
+	// rotation and stops. rotateProposed, for tests, replaces the error of
+	// proposing a rotation's start.
+	recMu          sync.Mutex
+	halted         atomic.Bool
+	rotateProposed func(error) error
 }
 
 var _ store.Applier = (*Node)(nil)
@@ -164,6 +186,9 @@ func New(cfg Config) (*Node, error) {
 	}
 	if cfg.ForwardWait <= 0 {
 		cfg.ForwardWait = defaultForwardWait
+	}
+	if cfg.CAReconcileEvery <= 0 {
+		cfg.CAReconcileEvery = time.Second
 	}
 	return &Node{cfg: cfg, dir: filepath.Join(cfg.DataDir, RaftDir), log: cfg.Log.With("node_id", cfg.NodeID)}, nil
 }
@@ -202,6 +227,9 @@ func (n *Node) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("cluster: %w", err)
 	}
+	if err := recoverNodeCertFinish(n.dir, n.cfg.CA); err != nil {
+		return fmt.Errorf("cluster: node certificate: %w", err)
+	}
 	cert, err := loadOrIssueNodeCert(n.dir, n.cfg.CA, n.cfg.NodeID, epoch, time.Now())
 	if err != nil {
 		return fmt.Errorf("cluster: node certificate: %w", err)
@@ -216,7 +244,12 @@ func (n *Node) Start(ctx context.Context) error {
 		return fmt.Errorf("cluster: %w", err)
 	}
 	n.stream = stream
-	n.fwdHTTP = newForwardClient(n.cfg.CA, cert, n.epoch)
+	if err := n.loadNextCert(); err != nil {
+		_ = stream.Close()
+		return fmt.Errorf("cluster: %w", err)
+	}
+	n.resumeRotation(ctx)
+	n.fwdHTTP = newForwardClient(n.cfg.CA, stream.currentCert, n.epoch)
 	n.trans = raft.NewNetworkTransportWithLogger(stream, maxPool, dialTimeout, logger)
 	n.bolt, err = raftboltdb.NewBoltStore(filepath.Join(n.dir, boltFile))
 	if err != nil {
@@ -263,6 +296,7 @@ func (n *Node) Start(ctx context.Context) error {
 	n.fsm.raft.Store(r)
 	n.watchLeader()
 	n.watchMembers()
+	n.watchCA()
 	return nil
 }
 
@@ -308,6 +342,7 @@ func (n *Node) Shutdown() error {
 	if n.raft == nil {
 		return nil
 	}
+	n.stopCA()
 	err := n.raft.Shutdown().Error()
 	n.raft.DeregisterObserver(n.obs)
 	close(n.stopObs)
@@ -346,10 +381,14 @@ func (n *Node) Apply(ctx context.Context, cmd store.Command) (store.Result, erro
 
 // apply is Apply that also returns the entry's log index once it was
 // committed and applied here (zero when it was not proposed or not applied).
-// It refuses store.MigrateSchema, which only MigrateSchema proposes.
+// It refuses store.MigrateSchema, which only MigrateSchema proposes, and the
+// commands of a hub CA rotation, which only the rotation proposes.
 func (n *Node) apply(ctx context.Context, cmd store.Command) (store.Result, uint64, error) {
 	if _, ok := cmd.(store.MigrateSchema); ok {
 		return store.Result{}, 0, errMigrateViaLog
+	}
+	if isRotationCommand(cmd) {
+		return store.Result{}, 0, errRotationViaLog
 	}
 	return n.propose(ctx, cmd)
 }

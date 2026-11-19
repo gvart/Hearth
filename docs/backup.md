@@ -11,7 +11,7 @@ already have: nothing has to be enrolled again.
 
 | Item                  | Notes                                                                       |
 | --------------------- | --------------------------------------------------------------------------- |
-| The CA                | `ca.crt` and `ca.key` (a scheduled backup leaves `ca.key` out by default). Agents trust this CA, and it seals stored kubeconfigs |
+| The CA                | `ca.crt` and `ca.key` (a scheduled backup leaves `ca.key` out by default). Agents trust this CA, and it seals stored kubeconfigs. During a [hub CA rotation](cluster.md#rotating-the-hub-ca) the new CA too (`ca.next.crt`, and `ca.next.key` when `ca.key` is in): both are restored, and a hub restored standalone drops the new one when it starts |
 | The database          | Devices, certificates, tokens, audit log, admin password hash, sessions     |
 | `policy.yaml`         | If there is one                                                             |
 | `notify.yaml`         | Including the credentials in it                                             |
@@ -288,6 +288,8 @@ so a member without a working majority refuses the backup. Take backups before y
    ```
 
    It forms a one-voter cluster from the restored database. `hearth cluster status` shows it alone.
+   If the backup was taken during a [hub CA rotation](cluster.md#rotating-the-hub-ca), finish it now
+   (`hearth cluster ca finish`): no hub can join while it is under way.
 4. **Wipe the other hubs' data dirs.** Each one holds the old cluster's Raft state and a copy of the CA
    key.
 5. **Join them again**, one at a time, as in [Forming the cluster](cluster.md#forming-the-cluster):

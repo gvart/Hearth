@@ -321,7 +321,7 @@ func startedRun(t *testing.T, e *Runbooks) store.RunbookRun {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sealed, err := xorSealer{}.Seal(runbookSealID("stuck"), rb.source)
+	sealed, err := xorSealer{}.Seal(RunbookSealID("stuck"), rb.source)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -54,22 +54,30 @@ func readHubs(dataDir string) ([]string, error) {
 // writeHubs replaces the hubs file (0600) atomically, so a crash never leaves
 // a partial list.
 func writeHubs(dataDir string, hubs []string) error {
-	tmp, err := os.CreateTemp(dataDir, HubsFile+".tmp-*")
-	if err != nil {
+	if err := replaceFile(dataDir, HubsFile, []byte(strings.Join(hubs, "\n")+"\n")); err != nil {
 		return fmt.Errorf("write hub list: %w", err)
 	}
+	return nil
+}
+
+// replaceFile replaces the file name in dataDir with data (0600) atomically.
+func replaceFile(dataDir, name string, data []byte) error {
+	tmp, err := os.CreateTemp(dataDir, name+".tmp-*")
+	if err != nil {
+		return err
+	}
 	defer func() { _ = os.Remove(tmp.Name()) }()
-	_, err = tmp.WriteString(strings.Join(hubs, "\n") + "\n")
+	_, err = tmp.Write(data)
+	if err == nil {
+		err = tmp.Sync()
+	}
 	if cerr := tmp.Close(); err == nil {
 		err = cerr
 	}
 	if err == nil {
-		err = os.Rename(tmp.Name(), filepath.Join(dataDir, HubsFile))
+		err = os.Rename(tmp.Name(), filepath.Join(dataDir, name))
 	}
-	if err != nil {
-		return fmt.Errorf("write hub list: %w", err)
-	}
-	return nil
+	return err
 }
 
 // notLeader returns the NotLeader detail of a hub's refusal, or nil if err is

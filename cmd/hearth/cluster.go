@@ -23,7 +23,7 @@ import (
 func newClusterCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "cluster", Short: "Manage the hub's Raft cluster"}
 	cmd.AddCommand(newClusterTokenCmd(), newClusterStatusCmd(), newClusterRemoveCmd(), newClusterTransferCmd(),
-		newClusterMigrateCmd())
+		newClusterMigrateCmd(), newClusterCACmd())
 	return cmd
 }
 

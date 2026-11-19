@@ -268,7 +268,7 @@ func (r *Runbooks) Start(ctx context.Context, actorKind, actorID, id string) (Ru
 		ActorKind: actorKind, ActorID: actorID, Action: policy.RunbookStart, Target: rb.ID,
 		Detail: map[string]any{"run": runID},
 	}, func(ctx context.Context) error {
-		sealed, err := r.cfg.Sealer.Seal(runbookSealID(runID), rb.source)
+		sealed, err := r.cfg.Sealer.Seal(RunbookSealID(runID), rb.source)
 		if err != nil {
 			return err
 		}
@@ -308,8 +308,8 @@ func (r *Runbooks) savedDespite(ctx context.Context, err error, saved bool, what
 	return err
 }
 
-// runbookSealID binds a run's sealed file to the run.
-func runbookSealID(runID string) string { return "runbook-run/" + runID }
+// RunbookSealID binds a run's sealed file to the run.
+func RunbookSealID(runID string) string { return "runbook-run/" + runID }
 
 // Runs lists runs, newest first: of runbookID, or of every runbook if empty.
 func (r *Runbooks) Runs(ctx context.Context, runbookID string, limit int) ([]RunbookRunJSON, error) {
@@ -762,7 +762,7 @@ func (r *Runbooks) drive(ctx context.Context, runID string) (progressed bool) {
 
 // definition reads the runbook file a run started from.
 func (r *Runbooks) definition(run store.RunbookRun) (*Runbook, error) {
-	src, err := r.cfg.Sealer.Open(runbookSealID(run.ID), run.Source)
+	src, err := r.cfg.Sealer.Open(RunbookSealID(run.ID), run.Source)
 	if err != nil {
 		return nil, fmt.Errorf("open the run's copy of its runbook: %w", err)
 	}

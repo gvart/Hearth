@@ -5,7 +5,6 @@ package cluster
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -197,15 +196,39 @@ func (n *Node) forward(ctx context.Context, leaderID, leaderAddr string, cmd sto
 
 // newForwardClient is the HTTP client a follower forwards writes with: TLS
 // 1.3 to a hub certificate from the CA and of this hub's cluster epoch,
-// presenting this hub's node certificate.
-func newForwardClient(ca *pki.CA, cert tls.Certificate, epoch string) *http.Client {
-	pool := x509.NewCertPool()
-	pool.AddCert(ca.Cert())
+// presenting this hub's node certificate, the one cert returns at each
+// handshake. It trusts the CAs ca trusts at each handshake, so a hub CA
+// rotation reaches new connections without a restart.
+func newForwardClient(ca *pki.CA, cert func() *tls.Certificate, epoch string) *http.Client {
+	return newForwardClientServedBy(ca, cert, epoch, "")
+}
+
+// newForwardClientServedBy is newForwardClient that also requires the
+// server certificate to be issued by the CA of fingerprint caFP, unless
+// caFP is empty: during a hub CA rotation, a hub that says it serves the
+// new CA must show it.
+func newForwardClientServedBy(ca *pki.CA, cert func() *tls.Certificate, epoch, caFP string) *http.Client {
+	inEpoch := requireEpoch(epoch)
 	return &http.Client{
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
-				MinVersion: tls.VersionTLS13, RootCAs: pool, Certificates: []tls.Certificate{cert},
-				VerifyConnection: requireEpoch(epoch),
+				MinVersion: tls.VersionTLS13,
+				GetClientCertificate: func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
+					return cert(), nil
+				},
+				// Standard verification is replaced, not skipped:
+				// VerifyConnection verifies the chain and host name
+				// against the CAs trusted now.
+				InsecureSkipVerify: true, //nolint:gosec // see VerifyConnection
+				VerifyConnection: func(cs tls.ConnectionState) error {
+					if err := verifyChain(ca, cs, cs.ServerName); err != nil {
+						return err
+					}
+					if caFP != "" && pki.FingerprintHex(ca.IssuerOf(cs.PeerCertificates[0])) != caFP {
+						return errors.New("the hub does not serve a certificate of the expected hub CA")
+					}
+					return inEpoch(cs)
+				},
 			},
 			ForceAttemptHTTP2: true,
 		},
@@ -230,6 +253,12 @@ func (s *JoinServer) Forward(ctx context.Context, req *connect.Request[clusterv1
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
+	if rec, ok := cmd.(store.RecordHubCert); ok && !s.ownCert(ctx, id, rec) {
+		// Recorded fingerprints decide what a hub CA rotation pins: a
+		// member records only the certificate it presents.
+		return nil, connect.NewError(connect.CodePermissionDenied,
+			errors.New("a hub may record only the node certificate it presents"))
+	}
 	res, index, err := s.node.apply(ctx, cmd)
 	var nl *ErrNotLeader
 	if errors.As(err, &nl) {
@@ -248,6 +277,22 @@ func (s *JoinServer) Forward(ctx context.Context, req *connect.Request[clusterv1
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("encode result: %w", err))
 	}
 	return connect.NewResponse(out), nil
+}
+
+// ownCert reports whether rec records the node certificate caller id
+// presents on this request: its fingerprint, and that of the CA that issued
+// it, unless the cluster is below the schema that records them.
+func (s *JoinServer) ownCert(ctx context.Context, id string, rec store.RecordHubCert) bool {
+	cs, _ := ctx.Value(tlsStateKey{}).(*tls.ConnectionState)
+	if cs == nil || len(cs.VerifiedChains) == 0 {
+		return false
+	}
+	c := cs.VerifiedChains[0][0]
+	issuer := s.ca.IssuerOf(c)
+	// Below the schema that records fingerprints a record carries neither.
+	unpinned := rec.Fingerprint == "" && rec.CAFP == "" && !s.store.AtSchema(ctx, store.CertPinsSchema)
+	return issuer != nil && rec.NodeID == id && rec.Serial == pki.SerialString(c) &&
+		(unpinned || rec.Fingerprint == pki.FingerprintHex(c) && rec.CAFP == pki.FingerprintHex(issuer))
 }
 
 // memberPeer is peerHubID for a caller that must also be in the Raft
@@ -278,8 +323,14 @@ func (s *JoinServer) peerHubID(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", connect.NewError(connect.CodePermissionDenied, errors.New("not a hub node certificate"))
 	}
+	// The connection may predate the end of a hub CA rotation.
+	if s.ca.IssuerOf(cert) == nil {
+		return "", connect.NewError(connect.CodeUnauthenticated, errors.New("hub node certificate of a CA no longer trusted"))
+	}
 	if err := s.node.checkPeerCert(cert); errors.Is(err, store.ErrCertRevoked) {
 		return "", connect.NewError(connect.CodePermissionDenied, errors.New("hub node certificate revoked"))
+	} else if errors.Is(err, errNotPinned) {
+		return "", connect.NewError(connect.CodePermissionDenied, err)
 	} else if err != nil {
 		s.log.WarnContext(ctx, "check hub node certificate", "from", id, "err", err)
 		return "", connect.NewError(connect.CodeUnavailable, errors.New("cannot check the hub node certificate"))

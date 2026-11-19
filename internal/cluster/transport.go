@@ -24,6 +24,9 @@ type tlsStream struct {
 	net.Listener
 	advertise advertiseAddr
 	client    *tls.Config
+	// cert is the hub node certificate this hub presents, both ways; a hub
+	// CA rotation swaps it at the cutover (see setCert).
+	cert atomic.Pointer[tls.Certificate]
 
 	// conns are the open connections, both accepted and dialed, so the
 	// ones of a revoked peer can be closed (see closeRevoked).
@@ -59,13 +62,18 @@ func listenTLS(ctx context.Context, ln net.Listener, listen, advertise string, c
 		_ = ln.Close()
 		return nil, fmt.Errorf("advertise address %q: %w", advertise, err)
 	}
-	return &tlsStream{
-		Listener:  tls.NewListener(ln, serverTLS(cert, ca, check)),
-		advertise: advertiseAddr(advertise),
-		client:    clientTLS(cert, ca, check),
-		conns:     map[*trackedConn]struct{}{},
-	}, nil
+	s := &tlsStream{advertise: advertiseAddr(advertise), conns: map[*trackedConn]struct{}{}}
+	s.cert.Store(&cert)
+	s.Listener = tls.NewListener(ln, serverTLSFunc(s.currentCert, ca, check))
+	s.client = clientTLSFunc(s.currentCert, ca, check)
+	return s, nil
 }
+
+// currentCert is the hub node certificate this hub presents.
+func (s *tlsStream) currentCert() *tls.Certificate { return s.cert.Load() }
+
+// setCert makes new connections present cert; open ones keep theirs.
+func (s *tlsStream) setCert(cert *tls.Certificate) { s.cert.Store(cert) }
 
 // Addr is the advertised address: raft hands it to peers.
 func (s *tlsStream) Addr() net.Addr { return s.advertise }
@@ -77,20 +85,20 @@ func (s *tlsStream) Accept() (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	tc, err := s.trackConn(c)
+	tc, err := s.trackConn(c, "")
 	if err != nil {
 		return nil, err
 	}
 	return tc, nil
 }
 
-func (s *tlsStream) trackConn(c net.Conn) (*trackedConn, error) {
+func (s *tlsStream) trackConn(c net.Conn, dialed string) (*trackedConn, error) {
 	tc, ok := c.(*tls.Conn)
 	if !ok {
 		_ = c.Close()
 		return nil, errors.New("raft transport: not a TLS connection")
 	}
-	return s.track(tc), nil
+	return s.track(tc, dialed), nil
 }
 
 // Dial opens a mutually authenticated connection to a peer.
@@ -102,7 +110,7 @@ func (s *tlsStream) Dial(addr raft.ServerAddress, timeout time.Duration) (net.Co
 	if err != nil {
 		return nil, err
 	}
-	tc, err := s.trackConn(c)
+	tc, err := s.trackConn(c, string(addr))
 	if err != nil {
 		return nil, err
 	}
@@ -119,10 +127,12 @@ type trackedConn struct {
 	// with ConnectionState from elsewhere: that waits for a handshake in
 	// progress, which a silent peer can stall indefinitely.
 	peer atomic.Pointer[x509.Certificate]
+	// dialed is the address this hub dialed; empty for an accepted connection.
+	dialed string
 }
 
-func (s *tlsStream) track(c *tls.Conn) *trackedConn {
-	tc := &trackedConn{Conn: c, s: s}
+func (s *tlsStream) track(c *tls.Conn, dialed string) *trackedConn {
+	tc := &trackedConn{Conn: c, s: s, dialed: dialed}
 	s.mu.Lock()
 	s.conns[tc] = struct{}{}
 	s.mu.Unlock()
@@ -152,6 +162,20 @@ func (c *trackedConn) Close() error {
 	return c.Conn.Close()
 }
 
+// dialedPeers returns the certificates the peer at addr presented on the
+// open connections this hub dialed to it.
+func (s *tlsStream) dialedPeers(addr string) []*x509.Certificate {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []*x509.Certificate
+	for c := range s.conns {
+		if p := c.peer.Load(); p != nil && c.dialed == addr {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 // closeRevoked closes every open connection whose peer certificate revoked
 // reports as revoked, and returns how many it closed. A handshake only
 // checks the certificate once, so this is how a revocation reaches
@@ -175,22 +199,22 @@ func (s *tlsStream) closeRevoked(revoked func(*x509.Certificate) bool) int {
 	return n
 }
 
-func caPool(ca *pki.CA) *x509.CertPool {
-	pool := x509.NewCertPool()
-	pool.AddCert(ca.Cert())
-	return pool
-}
-
-// serverTLS accepts only clients with a hub node certificate from ca that
-// check accepts.
-func serverTLS(cert tls.Certificate, ca *pki.CA, check peerCheck) *tls.Config {
+// serverTLSFunc accepts only clients with a hub node certificate from ca that
+// check accepts, and presents the certificate cert returns at each handshake. The CAs it trusts are ca's at each handshake, so a hub CA
+// rotation reaches new connections without a restart.
+func serverTLSFunc(cert func() *tls.Certificate, ca *pki.CA, check peerCheck) *tls.Config {
 	return &tls.Config{
-		MinVersion:   tls.VersionTLS13,
-		Certificates: []tls.Certificate{cert},
-		ClientAuth:   tls.RequireAndVerifyClientCert,
-		ClientCAs:    caPool(ca),
-		VerifyConnection: func(cs tls.ConnectionState) error {
-			return requireHubCert(cs.PeerCertificates, check)
+		MinVersion: tls.VersionTLS13,
+		GetConfigForClient: func(*tls.ClientHelloInfo) (*tls.Config, error) {
+			return &tls.Config{
+				MinVersion:   tls.VersionTLS13,
+				Certificates: []tls.Certificate{*cert()},
+				ClientAuth:   tls.RequireAndVerifyClientCert,
+				ClientCAs:    ca.Pool(),
+				VerifyConnection: func(cs tls.ConnectionState) error {
+					return requireHubCert(ca, cs.PeerCertificates, check)
+				},
+			}, nil
 		},
 	}
 }
@@ -198,40 +222,65 @@ func serverTLS(cert tls.Certificate, ca *pki.CA, check peerCheck) *tls.Config {
 // clientTLS dials peers by address, often an IP, so there is no host name to
 // check: the peer is authenticated by its CA-issued hub node certificate.
 func clientTLS(cert tls.Certificate, ca *pki.CA, check peerCheck) *tls.Config {
-	pool := caPool(ca)
+	return clientTLSFunc(func() *tls.Certificate { return &cert }, ca, check)
+}
+
+// clientTLSFunc is clientTLS presenting the certificate cert returns at each
+// handshake, and trusting ca's CAs at each handshake.
+func clientTLSFunc(cert func() *tls.Certificate, ca *pki.CA, check peerCheck) *tls.Config {
 	return &tls.Config{
-		MinVersion:   tls.VersionTLS13,
-		Certificates: []tls.Certificate{cert},
+		MinVersion: tls.VersionTLS13,
+		GetClientCertificate: func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
+			return cert(), nil
+		},
 		// Standard verification is replaced, not skipped: VerifyConnection
 		// verifies the chain against the hub CA and requires a hub identity.
 		InsecureSkipVerify: true, //nolint:gosec // see VerifyConnection
 		VerifyConnection: func(cs tls.ConnectionState) error {
-			if len(cs.PeerCertificates) == 0 {
-				return errors.New("peer presented no certificate")
+			if err := verifyChain(ca, cs, ""); err != nil {
+				return err
 			}
-			inter := x509.NewCertPool()
-			for _, c := range cs.PeerCertificates[1:] {
-				inter.AddCert(c)
-			}
-			if _, err := cs.PeerCertificates[0].Verify(x509.VerifyOptions{
-				Roots:         pool,
-				Intermediates: inter,
-				KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-			}); err != nil {
-				return fmt.Errorf("verify peer certificate: %w", err)
-			}
-			return requireHubCert(cs.PeerCertificates, check)
+			return requireHubCert(ca, cs.PeerCertificates, check)
 		},
 	}
 }
 
-func requireHubCert(chain []*x509.Certificate, check peerCheck) error {
+// verifyChain verifies a server's certificate chain against the CAs ca
+// trusts now and, when not empty, its host name dnsName.
+func verifyChain(ca *pki.CA, cs tls.ConnectionState, dnsName string) error {
+	if len(cs.PeerCertificates) == 0 {
+		return errors.New("peer presented no certificate")
+	}
+	inter := x509.NewCertPool()
+	for _, c := range cs.PeerCertificates[1:] {
+		inter.AddCert(c)
+	}
+	if _, err := cs.PeerCertificates[0].Verify(x509.VerifyOptions{
+		Roots:         ca.Pool(),
+		Intermediates: inter,
+		DNSName:       dnsName,
+		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}); err != nil {
+		return fmt.Errorf("verify peer certificate: %w", err)
+	}
+	return nil
+}
+
+// requireHubCert requires a hub node certificate issued by a CA that ca
+// trusts now, and that check accepts. The issuer is checked here as well
+// because a resumed TLS session skips chain verification but not
+// VerifyConnection: a session from before a hub CA rotation finished must
+// not outlive it.
+func requireHubCert(ca *pki.CA, chain []*x509.Certificate, check peerCheck) error {
 	if len(chain) == 0 {
 		return errors.New("peer presented no certificate")
 	}
 	id, err := pki.HubNodeID(chain[0])
 	if err != nil {
 		return fmt.Errorf("peer is not a hub: %w", err)
+	}
+	if ca.IssuerOf(chain[0]) == nil {
+		return fmt.Errorf("peer hub %s: its certificate is not from a trusted hub CA", id)
 	}
 	if check != nil {
 		if err := check(chain[0]); err != nil {

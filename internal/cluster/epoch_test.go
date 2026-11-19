@@ -133,7 +133,7 @@ func TestForwardClientRefusesAnotherEpoch(t *testing.T) {
 			srv.TLS = &tls.Config{MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{cert}}
 			srv.StartTLS()
 			defer srv.Close()
-			client := newForwardClient(ca, own, epochA)
+			client := newForwardClient(ca, func() *tls.Certificate { return &own }, epochA)
 			defer client.CloseIdleConnections()
 			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL, nil)
 			if err != nil {

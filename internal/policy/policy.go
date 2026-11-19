@@ -48,6 +48,19 @@ const (
 	// ClusterMigrate migrates the cluster's store schema to a newer version
 	// on every hub, through the Raft log.
 	ClusterMigrate Action = "cluster.migrate"
+	// ClusterCARotate starts a hub CA rotation: the leader generates a new CA
+	// that every hub trusts next to the old one and signs new certificates with.
+	ClusterCARotate Action = "cluster.ca.rotate"
+	// ClusterCAFinish finishes a hub CA rotation: every hub serves the new CA,
+	// drops the old one and deletes its key. Agents and hubs still on the old CA
+	// are cut off.
+	ClusterCAFinish Action = "cluster.ca.finish"
+	// ClusterCAAbort gives up a hub CA rotation before its cutover: every hub
+	// drops the new CA and its key. Agents it renewed have to enroll again.
+	ClusterCAAbort Action = "cluster.ca.abort"
+	// ClusterCAFetchKey hands the new CA's key, and a node certificate of it,
+	// to a cluster member during a hub CA rotation.
+	ClusterCAFetchKey Action = "cluster.ca.fetch_key"
 	// AutomationLog is an automation's log action: it writes a line to the
 	// hub log and touches no device.
 	AutomationLog Action = "automation.log"
@@ -290,6 +303,14 @@ var rules = map[Action]rule{
 	ClusterTransferLeadership: {class: Safe, actors: []string{ActorAdmin}},
 	// A schema migration cannot be undone: downgrades are unsupported.
 	ClusterMigrate: {class: Dangerous, actors: []string{ActorAdmin}},
+	// A rotation hands out a new CA key and, once finished, cuts off whatever
+	// still holds an old-CA certificate.
+	ClusterCARotate: {class: Dangerous, actors: []string{ActorAdmin}},
+	ClusterCAFinish: {class: Dangerous, actors: []string{ActorAdmin}},
+	ClusterCAAbort:  {class: Dangerous, actors: []string{ActorAdmin}},
+	// A member fetching the new CA key proves itself with its pinned node
+	// certificate, in a protocol no operator could stop to approve.
+	ClusterCAFetchKey: {class: Dangerous, actors: []string{ActorHub}, fixed: true},
 	// Writing a log line changes nothing.
 	AutomationLog: {class: Read, actors: []string{ActorAutomation}},
 	// A webhook touches no device: it tells another system something.

@@ -1054,7 +1054,14 @@ type Welcome struct {
 	// hubs are the agent-facing URLs (https://host:port) of every hub in the
 	// cluster, the leader included. Agents keep them to fail over between hubs.
 	// A single hub lists only itself, or nothing when it does not know its URL.
-	Hubs          []string `protobuf:"bytes,3,rep,name=hubs,proto3" json:"hubs,omitempty"`
+	Hubs []string `protobuf:"bytes,3,rep,name=hubs,proto3" json:"hubs,omitempty"`
+	// certificate, set during a hub CA rotation, is a client certificate of the
+	// new CA for the key the agent connected with (PEM). The agent saves
+	// ca_bundle first, then this, and reconnects with it.
+	Certificate []byte `protobuf:"bytes,4,opt,name=certificate,proto3" json:"certificate,omitempty"`
+	// ca_bundle, when set, is every hub CA the agent should trust (PEM): both
+	// during a hub CA rotation, the new one alone after it.
+	CaBundle      []byte `protobuf:"bytes,5,opt,name=ca_bundle,json=caBundle,proto3" json:"ca_bundle,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1106,6 +1113,20 @@ func (x *Welcome) GetHeartbeatInterval() *durationpb.Duration {
 func (x *Welcome) GetHubs() []string {
 	if x != nil {
 		return x.Hubs
+	}
+	return nil
+}
+
+func (x *Welcome) GetCertificate() []byte {
+	if x != nil {
+		return x.Certificate
+	}
+	return nil
+}
+
+func (x *Welcome) GetCaBundle() []byte {
+	if x != nil {
+		return x.CaBundle
 	}
 	return nil
 }
@@ -2700,12 +2721,14 @@ const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
 	"\x06denied\x18\x02 \x01(\bR\x06denied\x12\x1b\n" +
 	"\texit_code\x18\x03 \x01(\x05R\bexitCode\x12\x14\n" +
-	"\x05error\x18\x04 \x01(\tR\x05error\"\xa4\x01\n" +
+	"\x05error\x18\x04 \x01(\tR\x05error\"\xe3\x01\n" +
 	"\aWelcome\x12;\n" +
 	"\vserver_time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"serverTime\x12H\n" +
 	"\x12heartbeat_interval\x18\x02 \x01(\v2\x19.google.protobuf.DurationR\x11heartbeatInterval\x12\x12\n" +
-	"\x04hubs\x18\x03 \x03(\tR\x04hubs\">\n" +
+	"\x04hubs\x18\x03 \x03(\tR\x04hubs\x12 \n" +
+	"\vcertificate\x18\x04 \x01(\fR\vcertificate\x12\x1b\n" +
+	"\tca_bundle\x18\x05 \x01(\fR\bcaBundle\">\n" +
 	"\tNotLeader\x12\x1d\n" +
 	"\n" +
 	"leader_url\x18\x01 \x01(\tR\tleaderUrl\x12\x12\n" +

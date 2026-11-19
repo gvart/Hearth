@@ -122,26 +122,37 @@ func (w *memberWatch) isFailing(id raft.ServerID) bool {
 	return w.failing[id]
 }
 
-// checkPeerCert refuses a hub node certificate of another cluster epoch, and a
-// revoked one. It reads the local replica of the revocation table and returns
-// any read error.
+// checkPeerCert refuses a hub node certificate of another cluster epoch, a
+// revoked one, and during a hub CA rotation an old-CA one other than the
+// one pinned for its hub (errNotPinned). It reads the local replica of the
+// store and returns any read error.
 func (n *Node) checkPeerCert(cert *x509.Certificate) error {
 	if pki.HubEpoch(cert) != n.epoch {
 		return errOtherEpoch
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	return n.store.Hubs().CheckCert(ctx, pki.SerialString(cert))
+	if err := n.store.Hubs().CheckCert(ctx, pki.SerialString(cert)); err != nil {
+		return err
+	}
+	return n.checkRotationPin(ctx, cert)
 }
 
 // refuseRevoked is the Raft transport's peer check. It refuses a revoked
-// certificate only: when the revocation table cannot be read, it accepts the
-// CA-issued hub certificate and logs the failure, so a store problem on this
-// node halts it through the FSM, as before, rather than cutting it off from
-// its peers.
+// certificate, and an unpinned one during a hub CA rotation, only: when the
+// store cannot be read, it accepts the CA-issued hub certificate and logs
+// the failure, so a store problem on this node halts it through the FSM, as
+// before, rather than cutting it off from its peers. During a hub CA
+// rotation (this hub trusts a next CA) an old-CA certificate is refused when
+// the store cannot be read: its pin cannot be checked.
 func (n *Node) refuseRevoked(cert *x509.Certificate) error {
 	err := n.checkPeerCert(cert)
-	if err != nil && !errors.Is(err, store.ErrCertRevoked) {
+	if err != nil && !errors.Is(err, store.ErrCertRevoked) && !errors.Is(err, errNotPinned) {
+		if ca := n.cfg.CA; ca != nil && ca.NextActive() && cert.CheckSignatureFrom(ca.Next()) != nil {
+			n.log.Warn("cannot check a peer's old-CA hub certificate against its pin during a hub CA rotation; refusing it",
+				"err", err)
+			return fmt.Errorf("check the pin of an old-CA hub certificate: %w", err)
+		}
 		n.log.Warn("cannot check a peer's hub certificate for revocation; accepting it", "err", err)
 		return nil
 	}
@@ -156,6 +167,16 @@ func (n *Node) closeRevokedConns() {
 	if k > 0 {
 		n.log.Info("closed raft connections of revoked hub certificates", "count", k)
 	}
+}
+
+// issuerFingerprint is the fingerprint of the CA that issued cert, which in a
+// hub CA rotation need not be the one ca serves.
+func issuerFingerprint(ca *pki.CA, cert *x509.Certificate) (string, error) {
+	issuer := ca.IssuerOf(cert)
+	if issuer == nil {
+		return "", errors.New("the node certificate is of no CA this hub trusts")
+	}
+	return pki.FingerprintHex(issuer), nil
 }
 
 // RecordNodeCert records this node's hub node certificate in the replicated
@@ -202,10 +223,15 @@ func (n *Node) RecordNodeCert(ctx context.Context) {
 			// A certificate recorded before its fingerprint could be gets
 			// it filled in. Below the schema that records fingerprints it
 			// is recorded without, and the loop waits for the migration.
-			if err = n.store.Hubs().Record(ctx, store.HubCert{
-				Serial: serial, NodeID: n.cfg.NodeID,
-				Fingerprint: pki.FingerprintHex(n.cert), CAFP: pki.FingerprintHex(n.cfg.CA.Cert()),
-			}); err == nil {
+			// The CA recorded is the one that issued it, which in a rotation
+			// need not be the one served.
+			var caFP string
+			if caFP, err = issuerFingerprint(n.cfg.CA, n.cert); err == nil {
+				err = n.store.Hubs().Record(ctx, store.HubCert{
+					Serial: serial, NodeID: n.cfg.NodeID, Fingerprint: pki.FingerprintHex(n.cert), CAFP: caFP,
+				})
+			}
+			if err == nil {
 				if i < 0 {
 					n.log.InfoContext(ctx, "recorded this hub's node certificate in the cluster", "serial", serial)
 				}

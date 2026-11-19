@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 
 	"github.com/gvart/hearth/internal/pki"
 )
@@ -27,6 +28,8 @@ type identity struct {
 	hubs     []string // every known hub, in the order to try them; hubURL included
 	deviceID string
 	tls      *tls.Config
+	// verifiedRoot is the CA that verified the last hub connected to.
+	verifiedRoot atomic.Pointer[x509.Certificate]
 }
 
 // loadIdentity reads the agent key, certificate, hub CA, hub URL and hub list
@@ -55,10 +58,6 @@ func loadIdentity(dataDir string) (*identity, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read hub CA: %w", err)
 	}
-	ca, err := pki.ParseCertPEM(caPEM)
-	if err != nil {
-		return nil, fmt.Errorf("parse hub CA: %w", err)
-	}
 	raw, err := os.ReadFile(filepath.Join(dataDir, HubURLFile))
 	if err != nil {
 		return nil, fmt.Errorf("read hub URL: %w", err)
@@ -72,18 +71,30 @@ func loadIdentity(dataDir string) (*identity, error) {
 		return nil, err
 	}
 
+	// Every CA in the file: both while the hub CA is rotated.
 	roots := x509.NewCertPool()
-	roots.AddCert(ca)
-	return &identity{
+	if !roots.AppendCertsFromPEM(caPEM) {
+		return nil, errors.New("parse hub CA: no certificate in " + CAFile)
+	}
+	id := &identity{
 		hubURL:   u,
 		hubs:     mergeHubs(known, []string{u.String()}),
 		deviceID: deviceID,
-		tls: &tls.Config{
-			MinVersion:   tls.VersionTLS13,
-			RootCAs:      roots,
-			Certificates: []tls.Certificate{pair},
+	}
+	id.tls = &tls.Config{
+		MinVersion:   tls.VersionTLS13,
+		RootCAs:      roots,
+		Certificates: []tls.Certificate{pair},
+		// The CA that verified the hub decides which CAs a renewal may add.
+		VerifyConnection: func(cs tls.ConnectionState) error {
+			if len(cs.VerifiedChains) > 0 {
+				chain := cs.VerifiedChains[0]
+				id.verifiedRoot.Store(chain[len(chain)-1])
+			}
+			return nil
 		},
-	}, nil
+	}
+	return id, nil
 }
 
 func parseHubURL(s string) (*url.URL, error) {

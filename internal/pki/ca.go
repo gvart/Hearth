@@ -21,6 +21,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -45,20 +47,102 @@ const deviceURIPrefix = "urn:hearth:device:"
 
 // CA is the hub certificate authority. Its key never leaves a hub voter's data
 // dir; it is replicated only over the pinned join channel (see KeyDER).
+//
+// While the CA is rotated (see rotate.go) it holds two key pairs: the current
+// one (ca.crt, ca.key) and the next (ca.next.crt, ca.next.key). Both are
+// trusted; new certificates are signed by the next CA as soon as its key is
+// here, and the hub's TLS server certificates by the current CA until the
+// cutover. A CA is safe for concurrent use.
 type CA struct {
+	// dir is the data dir the CA files live in; empty for a CA that was
+	// not loaded from one (rotation then fails).
+	dir string
+	st  atomic.Pointer[caState]
+	// mu serializes changes of st and of the files.
+	mu sync.Mutex
+	// onChange are called after every change of st, outside mu.
+	onChangeMu sync.Mutex
+	onChange   []func()
+}
+
+// keyPair is a CA certificate and its key; key is nil for a next CA whose
+// key this hub has not fetched yet.
+type keyPair struct {
 	cert *x509.Certificate
 	key  crypto.Signer
 }
 
+// caState is the CA's state at one moment; it is never modified once stored.
+type caState struct {
+	cur  keyPair
+	next *keyPair
+	// active: a rotation to next is under way, as the replicated store
+	// shows. Until then next is neither trusted nor signs: a next CA whose
+	// rotation never started is known to no other hub.
+	active  bool
+	cutover bool
+	pool    *x509.CertPool
+}
+
+func newState(cur keyPair, next *keyPair, active, cutover bool) *caState {
+	active = active && next != nil
+	pool := x509.NewCertPool()
+	pool.AddCert(cur.cert)
+	if active {
+		pool.AddCert(next.cert)
+	}
+	return &caState{cur: cur, next: next, active: active, cutover: cutover && active && next.key != nil, pool: pool}
+}
+
+// serving is the key pair that signs the hub's TLS server certificates and
+// that clients pin: the next CA after the cutover, the current one before.
+func (s *caState) serving() keyPair {
+	if s.cutover {
+		return *s.next
+	}
+	return s.cur
+}
+
+// signer is the key pair that signs new client and hub node certificates:
+// the next CA as soon as this hub holds its key and the rotation to it is
+// under way.
+func (s *caState) signer() keyPair {
+	if s.active && s.next.key != nil {
+		return *s.next
+	}
+	return s.cur
+}
+
+func caFrom(dir string, cur keyPair, next *keyPair) *CA {
+	c := &CA{dir: dir}
+	c.st.Store(newState(cur, next, false, false))
+	return c
+}
+
+func (c *CA) state() *caState { return c.st.Load() }
+
 // LoadOrCreateCA loads the CA from dir, creating an ECDSA P-256 CA on first use.
-// The key file is written with mode 0600.
+// The key file is written with mode 0600. A next CA left by a rotation is
+// loaded too, and a rotation's finish interrupted between its two renames is
+// completed.
 func LoadOrCreateCA(dir string, now time.Time) (*CA, error) {
 	certPath, keyPath := filepath.Join(dir, CACertFile), filepath.Join(dir, CAKeyFile)
+	if err := recoverFinish(dir); err != nil {
+		return nil, err
+	}
 	_, certErr := os.Stat(certPath)
 	_, keyErr := os.Stat(keyPath)
 	switch {
 	case certErr == nil && keyErr == nil:
-		return loadCA(certPath, keyPath)
+		cur, err := loadKeyPair(certPath, keyPath)
+		if err != nil {
+			return nil, err
+		}
+		next, err := loadNext(dir)
+		if err != nil {
+			return nil, err
+		}
+		return caFrom(dir, cur, next), nil
 	case errors.Is(certErr, os.ErrNotExist) && errors.Is(keyErr, os.ErrNotExist):
 		return createCA(dir, certPath, keyPath, now)
 	case certErr != nil && !errors.Is(certErr, os.ErrNotExist):
@@ -83,13 +167,28 @@ func createCA(dir, certPath, keyPath string, now time.Time) (*CA, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("create data dir: %w", err)
 	}
+	kp, err := generateKeyPair(now)
+	if err != nil {
+		return nil, err
+	}
+	if err := WriteKey(keyPath, kp.key); err != nil {
+		return nil, err
+	}
+	if err := writeFile(certPath, EncodeCertPEM(kp.cert), 0o644); err != nil {
+		return nil, err
+	}
+	return caFrom(dir, kp, nil), nil
+}
+
+// generateKeyPair creates a new self-signed CA in memory.
+func generateKeyPair(now time.Time) (keyPair, error) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		return nil, fmt.Errorf("generate CA key: %w", err)
+		return keyPair{}, fmt.Errorf("generate CA key: %w", err)
 	}
 	serial, err := newSerial()
 	if err != nil {
-		return nil, err
+		return keyPair{}, err
 	}
 	tmpl := &x509.Certificate{
 		SerialNumber:          serial,
@@ -103,47 +202,47 @@ func createCA(dir, certPath, keyPath string, now time.Time) (*CA, error) {
 	}
 	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, key.Public(), key)
 	if err != nil {
-		return nil, fmt.Errorf("create CA cert: %w", err)
+		return keyPair{}, fmt.Errorf("create CA cert: %w", err)
 	}
 	cert, err := x509.ParseCertificate(der)
 	if err != nil {
-		return nil, fmt.Errorf("parse CA cert: %w", err)
+		return keyPair{}, fmt.Errorf("parse CA cert: %w", err)
 	}
-	if err := WriteKey(keyPath, key); err != nil {
-		return nil, err
-	}
-	if err := writeFile(certPath, EncodeCertPEM(cert), 0o644); err != nil {
-		return nil, err
-	}
-	return &CA{cert: cert, key: key}, nil
+	return keyPair{cert: cert, key: key}, nil
 }
 
-func loadCA(certPath, keyPath string) (*CA, error) {
+func loadKeyPair(certPath, keyPath string) (keyPair, error) {
 	certPEM, err := os.ReadFile(certPath)
 	if err != nil {
-		return nil, fmt.Errorf("read CA cert: %w", err)
+		return keyPair{}, fmt.Errorf("read CA cert: %w", err)
 	}
 	cert, err := ParseCertPEM(certPEM)
 	if err != nil {
-		return nil, err
+		return keyPair{}, err
 	}
 	key, err := ReadKey(keyPath)
 	if err != nil {
-		return nil, err
+		return keyPair{}, err
 	}
 	// A key copied in by hand, as after a restore without it, must be this
 	// CA's.
-	if pub, ok := cert.PublicKey.(interface{ Equal(crypto.PublicKey) bool }); !ok || !pub.Equal(key.Public()) {
-		return nil, fmt.Errorf("CA key %s does not match the CA certificate %s: copy the ca.key of this hub's CA", keyPath, certPath)
+	if !keyMatches(cert, key) {
+		return keyPair{}, fmt.Errorf("CA key %s does not match the CA certificate %s: copy the ca.key of this hub's CA", keyPath, certPath)
 	}
-	return &CA{cert: cert, key: key}, nil
+	return keyPair{cert: cert, key: key}, nil
 }
 
-// Cert returns the CA certificate.
-func (c *CA) Cert() *x509.Certificate { return c.cert }
+func keyMatches(cert *x509.Certificate, key crypto.Signer) bool {
+	pub, ok := cert.PublicKey.(interface{ Equal(crypto.PublicKey) bool })
+	return ok && pub.Equal(key.Public())
+}
 
-// Fingerprint returns the SHA-256 of the CA certificate's DER encoding.
-func (c *CA) Fingerprint() [sha256.Size]byte { return Fingerprint(c.cert) }
+// Cert returns the CA certificate clients pin and the hub serves at /ca.crt:
+// the current CA, or the next one after a rotation's cutover.
+func (c *CA) Cert() *x509.Certificate { return c.state().serving().cert }
+
+// Fingerprint returns the SHA-256 of Cert's DER encoding.
+func (c *CA) Fingerprint() [sha256.Size]byte { return Fingerprint(c.Cert()) }
 
 // Fingerprint returns the SHA-256 of cert's DER encoding.
 func Fingerprint(cert *x509.Certificate) [sha256.Size]byte { return sha256.Sum256(cert.Raw) }
@@ -193,7 +292,8 @@ func (c *CA) IssueHubServerCert(hosts []string, epoch string, now time.Time) (tl
 		}
 		tmpl.URIs = []*url.URL{u}
 	}
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, c.cert, key.Public(), c.key)
+	ca := c.state().serving()
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, ca.cert, key.Public(), ca.key)
 	if err != nil {
 		return tls.Certificate{}, fmt.Errorf("create server cert: %w", err)
 	}
@@ -201,7 +301,7 @@ func (c *CA) IssueHubServerCert(hosts []string, epoch string, now time.Time) (tl
 	if err != nil {
 		return tls.Certificate{}, fmt.Errorf("parse server cert: %w", err)
 	}
-	return tls.Certificate{Certificate: [][]byte{der, c.cert.Raw}, PrivateKey: key, Leaf: leaf}, nil
+	return tls.Certificate{Certificate: [][]byte{der, ca.cert.Raw}, PrivateKey: key, Leaf: leaf}, nil
 }
 
 // SignClientCSR verifies the CSR's self-signature and issues a client certificate
@@ -215,6 +315,13 @@ func (c *CA) SignClientCSR(csrDER []byte, deviceID string, now time.Time) (*x509
 	if err := csr.CheckSignature(); err != nil {
 		return nil, fmt.Errorf("check CSR signature: %w", err)
 	}
+	return c.SignClientKey(csr.PublicKey, deviceID, now)
+}
+
+// SignClientKey issues a client certificate binding pub to deviceID. A CA
+// rotation renews an agent's certificate this way, for the key the agent
+// proved it holds by presenting its current certificate.
+func (c *CA) SignClientKey(pub crypto.PublicKey, deviceID string, now time.Time) (*x509.Certificate, error) {
 	uri, err := url.Parse(deviceURIPrefix + deviceID)
 	if err != nil {
 		return nil, fmt.Errorf("device URI: %w", err)
@@ -232,7 +339,8 @@ func (c *CA) SignClientCSR(csrDER []byte, deviceID string, now time.Time) (*x509
 		KeyUsage:     x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 	}
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, c.cert, csr.PublicKey, c.key)
+	ca := c.state().signer()
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, ca.cert, pub, ca.key)
 	if err != nil {
 		return nil, fmt.Errorf("sign client cert: %w", err)
 	}
