@@ -56,8 +56,6 @@ const (
 	// maxFieldLength caps a name or other text the server reports: Proxmox VE
 	// keeps its own names far shorter.
 	maxFieldLength = 255
-	// freshReadTimeout bounds the read that confirms a guest before an action.
-	freshReadTimeout = 5 * time.Second
 )
 
 // Errors of the manager's API.
@@ -200,8 +198,11 @@ type Manager struct {
 	log    *slog.Logger
 	poll   time.Duration
 	every  time.Duration
-	now    func() time.Time
-	kick   chan struct{}
+	// readTimeout bounds the read that confirms a guest before an action; a
+	// poll gets as long, so a server that shows as connected can be acted on.
+	readTimeout time.Duration
+	now         func() time.Time
+	kick        chan struct{}
 	// toEntities is convert; tests replace it.
 	toEntities func([]resource) ([]Node, []Guest, []Storage)
 
@@ -233,6 +234,7 @@ func NewManager(cfg Config) *Manager {
 		store: cfg.Store, sealer: cfg.Sealer, policy: cfg.Policy, log: cfg.Log,
 		poll: cfg.PollInterval, every: cfg.SyncInterval, now: cfg.Now,
 		kick: make(chan struct{}, 1), servers: map[string]*running{}, toEntities: convert,
+		readTimeout: requestTimeout,
 	}
 	if m.poll <= 0 {
 		m.poll = DefaultPollInterval
@@ -577,7 +579,7 @@ func (m *Manager) Act(ctx context.Context, actorKind, actorID, id string, req Ac
 		}
 		// The last poll or an approval can be minutes old: the guest may have
 		// moved or gone, and its VMID may now belong to another guest.
-		now, err := readGuest(ctx, r.client, req.VMID, freshReadTimeout)
+		now, err := readGuest(ctx, r.client, req.VMID, m.readTimeout)
 		if err != nil {
 			return err
 		}

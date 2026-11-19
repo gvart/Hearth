@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Token is an API token the mock accepts by default.
@@ -39,6 +40,7 @@ type Server struct {
 	requests  []Request
 	failCode  int
 	failMsg   string
+	delay     time.Duration
 }
 
 // New returns a mock with a small cluster, accepting token.
@@ -103,6 +105,14 @@ func (s *Server) FailWith(code int, message string) {
 	s.failCode, s.failMsg = code, message
 }
 
+// SetDelay makes the mock wait d before it answers a read of the cluster
+// resources, until called with 0. Other requests are not slowed.
+func (s *Server) SetDelay(d time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.delay = d
+}
+
 // Requests returns every request received so far.
 func (s *Server) Requests() []Request {
 	s.mu.Lock()
@@ -165,6 +175,16 @@ func (s *Server) guest(vmid int) map[string]any {
 
 // ServeHTTP implements http.Handler.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	d := s.delay
+	s.mu.Unlock()
+	if d > 0 && r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/cluster/resources") {
+		select {
+		case <-time.After(d):
+		case <-r.Context().Done():
+			return
+		}
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	authorized := r.Header.Get("Authorization") == "PVEAPIToken="+s.token
