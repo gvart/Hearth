@@ -54,6 +54,8 @@ type Result struct {
 	// the first time, and back after an absence.
 	NewHosts      []NetworkHost
 	ReturnedHosts []NetworkHost
+	// PinMismatch is true when PinCert recorded a mismatch.
+	PinMismatch bool
 }
 
 // UpsertDevice inserts a device or replaces every field but first_seen.
@@ -286,9 +288,16 @@ func (c SetHubURL) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
 
 // RecordHubCert records a hub node certificate issued to a cluster node.
 // Recording a known serial again is a no-op: it never clears a revocation.
+//
+// From CertPinsSchema it also records the certificate's Fingerprint and the
+// fingerprint of the CA that issued it (CAFP), and fills them in for a known
+// serial of the same node recorded without them. Below that schema they are
+// dropped, the same way on every node.
 type RecordHubCert struct {
-	Serial string `json:"serial"`
-	NodeID string `json:"node_id"`
+	Serial      string `json:"serial"`
+	NodeID      string `json:"node_id"`
+	Fingerprint string `json:"fingerprint,omitempty"`
+	CAFP        string `json:"ca_fp,omitempty"`
 }
 
 // Op implements Command.
@@ -297,8 +306,24 @@ func (RecordHubCert) Op() string { return "record_hub_cert" }
 func (RecordHubCert) minSchema() int64 { return hubCertsSchema }
 
 func (c RecordHubCert) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	_, err := tx.ExecContext(ctx,
-		`INSERT INTO hub_certs (serial, node_id) VALUES (?, ?) ON CONFLICT (serial) DO NOTHING`, c.Serial, c.NodeID)
+	pinned, err := atSchema(ctx, tx, CertPinsSchema)
+	if err != nil {
+		return Result{}, err
+	}
+	if !pinned {
+		_, err := tx.ExecContext(ctx,
+			`INSERT INTO hub_certs (serial, node_id) VALUES (?, ?) ON CONFLICT (serial) DO NOTHING`, c.Serial, c.NodeID)
+		return Result{}, err
+	}
+	// A known serial keeps its node ID and revocation; only a missing
+	// fingerprint is filled in.
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO hub_certs (serial, node_id, fingerprint, ca_fp) VALUES (?, ?, ?, ?)
+		ON CONFLICT (serial) DO UPDATE SET
+			fingerprint = COALESCE(hub_certs.fingerprint, excluded.fingerprint),
+			ca_fp = COALESCE(hub_certs.ca_fp, excluded.ca_fp)
+		WHERE hub_certs.node_id = excluded.node_id`,
+		c.Serial, c.NodeID, nullString(c.Fingerprint), nullString(c.CAFP))
 	return Result{}, err
 }
 
@@ -454,17 +479,31 @@ func (c ConsumeJoinToken) apply(ctx context.Context, tx *sql.Tx) (Result, error)
 	}
 }
 
-// CreateCert records a certificate issued to a device.
+// CreateCert records a certificate issued to a device. From CertPinsSchema it also
+// records the certificate's Fingerprint and the fingerprint of the CA that
+// issued it (CAFP); below that schema they are dropped, the same way on every
+// node.
 type CreateCert struct {
-	Serial   string `json:"serial"`
-	DeviceID string `json:"device_id"`
+	Serial      string `json:"serial"`
+	DeviceID    string `json:"device_id"`
+	Fingerprint string `json:"fingerprint,omitempty"`
+	CAFP        string `json:"ca_fp,omitempty"`
 }
 
 // Op implements Command.
 func (CreateCert) Op() string { return "create_cert" }
 
 func (c CreateCert) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	_, err := tx.ExecContext(ctx, `INSERT INTO certs (serial, device_id) VALUES (?, ?)`, c.Serial, c.DeviceID)
+	pinned, err := atSchema(ctx, tx, CertPinsSchema)
+	if err != nil {
+		return Result{}, err
+	}
+	if !pinned {
+		_, err := tx.ExecContext(ctx, `INSERT INTO certs (serial, device_id) VALUES (?, ?)`, c.Serial, c.DeviceID)
+		return Result{}, err
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO certs (serial, device_id, fingerprint, ca_fp) VALUES (?, ?, ?, ?)`,
+		c.Serial, c.DeviceID, nullString(c.Fingerprint), nullString(c.CAFP))
 	return Result{}, err
 }
 
@@ -661,6 +700,8 @@ func nullInt(v *int64) sql.NullInt64 {
 	return sql.NullInt64{Int64: *v, Valid: true}
 }
 
+func nullString(s string) sql.NullString { return sql.NullString{String: s, Valid: s != ""} }
+
 // commandVersion is the encoding version written by EncodeCommand. Bump it
 // (and keep decoding the old one) when a command's fields change meaning.
 const commandVersion = 1
@@ -720,6 +761,8 @@ func DecodeCommand(b []byte) (Command, error) {
 		cmd, err = decodeAs[RecordHubCert](env.Cmd)
 	case RevokeHubCerts{}.Op():
 		cmd, err = decodeAs[RevokeHubCerts](env.Cmd)
+	case PinCert{}.Op():
+		cmd, err = decodeAs[PinCert](env.Cmd)
 	case CreateToken{}.Op():
 		cmd, err = decodeAs[CreateToken](env.Cmd)
 	case ConsumeToken{}.Op():

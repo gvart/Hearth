@@ -170,7 +170,7 @@ func (n *Node) RecordNodeCert(ctx context.Context) {
 	waiting := false
 	for {
 		err := n.store.Hubs().RequireCerts(ctx)
-		if errors.Is(err, store.ErrSchemaTooOld) {
+		if errors.Is(err, store.ErrSchemaTooOld) || (err == nil && n.recordedBeforePins(ctx, serial)) {
 			// A newer binary on an older schema: record it once the
 			// cluster migrates.
 			if !waiting {
@@ -196,12 +196,23 @@ func (n *Node) RecordNodeCert(ctx context.Context) {
 				n.log.ErrorContext(ctx, "this hub's node certificate is revoked: it was removed from the cluster. "+
 					"To bring it back, join it again with a fresh data dir and a new join token", "serial", serial)
 				return
-			case i >= 0:
+			case i >= 0 && certs[i].Fingerprint != "":
 				return
 			}
-			if err = n.store.Hubs().RecordCert(ctx, serial, n.cfg.NodeID); err == nil {
-				n.log.InfoContext(ctx, "recorded this hub's node certificate in the cluster", "serial", serial)
-				return
+			// A certificate recorded before its fingerprint could be gets
+			// it filled in. Below the schema that records fingerprints it
+			// is recorded without, and the loop waits for the migration.
+			if err = n.store.Hubs().Record(ctx, store.HubCert{
+				Serial: serial, NodeID: n.cfg.NodeID,
+				Fingerprint: pki.FingerprintHex(n.cert), CAFP: pki.FingerprintHex(n.cfg.CA.Cert()),
+			}); err == nil {
+				if i < 0 {
+					n.log.InfoContext(ctx, "recorded this hub's node certificate in the cluster", "serial", serial)
+				}
+				if n.store.AtSchema(ctx, store.CertPinsSchema) {
+					return
+				}
+				continue
 			}
 		}
 		if ctx.Err() != nil {
@@ -214,6 +225,17 @@ func (n *Node) RecordNodeCert(ctx context.Context) {
 		case <-time.After(announceRetry):
 		}
 	}
+}
+
+// recordedBeforePins reports whether this node's certificate is recorded,
+// unrevoked, at a schema that does not record fingerprints yet: it is
+// recorded again, with its fingerprint, once the cluster migrates.
+func (n *Node) recordedBeforePins(ctx context.Context, serial string) bool {
+	if n.store.AtSchema(ctx, store.CertPinsSchema) {
+		return false
+	}
+	certs, err := n.store.Hubs().Certs(ctx, n.cfg.NodeID)
+	return err == nil && slices.ContainsFunc(certs, func(c store.HubCert) bool { return c.Serial == serial && !c.Revoked })
 }
 
 // RemoveMember removes hub id from the cluster: on the leader, or forwarded

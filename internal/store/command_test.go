@@ -31,13 +31,14 @@ func allCommands() []Command {
 		MarkSeenBatch{Seen: []Seen{{ID: "nas", LastSeen: 14}, {ID: "pi", LastSeen: 15}}},
 		MarkDevicesOffline{IDs: []string{"nas", "pi"}},
 		SetHubURL{NodeID: "hub-a", AgentURL: "https://hub-a:7443"},
-		RecordHubCert{Serial: "0b", NodeID: "hub-a"},
+		RecordHubCert{Serial: "0b", NodeID: "hub-a", Fingerprint: "f0", CAFP: "c0"},
 		RevokeHubCerts{NodeID: "hub-a", Now: 16},
 		CreateToken{Hash: []byte{1, 2, 3}, Labels: `{}`, ExpiresAt: 6},
 		ConsumeToken{Hash: []byte{1, 2, 3}, Now: 7},
 		CreateJoinToken{Hash: []byte{7, 8}, ExpiresAt: 12},
 		ConsumeJoinToken{Hash: []byte{7, 8}, Now: 13},
-		CreateCert{Serial: "0a", DeviceID: "pi"},
+		CreateCert{Serial: "0a", DeviceID: "pi", Fingerprint: "f1", CAFP: "c0"},
+		PinCert{Serial: "0a", DeviceID: "pi", Fingerprint: "f1", CAFP: "c0", Now: 19},
 		RevokeDevice{DeviceID: "pi", Now: 8},
 		AppendAudit{
 			TS: 9, ActorKind: "agent", ActorID: "pi", Action: "agent.enroll", Target: "pi",
@@ -293,6 +294,12 @@ func runScenario(t *testing.T, s *Store) {
 	// Hub certificates are recorded and a removed hub's revoked.
 	must(s.Hubs().RecordCert(ctx, "0b", "hub-a"))
 	must(s.Hubs().RecordCert(ctx, "0c", "hub-b"))
+	// A recorded hub certificate gets its fingerprint filled in, and a
+	// device certificate is pinned on first use.
+	must(s.Hubs().Record(ctx, HubCert{Serial: "0b", NodeID: "hub-a", Fingerprint: "f0b", CAFP: "ca"}))
+	if got, err := s.Certs().Pin(ctx, "serial-pi", "pi", "f-pi", "ca", at(6*time.Minute)); err != nil || got != Pinned {
+		t.Fatalf("Pin = %v, %v; want Pinned", got, err)
+	}
 	n, err = s.Hubs().RevokeCerts(ctx, "hub-b", at(6*time.Minute))
 	must(err)
 	if n != 1 {

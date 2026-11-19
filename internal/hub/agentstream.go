@@ -4,6 +4,7 @@ package hub
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +16,8 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/gvart/hearth/internal/metrics"
+	"github.com/gvart/hearth/internal/pki"
+	"github.com/gvart/hearth/internal/policy"
 	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
 	"github.com/gvart/hearth/internal/proto/hearth/agent/v1/agentv1connect"
 	"github.com/gvart/hearth/internal/store"
@@ -39,6 +42,12 @@ type AgentStream struct {
 	// gates that judgement exactly as in requireClientCert.
 	certs     certChecker
 	authority func() error
+	// pins, when set, records the fingerprint of a client certificate
+	// issued before fingerprints were (see pinCert).
+	pins certPinner
+	// audit, when set, records a client certificate that is not the one
+	// recorded for its serial.
+	audit auditAppender
 	// agents tracks open streams so exec requests can be sent over them.
 	agents *Agents
 	// metrics, when set, records the agents' MetricsBatches.
@@ -99,6 +108,7 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 		log.ErrorContext(ctx, "record hello", "err", err)
 		return connect.NewError(connect.CodeUnavailable, errors.New("cannot record device facts"))
 	}
+	pinned := s.pinCert(ctx, log, deviceID)
 
 	welcome := &agentv1.HubMessage{Payload: &agentv1.HubMessage_Welcome{Welcome: &agentv1.Welcome{
 		ServerTime:        timestamppb.New(s.now()),
@@ -141,6 +151,9 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 			log.DebugContext(ctx, "heartbeat")
 			if err := s.recheckCert(ctx, log, deviceID); err != nil {
 				return err
+			}
+			if !pinned {
+				pinned = s.pinCert(ctx, log, deviceID)
 			}
 			if err := s.registry.Heartbeat(ctx, deviceID, p.Heartbeat.GetUptime().AsDuration()); err != nil {
 				log.WarnContext(ctx, "record heartbeat", "err", err)
@@ -240,4 +253,90 @@ func (r *Registry) markOffline(ctx context.Context, deviceID string) error {
 		r.publish(ctx, Event{Type: EventDeviceOffline, Device: d})
 	}
 	return nil
+}
+
+// certPinner is the part of store.Certs that pinCert needs.
+type certPinner interface {
+	Fingerprint(ctx context.Context, serial, deviceID string) (string, error)
+	Pin(ctx context.Context, serial, deviceID, fingerprint, caFP string, now time.Time) (store.PinOutcome, error)
+}
+
+// auditAppender is the part of store.Audit that pinCert needs.
+type auditAppender interface {
+	Append(ctx context.Context, e store.AuditEntry) (int64, error)
+}
+
+// ActionCertMismatch is the audit action of a client certificate that is not
+// the one recorded for its serial (see AgentStream.pinCert).
+const ActionCertMismatch = "agent.cert_mismatch"
+
+// pinCert records the fingerprint of the stream's client certificate, and
+// its CA's, when none is recorded for its serial: trust on first use, for a
+// certificate issued before the hub recorded fingerprints at enrollment
+// (store.CertPinsSchema). A hub CA rotation renews only a certificate whose exact
+// fingerprint is recorded, since its serial and device ID are in every copy
+// of the database. A certificate whose serial has another fingerprint was
+// minted by someone else with the CA key: the first sighting is recorded on
+// the certificate and in the audit log.
+//
+// Only a hub that can vouch for its store pins (see Registry.certAuthority).
+// It reports whether the certificate is settled: pinned, matching, or its
+// mismatch recorded. Connect calls it again on every heartbeat until it is,
+// so a stream that was open when the cluster migrated is pinned too.
+func (s *AgentStream) pinCert(ctx context.Context, log *slog.Logger, deviceID string) bool {
+	serial, ok := serialFrom(ctx)
+	chain, hasChain := chainFrom(ctx)
+	if s.pins == nil || !ok || !hasChain {
+		return true
+	}
+	if s.authority() != nil {
+		return false
+	}
+	leaf := chain[0]
+	fp := pki.FingerprintHex(leaf)
+	recorded, err := s.pins.Fingerprint(ctx, serial, deviceID)
+	switch {
+	case errors.Is(err, store.ErrSchemaTooOld):
+		return false
+	case err != nil:
+		log.WarnContext(ctx, "read the client certificate's recorded fingerprint", "err", err)
+		return false
+	case recorded == fp:
+		return true
+	}
+	var caFP string
+	if len(chain) > 1 {
+		caFP = pki.FingerprintHex(chain[len(chain)-1])
+	}
+	outcome, err := s.pins.Pin(ctx, serial, deviceID, fp, caFP, s.now())
+	switch {
+	case err != nil:
+		log.WarnContext(ctx, "record the client certificate's fingerprint", "err", err)
+		return false
+	case outcome == store.Pinned:
+		log.InfoContext(ctx, "recorded the client certificate's fingerprint", "serial", serial)
+	case outcome == store.PinMismatch:
+		// It works until the CA is rotated, which does not renew it.
+		log.WarnContext(ctx, "agent presented a certificate that is not the one recorded for its serial: "+
+			"someone minted it with the hub CA key; a hub CA rotation will not renew it",
+			"serial", serial, "fingerprint", fp)
+		s.auditMismatch(ctx, log, deviceID, serial, fp, recorded)
+	}
+	return true
+}
+
+func (s *AgentStream) auditMismatch(ctx context.Context, log *slog.Logger, deviceID, serial, fp, recorded string) {
+	if s.audit == nil {
+		return
+	}
+	detail, err := json.Marshal(map[string]string{"serial": serial, "fingerprint": fp, "recorded_fingerprint": recorded})
+	if err != nil {
+		return
+	}
+	if _, err := s.audit.Append(ctx, store.AuditEntry{
+		TS: s.now(), ActorKind: "agent", ActorID: deviceID, Action: ActionCertMismatch, Target: deviceID,
+		Decision: policy.Deny, Result: "client certificate is not the one recorded for its serial", Detail: detail,
+	}); err != nil {
+		log.WarnContext(ctx, "audit a certificate mismatch", "err", err)
+	}
 }

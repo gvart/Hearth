@@ -66,7 +66,7 @@ func TestHubCerts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []HubCert{{"01", "hub-a", true}, {"02", "hub-a", true}, {"04", "hub-a", false}}
+	want := []HubCert{{Serial: "01", NodeID: "hub-a", Revoked: true}, {Serial: "02", NodeID: "hub-a", Revoked: true}, {Serial: "04", NodeID: "hub-a"}}
 	if !slices.Equal(got, want) {
 		t.Errorf("Certs(hub-a) = %+v, want %+v", got, want)
 	}

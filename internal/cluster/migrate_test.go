@@ -602,6 +602,58 @@ func TestRollingUpgradeFromSchema5(t *testing.T) {
 	}
 }
 
+// schemaBeforePinsDir is a data dir whose database is at the schema before
+// certificate fingerprints (store.CertPinsSchema - 1).
+func schemaBeforePinsDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hearth.db")
+	st, err := store.Open(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = st.Close()
+	db, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	if _, err := db.ExecContext(t.Context(), fmt.Sprintf(`ALTER TABLE hub_certs DROP COLUMN ca_fp;
+		ALTER TABLE hub_certs DROP COLUMN fingerprint;
+		ALTER TABLE certs DROP COLUMN pin_mismatch_at;
+		ALTER TABLE certs DROP COLUMN ca_fp;
+		ALTER TABLE certs DROP COLUMN fingerprint;
+		DELETE FROM goose_db_version WHERE version_id >= %d`, store.CertPinsSchema)); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// A hub whose certificate was recorded before fingerprints were gets its
+// fingerprint filled in by a live migrate, with no restart: RecordNodeCert
+// keeps waiting for the schema.
+func TestNodeCertFingerprintAfterLiveMigrate(t *testing.T) {
+	ctx := t.Context()
+	h := startMigHub(t, newTestCA(t), "n1", schemaBeforePinsDir(t), "", true, false)
+	leaderOf(t, h.testNode)
+	recCtx, stopRec := context.WithCancel(ctx)
+	var wg sync.WaitGroup
+	t.Cleanup(func() { stopRec(); wg.Wait() })
+	wg.Go(func() { h.RecordNodeCert(recCtx) })
+	eventually(t, "the certificate recorded without a fingerprint", func() bool {
+		certs, err := h.st.Hubs().Certs(ctx, h.ID())
+		return err == nil && len(certs) == 1 && certs[0].Fingerprint == ""
+	})
+	if _, err := h.MigrateSchema(ctx, store.CertPinsSchema); err != nil {
+		t.Fatalf("migrate to %d: %v", store.CertPinsSchema, err)
+	}
+	eventually(t, "the fingerprint recorded after the migrate", func() bool {
+		certs, err := h.st.Hubs().Certs(ctx, h.ID())
+		return err == nil && len(certs) == 1 && certs[0].Fingerprint == pki.FingerprintHex(h.cert) &&
+			certs[0].CAFP != ""
+	})
+}
+
 // TestJoinOnSchema5 (#95): a hub joins a cluster still at schema 5, before
 // hub_certs. The leader cannot record the joiner's certificate yet; the
 // join, and the promotion over the joiner's hub certificate, still work.

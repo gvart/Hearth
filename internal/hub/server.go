@@ -133,7 +133,7 @@ func NewHandler(cfg Config) http.Handler {
 	authority := reg.certAuthority(lead)
 	stream := NewAgentStream(cfg.Log, cfg.HeartbeatInterval, reg)
 	stream.leadership = lead
-	stream.certs, stream.authority = cfg.Store.Certs(), authority
+	stream.certs, stream.authority, stream.pins, stream.audit = cfg.Store.Certs(), authority, cfg.Store.Certs(), cfg.Store.Audit()
 	stream.metrics = cfg.Metrics
 	if cfg.Agents != nil {
 		stream.agents = cfg.Agents
@@ -334,8 +334,18 @@ func requireClientCert(certs certChecker, log *slog.Logger, authority func() err
 			_ = errWriter.Write(w, r, connect.NewError(connect.CodeUnavailable, errors.New("cannot check certificate")))
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(context.WithValue(withDeviceID(ctx, deviceID), serialKey{}, serial)))
+		ctx = context.WithValue(withDeviceID(ctx, deviceID), serialKey{}, serial)
+		next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, chainKey{}, r.TLS.VerifiedChains[0])))
 	})
+}
+
+type chainKey struct{}
+
+// chainFrom returns the verified chain of the client certificate set by
+// requireClientCert: the certificate first, the CA that issued it last.
+func chainFrom(ctx context.Context) ([]*x509.Certificate, bool) {
+	c, ok := ctx.Value(chainKey{}).([]*x509.Certificate)
+	return c, ok && len(c) > 0
 }
 
 // certRejection is the error for a client certificate this hub has judged

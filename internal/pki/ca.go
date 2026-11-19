@@ -148,6 +148,12 @@ func (c *CA) Fingerprint() [sha256.Size]byte { return Fingerprint(c.cert) }
 // Fingerprint returns the SHA-256 of cert's DER encoding.
 func Fingerprint(cert *x509.Certificate) [sha256.Size]byte { return sha256.Sum256(cert.Raw) }
 
+// FingerprintHex is Fingerprint as lowercase hex, the form the hub stores.
+func FingerprintHex(cert *x509.Certificate) string {
+	fp := Fingerprint(cert)
+	return hex.EncodeToString(fp[:])
+}
+
 // IssueServerCert issues a fresh hub TLS certificate for hosts (DNS names or IPs).
 // The returned chain includes the CA so pinning clients can verify it.
 func (c *CA) IssueServerCert(hosts []string, now time.Time) (tls.Certificate, error) {
