@@ -1,0 +1,61 @@
+internal/integrations/kubernetes/actions_test.go
+  s_344993999c180f::t_3a1a68abb55104 6
+  s_344993999c180f::t_22b9b6622a987f 296-298
+internal/store/runbookruns.go
+  s_344993999c180f::t_22b9b6622a987f 37-40
+  s_344993999c180f::t_1e8dbd61d64ca6 19-22,29-32,205-207,225-232,247,249
+internal/hub/runbooks_test.go
+  s_344993999c180f::t_c576e70bc85b41 289-290
+  s_344993999c180f::t_22b9b6622a987f 207,210,271-288
+web/src/components/RunbooksPage.tsx
+  s_344993999c180f::t_1e8dbd61d64ca6 343
+web/src/api/client.ts
+  s_344993999c180f::t_1e8dbd61d64ca6 418-419,560-561
+internal/cluster/control.go
+  s_344993999c180f::t_f6b94318aaa296 253-258,260
+  s_344993999c180f::t_1e8dbd61d64ca6 259
+docs/runbooks.md
+  s_344993999c180f::t_1e8dbd61d64ca6 115-116,128-132,205
+cmd/hearth/runbook_test.go
+  s_344993999c180f::t_22b9b6622a987f 57-68,99-101
+internal/integrations/kubernetes/actions.go
+  s_344993999c180f::t_22b9b6622a987f 53-55
+  s_344993999c180f::t_1e8dbd61d64ca6 662,664-665
+cmd/hearth/runbook.go
+  s_344993999c180f::t_1e8dbd61d64ca6 145,155,159-161,167,305-307,312-316,425
+internal/store/runbookruns_test.go
+  s_344993999c180f::t_22b9b6622a987f 168,175-182,186,195-196,198-201,204-253
+internal/store/applier.go
+  s_344993999c180f::t_1e8dbd61d64ca6 84
+internal/automation/action_webhook.go
+  s_344993999c180f::t_1e8dbd61d64ca6 11,13,17,124-126,130-133,144-147,152-155,160-165
+  s_344993999c180f::t_35d69f70d831fb 166
+internal/automation/runbook_state.go
+  s_344993999c180f::t_1e8dbd61d64ca6 197-205,209,212,256-259
+  s_344993999c180f::t_22b9b6622a987f 242-243
+internal/automation/runbook_test.go
+  s_344993999c180f::t_22b9b6622a987f 270
+internal/automation/runbook_review_test.go
+  s_344993999c180f::t_22b9b6622a987f 19,363,366-375,730-807
+internal/automation/runbook_engine.go
+  s_344993999c180f::t_1e8dbd61d64ca6 21,452-456,465-467,470,525-536,577-578,580-583,813-815,820-822,832
+internal/hub/runbooks.go
+  s_344993999c180f::t_06d722d499bb8c 9
+  s_344993999c180f::t_1e8dbd61d64ca6 161-175,193-196
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "807afa09ef093d8059a0fe63acc46f5dab692c61",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": null
+    }
+  }
+}

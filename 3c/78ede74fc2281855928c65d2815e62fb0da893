@@ -1,0 +1,78 @@
+docs/runbooks.md
+  s_344993999c180f::t_3fca9f3b7ea0a2 115-119,123-129,173-174,196,198-199
+internal/automation/runbook.go
+  s_344993999c180f::t_6fafa3fcc3d21b 521
+  s_344993999c180f::t_7b74232c026c23 533-544
+  s_344993999c180f::t_477de3dcf5ae11 455-460,470,473,477-478,481-482,484-486,488-498,518-520,522-532
+  s_344993999c180f::t_6e31e8bca4bf6a 545-546
+internal/store/runbookruns_test.go
+  s_344993999c180f::t_6747a38ed1afd7 141-199
+  s_344993999c180f::t_3c37abd92d4312 10
+internal/hub/agentexec.go
+  s_344993999c180f::t_3fca9f3b7ea0a2 13
+  s_344993999c180f::t_477de3dcf5ae11 270
+internal/hub/runbooks_test.go
+  s_344993999c180f::t_883e739985d304 9,120-124,149,199-218,221,227,248-249
+internal/policy/policy.go
+  s_344993999c180f::t_3d32d2430ad2b1 154-155
+  s_344993999c180f::t_fe6d6f20021ee9 156
+  s_344993999c180f::t_477de3dcf5ae11 157-159,315-324
+internal/cluster/runbook_test.go
+  s_344993999c180f::t_817dc37bd75e98 161-165
+web/src/components/RunbooksPage.tsx
+  s_344993999c180f::t_3fca9f3b7ea0a2 284,341-344,346,352
+  s_344993999c180f::t_870a4729b15845 373-395
+internal/automation/runbook_state.go
+  s_344993999c180f::t_204b832fea69a5 219-221
+  s_344993999c180f::t_784e75fd3aa1bd 222-224,229,232
+  s_344993999c180f::t_9428da3e396a61 239
+  s_344993999c180f::t_477de3dcf5ae11 24-25,241-245
+cmd/hearth/runbook.go
+  s_344993999c180f::t_3fca9f3b7ea0a2 110,119-124,129,145,149-160,167,305-313,416-417,419-422
+  s_344993999c180f::t_66c685dba7d3e5 125,127-128
+  s_344993999c180f::t_d70159828c5389 126
+internal/store/runbookruns.go
+  s_344993999c180f::t_477de3dcf5ae11 19-21,24-27,146-147,150,160,196-197,225-231
+  s_344993999c180f::t_34f74a816a6526 232
+cmd/hearth/runbook_test.go
+  s_344993999c180f::t_603aabffaca883 19-22
+  s_344993999c180f::t_2bfe2b368bcba5 142-162
+internal/automation/runbook_engine.go
+  s_344993999c180f::t_070f5e438e8285 449-450
+  s_344993999c180f::t_477de3dcf5ae11 11,13-14,18,41-43,103-104,106-108,180-185,322,324-326,338,341,372-373,392-406,408-409,432-435,437-438,441,443-448,451-465,486,499-508,512,577-582,584,635-637,644,649,652,657,672,674,676,679,771-773,789-815,857-859,866-867,889,899,917-928
+  s_344993999c180f::t_7a2d72b2a25119 929
+internal/hub/runbooks.go
+  s_344993999c180f::t_477de3dcf5ae11 6,39,130-143,145,151-154,156-160
+internal/automation/runbook_review_test.go
+  s_344993999c180f::t_19da522d478494 199-217
+  s_344993999c180f::t_473ab106cd8328 219
+  s_344993999c180f::t_1de6151e413be0 79-87
+  s_344993999c180f::t_4d31e7f0f4a768 1-6,8-78,88-152,154,156-157,159-170,172-198,218,220-549
+  s_344993999c180f::t_4a62e2538ac4f9 171
+  s_344993999c180f::t_584681ec5148f1 7
+  s_344993999c180f::t_24880fcdad1b40 153,155,158
+internal/automation/runbook_test.go
+  s_344993999c180f::t_0714d99b7cf560 529
+  s_344993999c180f::t_706efd092a64f0 600
+  s_344993999c180f::t_72afcb0475f986 256,263-270
+internal/policy/guardrails_test.go
+  s_344993999c180f::t_477de3dcf5ae11 170-173
+web/src/api/client.ts
+  s_344993999c180f::t_3fca9f3b7ea0a2 409-410,417,554-559
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3c78ede74fc2281855928c65d2815e62fb0da893",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
