@@ -56,6 +56,8 @@ const (
 	// maxFieldLength caps a name or other text the server reports: Proxmox VE
 	// keeps its own names far shorter.
 	maxFieldLength = 255
+	// freshReadTimeout bounds the read that confirms a guest before an action.
+	freshReadTimeout = 5 * time.Second
 )
 
 // Errors of the manager's API.
@@ -532,6 +534,24 @@ func (m *Manager) resolve(id string, vmid int) (*running, Guest, error) {
 	return r, r.guests[i], nil
 }
 
+// readGuest asks the server what guest vmid is right now. It fails with
+// ErrUnavailable if the server does not answer within timeout, and with
+// ErrGuestNotFound if there is no such guest.
+func readGuest(ctx context.Context, c *client, vmid int, timeout time.Duration) (Guest, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	res, err := c.resources(ctx)
+	if err != nil {
+		return Guest{}, fmt.Errorf("%w: cannot confirm guest %d: %w", ErrUnavailable, vmid, err)
+	}
+	_, guests, _ := convert(res)
+	i := slices.IndexFunc(guests, func(g Guest) bool { return g.VMID == vmid })
+	if i < 0 {
+		return Guest{}, ErrGuestNotFound
+	}
+	return guests[i], nil
+}
+
 // Act starts, stops or reboots a guest of server id on behalf of
 // actorKind/actorID. Policy decides before anything is sent to the server,
 // and audits the decision; an action it holds for approval is sent only once
@@ -551,9 +571,13 @@ func (m *Manager) Act(ctx context.Context, actorKind, actorID, id string, req Ac
 	err = m.policy.Do(ctx, policy.Request{
 		ActorKind: actorKind, ActorID: actorID, Action: action, Target: target, Detail: detail,
 	}, func(ctx context.Context) error {
-		// An approval can take minutes: the guest may have moved or gone, and
-		// its VMID may now belong to another guest.
-		r, now, err := m.resolve(id, req.VMID)
+		r, _, err := m.resolve(id, req.VMID)
+		if err != nil {
+			return err
+		}
+		// The last poll or an approval can be minutes old: the guest may have
+		// moved or gone, and its VMID may now belong to another guest.
+		now, err := readGuest(ctx, r.client, req.VMID, freshReadTimeout)
 		if err != nil {
 			return err
 		}

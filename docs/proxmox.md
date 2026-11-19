@@ -93,11 +93,13 @@ one, and they are also available as `POST /api/v1/proxmox/servers/{id}/actions` 
   stop or reboot waits on the **Approvals** page and is sent only once approved.
 - **Accepted, not finished.** Proxmox VE runs an action as a task. Hearth reports that the server
   accepted it, and the guest's status changes on a later read.
-- **The hub picks the node.** A request names only the guest's VMID. The hub looks up its node and kind
-  in what it last read from the server.
-- **An approval covers one guest.** If the VMID names a guest of another kind or name by the time an
-  action is approved, Hearth refuses it and sends nothing. A guest that only migrated is still acted on,
-  and the audit log records the node actually used.
+- **The hub picks the node.** A request names only the guest's VMID. Right before sending an action, held
+  or not, the hub reads the guest from the server again and uses the node it finds there.
+- **An action covers one guest.** If that read shows a guest of another kind or name, shows no guest, or
+  fails, Hearth refuses the action, sends nothing and records the refusal in the audit log. A guest that
+  only migrated is still acted on, and the audit log records the node actually used.
+- **What the check cannot see.** Hearth tells guests apart by VMID, kind and name. A replacement with the
+  same VMID, kind and name looks like the original, so the action goes to the replacement.
 - **Web UI only, for now.** Automations and MCP clients cannot take these actions, and hosts themselves
   cannot be rebooted or shut down from Hearth.
 

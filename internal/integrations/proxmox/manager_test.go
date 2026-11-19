@@ -62,6 +62,12 @@ type fixture struct {
 // store, with a mock Proxmox API over TLS.
 func newFixture(t *testing.T, cfg policy.Config) *fixture {
 	t.Helper()
+	return newPolledFixture(t, cfg, 20*time.Millisecond)
+}
+
+// newPolledFixture is newFixture reading the server every poll.
+func newPolledFixture(t *testing.T, cfg policy.Config, poll time.Duration) *fixture {
+	t.Helper()
 	mock := pvemock.New(pvemock.Token)
 	srv := httptest.NewTLSServer(mock)
 	t.Cleanup(srv.Close)
@@ -77,7 +83,7 @@ func newFixture(t *testing.T, cfg policy.Config) *fixture {
 	pol := policy.NewWithConfig(st.Audit(), st.Approvals(), cfg)
 	m := NewManager(Config{
 		Store: st, Sealer: sealer, Policy: pol,
-		PollInterval: 20 * time.Millisecond, SyncInterval: 20 * time.Millisecond,
+		PollInterval: poll, SyncInterval: 20 * time.Millisecond,
 	})
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
