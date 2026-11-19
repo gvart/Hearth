@@ -27,6 +27,9 @@ func main() {
 	if len(os.Args) == 2 && os.Args[1] == hub.VerifyChildArg {
 		os.Exit(hub.RunVerifyChild(os.Stdin, os.Stderr))
 	}
+	if len(os.Args) > 2 && os.Args[1] == "agent" && os.Args[2] == "run" {
+		agent.LimitProcs()
+	}
 	os.Exit(run())
 }
 

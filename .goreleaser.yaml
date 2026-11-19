@@ -30,6 +30,21 @@ builds:
       - CGO_ENABLED=0
     flags:
       - -trimpath
+      # Keep in step with go:build in Taskfile.yml. Inlining stays on for the
+      # hub's hot paths: the Go runtime, SQLite, TLS and crypto, encoding and
+      # Connect/protobuf. Off elsewhere it shrinks the binary, and so the idle
+      # agent's RSS (issue #145). internal/... matches only std internals.
+      - -gcflags=all=-l
+      - -gcflags=modernc.org/...=
+      - -gcflags=runtime=
+      - -gcflags=runtime/...=
+      - -gcflags=sync=
+      - -gcflags=sync/...=
+      - -gcflags=internal/...=
+      - -gcflags=crypto/...=
+      - -gcflags=encoding/...=
+      - -gcflags=google.golang.org/protobuf/...=
+      - -gcflags=connectrpc.com/...=
     ldflags:
       - -s -w
       - -X main.version=v{{ .Version }}

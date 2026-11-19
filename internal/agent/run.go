@@ -59,6 +59,8 @@ type Config struct {
 	// Ceiling is what the hub may run on this device; the zero value allows
 	// nothing.
 	Ceiling Ceiling
+	// Connected, if set, is called each time a hub accepts this agent.
+	Connected func()
 }
 
 type runner struct {
@@ -282,6 +284,9 @@ func (r *runner) session(ctx context.Context, hub string) (welcomed bool, err er
 	interval := heartbeatInterval(welcome.GetHeartbeatInterval())
 	r.log.InfoContext(ctx, "connected to hub", "hub", hostOf(hub), "heartbeat_interval", interval)
 	r.learnHubs(ctx, hub, welcome.GetHubs())
+	if r.cfg.Connected != nil {
+		r.cfg.Connected()
+	}
 
 	g, gctx := errgroup.WithContext(ctx)
 	received := make(chan struct{})
