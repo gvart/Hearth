@@ -98,7 +98,8 @@ Keep this list in sync with `Taskfile.yml`. If you add a task, document it here.
 - Never log secrets, tokens, private keys or full certificates.
 - Enrollment tokens: single-use, short TTL, stored hashed.
 - mTLS everywhere between hub and agents, and between hubs; the hub CA key never leaves a hub voter's data
-  dir (0600); it is replicated only over the pinned mTLS join channel.
+  dir (0600), except inside an encrypted backup archive created by an authenticated admin through policy and
+  audited; it is replicated only over the pinned mTLS join channel.
 - Agent-side config is the capability ceiling; the hub can never grant more than the device allows.
 - Any new action type must declare its class (`read` / `safe` / `dangerous`) in `internal/policy`.
 - Shell-outs: no string concatenation into shells; use `exec.Command` with args.
