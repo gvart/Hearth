@@ -76,7 +76,7 @@ const maxCommandSize = 1 << 20
 // ControlHandler serves the control API: GET /v1/status (with every hub's
 // schema), POST /v1/apply (an encoded store command, proposed through node
 // or forwarded to the leader), and the member operations /v1/remove,
-// /v1/transfer-leadership and /v1/migrate, and /v1/ca/rotate, /v1/ca/finish and
+// /v1/transfer-leadership and /v1/migrate, and /v1/ca/rotate, /v1/ca/finish, /v1/ca/abort and
 // /v1/ca/status of a hub CA rotation.
 func ControlHandler(node *Node, log *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
@@ -149,6 +149,14 @@ func ControlHandler(node *Node, log *slog.Logger) http.Handler {
 		plan, err := node.FinishCA(r.Context(), req)
 		writeJSON(w, finishReply{Plan: plan, Error: wireErr(err)})
 	})
+	mux.HandleFunc("POST /v1/ca/abort", func(w http.ResponseWriter, r *http.Request) {
+		var req AbortOptions
+		if !readJSON(w, r, &req) {
+			return
+		}
+		plan, err := node.AbortCA(r.Context(), req)
+		writeJSON(w, abortReply{Plan: plan, Error: wireErr(err)})
+	})
 	mux.HandleFunc("GET /v1/ca/status", func(w http.ResponseWriter, r *http.Request) {
 		st, err := node.CAStatus(r.Context())
 		writeJSON(w, caStatusReply{Status: st, Error: wireErr(err)})
@@ -163,6 +171,11 @@ type rotateReply struct {
 
 type finishReply struct {
 	Plan  FinishPlan `json:"plan"`
+	Error *wireError `json:"error,omitempty"`
+}
+
+type abortReply struct {
+	Plan  AbortPlan  `json:"plan"`
 	Error *wireError `json:"error,omitempty"`
 }
 
@@ -450,6 +463,19 @@ func (c *ControlClient) FinishCA(ctx context.Context, opts FinishOptions) (Finis
 	var reply finishReply
 	if err := c.postWith(ctx, long, "/v1/ca/finish", opts, &reply); err != nil {
 		return FinishPlan{}, err
+	}
+	if reply.Error != nil {
+		return reply.Plan, reply.Error.toError()
+	}
+	return reply.Plan, nil
+}
+
+// AbortCA gives up the hub CA rotation before its cutover through the hub's
+// node (see Node.AbortCA). The plan comes back with a refusal too.
+func (c *ControlClient) AbortCA(ctx context.Context, opts AbortOptions) (AbortPlan, error) {
+	var reply abortReply
+	if err := c.post(ctx, "/v1/ca/abort", opts, &reply); err != nil {
+		return AbortPlan{}, err
 	}
 	if reply.Error != nil {
 		return reply.Plan, reply.Error.toError()

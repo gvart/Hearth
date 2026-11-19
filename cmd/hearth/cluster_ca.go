@@ -23,10 +23,11 @@ func newClusterCACmd() *cobra.Command {
 		Short: "Rotate the cluster's hub CA",
 		Long: "Replace the hub CA of a cluster, in two steps: `rotate` makes a new CA that every hub trusts next to\n" +
 			"the old one and renews hubs and agents with it; `finish` makes every hub serve the new CA, re-seals\n" +
-			"the stored secrets with its key and drops the old CA and its key. See \"Rotating the hub CA\" in\n" +
+			"the stored secrets with its key and drops the old CA and its key. `abort` gives up a rotation\n" +
+			"before the finish has begun. See \"Rotating the hub CA\" in\n" +
 			"docs/cluster.md.",
 	}
-	cmd.AddCommand(newClusterCARotateCmd(), newClusterCAFinishCmd(), newClusterCAStatusCmd())
+	cmd.AddCommand(newClusterCARotateCmd(), newClusterCAFinishCmd(), newClusterCAAbortCmd(), newClusterCAStatusCmd())
 	return cmd
 }
 
@@ -42,8 +43,10 @@ func newClusterCARotateCmd() *cobra.Command {
 		Long: "Start a hub CA rotation on the leader: it makes a new CA, which never leaves the hubs' data dirs,\n" +
 			"and every hub fetches its key and a node certificate of it over the cluster's mutual TLS. Agents get\n" +
 			"a certificate of the new CA when they next connect. Every hub must be up and at the store schema that\n" +
-			"records rotations. Certificates without a recorded fingerprint refuse the rotation unless\n" +
-			"--accept-unpinned: their holders are cut off when the rotation finishes. Run it on the leader's host\n" +
+			"records rotations, and present a node certificate whose fingerprint is recorded: a hub that does\n" +
+			"not is never given the new key, --accept-unpinned or not. Agent certificates without a recorded\n" +
+			"fingerprint refuse the rotation unless --accept-unpinned: those agents are cut off when the\n" +
+			"rotation finishes. Run it on the leader's host\n" +
 			"while its hub runs; finish it with `hearth cluster ca finish`.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -52,7 +55,7 @@ func newClusterCARotateCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir("hub"), "hub data directory (env HEARTH_DATA_DIR)")
 	cmd.Flags().BoolVar(&acceptUnpinned, "accept-unpinned", false,
-		"rotate although some certificates cannot be renewed; their holders are cut off at the finish")
+		"rotate although some agent certificates cannot be renewed; those agents are cut off at the finish (hubs are never covered)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print the plan, decide and audit the action without doing it")
 	return cmd
 }
@@ -154,6 +157,60 @@ func runClusterCAFinish(ctx context.Context, dataDir string, force, dryRun bool,
 	}
 	_, err = fmt.Fprintf(out, "Finished: every hub serves %s only; %d sealed secrets re-sealed. Backups taken before\n"+
 		"now still hold the old CA key.\n", plan.NewCAFP, plan.Resealed)
+	return err
+}
+
+func newClusterCAAbortCmd() *cobra.Command {
+	var (
+		dataDir string
+		dryRun  bool
+	)
+	cmd := &cobra.Command{
+		Use:   "abort",
+		Short: "Give up the hub CA rotation before its finish",
+		Long: "Give up a hub CA rotation that `hearth cluster ca finish` has not begun to cut over: every hub drops\n" +
+			"the new CA, its key and its node certificate of it, and hubs can join again. Agents the rotation\n" +
+			"already renewed hold only a certificate of the dropped CA and have to enroll again; they are listed\n" +
+			"first. It is also the way out when the leader that made the new CA is lost before another hub\n" +
+			"fetched its key. After the cutover it is refused: finish the rotation instead. Run it on the\n" +
+			"leader's host while its hub runs.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runClusterCAAbort(cmd.Context(), dataDir, dryRun, cmd.OutOrStdout())
+		},
+	}
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir("hub"), "hub data directory (env HEARTH_DATA_DIR)")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print the plan, decide and audit the action without doing it")
+	return cmd
+}
+
+func runClusterCAAbort(ctx context.Context, dataDir string, dryRun bool, out io.Writer) error {
+	st, cc, err := openClusterControl(ctx, dataDir)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+	defer cc.Close()
+	plan, err := cc.AbortCA(ctx, cluster.AbortOptions{DryRun: true})
+	if err != nil {
+		return err
+	}
+	for _, id := range plan.RenewedDevices {
+		_, _ = fmt.Fprintf(out, "Cut off: device %s was renewed by this rotation and has to enroll again.\n", id)
+	}
+	done, err := adminDo(ctx, dataDir, st, out, dryRun, policy.Request{
+		Action: policy.ClusterCAAbort,
+		Target: "hub CA " + plan.NewCAFP,
+		Detail: map[string]any{"cut_off_devices": plan.RenewedDevices},
+	}, func(ctx context.Context) error {
+		plan, err = cc.AbortCA(ctx, cluster.AbortOptions{})
+		return err
+	})
+	if err != nil || !done {
+		return err
+	}
+	_, err = fmt.Fprintf(out, "Aborted the hub CA rotation to %s: every hub drops the new CA; hubs can join again.\n",
+		plan.NewCAFP)
 	return err
 }
 

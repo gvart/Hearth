@@ -60,6 +60,12 @@ func sealID(table, id string) string {
 	return id
 }
 
+// rotTune is the configuration of a rotation test's hubs.
+func rotTune(c *Config) {
+	c.ForwardWait = 2 * time.Second
+	c.CAReconcileEvery = 100 * time.Millisecond
+}
+
 // startRotationHubs forms a 3-voter cluster whose hubs each load the same
 // CA from their own data dir. It returns the hubs and a copy of the CA as it
 // was before any rotation, as someone who stole it would hold it.
@@ -86,14 +92,10 @@ func startRotationHubs(t *testing.T) ([]*rotHub, *pki.CA) {
 		}
 		return dir, ca
 	}
-	tune := func(c *Config) {
-		c.ForwardWait = 2 * time.Second
-		c.CAReconcileEvery = 100 * time.Millisecond
-	}
 	var hubs []*rotHub
 	for i, id := range []string{"n1", "n2", "n3"} {
 		dir, ca := loadCopy()
-		n := startNodeBound(t, ca, id, dir, "", i == 0, (*Node).BindForwarding, tune)
+		n := startNodeBound(t, ca, id, dir, "", i == 0, (*Node).BindForwarding, rotTune)
 		if i == 0 {
 			leaderOf(t, n)
 		} else {
@@ -125,7 +127,7 @@ func (h *rotHub) serve(t *testing.T) {
 	issue := func() {
 		c, err := h.ca.IssueServerCert([]string{"127.0.0.1"}, time.Now())
 		if err != nil {
-			t.Error(err)
+			t.Log(err) // a hub that missed a rotation has no CA key
 			return
 		}
 		h.srvCert.Store(&c)
@@ -145,7 +147,7 @@ func (h *rotHub) serve(t *testing.T) {
 		issue()
 		keys, err := h.ca.KeyDERs()
 		if err != nil {
-			t.Error(err)
+			t.Log(err) // a hub that missed a rotation has no CA key
 			return
 		}
 		for _, s := range h.sealers {
@@ -297,6 +299,8 @@ func TestCARotationThreeHubs(t *testing.T) {
 		"another certificate":    {Serial: pki.SerialString(other.Leaf), NodeID: follower.ID(), Fingerprint: pki.FingerprintHex(other.Leaf)},
 		"another fingerprint":    {Serial: pki.SerialString(own), NodeID: follower.ID(), Fingerprint: pki.FingerprintHex(other.Leaf)},
 		"another hub's identity": {Serial: pki.SerialString(own), NodeID: leader.ID(), Fingerprint: pki.FingerprintHex(own)},
+		"another CA":             {Serial: pki.SerialString(own), NodeID: follower.ID(), Fingerprint: pki.FingerprintHex(own), CAFP: pki.FingerprintHex(other.Leaf)},
+		"no CA":                  {Serial: pki.SerialString(own), NodeID: follower.ID(), Fingerprint: pki.FingerprintHex(own)},
 	} {
 		if _, _, err := follower.forwardWrite(ctx, leader.ID(), leader.Addr(), rec); connect.CodeOf(err) != connect.CodePermissionDenied {
 			t.Errorf("forwarded record of %s = %v, want PermissionDenied", name, err)

@@ -48,6 +48,8 @@ type JoinServer struct {
 	policy *policy.Engine
 	log    *slog.Logger
 	now    func() time.Time
+	// fetchRefused rate-limits the audit entries of refused FetchCAKey calls.
+	fetchRefused fetchRefusals
 }
 
 var _ clusterv1connect.ClusterServiceHandler = (*JoinServer)(nil)

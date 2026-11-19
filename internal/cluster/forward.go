@@ -200,6 +200,14 @@ func (n *Node) forward(ctx context.Context, leaderID, leaderAddr string, cmd sto
 // handshake. It trusts the CAs ca trusts at each handshake, so a hub CA
 // rotation reaches new connections without a restart.
 func newForwardClient(ca *pki.CA, cert func() *tls.Certificate, epoch string) *http.Client {
+	return newForwardClientServedBy(ca, cert, epoch, "")
+}
+
+// newForwardClientServedBy is newForwardClient that also requires the
+// server certificate to be issued by the CA of fingerprint caFP, unless
+// caFP is empty: during a hub CA rotation, a hub that says it serves the
+// new CA must show it.
+func newForwardClientServedBy(ca *pki.CA, cert func() *tls.Certificate, epoch, caFP string) *http.Client {
 	inEpoch := requireEpoch(epoch)
 	return &http.Client{
 		Transport: &http.Transport{
@@ -215,6 +223,9 @@ func newForwardClient(ca *pki.CA, cert func() *tls.Certificate, epoch string) *h
 				VerifyConnection: func(cs tls.ConnectionState) error {
 					if err := verifyChain(ca, cs, cs.ServerName); err != nil {
 						return err
+					}
+					if caFP != "" && pki.FingerprintHex(ca.IssuerOf(cs.PeerCertificates[0])) != caFP {
+						return errors.New("the hub does not serve a certificate of the expected hub CA")
 					}
 					return inEpoch(cs)
 				},
@@ -269,15 +280,19 @@ func (s *JoinServer) Forward(ctx context.Context, req *connect.Request[clusterv1
 }
 
 // ownCert reports whether rec records the node certificate caller id
-// presents on this request.
+// presents on this request: its fingerprint, and that of the CA that issued
+// it, unless the cluster is below the schema that records them.
 func (s *JoinServer) ownCert(ctx context.Context, id string, rec store.RecordHubCert) bool {
 	cs, _ := ctx.Value(tlsStateKey{}).(*tls.ConnectionState)
 	if cs == nil || len(cs.VerifiedChains) == 0 {
 		return false
 	}
 	c := cs.VerifiedChains[0][0]
-	return rec.NodeID == id && rec.Serial == pki.SerialString(c) &&
-		(rec.Fingerprint == "" || rec.Fingerprint == pki.FingerprintHex(c))
+	issuer := s.ca.IssuerOf(c)
+	// Below the schema that records fingerprints a record carries neither.
+	unpinned := rec.Fingerprint == "" && rec.CAFP == "" && !s.store.AtSchema(ctx, store.CertPinsSchema)
+	return issuer != nil && rec.NodeID == id && rec.Serial == pki.SerialString(c) &&
+		(unpinned || rec.Fingerprint == pki.FingerprintHex(c) && rec.CAFP == pki.FingerprintHex(issuer))
 }
 
 // memberPeer is peerHubID for a caller that must also be in the Raft

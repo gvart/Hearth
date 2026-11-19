@@ -7,6 +7,8 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"sync"
+	"time"
 
 	"connectrpc.com/connect"
 
@@ -77,9 +79,50 @@ func (s *JoinServer) FetchCAKey(ctx context.Context, req *connect.Request[cluste
 	return connect.NewResponse(&clusterv1.FetchCAKeyResponse{CaKey: keyDER, Certificate: certDER}), nil
 }
 
+// fetchRefusalEvery bounds the audit entries of refused FetchCAKey calls:
+// one per caller per interval, which counts the refusals it left out.
+const fetchRefusalEvery = time.Minute
+
+// fetchRefusals rate-limits the audit entries of refused FetchCAKey calls.
+type fetchRefusals struct {
+	mu   sync.Mutex
+	last map[string]refusalWindow
+}
+
+type refusalWindow struct {
+	at         time.Time
+	suppressed int
+}
+
+// admit reports whether a refusal of caller at now gets an audit entry and,
+// if so, how many refusals of it were left out since the last entry.
+func (f *fetchRefusals) admit(caller string, now time.Time) (bool, int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.last == nil {
+		f.last = map[string]refusalWindow{}
+	}
+	if w, ok := f.last[caller]; ok && now.Sub(w.at) < fetchRefusalEvery {
+		w.suppressed++
+		f.last[caller] = w
+		return false, 0
+	}
+	if len(f.last) >= 256 {
+		for k, w := range f.last {
+			if now.Sub(w.at) >= fetchRefusalEvery {
+				delete(f.last, k)
+			}
+		}
+	}
+	suppressed := f.last[caller].suppressed
+	f.last[caller] = refusalWindow{at: now}
+	return true, suppressed
+}
+
 // auditFetchRefused records a FetchCAKey refused before its policy decision,
 // such as a certificate minted with the old CA key: nobody but a pinned hub
-// may get the new key, and every attempt is on record.
+// may get the new key, and attempts are on record, at most one entry per
+// caller a minute, with the count of those left out.
 func (s *JoinServer) auditFetchRefused(ctx context.Context, refusal error) {
 	actor := "unknown"
 	detail := map[string]any{"reason": refusal.Error()}
@@ -89,6 +132,13 @@ func (s *JoinServer) auditFetchRefused(ctx context.Context, refusal error) {
 			actor = id
 		}
 		detail["serial"], detail["fingerprint"] = pki.SerialString(c), pki.FingerprintHex(c)
+	}
+	ok, suppressed := s.fetchRefused.admit(actor, s.now())
+	if !ok {
+		return
+	}
+	if suppressed > 0 {
+		detail["refusals_not_audited_before"] = suppressed
 	}
 	b, err := json.Marshal(detail)
 	if err != nil {

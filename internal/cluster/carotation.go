@@ -11,6 +11,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -99,7 +100,8 @@ func (n *Node) SetResealer(r Resealer) { n.resealer.Store(&r) }
 type RotateOptions struct {
 	// AcceptUnpinned starts the rotation although some certificates have
 	// no pinned fingerprint or a recorded mismatch: their holders are not
-	// renewed and are cut off when the rotation finishes.
+	// renewed and are cut off when the rotation finishes. It never covers a
+	// hub presenting a certificate without a recorded fingerprint.
 	AcceptUnpinned bool
 	// DryRun checks and plans, and changes nothing.
 	DryRun bool
@@ -148,6 +150,13 @@ func (n *Node) RotateCA(ctx context.Context, opts RotateOptions) (RotatePlan, er
 		}
 	}
 	plan := RotatePlan{Pins: pins, Unpinned: unpinned}
+	if len(hubs) > 0 {
+		// --accept-unpinned never covers a member presenting an unrecorded
+		// certificate: it would get the new key.
+		return plan, fmt.Errorf("rotate the hub CA: %w: %s. A hub presenting a certificate without a recorded "+
+			"fingerprint is never given the new key, --accept-unpinned or not: restart it so it records its "+
+			"node certificate, or remove it", ErrUnpinnedCerts, describeUnpinned(hubs))
+	}
 	if len(unpinned) > 0 && !opts.AcceptUnpinned {
 		return plan, fmt.Errorf("rotate the hub CA: %w: %s. Their holders would not be renewed; "+
 			"reconnect those agents (a hub records an agent's certificate when it connects), or revoke them, "+
@@ -159,10 +168,13 @@ func (n *Node) RotateCA(ctx context.Context, opts RotateOptions) (RotatePlan, er
 	}
 	ca := n.cfg.CA
 	if ca.Next() != nil {
-		// No rotation is under way: a next CA is what an attempt that
-		// was never committed left behind.
-		if err := ca.DropNext(); err != nil {
-			return plan, fmt.Errorf("rotate the hub CA: drop a leftover next CA: %w", err)
+		// A next CA of an attempt whose start may still commit: drop it
+		// only once the log shows it did not.
+		if err := n.dropUncommittedNext(ctx); err != nil {
+			return plan, fmt.Errorf("rotate the hub CA: %w", err)
+		}
+		if ca.Next() != nil {
+			return plan, fmt.Errorf("rotate the hub CA: %w", store.ErrCARotationActive)
 		}
 	}
 	now := time.Now()
@@ -177,6 +189,17 @@ func (n *Node) RotateCA(ctx context.Context, opts RotateOptions) (RotatePlan, er
 			NewCAFP: plan.NewCAFP, OldCAFP: pki.FingerprintHex(ca.Cert()),
 			NewCACert: string(pki.EncodeCertPEM(next)), Pins: string(pinsJSON), Now: now.UnixMilli(),
 		})
+		if n.rotateProposed != nil {
+			err = n.rotateProposed(err)
+		}
+		if err != nil && !notProposed(err) {
+			// The start may still commit (a lost leadership, a timeout),
+			// and the new key is its only copy. The reconcile loop drops
+			// it once the log shows the rotation did not start.
+			n.log.WarnContext(ctx, "the hub CA rotation may or may not have started; keeping its key", "err", err)
+			n.kickCA()
+			return plan, fmt.Errorf("rotate the hub CA: %w; check `hearth cluster ca status` before trying again", err)
+		}
 	}
 	if err != nil {
 		if dropErr := ca.DropNext(); dropErr != nil {
@@ -186,6 +209,113 @@ func (n *Node) RotateCA(ctx context.Context, opts RotateOptions) (RotatePlan, er
 	}
 	n.log.InfoContext(ctx, "started a hub CA rotation", "new_ca", plan.NewCAFP)
 	n.kickCA()
+	return plan, nil
+}
+
+// notProposed reports whether err, from proposing a command, proves the
+// command never reached the log: this hub was not the leader when it tried,
+// or the context ended before it did. Any other failure (a lost leadership,
+// a timeout) may still commit.
+func notProposed(err error) bool {
+	var nl *ErrNotLeader
+	return errors.As(err, &nl) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}
+
+// dropUncommittedNext drops this hub's next CA, and its node certificate of
+// it, once the log shows no rotation to it can still start: on the leader,
+// after a barrier, which applies every earlier entry, the latest rotation is
+// another one or was aborted. Elsewhere it does nothing. The caller holds
+// rotMu, so no RotateCA is between generating a CA and proposing it.
+func (n *Node) dropUncommittedNext(ctx context.Context) error {
+	next := n.cfg.CA.Next()
+	if next == nil || !n.IsLeader() {
+		return nil
+	}
+	timeout := applyTimeout
+	if dl, ok := ctx.Deadline(); ok {
+		timeout = time.Until(dl)
+	}
+	if err := n.raft.Barrier(timeout).Error(); err != nil {
+		return fmt.Errorf("wait for the log to settle: %w", err)
+	}
+	rot, err := n.store.CARotations().Latest(ctx)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+	case err != nil:
+		return err
+	case rot.NewCAFP == pki.FingerprintHex(next) && rot.Stage != store.CAStageAborted:
+		return nil // it started after all
+	}
+	return n.dropNextLocal(ctx)
+}
+
+// dropNextLocal forgets this hub's next CA and its node certificate of it.
+func (n *Node) dropNextLocal(ctx context.Context) error {
+	if err := n.cfg.CA.DropNext(); err != nil {
+		return fmt.Errorf("drop the next CA: %w", err)
+	}
+	for _, f := range []string{nextNodeCertFile, nextNodeKeyFile} {
+		if err := os.Remove(filepath.Join(n.dir, f)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("drop the node certificate of the next CA: %w", err)
+		}
+	}
+	n.nextCert.Store(nil)
+	n.log.InfoContext(ctx, "dropped a next hub CA of a rotation that did not happen")
+	return nil
+}
+
+// AbortOptions are the options of AbortCA.
+type AbortOptions struct {
+	// DryRun checks and plans, and changes nothing.
+	DryRun bool
+}
+
+// AbortPlan is what AbortCA did or would do.
+type AbortPlan struct {
+	NewCAFP string
+	// RenewedDevices were handed a certificate of the new CA: the abort
+	// cuts them off, and they enroll again.
+	RenewedDevices []string
+}
+
+// AbortCA gives up the rotation under way before its cutover: every hub
+// drops the new CA, its key and its node certificate of it, and hubs can
+// join again. It is the way out when the new key was lost, say because the
+// leader that made it died before another hub fetched it. After the cutover
+// it refuses: finish the rotation instead. Only the leader aborts; elsewhere
+// it fails with *ErrNotLeader. The caller makes the policy decision.
+func (n *Node) AbortCA(ctx context.Context, opts AbortOptions) (AbortPlan, error) {
+	if !n.IsLeader() {
+		return AbortPlan{}, n.notLeader()
+	}
+	n.rotMu.Lock()
+	defer n.rotMu.Unlock()
+	if err := n.requireRotationSchema(ctx); err != nil {
+		return AbortPlan{}, err
+	}
+	rot, err := n.store.CARotations().Active(ctx)
+	if errors.Is(err, store.ErrNotFound) {
+		return AbortPlan{}, ErrNoRotation
+	} else if err != nil {
+		return AbortPlan{}, err
+	}
+	plan := AbortPlan{NewCAFP: rot.NewCAFP}
+	if rot.Stage != store.CAStageStarted {
+		return plan, fmt.Errorf("abort the hub CA rotation: %w: every hub serves the new CA already; "+
+			"finish it (`hearth cluster ca finish`)", store.ErrCARotationConflict)
+	}
+	if plan.RenewedDevices, err = n.store.CARotations().RenewedDevices(ctx, rot.NewCAFP); err != nil {
+		return plan, err
+	}
+	if opts.DryRun {
+		return plan, nil
+	}
+	if err := n.advanceCA(ctx, rot.NewCAFP, store.CAStageStarted, store.CAStageAborted); err != nil {
+		return plan, err
+	}
+	n.reconcileCA(ctx)
+	n.log.InfoContext(ctx, "aborted the hub CA rotation", "new_ca", rot.NewCAFP,
+		"cut_off_devices", len(plan.RenewedDevices))
 	return plan, nil
 }
 
@@ -259,8 +389,11 @@ func (n *Node) livePins(ctx context.Context) (map[string]string, []store.Unpinne
 		}
 		i := slices.IndexFunc(recorded, func(c store.HubCert) bool { return c.Serial == serial })
 		switch {
-		case i < 0:
+		case i < 0 || recorded[i].Fingerprint == "":
+			// Never pinned: a pin is a recorded fingerprint, so the hub
+			// could not prove which certificate is its own.
 			unpinned = append(unpinned, store.UnpinnedCert{Kind: "hub", ID: id, Serial: serial})
+			continue
 		case recorded[i].Revoked:
 			problems = append(problems, id+" (its certificate is revoked)")
 			continue
@@ -331,10 +464,22 @@ func (n *Node) localCAInfo() CAInfo {
 
 // hubCAInfo asks hub id for its side of a rotation; this hub answers itself.
 func (n *Node) hubCAInfo(ctx context.Context, id, addr string) (CAInfo, error) {
+	return n.hubCAInfoServedBy(ctx, id, addr, "")
+}
+
+// hubCAInfoServedBy is hubCAInfo over a connection on which hub id shows a
+// server certificate of the CA caFP, unless caFP is empty: a hub cannot
+// claim to serve the new CA without serving it.
+func (n *Node) hubCAInfoServedBy(ctx context.Context, id, addr, caFP string) (CAInfo, error) {
 	if id == n.cfg.NodeID {
 		return n.localCAInfo(), nil
 	}
-	c, err := n.memberClient(ctx, id, addr)
+	hc := n.fwdHTTP
+	if caFP != "" {
+		hc = newForwardClientServedBy(n.cfg.CA, n.stream.currentCert, n.epoch, caFP)
+		defer hc.CloseIdleConnections()
+	}
+	c, err := n.memberClientWith(ctx, hc, id, addr)
 	if err != nil {
 		return CAInfo{}, err
 	}
@@ -356,11 +501,15 @@ func (n *Node) hubCAInfo(ctx context.Context, id, addr string) (CAInfo, error) {
 }
 
 func (n *Node) memberClient(ctx context.Context, id, addr string) (clusterv1connect.ClusterServiceClient, error) {
+	return n.memberClientWith(ctx, n.fwdHTTP, id, addr)
+}
+
+func (n *Node) memberClientWith(ctx context.Context, hc *http.Client, id, addr string) (clusterv1connect.ClusterServiceClient, error) {
 	base := n.agentURL(n.hubURLs(ctx), id, addr)
 	if base == "" {
 		return nil, errors.New("its URL is unknown")
 	}
-	return clusterv1connect.NewClusterServiceClient(n.fwdHTTP, base), nil
+	return clusterv1connect.NewClusterServiceClient(hc, base), nil
 }
 
 // CAStatus is the state of the latest rotation and each hub's side of it.
@@ -493,7 +642,7 @@ func (n *Node) FinishCA(ctx context.Context, opts FinishOptions) (FinishPlan, er
 		return plan, errors.New("finish the hub CA rotation: this hub does not hold the new CA's key yet; try again shortly")
 	}
 	if rot.Stage == store.CAStageStarted {
-		if err := n.waitHubs(ctx, members, "hold the new CA's key and a node certificate of it", func(i CAInfo) bool {
+		if err := n.waitHubs(ctx, members, "hold the new CA's key and a node certificate of it", "", func(i CAInfo) bool {
 			return i.NextFP == rot.NewCAFP && i.HasNextKey && i.HasNextCert
 		}); err != nil {
 			return plan, err
@@ -505,17 +654,32 @@ func (n *Node) FinishCA(ctx context.Context, opts FinishOptions) (FinishPlan, er
 	n.reconcileCA(ctx)
 	// Every hub seals with the new key once it cut over; until then one
 	// could seal a secret with the old key after the re-seal.
-	if err := n.waitHubs(ctx, members, "serve the new CA", func(i CAInfo) bool {
+	if err := n.waitHubs(ctx, members, "serve the new CA", rot.NewCAFP, func(i CAInfo) bool {
 		return i.CutOver && i.ServingFP == rot.NewCAFP
 	}); err != nil {
 		return plan, err
 	}
-	if plan.Resealed, err = n.resealSecrets(ctx, rot.NewCAFP); err != nil {
-		return plan, err
+	// The finish names the secrets last checked to be sealed with the new key:
+	// one sealed since, with whatever key, refuses it, and they are checked
+	// again.
+	for attempt := 0; ; attempt++ {
+		resealed, digest, err := n.resealSecrets(ctx, rot.NewCAFP)
+		plan.Resealed += resealed
+		if err != nil {
+			return plan, err
+		}
+		_, _, err = n.propose(ctx, store.AdvanceCARotation{
+			NewCAFP: rot.NewCAFP, From: store.CAStageCutover, To: store.CAStageFinished,
+			Now: time.Now().UnixMilli(), SealedDigest: digest,
+		})
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, store.ErrCARotationConflict) || attempt == 5 {
+			return plan, fmt.Errorf("move the hub CA rotation to %s: %w", store.CAStageFinished, err)
+		}
 	}
-	if err := n.advanceCA(ctx, rot.NewCAFP, store.CAStageCutover, store.CAStageFinished); err != nil {
-		return plan, err
-	}
+	n.log.InfoContext(ctx, "hub CA rotation moved on", "stage", store.CAStageFinished)
 	n.reconcileCA(ctx)
 	n.log.InfoContext(ctx, "finished the hub CA rotation", "new_ca", rot.NewCAFP, "resealed", plan.Resealed,
 		"cut_off_devices", len(plan.OldDevices), "cut_off_hubs", len(plan.OldHubs))
@@ -543,12 +707,12 @@ func (n *Node) advanceCA(ctx context.Context, newCAFP, from, to string) error {
 }
 
 // waitHubs waits until every hub of members reports what ready accepts.
-func (n *Node) waitHubs(ctx context.Context, members []raft.Server, what string, ready func(CAInfo) bool) error {
+func (n *Node) waitHubs(ctx context.Context, members []raft.Server, what, servedBy string, ready func(CAInfo) bool) error {
 	deadline := time.Now().Add(caMemberWait)
 	for {
 		var waiting []string
 		for _, s := range members {
-			info, err := n.hubCAInfo(ctx, string(s.ID), string(s.Address))
+			info, err := n.hubCAInfoServedBy(ctx, string(s.ID), string(s.Address), servedBy)
 			switch {
 			case err != nil:
 				waiting = append(waiting, fmt.Sprintf("%s (cannot ask it: %v)", s.ID, err))
@@ -573,37 +737,38 @@ func (n *Node) waitHubs(ctx context.Context, members []raft.Server, what string,
 }
 
 // resealSecrets re-seals every secret still sealed with the old key, and
-// checks that none is left. It returns how many it re-sealed.
-func (n *Node) resealSecrets(ctx context.Context, newCAFP string) (int, error) {
+// checks that none is left. It returns how many it re-sealed, and the
+// store.SealedDigest of the secrets it last checked.
+func (n *Node) resealSecrets(ctx context.Context, newCAFP string) (int, string, error) {
 	rp := n.resealer.Load()
 	total := 0
 	for attempt := 0; ; attempt++ {
 		secrets, err := n.store.CARotations().Sealed(ctx)
 		if err != nil {
-			return total, err
+			return total, "", err
 		}
 		if len(secrets) == 0 {
-			return total, nil
+			return total, "", nil
 		}
 		if rp == nil {
-			return total, errors.New("finish the hub CA rotation: this hub cannot re-seal secrets")
+			return total, "", errors.New("finish the hub CA rotation: this hub cannot re-seal secrets")
 		}
 		stale, err := (*rp)(ctx, secrets)
 		if err != nil {
-			return total, fmt.Errorf("finish the hub CA rotation: re-seal secrets: %w", err)
+			return total, "", fmt.Errorf("finish the hub CA rotation: re-seal secrets: %w", err)
 		}
 		if len(stale) == 0 {
-			return total, nil
+			return total, store.SealedDigest(secrets), nil
 		}
 		if attempt == 5 {
-			return total, errors.New("finish the hub CA rotation: secrets kept changing while they were re-sealed; try again")
+			return total, "", errors.New("finish the hub CA rotation: secrets kept changing while they were re-sealed; try again")
 		}
 		_, _, err = n.propose(ctx, store.ResealSecrets{NewCAFP: newCAFP, Secrets: stale})
 		switch {
 		case errors.Is(err, store.ErrCARotationConflict):
 			continue // a secret changed since it was read
 		case err != nil:
-			return total, fmt.Errorf("finish the hub CA rotation: re-seal secrets: %w", err)
+			return total, "", fmt.Errorf("finish the hub CA rotation: re-seal secrets: %w", err)
 		}
 		total += len(stale)
 	}
@@ -615,19 +780,20 @@ func (n *Node) watchCA() {
 	n.caKick = make(chan struct{}, 1)
 	n.caStop = make(chan struct{})
 	n.caDone = make(chan struct{})
+	stop, done := n.caStop, n.caDone
 	go func() {
-		defer close(n.caDone)
+		defer close(done)
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		go func() {
-			<-n.caStop
+			<-stop
 			cancel()
 		}()
 		t := time.NewTicker(n.cfg.CAReconcileEvery)
 		defer t.Stop()
 		for {
 			select {
-			case <-n.caStop:
+			case <-stop:
 				return
 			case <-t.C:
 			case <-n.caKick:
@@ -643,6 +809,7 @@ func (n *Node) stopCA() {
 	}
 	close(n.caStop)
 	<-n.caDone
+	n.caStop = nil
 }
 
 // kickCA makes the reconcile loop run soon.
@@ -660,18 +827,40 @@ func (n *Node) kickCA() {
 // to the stage of the replicated rotation. It is idempotent; a failed step
 // is retried on the next run.
 func (n *Node) reconcileCA(ctx context.Context) {
+	// The loop and FinishCA or AbortCA must not step the CA at once.
+	n.recMu.Lock()
+	defer n.recMu.Unlock()
+	if n.halted.Load() {
+		return
+	}
+	ca := n.cfg.CA
 	rot, err := n.store.CARotations().Latest(ctx)
-	if err != nil {
-		if !errors.Is(err, store.ErrNotFound) && !errors.Is(err, store.ErrSchemaTooOld) && ctx.Err() == nil {
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		n.dropLeftoverNext(ctx)
+		return
+	case err != nil:
+		if !errors.Is(err, store.ErrSchemaTooOld) && ctx.Err() == nil {
 			n.log.WarnContext(ctx, "read the hub CA rotation", "err", err)
 		}
 		return
 	}
-	ca := n.cfg.CA
-	if !rot.Active() {
-		if next := ca.Next(); next != nil && pki.FingerprintHex(next) == rot.NewCAFP {
-			n.finishLocal(ctx)
+	next := ca.Next()
+	switch {
+	case rot.Stage == store.CAStageAborted && next != nil && pki.FingerprintHex(next) == rot.NewCAFP:
+		if err := n.dropNextLocal(ctx); err != nil {
+			n.log.ErrorContext(ctx, "drop the CA of the aborted rotation", "err", err)
 		}
+		return
+	case rot.Stage == store.CAStageFinished && next != nil && pki.FingerprintHex(next) == rot.NewCAFP:
+		n.finishLocal(ctx, rot)
+		return
+	case rot.Stage == store.CAStageFinished && pki.FingerprintHex(ca.Cert()) == rot.OldCAFP:
+		// The rotation finished without this hub ever trusting the new CA.
+		n.missedRotation(ctx, rot)
+		return
+	case !rot.Active():
+		n.dropLeftoverNext(ctx)
 		return
 	}
 	if pki.FingerprintHex(ca.Cert()) == rot.NewCAFP && ca.Next() == nil {
@@ -682,9 +871,10 @@ func (n *Node) reconcileCA(ctx context.Context) {
 		n.log.ErrorContext(ctx, "the hub CA rotation's certificate does not match its fingerprint", "err", err)
 		return
 	}
-	if next := ca.Next(); next != nil && pki.FingerprintHex(next) != rot.NewCAFP {
-		// A next CA of an attempt that was never committed.
-		if err := ca.DropNext(); err != nil {
+	if next != nil && pki.FingerprintHex(next) != rot.NewCAFP {
+		// A next CA of an attempt that did not start: only one rotation
+		// is under way at a time.
+		if err := n.dropNextLocal(ctx); err != nil {
 			n.log.ErrorContext(ctx, "drop a leftover next CA", "err", err)
 			return
 		}
@@ -717,6 +907,28 @@ func (n *Node) reconcileCA(ctx context.Context) {
 		n.fwdHTTP.CloseIdleConnections()
 		n.log.InfoContext(ctx, "serving the new hub CA")
 	}
+}
+
+// resumeCutover, at Start, serves the new CA at once if this hub's store has
+// the rotation at its cutover: the CA's cutover is not kept on disk, and a
+// hub that restarted must not seal a secret, or present a certificate, of
+// the old CA until the reconcile loop runs.
+func (n *Node) resumeCutover(ctx context.Context) {
+	rot, err := n.store.CARotations().Active(ctx)
+	if err != nil || rot.Stage != store.CAStageCutover {
+		return
+	}
+	ca := n.cfg.CA
+	next, nextCert := ca.Next(), n.nextCert.Load()
+	if next == nil || pki.FingerprintHex(next) != rot.NewCAFP || !ca.HasNextKey() || nextCert == nil {
+		return // the reconcile loop fetches what is missing first
+	}
+	if err := ca.Cutover(); err != nil {
+		n.log.ErrorContext(ctx, "serve the new hub CA", "err", err)
+		return
+	}
+	n.stream.setCert(nextCert)
+	n.log.InfoContext(ctx, "serving the new hub CA: the rotation is at its cutover")
 }
 
 // obtainNext gets the new CA's key and this hub's node certificate of it:
@@ -879,11 +1091,10 @@ func (n *Node) loadNextCert() error {
 // key, and the node certificate of the new CA replaces the old one. Open
 // connections of old-CA certificates are closed: a handshake checks a
 // certificate only once.
-func (n *Node) finishLocal(ctx context.Context) {
+func (n *Node) finishLocal(ctx context.Context, rot store.CARotation) {
 	ca := n.cfg.CA
-	if !ca.HasNextKey() {
-		n.log.ErrorContext(ctx, "the hub CA rotation finished before this hub got the new CA key; "+
-			"this hub must join the cluster again")
+	if !ca.HasNextKey() || n.nextCert.Load() == nil {
+		n.missedRotation(ctx, rot)
 		return
 	}
 	if err := ca.Finish(); err != nil {
@@ -901,6 +1112,51 @@ func (n *Node) finishLocal(ctx context.Context) {
 	n.fwdHTTP.CloseIdleConnections()
 	n.log.InfoContext(ctx, "finished the hub CA rotation here: the old CA is no longer trusted and its key is deleted",
 		"closed_connections", k)
+}
+
+// dropLeftoverNext drops, on the leader, a next CA no rotation under way
+// uses, once the log shows its start cannot commit any more. It skips a run
+// while RotateCA, FinishCA or AbortCA holds rotMu.
+func (n *Node) dropLeftoverNext(ctx context.Context) {
+	if n.cfg.CA.Next() == nil || !n.IsLeader() || !n.rotMu.TryLock() {
+		return
+	}
+	defer n.rotMu.Unlock()
+	if err := n.dropUncommittedNext(ctx); err != nil && ctx.Err() == nil {
+		n.log.WarnContext(ctx, "drop a leftover next CA; retrying", "err", err)
+	}
+}
+
+// errMissedRotation stops a hub that a hub CA rotation finished without: it
+// lacks the new CA's key, or a node certificate of it.
+var errMissedRotation = errors.New("the hub CA rotation finished without this hub: it holds no key and no " +
+	"node certificate of the new CA; remove it (`hearth cluster remove`), wipe its data dir and join it again")
+
+// missedRotation ends a hub the rotation rot finished without: the new CA
+// becomes its only CA, without a key, every CA key file of it is deleted, and
+// the hub stops (Config.OnFatal). It never serves the old CA again, and
+// cannot start until it joins the cluster anew.
+func (n *Node) missedRotation(ctx context.Context, rot store.CARotation) {
+	if !n.halted.CompareAndSwap(false, true) {
+		return
+	}
+	n.log.ErrorContext(ctx, errMissedRotation.Error())
+	newCA, err := pki.ParseCertPEM([]byte(rot.NewCACert))
+	if err == nil {
+		err = n.cfg.CA.Abandon(newCA)
+	}
+	if err != nil {
+		n.log.ErrorContext(ctx, "drop the old hub CA", "err", err)
+	}
+	for _, f := range []string{nextNodeCertFile, nextNodeKeyFile} {
+		_ = os.Remove(filepath.Join(n.dir, f))
+	}
+	n.nextCert.Store(nil)
+	k := n.stream.closeRevoked(func(*x509.Certificate) bool { return true })
+	n.fwdHTTP.CloseIdleConnections()
+	n.log.ErrorContext(ctx, "stopping: closed every raft connection", "closed_connections", k)
+	// OnFatal must not block, and the FSM may have called it already.
+	go n.cfg.OnFatal(errMissedRotation)
 }
 
 // recoverNodeCertFinish moves the node certificate of the new CA over the
@@ -933,9 +1189,15 @@ func recoverNodeCertFinish(dir string, ca *pki.CA) error {
 	return nil
 }
 
+// writeFileSync replaces path with data, mode perm, through a temporary file
+// that reaches the disk before the rename. A temporary file left by a crash
+// is removed first, so the new one is created with perm.
 func writeFileSync(path string, data []byte, perm os.FileMode) error {
 	tmp := path + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+	if err := os.Remove(tmp); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm)
 	if err != nil {
 		return err
 	}

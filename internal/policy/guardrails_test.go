@@ -136,6 +136,7 @@ var expected = map[Action]struct {
 	ClusterMigrate:            {Dangerous, []string{ActorAdmin}, false},
 	ClusterCARotate:           {Dangerous, []string{ActorAdmin}, false},
 	ClusterCAFinish:           {Dangerous, []string{ActorAdmin}, false},
+	ClusterCAAbort:            {Dangerous, []string{ActorAdmin}, false},
 	ClusterCAFetchKey:         {Dangerous, []string{ActorHub}, true},
 	AutomationLog:             {Read, []string{ActorAutomation}, false},
 	AutomationWebhook:         {Safe, []string{ActorAutomation}, false},

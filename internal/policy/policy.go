@@ -55,6 +55,9 @@ const (
 	// drops the old one and deletes its key. Agents and hubs still on the old CA
 	// are cut off.
 	ClusterCAFinish Action = "cluster.ca.finish"
+	// ClusterCAAbort gives up a hub CA rotation before its cutover: every hub
+	// drops the new CA and its key. Agents it renewed have to enroll again.
+	ClusterCAAbort Action = "cluster.ca.abort"
 	// ClusterCAFetchKey hands the new CA's key, and a node certificate of it,
 	// to a cluster member during a hub CA rotation.
 	ClusterCAFetchKey Action = "cluster.ca.fetch_key"
@@ -304,6 +307,7 @@ var rules = map[Action]rule{
 	// still holds an old-CA certificate.
 	ClusterCARotate: {class: Dangerous, actors: []string{ActorAdmin}},
 	ClusterCAFinish: {class: Dangerous, actors: []string{ActorAdmin}},
+	ClusterCAAbort:  {class: Dangerous, actors: []string{ActorAdmin}},
 	// A member fetching the new CA key proves itself with its pinned node
 	// certificate, in a protocol no operator could stop to approve.
 	ClusterCAFetchKey: {class: Dangerous, actors: []string{ActorHub}, fixed: true},

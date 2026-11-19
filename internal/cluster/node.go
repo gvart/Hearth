@@ -155,6 +155,12 @@ type Node struct {
 	caStop   chan struct{}
 	caDone   chan struct{}
 	resealer atomic.Pointer[Resealer]
+	// recMu serializes reconcileCA; halted is set once this hub missed a
+	// rotation and stops. rotateProposed, for tests, replaces the error of
+	// proposing a rotation's start.
+	recMu          sync.Mutex
+	halted         atomic.Bool
+	rotateProposed func(error) error
 }
 
 var _ store.Applier = (*Node)(nil)
@@ -242,6 +248,7 @@ func (n *Node) Start(ctx context.Context) error {
 		_ = stream.Close()
 		return fmt.Errorf("cluster: %w", err)
 	}
+	n.resumeCutover(ctx)
 	n.fwdHTTP = newForwardClient(n.cfg.CA, stream.currentCert, n.epoch)
 	n.trans = raft.NewNetworkTransportWithLogger(stream, maxPool, dialTimeout, logger)
 	n.bolt, err = raftboltdb.NewBoltStore(filepath.Join(n.dir, boltFile))

@@ -142,10 +142,17 @@ func (n *Node) checkPeerCert(cert *x509.Certificate) error {
 // certificate, and an unpinned one during a hub CA rotation, only: when the
 // store cannot be read, it accepts the CA-issued hub certificate and logs
 // the failure, so a store problem on this node halts it through the FSM, as
-// before, rather than cutting it off from its peers.
+// before, rather than cutting it off from its peers. During a hub CA
+// rotation (this hub trusts a next CA) an old-CA certificate is refused when
+// the store cannot be read: its pin cannot be checked.
 func (n *Node) refuseRevoked(cert *x509.Certificate) error {
 	err := n.checkPeerCert(cert)
 	if err != nil && !errors.Is(err, store.ErrCertRevoked) && !errors.Is(err, errNotPinned) {
+		if ca := n.cfg.CA; ca != nil && ca.Next() != nil && cert.CheckSignatureFrom(ca.Next()) != nil {
+			n.log.Warn("cannot check a peer's old-CA hub certificate against its pin during a hub CA rotation; refusing it",
+				"err", err)
+			return fmt.Errorf("check the pin of an old-CA hub certificate: %w", err)
+		}
 		n.log.Warn("cannot check a peer's hub certificate for revocation; accepting it", "err", err)
 		return nil
 	}
