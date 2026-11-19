@@ -339,7 +339,17 @@ func TestLeadershipChangeMidStream(t *testing.T) {
 	for _, h := range hubs {
 		streams[h].waitFor(t, hub.EventDeviceOnline, 1, eventWithin)
 	}
-	eventually(t, "the agent on the leader", func() bool { return agent.url() == leader.url })
+	// Under load an election can move leadership before this point, and the
+	// agent follows it: the leader to transfer from is the one it reached.
+	eventually(t, "the agent on the leader", func() bool {
+		for _, h := range hubs {
+			if h.IsLeader() && agent.url() == h.url {
+				leader = h
+				return true
+			}
+		}
+		return false
+	})
 	before := map[*testHub]int{}
 	for _, h := range hubs {
 		before[h] = len(streams[h].of(hub.EventDeviceUpdated))
