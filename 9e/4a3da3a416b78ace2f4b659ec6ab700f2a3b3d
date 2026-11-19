@@ -1,0 +1,36 @@
+scripts/embed-webui.mjs
+  s_344993999c180f::t_c4b79c378041d8 1-10,12-27,30-36
+  s_344993999c180f::t_7a90944f0ab437 11,28-29
+internal/hub/webui/webui.go
+  s_344993999c180f::t_a2499a32f07e29 6-10,14-15,18,20,23,25,34,72-74,77,79-82,85,92,97-108,115-117,123,125,139-144,148,154,161-163,176-177,179,181-201,204-251,253-258
+  s_344993999c180f::t_dace6bc3579e9d 83-84
+  s_344993999c180f::t_28c3c5d73c67bb 202-203
+  s_344993999c180f::t_5cf4bf8f0b2ab3 109-114,118-122,124,126-138
+  s_344993999c180f::t_e5b2a8b65538ab 17
+  s_344993999c180f::t_51346837b6d327 153,155-160,164-175,178,180
+  s_344993999c180f::t_38a97451a767cd 145-147
+  s_344993999c180f::t_67eb366858ec76 149-152
+internal/hub/webui/webui_test.go
+  s_344993999c180f::t_3c3180d1ef1771 87-259
+  s_344993999c180f::t_d9564e32d3a403 6-7,9,12
+Taskfile.yml
+  s_344993999c180f::t_f90b11343642ed 140-141
+.goreleaser.yaml
+  s_344993999c180f::t_a719ab0f98aceb 17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9e4a3da3a416b78ace2f4b659ec6ab700f2a3b3d",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
