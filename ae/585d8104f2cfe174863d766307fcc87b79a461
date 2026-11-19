@@ -2,6 +2,7 @@ internal/store/pins_test.go
   s_344993999c180f::t_eadfe6d8e91b15 47-48,51-52,55-60,63-65,74-84
   s_344993999c180f::t_58ae68a75a196e 198-202
   s_344993999c180f::t_61d90f0f7b03ed 145,161
+  s_344993999c180f::t_1612b33d816673 195
 internal/hub/revoke_test.go
   s_344993999c180f::t_3a2497cec4886a 7,30,33-35,67,77-79
 internal/store/command.go
