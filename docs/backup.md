@@ -104,8 +104,9 @@ hearth hub --data-dir /var/lib/hearth/hub \
 | `--backup-include-ca`        | `HEARTH_BACKUP_INCLUDE_CA`           | off         | Put the CA private key into the backups (see below)            |
 | `--backup-notify`            | `HEARTH_BACKUP_NOTIFY`               | none        | [Notification channel](notifications.md) told about failures  |
 
-The hub refuses to start when the interval is set and something else is missing, the passphrase is too
-short, or a secret file is readable by other users.
+The hub refuses to start when the interval is set and something else is missing, the interval is under
+5 minutes, the passphrase is too short, the bucket name breaks the S3 naming rules, or a secret file is
+readable by other users.
 
 **Keep the passphrase away from the bucket.** It is read from its file at start and held in memory only.
 It is not in the hub's database, in the audit log, in the logs or in the bucket. Anyone who has both a
@@ -149,6 +150,13 @@ the scheduled backups too. A backup from the bucket then restores the hub on its
 - Uploads are a single `PUT`, so a backup can be at most 5 GiB, far more than a homelab hub's database.
 
 The access key needs only `s3:PutObject`, `s3:ListBucket` and `s3:DeleteObject` on the bucket.
+
+**Give each hub, or each cluster, its own bucket or prefix.** Two hubs that share a bucket and prefix
+prune each other's backups.
+
+**Use an `https://` endpoint** unless the store is on the same host. Over plain `http://` the backups
+stay encrypted and the secret key is never sent, but anyone on the network path can see each signed
+request and send it again for about 15 minutes, including a `DELETE` of a backup.
 
 ### When a backup fails
 
