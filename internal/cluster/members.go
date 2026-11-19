@@ -196,10 +196,15 @@ func (n *Node) RecordNodeCert(ctx context.Context) {
 				n.log.ErrorContext(ctx, "this hub's node certificate is revoked: it was removed from the cluster. "+
 					"To bring it back, join it again with a fresh data dir and a new join token", "serial", serial)
 				return
-			case i >= 0:
+			case i >= 0 && (certs[i].Fingerprint != "" || !n.store.AtSchema(ctx, store.CARotationSchema)):
 				return
 			}
-			if err = n.store.Hubs().RecordCert(ctx, serial, n.cfg.NodeID); err == nil {
+			// A certificate recorded before its fingerprint could be gets
+			// it filled in.
+			if err = n.store.Hubs().Record(ctx, store.HubCert{
+				Serial: serial, NodeID: n.cfg.NodeID,
+				Fingerprint: pki.FingerprintHex(n.cert), CAFP: pki.FingerprintHex(n.cfg.CA.Cert()),
+			}); err == nil {
 				n.log.InfoContext(ctx, "recorded this hub's node certificate in the cluster", "serial", serial)
 				return
 			}

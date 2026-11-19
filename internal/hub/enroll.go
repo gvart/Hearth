@@ -83,7 +83,10 @@ func (e *Enroller) Enroll(ctx context.Context, req *connect.Request[agentv1.Enro
 		}); err != nil {
 			return err
 		}
-		if err := e.store.Certs().Create(ctx, pki.SerialString(c), deviceID); err != nil {
+		if err := e.store.Certs().Record(ctx, store.CertRecord{
+			Serial: pki.SerialString(c), DeviceID: deviceID,
+			Fingerprint: pki.FingerprintHex(c), CAFP: pki.FingerprintHex(e.ca.Cert()),
+		}); err != nil {
 			return err
 		}
 		cert = c

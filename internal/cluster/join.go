@@ -148,7 +148,10 @@ func (s *JoinServer) Join(ctx context.Context, req *connect.Request[clusterv1.Jo
 		// nothing is revoked; the hub records its own once the cluster
 		// migrates (RecordNodeCert).
 		if err := s.store.Hubs().RequireCerts(ctx); err == nil {
-			if err := s.store.Hubs().RecordCert(ctx, pki.SerialString(c), msg.GetNodeId()); err != nil {
+			if err := s.store.Hubs().Record(ctx, store.HubCert{
+				Serial: pki.SerialString(c), NodeID: msg.GetNodeId(),
+				Fingerprint: pki.FingerprintHex(c), CAFP: pki.FingerprintHex(s.ca.Cert()),
+			}); err != nil {
 				return err
 			}
 		} else if !errors.Is(err, store.ErrSchemaTooOld) {
