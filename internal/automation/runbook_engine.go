@@ -1039,6 +1039,9 @@ func (r *Runbooks) runCheck(ctx context.Context, d *RunbookStep) error {
 	deadline := r.cfg.Now().Add(d.Within)
 	for {
 		ran, err := c.run(ctx)
+		if ctx.Err() != nil {
+			return err
+		}
 		if !ran {
 			return fmt.Errorf("the check cannot run from its device: %w", err)
 		}

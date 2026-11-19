@@ -59,8 +59,9 @@ const (
 	AutomationRestart Action = "automation.restart"
 	// AutomationExec runs a command on a device, through its agent.
 	AutomationExec Action = "automation.exec"
-	// AutomationProbe is an http, tcp or dns trigger checking from a
-	// device: the device's agent runs the check for the hub.
+	// AutomationProbe is an http, tcp or dns trigger, or a runbook check
+	// step, checking from a device: the device's agent runs the check for
+	// the hub.
 	AutomationProbe Action = "automation.probe"
 	// KubeClusterAdd adopts a Kubernetes cluster: the hub stores its
 	// kubeconfig, sealed, and starts watching it read-only.

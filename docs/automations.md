@@ -309,7 +309,8 @@ Two gates stand before anything runs on a device, and both must agree:
 
   `--allow-exec` matches the command's first word exactly as the automation writes it, with any
   arguments. `--allow-restart` takes `systemd:UNIT`, `systemd-user:UNIT` or `docker:CONTAINER`.
-  `--allow-probe` lets checks run from the device (see above). On
+  `--allow-probe` lets checks run from the device (see above), and
+  [runbook](runbooks.md) check steps that set `from` too. On
   a systemd install, add the flags to `ExecStart=` with `systemctl edit hearth-agent`.
 
 A denial by either gate stops the run with status `denied`, shown in `hearth automation runs`, and
