@@ -156,6 +156,8 @@ internal/hub/shell.go
   s_344993999c180f::t_cb7aa505183d20 58,62,200,294
   s_344993999c180f::t_8d66d64d671ba3 269,271,277-279
   s_344993999c180f::t_baba323d8d995f 35-36
+site/src/pages.mjs
+  s_344993999c180f::t_985525fe548206 12
 ---
 {
   "schema_version": "authorship/3.0.0",
