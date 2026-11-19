@@ -1,0 +1,24 @@
+internal/agent/runtime_test.go
+  s_344993999c180f::t_7bd650d7e5e490 190-212
+internal/agent/runtime.go
+  s_344993999c180f::t_7bd650d7e5e490 9,55-63
+  s_344993999c180f::t_93195cc7b329da 64-66
+cmd/hearth/main.go
+  s_344993999c180f::t_7bd650d7e5e490 32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2b3652eace8e74717f8347110e5379ffceac302d",
+  "prompts": {},
+  "sessions": {
+    "s_344993999c180f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1893b4bd-6b15-43c0-aee7-8234b3fab2a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
