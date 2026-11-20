@@ -315,7 +315,7 @@ func (m *Membership) memberlistConfig(trans *gossipTransport) *memberlist.Config
 	c.Name = m.cfg.NodeID
 	c.Transport = trans
 	c.BindPort, c.AdvertisePort = trans.port, trans.port
-	c.Delegate, c.Events, c.Alive = m, m, m
+	c.Delegate, c.Events, c.Alive, c.Merge = m, m, m, m
 	c.Logger = log.New(memberlistLog{m.log}, "", 0)
 	setIfNonZero(&c.ProbeInterval, m.cfg.ProbeInterval)
 	setIfNonZero(&c.ProbeTimeout, m.cfg.ProbeTimeout)
@@ -513,11 +513,16 @@ func (m *Membership) NotifyUpdate(n *memberlist.Node) {
 }
 
 // NotifyAlive implements memberlist.AliveDelegate: it refuses a peer whose
-// name is not a node ID or whose metadata claims a role outside its own
-// allowed roles, or no gossiping role.
+// name is not a node ID, whose metadata claims a role outside its own
+// allowed roles or no gossiping role, or whose name is not the hub that owns
+// its address (see checkOwner).
+//
+// memberlist calls it under its node lock, so it never dials: an address
+// whose owner is not known yet is refused and verified in the background,
+// and a later alive message or push/pull about the member is accepted.
 func (m *Membership) NotifyAlive(peer *memberlist.Node) error {
 	if peer.Name == m.cfg.NodeID {
-		return nil
+		return m.checkSelf(peer)
 	}
 	if err := ValidNodeID(peer.Name); err != nil {
 		return err
@@ -532,7 +537,76 @@ func (m *Membership) NotifyAlive(peer *memberlist.Node) error {
 	if !meta.Roles.Gossips() {
 		return fmt.Errorf("member %s: roles %s do not gossip", peer.Name, meta.Roles)
 	}
+	return m.checkOwner(peer, false)
+}
+
+// NotifyMerge implements memberlist.MergeDelegate, which memberlist calls,
+// outside its locks, with the members a peer knows when it joins this one
+// or this one joins it. It verifies the owner of each live member's address,
+// dialing it if needed, and cancels the merge if any is claimed under a name
+// that is not its owner's. An address that cannot be dialed is left to
+// NotifyAlive, which refuses it until it is verified.
+func (m *Membership) NotifyMerge(peers []*memberlist.Node) error {
+	for _, p := range peers {
+		if p.State != memberlist.StateAlive && p.State != memberlist.StateSuspect {
+			continue
+		}
+		var err error
+		if p.Name == m.cfg.NodeID {
+			err = m.checkSelf(p)
+		} else {
+			err = m.checkOwner(p, true)
+		}
+		if errors.Is(err, errNameNotOwned) {
+			return err
+		}
+	}
 	return nil
+}
+
+// errNameNotOwned is a member claimed under a name that is not the name of
+// the hub certificate presented at its address.
+var errNameNotOwned = errors.New("member name is not its certificate's hub")
+
+// checkOwner binds a member's name to its certificate: the hub that
+// presented its certificate when this member dialed the peer's address must
+// carry the peer's name. With dial unset an unknown owner is not dialed but
+// verified in the background, and the peer is refused for now.
+//
+// This guarantees that a member is only added, or kept, under a name at an
+// address where that hub answers. It does not authenticate who relayed the
+// message: any hub of the cluster can gossip metadata, incarnations and
+// suspect or dead claims about another; those are memberlist's to refute.
+func (m *Membership) checkOwner(peer *memberlist.Node, dial bool) error {
+	t := m.trans.Load()
+	if t == nil {
+		return errors.New("gossip transport not started")
+	}
+	addr := peer.Address()
+	id, ok := t.ownerOf(addr)
+	if !ok && !dial {
+		t.verifyLater(addr)
+		return fmt.Errorf("member %s: the hub at %s is not verified yet", peer.Name, addr)
+	}
+	if !ok {
+		var err error
+		if id, err = t.verifyOwner(addr); err != nil {
+			return fmt.Errorf("member %s: verify the hub at %s: %w", peer.Name, addr, err)
+		}
+	}
+	if id != peer.Name {
+		return fmt.Errorf("member %s at %s: the hub there is %s: %w", peer.Name, addr, id, errNameNotOwned)
+	}
+	return nil
+}
+
+// checkSelf refuses a claim of this member's name at another address.
+func (m *Membership) checkSelf(peer *memberlist.Node) error {
+	t := m.trans.Load()
+	if t == nil || (peer.Addr.Equal(t.ip) && int(peer.Port) == t.port) {
+		return nil
+	}
+	return fmt.Errorf("member %s claimed at %s: %w", peer.Name, peer.Address(), errNameNotOwned)
 }
 
 // memberlistLog writes memberlist's "[LEVEL] memberlist: msg" lines to slog.

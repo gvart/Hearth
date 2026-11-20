@@ -29,6 +29,9 @@ const (
 	gossipPackets byte = 'p'
 	// gossipStream: one memberlist stream (push/pull, join, TCP ping).
 	gossipStream byte = 's'
+	// gossipVerify: nothing; the dialer only wanted the handshake, to learn
+	// which hub owns the address (see verifyOwner).
+	gossipVerify byte = 'v'
 )
 
 const (
@@ -44,6 +47,8 @@ const (
 	// gossipHandshakeTimeout bounds the TLS handshake and the first byte of
 	// an accepted connection.
 	gossipHandshakeTimeout = 10 * time.Second
+	// verifyRetry spaces out verification dials to one address.
+	verifyRetry = time.Second
 )
 
 // gossipTransport is a memberlist.Transport over TCP with mutual TLS, so
@@ -78,6 +83,14 @@ type gossipTransport struct {
 	// as its certificate names it.
 	seenMu sync.Mutex
 	seen   map[string]time.Time
+
+	// owners maps a gossip address (ip:port) to the hub node ID whose
+	// certificate the member there presented when this transport last
+	// dialed it; verifying and verifyTried track verification dials.
+	ownMu       sync.Mutex
+	owners      map[string]string
+	verifying   map[string]bool
+	verifyTried map[string]time.Time
 }
 
 var _ memberlist.Transport = (*gossipTransport)(nil)
@@ -111,6 +124,7 @@ func newGossipTransport(ctx context.Context, ln net.Listener, listen, advertise 
 		stream: s, ip: ip, port: port, dialTimeout: dialTimeout, log: log,
 		packetCh: make(chan *memberlist.Packet), streamCh: make(chan net.Conn),
 		peers: map[string]chan []byte{}, seen: map[string]time.Time{},
+		owners: map[string]string{}, verifying: map[string]bool{}, verifyTried: map[string]time.Time{},
 	}
 	t.ctx, t.cancel = context.WithCancel(context.Background())
 	t.wg.Go(t.accept)
@@ -229,6 +243,7 @@ func (t *gossipTransport) send(addr string, q chan []byte) {
 					continue
 				}
 				conn = c
+				t.recordOwner(addr, c)
 				frame = append(frame, gossipPackets)
 			}
 			frame = binary.BigEndian.AppendUint32(frame, uint32(len(b))) //nolint:gosec // len(b) <= maxGossipPacket
@@ -258,6 +273,7 @@ func (t *gossipTransport) DialTimeout(addr string, timeout time.Duration) (net.C
 	if err != nil {
 		return nil, err
 	}
+	t.recordOwner(addr, c)
 	_ = c.SetWriteDeadline(time.Now().Add(timeout))
 	if _, err := c.Write([]byte{gossipStream}); err != nil {
 		_ = c.Close()
@@ -308,6 +324,8 @@ func (t *gossipTransport) serve(c net.Conn) {
 		}
 	case gossipPackets:
 		t.readPackets(c, peer)
+	case gossipVerify:
+		_ = c.Close()
 	default:
 		_ = c.Close()
 	}
@@ -370,6 +388,70 @@ func (t *gossipTransport) lastSeen(id string) time.Time {
 	t.seenMu.Lock()
 	defer t.seenMu.Unlock()
 	return t.seen[id]
+}
+
+// recordOwner records the hub that answered a dial to addr.
+func (t *gossipTransport) recordOwner(addr string, c net.Conn) {
+	if id := peerID(c); id != "" {
+		t.ownMu.Lock()
+		t.owners[addr] = id
+		t.ownMu.Unlock()
+	}
+}
+
+// ownerOf is the hub node ID that last answered at addr, if any did.
+func (t *gossipTransport) ownerOf(addr string) (string, bool) {
+	t.ownMu.Lock()
+	defer t.ownMu.Unlock()
+	id, ok := t.owners[addr]
+	return id, ok
+}
+
+// verifyOwner dials addr, unless a dial already answered, and returns the
+// hub node ID of the certificate the member there presented.
+func (t *gossipTransport) verifyOwner(addr string) (string, error) {
+	if id, ok := t.ownerOf(addr); ok {
+		return id, nil
+	}
+	c, err := t.stream.Dial(raft.ServerAddress(addr), t.dialTimeout)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = c.Close() }()
+	t.recordOwner(addr, c)
+	_ = c.SetWriteDeadline(time.Now().Add(t.dialTimeout))
+	_, _ = c.Write([]byte{gossipVerify})
+	id, ok := t.ownerOf(addr)
+	if !ok {
+		return "", fmt.Errorf("gossip peer at %s presented no hub certificate", addr)
+	}
+	return id, nil
+}
+
+// verifyLater verifies addr's owner in the background, at most once per
+// verifyRetry, so a caller that must not block (memberlist's alive handler
+// runs under its node lock) finds it known next time.
+func (t *gossipTransport) verifyLater(addr string) {
+	t.ownMu.Lock()
+	if t.verifying[addr] || time.Since(t.verifyTried[addr]) < verifyRetry {
+		t.ownMu.Unlock()
+		return
+	}
+	t.verifying[addr], t.verifyTried[addr] = true, time.Now()
+	t.ownMu.Unlock()
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.closed {
+		return
+	}
+	t.wg.Go(func() {
+		if _, err := t.verifyOwner(addr); err != nil {
+			t.log.Debug("verify the owner of a gossip address", "addr", addr, "err", err)
+		}
+		t.ownMu.Lock()
+		delete(t.verifying, addr)
+		t.ownMu.Unlock()
+	})
 }
 
 // closeRevoked closes the open connections of peers whose certificate

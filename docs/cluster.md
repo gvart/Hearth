@@ -45,7 +45,11 @@ of its roles.
 Clustered hubs gossip their membership (hashicorp/memberlist) over TCP with mutual TLS on
 `--gossip-listen` (default `:7445`, empty turns it off), with the same hub node certificates and
 revocation checks as Raft: an enrolled device's certificate, a certificate of another CA or a
-revoked hub certificate is refused. `--gossip-advertise` is the address the other hubs dial (default:
+revoked hub certificate is refused. A member's gossip name is bound to its certificate: a hub adds a
+member only after a TLS handshake it made itself to that member's address showed a hub certificate
+for that name, so no hub can join, or be added, under another hub's name. What other hubs relay about
+a member (its metadata, or that it is suspect or dead) is trusted as coming from a cluster hub, not
+checked against the member itself. `--gossip-advertise` is the address the other hubs dial (default:
 the `--advertise` host and the gossip port); every hub must gossip on the same port, because a hub
 finds the others at its Raft peers' hosts on its own gossip port. Agents never gossip. For now
 gossip only reports membership, next to Raft, which still replicates everything; gossip and

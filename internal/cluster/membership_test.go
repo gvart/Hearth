@@ -23,6 +23,15 @@ type memberOpts struct {
 	check func(*x509.Certificate) error
 	seeds []string
 	roles RoleSet
+	// claim, if set, is the gossip name, instead of the certificate's ID.
+	claim string
+}
+
+func (o memberOpts) name(id string) string {
+	if o.claim != "" {
+		return o.claim
+	}
+	return id
 }
 
 // newTestMember returns a Membership on a loopback port with fast probes.
@@ -40,7 +49,7 @@ func newTestMember(t *testing.T, ca *pki.CA, id string, o memberOpts) *Membershi
 	}
 	seeds := o.seeds
 	m, err := NewMembership(MembershipConfig{
-		NodeID: id, Roles: o.roles, Allowed: RolesOf(RoleNode, RoleStorage, RoleMaster),
+		NodeID: o.name(id), Roles: o.roles, Allowed: RolesOf(RoleNode, RoleStorage, RoleMaster),
 		Listen: ln.Addr().String(), Listener: ln,
 		Seeds:        func() []string { return seeds },
 		Schema:       func(context.Context) (int64, error) { return 42, nil },
@@ -211,6 +220,41 @@ func TestMembershipRefusesNonHubPeers(t *testing.T) {
 	}
 }
 
+// TestMembershipBindsNamesToCertificates: a hub with a valid certificate
+// cannot join, or be added by others, under another hub's name.
+func TestMembershipBindsNamesToCertificates(t *testing.T) {
+	ca := newTestCA(t)
+	a := newTestMember(t, ca, "a", memberOpts{})
+	aAddr, _ := runMember(t, a)
+	b := newTestMember(t, ca, "b", memberOpts{seeds: []string{aAddr}})
+	bAddr, _ := runMember(t, b)
+	both := map[string]string{"a": MemberAlive, "b": MemberAlive}
+	waitUntil(t, 10*time.Second, "a and b to see each other", sees(a, both))
+	waitUntil(t, 10*time.Second, "b to see a", sees(b, both))
+
+	for _, claim := range []string{"b", "c"} { // an existing member's name, and a new one
+		t.Run(claim, func(t *testing.T) {
+			// The certificate says "evil".
+			x := newTestMember(t, ca, "evil", memberOpts{claim: claim, seeds: []string{aAddr}})
+			xAddr, _ := runMember(t, x)
+			if _, err := a.ml.Load().Join([]string{xAddr}); err == nil {
+				t.Errorf("a joined the hub claiming %s", claim)
+			}
+			time.Sleep(time.Second) // several refresh rounds of x joining a
+			for _, m := range []*Membership{a, b} {
+				for _, mi := range m.Members() {
+					if mi.Address == xAddr || mi.ID == "c" || mi.ID == "evil" {
+						t.Errorf("%s lists %+v", m.cfg.NodeID, mi)
+					}
+					if mi.ID == "b" && (mi.Address != bAddr || mi.State != MemberAlive) {
+						t.Errorf("%s lists b as %+v, want alive at %s", m.cfg.NodeID, mi, bAddr)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestNewMembershipRefuses(t *testing.T) {
 	ca := newTestCA(t)
 	cert := hubCert(t, ca, "a")
@@ -245,6 +289,19 @@ func TestNewMembershipRefuses(t *testing.T) {
 
 func TestNotifyAliveRefusesBadMetadata(t *testing.T) {
 	m := &Membership{cfg: MembershipConfig{NodeID: "a"}}
+	// The owners as dials would have recorded them: b answers at .2, the
+	// hub x at .3; .4 has not been dialed. closed keeps verifyLater from
+	// dialing.
+	m.trans.Store(&gossipTransport{
+		ip: net.ParseIP("10.0.0.1"), port: 7445, closed: true,
+		owners:    map[string]string{"10.0.0.2:7445": "b", "10.0.0.3:7445": "x"},
+		verifying: map[string]bool{}, verifyTried: map[string]time.Time{},
+	})
+	at := func(n memberlist.Node, ip string) memberlist.Node {
+		n.Addr, n.Port = net.ParseIP(ip), 7445
+		return n
+	}
+	hub := memberlist.Node{Name: "b", Meta: nil}
 	meta := func(mm memberMeta) []byte {
 		b, err := json.Marshal(mm)
 		if err != nil {
@@ -257,9 +314,12 @@ func TestNotifyAliveRefusesBadMetadata(t *testing.T) {
 		node memberlist.Node
 		ok   bool
 	}{
-		{name: "self", node: memberlist.Node{Name: "a"}, ok: true},
-		{name: "hub", node: memberlist.Node{Name: "b", Meta: meta(memberMeta{Roles: HubRoles, Allowed: HubRoles})}, ok: true},
-		{name: "storage only", node: memberlist.Node{Name: "b", Meta: meta(memberMeta{Roles: RolesOf(RoleStorage), Allowed: HubRoles})}, ok: true},
+		{name: "self", node: at(memberlist.Node{Name: "a"}, "10.0.0.1"), ok: true},
+		{name: "self elsewhere", node: at(memberlist.Node{Name: "a"}, "10.0.0.3")},
+		{name: "hub", node: at(withMeta(hub, meta(memberMeta{Roles: HubRoles, Allowed: HubRoles})), "10.0.0.2"), ok: true},
+		{name: "storage only", node: at(memberlist.Node{Name: "b", Meta: meta(memberMeta{Roles: RolesOf(RoleStorage), Allowed: HubRoles})}, "10.0.0.2"), ok: true},
+		{name: "another hub's name", node: at(withMeta(hub, meta(memberMeta{Roles: HubRoles, Allowed: HubRoles})), "10.0.0.3")},
+		{name: "address not verified", node: at(withMeta(hub, meta(memberMeta{Roles: HubRoles, Allowed: HubRoles})), "10.0.0.4")},
 		{name: "role outside allowed", node: memberlist.Node{Name: "b", Meta: meta(memberMeta{Roles: HubRoles, Allowed: RolesOf(RoleStorage)})}},
 		{name: "node only", node: memberlist.Node{Name: "b", Meta: meta(memberMeta{Roles: AgentRoles, Allowed: AgentRoles})}},
 		{name: "unknown role", node: memberlist.Node{Name: "b", Meta: []byte(`{"r":["root"],"a":["root"]}`)}},
@@ -273,6 +333,11 @@ func TestNotifyAliveRefusesBadMetadata(t *testing.T) {
 			}
 		})
 	}
+}
+
+func withMeta(n memberlist.Node, meta []byte) memberlist.Node {
+	n.Meta = meta
+	return n
 }
 
 // TestMemberMetaFits checks the largest metadata fits memberlist's limit.
