@@ -19,10 +19,7 @@ import (
 // A plugin started through a wrapper leaves no process behind when it is
 // restarted: the hub kills its whole process group.
 func TestRestartKillsWhatThePluginStarted(t *testing.T) {
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
+	exe := helperExe
 	man := helperManifest(t, "wrapped", "crash")
 	pids := filepath.Join(man.Dir, "pids")
 	script := "sleep 300 &\necho $! >> " + pids + "\nexec \"$@\"\n"
@@ -59,7 +56,7 @@ func TestTrustChecks(t *testing.T) {
 		return path
 	}
 	t.Run("group-writable directory above the manifest", func(t *testing.T) {
-		dir := filepath.Join(t.TempDir(), "shared")
+		dir := filepath.Join(tempDir(t), "shared")
 		if err := os.Mkdir(dir, 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -74,20 +71,16 @@ func TestTrustChecks(t *testing.T) {
 	})
 	t.Run("env in a manifest others can read", func(t *testing.T) {
 		body := good + "env: {TOKEN: secret}\n"
-		_, err := LoadManifest(write(t, t.TempDir(), body, 0o644))
+		_, err := LoadManifest(write(t, tempDir(t), body, 0o644))
 		if err == nil || !strings.Contains(err.Error(), "run chmod 600") {
 			t.Fatalf("err = %v", err)
 		}
-		if _, err := LoadManifest(write(t, t.TempDir(), body, 0o600)); err != nil {
+		if _, err := LoadManifest(write(t, tempDir(t), body, 0o600)); err != nil {
 			t.Fatalf("0600: %v", err)
 		}
 	})
 	t.Run("group-writable program is not started", func(t *testing.T) {
-		exe, err := os.Executable()
-		if err != nil {
-			t.Fatal(err)
-		}
-		b, err := os.ReadFile(exe)
+		b, err := os.ReadFile(helperExe)
 		if err != nil {
 			t.Fatal(err)
 		}

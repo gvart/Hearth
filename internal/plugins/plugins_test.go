@@ -255,7 +255,7 @@ func TestPluginEnvironmentIsClean(t *testing.T) {
 func TestLoadManifest(t *testing.T) {
 	write := func(t *testing.T, body string, mode os.FileMode) string {
 		t.Helper()
-		path := filepath.Join(t.TempDir(), "plugin.yaml")
+		path := filepath.Join(tempDir(t), "plugin.yaml")
 		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 			t.Fatal(err)
 		}

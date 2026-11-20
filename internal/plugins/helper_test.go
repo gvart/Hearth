@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -20,11 +21,48 @@ import (
 // helperArg makes the test binary run as a plugin, in the mode after it.
 const helperArg = "hearth-test-plugin"
 
+// helperExe is a copy of the test binary the hub trusts whatever the umask:
+// go test may build it in a group-writable directory.
+var helperExe string
+
 func TestMain(m *testing.M) {
 	if len(os.Args) == 3 && os.Args[1] == helperArg {
 		os.Exit(runHelper(os.Args[2]))
 	}
-	os.Exit(m.Run())
+	os.Exit(runTests(m))
+}
+
+func runTests(m *testing.M) int {
+	dir, err := os.MkdirTemp("", "hearth-plugins-test") // 0700
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	exe, err := os.Executable()
+	if err == nil {
+		var b []byte
+		if b, err = os.ReadFile(exe); err == nil {
+			helperExe = filepath.Join(dir, "plugin")
+			err = os.WriteFile(helperExe, b, 0o700) //nolint:gosec // an executable
+		}
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return m.Run()
+}
+
+// tempDir is t.TempDir, owner-only whatever the umask, as the hub wants a
+// plugin's directory.
+func tempDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o700); err != nil { //nolint:gosec // a directory
+		t.Fatal(err)
+	}
+	return dir
 }
 
 // runHelper is a plugin that behaves well, or misbehaves as mode says.
@@ -112,12 +150,8 @@ func runHelper(mode string) int {
 // helperManifest is a manifest that runs the test binary in mode.
 func helperManifest(t *testing.T, name, mode string) Manifest {
 	t.Helper()
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
 	return Manifest{
-		Protocol: 1, Name: name, Version: "test", Command: exe, Args: []string{helperArg, mode},
+		Protocol: 1, Name: name, Version: "test", Command: helperExe, Args: []string{helperArg, mode},
 		Capabilities: []string{CapDiscover, CapState, CapCommand},
 		Commands: []CommandSpec{
 			{Name: "toggle", Class: policy.Safe},
@@ -126,7 +160,7 @@ func helperManifest(t *testing.T, name, mode string) Manifest {
 			{Name: "slow", Class: policy.Read},
 			{Name: "async", Class: policy.Read},
 		},
-		Dir: t.TempDir(),
+		Dir: tempDir(t),
 	}
 }
 

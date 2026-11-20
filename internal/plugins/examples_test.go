@@ -15,7 +15,7 @@ import (
 // 0644, so that the test does not depend on the checkout's modes.
 func copyExample(t *testing.T, name string, files ...string) string {
 	t.Helper()
-	dir := t.TempDir()
+	dir := tempDir(t)
 	for _, f := range files {
 		b, err := os.ReadFile(filepath.Join("..", "..", "examples", "plugins", name, f))
 		if err != nil {
@@ -47,6 +47,10 @@ func TestGoExamplePlugin(t *testing.T) {
 	build := exec.Command("go", "build", "-o", filepath.Join(dir, "lamp"), "../../examples/plugins/go-lamp") //nolint:gosec // a fixed build of the example
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build: %v\n%s", err, out)
+	}
+	// Under umask 002 the build is group-writable, which the hub refuses.
+	if err := os.Chmod(filepath.Join(dir, "lamp"), 0o700); err != nil { //nolint:gosec // an executable
+		t.Fatal(err)
 	}
 	man, err := LoadManifest(filepath.Join(dir, "plugin.yaml"))
 	if err != nil {
