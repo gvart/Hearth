@@ -21,6 +21,7 @@ import (
 	"github.com/gvart/hearth/internal/metrics"
 	"github.com/gvart/hearth/internal/notify"
 	"github.com/gvart/hearth/internal/pki"
+	"github.com/gvart/hearth/internal/plugins"
 	"github.com/gvart/hearth/internal/policy"
 	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
 	"github.com/gvart/hearth/internal/proto/hearth/agent/v1/agentv1connect"
@@ -91,6 +92,9 @@ type Config struct {
 	// Proxmox serves adopted Proxmox VE servers under /api/v1/proxmox. Nil
 	// disables it.
 	Proxmox *proxmox.Manager
+	// Plugins serves the hub's exec plugins under /api/v1/plugins. Nil
+	// disables it.
+	Plugins *plugins.Manager
 	// Notify serves the notification channels under /api/v1/notify. Nil
 	// disables it.
 	Notify *notify.Notifier

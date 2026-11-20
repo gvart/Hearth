@@ -46,6 +46,7 @@ internal/policy/       action classes, decisions, audit log
 internal/discovery/    network discovery: ARP sweep, mDNS, OUI vendors, DHCP lease import (unmanaged hosts)
 internal/cluster/      Raft replication of the hub store (hashicorp/raft), hub join, mTLS transport
 internal/s3/           minimal SigV4 S3 client (put, list, delete) for scheduled backups
+internal/plugins/      exec plugins: child processes speaking JSON lines over stdio (docs/plugins.md)
 pkg/sdk/               public agent/plugin SDK — Apache-2.0 licensed
 proto/                 .proto sources
 web/                   Vite + React + TypeScript UI, embedded via embed.FS
@@ -53,6 +54,7 @@ deploy/                install.sh, systemd/launchd units
 docs/                  user docs (*.md, rendered by site/), design notes, task specs (docs/tasks/)
 site/                  docs site: Astro Starlight; publishes the docs/*.md listed in site/src/pages.mjs
 test/e2e/              end-to-end tests (compose: hub + agents)
+examples/              example exec plugins (Go, Python), exercised by internal/plugins tests
 ```
 
 ## Stack
