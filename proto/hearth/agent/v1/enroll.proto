@@ -30,4 +30,8 @@ message EnrollResponse {
   bytes certificate = 2;
   // ca_certificate is the DER-encoded hub CA certificate.
   bytes ca_certificate = 3;
+  // hubs are the agent-facing URLs of the hubs the agent may stream to, in
+  // an AP cluster every master, the enrolling one first. Empty from a
+  // single hub; a Welcome refreshes the list either way.
+  repeated string hubs = 4;
 }

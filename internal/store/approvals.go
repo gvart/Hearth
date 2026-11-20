@@ -199,19 +199,22 @@ type CreateApproval struct {
 	Class     string `json:"class"`
 	Target    string `json:"target"`
 	Detail    string `json:"detail"`
+	// Owner is the master that holds the request in an AP cluster
+	// (OwnedBy): only it approves or denies.
+	Owner string `json:"owner,omitempty"`
 }
 
 // Op implements Command.
 func (CreateApproval) Op() string { return "create_approval" }
 
-func (CreateApproval) minSchema() int64 { return approvalsSchema }
+func (c CreateApproval) minSchema() int64 { return ownedSchema(c.Owner, approvalsSchema) }
 
 func (c CreateApproval) apply(ctx context.Context, w *writer) (Result, error) {
-	return Result{}, w.insert(ctx, "approvals", row{
+	return Result{}, w.insert(ctx, "approvals", withOwner(row{
 		"id": c.ID, "created_at": c.CreatedAt, "expires_at": c.ExpiresAt, "actor_kind": c.ActorKind,
 		"actor_id": c.ActorID, "action": c.Action, "class": c.Class, "target": c.Target, "detail": c.Detail,
 		"status": ApprovalPending, "decided_by": "", "decided_at": nil,
-	})
+	}, c.Owner))
 }
 
 // DecideApproval closes a pending approval. Approving or denying one that
@@ -223,12 +226,15 @@ type DecideApproval struct {
 	Status string `json:"status"`
 	By     string `json:"by"`
 	At     int64  `json:"at"`
+	// Master is the master deciding it in an AP cluster (OwnedBy): only
+	// the owner approves or denies; any master may expire it.
+	Master string `json:"master,omitempty"`
 }
 
 // Op implements Command.
 func (DecideApproval) Op() string { return "decide_approval" }
 
-func (DecideApproval) minSchema() int64 { return approvalsSchema }
+func (c DecideApproval) minSchema() int64 { return ownedSchema(c.Master, approvalsSchema) }
 
 func (c DecideApproval) apply(ctx context.Context, w *writer) (Result, error) {
 	r, err := w.get(ctx, "approvals", c.ID)
@@ -237,6 +243,11 @@ func (c DecideApproval) apply(ctx context.Context, w *writer) (Result, error) {
 	}
 	if r == nil {
 		return Result{}, ErrNotFound
+	}
+	if c.Status != ApprovalExpired {
+		if err := checkOwner(r, "approval", c.Master); err != nil {
+			return Result{}, err
+		}
 	}
 	if status := r.str("status"); status != ApprovalPending {
 		return Result{}, fmt.Errorf("%w: it is %s", ErrApprovalClosed, status)

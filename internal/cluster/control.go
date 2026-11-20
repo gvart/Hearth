@@ -296,6 +296,9 @@ type wireError struct {
 	Message    string `json:"message"`
 	LeaderID   string `json:"leader_id,omitempty"`
 	LeaderAddr string `json:"leader_addr,omitempty"`
+	// Owner and What name a master-owned row's owner (kind not_owner).
+	Owner string `json:"owner,omitempty"`
+	What  string `json:"what,omitempty"`
 }
 
 var wireKinds = map[string]error{
@@ -329,6 +332,10 @@ func toWireError(err error) *wireError {
 	if errors.As(err, &nl) {
 		return &wireError{Kind: "not_leader", Message: nl.Error(), LeaderID: nl.LeaderID, LeaderAddr: nl.LeaderAddr}
 	}
+	var no *store.NotOwnerError
+	if errors.As(err, &no) {
+		return &wireError{Kind: "not_owner", Message: err.Error(), Owner: no.Owner, What: no.What}
+	}
 	for kind, target := range wireKinds {
 		if errors.Is(err, target) {
 			return &wireError{Kind: kind, Message: err.Error()}
@@ -340,6 +347,9 @@ func toWireError(err error) *wireError {
 func (e *wireError) toError() error {
 	if e.Kind == "not_leader" {
 		return &ErrNotLeader{LeaderID: e.LeaderID, LeaderAddr: e.LeaderAddr}
+	}
+	if e.Kind == "not_owner" {
+		return &store.NotOwnerError{What: e.What, Owner: e.Owner}
 	}
 	if target, ok := wireKinds[e.Kind]; ok {
 		return &kindError{msg: e.Message, target: target}

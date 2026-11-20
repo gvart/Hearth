@@ -61,8 +61,22 @@ func Join(ctx context.Context, hubURL, token, dataDir, hostname string) (string,
 
 	req := &agentv1.EnrollRequest{TokenSecret: tok.Secret, Csr: csr, Hostname: hostname}
 	enrolledWith := u
-	resp, err := enroll(ctx, u, tok.CAFingerprint, req)
-	var hubs []string
+	var (
+		resp *connect.Response[agentv1.EnrollResponse]
+		hubs []string
+	)
+	// A token of an AP cluster master names it: only it can use the token.
+	// The given URL is the way back if the device cannot reach that name.
+	tried := false
+	if owner, perr := parseHubURL(tok.HubURL); perr == nil && tok.HubURL != "" && owner.String() != u.String() {
+		resp, err = enroll(ctx, owner, tok.CAFingerprint, req)
+		if tried = err == nil || refusal(err); tried {
+			enrolledWith = owner
+		}
+	}
+	if !tried {
+		resp, err = enroll(ctx, u, tok.CAFingerprint, req)
+	}
 	if nl := notLeader(err); nl != nil {
 		if leader, perr := parseHubURL(nl.GetLeaderUrl()); perr == nil && leader.String() != u.String() {
 			enrolledWith = leader
@@ -72,6 +86,9 @@ func Join(ctx context.Context, hubURL, token, dataDir, hostname string) (string,
 	}
 	if err != nil {
 		return "", err
+	}
+	if listed := resp.Msg.GetHubs(); len(listed) > 0 {
+		hubs = mergeHubs([]string{enrolledWith.String()}, listed, hubs, []string{u.String()})
 	}
 
 	ca, cert, err := checkResponse(resp.Msg, tok.CAFingerprint, key.Public())
@@ -107,6 +124,17 @@ func Join(ctx context.Context, hubURL, token, dataDir, hostname string) (string,
 		return "", err
 	}
 	return resp.Msg.GetDeviceId(), nil
+}
+
+// refusal reports whether err, from enroll, is the hub refusing the token or
+// the request for good (unknown, used or expired token, policy, a bad
+// request): another hub cannot do better.
+func refusal(err error) bool {
+	switch connect.CodeOf(err) {
+	case connect.CodeUnauthenticated, connect.CodePermissionDenied, connect.CodeInvalidArgument:
+		return true
+	}
+	return false
 }
 
 // enroll sends req to the hub at u, verifying the hub against the pinned CA

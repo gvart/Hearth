@@ -126,6 +126,10 @@ func (a *api) createToken(w http.ResponseWriter, r *http.Request) {
 	a.log.InfoContext(ctx, "enrollment token created", "remote", remoteHost(r), "ttl", ttl.String())
 	agentURL := "https://" + net.JoinHostPort(agentHost, a.agentPort)
 	enc := tok.Encode()
+	if a.masters != nil {
+		// Only this master can use it: the token says where it is.
+		enc = tok.EncodeHub(agentURL)
+	}
 	writeJSON(w, http.StatusCreated, TokenJSON{
 		Token:     enc,
 		ExpiresAt: expires,

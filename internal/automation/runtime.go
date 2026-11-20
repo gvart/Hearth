@@ -72,6 +72,14 @@ type Config struct {
 	// DryRun sends every action to policy as a dry run: each decision is
 	// audited, and no action runs.
 	DryRun bool
+	// Owns, when set, says whether this hub owns automation id: in an AP
+	// cluster, each master watches every trigger of the automations it owns
+	// on the ring of masters (schedules, checks, metrics), and the local
+	// triggers (device and network events, manual fires) of all of them
+	// (localTrigger). Owned, when set, signals that what Owns says may have
+	// changed.
+	Owns  func(id string) bool
+	Owned <-chan struct{}
 }
 
 // Runtime runs the automations in a directory.
@@ -107,6 +115,7 @@ func (r *Runtime) Run(ctx context.Context) error {
 	tick := time.NewTicker(r.cfg.ReloadEvery)
 	defer tick.Stop()
 	last := "\x00" // never a fingerprint: the first check always loads
+	var loaded []*Automation
 	for {
 		if fp, load, err := r.check(ctx); err != nil {
 			r.cfg.Log.ErrorContext(ctx, "automations not reloaded", "dir", r.cfg.Dir, "err", err)
@@ -117,15 +126,43 @@ func (r *Runtime) Run(ctx context.Context) error {
 				r.cfg.Log.ErrorContext(ctx, "automations not reloaded: invalid files", "dir", r.cfg.Dir, "err", err)
 			} else {
 				r.warn(ctx, set)
-				r.reconcile(ctx, withBuiltin(set, r.cfg.Builtin))
+				loaded = withBuiltin(set, r.cfg.Builtin)
+				r.reconcile(ctx, loaded)
 			}
 		}
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-tick.C:
+		case <-r.cfg.Owned:
+			r.reconcile(ctx, loaded)
 		}
 	}
+}
+
+// owns reports whether this hub owns automation id (Config.Owns).
+func (r *Runtime) owns(id string) bool { return r.cfg.Owns == nil || r.cfg.Owns(id) }
+
+// localTrigger is a trigger fed by events of this hub only: a device going
+// online or offline here, a host its own network scan found, a manual
+// fire made here. Each such event happens on exactly one hub, so with
+// Config.Owns set every hub watches these triggers of every automation,
+// and an automation fires once, where the event happened. Events of rows
+// merged from other members are never published, so they fire nothing.
+type localTrigger interface{ firesLocally() }
+
+func (*deviceTrigger) firesLocally()  {}
+func (*networkTrigger) firesLocally() {}
+func (manualTrigger) firesLocally()   {}
+
+// watched reports whether this hub watches trigger t of an automation it
+// owns or not: an owner watches all; another hub only the local ones.
+func watched(owned bool, t Trigger) bool {
+	if owned {
+		return true
+	}
+	_, ok := t.(localTrigger)
+	return ok
 }
 
 // check returns the fingerprint of the automations, which changes whenever
@@ -191,7 +228,7 @@ func (r *Runtime) reconcile(ctx context.Context, set []*Automation) {
 	next := map[string]*instance{}
 	var start []*Automation
 	for _, a := range set {
-		if in, ok := r.live[a.ID]; ok && in.a.sum == a.sum {
+		if in, ok := r.live[a.ID]; ok && in.a.sum == a.sum && in.owned == r.owns(a.ID) {
 			next[a.ID] = in
 			delete(r.live, a.ID)
 			continue
@@ -231,11 +268,14 @@ func (r *Runtime) Fire(automationID, triggerID string) error {
 // instance is one running automation: its triggers' watchers and the worker
 // that executes its runs one at a time.
 type instance struct {
-	a    *Automation
-	r    *Runtime
-	stop context.CancelFunc
-	wg   sync.WaitGroup
-	wake chan struct{}
+	a *Automation
+	r *Runtime
+	// owned is whether this hub owned the automation when it started it:
+	// it then watches every trigger, else only the local ones.
+	owned bool
+	stop  context.CancelFunc
+	wg    sync.WaitGroup
+	wake  chan struct{}
 
 	mu        sync.Mutex
 	pending   []Event
@@ -245,9 +285,12 @@ type instance struct {
 
 func (r *Runtime) start(ctx context.Context, a *Automation) *instance {
 	ictx, cancel := context.WithCancel(ctx)
-	in := &instance{a: a, r: r, stop: cancel, wake: make(chan struct{}, 1)}
+	in := &instance{a: a, r: r, owned: r.owns(a.ID), stop: cancel, wake: make(chan struct{}, 1)}
 	in.wg.Go(func() { in.work(ictx) })
 	for _, t := range a.Triggers {
+		if !watched(in.owned, t.Impl) {
+			continue
+		}
 		in.wg.Go(func() {
 			if err := t.Impl.Watch(withTrigger(ictx, a.ID, t.ID), func(data map[string]any) { in.fire(t, data) }); err != nil && ictx.Err() == nil {
 				r.cfg.Log.ErrorContext(ictx, "automation trigger stopped", "automation", a.ID, "trigger", t.ID, "err", err)

@@ -96,6 +96,10 @@ type EnrollResponse struct {
 	Certificate []byte `protobuf:"bytes,2,opt,name=certificate,proto3" json:"certificate,omitempty"`
 	// ca_certificate is the DER-encoded hub CA certificate.
 	CaCertificate []byte `protobuf:"bytes,3,opt,name=ca_certificate,json=caCertificate,proto3" json:"ca_certificate,omitempty"`
+	// hubs are the agent-facing URLs of the hubs the agent may stream to, in
+	// an AP cluster every master, the enrolling one first. Empty from a
+	// single hub; a Welcome refreshes the list either way.
+	Hubs          []string `protobuf:"bytes,4,rep,name=hubs,proto3" json:"hubs,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -151,6 +155,13 @@ func (x *EnrollResponse) GetCaCertificate() []byte {
 	return nil
 }
 
+func (x *EnrollResponse) GetHubs() []string {
+	if x != nil {
+		return x.Hubs
+	}
+	return nil
+}
+
 var File_hearth_agent_v1_enroll_proto protoreflect.FileDescriptor
 
 const file_hearth_agent_v1_enroll_proto_rawDesc = "" +
@@ -159,11 +170,12 @@ const file_hearth_agent_v1_enroll_proto_rawDesc = "" +
 	"\rEnrollRequest\x12!\n" +
 	"\ftoken_secret\x18\x01 \x01(\tR\vtokenSecret\x12\x10\n" +
 	"\x03csr\x18\x02 \x01(\fR\x03csr\x12\x1a\n" +
-	"\bhostname\x18\x03 \x01(\tR\bhostname\"v\n" +
+	"\bhostname\x18\x03 \x01(\tR\bhostname\"\x8a\x01\n" +
 	"\x0eEnrollResponse\x12\x1b\n" +
 	"\tdevice_id\x18\x01 \x01(\tR\bdeviceId\x12 \n" +
 	"\vcertificate\x18\x02 \x01(\fR\vcertificate\x12%\n" +
-	"\x0eca_certificate\x18\x03 \x01(\fR\rcaCertificate2Z\n" +
+	"\x0eca_certificate\x18\x03 \x01(\fR\rcaCertificate\x12\x12\n" +
+	"\x04hubs\x18\x04 \x03(\tR\x04hubs2Z\n" +
 	"\rEnrollService\x12I\n" +
 	"\x06Enroll\x12\x1e.hearth.agent.v1.EnrollRequest\x1a\x1f.hearth.agent.v1.EnrollResponseB\xc0\x01\n" +
 	"\x13com.hearth.agent.v1B\vEnrollProtoP\x01Z>github.com/gvart/hearth/internal/proto/hearth/agent/v1;agentv1\xa2\x02\x03HAX\xaa\x02\x0fHearth.Agent.V1\xca\x02\x0fHearth\\Agent\\V1\xe2\x02\x1bHearth\\Agent\\V1\\GPBMetadata\xea\x02\x11Hearth::Agent::V1b\x06proto3"

@@ -69,6 +69,9 @@ message JoinRequest {
   // cluster_epochs is true when the joining binary keeps a cluster epoch in its
   // certificates. A cluster restored from a backup refuses a hub without it.
   bool cluster_epochs = 6;
+  // allowed_roles are the roles the joining host allows (--allow-roles), in
+  // an AP cluster: only a host that allows "master" is sent the CA key.
+  repeated string allowed_roles = 7;
 }
 
 // JoinResponse is the new hub's identity and the cluster's CA.
@@ -78,6 +81,7 @@ message JoinResponse {
   // ca_certificate is the DER-encoded hub CA certificate.
   bytes ca_certificate = 2;
   // ca_key is the CA private key, PKCS#8 DER. Store it at 0600; never log it.
+  // An AP cluster sends it only to a hub that allows the master role.
   bytes ca_key = 3;
   // leader_id is the Raft server ID of the hub that admitted this one.
   string leader_id = 4;

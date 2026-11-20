@@ -50,6 +50,7 @@ var partitionCols = map[string]string{
 	"panels":           "id",
 	"panel_links":      "panel_id",
 	"dashboard_tokens": "id",
+	"device_routes":    "device_id",
 }
 
 // globalTables are replicated to every storage member.
@@ -279,6 +280,8 @@ func RouteOf(cmd Command) (Route, error) {
 		return key(c.ID, false)
 	case SetBootTime:
 		return key(c.ID, false)
+	case SetDeviceRoute:
+		return key(c.DeviceID, false)
 	case MarkOffline:
 		return Route{Kind: RouteEvery}, nil
 	case MarkSeenBatch, MarkDevicesOffline:
@@ -385,7 +388,7 @@ func SplitCommand(cmd Command, group func(key string) string) (map[string]Comman
 		}
 		out := make(map[string]Command, len(parts))
 		for g, ids := range parts {
-			out[g] = MarkDevicesOffline{Stamp: c.Stamp, IDs: ids}
+			out[g] = MarkDevicesOffline{Stamp: c.Stamp, IDs: ids, Cutoff: c.Cutoff}
 		}
 		return out, nil
 	}

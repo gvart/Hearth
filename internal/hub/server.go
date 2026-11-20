@@ -131,6 +131,10 @@ type Config struct {
 	// served only with Agents set.
 	ShellIdleTimeout time.Duration
 	ShellMaxDuration time.Duration
+	// Masters, in an AP cluster, are the other masters: agent streams are
+	// routed and requests for them forwarded (forward.go). Set Leadership
+	// to the AP node too. Nil on a single hub and in a Raft cluster.
+	Masters Masters
 }
 
 // NewHandler serves EnrollService to anyone (the token is the credential) and
@@ -140,6 +144,7 @@ func NewHandler(cfg Config) http.Handler {
 	mux := http.NewServeMux()
 	enroller := NewEnroller(cfg.Store, cfg.CA, cfg.Policy, cfg.Log)
 	enroller.leadership = lead
+	enroller.masters = cfg.Masters
 	mux.Handle(agentv1connect.NewEnrollServiceHandler(enroller))
 	reg := cfg.Registry
 	if reg == nil {
@@ -154,6 +159,10 @@ func NewHandler(cfg Config) http.Handler {
 	stream.netEdges = cfg.NetEdges
 	if cfg.Agents != nil {
 		stream.agents = cfg.Agents
+	}
+	if cfg.Masters != nil {
+		stream.masters, stream.routes = cfg.Masters, cfg.Store.DeviceRoutes()
+		stream.agents.SetMasters(cfg.Masters, cfg.Store.DeviceRoutes())
 	}
 	path, h := agentServiceHandler(stream)
 	mux.Handle(path, requireClientCert(cfg.Store.Certs(), cfg.CA, cfg.Log, authority,

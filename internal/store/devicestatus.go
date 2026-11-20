@@ -96,6 +96,19 @@ func (r Devices) MarkDevicesOffline(ctx context.Context, ids []string) ([]Device
 	return res.Devices, nil
 }
 
+// MarkStaleOffline marks the given devices offline if they are online and
+// were last seen before cutoff, and returns the devices it changed, ordered
+// by ID.
+func (r Devices) MarkStaleOffline(ctx context.Context, ids []string, cutoff time.Time) ([]Device, error) {
+	ids = slices.Clone(ids)
+	slices.Sort(ids)
+	res, err := r.s.apply(ctx, MarkDevicesOffline{IDs: ids, Cutoff: toMillis(cutoff)})
+	if err != nil {
+		return nil, fmt.Errorf("mark stale devices offline: %w", err)
+	}
+	return res.Devices, nil
+}
+
 // MarkOffline marks every online device last seen before cutoff as offline
 // and returns the devices it changed, ordered by ID.
 func (r Devices) MarkOffline(ctx context.Context, cutoff time.Time) ([]Device, error) {

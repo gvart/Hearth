@@ -44,7 +44,7 @@ Parallel: 2 ∥ 3, then 4 ∥ 5. Everything else is sequential.
   except for host flags.
   verify: an edit on one master is applied on another; a policy import is audited and denied without
   permission. depends on: 3.
-- [ ] **6. Multi-master.** Agents stream to any master with endpoint list failover; `device → master`
+- [x] **6. Multi-master.** Agents stream to any master with endpoint list failover; `device → master`
   routing and API forwarding; presence ownership; automation and runbook ring; master-owned tokens
   and approvals carrying the owner URL; CA key on masters only; isolation fail-closed; update the
   CLAUDE.md CA rule.

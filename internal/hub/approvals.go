@@ -128,6 +128,8 @@ func (a *api) decideApproval(approve bool) http.HandlerFunc {
 			writeError(w, http.StatusNotFound, "not_found", "no such approval")
 		case errors.Is(err, store.ErrApprovalClosed):
 			writeError(w, http.StatusConflict, "closed", "the approval is no longer pending")
+		case errors.Is(err, store.ErrNotOwner):
+			a.writeNotOwner(ctx, w, err)
 		case errors.Is(err, errWrongPassword), errors.Is(err, errNoPassword):
 			a.log.WarnContext(ctx, "approval refused: wrong or missing password", "approval", id, "remote", remoteHost(r))
 			writeError(w, http.StatusForbidden, "reauth_failed", "approving needs your password, and it was missing or wrong")

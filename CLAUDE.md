@@ -103,12 +103,13 @@ Keep this list in sync with `Taskfile.yml`. If you add a task, document it here.
 
 - Never log secrets, tokens, private keys or full certificates.
 - Enrollment tokens: single-use, short TTL, stored hashed.
-- mTLS everywhere between hub and agents, and between hubs; the hub CA key never leaves a hub voter's data
-  dir (0600), except inside an encrypted backup archive created by an authenticated admin through policy and
-  audited, or by a scheduled hub backup when the operator opts in with `--backup-include-ca` (also through
-  policy and audited); it is replicated only over the pinned mTLS join channel and, during a hub CA rotation,
-  over the pinned mTLS `FetchCAKey` channel (policy-checked and audited, refusals too). A CA key never goes
-  into the store, the Raft log or a snapshot.
+- mTLS everywhere between hub and agents, and between hubs; the hub CA key never leaves a master's data
+  dir (0600; in a Raft cluster, a hub voter's), except inside an encrypted backup archive created by an
+  authenticated admin through policy and audited, or by a scheduled hub backup when the operator opts in with
+  `--backup-include-ca` (also through policy and audited); it is replicated only over the pinned mTLS join
+  channel (in an AP cluster, only to a joining hub that allows the `master` role; a storage-only member never
+  receives it) and, during a Raft hub CA rotation, over the pinned mTLS `FetchCAKey` channel (policy-checked
+  and audited, refusals too). A CA key never goes into the store, the Raft log, a snapshot or the gossip.
 - Agent-side config is the capability ceiling; the hub can never grant more than the device allows.
 - Any new action type must declare its class (`read` / `safe` / `dangerous`) in `internal/policy`.
 - Shell-outs: no string concatenation into shells; use `exec.Command` with args.

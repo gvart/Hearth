@@ -332,7 +332,11 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		return err
 	}
 	if opts.cluster.ap() {
-		if st, ca, apNode, err = startAPNode(ctx, opts, allowedRoles, log); err != nil {
+		var agentURL string
+		if agentPort != "" {
+			agentURL = "https://" + net.JoinHostPort(hosts[0], agentPort)
+		}
+		if st, ca, apNode, err = startAPNode(ctx, opts, allowedRoles, agentURL, log); err != nil {
 			return err
 		}
 		defer st.Close()
@@ -470,7 +474,16 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if configDocs {
 		runbookDocs = hubconfig.StoreDocs(st.ConfigDocs(), store.ConfigRunbook, runbooksDirOf(opts), "", time.Now)
 	}
-	runbooks, err := newRunbooks(opts, st, sealers.runbook, pol, agents, notifier, kube, pluginMgr, talosClient, runbookDocs, log)
+	// owns, in an AP cluster, says which items (automations, runbook runs,
+	// approvals) this master runs: those it owns on the ring of masters.
+	var owns func(string) bool
+	if apNode != nil {
+		owns = apNode.Masters().Owns
+		pol.SweepOnly(owns)
+		// A master cut off from every other member fails closed.
+		pol.FailClosedWhen(apNode.Isolated)
+	}
+	runbooks, err := newRunbooks(opts, st, sealers.runbook, pol, agents, notifier, kube, pluginMgr, talosClient, runbookDocs, owns, log)
 	if err != nil {
 		return err
 	}
@@ -513,8 +526,12 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		cfg.ConfigDrift = func(ctx context.Context) (any, error) { return node.ConfigDrift(ctx) }
 	}
 	if apNode != nil {
-		// Requests wait for the first sync with the cluster.
+		// Requests wait for the first sync with the cluster. Every master
+		// takes agent streams; calls for a stream on another master are
+		// forwarded to it.
 		cfg.Ready = ready
+		cfg.Leadership = apNode
+		cfg.Masters = apNode
 	}
 	if _, port, err := net.SplitHostPort(opts.httpListen); err == nil && port != "0" {
 		cfg.HTTPPort = port
@@ -555,6 +572,14 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	uiMux.Handle("GET /api/v1/events", hub.EndOnStop(stopping, webH))
 	uiMux.Handle("GET /api/v1/devices/{id}/logs", hub.EndOnStop(stopping, webH))
 	uiMux.Handle("GET /api/v1/devices/{id}/shell", hub.EndOnStop(stopping, webH))
+	if apNode != nil {
+		// Other masters forward calls for the agents streaming here, and
+		// proxy the log streams and terminals of their devices.
+		mm := http.NewServeMux()
+		mm.Handle("/agents/", hub.AgentsHandler(agents, log))
+		mm.Handle("/api/", hub.ProxiedHandler(uiMux))
+		apNode.SetMasterHandler(mm)
+	}
 	uiMux.Handle("GET /api/v1/guest/{token}/events", hub.EndOnStop(stopping, webH))
 	if node != nil {
 		node.SetConfigSource(cluster.HostFlagsSource(opts.dangerousAutomations))
@@ -651,6 +676,12 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if configDocs {
 		automationSource = configWatcher.Automations()
 	}
+	var ringChanged <-chan struct{}
+	if apNode != nil {
+		c, unsubscribe := apNode.Masters().Subscribe()
+		defer unsubscribe()
+		ringChanged = c
+	}
 	automations := automation.New(automation.Config{
 		Dir:     automationsDir,
 		Source:  automationSource,
@@ -660,6 +691,8 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		Runs:    st.AutomationRuns(),
 		Log:     log,
 		DryRun:  opts.automationsDryRun,
+		Owns:    owns,
+		Owned:   ringChanged,
 	})
 
 	var scanner *discovery.Scanner
@@ -685,7 +718,14 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		return err
 	}
 	g, gctx := errgroup.WithContext(ctx)
-	if node == nil {
+	if apNode != nil {
+		runAPLoops(gctx, g, apNode, apLoops{
+			agents: agents, reg: reg, st: st, pol: pol, automations: automations, runbooks: runbooks,
+			scanner: scanner, importer: importer, beszel: beszelReader, talos: talosReader, backups: backups,
+			ready: ready, log: log,
+		})
+	}
+	if node == nil && apNode == nil {
 		g.Go(func() error { return reg.Run(gctx) })
 		g.Go(func() error { return automations.Run(gctx) })
 		g.Go(func() error { return runbooks.Run(gctx) })
@@ -736,7 +776,13 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	g.Go(func() error { return ms.Run(gctx) })
 	g.Go(func() error { return dashboardAudit.Run(gctx) })
 	// Every hub checks the telemetry answer; only the leader sends.
-	telemetrySender := newTelemetrySender(opts, telemetryOff, st, node, log.With("component", "telemetry"))
+	var telemetryLeader interface{ IsLeader() bool }
+	if node != nil {
+		telemetryLeader = node
+	} else if apNode != nil {
+		telemetryLeader = apNode.Masters().Singleton("loop/telemetry", ready)
+	}
+	telemetrySender := newTelemetrySender(opts, telemetryOff, st, telemetryLeader, log.With("component", "telemetry"))
 	g.Go(func() error { return telemetrySender.Run(gctx) })
 	// Every hub writes the audit entries it spooled; a cluster member once
 	// its store has caught up, so it reads the cluster's schema.
@@ -873,7 +919,7 @@ func newProxmoxManager(st *store.Store, sealer *kubernetes.Sealer, pol *policy.E
 // file, sealed with sealer (hubSealers).
 func newRunbooks(opts hubOptions, st *store.Store, sealer *kubernetes.Sealer, pol *policy.Engine, agents *hub.Agents,
 	notifier *notify.Notifier, kube *kubernetes.Manager, pluginMgr *plugins.Manager,
-	talosClient *talos.Client, docs automation.DocSource, log *slog.Logger,
+	talosClient *talos.Client, docs automation.DocSource, owns func(string) bool, log *slog.Logger,
 ) (*automation.Runbooks, error) {
 	kinds := automation.Builtin(log)
 	maps.Copy(kinds.Actions, automation.Actions(automation.ActionDeps{
@@ -882,7 +928,7 @@ func newRunbooks(opts hubOptions, st *store.Store, sealer *kubernetes.Sealer, po
 	return automation.NewRunbooks(automation.RunbooksConfig{
 		Dir: runbooksDirOf(opts), Source: docs, Kinds: kinds, Policy: pol, Runs: st.RunbookRuns(), Sealer: sealer, Probers: agents,
 		KubeNodes: kube, TalosNodes: talosNodes(talosClient), Log: log.With("component", "runbooks"),
-		DryRun: opts.automationsDryRun,
+		DryRun: opts.automationsDryRun, Owns: owns,
 	}), nil
 }
 

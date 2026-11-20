@@ -9,7 +9,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/gvart/hearth/internal/cluster"
 	"github.com/gvart/hearth/internal/store"
 	"github.com/gvart/hearth/internal/telemetry"
 )
@@ -52,15 +51,11 @@ func (o telemetryOptions) off() (bool, error) {
 
 // newTelemetrySender builds the sender. It names the integrations the flags
 // turn on: kinds only, never their URLs.
-func newTelemetrySender(opts hubOptions, off bool, st *store.Store, node *cluster.Node, log *slog.Logger) *telemetry.Sender {
-	cfg := telemetry.Config{
+func newTelemetrySender(opts hubOptions, off bool, st *store.Store, leader telemetry.Leader, log *slog.Logger) *telemetry.Sender {
+	return telemetry.New(telemetry.Config{
 		Store: st, Endpoint: opts.telemetry.endpoint, Off: off, Version: opts.version,
-		Integrations: telemetryIntegrations(opts), Log: log,
-	}
-	if node != nil {
-		cfg.Leader = node
-	}
-	return telemetry.New(cfg)
+		Integrations: telemetryIntegrations(opts), Log: log, Leader: leader,
+	})
 }
 
 // telemetryIntegrations names the integrations the flags turn on.

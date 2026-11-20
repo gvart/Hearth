@@ -79,7 +79,7 @@ func (o clusterOptions) ap() bool { return o.mode == clusterModeAP }
 // certificate and the CA land in the data dir); without, the hub forms a
 // cluster of one, creating its CA if it has none. Writes go through the
 // node's replicator, reads to the members holding the rows.
-func startAPNode(ctx context.Context, opts hubOptions, allowed cluster.RoleSet, log *slog.Logger) (
+func startAPNode(ctx context.Context, opts hubOptions, allowed cluster.RoleSet, agentURL string, log *slog.Logger) (
 	*store.Store, *pki.CA, *cluster.APNode, error,
 ) {
 	o := opts.cluster
@@ -112,6 +112,7 @@ func startAPNode(ctx context.Context, opts hubOptions, allowed cluster.RoleSet, 
 		}
 		if err := cluster.Join(ctx, cluster.JoinParams{
 			URL: o.join, Token: token, DataDir: opts.dataDir, NodeID: nodeID, RaftAddress: advertise,
+			AllowedRoles: allowed,
 		}); err != nil {
 			return nil, nil, nil, err
 		}
@@ -131,7 +132,7 @@ func startAPNode(ctx context.Context, opts hubOptions, allowed cluster.RoleSet, 
 	node, err := cluster.NewAPNode(ctx, cluster.APConfig{
 		DataDir: opts.dataDir, NodeID: nodeID, CA: ca, Allowed: allowed,
 		Listen: o.gossipListen, Listener: ln, Advertise: advertise, Seeds: seeds,
-		Replicas: o.replicas, Log: log,
+		Replicas: o.replicas, AgentURL: agentURL, Log: log,
 	})
 	if err != nil {
 		_ = ln.Close()

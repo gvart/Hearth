@@ -42,7 +42,7 @@ const (
 )
 
 func (a *api) shellRoutes(mux *http.ServeMux) {
-	mux.Handle("GET /api/v1/devices/{id}/shell", a.auth(a.deviceShell))
+	mux.Handle("GET /api/v1/devices/{id}/shell", a.auth(a.proxyStream(a.deviceShell)))
 }
 
 // ShellMessageJSON is a text message of the terminal WebSocket, from the

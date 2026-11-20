@@ -60,6 +60,10 @@ type AgentStream struct {
 	metrics *metrics.Store
 	// netEdges, when set, records the agents' NetEdges.
 	netEdges *NetEdges
+	// masters and routes, in an AP cluster, record which master holds each
+	// stream (forward.go).
+	masters Masters
+	routes  store.DeviceRoutes
 }
 
 var _ agentv1connect.AgentServiceHandler = (*AgentStream)(nil)
@@ -138,6 +142,8 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 	sess := s.agents.attach(deviceID, hello, stream.Send, streamAbort(ctx))
 	s.forgetNetEdges(deviceID, hello.GetCeiling())
 	defer s.agents.detach(deviceID, sess)
+	var routed time.Time
+	s.route(ctx, log, deviceID, &routed)
 
 	for {
 		msg, err := stream.Receive()
@@ -175,6 +181,9 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 			if err := s.registry.Heartbeat(ctx, deviceID, p.Heartbeat.GetUptime().AsDuration()); err != nil {
 				log.WarnContext(ctx, "record heartbeat", "err", err)
 			}
+			if s.now().Sub(routed) >= routeRefresh {
+				s.route(ctx, log, deviceID, &routed)
+			}
 		case *agentv1.AgentMessage_Facts:
 			log.DebugContext(ctx, "facts")
 			sess.setCeiling(p.Facts.GetCeiling())
@@ -202,6 +211,22 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 			return connect.NewError(connect.CodeInvalidArgument, errors.New("duplicate Hello"))
 		}
 	}
+}
+
+// route records, in an AP cluster, that this master holds the stream of
+// deviceID, and when in at. A route is never cleared: a master's late clear
+// could win over the write of the master the agent moved to. Calls for the
+// device on other masters are forwarded here while this master is alive.
+func (s *AgentStream) route(ctx context.Context, log *slog.Logger, deviceID string, at *time.Time) {
+	if s.masters == nil {
+		return
+	}
+	now := s.now()
+	if err := s.routes.Set(ctx, deviceID, s.masters.Self(), now); err != nil {
+		log.WarnContext(ctx, "record which hub holds the agent stream", "err", err)
+		return
+	}
+	*at = now
 }
 
 // recheckCert re-runs the client certificate check of requireClientCert on an

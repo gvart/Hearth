@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"connectrpc.com/connect"
@@ -89,6 +90,9 @@ type APConfig struct {
 	Seeds []string
 	// Replicas is N (--replicas); zero means min(2, storage members).
 	Replicas int
+	// AgentURL is this hub's agent-facing URL (https://host:port), which
+	// agents are sent to fail over to; empty if unknown.
+	AgentURL string
 	Log      *slog.Logger
 	// Tuning for tests; zero uses the defaults.
 	Gossip ReplicatorConfig
@@ -103,6 +107,12 @@ type APNode struct {
 	rep        *Replicator
 	membership *Membership
 	st         *store.Store
+	// masters is the ring over the live masters, link the HTTP between
+	// them (masters.go, masterlink.go); both exist once Bind ran.
+	masters  *MasterRing
+	link     *MasterLink
+	masterH  atomic.Pointer[http.Handler]
+	isolated Isolation
 }
 
 // NewAPNode prepares this hub's AP membership: its node certificate
@@ -137,6 +147,11 @@ func NewAPNode(ctx context.Context, cfg APConfig) (*APNode, error) {
 	rc := cfg.Gossip
 	rc.NodeID, rc.Peers, rc.Replicas, rc.Hints, rc.Log = cfg.NodeID, apNodePeers{n}, cfg.Replicas, hints, cfg.Log
 	rc.LastContact = filepath.Join(dir, lastContactFile)
+	rc.Broadcast = func(b []byte) {
+		if m := n.membership; m != nil {
+			m.Broadcast(b)
+		}
+	}
 	if n.rep, err = NewReplicator(rc); err != nil {
 		_ = hints.Close()
 		return nil, err
@@ -190,12 +205,128 @@ func (n *APNode) Bind(ctx context.Context, st *store.Store) error {
 		Cert:    func() *tls.Certificate { return &cert },
 		Check:   n.checkPeer,
 		Replica: n.rep.ServeConn,
+		Master:  func(c net.Conn, peer string) { n.link.Accept(c, peer) },
+		Message: n.rep.HandleMessage,
 	})
 	if err != nil {
 		return err
 	}
 	n.membership = m
+	n.masters = NewMasterRing(n.cfg.NodeID, m.Members, time.Now)
+	n.link = NewMasterLink(n.cfg.NodeID, m.DialMaster, m.Members, http.HandlerFunc(n.serveMaster), n.log)
+	n.isolated = Isolation{
+		LastContact: m.LastContact, Now: time.Now, Bound: IsolationBound,
+		Others: func() bool {
+			if len(n.seeds()) > 0 {
+				return true
+			}
+			for _, mi := range m.Members() {
+				if mi.ID != n.cfg.NodeID {
+					return true
+				}
+			}
+			return false
+		},
+	}
 	return nil
+}
+
+// serveMaster serves another master's call with the handler SetMasterHandler
+// set; none answers 503.
+func (n *APNode) serveMaster(w http.ResponseWriter, r *http.Request) {
+	h := n.masterH.Load()
+	if h == nil {
+		http.Error(w, "this master serves no calls yet", http.StatusServiceUnavailable)
+		return
+	}
+	(*h).ServeHTTP(w, r)
+}
+
+// SetMasterHandler sets the handler of the calls other masters make to this
+// one (cluster.MasterPeer names the caller in its context).
+func (n *APNode) SetMasterHandler(h http.Handler) { n.masterH.Store(&h) }
+
+// Masters returns the ring over the live masters (nil before Bind).
+func (n *APNode) Masters() *MasterRing { return n.masters }
+
+// MasterLink returns the HTTP link to the other masters (nil before Bind).
+func (n *APNode) MasterLink() *MasterLink { return n.link }
+
+// Isolated reports whether this master has reached no other member for
+// IsolationBound though it knows of some: it then fails closed for
+// dangerous actions and enrollments (docs/design/ap-cluster.md §5.4).
+func (n *APNode) Isolated() bool {
+	if n.membership == nil {
+		return false
+	}
+	return n.isolated.Isolated()
+}
+
+// IsLeader is true: in an AP cluster every master serves agents and
+// enrollments (hub.Leadership).
+func (n *APNode) IsLeader() bool { return true }
+
+// LeaderAgentURL is empty: an AP cluster has no leader (hub.Leadership).
+func (n *APNode) LeaderAgentURL() string { return "" }
+
+// AgentURLs are the agent-facing URLs of the live masters, this one first,
+// as each recorded its own (Announce) (hub.Leadership).
+func (n *APNode) AgentURLs() []string {
+	if n.st == nil || n.masters == nil {
+		return nil
+	}
+	urls, err := n.st.Hubs().AgentURLs(context.Background())
+	if err != nil {
+		n.log.Warn("read hub URLs", "err", err)
+	}
+	var out []string
+	if n.cfg.AgentURL != "" {
+		out = append(out, n.cfg.AgentURL)
+	}
+	for _, id := range n.masters.Masters() {
+		if u := urls[id]; id != n.cfg.NodeID && u != "" {
+			out = append(out, u)
+		}
+	}
+	return out
+}
+
+// AgentURLOf is the agent-facing URL master id recorded, or "".
+func (n *APNode) AgentURLOf(ctx context.Context, id string) string {
+	if id == n.cfg.NodeID {
+		return n.cfg.AgentURL
+	}
+	urls, err := n.st.Hubs().AgentURLs(ctx)
+	if err != nil {
+		return ""
+	}
+	return urls[id]
+}
+
+// Announce records this hub's agent URL in the cluster, retrying until it
+// is recorded or ctx ends.
+func (n *APNode) Announce(ctx context.Context) {
+	if n.cfg.AgentURL == "" {
+		return
+	}
+	for {
+		urls, err := n.st.Hubs().AgentURLs(ctx)
+		if err == nil && urls[n.cfg.NodeID] == n.cfg.AgentURL {
+			return
+		}
+		if err == nil {
+			if err = n.st.Hubs().SetAgentURL(ctx, n.cfg.NodeID, n.cfg.AgentURL); err == nil {
+				n.log.InfoContext(ctx, "recorded this hub's agent URL in the cluster", "agent_url", n.cfg.AgentURL)
+				return
+			}
+		}
+		n.log.WarnContext(ctx, "cannot record this hub's agent URL yet; retrying", "err", err)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(announceRetry):
+		}
+	}
 }
 
 // hasRows reports whether st holds any replicated row.
@@ -295,6 +426,13 @@ func (n *APNode) Run(ctx context.Context) error {
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return n.membership.Run(gctx) })
 	g.Go(func() error { return n.rep.Run(gctx) })
+	g.Go(func() error { return n.link.Run(gctx) })
+	g.Go(func() error {
+		changes, stop := n.membership.Changes()
+		defer stop()
+		n.masters.Run(gctx, changes)
+		return nil
+	})
 	return g.Wait()
 }
 
@@ -479,11 +617,15 @@ func (s *APJoinServer) Join(ctx context.Context, req *connect.Request[clusterv1.
 		}
 		return nil, s.toConnectError(ctx, err)
 	}
-	keyDER, err := s.ca.KeyDER()
-	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, errors.New("join failed"))
+	// The CA key goes to masters only (docs/design/ap-cluster.md §9): a
+	// host that does not allow the master role, or does not say, gets none.
+	var keyDER []byte
+	if slices.Contains(msg.GetAllowedRoles(), string(RoleMaster)) {
+		if keyDER, err = s.ca.KeyDER(); err != nil {
+			return nil, connect.NewError(connect.CodeInternal, errors.New("join failed"))
+		}
 	}
-	s.log.InfoContext(ctx, "hub joined the AP cluster", "joined_id", msg.GetNodeId())
+	s.log.InfoContext(ctx, "hub joined the AP cluster", "joined_id", msg.GetNodeId(), "ca_key_sent", keyDER != nil)
 	return connect.NewResponse(&clusterv1.JoinResponse{
 		Certificate: cert.Raw, CaCertificate: s.ca.Cert().Raw, CaKey: keyDER, LeaderId: s.node.ID(),
 	}), nil
@@ -501,6 +643,15 @@ func (s *APJoinServer) toConnectError(ctx context.Context, err error) error {
 		return connect.NewError(connect.CodeUnauthenticated, errors.New("join token already used"))
 	case errors.Is(err, store.ErrTokenExpired):
 		return connect.NewError(connect.CodeUnauthenticated, errors.New("join token expired"))
+	case errors.Is(err, store.ErrNotOwner):
+		owner := store.OwnerOf(err)
+		msg := "this join token belongs to hub " + owner + ": join through it"
+		if u := s.node.AgentURLOf(ctx, owner); u != "" {
+			msg += " (--join " + u + ")"
+		}
+		return connect.NewError(connect.CodeFailedPrecondition, errors.New(msg))
+	case errors.Is(err, policy.ErrDenied) && strings.Contains(err.Error(), policy.ErrIsolated):
+		return connect.NewError(connect.CodeUnavailable, errors.New(policy.ErrIsolated))
 	case errors.Is(err, store.ErrUnavailable):
 		return connect.NewError(connect.CodeUnavailable, errors.New("join: the cluster is unavailable; try again"))
 	case errors.Is(err, policy.ErrDenied):
@@ -510,3 +661,17 @@ func (s *APJoinServer) toConnectError(ctx context.Context, err error) error {
 		return connect.NewError(connect.CodeInternal, errors.New("join failed"))
 	}
 }
+
+// Self is this member's id (hub.Masters).
+func (n *APNode) Self() string { return n.cfg.NodeID }
+
+// Live reports whether master id is alive (hub.Masters).
+func (n *APNode) Live(id string) bool { return n.masters != nil && n.masters.Live(id) }
+
+// Client sends HTTP requests to http://<master id>/ over the masters' link
+// (hub.Masters).
+func (n *APNode) Client() *http.Client { return n.link.Client() }
+
+// OwnerOf is the master owning key on the ring of live masters
+// (hub.Masters).
+func (n *APNode) OwnerOf(key string) string { return n.masters.Owner(key) }
