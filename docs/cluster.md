@@ -77,7 +77,11 @@ status` says it is not highly available.
   seconds and copy what differs (anti-entropy), so a split cluster converges once healed.
 - **Joining.** `hearth cluster token create` on a member prints the command for a new hub:
   `--cluster-mode ap --join <url>` with the token, plus `--gossip-advertise` and, if needed,
-  `--gossip-seeds`. Replication runs over the gossip port with the same mutual TLS.
+  `--gossip-seeds`. Replication runs over the gossip port with the same mutual TLS. Until a joining
+  or restarted member has found another member, it refuses critical writes (503) rather than keep
+  their only copy; if none is reached within 30 seconds it starts alone and says so in its log. It
+  imports its configuration files only once it has found the cluster and caught up, so it takes the
+  cluster's documents instead of its own.
 - **Away too long.** Deleted rows are forgotten after 7 days. A member that has not reached the
   cluster for longer refuses to start with its old data: clear its data dir and join it again.
 - **Every master serves agents.** There is no leader: an agent streams to any master. It gets the
