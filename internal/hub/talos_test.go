@@ -78,3 +78,25 @@ func TestAPITalosNodesUnavailable(t *testing.T) {
 		t.Errorf("body = %+v", got)
 	}
 }
+
+// When devices share an address or a hostname, as after a node is enrolled
+// again, a node links to the one seen last, whatever the listing order.
+func TestTalosMatcherPrefersTheDeviceSeenLast(t *testing.T) {
+	old := time.UnixMilli(1_700_000_000_000).UTC()
+	recent := old.Add(time.Hour)
+	ip := func(a string) json.RawMessage {
+		return json.RawMessage(`{"interfaces":[{"name":"eno1","ips":["` + a + `/24"]}]}`)
+	}
+	stale := store.Device{ID: "stale", Name: "talos-cp-1", Hostname: "talos-cp-1", LastSeen: old, Facts: ip("10.0.0.11")}
+	fresh := store.Device{ID: "fresh", Name: "talos-cp-1", Hostname: "talos-cp-1", LastSeen: recent, Facts: ip("10.0.0.11")}
+	byName := talos.Node{Address: "10.0.0.50", Hostname: "talos-cp-1"}
+	byAddr := talos.Node{Address: "10.0.0.11", Hostname: "renamed"}
+	for _, devs := range [][]store.Device{{stale, fresh}, {fresh, stale}} {
+		m := newTalosMatcher(devs)
+		for _, n := range []talos.Node{byAddr, byName} {
+			if got := m.match(n).DeviceID; got != "fresh" {
+				t.Errorf("devices %s, %s: node %s matched %q; want fresh", devs[0].ID, devs[1].ID, n.Address, got)
+			}
+		}
+	}
+}

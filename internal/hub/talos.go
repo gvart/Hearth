@@ -66,21 +66,28 @@ func (a *api) listTalosNodes(w http.ResponseWriter, r *http.Request) {
 }
 
 // talosMatcher finds the device a Talos node is: by the address it is read
-// at, then by its hostname or the name it is read at.
+// at, then by its hostname or the name it is read at. When devices share an
+// address or a name (a node re-enrolled, a reused address), the one seen last
+// wins.
 type talosMatcher struct {
 	byAddr, byName map[string]store.Device
 }
 
 func newTalosMatcher(devs []store.Device) talosMatcher {
 	m := talosMatcher{byAddr: map[string]store.Device{}, byName: map[string]store.Device{}}
+	keep := func(idx map[string]store.Device, k string, d store.Device) {
+		if old, ok := idx[k]; !ok || d.LastSeen.After(old.LastSeen) {
+			idx[k] = d
+		}
+	}
 	for _, d := range devs {
 		pd := promDevice(d)
 		for _, n := range nameKeys(pd.Hostname) {
-			m.byName[n] = d
+			keep(m.byName, n, d)
 		}
 		for _, a := range pd.Addrs {
 			if k, ok := addrKey(a); ok {
-				m.byAddr[k] = d
+				keep(m.byAddr, k, d)
 			}
 		}
 	}
