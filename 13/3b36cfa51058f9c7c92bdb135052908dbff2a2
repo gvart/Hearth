@@ -1,0 +1,28 @@
+internal/cluster/gossiptransport.go
+  s_87f1c7baee7d5a::t_ae5670ea469150 32-34,50-51,86-93,127,246,276,327-328,393-455
+  s_87f1c7baee7d5a::t_84869ecd0f91ff 456
+internal/cluster/membership.go
+  s_87f1c7baee7d5a::t_d36dc71e60a96f 318,516-522,525,540-599,603-610
+  s_87f1c7baee7d5a::t_55da15e924b48f 611
+internal/cluster/membership_test.go
+  s_87f1c7baee7d5a::t_bc82e5291aee74 26-34,52,223-257,292-304,317-322,338-340
+  s_87f1c7baee7d5a::t_a8eec68b7f700d 341-342
+docs/cluster.md
+  s_87f1c7baee7d5a::t_833b09483a974d 48-52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "133b36cfa51058f9c7c92bdb135052908dbff2a2",
+  "prompts": {},
+  "sessions": {
+    "s_87f1c7baee7d5a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "45cc2cdf-3130-4caa-8cb4-8cb365d2150d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
