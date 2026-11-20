@@ -808,6 +808,10 @@ func TestCARotationDropWaitsAgainForAnotherNextCA(t *testing.T) {
 				t.Fatal("the gate entry was not applied on the follower")
 			}
 			setBoot(ms + 1) // the store is behind the log by this entry
+			last := leader.raft.LastIndex()
+			eventually(t, id+" to hold the entry its store is behind by", func() bool {
+				return follower.raft.LastIndex() >= last
+			})
 		}
 		return wait, open
 	}
