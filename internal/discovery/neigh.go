@@ -18,6 +18,10 @@ type Neighbor struct {
 	MAC net.HardwareAddr
 }
 
+// ReadNeighbors returns the complete unicast entries of the operating
+// system's IPv4 neighbour (ARP) table, which any user may read.
+func ReadNeighbors() ([]Neighbor, error) { return readNeighbors() }
+
 // usableMAC reports whether mac names one host: not empty, all zeros
 // (incomplete) or a group (broadcast, multicast) address.
 func usableMAC(mac net.HardwareAddr) bool {

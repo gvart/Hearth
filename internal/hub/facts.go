@@ -42,6 +42,8 @@ type Ceiling struct {
 	// Scan are the subnets the hub may have the device sweep for network
 	// discovery.
 	Scan []string `json:"scan"`
+	// NetEdges is whether the agent reports its network edges.
+	NetEdges bool `json:"net_edges"`
 }
 
 // Disk is a mounted filesystem.
@@ -74,7 +76,7 @@ func factsFromHello(h *agentv1.Hello) (store.DeviceFacts, error) {
 		Capabilities:  nonNil(h.GetCapabilities()),
 	}
 	if c := h.GetCeiling(); c != nil {
-		f.Ceiling = &Ceiling{Exec: nonNil(c.GetExec()), Restart: nonNil(c.GetRestart()), Probe: c.GetProbe(), Logs: nonNil(c.GetLogs()), Shell: c.GetShell(), Scan: nonNil(c.GetScan())}
+		f.Ceiling = &Ceiling{Exec: nonNil(c.GetExec()), Restart: nonNil(c.GetRestart()), Probe: c.GetProbe(), Logs: nonNil(c.GetLogs()), Shell: c.GetShell(), Scan: nonNil(c.GetScan()), NetEdges: c.GetNetEdges()}
 	}
 	for _, d := range h.GetDisks() {
 		f.Disks = append(f.Disks, Disk{

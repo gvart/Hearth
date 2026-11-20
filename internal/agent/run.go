@@ -29,8 +29,8 @@ import (
 // Protocol version this agent speaks.
 const (
 	ProtocolMajor = 1
-	// 1: answers ExecRequest; 2: reports its capability ceiling; 3: answers ProbeRequest; 4: sends MetricsBatch; 5: streams logs (LogRequest); 6: answers ShellRequest; 7: answers ScanRequest
-	ProtocolMinor = 7
+	// 1: answers ExecRequest; 2: reports its capability ceiling; 3: answers ProbeRequest; 4: sends MetricsBatch; 5: streams logs (LogRequest); 6: answers ShellRequest; 7: answers ScanRequest; 8: sends NetEdges
+	ProtocolMinor = 8
 )
 
 const (
@@ -57,6 +57,11 @@ type Config struct {
 	FactsInterval time.Duration
 	// MetricsInterval is how often host metrics are sent; 0 means every 15 s.
 	MetricsInterval time.Duration
+	// NetEdgesInterval is how often network edges are sent when the ceiling
+	// allows them; 0 means every minute.
+	NetEdgesInterval time.Duration
+	// readNetEdges, set by tests, replaces the platform's readNetEdges.
+	readNetEdges func() (*agentv1.NetEdges, error)
 	// Ceiling is what the hub may run on this device; the zero value allows
 	// nothing.
 	Ceiling Ceiling
@@ -77,6 +82,10 @@ type runner struct {
 	// previous readings across sessions.
 	metrics         *collector
 	metricsInterval time.Duration
+	// netEdges reads the network edges sent every netEdgesInterval, only if
+	// the ceiling allows it.
+	netEdges         func() (*agentv1.NetEdges, error)
+	netEdgesInterval time.Duration
 	// hubs are the hubs to try, in order, and cur the index of the next one.
 	// Only Run's goroutine touches them.
 	hubs []string
@@ -128,6 +137,12 @@ func Run(ctx context.Context, cfg Config) error {
 
 		metrics:         newCollector(log),
 		metricsInterval: cmp.Or(cfg.MetricsInterval, defaultMetricsInterval),
+
+		netEdges:         readNetEdges,
+		netEdgesInterval: cmp.Or(cfg.NetEdgesInterval, defaultNetEdgesInterval),
+	}
+	if cfg.readNetEdges != nil {
+		r.netEdges = cfg.readNetEdges
 	}
 	log.InfoContext(ctx, "agent starting", "version", cfg.Version, "hubs", r.hubs)
 
@@ -433,7 +448,7 @@ func (r *runner) receive(ctx context.Context, stream *connect.BidiStreamForClien
 	}
 }
 
-// sendLoop sends heartbeats, periodic facts and metrics, and exec and probe results until ctx is
+// sendLoop sends heartbeats, periodic facts, metrics and network edges, and exec and probe results until ctx is
 // canceled or a send fails. It is the only sender after Hello.
 func (r *runner) sendLoop(ctx context.Context, stream *connect.BidiStreamForClient[agentv1.AgentMessage, agentv1.HubMessage],
 	interval time.Duration, results <-chan *agentv1.AgentMessage,
@@ -444,6 +459,14 @@ func (r *runner) sendLoop(ctx context.Context, stream *connect.BidiStreamForClie
 	defer facts.Stop()
 	metrics := time.NewTicker(r.metricsInterval)
 	defer metrics.Stop()
+	// Network edges are read only when the ceiling allows them; otherwise
+	// edgesC stays nil and never fires.
+	var edgesC <-chan time.Time
+	edges := time.NewTimer(min(netEdgesFirst, r.netEdgesInterval))
+	defer edges.Stop()
+	if r.cfg.Ceiling.NetEdges {
+		edgesC = edges.C
+	}
 	for {
 		var msg *agentv1.AgentMessage
 		select {
@@ -459,6 +482,17 @@ func (r *runner) sendLoop(ctx context.Context, stream *connect.BidiStreamForClie
 				continue
 			}
 			msg = &agentv1.AgentMessage{Payload: &agentv1.AgentMessage_MetricsBatch{MetricsBatch: &agentv1.MetricsBatch{Samples: samples}}}
+		case <-edgesC:
+			edges.Reset(r.netEdgesInterval)
+			e, err := r.netEdges()
+			if err != nil {
+				r.log.WarnContext(ctx, "read network edges", "err", err)
+				continue
+			}
+			if e == nil {
+				continue // not supported on this platform
+			}
+			msg = &agentv1.AgentMessage{Payload: &agentv1.AgentMessage_NetEdges{NetEdges: e}}
 		case msg = <-results:
 		}
 		if err := stream.Send(msg); err != nil {

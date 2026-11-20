@@ -58,6 +58,8 @@ type AgentStream struct {
 	agents *Agents
 	// metrics, when set, records the agents' MetricsBatches.
 	metrics *metrics.Store
+	// netEdges, when set, records the agents' NetEdges.
+	netEdges netEdgesRecorder
 }
 
 var _ agentv1connect.AgentServiceHandler = (*AgentStream)(nil)
@@ -190,6 +192,8 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 			sess.deliverLogs(p.LogLines)
 		case *agentv1.AgentMessage_ShellEvent:
 			sess.deliverShell(p.ShellEvent)
+		case *agentv1.AgentMessage_NetEdges:
+			s.recordNetEdges(ctx, log, deviceID, sess, p.NetEdges)
 		case *agentv1.AgentMessage_Hello:
 			return connect.NewError(connect.CodeInvalidArgument, errors.New("duplicate Hello"))
 		}

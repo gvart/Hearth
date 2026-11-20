@@ -144,6 +144,7 @@ func NewHandler(cfg Config) http.Handler {
 	stream.certs, stream.authority, stream.pins, stream.audit = cfg.Store.Certs(), authority, cfg.Store.Certs(), cfg.Store.Audit()
 	stream.ca, stream.rotations, stream.renew = cfg.CA, cfg.Store.CARotations(), cfg.Store.Certs()
 	stream.metrics = cfg.Metrics
+	stream.netEdges = cfg.Store.NetEdges()
 	if cfg.Agents != nil {
 		stream.agents = cfg.Agents
 	}

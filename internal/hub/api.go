@@ -154,6 +154,7 @@ func (a *api) routes() http.Handler {
 	a.approvalLinkRoutes(mux)
 	a.runbookRoutes(mux)
 	a.telemetryRoutes(mux)
+	a.netEdgeRoutes(mux)
 	a.panelRoutes(mux)
 	a.guestRoutes(mux, ui)
 	a.dashboardRoutes(mux)

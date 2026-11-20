@@ -89,6 +89,10 @@ func allCommands() []Command {
 		RevokePanelLink{PanelID: "p1", ID: "l1", At: 30},
 		CreateDashboardToken{ID: "d1", Name: "homepage", Hash: []byte{4, 4}, CreatedAt: 31, ExpiresAt: &exp},
 		RevokeDashboardToken{ID: "d1", At: 32},
+		ReplaceNetEdges{DeviceID: "pi", At: 33, Edges: []NetEdge{
+			{Kind: EdgeConnection, IP: "192.0.2.10", Port: 7443, Count: 2},
+			{Kind: EdgeNeighbor, IP: "192.0.2.1", MAC: "aa:bb:cc:dd:ee:01"},
+		}},
 		RecordNetworkImport{At: 24, Hosts: []ImportedHost{
 			{
 				MAC: "2c:cf:67:00:00:01", IP: "192.168.2.171", Hostname: "pi5", HostnameSource: SourcePihole,
@@ -403,6 +407,11 @@ func runScenario(t *testing.T, s *Store) {
 		{MAC: pi.MAC, IP: pi.IP, Hostname: "pi5", HostnameSource: SourcePihole, Sources: []string{SourcePihole}, Seen: at(6 * time.Hour).UnixMilli()},
 		{MAC: "aa:bb:cc:dd:ee:01", IP: "192.168.20.5", Hostname: "tv", HostnameSource: SourceDHCP, Sources: []string{SourceDHCP}},
 	}))
+	// A device's edges, replaced by a changed report.
+	_, err = s.NetEdges().Replace(ctx, "pi", at(6*time.Hour), []NetEdge{{Kind: EdgeNeighbor, IP: "192.0.2.1", MAC: "aa:bb:cc:dd:ee:01"}})
+	must(err)
+	_, err = s.NetEdges().Replace(ctx, "pi", at(6*time.Hour+time.Minute), []NetEdge{{Kind: EdgeConnection, IP: "192.0.2.10", Port: 7443, Count: 1}})
+	must(err)
 	// Telemetry turned on, sent once, then off: a send for the old ID is refused.
 	must(s.Telemetry().Set(ctx, true, "0123456789abcdef", at(7*time.Hour)))
 	must(s.Telemetry().MarkSent(ctx, "0123456789abcdef", at(7*time.Hour+time.Minute)))
