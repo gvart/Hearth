@@ -114,6 +114,26 @@ func (r CARotations) Active(ctx context.Context) (CARotation, error) {
 	return c, err
 }
 
+// Get returns the rotation to the CA whose fingerprint is newCAFP, whatever
+// its stage. It fails with ErrNotFound when there is none, and with
+// ErrSchemaTooOld below CARotationSchema.
+func (r CARotations) Get(ctx context.Context, newCAFP string) (CARotation, error) {
+	if ok, err := atSchema(ctx, r.s.db, CARotationSchema); err != nil {
+		return CARotation{}, err
+	} else if !ok {
+		return CARotation{}, fmt.Errorf("read hub CA rotation: %w", ErrSchemaTooOld)
+	}
+	c, err := scanCARotation(r.s.db.QueryRowContext(ctx,
+		`SELECT `+caRotationColumns+` FROM ca_rotations WHERE new_ca_fp = ?`, newCAFP))
+	if errors.Is(err, sql.ErrNoRows) {
+		return CARotation{}, ErrNotFound
+	}
+	if err != nil {
+		return CARotation{}, fmt.Errorf("read hub CA rotation: %w", err)
+	}
+	return c, nil
+}
+
 // Start records a new rotation at CAStageStarted. It fails with
 // ErrCARotationActive while another is under way.
 func (r CARotations) Start(ctx context.Context, c CARotation, now time.Time) error {

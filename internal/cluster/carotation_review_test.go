@@ -857,3 +857,75 @@ func TestCARotationDropWaitsAgainForAnotherNextCA(t *testing.T) {
 		return ca.Next() == nil
 	})
 }
+
+// A hub that cut over to a new CA, and next reconciles only after the
+// rotation finished and another one started, finishes the first rotation:
+// its next CA is the cluster's CA now, not a leftover of another rotation.
+func TestCARotationFinishOvertakenByTheNextRotation(t *testing.T) {
+	ctx := t.Context()
+	hubs, _ := startRotationHubs(t)
+	leader := rotLeader(t, hubs)
+	recordHubCerts(t, hubs)
+	f := otherHubs(hubs, leader)[0]
+
+	first, err := leader.RotateCA(ctx, RotateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitNext(t, hubs, first.NewCAFP)
+	finished := make(chan error, 1)
+	go func() {
+		_, err := leader.FinishCA(ctx, FinishOptions{})
+		finished <- err
+	}()
+	// Hold the follower's reconcile from the moment it cut over.
+	for {
+		f.recMu.Lock()
+		if f.ca.CutOver() {
+			break
+		}
+		f.recMu.Unlock()
+		time.Sleep(time.Millisecond)
+	}
+	held := true
+	unhold := func() {
+		if held {
+			held = false
+			f.recMu.Unlock()
+		}
+	}
+	defer unhold()
+	select {
+	case err := <-finished:
+		if err != nil {
+			t.Fatalf("FinishCA: %v", err)
+		}
+	case <-time.After(waitFor):
+		t.Fatal("FinishCA did not return")
+	}
+	// The finish closed the old-CA connections; the hubs reconnect.
+	var second RotatePlan
+	var rotErr error
+	eventually(t, "a second rotation to start", func() bool {
+		second, rotErr = leader.RotateCA(ctx, RotateOptions{})
+		return rotErr == nil
+	})
+	eventually(t, f.ID()+"'s store to show the second rotation", func() bool {
+		rot, err := f.st.CARotations().Latest(ctx)
+		return err == nil && rot.NewCAFP == second.NewCAFP
+	})
+	if fp := pki.FingerprintHex(f.ca.Next()); fp != first.NewCAFP || !f.ca.CutOver() {
+		t.Fatalf("precondition: next CA %s, cut over %v; want %s, cut over", fp, f.ca.CutOver(), first.NewCAFP)
+	}
+
+	unhold()
+	eventually(t, f.ID()+" on the first rotation's CA, with the second one's next", func() bool {
+		f.kickCA()
+		next := f.ca.Next()
+		return pki.FingerprintHex(f.ca.Cert()) == first.NewCAFP &&
+			next != nil && pki.FingerprintHex(next) == second.NewCAFP
+	})
+	if f.halted.Load() {
+		t.Fatal("the hub stopped")
+	}
+}
