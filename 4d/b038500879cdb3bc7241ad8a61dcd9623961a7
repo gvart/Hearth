@@ -1,0 +1,28 @@
+internal/mqtt/broker.go
+  s_87f1c7baee7d5a::t_20605680d03b5b 217-218,223
+  s_87f1c7baee7d5a::t_5c8305d030df03 188-189
+  s_87f1c7baee7d5a::t_ba34ae2faa4d23 227-273
+  s_87f1c7baee7d5a::t_49caf23db006e7 107
+  s_87f1c7baee7d5a::t_605ebc5384d48f 145-146
+  s_87f1c7baee7d5a::t_cc89080d18fae1 77
+  s_87f1c7baee7d5a::t_0de512105ac31b 99-100
+  s_87f1c7baee7d5a::t_d5a3fbd6716f17 184-185
+  s_87f1c7baee7d5a::t_b33da0501fafdf 210,212-213
+  s_87f1c7baee7d5a::t_25c131051e5d59 143-144,147,149
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4db038500879cdb3bc7241ad8a61dcd9623961a7",
+  "prompts": {},
+  "sessions": {
+    "s_87f1c7baee7d5a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "45cc2cdf-3130-4caa-8cb4-8cb365d2150d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
