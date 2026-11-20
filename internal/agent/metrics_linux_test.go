@@ -76,3 +76,25 @@ func TestProcReadersMissing(t *testing.T) {
 		t.Error("temperature without thermal zones reported a value")
 	}
 }
+
+// TestPlatformHostPaths: HOST_PROC and HOST_SYS move /proc and /sys, as for
+// an agent in a container that reads the host's mounted read-only.
+func TestPlatformHostPaths(t *testing.T) {
+	tests := []struct {
+		name, proc, sys    string
+		wantProc, wantGlob string
+	}{
+		{"defaults", "", "", "/proc", "/sys/class/thermal/thermal_zone*/temp"},
+		{"host mounts", "/host/proc", "/host/sys", "/host/proc", "/host/sys/class/thermal/thermal_zone*/temp"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("HOST_PROC", tt.proc)
+			t.Setenv("HOST_SYS", tt.sys)
+			p := newPlatform()
+			if p.proc != tt.wantProc || p.thermalGlob != tt.wantGlob {
+				t.Errorf("newPlatform() = %q, %q; want %q, %q", p.proc, p.thermalGlob, tt.wantProc, tt.wantGlob)
+			}
+		})
+	}
+}

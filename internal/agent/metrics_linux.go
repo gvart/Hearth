@@ -23,8 +23,22 @@ type platform struct {
 	zones       []string
 }
 
+// newPlatform finds /proc and /sys where HOST_PROC and HOST_SYS say, as
+// gopsutil does for the facts: an agent in a container (the Kubernetes
+// DaemonSet) reads the host's, mounted read-only.
 func newPlatform() platform {
-	return platform{proc: "/proc", thermalGlob: "/sys/class/thermal/thermal_zone*/temp"}
+	return platform{
+		proc:        envOr("HOST_PROC", "/proc"),
+		thermalGlob: envOr("HOST_SYS", "/sys") + "/class/thermal/thermal_zone*/temp",
+	}
+}
+
+// envOr returns the environment variable key, or def if it is unset or empty.
+func envOr(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
 }
 
 // cpuTimes reads the aggregate "cpu" line of /proc/stat: user nice system
