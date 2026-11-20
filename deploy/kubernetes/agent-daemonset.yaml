@@ -6,7 +6,9 @@
 #
 # Before applying:
 #   1. Set HEARTH_HUB_URL below to your hub's agent URL, and the image tag to
-#      your hub's version.
+#      your hub's version. The image must be the first Hearth release with this
+#      manifest or later: older images lack `hearth agent join --token-file`.
+#      The v0.1.0 tag below is a placeholder.
 #   2. Create one enrollment token per node (tokens are single-use) in the
 #      Secret hearth-agent-tokens, keyed by node name. On the hub host:
 #        mkdir -m 700 tokens
@@ -16,6 +18,9 @@
 #        kubectl apply -f agent-daemonset.yaml   # the namespace first
 #        kubectl -n hearth create secret generic hearth-agent-tokens --from-file=tokens/
 #        rm -r tokens
+#   3. Once every node shows on the Devices page, delete the Secret: every pod
+#      mounts every node's token, and an enrolled node needs none again.
+#        kubectl -n hearth delete secret hearth-agent-tokens
 #
 # The agent only reads: no exec, restart, logs or shell (its capability
 # ceiling is empty), all Linux capabilities dropped, read-only host /proc and
@@ -66,6 +71,7 @@ spec:
           type: RuntimeDefault
       initContainers:
         - name: join
+          # The first release with this manifest or later (see the top).
           image: ghcr.io/gvart/hearth:v0.1.0
           args:
             - agent
@@ -101,6 +107,7 @@ spec:
               readOnly: true
       containers:
         - name: agent
+          # The first release with this manifest or later (see the top).
           image: ghcr.io/gvart/hearth:v0.1.0
           args:
             - agent
@@ -137,6 +144,8 @@ spec:
           secret:
             secretName: hearth-agent-tokens
             defaultMode: 0400
+            # Deleted after enrollment: a restarted pod is already enrolled.
+            optional: true
         - name: proc
           hostPath:
             path: /proc

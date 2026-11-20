@@ -99,7 +99,9 @@ talosconfig, so that a new leader starts reading after a failover.
 runs one agent per node, control planes included. It works on any Kubernetes, not only Talos.
 
 1. Edit the manifest: set `HEARTH_HUB_URL` to the hub's agent URL (`https://<hub>:7443`, a name or
-   address in the hub's certificate) and the image tag to the hub's version.
+   address in the hub's certificate) and the image tag to the hub's version. The image must be the
+   first Hearth release that ships this manifest, or a later one: older images lack
+   `hearth agent join --token-file`. The tag in the file is a placeholder.
 2. Enrollment tokens are single-use, so create one per node and put them in a Secret keyed by node
    name. On the hub host:
 
@@ -115,6 +117,12 @@ runs one agent per node, control planes included. It works on any Kubernetes, no
 
 3. Each pod enrolls its node within seconds: the nodes appear on the Devices page under their
    hostnames.
+4. Once every node is there, delete the Secret. Every pod mounts every node's token, and an enrolled
+   node never needs one again: the Secret volume is optional, so a restarted pod starts without it.
+
+   ```sh
+   kubectl -n hearth delete secret hearth-agent-tokens
+   ```
 
 How it works:
 
@@ -125,8 +133,9 @@ How it works:
 - **Enrollment.** An init container runs `hearth agent join --if-not-enrolled
   --token-file /etc/hearth-tokens/$(NODE_NAME)`, with the node name from the downward API. The
   identity is kept on the node in `/var/lib/hearth-agent` (writable on Talos), so a restarted or
-  updated pod is the same device and needs no new token. A node added later needs its own token: add
-  it to the Secret. The join of a node without one fails, and its pod waits.
+  updated pod is the same device and needs no new token. A node added later needs its own token:
+  create the Secret again with that node's token. Until then the join of that node fails, and its pod
+  retries.
 - **Only reads.** The agent runs with an empty capability ceiling: no `--allow-exec`,
   `--allow-restart`, `--allow-logs` or `--allow-shell`, so the hub can run nothing on the node through
   it. All Linux capabilities are dropped, the root filesystem is read-only, privilege escalation is
@@ -144,7 +153,8 @@ container's own filesystem. On Talos that is the `/var` partition, so the disk m
 The Talos integration only reads. To upgrade a node, use the
 [upgrade recipe](runbook-recipes.md#upgrade-a-talos-node): a runbook that checks cluster health and
 etcd quorum, asks for approval, runs `talosctl upgrade --preserve` from a device with an agent, waits
-for the node to be Ready again, and rolls back with `talosctl rollback`. Its `talosctl` steps are
+for the node to be Ready again, and rolls back with `talosctl rollback`. Never roll back a node that
+did not reboot into the new version: `talosctl rollback` would boot the version before the current one. Its `talosctl` steps are
 `exec` actions, which are dangerous, so they go through policy and approval like any other.
 
 **The recipe has not been run on real hardware yet.** It is checked by unit tests only. Try it on a
