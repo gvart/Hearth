@@ -152,7 +152,7 @@ func newAgentJoinCmd() *cobra.Command {
 
 // readTokenFile reads an enrollment token from the first line of a file.
 func readTokenFile(path string) (string, error) {
-	f, err := os.Open(path) //nolint:gosec // the operator names the file
+	f, err := os.Open(path)
 	if err != nil {
 		return "", fmt.Errorf("--token-file: %w", err)
 	}

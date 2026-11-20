@@ -234,7 +234,7 @@ func decodeLoad(n *Node, f field) error {
 func decodeStat(n *Node, f field) error {
 	if f.num == fBootTime {
 		if s := f.uint(); s > 0 && s < 1<<40 {
-			n.BootTime = time.Unix(int64(s), 0).UTC() //nolint:gosec // bounded above
+			n.BootTime = time.Unix(int64(s), 0).UTC()
 		}
 	}
 	return nil

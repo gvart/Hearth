@@ -3,9 +3,9 @@
 package automation
 
 import (
+	"io/fs"
 	"maps"
 	"os"
-	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -21,7 +21,7 @@ import (
 // recording agent stands in for the device.
 func talosUpgradeHarness(t *testing.T) (*rbHarness, *recordingAgents) {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join(recipesDir, "upgrade-talos-node.yaml"))
+	b, err := fs.ReadFile(os.DirFS(recipesDir), "upgrade-talos-node.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}

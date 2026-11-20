@@ -52,7 +52,7 @@ type Config struct {
 // name, or its current context when name is "". nodes, when not empty,
 // replaces the context's node list.
 func LoadConfig(path, name string, nodes []string) (Config, error) {
-	f, err := os.Open(path) //nolint:gosec // the operator names the file
+	f, err := os.Open(path)
 	if err != nil {
 		return Config{}, fmt.Errorf("read talosconfig: %w", err)
 	}
