@@ -17,7 +17,8 @@ separate Mosquitto. It is off by default. When it is on:
 ## Turn it on
 
 1. Write the clients file, `<data-dir>/mqtt.yaml` by default. Only the hub's user should be able to
-   read it (`chmod 600`). It holds password hashes, and the hub warns at start if others can read it.
+   read it (`chmod 600`). It holds password hashes, and the hub warns at start if others can read it. The hub refuses to
+   start if group or others can write it, since whoever can write it can grant themselves any topic.
 
    ```yaml
    users:
@@ -82,7 +83,9 @@ mosquitto_sub -h hub.lan -p 8883 --cafile /var/lib/hearth/agent/ca.crt \
 
 When a client presents a certificate, the certificate decides who it is. A username, if it sends
 one, must be the device ID, and a password is ignored. The hub checks the certificate is one it
-issued to that device and has not revoked (`hearth device revoke`), as it does for the agent.
+issued to that device and has not revoked (`hearth device revoke`), as it does for the agent. It
+checks the certificates of connected devices again every 30 seconds. A device whose certificate has
+been revoked, or was issued by a hub CA that a [CA rotation](cluster.md) has retired, is disconnected.
 
 ## Topic rules
 
@@ -117,5 +120,8 @@ clients file is the rule that guards it.
 - Messages, retained messages and sessions are kept in memory. They do not survive a hub restart.
 - In a [cluster](cluster.md) every hub started with `--mqtt-listen` runs a broker of its own, with
   its own clients file. The brokers do not share messages. Point your devices at one hub.
-- A device revoked while it is connected stays connected until it reconnects.
+- A packet, CONNECT included, may be at most 256 KiB. A larger one ends the connection.
+- MQTT 5 topic aliases are not supported. A publish that uses one ends the connection.
+- Password checks run one at a time. At most 32 logins wait for one, each for up to 2 seconds.
+  Beyond that a login is refused as busy, and the client should retry.
 - Bridging to another broker is not built in yet ([#221](https://github.com/gvart/hearth/issues/221)).

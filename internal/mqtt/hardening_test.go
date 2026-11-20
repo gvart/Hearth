@@ -5,9 +5,12 @@ package mqtt
 import (
 	"bufio"
 	"crypto/tls"
+	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,12 +38,16 @@ func (tb *testBroker) rawTLS(t *testing.T) *client {
 	return &client{t: t, conn: conn, r: bufio.NewReader(conn)}
 }
 
-// closedSoon reports whether the broker ends c's connection, possibly after
-// a DISCONNECT, without sending it anything else.
+// closedSoon reports whether the broker ends c's connection within 2 s,
+// possibly after a DISCONNECT, without sending it anything else.
 func (c *client) closedSoon() (bool, []byte) {
+	_ = c.conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	var got []byte
 	for range 3 {
 		typ, _, err := c.read()
+		if ne := net.Error(nil); errors.As(err, &ne) && ne.Timeout() {
+			return false, got
+		}
 		if err != nil {
 			return true, got
 		}
@@ -139,7 +146,10 @@ func TestPacketsNotLogged(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if strings.Contains(tb.logs.String(), secret) {
+	logs := tb.logs.String()
+	// As text, as Go prints a []byte, and as JSON encodes one.
+	if strings.Contains(logs, secret) || strings.Contains(logs, fmt.Sprintf("%v", []byte(secret))) ||
+		strings.Contains(logs, base64.StdEncoding.EncodeToString([]byte(secret))) {
 		t.Fatalf("the password reached the log:\n%s", tb.logs.String())
 	}
 }
@@ -219,7 +229,8 @@ func TestRetiredCADeviceIsDisconnected(t *testing.T) {
 func TestClientIDClaim(t *testing.T) {
 	h := newAuthHook(mochi.New(&mochi.Options{Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}),
 		Config{Log: slog.New(slog.NewTextHandler(io.Discard, nil))})
-	if !h.claim("id", "alice") || !h.claim("id", "alice") {
+	// Two connections of one identity, as in a takeover of its own session.
+	if first, second := h.claim("id", "alice"), h.claim("id", "alice"); !first || !second {
 		t.Fatal("an identity could not claim its own ID twice")
 	}
 	if h.claim("id", "bob") {
