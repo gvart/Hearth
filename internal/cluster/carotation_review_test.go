@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -552,7 +553,10 @@ func TestCARotationRestartKeepsNextOfALaterRotation(t *testing.T) {
 		}
 		return nil
 	}
-	restarted.reconcileCA(ctx)
+	// A follower drops a next CA no earlier than its second run (#234).
+	for range 3 {
+		restarted.reconcileCA(ctx)
+	}
 	if err := holdsSecond(); err != nil {
 		t.Fatalf("the hub dropped the next CA of the later rotation while replaying: %v", err)
 	}
@@ -703,4 +707,149 @@ func TestCARotationTrustsTheNewCAUnderSteadyWrites(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitNext(t, hubs, plan.NewCAFP)
+}
+
+// Under steady writes a follower's log rarely holds no entry past the commit
+// index, yet a follower still drops a leftover next CA in bounded time
+// (#234).
+func TestCARotationDropsAnOrphanNextUnderSteadyWrites(t *testing.T) {
+	ctx := t.Context()
+	hubs, _ := startRotationHubs(t)
+	leader := rotLeader(t, hubs)
+	follower := otherHubs(hubs, leader)[0]
+
+	var writes atomic.Int64
+	stop, done := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(done)
+		tick := time.NewTicker(time.Second / 60)
+		defer tick.Stop()
+		for i := 0; ; i++ {
+			select {
+			case <-stop:
+				return
+			case <-tick.C:
+			}
+			now := time.Now()
+			id := fmt.Sprintf("d%d", i%50)
+			if leader.st.Devices().Upsert(ctx, store.Device{ID: id, Name: id, FirstSeen: now, LastSeen: now}) == nil {
+				writes.Add(1)
+			}
+		}
+	}()
+	defer func() {
+		close(stop)
+		<-done
+	}()
+	eventually(t, "the writes to flow", func() bool { return writes.Load() >= 10 })
+
+	if _, err := follower.ca.GenerateNext(time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	start, before := time.Now(), writes.Load()
+	const bound = 5 * time.Second // 50 reconcile periods
+	for follower.ca.Next() != nil {
+		if time.Since(start) > bound {
+			t.Fatalf("the follower still holds the orphan next CA after %v (%d writes meanwhile)",
+				bound, writes.Load()-before)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	elapsed := time.Since(start)
+	t.Logf("dropped after %v, %.0f writes/s", elapsed, float64(writes.Load()-before)/elapsed.Seconds())
+	for _, f := range []string{pki.NextCACertFile, pki.NextCAKeyFile} {
+		if _, err := os.Stat(filepath.Join(follower.dir, f)); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("%s left after the drop: %v", f, err)
+		}
+	}
+}
+
+// The point a follower waits for before it drops a leftover next CA belongs
+// to that CA. A hub that, as leader in between, made another next CA and
+// proposed its start after that point must keep the new one until its log
+// has settled past it too (#234).
+func TestCARotationDropWaitsAgainForAnotherNextCA(t *testing.T) {
+	ctx := t.Context()
+	hubs, _ := startRotationHubs(t)
+	leader := rotLeader(t, hubs)
+	f := otherHubs(hubs, leader)[0]
+	// Restarted so that only this test runs the follower's reconcile.
+	dir, addr, id := f.dir, f.Addr(), f.ID()
+	f.stop()
+	ca, err := pki.LoadOrCreateCA(dir, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	slow := func(c *Config) { c.CAReconcileEvery = time.Hour }
+	follower := startNodeBound(t, ca, id, dir, addr, false, (*Node).BindForwarding, rotTune, slow)
+	upsert(t, leader.testNode, "pi")
+	eventually(t, id+" to catch up", follower.caughtUp)
+
+	setBoot := func(ms int64) {
+		t.Helper()
+		if _, err := leader.st.Devices().SetBootTime(ctx, "pi", time.UnixMilli(ms).UTC()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// gate makes the follower's store stop after the entry, written through
+	// the leader, that sets the boot time to ms. It returns a wait for that
+	// entry and the release.
+	gate := func(ms int64) (wait, open func()) {
+		obs := &gatedObserver{gate: ms, entered: make(chan struct{}), release: make(chan struct{}), local: map[int64]bool{}}
+		follower.ObserveApplies(obs)
+		var once sync.Once
+		open = func() { once.Do(func() { close(obs.release) }) }
+		t.Cleanup(open)
+		setBoot(ms)
+		wait = func() {
+			select {
+			case <-obs.entered:
+			case <-time.After(waitFor):
+				t.Fatal("the gate entry was not applied on the follower")
+			}
+			setBoot(ms + 1) // the store is behind the log by this entry
+		}
+		return wait, open
+	}
+
+	waitFirst, openFirst := gate(1_000_000)
+	waitFirst()
+	if _, err := ca.GenerateNext(time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	follower.reconcileCA(ctx) // takes the point to wait for
+	if ca.Next() == nil {
+		t.Fatal("dropped the next CA while the store was behind")
+	}
+	// Past that point now, with the store still behind the log.
+	waitSecond, openSecond := gate(2_000_000)
+	openFirst()
+	waitSecond()
+	eventually(t, "the store past the point", func() bool {
+		follower.recMu.Lock()
+		defer follower.recMu.Unlock()
+		return follower.appliedThrough(follower.dropAt)
+	})
+	if follower.caughtUp() {
+		t.Fatal("caught up while the store holds the second gate")
+	}
+	// Another next CA, as RotateCA would make it.
+	if err := ca.DropNext(); err != nil {
+		t.Fatal(err)
+	}
+	other, err := ca.GenerateNext(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 3 {
+		follower.reconcileCA(ctx)
+	}
+	if next := ca.Next(); next == nil || !next.Equal(other) {
+		t.Fatal("dropped another next CA at the point taken for the first one")
+	}
+	openSecond()
+	eventually(t, id+" to drop the other next CA once settled", func() bool {
+		follower.reconcileCA(ctx)
+		return ca.Next() == nil
+	})
 }

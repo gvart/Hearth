@@ -1148,10 +1148,11 @@ func (n *Node) finishLocal(ctx context.Context, rot store.CARotation) {
 
 // dropLeftoverNext drops a next CA no rotation under way uses, once the log
 // shows its start cannot commit any more: on the leader after a barrier, on
-// a follower once it has applied every entry of its log and the leader
-// committed them all. Until then the next CA neither signs nor is trusted
-// (pki.CA.TrustNext). It skips a run while RotateCA, FinishCA or AbortCA
-// holds rotMu.
+// a follower once it is caught up (caughtUp) or has settled past the log it
+// held on an earlier run (settledPast). Until then the next CA neither signs
+// nor is trusted (pki.CA.TrustNext). It skips a run while RotateCA,
+// FinishCA or AbortCA holds rotMu.
+// Called with recMu held.
 func (n *Node) dropLeftoverNext(ctx context.Context) {
 	if n.cfg.CA.Next() == nil || !n.rotMu.TryLock() {
 		return
@@ -1159,8 +1160,10 @@ func (n *Node) dropLeftoverNext(ctx context.Context) {
 	defer n.rotMu.Unlock()
 	var err error
 	if n.IsLeader() {
+		n.dropFP = ""
 		err = n.dropUncommittedNext(ctx)
-	} else if n.caughtUp() {
+	} else if n.caughtUp() || n.settledPast() {
+		n.dropFP = ""
 		err = n.dropOrphanNext(ctx)
 	}
 	if err != nil && ctx.Err() == nil {
@@ -1207,6 +1210,35 @@ func (n *Node) settledOn(ctx context.Context, newCAFP string) bool {
 	}
 	rot, err := n.store.CARotations().Latest(ctx)
 	return err == nil && rot.NewCAFP == newCAFP && rot.Active()
+}
+
+// settledPast reports whether this follower has settled past the log it
+// held, with the next CA it holds now, on an earlier run: the leader has
+// committed every entry up to that log's last index, and the store applied
+// them. Under steady writes a follower's log rarely ends at the commit index
+// (caughtUp), but its commit index and store pass a last index taken a run
+// earlier.
+//
+// It is as safe as caughtUp. Only the hub that generated a next CA proposes
+// a start of a rotation to it, once, as leader, under rotMu (RotateCA). An
+// entry this hub appended for that CA is in its log at or below the
+// recorded index, or was truncated, which a leader does only with entries of
+// its own that are now committed there: either way, committed and applied
+// through that index, the store shows the start if it committed, and it can
+// never commit otherwise. A different next CA records a new target, and so
+// does a run as leader in between (dropLeftoverNext clears it).
+// Called with recMu and rotMu held.
+func (n *Node) settledPast() bool {
+	next := n.cfg.CA.Next()
+	if n.raft == nil || next == nil || n.Leader().ID == "" {
+		return false
+	}
+	if fp := pki.FingerprintHex(next); n.dropFP != fp {
+		n.dropAt, n.dropFP = n.raft.LastIndex(), fp
+		return false
+	}
+	commit, err := strconv.ParseUint(n.raft.Stats()["commit_index"], 10, 64)
+	return err == nil && commit >= n.dropAt && n.appliedThrough(n.dropAt)
 }
 
 // caughtUp reports whether this follower has a leader, and has applied every
