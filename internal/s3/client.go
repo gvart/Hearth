@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -36,11 +37,11 @@ const (
 
 // bucketName is an S3 bucket name: 3 to 63 lowercase letters, digits, dots
 // and hyphens, starting and ending with a letter or a digit.
-var bucketName = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$`)
+var bucketName = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$`) })
 
 // validBucket applies the S3 bucket naming rules.
 func validBucket(name string) bool {
-	return bucketName.MatchString(name) && !strings.Contains(name, "..") && net.ParseIP(name) == nil
+	return bucketName().MatchString(name) && !strings.Contains(name, "..") && net.ParseIP(name) == nil
 }
 
 // ErrHTTP is the error of a request S3 answered with a failure status.

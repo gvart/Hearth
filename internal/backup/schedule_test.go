@@ -373,7 +373,7 @@ func TestScheduledNameIsExact(t *testing.T) {
 		"hearth-20261119T1200Z.hbk":       false,
 		"mine-20261119T120000Z.hbk":       false,
 	} {
-		if got := scheduledName.MatchString(name); got != want {
+		if got := scheduledName().MatchString(name); got != want {
 			t.Errorf("%s: %v, want %v", name, got, want)
 		}
 	}

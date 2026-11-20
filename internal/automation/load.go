@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 
 	"go.yaml.in/yaml/v3"
 
@@ -40,7 +41,7 @@ func (e *LoadError) Error() string {
 
 // idPattern is what automation and step ids look like: they name the actor
 // in the audit log and appear in run history.
-var idPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
+var idPattern = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`) })
 
 // LoadFile reads and validates one automation file.
 func LoadFile(path string, kinds Kinds) (*Automation, error) {
@@ -166,7 +167,7 @@ func Parse(name string, b []byte, kinds Kinds) (*Automation, error) {
 			errs = append(errs, lineError(k.Line, "unknown field %q", k.Value))
 		}
 	}
-	if !idPattern.MatchString(a.ID) {
+	if !idPattern().MatchString(a.ID) {
 		errs = append(errs, lineError(idLine,
 			"id %q must be 1 to 64 lowercase letters, digits, - or _, starting with a letter or digit", a.ID))
 	}
@@ -239,7 +240,7 @@ func checkStepIDs(a *Automation, errs *[]error) {
 	}
 	seen := map[string]int{}
 	for _, r := range refs {
-		if !idPattern.MatchString(r.id) {
+		if !idPattern().MatchString(r.id) {
 			*errs = append(*errs, lineError(r.line, "step id %q must be 1 to 64 lowercase letters, digits, - or _", r.id))
 		} else if prev, ok := seen[r.id]; ok {
 			*errs = append(*errs, lineError(r.line, "step id %q is already used on line %d", r.id, prev))

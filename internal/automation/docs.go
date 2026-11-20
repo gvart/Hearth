@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sync"
 )
 
 // Doc is one automation or runbook file as a document of the hub's store:
@@ -33,11 +34,11 @@ type DocStore interface {
 
 // docNamePattern is what a document name looks like: the name of a file the
 // hub would load, that export can write into a directory.
-var docNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.(yaml|yml)$`)
+var docNamePattern = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.(yaml|yml)$`) })
 
 // ValidDocName reports whether name can name an automation or runbook
 // document: a .yaml or .yml file name without a path or a leading dot.
-func ValidDocName(name string) bool { return docNamePattern.MatchString(name) }
+func ValidDocName(name string) bool { return docNamePattern().MatchString(name) }
 
 // LoadDocs is LoadDir for documents: any invalid document, or two with the
 // same automation id, fails the whole load.

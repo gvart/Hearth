@@ -35,7 +35,7 @@ const maxAnswer = 64 << 10
 // ErrNoChannel is returned for a channel name that is not configured.
 var ErrNoChannel = errors.New("no such notification channel")
 
-var nameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
+var nameRE = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`) })
 
 // ChannelInfo is what may be shown about a channel: never its credentials or
 // address.
@@ -136,7 +136,7 @@ func Parse(b []byte) (*Notifier, error) {
 	}
 	n := &Notifier{client: &http.Client{}, channels: map[string]channel{}}
 	for name, c := range file.Channels {
-		if !nameRE.MatchString(name) {
+		if !nameRE().MatchString(name) {
 			return nil, fmt.Errorf("channel %q: name must be lowercase letters, digits, - and _", name)
 		}
 		var (

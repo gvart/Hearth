@@ -15,6 +15,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"text/tabwriter"
 	"time"
 
@@ -110,7 +111,7 @@ func newMCPTokenCmd() *cobra.Command {
 
 // mcpTokenName is what a token name looks like: it names the actor in the
 // audit log.
-var mcpTokenName = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]{0,63}$`)
+var mcpTokenName = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]{0,63}$`) })
 
 func newMCPTokenCreateCmd() *cobra.Command {
 	var (
@@ -133,7 +134,7 @@ func newMCPTokenCreateCmd() *cobra.Command {
 }
 
 func runMCPTokenCreate(ctx context.Context, dataDir, name, scope string, dryRun bool, out io.Writer) error {
-	if !mcpTokenName.MatchString(name) {
+	if !mcpTokenName().MatchString(name) {
 		return fmt.Errorf("name %q must be 1 to 64 lowercase letters, digits, ., - or _, starting with a letter or digit", name)
 	}
 	switch policy.Class(scope) {

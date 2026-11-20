@@ -89,7 +89,7 @@ func validDevices(devs []Device) error {
 	}
 	seen := make(map[string]bool, len(devs))
 	for _, d := range devs {
-		if !idRE.MatchString(d.ID) {
+		if !idRE().MatchString(d.ID) {
 			return fmt.Errorf("invalid device id %.64q", d.ID)
 		}
 		if seen[d.ID] {
@@ -104,7 +104,7 @@ func validDevices(devs []Device) error {
 		}
 		ents := make(map[string]bool, len(d.Entities))
 		for _, e := range d.Entities {
-			if !idRE.MatchString(e.ID) {
+			if !idRE().MatchString(e.ID) {
 				return fmt.Errorf("device %q: invalid entity id %.64q", d.ID, e.ID)
 			}
 			if ents[e.ID] {

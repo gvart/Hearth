@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -119,7 +120,7 @@ var (
 )
 
 // widgetIDPattern is the shape of a widget ID the hub made.
-var widgetIDPattern = regexp.MustCompile(`^[a-z0-9]{1,32}$`)
+var widgetIDPattern = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`^[a-z0-9]{1,32}$`) })
 
 // serviceManagers are the managers a restart may name, as the agent's
 // --allow-restart does.
@@ -165,7 +166,7 @@ func (a *api) checkPanel(ctx context.Context, b panelBody) (panelBody, error) {
 		} else if err != nil {
 			return b, err
 		}
-		if !widgetIDPattern.MatchString(w.ID) || seen[w.ID] {
+		if !widgetIDPattern().MatchString(w.ID) || seen[w.ID] {
 			w.ID = strings.ToLower(rand.Text())
 		}
 		seen[w.ID] = true

@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gvart/hearth/internal/policy"
@@ -37,7 +38,7 @@ const (
 
 // scheduledName matches the names scheduled backups are given under the
 // prefix. Pruning never touches another object.
-var scheduledName = regexp.MustCompile(`^hearth-\d{8}T\d{6}Z\.hbk$`)
+var scheduledName = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`^hearth-\d{8}T\d{6}Z\.hbk$`) })
 
 // Bucket is where scheduled backups go: an S3-compatible bucket.
 type Bucket interface {
@@ -222,7 +223,7 @@ func (s *Scheduler) scheduled(ctx context.Context) ([]string, error) {
 	}
 	keys = slices.DeleteFunc(keys, func(k string) bool {
 		rest, ok := strings.CutPrefix(k, s.cfg.Prefix)
-		return !ok || !scheduledName.MatchString(rest)
+		return !ok || !scheduledName().MatchString(rest)
 	})
 	slices.Sort(keys)
 	return keys, nil
