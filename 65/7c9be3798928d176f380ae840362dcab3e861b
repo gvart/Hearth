@@ -21,6 +21,7 @@ go.mod
   s_26e932fc13ca45::t_af190f7de6191a 35,48
 cmd/hearth/hub.go
   s_26e932fc13ca45::t_fdebc0dafcf849 112,144-145,226,545-550,643-646
+  s_26e932fc13ca45::t_8240fd319b6662 560
 cmd/hearth/hub_mqtt_test.go
   s_26e932fc13ca45::t_d73da03a848c88 1-91
 cmd/hearth/hub_mqtt.go
