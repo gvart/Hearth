@@ -5,8 +5,6 @@ package kubernetes
 import (
 	"cmp"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -438,10 +436,9 @@ func (m *Manager) Add(ctx context.Context, actorID, name string, raw []byte) (Cl
 	if !validName(name) {
 		return ClusterInfo{}, ErrBadName
 	}
-	id, err := newID()
-	if err != nil {
-		return ClusterInfo{}, err
-	}
+	// The id is derived from the name, so two hubs adding the same name
+	// make one cluster.
+	id := store.KubeClusterID(name)
 	now := m.now().UTC().Truncate(time.Millisecond)
 	err = m.policy.Do(ctx, policy.Request{
 		ActorKind: policy.ActorWeb, ActorID: actorID, Action: policy.KubeClusterAdd, Target: name,
@@ -555,12 +552,4 @@ func validName(s string) bool {
 		}
 	}
 	return true
-}
-
-func newID() (string, error) {
-	b := make([]byte, 8)
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("new cluster ID: %w", err)
-	}
-	return hex.EncodeToString(b), nil
 }

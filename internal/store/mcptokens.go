@@ -122,6 +122,7 @@ func (r MCPTokens) query(ctx context.Context, q string, args ...any) ([]MCPToken
 
 // CreateMCPToken inserts an MCP token by its hash.
 type CreateMCPToken struct {
+	Stamp
 	Name      string `json:"name"`
 	Hash      []byte `json:"hash"`
 	Scope     string `json:"scope"`
@@ -133,15 +134,16 @@ func (CreateMCPToken) Op() string { return "create_mcp_token" }
 
 func (CreateMCPToken) minSchema() int64 { return mcpTokensSchema }
 
-func (c CreateMCPToken) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	_, err := tx.ExecContext(ctx, `INSERT INTO mcp_tokens (name, hash, scope, created_at) VALUES (?, ?, ?, ?)`,
-		c.Name, c.Hash, c.Scope, c.CreatedAt)
-	return Result{}, err
+func (c CreateMCPToken) apply(ctx context.Context, w *writer) (Result, error) {
+	return Result{}, w.insert(ctx, "mcp_tokens", row{
+		"name": c.Name, "hash": c.Hash, "scope": c.Scope, "created_at": c.CreatedAt, "revoked_at": nil,
+	})
 }
 
 // RevokeMCPToken revokes an MCP token in use; ErrNotFound if there is none
 // by that name.
 type RevokeMCPToken struct {
+	Stamp
 	Name string `json:"name"`
 	At   int64  `json:"at"`
 }
@@ -151,17 +153,6 @@ func (RevokeMCPToken) Op() string { return "revoke_mcp_token" }
 
 func (RevokeMCPToken) minSchema() int64 { return mcpTokensSchema }
 
-func (c RevokeMCPToken) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	res, err := tx.ExecContext(ctx, `UPDATE mcp_tokens SET revoked_at = ? WHERE name = ? AND revoked_at IS NULL`, c.At, c.Name)
-	if err != nil {
-		return Result{}, err
-	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return Result{}, err
-	}
-	if n == 0 {
-		return Result{}, ErrNotFound
-	}
-	return Result{Count: int(n)}, nil
+func (c RevokeMCPToken) apply(ctx context.Context, w *writer) (Result, error) {
+	return revokeOne(ctx, w, "mcp_tokens", `name = ?`, c.At, c.Name)
 }

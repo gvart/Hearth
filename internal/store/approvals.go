@@ -184,6 +184,7 @@ func (r Approvals) query(ctx context.Context, q string, args ...any) ([]Approval
 
 // CreateApproval inserts a pending approval.
 type CreateApproval struct {
+	Stamp
 	ID        string `json:"id"`
 	CreatedAt int64  `json:"created_at"`
 	ExpiresAt int64  `json:"expires_at"`
@@ -200,18 +201,19 @@ func (CreateApproval) Op() string { return "create_approval" }
 
 func (CreateApproval) minSchema() int64 { return approvalsSchema }
 
-func (c CreateApproval) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	_, err := tx.ExecContext(ctx, `
-		INSERT INTO approvals (id, created_at, expires_at, actor_kind, actor_id, action, class, target, detail)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		c.ID, c.CreatedAt, c.ExpiresAt, c.ActorKind, c.ActorID, c.Action, c.Class, c.Target, c.Detail)
-	return Result{}, err
+func (c CreateApproval) apply(ctx context.Context, w *writer) (Result, error) {
+	return Result{}, w.insert(ctx, "approvals", row{
+		"id": c.ID, "created_at": c.CreatedAt, "expires_at": c.ExpiresAt, "actor_kind": c.ActorKind,
+		"actor_id": c.ActorID, "action": c.Action, "class": c.Class, "target": c.Target, "detail": c.Detail,
+		"status": ApprovalPending, "decided_by": "", "decided_at": nil,
+	})
 }
 
 // DecideApproval closes a pending approval. Approving or denying one that
 // expired by At fails with ErrApprovalClosed, as does deciding one that is
 // not pending; an unknown id fails with ErrNotFound.
 type DecideApproval struct {
+	Stamp
 	ID     string `json:"id"`
 	Status string `json:"status"`
 	By     string `json:"by"`
@@ -223,28 +225,26 @@ func (DecideApproval) Op() string { return "decide_approval" }
 
 func (DecideApproval) minSchema() int64 { return approvalsSchema }
 
-func (c DecideApproval) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	var (
-		status  string
-		expires int64
-	)
-	err := tx.QueryRowContext(ctx, `SELECT status, expires_at FROM approvals WHERE id = ?`, c.ID).Scan(&status, &expires)
-	if errors.Is(err, sql.ErrNoRows) {
-		return Result{}, ErrNotFound
-	}
+func (c DecideApproval) apply(ctx context.Context, w *writer) (Result, error) {
+	r, err := w.get(ctx, "approvals", c.ID)
 	if err != nil {
 		return Result{}, err
 	}
-	if status != ApprovalPending {
+	if r == nil {
+		return Result{}, ErrNotFound
+	}
+	if status := r.str("status"); status != ApprovalPending {
 		return Result{}, fmt.Errorf("%w: it is %s", ErrApprovalClosed, status)
 	}
-	if c.Status != ApprovalExpired && c.At >= expires {
+	if c.Status != ApprovalExpired && c.At >= r.int("expires_at") {
 		return Result{}, fmt.Errorf("%w: it has expired", ErrApprovalClosed)
 	}
 	// The plan can hold secrets from command arguments and a decided approval
 	// has no use for it, so it goes in the write that records the decision.
-	_, err = tx.ExecContext(ctx, `UPDATE approvals SET status = ?, decided_by = ?, decided_at = ?,
-		detail = json_remove(detail, '$.`+planKey+`') WHERE id = ?`,
-		c.Status, c.By, c.At, c.ID)
-	return Result{}, err
+	var detail string
+	if err := w.tx.QueryRowContext(ctx, `SELECT json_remove(?, '$.`+planKey+`')`, r.str("detail")).Scan(&detail); err != nil {
+		return Result{}, err
+	}
+	r["status"], r["decided_by"], r["decided_at"], r["detail"] = c.Status, c.By, c.At, detail
+	return Result{}, w.put(ctx, "approvals", r)
 }

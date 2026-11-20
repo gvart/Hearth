@@ -236,6 +236,7 @@ type ScannedHost struct {
 // RecordNetworkScan upserts the hosts of one scan, keyed by MAC. Its result
 // carries NewHosts and ReturnedHosts (see ScanResult).
 type RecordNetworkScan struct {
+	Stamp
 	At int64 `json:"at"`
 	// AbsentAfter is how long, in milliseconds, a known host must have gone
 	// unseen to count as returned.
@@ -257,98 +258,104 @@ func (RecordNetworkScan) Op() string { return "record_network_scan" }
 
 func (RecordNetworkScan) minSchema() int64 { return networkHostsSchema }
 
-func (c RecordNetworkScan) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	v, err := schemaVersion(ctx, tx)
-	if err != nil {
-		return Result{}, err
-	}
-	withSources := v >= networkHostSourcesSchema
-	withScanner := v >= networkHostScannedBySchema
+func (c RecordNetworkScan) apply(ctx context.Context, w *writer) (Result, error) {
+	withSources := w.schema >= networkHostSourcesSchema
+	withScanner := w.schema >= networkHostScannedBySchema
 	// New, baseline and returned are about scans: what an import stored
 	// (from schema 14) does not count.
-	knownIPs, lastScan := `SELECT ip FROM network_hosts`, `SELECT last_seen, '', ip FROM network_hosts WHERE mac = ?`
+	knownIPs := `SELECT ip FROM network_hosts`
 	if withSources {
 		knownIPs += ` WHERE (',' || sources || ',') LIKE '%,scan,%'`
-		lastScan = `SELECT last_scan, sources, ip FROM network_hosts WHERE mac = ?`
 	}
 	subnets := c.subnets()
-	inBaseline, err := c.baseline(ctx, tx, knownIPs, subnets)
+	inBaseline, err := c.baseline(ctx, w.tx, knownIPs, subnets)
 	if err != nil {
 		return Result{}, err
 	}
-	returning := "RETURNING" + strings.TrimPrefix(networkHostSelect(v), "SELECT")
 	var res Result
 	for _, h := range c.Hosts {
-		var (
-			last        int64
-			sources, ip string
-		)
-		err := tx.QueryRowContext(ctx, lastScan, h.MAC).Scan(&last, &sources, &ip)
-		isNew := errors.Is(err, sql.ErrNoRows)
-		if err != nil && !isNew {
+		r, err := w.get(ctx, "network_hosts", h.MAC)
+		if err != nil {
 			return Result{}, err
 		}
-		if !isNew && c.ScannedBy != "" && len(subnets) > 0 && !within(subnets, ip) {
+		isNew := r == nil
+		var last int64
+		if !isNew {
+			last = r.int("last_seen")
+			if withSources {
+				last = r.int("last_scan")
+			}
+		}
+		if !isNew && c.ScannedBy != "" && len(subnets) > 0 && !within(subnets, r.str("ip")) {
 			// A device answers for its subnets only: a MAC known elsewhere
 			// (the router's, say) is not its to move.
 			continue
 		}
-		if withSources && !slices.Contains(splitSources(sources), SourceScan) {
+		if withSources && !slices.Contains(splitSources(r.str("sources")), SourceScan) {
 			isNew = true
 		}
-		var row NetworkHost
+		if r == nil {
+			r = newNetworkHostRow(w.schema, h.MAC, c.At)
+		}
+		r["ip"] = h.IP
+		if h.Vendor != "" {
+			r["vendor"] = h.Vendor
+		}
+		r["last_seen"] = max(r.int("last_seen"), c.At)
 		if withSources {
 			// A name Pi-hole or a DHCP lease gave is kept: a scan only
 			// replaces a name a scan found.
-			nameSource := ""
-			if h.Hostname != "" {
-				nameSource = SourceScan
+			if h.Hostname != "" && (r.str("hostname_source") == "" || r.str("hostname_source") == SourceScan) {
+				r["hostname"], r["hostname_source"] = h.Hostname, SourceScan
 			}
-			row, err = scanNetworkHost(tx.QueryRowContext(ctx, `
-				INSERT INTO network_hosts (mac, ip, hostname, vendor, first_seen, last_seen, last_scan, sources, hostname_source)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-				ON CONFLICT (mac) DO UPDATE SET
-					ip = excluded.ip,
-					hostname = CASE WHEN excluded.hostname != '' AND hostname_source IN ('', 'scan')
-						THEN excluded.hostname ELSE hostname END,
-					hostname_source = CASE WHEN excluded.hostname != '' AND hostname_source IN ('', 'scan')
-						THEN excluded.hostname_source ELSE hostname_source END,
-					vendor = COALESCE(NULLIF(excluded.vendor, ''), vendor),
-					last_seen = MAX(last_seen, excluded.last_seen),
-					last_scan = MAX(last_scan, excluded.last_scan),
-					sources = excluded.sources
-				`+returning,
-				h.MAC, h.IP, h.Hostname, h.Vendor, c.At, c.At, c.At, addSources(sources, SourceScan), nameSource))
-		} else {
-			row, err = scanNetworkHost(tx.QueryRowContext(ctx, `
-				INSERT INTO network_hosts (mac, ip, hostname, vendor, first_seen, last_seen)
-				VALUES (?, ?, ?, ?, ?, ?)
-				ON CONFLICT (mac) DO UPDATE SET
-					ip = excluded.ip,
-					hostname = COALESCE(NULLIF(excluded.hostname, ''), hostname),
-					vendor = COALESCE(NULLIF(excluded.vendor, ''), vendor),
-					last_seen = MAX(last_seen, excluded.last_seen)
-				`+returning,
-				h.MAC, h.IP, h.Hostname, h.Vendor, c.At, c.At))
-		}
-		if err != nil {
-			return Result{}, err
+			r["last_scan"] = max(r.int("last_scan"), c.At)
+			r["sources"] = addSources(r.str("sources"), SourceScan)
+		} else if h.Hostname != "" {
+			r["hostname"] = h.Hostname
 		}
 		if withScanner {
-			if _, err := tx.ExecContext(ctx, `UPDATE network_hosts SET scanned_by = ? WHERE mac = ?`, c.ScannedBy, h.MAC); err != nil {
-				return Result{}, err
-			}
-			row.ScannedBy = c.ScannedBy
+			r["scanned_by"] = c.ScannedBy
 		}
+		if err := w.put(ctx, "network_hosts", r); err != nil {
+			return Result{}, err
+		}
+		host := networkHostOf(r)
 		switch {
 		case isNew && !inBaseline(h.IP):
-			res.NewHosts = append(res.NewHosts, row)
+			res.NewHosts = append(res.NewHosts, host)
 		case !isNew && c.AbsentAfter > 0 && c.At-last >= c.AbsentAfter:
-			res.ReturnedHosts = append(res.ReturnedHosts, row)
+			res.ReturnedHosts = append(res.ReturnedHosts, host)
 		}
 		res.Count++
 	}
 	return res, nil
+}
+
+// newNetworkHostRow is the row of a host first found at time at, with every
+// column of schema v.
+func newNetworkHostRow(v int64, mac string, at int64) row {
+	r := row{"mac": mac, "ip": "", "hostname": "", "vendor": "", "first_seen": at, "last_seen": at}
+	if v >= networkHostStateSchema {
+		r["state"] = HostUnreviewed
+	}
+	if v >= networkHostSourcesSchema {
+		r["sources"], r["hostname_source"], r["last_scan"] = "", "", int64(0)
+	}
+	if v >= networkHostScannedBySchema {
+		r["scanned_by"] = ""
+	}
+	return r
+}
+
+// networkHostOf decodes a network_hosts row, as scanNetworkHost does the
+// columns of networkHostSelect.
+func networkHostOf(r row) NetworkHost {
+	return NetworkHost{
+		MAC: r.str("mac"), IP: r.str("ip"), Hostname: r.str("hostname"), Vendor: r.str("vendor"),
+		FirstSeen: fromMillis(r.int("first_seen")), LastSeen: fromMillis(r.int("last_seen")),
+		State: r.str("state"), Sources: splitSources(r.str("sources")), HostnameSource: r.str("hostname_source"),
+		ScannedBy: r.str("scanned_by"),
+	}
 }
 
 // subnets are the scan's subnets that parse.
@@ -427,6 +434,7 @@ func (r NetworkHosts) SetState(ctx context.Context, mac, state string) error {
 // SetNetworkHostState sets a host's state (HostUnreviewed, HostKnown or
 // HostIgnored). It fails with ErrNotFound if there is no host with MAC.
 type SetNetworkHostState struct {
+	Stamp
 	MAC   string `json:"mac"`
 	State string `json:"state"`
 }
@@ -436,19 +444,16 @@ func (SetNetworkHostState) Op() string { return "set_network_host_state" }
 
 func (SetNetworkHostState) minSchema() int64 { return networkHostStateSchema }
 
-func (c SetNetworkHostState) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	res, err := tx.ExecContext(ctx, `UPDATE network_hosts SET state = ? WHERE mac = ?`, c.State, c.MAC)
+func (c SetNetworkHostState) apply(ctx context.Context, w *writer) (Result, error) {
+	r, err := w.get(ctx, "network_hosts", c.MAC)
 	if err != nil {
 		return Result{}, err
 	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return Result{}, err
-	}
-	if n == 0 {
+	if r == nil {
 		return Result{}, ErrNotFound
 	}
-	return Result{Count: int(n)}, nil
+	r["state"] = c.State
+	return Result{Count: 1}, w.put(ctx, "network_hosts", r)
 }
 
 // ImportedHost is one host in a RecordNetworkImport: what Pi-hole and the
@@ -490,6 +495,7 @@ func (r NetworkHosts) RecordImport(ctx context.Context, at time.Time, hosts []Im
 
 // RecordNetworkImport upserts the hosts of one import (see RecordImport).
 type RecordNetworkImport struct {
+	Stamp
 	At    int64          `json:"at"`
 	Hosts []ImportedHost `json:"hosts"`
 }
@@ -499,37 +505,33 @@ func (RecordNetworkImport) Op() string { return "record_network_import" }
 
 func (RecordNetworkImport) minSchema() int64 { return networkHostSourcesSchema }
 
-func (c RecordNetworkImport) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
+func (c RecordNetworkImport) apply(ctx context.Context, w *writer) (Result, error) {
 	for _, h := range c.Hosts {
-		var (
-			last    int64
-			sources string
-		)
-		err := tx.QueryRowContext(ctx, `SELECT last_seen, sources FROM network_hosts WHERE mac = ?`, h.MAC).Scan(&last, &sources)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		r, err := w.get(ctx, "network_hosts", h.MAC)
+		if err != nil {
 			return Result{}, err
 		}
 		seen := h.Seen
 		if seen == 0 {
 			seen = c.At // first and last seen of a new host only
 		}
-		newer := h.Seen != 0 && h.Seen >= last
-		nameSource := ""
-		if h.Hostname != "" {
-			nameSource = h.HostnameSource
+		if r == nil {
+			r = newNetworkHostRow(w.schema, h.MAC, seen)
+			r["ip"], r["vendor"] = h.IP, h.Vendor
+		} else {
+			if h.Seen != 0 && h.Seen >= r.int("last_seen") {
+				r["ip"] = h.IP
+			}
+			if r.str("vendor") == "" {
+				r["vendor"] = h.Vendor
+			}
+			r["last_seen"] = max(r.int("last_seen"), h.Seen)
 		}
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO network_hosts (mac, ip, hostname, vendor, first_seen, last_seen, sources, hostname_source)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT (mac) DO UPDATE SET
-				ip = CASE WHEN ? THEN excluded.ip ELSE ip END,
-				hostname = COALESCE(NULLIF(excluded.hostname, ''), hostname),
-				hostname_source = CASE WHEN excluded.hostname != '' THEN excluded.hostname_source ELSE hostname_source END,
-				vendor = COALESCE(NULLIF(vendor, ''), excluded.vendor),
-				last_seen = MAX(last_seen, ?),
-				sources = excluded.sources`,
-			h.MAC, h.IP, h.Hostname, h.Vendor, seen, seen, addSources(sources, h.Sources...), nameSource,
-			newer, h.Seen); err != nil {
+		if h.Hostname != "" {
+			r["hostname"], r["hostname_source"] = h.Hostname, h.HostnameSource
+		}
+		r["sources"] = addSources(r.str("sources"), h.Sources...)
+		if err := w.put(ctx, "network_hosts", r); err != nil {
 			return Result{}, err
 		}
 	}

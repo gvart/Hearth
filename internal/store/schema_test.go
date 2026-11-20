@@ -286,8 +286,8 @@ type gatedInsert struct{ ID string }
 
 func (gatedInsert) Op() string       { return "gated_insert" }
 func (gatedInsert) minSchema() int64 { return nextSchema }
-func (c gatedInsert) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	_, err := tx.ExecContext(ctx, `INSERT INTO rolling_test (device_id) VALUES (?)`, c.ID)
+func (c gatedInsert) apply(ctx context.Context, w *writer) (Result, error) {
+	_, err := w.tx.ExecContext(ctx, `INSERT INTO rolling_test (device_id) VALUES (?)`, c.ID)
 	return Result{}, err
 }
 

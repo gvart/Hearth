@@ -4,7 +4,6 @@ package store
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"time"
@@ -27,6 +26,7 @@ type ProxmoxServer struct {
 // AddProxmoxServer stores a server and its sealed connection. A duplicate ID
 // or name is a constraint violation.
 type AddProxmoxServer struct {
+	Stamp
 	ID        string `json:"id"`
 	Name      string `json:"name"`
 	Sealed    []byte `json:"sealed"`
@@ -38,16 +38,16 @@ func (AddProxmoxServer) Op() string { return "add_proxmox_server" }
 
 func (AddProxmoxServer) minSchema() int64 { return proxmoxServersSchema }
 
-func (c AddProxmoxServer) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	_, err := tx.ExecContext(ctx,
-		`INSERT INTO proxmox_servers (id, name, connection, created_at) VALUES (?, ?, ?, ?)`,
-		c.ID, c.Name, c.Sealed, c.CreatedAt)
-	return Result{}, err
+func (c AddProxmoxServer) apply(ctx context.Context, w *writer) (Result, error) {
+	return Result{}, w.insert(ctx, "proxmox_servers", row{
+		"id": c.ID, "name": c.Name, "connection": c.Sealed, "created_at": c.CreatedAt,
+	})
 }
 
 // RemoveProxmoxServer deletes a server. It fails with ErrNotFound if there is
 // none with ID.
 type RemoveProxmoxServer struct {
+	Stamp
 	ID string `json:"id"`
 }
 
@@ -56,19 +56,8 @@ func (RemoveProxmoxServer) Op() string { return "remove_proxmox_server" }
 
 func (RemoveProxmoxServer) minSchema() int64 { return proxmoxServersSchema }
 
-func (c RemoveProxmoxServer) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	res, err := tx.ExecContext(ctx, `DELETE FROM proxmox_servers WHERE id = ?`, c.ID)
-	if err != nil {
-		return Result{}, err
-	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return Result{}, err
-	}
-	if n == 0 {
-		return Result{}, ErrNotFound
-	}
-	return Result{Count: int(n)}, nil
+func (c RemoveProxmoxServer) apply(ctx context.Context, w *writer) (Result, error) {
+	return deleteRow(ctx, w, "proxmox_servers", c.ID)
 }
 
 // ProxmoxServers is the repository for adopted Proxmox VE servers.
@@ -131,8 +120,11 @@ func (r ProxmoxServers) List(ctx context.Context) ([]ProxmoxServer, error) {
 	if v < proxmoxServersSchema {
 		return nil, nil
 	}
-	rows, err := r.s.db.QueryContext(ctx,
-		`SELECT id, name, connection, created_at FROM proxmox_servers ORDER BY name`)
+	q := `SELECT id, name, connection, created_at FROM proxmox_servers ORDER BY name`
+	if v >= VersionedSchema {
+		q = `SELECT id, name, connection, created_at FROM proxmox_servers WHERE _deleted = 0 ORDER BY name`
+	}
+	rows, err := r.s.db.QueryContext(ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("list proxmox servers: %w", err)
 	}

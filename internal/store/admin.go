@@ -62,8 +62,12 @@ func (r Admin) CreateSession(ctx context.Context, secret string, now, expiresAt 
 // ErrNotFound or ErrSessionExpired otherwise.
 func (r Admin) CheckSession(ctx context.Context, secret string, now time.Time) (time.Time, error) {
 	h := hashSecret(secret)
+	versioned, err := isVersioned(ctx, r.s.db)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("check session: %w", err)
+	}
 	var expiresAt int64
-	err := r.s.db.QueryRowContext(ctx, `SELECT expires_at FROM sessions WHERE hash = ?`, h[:]).Scan(&expiresAt)
+	err = r.s.db.QueryRowContext(ctx, `SELECT expires_at FROM sessions WHERE hash = ?`+liveOnly(versioned), h[:]).Scan(&expiresAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return time.Time{}, fmt.Errorf("check session: %w", ErrNotFound)
 	}

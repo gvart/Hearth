@@ -4,7 +4,6 @@ package store
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"time"
@@ -27,6 +26,7 @@ type KubeCluster struct {
 // AddKubeCluster stores a cluster and its sealed kubeconfig. A duplicate ID
 // or name is a constraint violation.
 type AddKubeCluster struct {
+	Stamp
 	ID        string `json:"id"`
 	Name      string `json:"name"`
 	Sealed    []byte `json:"sealed"`
@@ -38,16 +38,16 @@ func (AddKubeCluster) Op() string { return "add_kube_cluster" }
 
 func (AddKubeCluster) minSchema() int64 { return kubeClustersSchema }
 
-func (c AddKubeCluster) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	_, err := tx.ExecContext(ctx,
-		`INSERT INTO kube_clusters (id, name, kubeconfig, created_at) VALUES (?, ?, ?, ?)`,
-		c.ID, c.Name, c.Sealed, c.CreatedAt)
-	return Result{}, err
+func (c AddKubeCluster) apply(ctx context.Context, w *writer) (Result, error) {
+	return Result{}, w.insert(ctx, "kube_clusters", row{
+		"id": c.ID, "name": c.Name, "kubeconfig": c.Sealed, "created_at": c.CreatedAt,
+	})
 }
 
 // RemoveKubeCluster deletes a cluster. It fails with ErrNotFound if there is
 // none with ID.
 type RemoveKubeCluster struct {
+	Stamp
 	ID string `json:"id"`
 }
 
@@ -56,19 +56,8 @@ func (RemoveKubeCluster) Op() string { return "remove_kube_cluster" }
 
 func (RemoveKubeCluster) minSchema() int64 { return kubeClustersSchema }
 
-func (c RemoveKubeCluster) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	res, err := tx.ExecContext(ctx, `DELETE FROM kube_clusters WHERE id = ?`, c.ID)
-	if err != nil {
-		return Result{}, err
-	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return Result{}, err
-	}
-	if n == 0 {
-		return Result{}, ErrNotFound
-	}
-	return Result{Count: int(n)}, nil
+func (c RemoveKubeCluster) apply(ctx context.Context, w *writer) (Result, error) {
+	return deleteRow(ctx, w, "kube_clusters", c.ID)
 }
 
 // KubeClusters is the repository for adopted Kubernetes clusters.
@@ -108,8 +97,11 @@ func (r KubeClusters) List(ctx context.Context) ([]KubeCluster, error) {
 	if v < kubeClustersSchema {
 		return nil, nil
 	}
-	rows, err := r.s.db.QueryContext(ctx,
-		`SELECT id, name, kubeconfig, created_at FROM kube_clusters ORDER BY name`)
+	q := `SELECT id, name, kubeconfig, created_at FROM kube_clusters ORDER BY name`
+	if v >= VersionedSchema {
+		q = `SELECT id, name, kubeconfig, created_at FROM kube_clusters WHERE _deleted = 0 ORDER BY name`
+	}
+	rows, err := r.s.db.QueryContext(ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("list kube clusters: %w", err)
 	}

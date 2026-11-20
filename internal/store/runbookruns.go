@@ -4,7 +4,6 @@ package store
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -128,7 +127,7 @@ func (r RunbookRuns) Save(ctx context.Context, run RunbookRun) (int64, error) {
 
 // Get returns one run with its source, or ErrNotFound.
 func (r RunbookRuns) Get(ctx context.Context, id string) (RunbookRun, error) {
-	out, err := r.query(ctx, `SELECT `+runbookRunColumns+`, source FROM runbook_runs WHERE id = ?`, id)
+	out, err := r.query(ctx, `source`, `id = ?`, ``, id)
 	if err != nil {
 		return RunbookRun{}, fmt.Errorf("get runbook run %s: %w", id, err)
 	}
@@ -144,8 +143,8 @@ func (r RunbookRuns) List(ctx context.Context, runbookID string, limit int) ([]R
 	if limit <= 0 {
 		return nil, errors.New("list runbook runs: limit must be positive")
 	}
-	out, err := r.query(ctx, `SELECT `+runbookRunColumns+`, x'' FROM runbook_runs
-		WHERE ? = '' OR runbook_id = ? ORDER BY started_at DESC, rowid DESC LIMIT ?`, runbookID, runbookID, limit)
+	out, err := r.query(ctx, `x''`, `? = '' OR runbook_id = ?`, `ORDER BY started_at DESC, rowid DESC LIMIT ?`,
+		runbookID, runbookID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list runbook runs: %w", err)
 	}
@@ -155,8 +154,7 @@ func (r RunbookRuns) List(ctx context.Context, runbookID string, limit int) ([]R
 // Open returns every run the engine has work on, oldest first: not finished,
 // and not stopped for an operator's decision. Before schema 16 there are none.
 func (r RunbookRuns) Open(ctx context.Context) ([]RunbookRun, error) {
-	out, err := r.query(ctx, `SELECT `+runbookRunColumns+`, x'' FROM runbook_runs
-		WHERE finished_at = 0 AND status NOT IN (`+runbookRunsStopped+`) ORDER BY started_at, rowid`)
+	out, err := r.query(ctx, `x''`, `finished_at = 0 AND status NOT IN (`+runbookRunsStopped+`)`, `ORDER BY started_at, rowid`)
 	if err != nil {
 		return nil, fmt.Errorf("list open runbook runs: %w", err)
 	}
@@ -165,9 +163,11 @@ func (r RunbookRuns) Open(ctx context.Context) ([]RunbookRun, error) {
 
 const runbookRunColumns = `id, runbook_id, status, version, started_by, started_at, updated_at, finished_at, state`
 
-// query runs q, which selects runbookRunColumns and the source; before schema
-// 16 it finds none.
-func (r RunbookRuns) query(ctx context.Context, q string, args ...any) ([]RunbookRun, error) {
+// query selects runbookRunColumns and source (the column, or an empty blob)
+// of the runs matching where, then tail (an ORDER BY or LIMIT clause). The
+// clauses are constants of this file's callers; values are bound. Before
+// schema 16 it finds none.
+func (r RunbookRuns) query(ctx context.Context, source, where, tail string, args ...any) ([]RunbookRun, error) {
 	v, err := schemaVersion(ctx, r.s.db)
 	if err != nil {
 		return nil, err
@@ -175,6 +175,8 @@ func (r RunbookRuns) query(ctx context.Context, q string, args ...any) ([]Runboo
 	if v < runbookRunsSchema {
 		return nil, nil
 	}
+	q := `SELECT ` + runbookRunColumns + `, ` + source + ` FROM runbook_runs WHERE (` + where + `)` + //nolint:gosec // see above
+		liveOnly(v >= VersionedSchema) + ` ` + tail
 	rows, err := r.s.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
@@ -206,6 +208,7 @@ func (r RunbookRuns) query(ctx context.Context, q string, args ...any) ([]Runboo
 // runs. It fails with ErrRunbookRunsUnresolved, inserting nothing, when the
 // runbook already has Keep unresolved runs.
 type CreateRunbookRun struct {
+	Stamp
 	ID        string `json:"id"`
 	RunbookID string `json:"runbook_id"`
 	Status    string `json:"status"`
@@ -221,34 +224,26 @@ func (CreateRunbookRun) Op() string { return "create_runbook_run" }
 
 func (CreateRunbookRun) minSchema() int64 { return runbookRunsSchema }
 
-func (c CreateRunbookRun) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	var unresolved int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM runbook_runs
-		WHERE runbook_id = ? AND finished_at = 0 AND status IN (`+runbookRunsUnresolved+`)`, c.RunbookID).Scan(&unresolved); err != nil {
-		return Result{}, err
-	}
-	if c.Keep > 0 && unresolved >= c.Keep {
-		return Result{}, ErrRunbookRunsUnresolved
-	}
-	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO runbook_runs (id, runbook_id, status, version, started_by, started_at, updated_at, source, state)
-		VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?)`,
-		c.ID, c.RunbookID, c.Status, c.StartedBy, c.StartedAt, c.StartedAt, c.Source, c.State); err != nil {
-		return Result{}, err
-	}
-	_, err := tx.ExecContext(ctx, `
-		DELETE FROM runbook_runs WHERE runbook_id = ? AND finished_at != 0 AND rowid NOT IN (
-			SELECT rowid FROM runbook_runs WHERE runbook_id = ? AND finished_at != 0
-			ORDER BY started_at DESC, rowid DESC LIMIT ?)`, c.RunbookID, c.RunbookID, c.Keep)
+func (c CreateRunbookRun) apply(ctx context.Context, w *writer) (Result, error) {
+	unresolved, err := w.query(ctx, "runbook_runs",
+		`runbook_id = ? AND finished_at = 0 AND status IN (`+runbookRunsUnresolved+`)`, "", c.RunbookID)
 	if err != nil {
 		return Result{}, err
 	}
-	_, err = tx.ExecContext(ctx, `
-		DELETE FROM runbook_runs WHERE runbook_id = ? AND finished_at = 0 AND status = 'failed'
-		AND rowid NOT IN (
-			SELECT rowid FROM runbook_runs WHERE runbook_id = ? AND finished_at = 0 AND status = 'failed'
-			ORDER BY started_at DESC, rowid DESC LIMIT ?)`, c.RunbookID, c.RunbookID, c.Keep)
-	return Result{}, err
+	if c.Keep > 0 && len(unresolved) >= c.Keep {
+		return Result{}, ErrRunbookRunsUnresolved
+	}
+	if err := w.insert(ctx, "runbook_runs", row{
+		"id": c.ID, "runbook_id": c.RunbookID, "status": c.Status, "version": int64(1), "started_by": c.StartedBy,
+		"started_at": c.StartedAt, "updated_at": c.StartedAt, "finished_at": int64(0), "source": c.Source, "state": c.State,
+	}); err != nil {
+		return Result{}, err
+	}
+	if err := pruneRuns(ctx, w, "runbook_runs", `runbook_id = ? AND finished_at != 0`, c.Keep, c.RunbookID); err != nil {
+		return Result{}, err
+	}
+	return Result{}, pruneRuns(ctx, w, "runbook_runs", `runbook_id = ? AND finished_at = 0 AND status = 'failed'`,
+		c.Keep, c.RunbookID)
 }
 
 // SaveRunbookRun replaces a run's status and state if it is still at Version.
@@ -256,6 +251,7 @@ func (c CreateRunbookRun) apply(ctx context.Context, tx *sql.Tx) (Result, error)
 // exactly one wins, in log order, on every node. It fails with
 // ErrRunbookRunConflict or ErrNotFound.
 type SaveRunbookRun struct {
+	Stamp
 	ID         string `json:"id"`
 	Version    int64  `json:"version"`
 	Status     string `json:"status"`
@@ -269,26 +265,17 @@ func (SaveRunbookRun) Op() string { return "save_runbook_run" }
 
 func (SaveRunbookRun) minSchema() int64 { return runbookRunsSchema }
 
-func (c SaveRunbookRun) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	res, err := tx.ExecContext(ctx, `
-		UPDATE runbook_runs SET status = ?, version = version + 1, updated_at = ?, finished_at = ?, state = ?
-		WHERE id = ? AND version = ?`, c.Status, c.UpdatedAt, c.FinishedAt, c.State, c.ID, c.Version)
-	if err != nil {
+func (c SaveRunbookRun) apply(ctx context.Context, w *writer) (Result, error) {
+	r, err := w.get(ctx, "runbook_runs", c.ID)
+	switch {
+	case err != nil:
 		return Result{}, err
-	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return Result{}, err
-	}
-	if n == 1 {
-		return Result{}, nil
-	}
-	var exists bool
-	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM runbook_runs WHERE id = ?)`, c.ID).Scan(&exists); err != nil {
-		return Result{}, err
-	}
-	if !exists {
+	case r == nil:
 		return Result{}, ErrNotFound
+	case r.int("version") != c.Version:
+		return Result{}, ErrRunbookRunConflict
 	}
-	return Result{}, ErrRunbookRunConflict
+	r["status"], r["version"], r["updated_at"] = c.Status, c.Version+1, c.UpdatedAt
+	r["finished_at"], r["state"] = c.FinishedAt, c.State
+	return Result{}, w.put(ctx, "runbook_runs", r)
 }

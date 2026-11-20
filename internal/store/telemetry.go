@@ -29,6 +29,7 @@ type TelemetrySetting struct {
 // SetTelemetry stores the admin's answer. It resets the last send, so a new
 // opt-in sends shortly after.
 type SetTelemetry struct {
+	Stamp
 	Enabled   bool   `json:"enabled"`
 	InstallID string `json:"install_id"`
 	At        int64  `json:"at"`
@@ -39,19 +40,20 @@ func (SetTelemetry) Op() string { return "set_telemetry" }
 
 func (SetTelemetry) minSchema() int64 { return telemetrySchema }
 
-func (c SetTelemetry) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	_, err := tx.ExecContext(ctx, `
-		INSERT INTO telemetry (id, enabled, install_id, answered_at, last_sent_at) VALUES (1, ?, ?, ?, 0)
-		ON CONFLICT (id) DO UPDATE SET
-			enabled = excluded.enabled, install_id = excluded.install_id,
-			answered_at = excluded.answered_at, last_sent_at = 0`,
-		c.Enabled, c.InstallID, c.At)
-	return Result{}, err
+func (c SetTelemetry) apply(ctx context.Context, w *writer) (Result, error) {
+	enabled := int64(0)
+	if c.Enabled {
+		enabled = 1
+	}
+	return Result{}, w.put(ctx, "telemetry", row{
+		"id": int64(1), "enabled": enabled, "install_id": c.InstallID, "answered_at": c.At, "last_sent_at": int64(0),
+	})
 }
 
 // MarkTelemetrySent records an attempt to send for InstallID. It fails with
 // ErrNotFound if telemetry was turned off, or on again with a new ID, since.
 type MarkTelemetrySent struct {
+	Stamp
 	InstallID string `json:"install_id"`
 	At        int64  `json:"at"`
 }
@@ -61,20 +63,16 @@ func (MarkTelemetrySent) Op() string { return "mark_telemetry_sent" }
 
 func (MarkTelemetrySent) minSchema() int64 { return telemetrySchema }
 
-func (c MarkTelemetrySent) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	res, err := tx.ExecContext(ctx,
-		`UPDATE telemetry SET last_sent_at = ? WHERE id = 1 AND enabled = 1 AND install_id = ?`, c.At, c.InstallID)
+func (c MarkTelemetrySent) apply(ctx context.Context, w *writer) (Result, error) {
+	r, err := w.get(ctx, "telemetry", int64(1))
 	if err != nil {
 		return Result{}, err
 	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return Result{}, err
-	}
-	if n == 0 {
+	if r == nil || r.int("enabled") != 1 || r.str("install_id") != c.InstallID {
 		return Result{}, ErrNotFound
 	}
-	return Result{Count: int(n)}, nil
+	r["last_sent_at"] = c.At
+	return Result{Count: 1}, w.put(ctx, "telemetry", r)
 }
 
 // Telemetry is the repository for the telemetry setting.

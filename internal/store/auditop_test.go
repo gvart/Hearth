@@ -112,11 +112,11 @@ func TestAuditQueryColumnsMatchDetailFolding(t *testing.T) {
 		for _, limit := range []int{1, 2, 5, 17, 1000} {
 			f := f
 			for page := range 400 {
-				want, err := s.Audit().query(ctx, f, limit, false)
+				want, err := s.Audit().query(ctx, f, limit, auditByDetail)
 				if err != nil {
 					t.Fatal(err)
 				}
-				got, err := s.Audit().query(ctx, f, limit, true)
+				got, err := s.Audit().query(ctx, f, limit, auditByColumn)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -134,7 +134,7 @@ func TestAuditQueryColumnsMatchDetailFolding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want, err := s.Audit().query(ctx, AuditFilter{}, 1000, false)
+	want, err := s.Audit().query(ctx, AuditFilter{}, 1000, auditByDetail)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +208,7 @@ func TestAuditOpMigrationBackfills(t *testing.T) {
 		}
 	}
 	// What the detail folding says before the migration.
-	before, err := s.Audit().query(ctx, AuditFilter{}, 10000, false)
+	before, err := s.Audit().query(ctx, AuditFilter{}, 10000, auditByDetail)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,7 +236,7 @@ func TestAuditOpMigrationBackfills(t *testing.T) {
 			t.Errorf("detail %.40q: op, outcome_of = %v, %v; want %v, %v", tt.detail, got[0], got[1], tt.op, tt.outcom)
 		}
 	}
-	after, err := s.Audit().query(ctx, AuditFilter{}, 10000, true)
+	after, err := s.Audit().query(ctx, AuditFilter{}, 10000, auditByColumn)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,7 +268,7 @@ func TestAuditBeforeTheOpColumns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want, err := s.Audit().query(ctx, AuditFilter{}, 10000, false)
+	want, err := s.Audit().query(ctx, AuditFilter{}, 10000, auditByDetail)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,7 +280,7 @@ func TestAuditBeforeTheOpColumns(t *testing.T) {
 	if _, err := s.ApplyLocal(ctx, MigrateSchema{To: auditOpSchemaForTest}); err != nil {
 		t.Fatal(err)
 	}
-	after, err := s.Audit().query(ctx, AuditFilter{}, 10000, true)
+	after, err := s.Audit().query(ctx, AuditFilter{}, 10000, auditByColumn)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -343,15 +343,16 @@ func TestAuditFoldUsesTheIndex(t *testing.T) {
 }
 
 // BenchmarkAuditQuery pages a log of 150k rows by folding on the detail JSON
-// ("detail") and on the indexed columns ("column").
+// ("detail"), on the indexed columns ("column"), and on the indexed columns
+// in the order of the global id ("version").
 func BenchmarkAuditQuery(b *testing.B) {
 	ctx := b.Context()
 	s := openBench(b)
 	seedBenchAudit(ctx, b, s, 150_000)
 	for _, mode := range []struct {
-		name    string
-		indexed bool
-	}{{"detail", false}, {"column", true}} {
+		name string
+		mode auditMode
+	}{{"detail", auditByDetail}, {"column", auditByColumn}, {"version", auditByVersion}} {
 		for _, page := range []struct {
 			name string
 			f    AuditFilter
@@ -362,7 +363,7 @@ func BenchmarkAuditQuery(b *testing.B) {
 		} {
 			b.Run(mode.name+"/"+page.name, func(b *testing.B) {
 				for range b.N {
-					if _, err := s.Audit().query(ctx, page.f, 101, mode.indexed); err != nil {
+					if _, err := s.Audit().query(ctx, page.f, 101, mode.mode); err != nil {
 						b.Fatal(err)
 					}
 				}
@@ -380,10 +381,10 @@ func seedBenchAudit(ctx context.Context, b *testing.B, s *Store, n int) {
 		b.Fatal(err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	st, err := tx.PrepareContext(ctx, `INSERT INTO audit_log (ts, actor_kind, actor_id, action, target, decision, result, detail, audit_op, audit_outcome_of)
+	st, err := tx.PrepareContext(ctx, `INSERT INTO audit_log (ts, actor_kind, actor_id, action, target, decision, result, detail, audit_op, audit_outcome_of, _hlc)
 		VALUES (?1, 'admin', 'root', ?2, 't', 'allow', ?3, ?4,
 		        CASE WHEN json_valid(?4) THEN json_extract(?4, '$.audit_op') END,
-		        CASE WHEN json_valid(?4) THEN json_extract(?4, '$.audit_outcome_of') END)`)
+		        CASE WHEN json_valid(?4) THEN json_extract(?4, '$.audit_outcome_of') END, ?1 + 1)`)
 	if err != nil {
 		b.Fatal(err)
 	}

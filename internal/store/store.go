@@ -10,10 +10,13 @@ import (
 	"fmt"
 	"io/fs"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pressly/goose/v3"
 	_ "modernc.org/sqlite" // registers the pure-Go "sqlite" database/sql driver
+
+	"github.com/gvart/hearth/internal/hlc"
 )
 
 //go:embed migrations/*.sql
@@ -32,6 +35,11 @@ type Store struct {
 	// newest schema version this store can migrate to.
 	extra     []*goose.Migration
 	maxSchema int64
+	// clock stamps the writes this store accepts, as origin (see Stamp).
+	clock  *hlc.Clock
+	origin string
+	// stmts caches the statements the writer builds (see stmtFor).
+	stmts sync.Map
 }
 
 // Open opens (creating if needed) the SQLite database at path with WAL,
@@ -60,13 +68,23 @@ func Open(ctx context.Context, path string, opts ...Option) (*Store, error) {
 	for _, o := range opts {
 		o(&cfg)
 	}
-	s := &Store{db: db, path: path, extra: cfg.extra, maxSchema: SchemaVersion()}
+	if cfg.clock == nil {
+		cfg.clock = hlc.NewClock(nil)
+	}
+	if cfg.origin == "" {
+		cfg.origin = randomOrigin()
+	}
+	s := &Store{db: db, path: path, extra: cfg.extra, maxSchema: SchemaVersion(), clock: cfg.clock, origin: cfg.origin}
 	for _, m := range cfg.extra {
 		s.maxSchema = max(s.maxSchema, m.Version)
 	}
 	if err := s.migrate(ctx, cfg.noUpgrade); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate %s: %w", path, err)
+	}
+	if err := s.observeStored(ctx); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("open sqlite %s: %w", path, err)
 	}
 	s.applier = ApplierFunc(s.ApplyLocal)
 	if cfg.newApplier != nil {
@@ -135,13 +153,29 @@ func (s *Store) SchemaVersion(ctx context.Context) (int64, error) {
 	return v, nil
 }
 
-// apply routes a write through the store's Applier.
+// apply routes a write through the store's Applier. From VersionedSchema it
+// first stamps the command with this hub's clock, unless it carries a stamp
+// already; below it, the command goes as it is, so a member whose binary
+// predates stamps can still decode it.
 func (s *Store) apply(ctx context.Context, cmd Command) (Result, error) {
+	if stampOf(cmd) == (Stamp{}) {
+		versioned, err := isVersioned(ctx, s.db)
+		if err != nil {
+			return Result{}, fmt.Errorf("apply %s: %w", cmd.Op(), err)
+		}
+		if versioned {
+			cmd = withStamp(cmd, Stamp{HLC: s.clock.Now(), Origin: s.origin})
+		}
+	}
 	return s.applier.Apply(ctx, cmd)
 }
 
 // Close closes the database.
 func (s *Store) Close() error {
+	s.stmts.Range(func(_, st any) bool {
+		_ = st.(*sql.Stmt).Close() //nolint:forcetypeassert // the cache holds statements only
+		return true
+	})
 	return s.db.Close()
 }
 

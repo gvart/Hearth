@@ -3,10 +3,12 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -15,9 +17,39 @@ import (
 	"time"
 )
 
+// migratedDB is the file of a new database migrated to SchemaVersion,
+// built once per test binary: migrating is the costliest part of Open, and
+// most tests only need a migrated database (as storetest gives other
+// packages).
+var migratedDB = sync.OnceValues(func() ([]byte, error) {
+	dir, err := os.MkdirTemp("", "hearth-store-test-")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	s, err := Open(context.Background(), filepath.Join(dir, "migrated.db"))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = s.Close() }()
+	var b bytes.Buffer
+	if err := s.Snapshot(context.Background(), &b); err != nil {
+		return nil, err
+	}
+	return b.Bytes(), nil
+})
+
 func openTest(t *testing.T) *Store {
 	t.Helper()
-	s, err := Open(t.Context(), filepath.Join(t.TempDir(), "hearth.db"))
+	b, err := migratedDB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "hearth.db")
+	if err := os.WriteFile(path, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(t.Context(), path)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}

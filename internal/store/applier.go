@@ -11,6 +11,8 @@ import (
 	"github.com/pressly/goose/v3"
 	"modernc.org/sqlite"
 	sqlite3 "modernc.org/sqlite/lib"
+
+	"github.com/gvart/hearth/internal/hlc"
 )
 
 // Applier executes store writes. Every repository write builds a Command and
@@ -36,6 +38,20 @@ type openConfig struct {
 	newApplier func(s *Store) Applier
 	noUpgrade  bool
 	extra      []*goose.Migration
+	clock      *hlc.Clock
+	origin     string
+}
+
+// WithClock makes the store stamp its writes with clock instead of one of
+// its own on the wall clock.
+func WithClock(clock *hlc.Clock) Option {
+	return func(c *openConfig) { c.clock = clock }
+}
+
+// WithOrigin sets the member id the store stamps its writes with (see
+// Stamp). Without it, a store makes up a random one each time it opens.
+func WithOrigin(id string) Option {
+	return func(c *openConfig) { c.origin = id }
 }
 
 // WithApplier makes the store route every write through the Applier returned
@@ -82,7 +98,7 @@ func IsDomainError(err error) bool {
 	if errors.Is(err, ErrNotFound) || errors.Is(err, ErrTokenUsed) || errors.Is(err, ErrTokenExpired) ||
 		errors.Is(err, ErrSchemaNotNewer) || errors.Is(err, ErrSchemaTooOld) || errors.Is(err, ErrApprovalClosed) ||
 		errors.Is(err, ErrRunbookRunConflict) || errors.Is(err, ErrRunbookRunsUnresolved) ||
-		errors.Is(err, ErrCARotationActive) || errors.Is(err, ErrCARotationConflict) {
+		errors.Is(err, ErrCARotationActive) || errors.Is(err, ErrCARotationConflict) || errors.Is(err, ErrExists) {
 		return true
 	}
 	var se *sqlite.Error
@@ -93,28 +109,45 @@ func IsDomainError(err error) bool {
 // state machine step: a replicated Applier calls it on every node, in log
 // order. Other callers go through the repositories instead, so their writes
 // reach the configured Applier.
-func (s *Store) ApplyLocal(ctx context.Context, cmd Command) (res Result, err error) {
+func (s *Store) ApplyLocal(ctx context.Context, cmd Command) (Result, error) {
+	res, _, err := s.ApplyLocalMutations(ctx, cmd)
+	return res, err
+}
+
+// ApplyLocalMutations is ApplyLocal, also returning the mutations the
+// command merged, in order: none below VersionedSchema.
+func (s *Store) ApplyLocalMutations(ctx context.Context, cmd Command) (res Result, muts []Mutation, err error) {
 	if m, ok := cmd.(MigrateSchema); ok {
 		// goose runs each migration in a transaction of its own.
-		return Result{}, s.migrateTo(ctx, m.To)
+		return Result{}, nil, s.migrateTo(ctx, m.To)
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return Result{}, fmt.Errorf("apply %s: %w", cmd.Op(), err)
+		return Result{}, nil, fmt.Errorf("apply %s: %w", cmd.Op(), err)
 	}
 	defer func() {
 		if err != nil {
 			_ = tx.Rollback()
 		}
 	}()
-	if err = checkSchema(ctx, tx, cmd); err != nil {
-		return Result{}, err
+	v, err := schemaVersion(ctx, tx)
+	if err != nil {
+		return Result{}, nil, fmt.Errorf("apply %s: %w", cmd.Op(), err)
 	}
-	if res, err = cmd.apply(ctx, tx); err != nil {
-		return Result{}, err
+	if err = checkSchema(cmd, v); err != nil {
+		return Result{}, nil, err
+	}
+	w := &writer{s: s, tx: tx, stamp: stampOf(cmd), schema: v, versioned: v >= VersionedSchema}
+	if res, err = cmd.apply(ctx, w); err != nil {
+		return Result{}, nil, err
 	}
 	if err = tx.Commit(); err != nil {
-		return Result{}, fmt.Errorf("apply %s: %w", cmd.Op(), err)
+		return Result{}, nil, fmt.Errorf("apply %s: %w", cmd.Op(), err)
 	}
-	return res, nil
+	// The clock stays ahead of every version applied, so the next write
+	// this hub stamps supersedes them.
+	for _, m := range w.muts {
+		s.clock.Observe(m.HLC)
+	}
+	return res, w.muts, nil
 }

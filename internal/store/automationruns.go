@@ -4,7 +4,6 @@ package store
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -76,10 +75,11 @@ func (r AutomationRuns) List(ctx context.Context, automationID string, limit int
 	if v < automationRunsSchema {
 		return nil, nil
 	}
-	rows, err := r.s.db.QueryContext(ctx, `
-		SELECT id, automation_id, trigger_id, started_at, finished_at, status, error, steps
-		FROM automation_runs WHERE ? = '' OR automation_id = ?
-		ORDER BY started_at DESC, rowid DESC LIMIT ?`, automationID, automationID, limit)
+	// liveOnly is a constant clause; values are bound.
+	q := `SELECT id, automation_id, trigger_id, started_at, finished_at, status, error, steps ` + //nolint:gosec // see above
+		`FROM automation_runs WHERE (? = '' OR automation_id = ?)` + liveOnly(v >= VersionedSchema) +
+		` ORDER BY started_at DESC, rowid DESC LIMIT ?`
+	rows, err := r.s.db.QueryContext(ctx, q, automationID, automationID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list automation runs: %w", err)
 	}
@@ -108,6 +108,7 @@ func (r AutomationRuns) List(ctx context.Context, automationID string, limit int
 // RecordAutomationRun inserts a finished automation run, then deletes all
 // but the newest Keep runs of that automation.
 type RecordAutomationRun struct {
+	Stamp
 	ID           string `json:"id"`
 	AutomationID string `json:"automation_id"`
 	TriggerID    string `json:"trigger_id"`
@@ -124,16 +125,12 @@ func (RecordAutomationRun) Op() string { return "record_automation_run" }
 
 func (RecordAutomationRun) minSchema() int64 { return automationRunsSchema }
 
-func (c RecordAutomationRun) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO automation_runs (id, automation_id, trigger_id, started_at, finished_at, status, error, steps)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		c.ID, c.AutomationID, c.TriggerID, c.StartedAt, c.FinishedAt, c.Status, c.Error, c.Steps); err != nil {
+func (c RecordAutomationRun) apply(ctx context.Context, w *writer) (Result, error) {
+	if err := w.insert(ctx, "automation_runs", row{
+		"id": c.ID, "automation_id": c.AutomationID, "trigger_id": c.TriggerID, "started_at": c.StartedAt,
+		"finished_at": c.FinishedAt, "status": c.Status, "error": c.Error, "steps": c.Steps,
+	}); err != nil {
 		return Result{}, err
 	}
-	_, err := tx.ExecContext(ctx, `
-		DELETE FROM automation_runs WHERE automation_id = ? AND rowid NOT IN (
-			SELECT rowid FROM automation_runs WHERE automation_id = ?
-			ORDER BY started_at DESC, rowid DESC LIMIT ?)`, c.AutomationID, c.AutomationID, c.Keep)
-	return Result{}, err
+	return Result{}, pruneRuns(ctx, w, "automation_runs", `automation_id = ?`, c.Keep, c.AutomationID)
 }

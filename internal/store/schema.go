@@ -43,7 +43,7 @@ func (MigrateSchema) Op() string { return "migrate_schema" }
 
 // apply is never called: ApplyLocal runs MigrateSchema through goose, which
 // runs each migration in a transaction of its own.
-func (MigrateSchema) apply(context.Context, *sql.Tx) (Result, error) {
+func (MigrateSchema) apply(context.Context, *writer) (Result, error) {
 	return Result{}, errors.New("migrate_schema runs outside a command transaction")
 }
 
@@ -76,16 +76,12 @@ type schemaGated interface {
 }
 
 // checkSchema refuses cmd with ErrSchemaTooOld if it needs a newer schema
-// than the database is at. Every node is at the same schema at the same log
+// than v, the version the database is at. Every node is at the same schema at the same log
 // position, so the refusal is the same everywhere.
-func checkSchema(ctx context.Context, tx *sql.Tx, cmd Command) error {
+func checkSchema(cmd Command, v int64) error {
 	g, ok := cmd.(schemaGated)
 	if !ok {
 		return nil
-	}
-	v, err := schemaVersion(ctx, tx)
-	if err != nil {
-		return fmt.Errorf("apply %s: %w", cmd.Op(), err)
 	}
 	if v < g.minSchema() {
 		return fmt.Errorf("apply %s: %w: it needs %d, the database is at %d; run `hearth cluster migrate` first",

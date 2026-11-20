@@ -155,6 +155,7 @@ func (r Certs) PinMismatches(ctx context.Context, deviceID string) ([]string, er
 // Count, 1 when it pinned the certificate; PinMismatch, true when it recorded
 // a mismatch. It fails with ErrNotFound for an unknown certificate.
 type PinCert struct {
+	Stamp
 	Serial      string `json:"serial"`
 	DeviceID    string `json:"device_id"`
 	Fingerprint string `json:"fingerprint"`
@@ -167,29 +168,24 @@ func (PinCert) Op() string { return "pin_cert" }
 
 func (PinCert) minSchema() int64 { return CertPinsSchema }
 
-func (c PinCert) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	var (
-		fp       sql.NullString
-		mismatch sql.NullInt64
-	)
-	err := tx.QueryRowContext(ctx, `SELECT fingerprint, pin_mismatch_at FROM certs WHERE serial = ? AND device_id = ?`,
-		c.Serial, c.DeviceID).Scan(&fp, &mismatch)
+func (c PinCert) apply(ctx context.Context, w *writer) (Result, error) {
+	r, err := w.get(ctx, "certs", c.Serial)
 	switch {
-	case errors.Is(err, sql.ErrNoRows):
-		return Result{}, ErrNotFound
 	case err != nil:
 		return Result{}, err
-	case !fp.Valid:
-		_, err := tx.ExecContext(ctx,
-			`UPDATE certs SET fingerprint = ?, ca_fp = COALESCE(ca_fp, ?) WHERE serial = ? AND device_id = ?`,
-			c.Fingerprint, nullString(c.CAFP), c.Serial, c.DeviceID)
-		return Result{Count: 1}, err
-	case fp.String == c.Fingerprint || mismatch.Valid:
+	case r == nil || r.str("device_id") != c.DeviceID:
+		return Result{}, ErrNotFound
+	case r.isNull("fingerprint"):
+		r["fingerprint"] = c.Fingerprint
+		if r.isNull("ca_fp") {
+			r["ca_fp"] = optString(c.CAFP)
+		}
+		return Result{Count: 1}, w.put(ctx, "certs", r)
+	case r.str("fingerprint") == c.Fingerprint || !r.isNull("pin_mismatch_at"):
 		return Result{}, nil
 	}
-	_, err = tx.ExecContext(ctx, `UPDATE certs SET pin_mismatch_at = ? WHERE serial = ? AND device_id = ?`,
-		c.Now, c.Serial, c.DeviceID)
-	return Result{PinMismatch: true}, err
+	r["pin_mismatch_at"] = c.Now
+	return Result{PinMismatch: true}, w.put(ctx, "certs", r)
 }
 
 // Record records a hub node certificate issued to c.NodeID, as RecordCert

@@ -13,6 +13,7 @@ import (
 	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/policy"
 	"github.com/gvart/hearth/internal/store"
+	"github.com/gvart/hearth/internal/store/storetest"
 )
 
 func execute(t *testing.T, args ...string) (string, error) {
@@ -34,13 +35,7 @@ func initHub(t *testing.T) (string, *pki.CA) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	st, err := store.Open(t.Context(), filepath.Join(dir, dbFile))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := st.Close(); err != nil {
-		t.Fatal(err)
-	}
+	storetest.Migrated(t, filepath.Join(dir, dbFile))
 	return dir, ca
 }
 
