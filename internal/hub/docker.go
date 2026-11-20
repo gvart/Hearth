@@ -153,7 +153,7 @@ func (a *api) deviceDockerLogs(w http.ResponseWriter, r *http.Request) {
 		tail = min(n, policy.MaxDockerLogTail)
 	}
 	req := &agentv1.DockerRequest{Op: &agentv1.DockerRequest_Logs{Logs: &agentv1.DockerLogs{
-		Container: container, Tail: uint32(tail), //nolint:gosec // at most MaxDockerLogTail
+		Container: container, Tail: uint32(tail),
 	}}}
 	var res *agentv1.DockerResult
 	err := a.policy.Do(r.Context(), policy.Request{

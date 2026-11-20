@@ -7,7 +7,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -90,7 +89,7 @@ func startFakeDocker(t *testing.T) *fakeDocker {
 		default:
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusNotFound)
-			_, _ = fmt.Fprintf(w, `{"message":"No such container: %s"}`, r.PathValue("id"))
+			writeJSONBody(w, map[string]string{"message": "No such container: " + r.PathValue("id")})
 		}
 	})
 	mux.HandleFunc("GET /containers/{id}/logs", func(w http.ResponseWriter, r *http.Request) {

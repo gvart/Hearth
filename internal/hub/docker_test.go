@@ -232,26 +232,64 @@ func TestDeviceDockerRefused(t *testing.T) {
 		want    string
 		audited string
 	}{
-		{"ceiling off", policy.Config{}, minDockerMinor, &agentv1.Ceiling{Logs: []string{"docker:*"}, Restart: []string{"docker:web"}},
-			http.MethodGet, "/api/v1/devices/dev-1/docker", "", http.StatusForbidden, "--allow-docker", "deny device.docker.list"},
-		{"ceiling off, action", policy.Config{}, minDockerMinor, &agentv1.Ceiling{Restart: []string{"docker:web"}},
-			http.MethodPost, "/api/v1/devices/dev-1/docker/actions", `{"action":"restart","container":"web"}`, http.StatusForbidden, "--allow-docker", "deny device.docker.restart"},
-		{"ceiling off, logs", policy.Config{}, minDockerMinor, nil,
-			http.MethodGet, "/api/v1/devices/dev-1/docker/logs?container=web", "", http.StatusForbidden, "--allow-docker", "deny device.docker.logs"},
-		{"agent too old", policy.Config{}, minDockerMinor - 1, on,
-			http.MethodGet, "/api/v1/devices/dev-1/docker", "", http.StatusForbidden, "too old", "deny device.docker.list"},
-		{"policy denies", denySafe, minDockerMinor, on,
-			http.MethodPost, "/api/v1/devices/dev-1/docker/actions", `{"action":"stop","container":"web"}`, http.StatusForbidden, "denied by policy", "deny device.docker.stop"},
-		{"invalid container", policy.Config{}, minDockerMinor, on,
-			http.MethodPost, "/api/v1/devices/dev-1/docker/actions", `{"action":"stop","container":"../../images/create"}`, http.StatusBadRequest, "container", ""},
-		{"invalid container, logs", policy.Config{}, minDockerMinor, on,
-			http.MethodGet, "/api/v1/devices/dev-1/docker/logs?container=web%2F..%2Fexec", "", http.StatusBadRequest, "container", ""},
-		{"exec", policy.Config{}, minDockerMinor, on,
-			http.MethodPost, "/api/v1/devices/dev-1/docker/actions", `{"action":"exec","container":"web"}`, http.StatusBadRequest, "start, stop, restart", ""},
-		{"remove", policy.Config{}, minDockerMinor, on,
-			http.MethodPost, "/api/v1/devices/dev-1/docker/actions", `{"action":"remove","container":"web"}`, http.StatusBadRequest, "start, stop, restart", ""},
-		{"no tail", policy.Config{}, minDockerMinor, on,
-			http.MethodGet, "/api/v1/devices/dev-1/docker/logs?container=web&tail=0", "", http.StatusBadRequest, "tail", ""},
+		{
+			"ceiling off",
+			policy.Config{},
+			minDockerMinor, &agentv1.Ceiling{Logs: []string{"docker:*"}, Restart: []string{"docker:web"}},
+			http.MethodGet, "/api/v1/devices/dev-1/docker", "", http.StatusForbidden, "--allow-docker", "deny device.docker.list",
+		},
+		{
+			"ceiling off, action",
+			policy.Config{},
+			minDockerMinor, &agentv1.Ceiling{Restart: []string{"docker:web"}},
+			http.MethodPost, "/api/v1/devices/dev-1/docker/actions", `{"action":"restart","container":"web"}`, http.StatusForbidden, "--allow-docker", "deny device.docker.restart",
+		},
+		{
+			"ceiling off, logs",
+			policy.Config{},
+			minDockerMinor, nil,
+			http.MethodGet, "/api/v1/devices/dev-1/docker/logs?container=web", "", http.StatusForbidden, "--allow-docker", "deny device.docker.logs",
+		},
+		{
+			"agent too old",
+			policy.Config{},
+			minDockerMinor - 1, on,
+			http.MethodGet, "/api/v1/devices/dev-1/docker", "", http.StatusForbidden, "too old", "deny device.docker.list",
+		},
+		{
+			"policy denies", denySafe, minDockerMinor, on,
+			http.MethodPost, "/api/v1/devices/dev-1/docker/actions", `{"action":"stop","container":"web"}`, http.StatusForbidden, "denied by policy", "deny device.docker.stop",
+		},
+		{
+			"invalid container",
+			policy.Config{},
+			minDockerMinor, on,
+			http.MethodPost, "/api/v1/devices/dev-1/docker/actions", `{"action":"stop","container":"../../images/create"}`, http.StatusBadRequest, "container", "",
+		},
+		{
+			"invalid container, logs",
+			policy.Config{},
+			minDockerMinor, on,
+			http.MethodGet, "/api/v1/devices/dev-1/docker/logs?container=web%2F..%2Fexec", "", http.StatusBadRequest, "container", "",
+		},
+		{
+			"exec",
+			policy.Config{},
+			minDockerMinor, on,
+			http.MethodPost, "/api/v1/devices/dev-1/docker/actions", `{"action":"exec","container":"web"}`, http.StatusBadRequest, "start, stop, restart", "",
+		},
+		{
+			"remove",
+			policy.Config{},
+			minDockerMinor, on,
+			http.MethodPost, "/api/v1/devices/dev-1/docker/actions", `{"action":"remove","container":"web"}`, http.StatusBadRequest, "start, stop, restart", "",
+		},
+		{
+			"no tail",
+			policy.Config{},
+			minDockerMinor, on,
+			http.MethodGet, "/api/v1/devices/dev-1/docker/logs?container=web&tail=0", "", http.StatusBadRequest, "tail", "",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
