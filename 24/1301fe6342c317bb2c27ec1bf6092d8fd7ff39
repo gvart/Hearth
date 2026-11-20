@@ -1,0 +1,33 @@
+web/src/components/AutomationsPage.tsx
+  s_87f1c7baee7d5a::t_5316a11e8f23c0 62-63
+internal/policy/guardrails_test.go
+  s_87f1c7baee7d5a::t_1190e3d745ca7a 198-200
+cmd/hearth/config_test.go
+  s_87f1c7baee7d5a::t_29f22060bf07ef 8,155-158,160-161
+web/src/api/automations.ts
+  s_87f1c7baee7d5a::t_d4115dfca8501c 64-65
+web/src/api/client.ts
+  s_87f1c7baee7d5a::t_1070ebff86aaf7 80
+web/src/automations/session.ts
+  s_87f1c7baee7d5a::t_e957ff77ba9380 12-13,39,43-45
+web/src/components/ConfigDriftBanner.tsx
+  s_87f1c7baee7d5a::t_b86fcccc4a1846 4,7,37-40,56-57,62,64-65
+web/test/automation-values.test.mjs
+  s_87f1c7baee7d5a::t_43388322b8621d 347-352
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "241301fe6342c317bb2c27ec1bf6092d8fd7ff39",
+  "prompts": {},
+  "sessions": {
+    "s_87f1c7baee7d5a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "45cc2cdf-3130-4caa-8cb4-8cb365d2150d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
