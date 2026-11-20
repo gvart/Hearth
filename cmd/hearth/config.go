@@ -176,6 +176,9 @@ func runConfigImport(ctx context.Context, dataDir, path, kind string, dryRun boo
 	if err != nil {
 		return err
 	}
+	if err := hubconfig.CheckLockout(incoming); err != nil {
+		return fmt.Errorf("nothing imported: %w", err)
+	}
 	if err := hubconfig.Validate(hubconfig.Overlay(current, incoming), cliKinds); err != nil {
 		return fmt.Errorf("nothing imported: %w", err)
 	}

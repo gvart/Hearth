@@ -193,8 +193,6 @@ func Parse(docs []Doc) (Set, error) {
 // Validate checks docs, the whole configuration an import would leave, as
 // the hub would load it: Parse, then every automation and runbook with the
 // step types kinds returns for the configuration's notification channels.
-// It also refuses a policy that would deny the operator config.import: the
-// way to change the policy back.
 func Validate(docs []Doc, kinds func(*notify.Notifier) automation.Kinds) error {
 	for _, d := range docs {
 		if err := CheckName(d.Kind, d.Name); err != nil {
@@ -213,12 +211,34 @@ func Validate(docs []Doc, kinds func(*notify.Notifier) automation.Kinds) error {
 	if _, rbErrs := automation.LoadRunbookDocs(set.Runbooks, k); len(rbErrs) > 0 {
 		errs = append(errs, rbErrs...)
 	}
-	req := policy.Request{ActorKind: policy.ActorAdmin, ActorID: "operator", Action: policy.ConfigImport}
-	if d, _ := policy.NewWithConfig(nil, nil, set.Policy).Check(req); d == policy.Deny {
-		errs = append(errs, fmt.Errorf("%s: it denies config.import to the operator, so it could never be changed again: "+
-			"hold dangerous actions for approval (confirm) instead", PolicyFile))
-	}
 	return errors.Join(errs...)
+}
+
+// CheckLockout refuses a policy document of incoming that would deny the
+// operator config.import: the only way to change the policy back.
+func CheckLockout(incoming []Doc) error {
+	for _, d := range incomingPolicy(incoming) {
+		cfg, err := policy.ParseConfig(d.Content)
+		if err != nil {
+			return fmt.Errorf("%s: %w", d.Name, err)
+		}
+		req := policy.Request{ActorKind: policy.ActorAdmin, ActorID: "operator", Action: policy.ConfigImport}
+		if decision, _ := policy.NewWithConfig(nil, nil, cfg).Check(req); decision == policy.Deny {
+			return fmt.Errorf("%s: it denies config.import to the operator, so it could never be changed again: "+
+				"hold dangerous actions for approval (confirm) instead", d.Name)
+		}
+	}
+	return nil
+}
+
+func incomingPolicy(docs []Doc) []Doc {
+	var out []Doc
+	for _, d := range docs {
+		if d.Kind == store.ConfigPolicy {
+			out = append(out, d)
+		}
+	}
+	return out
 }
 
 // ReadPath reads documents to import from path: a directory laid out like a
