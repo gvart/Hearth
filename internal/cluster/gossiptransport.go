@@ -134,12 +134,17 @@ func resolveAdvertise(ctx context.Context, advertise string) (net.IP, int, error
 		if err != nil || len(ips) == 0 {
 			return nil, 0, fmt.Errorf("gossip advertise address %q: resolve %s: %w", advertise, host, err)
 		}
-		ip = ips[0]
-		for _, x := range ips { // prefer IPv4, which every member can reach on a typical LAN
-			if x.To4() != nil {
+		// A host name often maps to a loopback address too (127.0.1.1 in
+		// Debian's /etc/hosts), which other members cannot dial. Prefer
+		// IPv4, which every member can reach on a typical LAN.
+		for _, x := range ips {
+			if !x.IsLoopback() && (ip == nil || ip.To4() == nil && x.To4() != nil) {
 				ip = x
-				break
 			}
+		}
+		if ip == nil {
+			return nil, 0, fmt.Errorf("gossip advertise address %q: %s resolves only to loopback; set --gossip-advertise",
+				advertise, host)
 		}
 	}
 	if ip.IsUnspecified() {

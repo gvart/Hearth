@@ -104,8 +104,7 @@ func (o clusterOptions) gossipAdvertiseAddr() (string, error) {
 }
 
 // newMembership returns the started node's gossip membership, its listener
-// bound so a taken port stops the hub at start; nil when gossip is off. The
-// caller runs it.
+// bound; nil when gossip is off or its port is taken. The caller runs it.
 func newMembership(ctx context.Context, o clusterOptions, node *cluster.Node, allowed cluster.RoleSet, log *slog.Logger) (
 	*cluster.Membership, error,
 ) {
@@ -118,7 +117,9 @@ func newMembership(ctx context.Context, o clusterOptions, node *cluster.Node, al
 	}
 	ln, err := (&net.ListenConfig{}).Listen(ctx, "tcp", o.gossipListen)
 	if err != nil {
-		return nil, fmt.Errorf("--gossip-listen: %w", err)
+		// Gossip only reports membership for now; the hub runs on without it.
+		log.WarnContext(ctx, "gossip membership off: cannot listen", "gossip_listen", o.gossipListen, "err", err)
+		return nil, nil
 	}
 	if host, port, err := net.SplitHostPort(advertise); err == nil && port == "0" {
 		// Listening on port 0 (tests): advertise the port taken.

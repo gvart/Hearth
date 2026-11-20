@@ -291,6 +291,29 @@ func TestMemberMetaFits(t *testing.T) {
 	}
 }
 
+func TestResolveAdvertise(t *testing.T) {
+	for _, tc := range []struct {
+		in, want, wantErr string
+	}{
+		{in: "127.0.0.1:7445", want: "127.0.0.1"},
+		{in: "10.0.0.5:7445", want: "10.0.0.5"},
+		{in: "localhost:7445", wantErr: "only to loopback"},
+		{in: "0.0.0.0:7445", wantErr: "other members can dial"},
+		{in: "no-port", wantErr: "missing port"},
+	} {
+		ip, port, err := resolveAdvertise(t.Context(), tc.in)
+		if tc.wantErr != "" {
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("resolveAdvertise(%q) = %v, %d, %v; want %q", tc.in, ip, port, err, tc.wantErr)
+			}
+			continue
+		}
+		if err != nil || ip.String() != tc.want || port != 7445 {
+			t.Errorf("resolveAdvertise(%q) = %v, %d, %v; want %s", tc.in, ip, port, err, tc.want)
+		}
+	}
+}
+
 func TestDigestOf(t *testing.T) {
 	a := digestOf(map[string]string{"policy": "1", "notify": "2"})
 	if a == "" || a != digestOf(map[string]string{"notify": "2", "policy": "1"}) {

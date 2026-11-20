@@ -89,7 +89,9 @@ It shows this hub's state, the leader, the Raft term and indexes, and every peer
 and its database schema as `DATABASE/SUPPORTED`: the schema version its database is at and the
 newest its Hearth supports (`?` and the reason when the hub does not answer). All peers should be
 `Voter`, and every DATABASE column shows the same version. The `MEMBER` table lists the gossip members
-with their address, roles, allowed roles, state (`alive`, `suspect`, `dead` or `left`) and schema. The `CONFIG` table compares each hub's
+with their address, roles, allowed roles, state and schema. A member is `alive`, `suspect` (gossip
+holds it alive but this hub has heard nothing from it directly for about two probe rounds), `dead`
+(failed) or `left` (stopped cleanly); `dead` and `left` members stay listed until this hub restarts. The `CONFIG` table compares each hub's
 local configuration (see [Configuration drift](#configuration-drift)). In the hub logs, `leading the cluster` and `no longer leading the
 cluster` mark leadership changes, and `caught up with the cluster` marks a hub that is ready after a
 start.
