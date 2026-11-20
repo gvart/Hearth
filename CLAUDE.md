@@ -13,7 +13,7 @@ Read this file fully before starting any task. Task specs live in `docs/tasks/`.
 2. **Act, not just look.** Automations and runbooks are the product. Dashboards are a side effect.
 3. **Deny by default.** Every action — UI, CLI, automation, AI, MCP — goes through `internal/policy`.
    No code path may execute anything on a device without a policy decision and an audit log entry.
-4. **Tiny on the edge.** The agent must idle under 20 MB RSS and near-zero CPU. Measure it.
+4. **Tiny on the edge.** The agent must idle under 25 MB RSS and near-zero CPU. Measure it.
 5. **Ship the demo.** v0's headline: one command on a fresh device → visible in the UI in < 10 s.
    Anything that doesn't serve v0 scope goes behind an issue, not into the PR.
 
