@@ -87,6 +87,10 @@ A read is the hub action `talos.read` (class `read`, actor `hub/talos`), one aud
 detail. A policy that denies the `read` class stops reads before the hub contacts the Talos API. The
 talosconfig's key never appears in the audit log, the hub log or the API.
 
+A runbook's [`talos_node` check](runbooks.md#a-talos-node-runs-a-version) reads through the same client
+and is decided as `talos.read` too, with the runbook as actor (`automation`, `runbook/<id>`) and the
+node as target: one entry per attempt at the step.
+
 ### In a cluster
 
 Only the leader reads, because only the leader can write the audit entry each read needs. Open the
@@ -152,8 +156,9 @@ container's own filesystem. On Talos that is the `/var` partition, so the disk m
 
 The Talos integration only reads. To upgrade a node, use the
 [upgrade recipe](runbook-recipes.md#upgrade-a-talos-node): a runbook that checks cluster health and
-etcd quorum, asks for approval, runs `talosctl upgrade --preserve` from a device with an agent, waits
-for the node to be Ready again, and rolls back with `talosctl rollback`. Never roll back a node that
+etcd quorum, asks for approval, runs `talosctl upgrade --preserve` from a device with an agent, checks
+through this integration that the node runs the new version with every service healthy, waits for the
+node to be Ready again, and rolls back with `talosctl rollback`. Never roll back a node that
 did not reboot into the new version: `talosctl rollback` would boot the version before the current one. Its `talosctl` steps are
 `exec` actions, which are dangerous, so they go through policy and approval like any other.
 

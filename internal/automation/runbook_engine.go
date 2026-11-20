@@ -85,7 +85,10 @@ type RunbooksConfig struct {
 	// KubeNodes runs the kube_node check steps. Without it, such a step
 	// fails.
 	KubeNodes KubeNodes
-	Log       *slog.Logger
+	// TalosNodes runs the talos_node check steps. Without it, such a step
+	// fails.
+	TalosNodes TalosNodes
+	Log        *slog.Logger
 	// Poll is how often the engine looks for work. Default 1s.
 	Poll time.Duration
 	// Now is the clock; default time.Now.
@@ -221,6 +224,9 @@ func checkAction(c *checkTrigger) (policy.Action, string) {
 	}
 	if c.kubeNode != nil {
 		return policy.KubeNodeReady, c.target
+	}
+	if c.talosNode != nil {
+		return policy.TalosRead, c.target
 	}
 	return policy.RunbookCheck, c.what
 }
@@ -1034,7 +1040,8 @@ func (r *Runbooks) policedCheck(ctx context.Context, rb *Runbook, run *store.Run
 // runCheck repeats a check until it passes or its time is up. A check from a
 // device that cannot run at all (the device is unknown, its agent offline or
 // refusing probes) fails at once: it never falls back to the hub. So does a
-// kube_node check on a cluster the hub has not adopted.
+// kube_node check on a cluster the hub has not adopted, and a talos_node
+// check on a hub without a talosconfig.
 func (r *Runbooks) runCheck(ctx context.Context, d *RunbookStep) error {
 	c := *d.Check
 	if c.from != "" {
@@ -1063,6 +1070,12 @@ func (r *Runbooks) runCheck(ctx context.Context, d *RunbookStep) error {
 		if err != nil {
 			return fmt.Errorf("%s: the Kubernetes clusters did not load within %s", cannot, d.Within)
 		}
+	}
+	if c.talosNode != nil {
+		if r.cfg.TalosNodes == nil {
+			return errNoTalos
+		}
+		once = func(ctx context.Context) (bool, error) { return true, c.talosNode.run(ctx, r.cfg.TalosNodes) }
 	}
 	for {
 		ran, err := once(ctx)

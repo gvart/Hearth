@@ -436,7 +436,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	// and agents see a clean end of stream and reconnect at once.
 	stopping, stop := context.WithCancel(context.WithoutCancel(ctx))
 	defer stop()
-	runbooks, err := newRunbooks(opts, st, sealers.runbook, pol, agents, notifier, kube, pluginMgr, log)
+	runbooks, err := newRunbooks(opts, st, sealers.runbook, pol, agents, notifier, kube, pluginMgr, talosClient, log)
 	if err != nil {
 		return err
 	}
@@ -783,7 +783,8 @@ func newProxmoxManager(st *store.Store, sealer *kubernetes.Sealer, pol *policy.E
 // newRunbooks returns the runbook engine. A run keeps a copy of its runbook
 // file, sealed with sealer (hubSealers).
 func newRunbooks(opts hubOptions, st *store.Store, sealer *kubernetes.Sealer, pol *policy.Engine, agents *hub.Agents,
-	notifier *notify.Notifier, kube *kubernetes.Manager, pluginMgr *plugins.Manager, log *slog.Logger,
+	notifier *notify.Notifier, kube *kubernetes.Manager, pluginMgr *plugins.Manager,
+	talosClient *talos.Client, log *slog.Logger,
 ) (*automation.Runbooks, error) {
 	kinds := automation.Builtin(log)
 	maps.Copy(kinds.Actions, automation.Actions(automation.ActionDeps{
@@ -791,8 +792,18 @@ func newRunbooks(opts hubOptions, st *store.Store, sealer *kubernetes.Sealer, po
 	}))
 	return automation.NewRunbooks(automation.RunbooksConfig{
 		Dir: runbooksDirOf(opts), Kinds: kinds, Policy: pol, Runs: st.RunbookRuns(), Sealer: sealer, Probers: agents,
-		KubeNodes: kube, Log: log.With("component", "runbooks"), DryRun: opts.automationsDryRun,
+		KubeNodes: kube, TalosNodes: talosNodes(talosClient), Log: log.With("component", "runbooks"),
+		DryRun: opts.automationsDryRun,
 	}), nil
+}
+
+// talosNodes returns c as an automation.TalosNodes, nil if c is: a nil
+// *talos.Client in the interface would not be nil.
+func talosNodes(c *talos.Client) automation.TalosNodes {
+	if c == nil {
+		return nil
+	}
+	return c
 }
 
 // runbooksDirOf is the directory the hub loads runbooks from.
