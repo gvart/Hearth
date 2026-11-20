@@ -24,7 +24,7 @@ Parallel: 2 ∥ 3, then 4 ∥ 5. Everything else is sequential.
 - [x] **1. Design note.** `docs/design/ap-cluster.md`.
   verify: owner approves the PR. depends on: none.
 - [ ] **2. Roles + membership.** Role set and `--allow-roles` in config; memberlist with an mTLS TCP
-  transport on 7444; member metadata (roles, schema, HLC, digest); `hearth cluster status` lists
+  transport (on `--gossip-listen :7445` while Raft keeps 7444; one port from item 8); member metadata (roles, schema, HLC, digest); `hearth cluster status` lists
   members and roles. Raft still runs alongside, untouched.
   verify: unit tests for join/leave/fail detection and for refusing a cert from a non-member; a role
   outside `--allow-roles` is refused. depends on: 1.
