@@ -5,6 +5,7 @@ package policy
 import (
 	"errors"
 	"fmt"
+	"net/netip"
 	"path"
 	"slices"
 	"strings"
@@ -77,6 +78,32 @@ func LogsWithinCeiling(c *agentv1.Ceiling, src *agentv1.LogSource) error {
 func ShellWithinCeiling(c *agentv1.Ceiling) error {
 	if !c.GetShell() {
 		return fmt.Errorf("shell: %w", ErrBeyondCeiling)
+	}
+	return nil
+}
+
+// ScanWithinCeiling checks a network scan of subnets against a device's
+// capability ceiling c, as the hub does before it sends a ScanRequest and the
+// agent does again before it sweeps. Each subnet must lie within one of the
+// ceiling's scan subnets: a /24 ceiling allows that /24 or a part of it, never
+// a wider one. It returns an error wrapping ErrBeyondCeiling unless every
+// subnet is allowed; a nil c, or one with no scan subnet, allows none.
+func ScanWithinCeiling(c *agentv1.Ceiling, subnets []netip.Prefix) error {
+	if len(subnets) == 0 {
+		return errors.New("no subnet to scan")
+	}
+	var allowed []netip.Prefix
+	for _, e := range c.GetScan() {
+		if p, err := netip.ParsePrefix(e); err == nil {
+			allowed = append(allowed, p.Masked())
+		}
+	}
+	for _, s := range subnets {
+		if !slices.ContainsFunc(allowed, func(a netip.Prefix) bool {
+			return a.Addr().Is4() == s.Addr().Is4() && a.Bits() <= s.Bits() && a.Contains(s.Addr())
+		}) {
+			return fmt.Errorf("scan %s: %w", s, ErrBeyondCeiling)
+		}
 	}
 	return nil
 }

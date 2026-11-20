@@ -4,6 +4,7 @@ package policy
 
 import (
 	"errors"
+	"net/netip"
 	"testing"
 
 	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
@@ -40,5 +41,41 @@ func TestLogsWithinCeiling(t *testing.T) {
 	}
 	if class, ok := ClassOf(DeviceLogs); !ok || class != Read {
 		t.Errorf("class of %s = %s, want read", DeviceLogs, class)
+	}
+}
+
+func TestScanWithinCeiling(t *testing.T) {
+	t.Parallel()
+	c := &agentv1.Ceiling{Scan: []string{"192.168.2.0/24", "10.20.0.0/16", "bad", "fd00::/64"}}
+	for _, tc := range []struct {
+		c       *agentv1.Ceiling
+		subnets []string
+		ok      bool
+	}{
+		{c, []string{"192.168.2.0/24"}, true},
+		{c, []string{"192.168.2.128/25"}, true},
+		{c, []string{"10.20.5.0/24", "192.168.2.0/24"}, true},
+		// Overlapping is not enough: a wider subnet sweeps beyond the ceiling.
+		{c, []string{"192.168.0.0/16"}, false},
+		{c, []string{"192.168.3.0/24"}, false},
+		{c, []string{"192.168.2.0/24", "192.168.3.0/24"}, false},
+		// Off by default: no ceiling, or one without scan subnets.
+		{nil, []string{"192.168.2.0/24"}, false},
+		{&agentv1.Ceiling{Probe: true, Shell: true}, []string{"192.168.2.0/24"}, false},
+	} {
+		var subnets []netip.Prefix
+		for _, s := range tc.subnets {
+			subnets = append(subnets, netip.MustParsePrefix(s))
+		}
+		err := ScanWithinCeiling(tc.c, subnets)
+		if (err == nil) != tc.ok || (err != nil && !errors.Is(err, ErrBeyondCeiling)) {
+			t.Errorf("ScanWithinCeiling(%v, %v) = %v, want ok=%v", tc.c.GetScan(), tc.subnets, err, tc.ok)
+		}
+		if err != nil && !errors.Is(err, ErrDenied) {
+			t.Errorf("ScanWithinCeiling(%v) = %v, want it to wrap ErrDenied", tc.subnets, err)
+		}
+	}
+	if err := ScanWithinCeiling(c, nil); err == nil || errors.Is(err, ErrBeyondCeiling) {
+		t.Errorf("no subnet = %v, want a plain error", err)
 	}
 }
