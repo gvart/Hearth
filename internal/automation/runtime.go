@@ -432,7 +432,9 @@ func (r *Runtime) act(ctx context.Context, a *Automation, s Step[Action], runID 
 		Detail:    map[string]any{"run": runID, "step": s.ID, "trigger": ev.TriggerID},
 		DryRun:    r.cfg.DryRun,
 	}
-	err = doAction(context.WithoutCancel(ctx), ctx, r.cfg.Policy, req, s.Impl, ev, s.Impl.Run)
+	// A script action calls policy itself, as the automation of this run.
+	runCtx := withCaller(ctx, caller{policy: r.cfg.Policy, req: req})
+	err = doAction(context.WithoutCancel(ctx), runCtx, r.cfg.Policy, req, s.Impl, ev, s.Impl.Run)
 	p, ok := s.Impl.(planner)
 	if err != nil || !r.cfg.DryRun || !ok {
 		return "", err

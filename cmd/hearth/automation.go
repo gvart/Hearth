@@ -39,6 +39,7 @@ func newAutomationPlanCmd() *cobra.Command {
 			kinds := automation.Builtin(slog.New(slog.DiscardHandler))
 			maps.Copy(kinds.Triggers, automation.Triggers(automation.TriggerDeps{}))
 			maps.Copy(kinds.Actions, automation.Actions(automation.ActionDeps{}))
+			kinds.Actions["script"] = automation.Script(automation.ScriptDeps{})
 			a, err := automation.LoadFile(args[0], kinds)
 			if err != nil {
 				return err

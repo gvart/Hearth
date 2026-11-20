@@ -463,3 +463,61 @@ file that uses `define`, `template` or `block`, edit it on the hub.
 `hearth automation plan` shows templates as written, and lists the fields each trigger provides.
 Policy decides on, and the audit log records, the rendered device. Run history keeps the trigger's
 fields as the first step of each run.
+
+## Scripts
+
+When YAML cannot say it (a loop, a computed value, a decision over several devices), a `script`
+action runs a [Starlark](https://github.com/google/starlark-go/blob/master/doc/spec.md) script on
+the hub. Starlark is a small, deterministic dialect of Python:
+
+```yaml
+id: attic-reboot
+triggers:
+  - type: schedule
+    cron: "0 4 * * 0"
+actions:
+  - id: reboot-attic
+    type: script
+    timeout: 30s                 # optional, default 10s, at most 1m
+    max_steps: 1000000           # optional, default 1,000,000, at most 100,000,000
+    source: |
+      for d in devices():
+          if d["labels"].get("room") == "attic" and d["status"] == "online":
+              action("restart", device=d["name"], service="systemd:hearth-agent.service")
+      action("log", message="attic restarted at " + trigger["At"])
+```
+
+A script sees only these, on top of Starlark's core (no `load`, and its built-ins compute only):
+
+| name                 | does                                                                                    |
+|----------------------|-----------------------------------------------------------------------------------------|
+| `trigger`            | the trigger's fields, as a dict: `trigger["ID"]`, `trigger["Device"]` ... (the `.Trigger` fields above) |
+| `devices()`          | every device, as dicts: `id`, `name`, `hostname`, `os`, `arch`, `status`, `labels`, `last_seen` |
+| `device(name)`       | the device with this id, name or hostname, or `None`                                    |
+| `action(type, ...)`  | takes one action of any type above but `script`, with its fields as keyword arguments   |
+
+There is no file, network, exec or environment access, and `print` is refused: write to the hub log
+with `action("log", message=...)`.
+
+Scripts cannot get around policy:
+
+- The `script` action is `automation.script`, class **safe**: running the script only computes. Each
+  `devices()` or `device()` is a `device.read` (read), and each `action()` is the action of its
+  type, with that type's class: an `action("exec", ...)` is dangerous and needs the same grant as an
+  `exec` step. Every one of them is decided and audited on its own, as `automation/<id>`, with the
+  run, the step and a call number in the audit entry's detail.
+- A denied call stops the script, and the run ends `denied`. Starlark has no `try`, so a script
+  cannot carry on past a denial.
+- Field values are values only: a string holding `{{` is refused, never parsed as a template, so
+  text from a device's name or labels cannot become one.
+- A script makes at most 100 calls per run.
+
+A script that runs too long is stopped: at `max_steps` Starlark steps, or at `timeout` of wall-clock
+time, including the time spent in the actions it calls (one waiting for approval too). The run
+fails with an error naming the limit. The step and time limits do not bound memory: keep data
+small.
+
+The script is parsed when the file loads, so a syntax error or an unknown name is reported with its
+line. In a dry run (`--automations-dry-run`, or the web UI's dry run) policy decides on the
+`automation.script` step itself; the script does not run, so the calls it would make are not
+decided. Scripts are for automations only, not [runbooks](runbooks.md).
