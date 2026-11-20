@@ -271,7 +271,7 @@ func collectNetEdges(procNet fs.FS, neighbors func() ([]discovery.Neighbor, erro
 	if err != nil {
 		return nil, err
 	}
-	out := &agentv1.NetEdges{Connections: t.connections(), ConnectionsDropped: uint32(min(t.dropped, 1<<31))} //nolint:gosec // capped
+	out := &agentv1.NetEdges{Connections: t.connections(), ConnectionsDropped: uint32(min(int64(t.dropped), 1<<31))} //nolint:gosec // capped
 	for _, n := range nb[:min(len(nb), maxNeighbors)] {
 		out.Neighbors = append(out.Neighbors, &agentv1.Neighbor{Ip: n.IP.String(), Mac: n.MAC.String()})
 	}
