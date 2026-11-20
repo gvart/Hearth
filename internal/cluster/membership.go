@@ -236,7 +236,7 @@ func decodeMeta(b []byte) (memberMeta, error) {
 func (m *Membership) setMeta(ctx context.Context, leaving bool) error {
 	meta := memberMeta{
 		Roles: m.cfg.Roles, Allowed: m.cfg.Allowed, Leaving: leaving,
-		Clock: uint64(time.Now().UnixMilli()), //nolint:gosec // after 1970
+		Clock: uint64(time.Now().UnixMilli()),
 	}
 	if m.cfg.Schema != nil {
 		if v, err := m.cfg.Schema(ctx); err == nil {
