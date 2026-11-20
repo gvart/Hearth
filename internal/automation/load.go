@@ -291,7 +291,11 @@ func buildSteps[T any](n *yaml.Node, kind string, builders map[string]Builder[T]
 		if s.ID == "" {
 			s.ID = fmt.Sprintf("%s-%d", s.Type, i+1)
 		}
-		impl, err := build(Params{node: params})
+		p := Params{node: params}
+		if acts, ok := any(builders).(map[string]Builder[Action]); ok {
+			p.actions = acts
+		}
+		impl, err := build(p)
 		if err != nil {
 			var le *lineErr
 			if !errors.As(err, &le) {

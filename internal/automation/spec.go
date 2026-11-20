@@ -129,6 +129,9 @@ type Kinds struct {
 // description.
 type Params struct {
 	node *yaml.Node
+	// actions are the action types of the file being loaded, for a script
+	// action to call; nil for a trigger or condition.
+	actions map[string]Builder[Action]
 }
 
 // Decode decodes the fields into v, a pointer to a struct with yaml tags. A

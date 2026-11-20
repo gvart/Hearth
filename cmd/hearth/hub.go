@@ -494,6 +494,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		Log:     log,
 	}))
 	maps.Copy(kinds.Actions, automation.Actions(automation.ActionDeps{Agents: agents, Notifier: notifier, Kube: kube}))
+	kinds.Actions["script"] = automation.Script(automation.ScriptDeps{Devices: st.Devices(), Live: reg.Live})
 	cfg.AutomationsDir, cfg.AutomationKinds = automationsDir, kinds
 	// The web editor and MCP write the same directory under one lock.
 	var automationsMu sync.Mutex

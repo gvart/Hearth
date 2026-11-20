@@ -4,6 +4,7 @@ go 1.26.0
 
 require (
 	connectrpc.com/connect v1.21.1
+	github.com/canonical/starlark v0.0.0-20261013114702-d127486937f6
 	github.com/creack/pty v1.1.24
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/raft v1.8.0

@@ -72,6 +72,10 @@ const (
 	AutomationRestart Action = "automation.restart"
 	// AutomationExec runs a command on a device, through its agent.
 	AutomationExec Action = "automation.exec"
+	// AutomationScript is an automation's script action: a Starlark script
+	// run on the hub. It reads and acts only through the device.read and
+	// automation actions it calls, each decided and audited on its own.
+	AutomationScript Action = "automation.script"
 	// AutomationProbe is an http, tcp or dns trigger, or a runbook check
 	// step, checking from a device: the device's agent runs the check for
 	// the hub.
@@ -115,7 +119,7 @@ const (
 	// ApprovalDeny refuses an action policy held for confirmation.
 	ApprovalDeny Action = "approval.deny"
 	// DeviceRead lists, searches or reads the facts of devices, for an MCP
-	// client.
+	// client or an automation's script.
 	DeviceRead Action = "device.read"
 	// DeviceMetrics reads a device's current metrics from Prometheus, for an
 	// MCP client.
@@ -334,6 +338,10 @@ var rules = map[Action]rule{
 	AutomationRestart: {class: Safe, actors: []string{ActorAutomation}},
 	// An arbitrary command can do anything the agent can.
 	AutomationExec: {class: Dangerous, actors: []string{ActorAutomation}},
+	// A script by itself only computes, within its step and time limits:
+	// every device read and action it calls is decided on its own, as the
+	// automation, and a dangerous one is denied unless granted or approved.
+	AutomationScript: {class: Safe, actors: []string{ActorAutomation}},
 	// A check from a device only connects and reads: it changes nothing,
 	// and the device's agent runs it only if its ceiling allows probes.
 	AutomationProbe: {class: Read, actors: []string{ActorAutomation}},
@@ -372,8 +380,9 @@ var rules = map[Action]rule{
 	// An approval link decides the one approval it was sent for.
 	ApprovalApprove: {class: Dangerous, actors: []string{ActorAdmin, ActorWeb, ActorApprovalLink}, fixed: true},
 	ApprovalDeny:    {class: Safe, actors: []string{ActorAdmin, ActorWeb, ActorApprovalLink}, fixed: true},
-	// What an MCP client reads is what the web UI shows.
-	DeviceRead:    {class: Read, actors: []string{ActorMCP}},
+	// What an MCP client reads is what the web UI shows. An automation's
+	// script reads the same.
+	DeviceRead:    {class: Read, actors: []string{ActorMCP, ActorAutomation}},
 	DeviceMetrics: {class: Read, actors: []string{ActorMCP}},
 	KubeRead:      {class: Read, actors: []string{ActorMCP}},
 	// As automation.restart and automation.exec, for an MCP client.
