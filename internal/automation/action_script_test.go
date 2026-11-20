@@ -105,6 +105,35 @@ func TestScriptTimeoutInsideCall(t *testing.T) {
 	}
 }
 
+// A call held for approval waits no longer than the script's time limit, and
+// the hold is closed in the audit log.
+func TestScriptTimeoutWhileHeld(t *testing.T) {
+	st, err := store.Open(t.Context(), t.TempDir()+"/hub.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	h := newScriptHarness(t, "    timeout: 300ms\n"+source(`action("exec", device="pi", command=["/usr/bin/df"])`), policy.Config{})
+	h.rt.cfg.Policy = policy.NewWithConfig(h.audit, st.Approvals(), policy.Config{
+		Classes: map[policy.Class]policy.Mode{policy.Dangerous: policy.ModeConfirm},
+	})
+	start := time.Now()
+	err = h.run(t.Context())
+	if !errors.Is(err, errScriptTimeout) {
+		t.Fatalf("err = %v, want the time limit", err)
+	}
+	if d := time.Since(start); d > 5*time.Second {
+		t.Fatalf("stopped after %s", d)
+	}
+	if n := len(h.agents.requests()); n != 0 {
+		t.Fatalf("agent got %d requests", n)
+	}
+	got := h.entries(policy.AutomationExec)
+	if len(got) != 2 || got[0].Decision != policy.Confirm || got[1].Decision != policy.Deny {
+		t.Fatalf("exec entries = %+v", got)
+	}
+}
+
 // A runaway script fails the run at its limit, recorded in history.
 func TestScriptRunawayRunFails(t *testing.T) {
 	h := newScriptHarness(t, "    max_steps: 1000\n"+source("x = 0\nwhile True:\n  x += 1"), policy.Config{})
