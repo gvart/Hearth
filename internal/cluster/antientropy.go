@@ -1,0 +1,314 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package cluster
+
+import (
+	"context"
+	"encoding/binary"
+	"errors"
+	"fmt"
+	"hash/fnv"
+	"slices"
+	"time"
+
+	"github.com/gvart/hearth/internal/hlc"
+	"github.com/gvart/hearth/internal/store"
+)
+
+// Anti-entropy (docs/design/ap-cluster.md §5.2): every round, this member
+// compares the rows it shares with each live peer and copies the newer
+// versions both ways. The comparison walks a tree of digests the store
+// keeps up to date as it writes (store.BucketDigests), so a round between
+// replicas that agree reads no rows:
+//
+//  1. the shared bucket ranges, cut into chunks of chunkBuckets buckets: one
+//     hash per chunk;
+//  2. for each chunk that differs, the digest of each of its buckets;
+//  3. for each bucket that differs, the version of each of its rows;
+//  4. the rows that differ, fetched from the newer side and merged.
+//
+// Only steps 3 and 4 read the database, and only for the buckets that
+// differ.
+
+// chunkBuckets is how many buckets one tree node above the leaves covers.
+const chunkBuckets = 256
+
+// refBatch bounds the rows fetched or pushed in one request.
+const refBatch = 500
+
+// bucketRange is the buckets [Start, End).
+type bucketRange struct {
+	Start int `json:"start"`
+	End   int `json:"end"`
+}
+
+// chunks cuts ranges into chunks of at most chunkBuckets buckets.
+func chunks(ranges []bucketRange) []bucketRange {
+	var out []bucketRange
+	for _, rg := range ranges {
+		for s := rg.Start; s < rg.End; s += chunkBuckets {
+			out = append(out, bucketRange{s, min(s+chunkBuckets, rg.End)})
+		}
+	}
+	return out
+}
+
+func bucketsOf(ranges []bucketRange) []int {
+	var out []int
+	for _, rg := range ranges {
+		for b := rg.Start; b < rg.End; b++ {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
+// checkRanges refuses ranges outside sp.
+func checkRanges(sp store.Space, ranges []bucketRange) error {
+	if sp != store.SpaceShard && sp != store.SpaceGlobal {
+		return fmt.Errorf("unknown digest space %d", sp)
+	}
+	for _, rg := range ranges {
+		if rg.Start < 0 || rg.End > sp.Buckets() || rg.Start >= rg.End {
+			return fmt.Errorf("bucket range %d-%d out of space", rg.Start, rg.End)
+		}
+	}
+	return nil
+}
+
+// chunkHashes hashes the bucket digests of each chunk.
+func chunkHashes(st *store.Store, sp store.Space, cs []bucketRange) []uint64 {
+	out := make([]uint64, len(cs))
+	for i, c := range cs {
+		h := fnv.New64a()
+		var b [8]byte
+		for _, d := range st.BucketDigests(sp, bucketsOf([]bucketRange{c})) {
+			binary.BigEndian.PutUint64(b[:], d)
+			_, _ = h.Write(b[:])
+		}
+		out[i] = h.Sum64()
+	}
+	return out
+}
+
+// sharedRanges are the shard buckets both this member and peer hold.
+func (v view) sharedRanges(peer string) []bucketRange {
+	var out []bucketRange
+	for _, seg := range v.ring.Segments() {
+		owners := v.ring.Owners(seg.Start, v.n)
+		if slices.Contains(owners, v.self) && slices.Contains(owners, peer) {
+			if k := len(out); k > 0 && out[k-1].End == seg.Start {
+				out[k-1].End = seg.End
+			} else {
+				out = append(out, bucketRange{seg.Start, seg.End})
+			}
+		}
+	}
+	return out
+}
+
+// antiEntropy runs one round with every live peer.
+func (r *Replicator) antiEntropy(ctx context.Context) {
+	st := r.store()
+	if st == nil {
+		return
+	}
+	v := r.view()
+	peers := 0
+	for _, p := range v.ring.Members() {
+		if p == v.self || !v.live[p] {
+			continue
+		}
+		peers++
+		if err := r.SyncWith(ctx, p); err != nil {
+			r.log.DebugContext(ctx, "anti-entropy", "peer", p, "err", err)
+		}
+	}
+	if peers == 0 && v.ring.Size() == 1 {
+		// Alone in the cluster: in contact with all of it.
+		r.touchContact()
+	}
+}
+
+// SyncWith runs one anti-entropy round with peer: the global rows, and the
+// shard buckets both hold.
+func (r *Replicator) SyncWith(ctx context.Context, peer string) error {
+	v := r.view()
+	if err := r.syncSpace(ctx, peer, store.SpaceGlobal, []bucketRange{{0, store.GlobalBuckets}}); err != nil {
+		return err
+	}
+	if ranges := v.sharedRanges(peer); len(ranges) > 0 {
+		return r.syncSpace(ctx, peer, store.SpaceShard, ranges)
+	}
+	return nil
+}
+
+func (r *Replicator) syncSpace(ctx context.Context, peer string, sp store.Space, ranges []bucketRange) error {
+	st := r.store()
+	cs := chunks(ranges)
+	resp, err := r.call(ctx, peer, apRequest{Op: opTree, Space: sp, Ranges: ranges})
+	if err != nil {
+		return err
+	}
+	mine := chunkHashes(st, sp, cs)
+	if len(resp.Hashes) != len(cs) {
+		return errors.New("anti-entropy: the peer cut the ranges differently")
+	}
+	var diffChunks []bucketRange
+	for i := range cs {
+		if mine[i] != resp.Hashes[i] {
+			diffChunks = append(diffChunks, cs[i])
+		}
+	}
+	if len(diffChunks) == 0 {
+		return nil
+	}
+	resp, err = r.call(ctx, peer, apRequest{Op: opLeaves, Space: sp, Ranges: diffChunks})
+	if err != nil {
+		return err
+	}
+	buckets := bucketsOf(diffChunks)
+	leaves := st.BucketDigests(sp, buckets)
+	if len(resp.Hashes) != len(buckets) {
+		return errors.New("anti-entropy: leaf count differs")
+	}
+	var diff []int
+	for i, b := range buckets {
+		if leaves[i] != resp.Hashes[i] {
+			diff = append(diff, b)
+		}
+	}
+	if len(diff) == 0 {
+		return nil
+	}
+	resp, err = r.call(ctx, peer, apRequest{Op: opRows, Space: sp, Buckets: diff})
+	if err != nil {
+		return err
+	}
+	in := func(b int) bool { _, ok := slices.BinarySearch(diff, b); return ok }
+	ours, err := st.BucketRows(ctx, sp, in)
+	if err != nil {
+		return err
+	}
+	pull, push := diffRows(ours, resp.Digests)
+	cutoff := hlc.New(r.cfg.Now().Add(-store.TombstoneTTL))
+	for refs := range slices.Chunk(pull, refBatch) {
+		ms, err := r.fetch(ctx, peer, refs)
+		if err != nil {
+			return err
+		}
+		if err := r.mergeOn(ctx, r.cfg.NodeID, liveOrRecent(ms, cutoff)); err != nil {
+			return fmt.Errorf("anti-entropy: merge from %s: %w", peer, err)
+		}
+	}
+	for refs := range slices.Chunk(push, refBatch) {
+		ms, err := st.ReadRows(ctx, refs)
+		if err != nil {
+			return err
+		}
+		if err := r.mergeOn(ctx, peer, liveOrRecent(ms, cutoff)); err != nil {
+			return fmt.Errorf("anti-entropy: merge into %s: %w", peer, err)
+		}
+	}
+	if len(pull)+len(push) > 0 {
+		r.log.DebugContext(ctx, "anti-entropy copied rows", "peer", peer, "space", sp, "pulled", len(pull), "pushed", len(push))
+	}
+	return nil
+}
+
+// liveOrRecent drops the tombstones older than cutoff: the GC drops them
+// on every member, so copying one would only bring it back for a while.
+func liveOrRecent(ms []store.Mutation, cutoff hlc.Timestamp) []store.Mutation {
+	return slices.DeleteFunc(ms, func(m store.Mutation) bool { return m.Deleted && m.HLC < cutoff })
+}
+
+// diffRows compares this member's row digests with a peer's: the rows to
+// pull are newer, or only, on the peer; those to push newer, or only,
+// here. A row at the same version with another hash (its set-once columns
+// differ) goes both ways, as merging keeps the earliest of each.
+func diffRows(ours, theirs []store.RowDigest) (pull, push []store.RowRef) {
+	key := func(d store.RowDigest) string { return d.Table + "\x00" + fmt.Sprint([]any(d.Key)) }
+	mine := make(map[string]store.RowDigest, len(ours))
+	for _, d := range ours {
+		mine[key(d)] = d
+	}
+	seen := map[string]bool{}
+	for _, t := range theirs {
+		k := key(t)
+		seen[k] = true
+		m, ok := mine[k]
+		switch {
+		case !ok || t.Newer(m):
+			pull = append(pull, t.RowRef)
+		case m.Newer(t):
+			push = append(push, m.RowRef)
+		case m.Hash != t.Hash:
+			pull = append(pull, t.RowRef)
+			push = append(push, m.RowRef)
+		}
+	}
+	for _, m := range ours {
+		if !seen[key(m)] {
+			push = append(push, m.RowRef)
+		}
+	}
+	return pull, push
+}
+
+// handleAntiEntropy answers the tree, leaves and rows requests.
+func (r *Replicator) handleAntiEntropy(ctx context.Context, st *store.Store, req apRequest) apResponse {
+	fail := func(err error) apResponse { return apResponse{Error: apWireError(err)} }
+	switch req.Op {
+	case opTree:
+		if err := checkRanges(req.Space, req.Ranges); err != nil {
+			return fail(err)
+		}
+		return apResponse{Hashes: chunkHashes(st, req.Space, chunks(req.Ranges))}
+	case opLeaves:
+		if err := checkRanges(req.Space, req.Ranges); err != nil {
+			return fail(err)
+		}
+		return apResponse{Hashes: st.BucketDigests(req.Space, bucketsOf(req.Ranges))}
+	default:
+		buckets := slices.Sorted(slices.Values(req.Buckets))
+		for _, b := range buckets {
+			if b < 0 || b >= req.Space.Buckets() {
+				return fail(fmt.Errorf("bucket %d out of space", b))
+			}
+		}
+		in := func(b int) bool { _, ok := slices.BinarySearch(buckets, b); return ok }
+		ds, err := st.BucketRows(ctx, req.Space, in)
+		if err != nil {
+			return fail(err)
+		}
+		return apResponse{Digests: ds}
+	}
+}
+
+// WaitSynced runs anti-entropy rounds until one with every live peer
+// succeeds, or ctx ends, or limit passes: a member that just started
+// catches up on the global rows before it acts on them.
+func (r *Replicator) WaitSynced(ctx context.Context, limit time.Duration) error {
+	ctx, cancel := context.WithTimeout(ctx, limit)
+	defer cancel()
+	for {
+		v := r.view()
+		ok := true
+		for _, p := range v.ring.Members() {
+			if p == v.self || !v.live[p] {
+				continue
+			}
+			if err := r.SyncWith(ctx, p); err != nil {
+				ok = false
+			}
+		}
+		if ok {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second):
+		}
+	}
+}

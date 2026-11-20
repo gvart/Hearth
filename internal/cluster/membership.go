@@ -88,6 +88,11 @@ type MembershipConfig struct {
 	// RefreshEvery is how often the metadata is refreshed and the seeds
 	// joined; zero means 10 s.
 	RefreshEvery time.Duration
+
+	// Replica, if set, serves the replication connections of a sharded
+	// cluster that other members open on the gossip port, with the hub
+	// node ID their certificate names. It owns the connection.
+	Replica func(c net.Conn, peer string)
 }
 
 // Membership is this host's place in the cluster's gossip membership
@@ -296,6 +301,9 @@ func (m *Membership) start(ctx context.Context) (*memberlist.Memberlist, error) 
 		peerCheck(m.cfg.Check), dialTimeout, m.log)
 	if err != nil {
 		return nil, fmt.Errorf("membership: %w", err)
+	}
+	if m.cfg.Replica != nil {
+		trans.replica.Store(&m.cfg.Replica)
 	}
 	m.trans.Store(trans)
 	ml, err := memberlist.Create(m.memberlistConfig(trans))

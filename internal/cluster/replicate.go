@@ -1,0 +1,1060 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package cluster
+
+import (
+	"context"
+	"encoding/binary"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"net"
+	"os"
+	"slices"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/gvart/hearth/internal/hlc"
+	"github.com/gvart/hearth/internal/store"
+)
+
+// Replication of a sharded (AP) cluster (docs/design/ap-cluster.md §5).
+//
+// The Replicator is the store's Applier and its Shards. A write runs on one
+// replica of the rows it touches (the coordinator): the command is applied
+// to that member's database, and the row mutations it made are sent to the
+// other replicas, which merge them last-writer-wins. Placement is sloppy:
+// a write meant for a replica that is down goes to the next live member of
+// the preference list instead, and the coordinator keeps a hint (hints.go)
+// that delivers it to the replica once it is back. Critical writes wait for
+// W = min(2, N) replicas, and fail fast with store.ErrUnavailable when fewer
+// are live; every other write waits for the coordinator alone and is copied
+// in the background.
+//
+// Members talk over the gossip port's mutual TLS (gossipReplica
+// connections, one request after another, each a length-prefixed JSON
+// frame), so replication is authenticated like gossip: a peer must present
+// the hub node certificate of a current storage member. No CA key material
+// is ever sent.
+
+// APPeers is the cluster as the replicator reaches it.
+type APPeers interface {
+	// Members lists the members, this one included.
+	Members() []MemberInfo
+	// DialReplica opens a replication connection to a live member.
+	DialReplica(ctx context.Context, id string) (net.Conn, error)
+}
+
+// ReplicatorConfig configures a Replicator.
+type ReplicatorConfig struct {
+	// NodeID is this member's id: the origin of the writes it stamps.
+	NodeID string
+	Peers  APPeers
+	// Replicas is N, the copies of each row; zero means min(2, storage
+	// members). It is never more than the storage members.
+	Replicas int
+	// Hints keeps the writes for replicas that are down; nil keeps none.
+	Hints *Hints
+	// LastContact is the file that records when this member last reached
+	// the cluster (see CheckRejoin); empty records nothing.
+	LastContact string
+	Log         *slog.Logger
+
+	// Tuning; zero values use the defaults.
+	RequestTimeout   time.Duration
+	AntiEntropyEvery time.Duration
+	HintsEvery       time.Duration
+	GCEvery          time.Duration
+	Now              func() time.Time
+}
+
+const (
+	defaultRequestTimeout   = 10 * time.Second
+	defaultAntiEntropyEvery = 30 * time.Second
+	defaultHintsEvery       = 5 * time.Second
+	defaultGCEvery          = time.Hour
+	// replicaIdle closes a served replication connection after this long
+	// without a request.
+	replicaIdle = 2 * time.Minute
+	// maxFrame bounds one request or response.
+	maxFrame = 64 << 20
+	// poolSize is how many idle connections are kept per member.
+	poolSize = 4
+	// asyncQueue is how many background jobs may wait.
+	asyncQueue = 4096
+)
+
+// Replicator coordinates the writes and reads of a sharded cluster.
+type Replicator struct {
+	cfg ReplicatorConfig
+	log *slog.Logger
+	st  atomic.Pointer[store.Store]
+
+	poolMu sync.Mutex
+	pool   map[string][]net.Conn
+
+	ringMu  sync.Mutex
+	ringKey string
+	ring    *Ring
+
+	jobs chan func(context.Context)
+	// ctx is Run's, for the requests served; background before Run.
+	ctx atomic.Pointer[context.Context]
+
+	contactMu   sync.Mutex
+	contactSeen time.Time
+}
+
+// NewReplicator returns a Replicator; bind it to the store with Bind (or
+// open the store with store.WithShards and store.WithApplier) and run it
+// with Run.
+func NewReplicator(cfg ReplicatorConfig) (*Replicator, error) {
+	if err := ValidNodeID(cfg.NodeID); err != nil {
+		return nil, err
+	}
+	if cfg.Peers == nil {
+		return nil, errors.New("replicator: no peers")
+	}
+	if cfg.Replicas < 0 {
+		return nil, errors.New("replicator: replicas must be at least 1")
+	}
+	if cfg.Log == nil {
+		cfg.Log = slog.New(slog.DiscardHandler)
+	}
+	setIfZero(&cfg.RequestTimeout, defaultRequestTimeout)
+	setIfZero(&cfg.AntiEntropyEvery, defaultAntiEntropyEvery)
+	setIfZero(&cfg.HintsEvery, defaultHintsEvery)
+	setIfZero(&cfg.GCEvery, defaultGCEvery)
+	if cfg.Now == nil {
+		cfg.Now = time.Now
+	}
+	r := &Replicator{
+		cfg: cfg, log: cfg.Log.With("component", "replication"),
+		pool: map[string][]net.Conn{}, jobs: make(chan func(context.Context), asyncQueue),
+	}
+	bg := context.Background()
+	r.ctx.Store(&bg)
+	return r, nil
+}
+
+func setIfZero[T comparable](dst *T, v T) {
+	var zero T
+	if *dst == zero {
+		*dst = v
+	}
+}
+
+// Bind records the store the replicator writes to and returns it as the
+// store's Applier: pass it to store.WithApplier.
+func (r *Replicator) Bind(s *store.Store) store.Applier {
+	r.st.Store(s)
+	return r
+}
+
+func (r *Replicator) store() *store.Store { return r.st.Load() }
+
+// view is the ring and liveness of the moment.
+type view struct {
+	self string
+	ring *Ring
+	live map[string]bool
+	n    int
+}
+
+// view returns the current view: the ring over the storage members not
+// gone for good (dead ones stay on it, so a crash moves no data), and the
+// members reachable now.
+func (r *Replicator) view() view {
+	members := r.cfg.Peers.Members()
+	ids := []string{r.cfg.NodeID}
+	live := map[string]bool{r.cfg.NodeID: true}
+	for _, m := range members {
+		if !m.Roles.Has(RoleStorage) || m.State == MemberLeft {
+			continue
+		}
+		ids = append(ids, m.ID)
+		if m.State == MemberAlive || m.State == MemberSuspect {
+			live[m.ID] = true
+		}
+	}
+	slices.Sort(ids)
+	ids = slices.Compact(ids)
+	key := strings.Join(ids, ",")
+	r.ringMu.Lock()
+	if key != r.ringKey {
+		r.ring, r.ringKey = NewRing(ids), key
+	}
+	ring := r.ring
+	r.ringMu.Unlock()
+	n := r.cfg.Replicas
+	if n == 0 {
+		n = 2
+	}
+	n = max(1, min(n, ring.Size()))
+	return view{self: r.cfg.NodeID, ring: ring, live: live, n: n}
+}
+
+// N is the replication factor in effect.
+func (r *Replicator) N() int { return r.view().n }
+
+// targets returns where a write of bucket goes: the live members among the
+// first N of its preference list, filled up to N with the next live ones
+// (stand-ins for replicas that are down), and the replicas that are down.
+func (v view) targets(bucket int) (live, down []string) {
+	pref := v.ring.Preference(bucket)
+	for i, m := range pref {
+		switch {
+		case i < v.n && v.live[m]:
+			live = append(live, m)
+		case i < v.n:
+			down = append(down, m)
+		case len(live) < v.n && v.live[m]:
+			live = append(live, m)
+		}
+	}
+	return live, down
+}
+
+// all returns every storage member, live and down: the targets of a
+// global row.
+func (v view) all() (live, down []string) {
+	for _, m := range v.ring.Members() {
+		if v.live[m] {
+			live = append(live, m)
+		} else {
+			down = append(down, m)
+		}
+	}
+	return live, down
+}
+
+// placementTargets returns the targets of a row placed at p.
+func (v view) placementTargets(p store.Placement) (live, down []string) {
+	if p.Global {
+		return v.all()
+	}
+	return v.targets(store.BucketOf(store.Token(p.Key)))
+}
+
+// writeQuorum is W for a write to replicas targets: min(2, N) for a
+// critical one, else 1.
+func writeQuorum(critical bool, n int) int {
+	if critical {
+		return min(2, n)
+	}
+	return 1
+}
+
+// errUnreachable marks a member that could not be reached: its writes go
+// to hints.
+var errUnreachable = errors.New("member unreachable")
+
+// Apply implements store.Applier.
+func (r *Replicator) Apply(ctx context.Context, cmd store.Command) (store.Result, error) {
+	route, err := store.RouteOf(cmd)
+	if err != nil {
+		return store.Result{}, err
+	}
+	v := r.view()
+	switch route.Kind {
+	case store.RouteEvery:
+		live, _ := v.all()
+		results := make([]store.Result, len(live))
+		errs := make([]error, len(live))
+		var wg sync.WaitGroup
+		for i, m := range live {
+			wg.Go(func() { results[i], errs[i] = r.applyOn(ctx, m, cmd) })
+		}
+		wg.Wait()
+		if err := firstDomainError(errs); err != nil {
+			return store.Result{}, err
+		}
+		return store.MergeResults(cmd, results), nil
+	case store.RouteSplit:
+		parts, err := store.SplitCommand(cmd, func(key string) string {
+			return v.coordinator(store.BucketOf(store.Token(key)))
+		})
+		if err != nil {
+			return store.Result{}, err
+		}
+		var results []store.Result
+		for m, part := range parts {
+			if m == "" {
+				return store.Result{}, fmt.Errorf("apply %s: no live replica: %w", cmd.Op(), store.ErrUnavailable)
+			}
+			res, err := r.applyOn(ctx, m, part)
+			if err != nil {
+				return store.Result{}, err
+			}
+			results = append(results, res)
+		}
+		return store.MergeResults(cmd, results), nil
+	case store.RouteGlobal:
+		return r.applyHere(ctx, cmd, route, v)
+	}
+	// RouteKey: on this member if it takes the write, else forwarded to
+	// the first live one that does.
+	live, _ := v.targets(store.BucketOf(store.Token(route.Key)))
+	if slices.Contains(live, v.self) {
+		return r.applyHere(ctx, cmd, route, v)
+	}
+	if len(live) < writeQuorum(route.Critical, v.n) {
+		return store.Result{}, fmt.Errorf("apply %s: %d of %d replicas reachable: %w", cmd.Op(), len(live), v.n, store.ErrUnavailable)
+	}
+	var lastErr error
+	for _, m := range live {
+		res, err := r.applyOn(ctx, m, cmd)
+		if err == nil || !errors.Is(err, errUnreachable) {
+			return res, err
+		}
+		lastErr = err
+	}
+	return store.Result{}, fmt.Errorf("apply %s: %w: %w", cmd.Op(), lastErr, store.ErrUnavailable)
+}
+
+// coordinator is the member a write of bucket runs on: this one if it is a
+// target, else the first live target; "" if there is none.
+func (v view) coordinator(bucket int) string {
+	live, _ := v.targets(bucket)
+	if slices.Contains(live, v.self) {
+		return v.self
+	}
+	if len(live) == 0 {
+		return ""
+	}
+	return live[0]
+}
+
+// firstDomainError returns the first error of errs that is not a member
+// being unreachable: a write every member runs succeeds on those it
+// reaches.
+func firstDomainError(errs []error) error {
+	for _, err := range errs {
+		if err != nil && !errors.Is(err, errUnreachable) {
+			return err
+		}
+	}
+	return nil
+}
+
+// applyOn applies cmd on member m, which then replicates it.
+func (r *Replicator) applyOn(ctx context.Context, m string, cmd store.Command) (store.Result, error) {
+	if m == r.cfg.NodeID {
+		route, err := store.RouteOf(cmd)
+		if err != nil {
+			return store.Result{}, err
+		}
+		return r.applyHere(ctx, cmd, route, r.view())
+	}
+	b, err := store.EncodeCommand(cmd)
+	if err != nil {
+		return store.Result{}, err
+	}
+	resp, err := r.call(ctx, m, apRequest{Op: opApply, Cmd: b})
+	if err != nil {
+		return store.Result{}, err
+	}
+	if resp.Result == nil {
+		return store.Result{}, nil
+	}
+	return *resp.Result, nil
+}
+
+// applyHere applies cmd to this member's database and replicates the rows
+// it wrote. A critical write first checks that W replicas are live, so it
+// fails before writing anything when they are not.
+func (r *Replicator) applyHere(ctx context.Context, cmd store.Command, route store.Route, v view) (store.Result, error) {
+	st := r.store()
+	if st == nil {
+		return store.Result{}, errors.New("replicator: no store bound")
+	}
+	if route.Critical {
+		var live []string
+		n := v.n
+		if route.Kind == store.RouteKey {
+			live, _ = v.targets(store.BucketOf(store.Token(route.Key)))
+		} else {
+			live, _ = v.all()
+			n = v.ring.Size()
+		}
+		if w := writeQuorum(true, n); len(live) < w {
+			return store.Result{}, fmt.Errorf("apply %s: %d of %d replicas reachable, %d needed: %w",
+				cmd.Op(), len(live), n, w, store.ErrUnavailable)
+		}
+	}
+	res, muts, err := st.ApplyLocalMutations(ctx, cmd)
+	if err != nil {
+		return store.Result{}, err
+	}
+	if err := r.replicate(ctx, muts, route.Critical, v); err != nil {
+		return store.Result{}, fmt.Errorf("apply %s: %w", cmd.Op(), err)
+	}
+	return res, nil
+}
+
+// replicate sends muts, written here, to the other members that take them.
+// Replicas that are down get hints. A critical write waits for W - 1 other
+// replicas of every row; any other is sent in the background.
+func (r *Replicator) replicate(ctx context.Context, muts []store.Mutation, critical bool, v view) error {
+	if len(muts) == 0 {
+		return nil
+	}
+	type group struct {
+		live []string
+		w    int
+	}
+	batches := map[string][]store.Mutation{}
+	hinted := map[string][]store.Mutation{}
+	var groups []group
+	for _, m := range muts {
+		p, err := m.Placement()
+		if err != nil {
+			return err
+		}
+		live, down := v.placementTargets(p)
+		n := v.n
+		if p.Global {
+			n = v.ring.Size()
+		}
+		groups = append(groups, group{live: live, w: writeQuorum(critical, n)})
+		for _, t := range live {
+			if t != v.self {
+				batches[t] = append(batches[t], m)
+			}
+		}
+		for _, t := range down {
+			hinted[t] = append(hinted[t], m)
+		}
+	}
+	for t, ms := range hinted {
+		r.hint(t, ms)
+	}
+	if !critical {
+		for t, ms := range batches {
+			r.enqueue(func(ctx context.Context) {
+				if _, err := r.call(ctx, t, apRequest{Op: opMerge, Muts: ms}); err != nil {
+					r.log.DebugContext(ctx, "replicate: hinted", "member", t, "err", err)
+					r.hint(t, ms)
+				}
+			}, func() { r.hint(t, ms) })
+		}
+		return nil
+	}
+	acked := map[string]bool{v.self: true}
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	for t, ms := range batches {
+		wg.Go(func() {
+			_, err := r.call(ctx, t, apRequest{Op: opMerge, Muts: ms})
+			if err != nil {
+				r.log.WarnContext(ctx, "replicate a critical write: hinted", "member", t, "err", err)
+				r.hint(t, ms)
+				return
+			}
+			mu.Lock()
+			acked[t] = true
+			mu.Unlock()
+		})
+	}
+	wg.Wait()
+	for _, g := range groups {
+		n := 0
+		for _, t := range g.live {
+			if acked[t] {
+				n++
+			}
+		}
+		if n < g.w {
+			return fmt.Errorf("%d of %d replicas took a critical write: %w", n, g.w, store.ErrUnavailable)
+		}
+	}
+	return nil
+}
+
+// hint keeps ms for member t.
+func (r *Replicator) hint(t string, ms []store.Mutation) {
+	if r.cfg.Hints == nil {
+		return
+	}
+	if err := r.cfg.Hints.Add(t, ms); err != nil {
+		r.log.Warn("keep a hint", "member", t, "err", err)
+	}
+}
+
+// enqueue runs job in the background; full, it runs full instead.
+func (r *Replicator) enqueue(job func(context.Context), full func()) {
+	select {
+	case r.jobs <- job:
+	default:
+		if full != nil {
+			full()
+		}
+	}
+}
+
+// Holds implements store.Shards.
+func (r *Replicator) Holds(key string) bool {
+	v := r.view()
+	return slices.Contains(v.ring.Owners(store.BucketOf(store.Token(key)), v.n), v.self)
+}
+
+// readOrder is where a read of bucket is tried: its live replicas in
+// preference order, this member first, then the other live members (which
+// may hold rows as stand-ins).
+func (v view) readOrder(bucket int) []string {
+	pref := v.ring.Preference(bucket)
+	var out []string
+	for i, m := range pref {
+		if v.live[m] && i < v.n {
+			out = append(out, m)
+		}
+	}
+	if i := slices.Index(out, v.self); i > 0 {
+		out = append([]string{v.self}, slices.Delete(out, i, i+1)...)
+	}
+	for i, m := range pref {
+		if v.live[m] && i >= v.n {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// ReadKey implements store.Shards.
+func (r *Replicator) ReadKey(ctx context.Context, key, query string, args store.Values) (store.Rows, error) {
+	v := r.view()
+	var lastErr error = store.ErrUnavailable
+	for _, m := range v.readOrder(store.BucketOf(store.Token(key))) {
+		rows, err := r.readOn(ctx, m, query, args)
+		if err == nil {
+			return rows, nil
+		}
+		if !errors.Is(err, errUnreachable) {
+			return store.Rows{}, err
+		}
+		lastErr = err
+	}
+	return store.Rows{}, fmt.Errorf("read: no replica reachable: %w: %w", lastErr, store.ErrUnavailable)
+}
+
+func (r *Replicator) readOn(ctx context.Context, m, query string, args store.Values) (store.Rows, error) {
+	if m == r.cfg.NodeID {
+		return r.store().ReadLocal(ctx, query, args)
+	}
+	resp, err := r.call(ctx, m, apRequest{Op: opRead, Query: query, Args: args})
+	if err != nil {
+		return store.Rows{}, err
+	}
+	if resp.Rows == nil {
+		return store.Rows{Member: m}, nil
+	}
+	resp.Rows.Member = m
+	return *resp.Rows, nil
+}
+
+// ReadAll implements store.Shards: it reads on every live storage member,
+// and fails unless those that answered hold a replica of every bucket.
+func (r *Replicator) ReadAll(ctx context.Context, query string, args store.Values) ([]store.Rows, error) {
+	v := r.view()
+	live, _ := v.all()
+	out := make([]store.Rows, len(live))
+	errs := make([]error, len(live))
+	var wg sync.WaitGroup
+	for i, m := range live {
+		wg.Go(func() { out[i], errs[i] = r.readOn(ctx, m, query, args) })
+	}
+	wg.Wait()
+	answered := map[string]bool{}
+	var rows []store.Rows
+	for i, err := range errs {
+		if err != nil {
+			if !errors.Is(err, errUnreachable) {
+				return nil, err
+			}
+			continue
+		}
+		answered[live[i]] = true
+		rows = append(rows, out[i])
+	}
+	for _, seg := range v.ring.Segments() {
+		if !slices.ContainsFunc(v.ring.Owners(seg.Start, v.n), func(m string) bool { return answered[m] }) {
+			return nil, fmt.Errorf("read: no replica of buckets %d-%d reachable: %w", seg.Start, seg.End-1, store.ErrUnavailable)
+		}
+	}
+	return rows, nil
+}
+
+// Repair implements store.Shards: in the background, the rows refs name are
+// read on every live member, and the newest version of each is merged into
+// all its replicas.
+func (r *Replicator) Repair(refs []store.RowRef) {
+	r.enqueue(func(ctx context.Context) {
+		if err := r.repair(ctx, refs); err != nil {
+			r.log.DebugContext(ctx, "read repair", "err", err)
+		}
+	}, nil)
+}
+
+func (r *Replicator) repair(ctx context.Context, refs []store.RowRef) error {
+	v := r.view()
+	live, _ := v.all()
+	var muts []store.Mutation
+	for _, m := range live {
+		ms, err := r.fetch(ctx, m, refs)
+		if err != nil {
+			continue
+		}
+		muts = append(muts, ms...)
+	}
+	batches := map[string][]store.Mutation{}
+	for _, m := range muts {
+		p, err := m.Placement()
+		if err != nil {
+			return err
+		}
+		targets, _ := v.placementTargets(p)
+		for _, t := range targets {
+			batches[t] = append(batches[t], m)
+		}
+	}
+	for t, ms := range batches {
+		if err := r.mergeOn(ctx, t, ms); err != nil {
+			r.log.DebugContext(ctx, "read repair", "member", t, "err", err)
+		}
+	}
+	return nil
+}
+
+// fetch reads the rows refs name on member m.
+func (r *Replicator) fetch(ctx context.Context, m string, refs []store.RowRef) ([]store.Mutation, error) {
+	if m == r.cfg.NodeID {
+		return r.store().ReadRows(ctx, refs)
+	}
+	resp, err := r.call(ctx, m, apRequest{Op: opFetch, Refs: refs})
+	if err != nil {
+		return nil, err
+	}
+	return resp.Muts, nil
+}
+
+// mergeOn merges ms into member m's database.
+func (r *Replicator) mergeOn(ctx context.Context, m string, ms []store.Mutation) error {
+	if len(ms) == 0 {
+		return nil
+	}
+	if m == r.cfg.NodeID {
+		ms = slices.Clone(ms)
+		store.SortMutations(ms)
+		return r.store().Merge(ctx, ms)
+	}
+	_, err := r.call(ctx, m, apRequest{Op: opMerge, Muts: ms})
+	return err
+}
+
+// Run delivers hints, runs anti-entropy and the tombstone GC, and works the
+// background jobs until ctx ends.
+func (r *Replicator) Run(ctx context.Context) error {
+	r.ctx.Store(&ctx)
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Go(func() {
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case job := <-r.jobs:
+					jctx, cancel := context.WithTimeout(ctx, r.cfg.RequestTimeout)
+					job(jctx)
+					cancel()
+				}
+			}
+		})
+	}
+	wg.Go(func() { r.every(ctx, r.cfg.HintsEvery, r.deliverHints) })
+	wg.Go(func() { r.every(ctx, r.cfg.AntiEntropyEvery, r.antiEntropy) })
+	wg.Go(func() { r.every(ctx, r.cfg.GCEvery, r.gc) })
+	wg.Wait()
+	r.closePool()
+	return nil
+}
+
+// every runs fn now and then every d until ctx ends.
+func (r *Replicator) every(ctx context.Context, d time.Duration, fn func(context.Context)) {
+	t := time.NewTicker(d)
+	defer t.Stop()
+	for {
+		fn(ctx)
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
+}
+
+// gc drops the tombstones older than store.TombstoneTTL.
+func (r *Replicator) gc(ctx context.Context) {
+	st := r.store()
+	if st == nil {
+		return
+	}
+	n, err := st.GCTombstones(ctx, r.cfg.Now())
+	if err != nil {
+		r.log.WarnContext(ctx, "tombstone gc", "err", err)
+		return
+	}
+	if n > 0 {
+		r.log.InfoContext(ctx, "dropped old tombstones", "count", n)
+	}
+}
+
+// deliverHints sends the hints of every live member.
+func (r *Replicator) deliverHints(ctx context.Context) {
+	h := r.cfg.Hints
+	if h == nil {
+		return
+	}
+	members, err := h.Members(ctx)
+	if err != nil {
+		r.log.WarnContext(ctx, "read hints", "err", err)
+		return
+	}
+	v := r.view()
+	for _, m := range members {
+		if !v.live[m] || m == v.self {
+			continue
+		}
+		for ctx.Err() == nil {
+			ids, ms, err := h.Take(ctx, m, hintBatch)
+			if err != nil || len(ids) == 0 {
+				break
+			}
+			if _, err := r.call(ctx, m, apRequest{Op: opMerge, Muts: ms}); err != nil {
+				r.log.DebugContext(ctx, "deliver hints", "member", m, "err", err)
+				break
+			}
+			if err := h.Delete(ctx, ids); err != nil {
+				r.log.WarnContext(ctx, "delete delivered hints", "err", err)
+				break
+			}
+			r.log.DebugContext(ctx, "delivered hints", "member", m, "count", len(ms))
+		}
+	}
+}
+
+// Requests between members.
+const (
+	opApply  = "apply"
+	opMerge  = "merge"
+	opRead   = "read"
+	opTree   = "tree"
+	opLeaves = "leaves"
+	opRows   = "rows"
+	opFetch  = "fetch"
+)
+
+type apRequest struct {
+	Op      string           `json:"op"`
+	Cmd     json.RawMessage  `json:"cmd,omitempty"`
+	Muts    []store.Mutation `json:"muts,omitempty"`
+	Query   string           `json:"query,omitempty"`
+	Args    store.Values     `json:"args,omitempty"`
+	Space   store.Space      `json:"space,omitempty"`
+	Ranges  []bucketRange    `json:"ranges,omitempty"`
+	Buckets []int            `json:"buckets,omitempty"`
+	Refs    []store.RowRef   `json:"refs,omitempty"`
+}
+
+type apResponse struct {
+	Error   *wireError        `json:"error,omitempty"`
+	Result  *store.Result     `json:"result,omitempty"`
+	Rows    *store.Rows       `json:"rows,omitempty"`
+	Hashes  []uint64          `json:"hashes,omitempty"`
+	Digests []store.RowDigest `json:"digests,omitempty"`
+	Muts    []store.Mutation  `json:"muts,omitempty"`
+}
+
+// The store errors a member's answer carries beyond those of wireKinds.
+var apKinds = map[string]error{
+	"exists":       store.ErrExists,
+	"skew":         hlc.ErrSkew,
+	"no_route":     store.ErrNoRoute,
+	"not_member":   errNotMember,
+	"cert_revoked": store.ErrCertRevoked,
+}
+
+// errNotMember refuses a replication request from a hub that is not a
+// storage member.
+var errNotMember = errors.New("not a storage member of this cluster")
+
+func apWireError(err error) *wireError {
+	for kind, target := range apKinds {
+		if errors.Is(err, target) {
+			return &wireError{Kind: kind, Message: err.Error()}
+		}
+	}
+	return toWireError(err)
+}
+
+func apError(e *wireError) error {
+	if target, ok := apKinds[e.Kind]; ok {
+		return &kindError{msg: e.Message, target: target}
+	}
+	return e.toError()
+}
+
+// call sends req to member m and returns its answer. A member that cannot
+// be reached fails with errUnreachable; its answer's error is returned as
+// the store error it carries.
+func (r *Replicator) call(ctx context.Context, m string, req apRequest) (apResponse, error) {
+	if m == r.cfg.NodeID {
+		resp := r.handle(ctx, m, req)
+		if resp.Error != nil {
+			return resp, apError(resp.Error)
+		}
+		return resp, nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, r.cfg.RequestTimeout)
+	defer cancel()
+	c, err := r.conn(ctx, m)
+	if err != nil {
+		return apResponse{}, fmt.Errorf("%s: %w: %w", m, errUnreachable, err)
+	}
+	d, _ := ctx.Deadline()
+	_ = c.SetDeadline(d)
+	var resp apResponse
+	if err := writeFrame(c, req); err != nil {
+		_ = c.Close()
+		return apResponse{}, fmt.Errorf("%s: %w: %w", m, errUnreachable, err)
+	}
+	if err := readFrame(c, &resp); err != nil {
+		_ = c.Close()
+		return apResponse{}, fmt.Errorf("%s: %w: %w", m, errUnreachable, err)
+	}
+	_ = c.SetDeadline(time.Time{})
+	r.putConn(m, c)
+	r.touchContact()
+	if resp.Error != nil {
+		return resp, apError(resp.Error)
+	}
+	return resp, nil
+}
+
+func (r *Replicator) conn(ctx context.Context, m string) (net.Conn, error) {
+	r.poolMu.Lock()
+	if cs := r.pool[m]; len(cs) > 0 {
+		c := cs[len(cs)-1]
+		r.pool[m] = cs[:len(cs)-1]
+		r.poolMu.Unlock()
+		return c, nil
+	}
+	r.poolMu.Unlock()
+	return r.cfg.Peers.DialReplica(ctx, m)
+}
+
+func (r *Replicator) putConn(m string, c net.Conn) {
+	r.poolMu.Lock()
+	defer r.poolMu.Unlock()
+	if len(r.pool[m]) >= poolSize {
+		_ = c.Close()
+		return
+	}
+	r.pool[m] = append(r.pool[m], c)
+}
+
+func (r *Replicator) closePool() {
+	r.poolMu.Lock()
+	defer r.poolMu.Unlock()
+	for m, cs := range r.pool {
+		for _, c := range cs {
+			_ = c.Close()
+		}
+		delete(r.pool, m)
+	}
+}
+
+// ServeConn serves the replication requests of peer, the hub node ID its
+// certificate names, on c until c fails or stays idle; then it closes c.
+// Pass it as MembershipConfig.Replica.
+func (r *Replicator) ServeConn(c net.Conn, peer string) {
+	defer func() { _ = c.Close() }()
+	ctx := *r.ctx.Load()
+	for ctx.Err() == nil {
+		_ = c.SetReadDeadline(time.Now().Add(replicaIdle))
+		var req apRequest
+		if err := readFrame(c, &req); err != nil {
+			return
+		}
+		_ = c.SetReadDeadline(time.Time{})
+		rctx, cancel := context.WithTimeout(ctx, r.cfg.RequestTimeout)
+		var resp apResponse
+		if r.isMember(peer) {
+			resp = r.handle(rctx, peer, req)
+		} else {
+			r.log.Warn("refused a replication request from a non-member", "peer", peer, "op", req.Op)
+			resp = apResponse{Error: apWireError(fmt.Errorf("%s: %w", peer, errNotMember))}
+		}
+		cancel()
+		_ = c.SetWriteDeadline(time.Now().Add(r.cfg.RequestTimeout))
+		if err := writeFrame(c, resp); err != nil {
+			return
+		}
+		if resp.Error != nil && resp.Error.Kind == "not_member" {
+			return
+		}
+	}
+}
+
+// isMember reports whether peer is a storage member this member knows.
+func (r *Replicator) isMember(peer string) bool {
+	if peer == "" || peer == r.cfg.NodeID {
+		return false
+	}
+	for _, m := range r.cfg.Peers.Members() {
+		if m.ID == peer && m.Roles.Has(RoleStorage) && m.State != MemberLeft {
+			return true
+		}
+	}
+	return false
+}
+
+// handle answers one request.
+func (r *Replicator) handle(ctx context.Context, peer string, req apRequest) apResponse {
+	st := r.store()
+	if st == nil {
+		return apResponse{Error: apWireError(errors.New("replicator: no store bound"))}
+	}
+	fail := func(err error) apResponse { return apResponse{Error: apWireError(err)} }
+	switch req.Op {
+	case opApply:
+		cmd, err := store.DecodeCommand(req.Cmd)
+		if err != nil {
+			return fail(err)
+		}
+		route, err := store.RouteOf(cmd)
+		if err != nil {
+			return fail(err)
+		}
+		res, err := r.applyHere(ctx, cmd, route, r.view())
+		if err != nil {
+			return fail(err)
+		}
+		return apResponse{Result: &res}
+	case opMerge:
+		ms := slices.Clone(req.Muts)
+		store.SortMutations(ms)
+		if err := st.Merge(ctx, ms); err != nil {
+			if errors.Is(err, hlc.ErrSkew) {
+				r.log.WarnContext(ctx, "refused rows stamped too far ahead of this clock", "peer", peer, "err", err)
+			}
+			return fail(err)
+		}
+		return apResponse{}
+	case opRead:
+		rows, err := st.ReadLocal(ctx, req.Query, req.Args)
+		if err != nil {
+			return fail(err)
+		}
+		return apResponse{Rows: &rows}
+	case opFetch:
+		ms, err := st.ReadRows(ctx, req.Refs)
+		if err != nil {
+			return fail(err)
+		}
+		return apResponse{Muts: ms}
+	case opTree, opLeaves, opRows:
+		return r.handleAntiEntropy(ctx, st, req)
+	}
+	return fail(fmt.Errorf("unknown request %q", req.Op))
+}
+
+func writeFrame(w io.Writer, v any) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	if len(b) > maxFrame {
+		return fmt.Errorf("frame of %d bytes exceeds %d", len(b), maxFrame)
+	}
+	buf := make([]byte, 4+len(b))
+	binary.BigEndian.PutUint32(buf, uint32(len(b))) //nolint:gosec // bounded by maxFrame
+	copy(buf[4:], b)
+	_, err = w.Write(buf)
+	return err
+}
+
+func readFrame(rd io.Reader, v any) error {
+	var hdr [4]byte
+	if _, err := io.ReadFull(rd, hdr[:]); err != nil {
+		return err
+	}
+	n := binary.BigEndian.Uint32(hdr[:])
+	if n > maxFrame {
+		return fmt.Errorf("frame of %d bytes exceeds %d", n, maxFrame)
+	}
+	b := make([]byte, n)
+	if _, err := io.ReadFull(rd, b); err != nil {
+		return err
+	}
+	return json.Unmarshal(b, v)
+}
+
+// touchContact records that this member reached the cluster now (see
+// CheckRejoin), at most once a minute.
+func (r *Replicator) touchContact() {
+	if r.cfg.LastContact == "" {
+		return
+	}
+	now := r.cfg.Now()
+	r.contactMu.Lock()
+	defer r.contactMu.Unlock()
+	if now.Sub(r.contactSeen) < time.Minute {
+		return
+	}
+	r.contactSeen = now
+	if err := writeLastContact(r.cfg.LastContact, now); err != nil {
+		r.log.Warn("record last contact", "err", err)
+	}
+}
+
+// ErrRejoinEmpty refuses to start a storage member that was cut off from
+// the cluster for longer than the tombstone window: rows deleted meanwhile
+// lost their tombstones elsewhere, so its copy could bring them back.
+var ErrRejoinEmpty = errors.New("this member was away from the cluster for longer than the tombstone window " +
+	"and must rejoin empty")
+
+// CheckRejoin refuses a member whose database holds rows and whose last
+// contact with the cluster (recorded in the file at path) is older than
+// store.TombstoneTTL at now. A member alone in its cluster counts as in
+// contact (the Replicator records it every anti-entropy round).
+func CheckRejoin(path string, hasRows bool, now time.Time) error {
+	b, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read last contact: %w", err)
+	}
+	last, err := time.Parse(time.RFC3339, strings.TrimSpace(string(b)))
+	if err != nil {
+		return fmt.Errorf("read last contact %s: %w", path, err)
+	}
+	if hasRows && now.Sub(last) > store.TombstoneTTL {
+		return fmt.Errorf("%w: last in contact %s ago (window %s); move the database (hearth.db) aside, "+
+			"start the hub to resync from the cluster, then delete the old copy",
+			ErrRejoinEmpty, now.Sub(last).Round(time.Hour), store.TombstoneTTL)
+	}
+	return nil
+}
+
+func writeLastContact(path string, t time.Time) error {
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, []byte(t.UTC().Format(time.RFC3339)+"\n"), 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
