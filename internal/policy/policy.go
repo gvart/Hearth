@@ -159,6 +159,9 @@ const (
 	// BeszelRead is one read by the hub of the systems a Beszel hub
 	// monitors.
 	BeszelRead Action = "beszel.read"
+	// TalosRead is one read by the hub of the Talos nodes of a talosconfig:
+	// versions, services, memory, load and boot time, through the Talos API.
+	TalosRead Action = "talos.read"
 	// ProxmoxServerAdd adopts a Proxmox VE server: the hub stores its API
 	// token, sealed, and starts reading it.
 	ProxmoxServerAdd Action = "proxmox.server.add"
@@ -391,6 +394,9 @@ var rules = map[Action]rule{
 	NetworkImport: {class: Read, actors: []string{ActorHub}},
 	// A Beszel read lists the systems Beszel monitors; it changes nothing.
 	BeszelRead: {class: Read, actors: []string{ActorHub}},
+	// A Talos read calls only read methods of the Talos API; it changes
+	// nothing on any node.
+	TalosRead: {class: Read, actors: []string{ActorHub}},
 	// Adding a server hands the hub a credential to it; the hub only reads
 	// with it, except for the proxmox.guest actions below, each decided and
 	// audited on its own.

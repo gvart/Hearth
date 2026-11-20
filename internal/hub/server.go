@@ -71,6 +71,10 @@ type Config struct {
 	// Beszel holds what the hub last read from a Beszel hub. Nil means none
 	// is configured: GET /api/v1/beszel/systems reports not_configured.
 	Beszel BeszelSnapshotter
+	// Talos holds what the hub last read from the Talos API. Nil means no
+	// talosconfig is configured: GET /api/v1/talos/nodes reports
+	// not_configured.
+	Talos TalosSnapshotter
 	// Metrics stores the host metrics agents send and serves device charts
 	// when no Prometheus is configured. Nil drops the metrics.
 	Metrics *metrics.Store
