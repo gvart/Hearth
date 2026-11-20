@@ -97,8 +97,8 @@ most 100 steps, in a file of at most 64 KiB.
 - **action** takes any action of the [automation reference](automations.md), with the same fields.
   `rollback` is another action, which undoes this one.
 - **check** takes an `http`, `tcp` or `dns` check as in the automation reference, or a `kube_node`
-  check, and is tried every `every` until it passes or `within` has passed. It runs from the hub
-  unless it sets `from`; see [Checks from a device](#checks-from-a-device).
+  or `talos_node` check, and is tried every `every` until it passes or `within` has passed. It runs
+  from the hub unless it sets `from`; see [Checks from a device](#checks-from-a-device).
 - **prompt** is `input` for a line of text or `confirm` for yes or no. Answering no fails the step.
   `timeout` is 1 hour by default and at most 7 days. A prompt nobody answers in time fails the step.
 - **wait** keeps its deadline across a hub restart.
@@ -149,6 +149,35 @@ A `kube_node` check passes when the Node is Ready, read by the hub from a cluste
 To remove a Node object, such as the one a node leaves behind after a rollback, use the
 `kube_node_delete` action (`kube.node.delete`, dangerous) from the
 [automation reference](automations.md#kubernetes-actions).
+
+### A Talos node runs a version
+
+A `talos_node` check reads a Talos node through the Talos API, with the hub's
+[talosconfig](talos.md). It passes when the node answers, runs `version` if set, and has every service
+healthy if `healthy: true` is set:
+
+```yaml
+  - id: upgraded
+    type: check
+    check: {type: talos_node, node: 192.0.2.50, version: v1.12.8, healthy: true}
+    within: 20m
+    every: 15s
+```
+
+- `node` is the node's address as the talosconfig context (or `--talos-nodes`) names it, or its
+  hostname. A node that is down has no hostname to match, so name it by address in a check that waits
+  for a reboot.
+- `version` is the Talos version tag; `v1.12.8` and `1.12.8` are the same. Without it, any version
+  passes.
+- `healthy: true` needs every service Running (or Finished) and none failing its health check, as the
+  [From Talos](talos.md) table shows it. The error names the services that are not.
+- Each attempt at the step is decided as `talos.read` (class `read`) on the node, with one audit entry,
+  however often it polls. The hub reads every node of its talosconfig on each poll, with the same
+  read-only client as its own reads.
+- A node that cannot be read, a version that does not match, an unhealthy service, a node not among
+  those read, and a Talos API that does not answer at all fail the check, so the step keeps trying
+  while the node reboots. A hub started without `--talosconfig` fails the step at once.
+- It always runs from the hub: it has no `from`.
 
 ## Vars
 
@@ -270,6 +299,7 @@ People act through a signed-in session. These actions are audited with who took 
 | `automation.probe` | read  | run a check step `from` a device |
 | `kube.node.ready`  | read  | run a `kube_node` check step |
 | `plugin.command.*` | the manifest's | run a `plugin_command` action step (see [automations.md](automations.md#plugin-commands)) |
+| `talos.read`       | read  | run a `talos_node` check step |
 
 ## A run keeps its definition
 

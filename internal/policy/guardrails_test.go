@@ -173,7 +173,7 @@ var expected = map[Action]struct {
 	NetworkHostMark:           {Safe, []string{ActorWeb}, false},
 	NetworkImport:             {Read, []string{ActorHub}, false},
 	BeszelRead:                {Read, []string{ActorHub}, false},
-	TalosRead:                 {Read, []string{ActorHub}, false},
+	TalosRead:                 {Read, []string{ActorHub, ActorAutomation}, false},
 	ProxmoxServerAdd:          {Safe, []string{ActorWeb}, false},
 	ProxmoxServerRemove:       {Safe, []string{ActorWeb}, false},
 	ProxmoxGuestStart:         {Safe, []string{ActorWeb}, false},

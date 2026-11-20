@@ -8,8 +8,10 @@
 #       hearth agent run --allow-exec /usr/local/bin/talosctl
 #   - /etc/talos/talosconfig (client config with the cluster endpoints) exists
 #     on that machine. Hearth never sees its content.
-#   - The hub reads the Talos nodes (hearth hub --talosconfig, see docs/talos.md),
-#     so the Devices page shows each node's Talos version.
+#   - The hub reads the Talos nodes (hearth hub --talosconfig, see docs/talos.md):
+#     the talos_node checks read the node's version and services through it. The
+#     node-ip var must be one of the nodes the hub reads: a node of the
+#     talosconfig context, or of --talos-nodes. An os:reader talosconfig is enough.
 #   - The cluster is adopted on the hub's Kubernetes page, so the hub can check
 #     that the node is Ready.
 #   - Edit the vars below: the device with talosctl, the node's name and address,
@@ -20,12 +22,22 @@
 #     actions run for 10 at most). A slower upgrade ends the step as unknown:
 #     look at the node, then retry or pass over. Never roll back a node that
 #     did not reboot into the new version.
+#   - After the upgrade, the run checks through the Talos API that the node runs
+#     the new version with every service healthy. If that check fails, roll back
+#     only if the node runs the new version and misbehaves: a node still at the
+#     old version never rebooted, and talosctl rollback would boot the version
+#     before that one.
+#   - talosctl health stays an exec step: it checks the whole cluster (etcd
+#     members, every node, the control plane), which a talos_node check of one
+#     node does not.
 #
 # The talosctl steps are exec actions, which are dangerous: they are held or
 # denied until the hub grants them, for example:
 #   hearth hub --allow-dangerous-automation runbook/upgrade-talos-node
 id: upgrade-talos-node
-description: Upgrade one Talos node after health and quorum checks, wait for it to be Ready, undo with a talosctl rollback.
+description: >-
+  Upgrade one Talos node after health and quorum checks, check through the Talos API that it runs the
+  new version with healthy services and wait for it to be Ready, undo with a talosctl rollback.
 vars:
   talosctl-device: workstation
   node-name: talos-worker-1
@@ -69,6 +81,16 @@ steps:
         - 5m
       timeout: 6m
 
+  - id: node-healthy-before
+    type: check
+    description: The node answers through the Talos API and every service on it is healthy.
+    check:
+      type: talos_node
+      node: ${{ vars.node-ip }}
+      healthy: true
+    within: 2m
+    every: 10s
+
   - id: node-ready-before
     type: check
     description: The node is Ready before it is upgraded.
@@ -84,7 +106,10 @@ steps:
     prompt: confirm
     message: >-
       Upgrade ${{ vars.node-name }} at ${{ vars.node-ip }} to ${{ vars.installer-image }} now? The
-      node reboots, and its pods move or wait until it is back.
+      node reboots, and its pods move or wait until it is back. If the run stops after the upgrade,
+      roll back only if the node runs ${{ vars.version }} and misbehaves: if it never rebooted and still
+      runs the old version, do NOT roll back, as talosctl rollback would boot the version before that
+      one.
     timeout: 1h
 
   - id: upgrade
@@ -121,12 +146,17 @@ steps:
         - rollback
       timeout: 5m
 
-  - id: api-back
+  - id: version-after
     type: check
-    description: The node's Talos API answers again.
+    description: >-
+      The node is back, runs the new version and every service on it is healthy. If this fails, roll
+      back only if the node runs the new version and misbehaves: if it never rebooted and still runs
+      the old version, do NOT roll back, as talosctl rollback would boot the version before that one.
     check:
-      type: tcp
-      address: "${{ vars.node-ip }}:50000"
+      type: talos_node
+      node: ${{ vars.node-ip }}
+      version: ${{ vars.version }}
+      healthy: true
     within: 20m
     every: 15s
 
@@ -139,16 +169,6 @@ steps:
       node: ${{ vars.node-name }}
     within: 20m
     every: 15s
-
-  - id: version-after
-    type: prompt
-    prompt: confirm
-    message: >-
-      Does the From Talos table on the Devices page show ${{ vars.node-name }} at ${{ vars.version }}
-      and healthy? Answer no to stop here. Roll back only if the node runs ${{ vars.version }} and
-      misbehaves: if it never rebooted and still shows the old version, do NOT roll back, as
-      talosctl rollback would boot the version before that one.
-    timeout: 1h
 
   - id: health-after
     type: action

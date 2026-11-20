@@ -131,6 +131,8 @@ type rbHarness struct {
 	probers Probers
 	// kubeNodes run the kube_node checks, when set.
 	kubeNodes KubeNodes
+	// talosNodes run the talos_node checks, when set.
+	talosNodes TalosNodes
 	// skew moves the engine's clock ahead of real time, in nanoseconds.
 	skew atomic.Int64
 }
@@ -196,7 +198,7 @@ func (h *rbHarness) engine() *Runbooks {
 	return NewRunbooks(RunbooksConfig{
 		Dir: h.dir, Kinds: h.kinds, Policy: policy.NewWithConfig(h.audit, nil, h.cfg),
 		Runs: h.st.RunbookRuns(), Sealer: xorSealer{}, Poll: 5 * time.Millisecond, Now: h.now, Probers: h.probers,
-		KubeNodes: h.kubeNodes,
+		KubeNodes: h.kubeNodes, TalosNodes: h.talosNodes,
 	})
 }
 

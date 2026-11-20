@@ -31,7 +31,7 @@ All four are built from the step types that exist today, so they have the same l
   [adopted](kubernetes.md) on the hub, as does the `kube_node` check that waits for the node to be Ready.
 
 These recipes were checked by the runbook parser and a plan (dry run) in the test suite, and the Talos
-upgrade's steps in order against a stand-in agent. They have not been run against a real Talos, k3s or
+upgrade's steps in order against a stand-in agent and Talos API. They have not been run against a real Talos, k3s or
 Docker host. Try one on a spare machine first, and tell us what
 needs fixing.
 
@@ -153,19 +153,22 @@ steps:
 ## Upgrade a Talos node
 
 Upgrades one Talos node to a new installer image. Before it changes anything it runs `talosctl health`
-(etcd healthy, every node Ready, control plane up), checks that the node is Ready, and asks you to
-confirm that taking the node down keeps etcd's quorum: on the only control-plane node, the Kubernetes
-API and etcd are down while it reboots, so answer no there unless you accept that outage. A last prompt
-asks for the go-ahead, then `talosctl upgrade --preserve --wait` upgrades the node and waits until it has
-rebooted into the new image, and the run waits for the node's Talos API and its Ready condition. An
-exec action runs for 10 minutes at most, so an upgrade that takes longer ends that step as `unknown`:
-look at the node, then retry or pass over. You confirm the new version on the
-[From Talos](talos.md) table, and `talosctl health` checks the cluster again. Rollback runs
-`talosctl rollback`, which boots the node back into its previous Talos version. Never roll back a node
-that did not reboot into the new version: the rollback would boot the version before the current one.
+(etcd healthy, every node Ready, control plane up), checks through the Talos API that every service on
+the node is healthy and through Kubernetes that the node is Ready, and asks you to confirm that taking
+the node down keeps etcd's quorum: on the only control-plane node, the Kubernetes API and etcd are down
+while it reboots, so answer no there unless you accept that outage. A last prompt asks for the
+go-ahead, then `talosctl upgrade --preserve --wait` upgrades the node and waits until it has rebooted
+into the new image. An exec action runs for 10 minutes at most, so an upgrade that takes longer ends
+that step as `unknown`: look at the node, then retry or pass over. A
+[`talos_node` check](runbooks.md#a-talos-node-runs-a-version) then waits for the node to answer
+through the Talos API at the new version with every service healthy, the run waits for its Ready
+condition, and `talosctl health` checks the cluster again. Rollback runs `talosctl rollback`, which
+boots the node back into its previous Talos version. Never roll back a node that did not reboot into
+the new version: the rollback would boot the version before the current one. The version check's error
+says which version the node runs.
 
-Runbooks have no step that reads the output of a command or a node's Talos version, so the version
-check is a prompt: compare the version the Devices page shows with the one you upgraded to.
+The `talos_node` checks need the hub to read the Talos nodes (`hearth hub --talosconfig`, see
+[Talos](talos.md)), with the node's address among the nodes it reads.
 
 **Not run on real hardware yet.** Try it on a spare cluster first, one node at a time.
 
@@ -182,8 +185,10 @@ The file: [`docs/recipes/runbooks/upgrade-talos-node.yaml`](recipes/runbooks/upg
 #       hearth agent run --allow-exec /usr/local/bin/talosctl
 #   - /etc/talos/talosconfig (client config with the cluster endpoints) exists
 #     on that machine. Hearth never sees its content.
-#   - The hub reads the Talos nodes (hearth hub --talosconfig, see docs/talos.md),
-#     so the Devices page shows each node's Talos version.
+#   - The hub reads the Talos nodes (hearth hub --talosconfig, see docs/talos.md):
+#     the talos_node checks read the node's version and services through it. The
+#     node-ip var must be one of the nodes the hub reads: a node of the
+#     talosconfig context, or of --talos-nodes. An os:reader talosconfig is enough.
 #   - The cluster is adopted on the hub's Kubernetes page, so the hub can check
 #     that the node is Ready.
 #   - Edit the vars below: the device with talosctl, the node's name and address,
@@ -194,12 +199,22 @@ The file: [`docs/recipes/runbooks/upgrade-talos-node.yaml`](recipes/runbooks/upg
 #     actions run for 10 at most). A slower upgrade ends the step as unknown:
 #     look at the node, then retry or pass over. Never roll back a node that
 #     did not reboot into the new version.
+#   - After the upgrade, the run checks through the Talos API that the node runs
+#     the new version with every service healthy. If that check fails, roll back
+#     only if the node runs the new version and misbehaves: a node still at the
+#     old version never rebooted, and talosctl rollback would boot the version
+#     before that one.
+#   - talosctl health stays an exec step: it checks the whole cluster (etcd
+#     members, every node, the control plane), which a talos_node check of one
+#     node does not.
 #
 # The talosctl steps are exec actions, which are dangerous: they are held or
 # denied until the hub grants them, for example:
 #   hearth hub --allow-dangerous-automation runbook/upgrade-talos-node
 id: upgrade-talos-node
-description: Upgrade one Talos node after health and quorum checks, wait for it to be Ready, undo with a talosctl rollback.
+description: >-
+  Upgrade one Talos node after health and quorum checks, check through the Talos API that it runs the
+  new version with healthy services and wait for it to be Ready, undo with a talosctl rollback.
 vars:
   talosctl-device: workstation
   node-name: talos-worker-1
@@ -243,6 +258,16 @@ steps:
         - 5m
       timeout: 6m
 
+  - id: node-healthy-before
+    type: check
+    description: The node answers through the Talos API and every service on it is healthy.
+    check:
+      type: talos_node
+      node: ${{ vars.node-ip }}
+      healthy: true
+    within: 2m
+    every: 10s
+
   - id: node-ready-before
     type: check
     description: The node is Ready before it is upgraded.
@@ -258,7 +283,10 @@ steps:
     prompt: confirm
     message: >-
       Upgrade ${{ vars.node-name }} at ${{ vars.node-ip }} to ${{ vars.installer-image }} now? The
-      node reboots, and its pods move or wait until it is back.
+      node reboots, and its pods move or wait until it is back. If the run stops after the upgrade,
+      roll back only if the node runs ${{ vars.version }} and misbehaves: if it never rebooted and still
+      runs the old version, do NOT roll back, as talosctl rollback would boot the version before that
+      one.
     timeout: 1h
 
   - id: upgrade
@@ -295,12 +323,17 @@ steps:
         - rollback
       timeout: 5m
 
-  - id: api-back
+  - id: version-after
     type: check
-    description: The node's Talos API answers again.
+    description: >-
+      The node is back, runs the new version and every service on it is healthy. If this fails, roll
+      back only if the node runs the new version and misbehaves: if it never rebooted and still runs
+      the old version, do NOT roll back, as talosctl rollback would boot the version before that one.
     check:
-      type: tcp
-      address: "${{ vars.node-ip }}:50000"
+      type: talos_node
+      node: ${{ vars.node-ip }}
+      version: ${{ vars.version }}
+      healthy: true
     within: 20m
     every: 15s
 
@@ -313,16 +346,6 @@ steps:
       node: ${{ vars.node-name }}
     within: 20m
     every: 15s
-
-  - id: version-after
-    type: prompt
-    prompt: confirm
-    message: >-
-      Does the From Talos table on the Devices page show ${{ vars.node-name }} at ${{ vars.version }}
-      and healthy? Answer no to stop here. Roll back only if the node runs ${{ vars.version }} and
-      misbehaves: if it never rebooted and still shows the old version, do NOT roll back, as
-      talosctl rollback would boot the version before that one.
-    timeout: 1h
 
   - id: health-after
     type: action

@@ -60,10 +60,13 @@ type checkTrigger struct {
 	// kubeNode, for a runbook's kube_node check, reads a Node instead of
 	// sending req.
 	kubeNode *kubeNodeCheck
-	probers  Probers
-	policy   Policy
-	clock    Clock
-	log      *slog.Logger
+	// talosNode, for a runbook's talos_node check, reads a Talos node
+	// instead of sending req.
+	talosNode *talosNodeCheck
+	probers   Probers
+	policy    Policy
+	clock     Clock
+	log       *slog.Logger
 }
 
 func (t *checkTrigger) Describe() string {
