@@ -167,6 +167,13 @@ func (n *Node) closeRevokedConns() {
 	if k > 0 {
 		n.log.Info("closed raft connections of revoked hub certificates", "count", k)
 	}
+	if m := n.membership.Load(); m != nil {
+		if k := m.closeRevoked(func(c *x509.Certificate) bool {
+			return errors.Is(n.checkPeerCert(c), store.ErrCertRevoked)
+		}); k > 0 {
+			n.log.Info("closed gossip connections of revoked hub certificates", "count", k)
+		}
+	}
 }
 
 // issuerFingerprint is the fingerprint of the CA that issued cert, which in a
