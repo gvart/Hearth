@@ -74,6 +74,7 @@ type Broker struct {
 	auth    *authHook
 	ln      net.Listener
 	conns   *connListener
+	serve   *serveListener
 	recheck time.Duration
 	bridge  *bridge
 }
@@ -95,14 +96,15 @@ func New(cfg Config) (*Broker, error) {
 	}
 	conns := &connListener{Listener: cfg.Listener, conns: map[*trackedConn]struct{}{}}
 	ln := tls.NewListener(conns, TLSConfig(cfg.CA, cfg.ServerCert))
-	if err := srv.AddListener(listeners.NewNet("mqtts", ln)); err != nil {
+	serve := &serveListener{ln: ln, served: make(chan struct{})}
+	if err := srv.AddListener(serve); err != nil {
 		return nil, fmt.Errorf("mqtt: add listener: %w", err)
 	}
 	recheck := cfg.Recheck
 	if recheck <= 0 {
 		recheck = DefaultRecheck
 	}
-	b := &Broker{srv: srv, auth: auth, ln: ln, conns: conns, recheck: recheck}
+	b := &Broker{srv: srv, auth: auth, ln: ln, conns: conns, serve: serve, recheck: recheck}
 	if cfg.Bridge != nil {
 		br, err := newBridge(srv, cfg.Bridge, cfg.Clients, cfg.Log)
 		if err != nil {
@@ -138,8 +140,13 @@ func (b *Broker) Run(ctx context.Context) error {
 		}
 	}
 	wg.Wait()
-	// Connected clients are disconnected by Close; this ends the rest.
+	// mochi's Close waits for its clients on a WaitGroup that each new
+	// connection adds to, so a connection accepted during Close races with
+	// it. Stop accepting, close every connection and wait for mochi to be
+	// done with each before Close.
+	b.serve.stop()
 	b.conns.stop()
+	b.serve.handlers.Wait()
 	if err := b.srv.Close(); err != nil {
 		return fmt.Errorf("mqtt: close: %w", err)
 	}
@@ -174,13 +181,12 @@ func TLSConfig(ca *pki.CA, serverCert func() *tls.Certificate) *tls.Config {
 // connListener gives each connection connectTimeout to finish its TLS
 // handshake and CONNECT, so a silent client cannot hold a connection open;
 // the broker sets the keepalive deadline after CONNECT. It tracks the
-// connections it accepted, so stop can end those that never got that far:
-// the broker waits for every connection before it stops.
+// connections it accepted, so stop can end them all: the broker waits for
+// every connection before it stops.
 type connListener struct {
 	net.Listener
-	mu      sync.Mutex
-	conns   map[*trackedConn]struct{}
-	stopped bool
+	mu    sync.Mutex
+	conns map[*trackedConn]struct{}
 }
 
 type trackedConn struct {
@@ -201,25 +207,68 @@ func (l *connListener) Accept() (net.Conn, error) {
 		return nil, err
 	}
 	tc := &trackedConn{Conn: c, l: l}
+	_ = c.SetDeadline(time.Now().Add(connectTimeout))
 	l.mu.Lock()
-	defer l.mu.Unlock()
-	if l.stopped {
-		_ = c.SetDeadline(time.Now())
-	} else {
-		_ = c.SetDeadline(time.Now().Add(connectTimeout))
-		l.conns[tc] = struct{}{}
-	}
+	l.conns[tc] = struct{}{}
+	l.mu.Unlock()
 	return tc, nil
 }
 
-// stop ends every open connection's reads and writes now.
+// stop closes every open connection. A deadline would not end a connected
+// client's: mochi moves it before each read.
 func (l *connListener) stop() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.stopped = true
 	for c := range l.conns {
-		_ = c.SetDeadline(time.Now())
+		_ = c.Conn.Close()
 	}
+}
+
+// serveListener hands mochi the connections accepted on ln, as mochi's
+// listeners.Net does, but tracks the goroutine serving each one so the broker
+// can wait for them all to end before it closes the mochi server.
+type serveListener struct {
+	ln       net.Listener
+	log      *slog.Logger
+	served   chan struct{} // closed when Serve returns
+	handlers sync.WaitGroup
+}
+
+func (l *serveListener) ID() string       { return "mqtts" }
+func (l *serveListener) Address() string  { return l.ln.Addr().String() }
+func (l *serveListener) Protocol() string { return l.ln.Addr().Network() }
+
+func (l *serveListener) Init(log *slog.Logger) error {
+	l.log = log
+	return nil
+}
+
+func (l *serveListener) Serve(establish listeners.EstablishFn) {
+	defer close(l.served)
+	for {
+		c, err := l.ln.Accept()
+		if err != nil {
+			return
+		}
+		l.handlers.Go(func() {
+			if err := establish(l.ID(), c); err != nil {
+				l.log.Warn("", "error", err)
+			}
+		})
+	}
+}
+
+// Close is called by mochi's Server.Close, after stop.
+func (l *serveListener) Close(closeClients listeners.CloseFn) {
+	closeClients(l.ID())
+	_ = l.ln.Close()
+}
+
+// stop closes ln and waits for Serve to return, so no connection is handed
+// to mochi after it.
+func (l *serveListener) stop() {
+	_ = l.ln.Close()
+	<-l.served
 }
 
 // redactPackets drops mochi's "pk" and "packet" log attributes: a logged
