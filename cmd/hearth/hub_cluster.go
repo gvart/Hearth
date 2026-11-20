@@ -40,6 +40,11 @@ type clusterOptions struct {
 	// off. gossipAdvertise is the host:port other hubs dial for it.
 	gossipListen    string
 	gossipAdvertise string
+	// mode is "raft" or "ap" (--cluster-mode); replicas and gossipSeeds
+	// configure an AP cluster (hub_cluster_ap.go).
+	mode        string
+	replicas    int
+	gossipSeeds []string
 }
 
 func addClusterFlags(cmd *cobra.Command, o *clusterOptions) {
@@ -68,6 +73,7 @@ func addClusterFlags(cmd *cobra.Command, o *clusterOptions) {
 		"address for membership gossip between cluster hubs (TCP, mutual TLS); empty turns gossip off")
 	cmd.Flags().StringVar(&o.gossipAdvertise, "gossip-advertise", "",
 		"host:port other hubs use to reach this hub's --gossip-listen (default: the --advertise host and the gossip port)")
+	addAPClusterFlags(cmd, o)
 }
 
 // allowedRoles parses --allow-roles; empty means the hub's roles.
@@ -171,6 +177,9 @@ func startClusterNode(ctx context.Context, opts hubOptions, log *slog.Logger, on
 	*store.Store, *pki.CA, *cluster.Node, error,
 ) {
 	o := opts.cluster
+	if err := cluster.CheckMode(opts.dataDir, clusterModeRaft); err != nil {
+		return nil, nil, nil, err
+	}
 	if o.form && o.join != "" {
 		return nil, nil, nil, errors.New("--cluster forms a new cluster and --join joins one: pick one")
 	}

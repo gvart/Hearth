@@ -105,7 +105,7 @@ func (r Approvals) Decide(ctx context.Context, id, status, decider string, at ti
 
 // Get returns one approval, or ErrNotFound.
 func (r Approvals) Get(ctx context.Context, id string) (Approval, error) {
-	out, err := r.query(ctx, approvalSelect+` WHERE id = ?`, id)
+	out, err := r.query(ctx, id, gather{}, ` WHERE id = ?`, id)
 	if err != nil {
 		return Approval{}, fmt.Errorf("get approval %s: %w", id, err)
 	}
@@ -121,7 +121,8 @@ func (r Approvals) List(ctx context.Context, status string, limit int) ([]Approv
 	if limit <= 0 {
 		return nil, errors.New("list approvals: limit must be positive")
 	}
-	out, err := r.query(ctx, approvalSelect+` WHERE ? = '' OR status = ? ORDER BY created_at DESC, rowid DESC LIMIT ?`,
+	out, err := r.query(ctx, "", gather{order: then(desc(byInt(1)), desc(byText(0))), limit: limit},
+		` WHERE ? = '' OR status = ? ORDER BY created_at DESC, rowid DESC LIMIT ?`,
 		status, status, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list approvals: %w", err)
@@ -135,7 +136,8 @@ func (r Approvals) Overdue(ctx context.Context, at time.Time, limit int) ([]Appr
 	if limit <= 0 {
 		return nil, errors.New("overdue approvals: limit must be positive")
 	}
-	out, err := r.query(ctx, approvalSelect+` WHERE status = ? AND expires_at <= ? ORDER BY expires_at, id LIMIT ?`,
+	out, err := r.query(ctx, "", gather{order: then(byInt(2), byText(0)), limit: limit},
+		` WHERE status = ? AND expires_at <= ? ORDER BY expires_at, id LIMIT ?`,
 		ApprovalPending, toMillis(at), limit)
 	if err != nil {
 		return nil, fmt.Errorf("overdue approvals: %w", err)
@@ -143,11 +145,13 @@ func (r Approvals) Overdue(ctx context.Context, at time.Time, limit int) ([]Appr
 	return out, nil
 }
 
-const approvalSelect = `SELECT id, created_at, expires_at, actor_kind, actor_id, action, class, target,
-	detail, status, decided_by, decided_at FROM approvals`
+const approvalColumns = `SELECT id, created_at, expires_at, actor_kind, actor_id, action, class, target,
+	detail, status, decided_by, decided_at`
 
-// query runs q, an approvalSelect query; before schema 9 it finds none.
-func (r Approvals) query(ctx context.Context, q string, args ...any) ([]Approval, error) {
+// query selects approvalColumns of the approvals matching rest (FROM
+// approvals WHERE ...), of partition key if set, else of every member
+// merged by g; before schema 9 it finds none.
+func (r Approvals) query(ctx context.Context, key string, g gather, rest string, args ...any) ([]Approval, error) {
 	v, err := schemaVersion(ctx, r.s.db)
 	if err != nil {
 		return nil, err
@@ -155,7 +159,8 @@ func (r Approvals) query(ctx context.Context, q string, args ...any) ([]Approval
 	if v < approvalsSchema {
 		return nil, nil
 	}
-	rows, err := r.s.db.QueryContext(ctx, q, args...)
+	g.table = "approvals"
+	rows, err := r.s.list(ctx, key, g, approvalColumns, ` FROM approvals`+rest, args...)
 	if err != nil {
 		return nil, err
 	}

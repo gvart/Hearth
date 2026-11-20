@@ -620,6 +620,14 @@ type Status struct {
 	// Members are the gossip members this node sees; empty when it does not
 	// gossip.
 	Members []MemberInfo `json:"members,omitempty"`
+
+	// Mode is "ap" for a member of an AP cluster (--cluster-mode ap), which
+	// has no Raft state: then StorageMembers, Replicas (N) and
+	// HighlyAvailable describe its sharded store.
+	Mode            string `json:"mode,omitempty"`
+	StorageMembers  int    `json:"storage_members,omitempty"`
+	Replicas        int    `json:"replicas,omitempty"`
+	HighlyAvailable bool   `json:"highly_available,omitempty"`
 }
 
 // Status returns this node's view of the cluster.

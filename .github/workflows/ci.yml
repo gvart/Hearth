@@ -216,3 +216,25 @@ jobs:
           path: ${{ runner.temp }}/e2e-cluster-logs
           if-no-files-found: ignore
           retention-days: 7
+
+  e2e-ap:
+    name: E2E ap
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: 3-hub AP cluster kill, partition and heal (test/e2e, task e2e:ap)
+        run: go test -tags e2e -count=1 -v -run '^TestAPCluster$' ./test/e2e/...
+        env:
+          HEARTH_E2E_LOG_DIR: ${{ runner.temp }}/e2e-ap-logs
+      - name: Upload hub and agent logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-ap-logs
+          path: ${{ runner.temp }}/e2e-ap-logs
+          if-no-files-found: ignore
+          retention-days: 7

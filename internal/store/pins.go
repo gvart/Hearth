@@ -71,7 +71,7 @@ func (r Certs) Fingerprint(ctx context.Context, serial, deviceID string) (string
 		return "", fmt.Errorf("cert fingerprint %s: %w", serial, ErrSchemaTooOld)
 	}
 	var fp sql.NullString
-	err := r.s.db.QueryRowContext(ctx,
+	err := r.s.queryRowKey(ctx, deviceID,
 		`SELECT fingerprint FROM certs WHERE serial = ? AND device_id = ?`, serial, deviceID).Scan(&fp)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
@@ -132,7 +132,7 @@ func (r Certs) PinMismatches(ctx context.Context, deviceID string) ([]string, er
 	if ok, err := atSchema(ctx, r.s.db, CertPinsSchema); err != nil || !ok {
 		return nil, err
 	}
-	rows, err := r.s.db.QueryContext(ctx,
+	rows, err := r.s.queryKey(ctx, deviceID,
 		`SELECT serial FROM certs WHERE device_id = ? AND pin_mismatch_at IS NOT NULL ORDER BY serial`, deviceID)
 	if err != nil {
 		return nil, fmt.Errorf("list pin mismatches of %s: %w", deviceID, err)

@@ -103,7 +103,7 @@ func (r Panels) Delete(ctx context.Context, id string) error {
 
 // Get returns panel id, or ErrNotFound.
 func (r Panels) Get(ctx context.Context, id string) (Panel, error) {
-	out, err := r.query(ctx, `id = ?`, ``, id)
+	out, err := r.query(ctx, id, gather{}, `id = ?`, ``, id)
 	if err != nil {
 		return Panel{}, fmt.Errorf("get panel %s: %w", id, err)
 	}
@@ -115,7 +115,7 @@ func (r Panels) Get(ctx context.Context, id string) (Panel, error) {
 
 // List returns every panel, by name. Before schema 22 there are none.
 func (r Panels) List(ctx context.Context) ([]Panel, error) {
-	out, err := r.query(ctx, `TRUE`, `ORDER BY name, id`)
+	out, err := r.query(ctx, "", gather{order: then(byText(1), byText(0))}, `TRUE`, `ORDER BY name, id`)
 	if err != nil {
 		return nil, fmt.Errorf("list panels: %w", err)
 	}
@@ -125,14 +125,15 @@ func (r Panels) List(ctx context.Context) ([]Panel, error) {
 // query returns the live panels matching where, then tail (an ORDER BY
 // clause). The clauses are constants of this file's callers; values are
 // bound.
-func (r Panels) query(ctx context.Context, where, tail string, args ...any) ([]Panel, error) {
+func (r Panels) query(ctx context.Context, key string, g gather, where, tail string, args ...any) ([]Panel, error) {
 	v, err := schemaVersion(ctx, r.s.db)
 	if err != nil || v < panelsSchema {
 		return nil, err
 	}
-	q := `SELECT id, name, widgets, created_at, updated_at FROM panels WHERE (` + where + `)` + //nolint:gosec // see above
+	rest := ` FROM panels WHERE (` + where + `)` +
 		liveOnly(v >= VersionedSchema) + ` ` + tail
-	rows, err := r.s.db.QueryContext(ctx, q, args...)
+	g.table = "panels"
+	rows, err := r.s.list(ctx, key, g, `SELECT id, name, widgets, created_at, updated_at`, rest, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -188,7 +189,7 @@ func (r Panels) RevokeLink(ctx context.Context, panelID, id string, at time.Time
 // Links returns every share link, revoked and expired ones included, oldest
 // first. Before schema 22 there are none.
 func (r Panels) Links(ctx context.Context) ([]PanelLink, error) {
-	out, err := r.queryLinks(ctx, `TRUE`, `ORDER BY created_at, id`)
+	out, err := r.queryLinks(ctx, gather{order: then(byInt(2), byText(0))}, `TRUE`, `ORDER BY created_at, id`)
 	if err != nil {
 		return nil, fmt.Errorf("list panel links: %w", err)
 	}
@@ -201,7 +202,7 @@ func (r Panels) Links(ctx context.Context) ([]PanelLink, error) {
 // for an expired one.
 func (r Panels) CheckLink(ctx context.Context, secret string, now time.Time) (Panel, PanelLink, error) {
 	h := hashSecret(secret)
-	links, err := r.queryLinks(ctx, `hash = ?`, ``, h[:])
+	links, err := r.queryLinks(ctx, gather{}, `hash = ?`, ``, h[:])
 	if err != nil {
 		return Panel{}, PanelLink{}, fmt.Errorf("check panel link: %w", err)
 	}
@@ -224,14 +225,15 @@ func (r Panels) CheckLink(ctx context.Context, secret string, now time.Time) (Pa
 
 // queryLinks returns the live share links matching where, then tail, as
 // query does.
-func (r Panels) queryLinks(ctx context.Context, where, tail string, args ...any) ([]PanelLink, error) {
+func (r Panels) queryLinks(ctx context.Context, g gather, where, tail string, args ...any) ([]PanelLink, error) {
 	v, err := schemaVersion(ctx, r.s.db)
 	if err != nil || v < panelsSchema {
 		return nil, err
 	}
-	q := `SELECT id, panel_id, created_at, expires_at, revoked_at FROM panel_links WHERE (` + where + `)` + //nolint:gosec // see query
+	rest := ` FROM panel_links WHERE (` + where + `)` +
 		liveOnly(v >= VersionedSchema) + ` ` + tail
-	rows, err := r.s.db.QueryContext(ctx, q, args...)
+	g.table = "panel_links"
+	rows, err := r.s.list(ctx, "", g, `SELECT id, panel_id, created_at, expires_at, revoked_at`, rest, args...)
 	if err != nil {
 		return nil, err
 	}

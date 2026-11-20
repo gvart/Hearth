@@ -64,6 +64,11 @@ tasks:
     cmds:
       - go test -tags e2e -count=1 -v -run '^TestClusterFailover$' ./test/e2e/...
 
+  e2e:ap:
+    desc: Run the compose-based end-to-end test of a 3-hub AP cluster (needs Docker with compose)
+    cmds:
+      - go test -tags e2e -count=1 -v -run '^TestAPCluster$' ./test/e2e/...
+
   e2e:install:
     desc: Test deploy/install.sh end to end in a Debian 12 container (needs Docker)
     cmds:

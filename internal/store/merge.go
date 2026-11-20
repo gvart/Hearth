@@ -49,12 +49,15 @@ func (s *Store) Merge(ctx context.Context, muts []Mutation) (err error) {
 	} else if !ok {
 		return fmt.Errorf("merge: %w: it needs %d", ErrSchemaTooOld, VersionedSchema)
 	}
+	dt := s.newDigestTx()
 	for _, m := range muts {
-		if m.Table == auditTable {
-			err = mergeAudit(ctx, tx, m)
-		} else {
-			_, err = mergeRow(ctx, s, tx, m, true)
-		}
+		err = dt.merge(ctx, tx, m, func() error {
+			if m.Table == auditTable {
+				return mergeAudit(ctx, tx, m)
+			}
+			_, err := mergeRow(ctx, s, tx, m, true)
+			return err
+		})
 		if err != nil {
 			return fmt.Errorf("merge %s: %w", m.Table, err)
 		}
@@ -62,6 +65,7 @@ func (s *Store) Merge(ctx context.Context, muts []Mutation) (err error) {
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("merge: %w", err)
 	}
+	dt.commit()
 	return nil
 }
 
@@ -98,6 +102,9 @@ func (s *Store) GCTombstones(ctx context.Context, now time.Time) (int, error) {
 		return 0, err
 	}
 	cutoff := int64(hlc.New(now.Add(-TombstoneTTL))) //nolint:gosec // an HLC fits in 63 bits
+	if s.digest != nil {
+		return s.gcTombstonesDigested(ctx, cutoff)
+	}
 	n := 0
 	for _, table := range slices.Sorted(maps.Keys(tables)) {
 		if !tables[table].deletable || !tables[table].existsAt(v) {

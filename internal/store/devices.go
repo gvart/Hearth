@@ -62,7 +62,7 @@ func (r Devices) Upsert(ctx context.Context, d Device) error {
 
 // Get returns the device with the given ID, or ErrNotFound.
 func (r Devices) Get(ctx context.Context, id string) (Device, error) {
-	row := r.s.db.QueryRowContext(ctx, `SELECT `+deviceColumns+` FROM devices WHERE id = ?`, id)
+	row := r.s.queryRowKey(ctx, id, `SELECT `+deviceColumns+` FROM devices WHERE id = ?`, id)
 	d, err := scanDevice(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Device{}, fmt.Errorf("get device %s: %w", id, ErrNotFound)
@@ -75,7 +75,8 @@ func (r Devices) Get(ctx context.Context, id string) (Device, error) {
 
 // List returns all devices ordered by ID.
 func (r Devices) List(ctx context.Context) ([]Device, error) {
-	rows, err := r.s.db.QueryContext(ctx, `SELECT `+deviceColumns+` FROM devices ORDER BY id`)
+	rows, err := r.s.list(ctx, "", gather{table: "devices", order: byText(0)},
+		`SELECT `+deviceColumns, ` FROM devices ORDER BY id`)
 	if err != nil {
 		return nil, fmt.Errorf("list devices: %w", err)
 	}

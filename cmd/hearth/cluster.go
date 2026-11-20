@@ -338,6 +338,16 @@ func runClusterTokenCreate(ctx context.Context, opts clusterTokenOptions, out io
 	if err != nil || !done {
 		return err
 	}
+	if cluster.IsAPMember(opts.dataDir) {
+		_, err = fmt.Fprintf(out, "Cluster join token (single use, expires %s):\n  %s\n\n"+
+			"On the new hub, with an empty data dir:\n  HEARTH_JOIN_TOKEN=%s hearth hub --cluster-mode ap --join %s "+
+			"--gossip-advertise <new-hub-host>:%s\n",
+			expires.Format(time.RFC3339), tok.EncodeJoin(), tok.EncodeJoin(), opts.hubURL, cluster.DefaultGossipPort)
+		if err != nil {
+			return fmt.Errorf("write token: %w", err)
+		}
+		return nil
+	}
 	_, err = fmt.Fprintf(out, "Cluster join token (single use, expires %s):\n  %s\n\n"+
 		"On the new hub, with an empty data dir:\n  HEARTH_JOIN_TOKEN=%s hearth hub --join %s --advertise <new-hub-host>:%s\n",
 		expires.Format(time.RFC3339), tok.EncodeJoin(), tok.EncodeJoin(), opts.hubURL, cluster.DefaultRaftPort)
@@ -385,6 +395,9 @@ func runClusterStatus(ctx context.Context, dataDir string, asJSON bool, out io.W
 		enc := json.NewEncoder(out)
 		enc.SetIndent("", "  ")
 		return enc.Encode(st)
+	}
+	if st.Mode == clusterModeAP {
+		return writeAPStatus(out, st)
 	}
 	leader := st.LeaderID
 	if leader == "" {
@@ -439,4 +452,20 @@ func driftHubsColumn(it cluster.DriftItem) string {
 		parts = append(parts, "unknown: "+strings.Join(it.Unknown, ", "))
 	}
 	return strings.Join(parts, " | ")
+}
+
+// writeAPStatus writes the status of an AP cluster member.
+func writeAPStatus(out io.Writer, st cluster.Status) error {
+	ha := "yes"
+	if !st.HighlyAvailable {
+		ha = "no: not highly available (fewer than 2 storage members, or N < 2)"
+	}
+	tw := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintf(tw, "Node:\t%s\nMode:\tap (leaderless, sharded)\nStorage members:\t%d\nReplicas (N):\t%d\nHighly available:\t%s\n",
+		st.NodeID, st.StorageMembers, st.Replicas, ha)
+	writeMembers(tw, st.Members)
+	if err := tw.Flush(); err != nil {
+		return fmt.Errorf("write status: %w", err)
+	}
+	return nil
 }

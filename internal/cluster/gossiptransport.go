@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/hashicorp/memberlist"
@@ -32,6 +33,9 @@ const (
 	// gossipVerify: nothing; the dialer only wanted the handshake, to learn
 	// which hub owns the address (see verifyOwner).
 	gossipVerify byte = 'v'
+	// gossipReplica: replication requests of a sharded cluster (replicate.go),
+	// served by MembershipConfig.Replica.
+	gossipReplica byte = 'r'
 )
 
 const (
@@ -91,6 +95,9 @@ type gossipTransport struct {
 	owners      map[string]string
 	verifying   map[string]bool
 	verifyTried map[string]time.Time
+
+	// replica serves gossipReplica connections; nil refuses them.
+	replica atomic.Pointer[func(net.Conn, string)]
 }
 
 var _ memberlist.Transport = (*gossipTransport)(nil)
@@ -324,6 +331,14 @@ func (t *gossipTransport) serve(c net.Conn) {
 		}
 	case gossipPackets:
 		t.readPackets(c, peer)
+	case gossipReplica:
+		h := t.replica.Load()
+		if h == nil {
+			_ = c.Close()
+			return
+		}
+		t.markSeen(peer)
+		(*h)(c, peer)
 	case gossipVerify:
 		_ = c.Close()
 	default:

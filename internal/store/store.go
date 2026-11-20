@@ -38,6 +38,13 @@ type Store struct {
 	// clock stamps the writes this store accepts, as origin (see Stamp).
 	clock  *hlc.Clock
 	origin string
+	// digest holds the bucket digests (WithDigest), nil without.
+	digest *digest
+	// shards reads the rows other members hold in a sharded cluster
+	// (WithShards), nil on a hub that holds every row.
+	shards Shards
+	// ro is a read-only pool serving other members' reads (ReadLocal).
+	ro *sql.DB
 	// stmts caches the statements the writer builds (see stmtFor).
 	stmts sync.Map
 }
@@ -85,6 +92,12 @@ func Open(ctx context.Context, path string, opts ...Option) (*Store, error) {
 	if err := s.observeStored(ctx); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("open sqlite %s: %w", path, err)
+	}
+	if cfg.digest || cfg.shards != nil {
+		if err := s.openSharded(ctx, cfg); err != nil {
+			_ = s.Close()
+			return nil, fmt.Errorf("open sqlite %s: %w", path, err)
+		}
 	}
 	s.applier = ApplierFunc(s.ApplyLocal)
 	if cfg.newApplier != nil {
@@ -176,6 +189,9 @@ func (s *Store) Close() error {
 		_ = st.(*sql.Stmt).Close() //nolint:forcetypeassert // the cache holds statements only
 		return true
 	})
+	if s.ro != nil {
+		_ = s.ro.Close()
+	}
 	return s.db.Close()
 }
 

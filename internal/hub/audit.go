@@ -36,10 +36,13 @@ type AuditEntryJSON struct {
 }
 
 // AuditPageJSON is a page of the audit log, newest first. NextBefore, when
-// set, is the before= cursor of the next, older page.
+// set, is the before= cursor of the next, older page. A hub of an AP
+// cluster, where an entry id (its HLC) is not unique, sets NextCursor
+// instead: an opaque before= cursor, the entry's global id.
 type AuditPageJSON struct {
 	Entries    []AuditEntryJSON `json:"entries"`
 	NextBefore int64            `json:"next_before,omitempty"`
+	NextCursor string           `json:"next_cursor,omitempty"`
 	// Actions are every action policy knows, for filters.
 	Actions []string `json:"actions"`
 }
@@ -94,7 +97,13 @@ func (a *api) listAudit(w http.ResponseWriter, r *http.Request) {
 			*p.to = t
 		}
 	}
-	if v := q.Get("before"); v != "" {
+	if v := q.Get("before"); v != "" && a.store.Sharded() {
+		if store.CheckAuditCursor(v) != nil {
+			bad("before must be a next_cursor of this log")
+			return
+		}
+		f.BeforeCursor = v
+	} else if v != "" {
 		n, err := strconv.ParseInt(v, 10, 64)
 		if err != nil || n <= 0 {
 			bad("before must be a positive entry id")
@@ -140,7 +149,11 @@ func (a *api) listAudit(w http.ResponseWriter, r *http.Request) {
 	page := AuditPageJSON{Entries: make([]AuditEntryJSON, 0, min(len(entries), limit)), Actions: allActions()}
 	if len(entries) > limit {
 		entries = entries[:limit]
-		page.NextBefore = entries[limit-1].ID
+		if last := entries[limit-1]; last.Cursor != "" {
+			page.NextCursor = last.Cursor
+		} else {
+			page.NextBefore = last.ID
+		}
 	}
 	for _, e := range entries {
 		class, _ := policy.ClassOf(policy.Action(e.Action))

@@ -34,7 +34,7 @@ Parallel: 2 ∥ 3, then 4 ∥ 5. Everything else is sequential.
   verify: property test where shuffled mutation orders converge to identical DBs; negative tests:
   revocation is never cleared, audit is never overwritten, a future-skewed HLC is rejected.
   depends on: 1.
-- [ ] **4. Sharding + replication.** Hash ring over storage members; partition keys; W/R levels;
+- [x] **4. Sharding + replication.** Hash ring over storage members; partition keys; W/R levels;
   hinted handoff; read repair; Merkle anti-entropy; scatter-gather list queries.
   verify: 3 storage members, `N=2`: kill one, nothing is lost for critical writes; a split and heal
   converges; benchmark the devices list and audit page against single-hub numbers.

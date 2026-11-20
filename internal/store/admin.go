@@ -67,7 +67,7 @@ func (r Admin) CheckSession(ctx context.Context, secret string, now time.Time) (
 		return time.Time{}, fmt.Errorf("check session: %w", err)
 	}
 	var expiresAt int64
-	err = r.s.db.QueryRowContext(ctx, `SELECT expires_at FROM sessions WHERE hash = ?`+liveOnly(versioned), h[:]).Scan(&expiresAt)
+	err = r.s.queryRowKey(ctx, keyString(h[:]), `SELECT expires_at FROM sessions WHERE hash = ?`+liveOnly(versioned), h[:]).Scan(&expiresAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return time.Time{}, fmt.Errorf("check session: %w", ErrNotFound)
 	}

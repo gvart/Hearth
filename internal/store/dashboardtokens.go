@@ -87,7 +87,7 @@ func (r DashboardTokens) Revoke(ctx context.Context, id string, at time.Time) er
 // List returns every token, revoked and expired ones included, oldest
 // first. Before dashboardTokensSchema there are none.
 func (r DashboardTokens) List(ctx context.Context) ([]DashboardToken, error) {
-	out, err := r.query(ctx, dashboardTokenSelect+` ORDER BY created_at, id`)
+	out, err := r.query(ctx, gather{order: then(byInt(2), byText(0))}, ` ORDER BY created_at, id`)
 	if err != nil {
 		return nil, fmt.Errorf("list dashboard tokens: %w", err)
 	}
@@ -100,7 +100,7 @@ func (r DashboardTokens) List(ctx context.Context) ([]DashboardToken, error) {
 // that a refusal can name it.
 func (r DashboardTokens) Check(ctx context.Context, secret string, now time.Time) (DashboardToken, error) {
 	h := hashSecret(secret)
-	out, err := r.query(ctx, dashboardTokenSelect+` WHERE hash = ?`, h[:])
+	out, err := r.query(ctx, gather{}, ` WHERE hash = ?`, h[:])
 	if err != nil {
 		return DashboardToken{}, fmt.Errorf("check dashboard token: %w", err)
 	}
@@ -117,15 +117,18 @@ func (r DashboardTokens) Check(ctx context.Context, secret string, now time.Time
 	return t, nil
 }
 
-const dashboardTokenSelect = `SELECT id, name, created_at, expires_at, revoked_at FROM dashboard_tokens` //nolint:gosec // a query
+const dashboardTokenColumns = `SELECT id, name, created_at, expires_at, revoked_at` //nolint:gosec // G101: column names, no credential
 
-// query runs q, a dashboardTokenSelect query; before dashboardTokensSchema it finds none.
-func (r DashboardTokens) query(ctx context.Context, q string, args ...any) ([]DashboardToken, error) {
+// query selects dashboardTokenColumns of the tokens matching rest (WHERE
+// and ORDER BY clauses), on every member merged by g; before
+// dashboardTokensSchema it finds none.
+func (r DashboardTokens) query(ctx context.Context, g gather, rest string, args ...any) ([]DashboardToken, error) {
 	v, err := schemaVersion(ctx, r.s.db)
 	if err != nil || v < dashboardTokensSchema {
 		return nil, err
 	}
-	rows, err := r.s.db.QueryContext(ctx, q, args...)
+	g.table = "dashboard_tokens"
+	rows, err := r.s.list(ctx, "", g, dashboardTokenColumns, ` FROM dashboard_tokens`+rest, args...)
 	if err != nil {
 		return nil, err
 	}

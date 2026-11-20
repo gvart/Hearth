@@ -54,7 +54,7 @@ func (r MCPTokens) Create(ctx context.Context, name, secret, scope string, now t
 // ErrTokenRevoked for a revoked one.
 func (r MCPTokens) Check(ctx context.Context, secret string) (MCPToken, error) {
 	h := hashSecret(secret)
-	out, err := r.query(ctx, mcpTokenSelect+` WHERE hash = ?`, h[:])
+	out, err := r.query(ctx, gather{}, ` WHERE hash = ?`, h[:])
 	if err != nil {
 		return MCPToken{}, fmt.Errorf("check mcp token: %w", err)
 	}
@@ -69,7 +69,7 @@ func (r MCPTokens) Check(ctx context.Context, secret string) (MCPToken, error) {
 
 // List returns every token, revoked ones included, by name.
 func (r MCPTokens) List(ctx context.Context) ([]MCPToken, error) {
-	out, err := r.query(ctx, mcpTokenSelect+` ORDER BY name`)
+	out, err := r.query(ctx, gather{order: byText(0)}, ` ORDER BY name`)
 	if err != nil {
 		return nil, fmt.Errorf("list mcp tokens: %w", err)
 	}
@@ -85,10 +85,12 @@ func (r MCPTokens) Revoke(ctx context.Context, name string, at time.Time) error 
 	return nil
 }
 
-const mcpTokenSelect = `SELECT name, scope, created_at, revoked_at FROM mcp_tokens` //nolint:gosec // a query
+const mcpTokenColumns = `SELECT name, scope, created_at, revoked_at` //nolint:gosec // G101: column names, no credential
 
-// query runs q, an mcpTokenSelect query; before schema 11 it finds none.
-func (r MCPTokens) query(ctx context.Context, q string, args ...any) ([]MCPToken, error) {
+// query selects mcpTokenColumns of the tokens matching rest (WHERE and
+// ORDER BY clauses), on every member merged by g; before schema 11 it
+// finds none.
+func (r MCPTokens) query(ctx context.Context, g gather, rest string, args ...any) ([]MCPToken, error) {
 	v, err := schemaVersion(ctx, r.s.db)
 	if err != nil {
 		return nil, err
@@ -96,7 +98,8 @@ func (r MCPTokens) query(ctx context.Context, q string, args ...any) ([]MCPToken
 	if v < mcpTokensSchema {
 		return nil, nil
 	}
-	rows, err := r.s.db.QueryContext(ctx, q, args...)
+	g.table = "mcp_tokens"
+	rows, err := r.s.list(ctx, "", g, mcpTokenColumns, ` FROM mcp_tokens`+rest, args...)
 	if err != nil {
 		return nil, err
 	}

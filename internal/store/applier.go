@@ -40,6 +40,8 @@ type openConfig struct {
 	extra      []*goose.Migration
 	clock      *hlc.Clock
 	origin     string
+	digest     bool
+	shards     Shards
 }
 
 // WithClock makes the store stamp its writes with clock instead of one of
@@ -138,13 +140,14 @@ func (s *Store) ApplyLocalMutations(ctx context.Context, cmd Command) (res Resul
 	if err = checkSchema(cmd, v); err != nil {
 		return Result{}, nil, err
 	}
-	w := &writer{s: s, tx: tx, stamp: stampOf(cmd), schema: v, versioned: v >= VersionedSchema}
+	w := &writer{s: s, tx: tx, stamp: stampOf(cmd), schema: v, versioned: v >= VersionedSchema, dt: s.newDigestTx()}
 	if res, err = cmd.apply(ctx, w); err != nil {
 		return Result{}, nil, err
 	}
 	if err = tx.Commit(); err != nil {
 		return Result{}, nil, fmt.Errorf("apply %s: %w", cmd.Op(), err)
 	}
+	w.dt.commit()
 	// The clock stays ahead of every version applied, so the next write
 	// this hub stamps supersedes them.
 	for _, m := range w.muts {

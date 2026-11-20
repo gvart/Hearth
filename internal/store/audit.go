@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gvart/hearth/internal/hlc"
@@ -17,7 +19,10 @@ import (
 
 // AuditEntry is one row of the append-only audit log.
 type AuditEntry struct {
-	ID        int64
+	ID int64
+	// Cursor, filled by Query in a sharded cluster, is the entry's place in
+	// the log, for AuditFilter.BeforeCursor.
+	Cursor    string
 	TS        time.Time
 	ActorKind string
 	ActorID   string
@@ -250,6 +255,9 @@ type AuditFilter struct {
 	// Before returns only entries older than the entry with this ID: the
 	// cursor for the next page.
 	Before int64
+	// BeforeCursor is Before in a sharded cluster, where an ID (the HLC) is
+	// not unique: the Cursor of the last entry of the page before.
+	BeforeCursor string
 }
 
 // List returns up to limit entries, newest first.
@@ -289,6 +297,9 @@ func (r Audit) query(ctx context.Context, f AuditFilter, limit int, mode auditMo
 	}
 	if !f.Until.IsZero() {
 		until = toMillis(f.Until)
+	}
+	if r.s.shards != nil {
+		return r.queryShards(ctx, f, string(actions), string(targets), since, until, limit)
 	}
 	page := map[auditMode]string{
 		auditByDetail: auditPageDetailSQL, auditByColumn: auditPageIndexedSQL, auditByVersion: auditPageVersionSQL,
@@ -366,6 +377,115 @@ func (r Audit) foldOutcomes(ctx context.Context, out []AuditEntry, ops map[strin
 		out[i].Detail = withoutOpKeys(out[i].Detail)
 	}
 	return nil
+}
+
+// auditPageShardSQL is the audit page of a member of a sharded cluster, in
+// the strict order of the global id (_hlc, _origin, _seq), newest first: the
+// cursor ?8, ?10, ?11 is the global id of the last entry of the page before
+// (?8 = 0: none), and the page holds only entries before it in that order,
+// so entries with the same HLC from two members are neither skipped nor
+// repeated. The outcome folds in on the member itself, which holds an
+// action's entries together (auditPartition). After its own columns it
+// selects the hidden ones queryAll merges by.
+const auditPageShardSQL = `
+	SELECT _hlc, _origin, _seq, ts, actor_kind, actor_id, action, target, decision,
+	       coalesce((SELECT o.result FROM audit_log o WHERE a.audit_op IS NOT NULL AND o.audit_outcome_of = a.audit_op
+	                 ORDER BY o._hlc DESC, o._origin DESC, o._seq DESC LIMIT 1), result),
+	       coalesce((SELECT o.detail FROM audit_log o WHERE a.audit_op IS NOT NULL AND o.audit_outcome_of = a.audit_op
+	                 ORDER BY o._hlc DESC, o._origin DESC, o._seq DESC LIMIT 1), detail),
+	       coalesce(audit_op, ''),
+	       _hlc, _origin, _seq, _hlc, _origin
+	FROM audit_log a
+	WHERE +audit_outcome_of IS NULL
+	  AND (?1 = '' OR actor_kind = ?1)
+	  AND (?2 = '' OR instr(actor_id, ?2) > 0)
+	  AND (?3 = '[]' OR action IN (SELECT value FROM json_each(?3)))
+	  AND (?4 = '[]' OR target IN (SELECT value FROM json_each(?4)))
+	  AND (?5 = '' OR decision = ?5)
+	  AND (?6 = 0 OR ts >= ?6)
+	  AND (?7 = 0 OR ts < ?7)
+	  AND (?8 = 0 OR (_hlc, _origin, _seq) < (?8, ?10, ?11))
+	ORDER BY _hlc DESC, _origin DESC, _seq DESC LIMIT ?9`
+
+// queryShards is query in a sharded cluster: every member pages its own
+// entries, outcomes folded in, and the pages merge newest first (a k-way
+// merge in the strict order of the global id). An entry's ID is its HLC, its
+// Cursor its global id, and f.BeforeCursor the cursor of the page before.
+func (r Audit) queryShards(ctx context.Context, f AuditFilter, actions, targets string, since, until int64, limit int) ([]AuditEntry, error) {
+	var before auditCursor
+	if f.BeforeCursor != "" {
+		var err error
+		if before, err = parseAuditCursor(f.BeforeCursor); err != nil {
+			return nil, fmt.Errorf("list audit: %w", err)
+		}
+	}
+	order := desc(then(byInt(0), byText(1), byInt(2)))
+	rows, err := r.s.queryAll(ctx, gather{table: auditTable, order: order, limit: limit}, auditPageShardSQL,
+		f.ActorKind, f.ActorID, actions, targets, f.Decision, since, until, before.hlc, limit, before.origin, before.seq)
+	if err != nil {
+		return nil, fmt.Errorf("list audit: %w", err)
+	}
+	defer rows.Close()
+	var out []AuditEntry
+	for rows.Next() {
+		var (
+			e          AuditEntry
+			c          auditCursor
+			ts         int64
+			detail, op string
+		)
+		if err := rows.Scan(&c.hlc, &c.origin, &c.seq, &ts, &e.ActorKind, &e.ActorID, &e.Action, &e.Target,
+			&e.Decision, &e.Result, &detail, &op); err != nil {
+			return nil, fmt.Errorf("list audit: %w", err)
+		}
+		e.ID, e.Cursor = c.hlc, c.String()
+		e.TS = fromMillis(ts)
+		e.Detail = json.RawMessage(detail)
+		if op != "" {
+			e.Detail = withoutOpKeys(e.Detail)
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// ErrBadCursor refuses an audit cursor that is not one Query returned.
+var ErrBadCursor = errors.New("bad audit cursor")
+
+// auditCursor is an audit entry's global id: the position of the entry in a
+// sharded cluster's log, which orders by it.
+type auditCursor struct {
+	hlc    int64
+	origin string
+	seq    int64
+}
+
+// String encodes c as "<hlc>.<seq>.<origin>"; the origin, a node id, goes
+// last so it may hold anything.
+func (c auditCursor) String() string {
+	return strconv.FormatInt(c.hlc, 10) + "." + strconv.FormatInt(c.seq, 10) + "." + c.origin
+}
+
+// CheckAuditCursor checks that s is an AuditEntry.Cursor, to pass as
+// AuditFilter.BeforeCursor: ErrBadCursor if not.
+func CheckAuditCursor(s string) error {
+	_, err := parseAuditCursor(s)
+	return err
+}
+
+// parseAuditCursor decodes an AuditEntry.Cursor, to pass as
+// AuditFilter.BeforeCursor.
+func parseAuditCursor(s string) (auditCursor, error) {
+	parts := strings.SplitN(s, ".", 3)
+	if len(parts) != 3 || parts[2] == "" {
+		return auditCursor{}, fmt.Errorf("%w %q", ErrBadCursor, s)
+	}
+	h, err1 := strconv.ParseInt(parts[0], 10, 64)
+	seq, err2 := strconv.ParseInt(parts[1], 10, 64)
+	if err1 != nil || err2 != nil || h <= 0 || seq < 0 {
+		return auditCursor{}, fmt.Errorf("%w %q", ErrBadCursor, s)
+	}
+	return auditCursor{hlc: h, origin: parts[2], seq: seq}, nil
 }
 
 // withoutOpKeys returns detail without the keys that tie an action's entries,
@@ -457,8 +577,11 @@ func (w *writer) appendAudit(ctx context.Context, c AppendAudit, key string) (in
 			"decision": c.Decision, "result": c.Result, "detail": c.Detail, "audit_key": optString(key),
 		},
 	}
-	id, err := insertAudit(ctx, w.tx, m)
-	if err != nil {
+	var id int64
+	if err := w.dt.merge(ctx, w.tx, m, func() (err error) {
+		id, err = insertAudit(ctx, w.tx, m)
+		return err
+	}); err != nil {
 		return 0, err
 	}
 	w.muts = append(w.muts, m)
