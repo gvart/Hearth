@@ -69,6 +69,11 @@ func runAdminSetPassword(ctx context.Context, dataDir, password string, out io.W
 // readPassword prompts twice without echo when in is a terminal, and otherwise
 // reads the first line of in.
 func readPassword(in io.Reader, prompt io.Writer) (string, error) {
+	return readNewPassword(in, prompt, "New admin password: ")
+}
+
+// readNewPassword is readPassword with label as the first prompt.
+func readNewPassword(in io.Reader, prompt io.Writer, label string) (string, error) {
 	if f, ok := in.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
 		fd := int(f.Fd())
 		read := func(label string) (string, error) {
@@ -80,7 +85,7 @@ func readPassword(in io.Reader, prompt io.Writer) (string, error) {
 			}
 			return string(b), nil
 		}
-		pw, err := read("New admin password: ")
+		pw, err := read(label)
 		if err != nil {
 			return "", err
 		}
