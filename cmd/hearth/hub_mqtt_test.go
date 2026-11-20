@@ -40,6 +40,10 @@ func TestNewMQTTBroker(t *testing.T) {
 	if b, err := newMQTTBroker(ctx, hubOptions{dataDir: dir}, ca, serverCert, st, log); b != nil || err != nil {
 		t.Fatalf("without --mqtt-listen: %v, %v", b, err)
 	}
+	bridgeOnly := hubOptions{dataDir: dir, mqtt: mqttOptions{bridge: filepath.Join(dir, "bridge.yaml")}}
+	if _, err := newMQTTBroker(ctx, bridgeOnly, ca, serverCert, st, log); err == nil || !strings.Contains(err.Error(), "needs --mqtt-listen") {
+		t.Fatalf("--mqtt-bridge without --mqtt-listen: %v", err)
+	}
 	on := hubOptions{dataDir: dir, mqtt: mqttOptions{listen: "127.0.0.1:0"}}
 	if _, err := newMQTTBroker(ctx, on, ca, serverCert, st, log); err == nil || !strings.Contains(err.Error(), "mqtt.yaml") {
 		t.Fatalf("without a clients file: %v", err)
@@ -52,6 +56,11 @@ func TestNewMQTTBroker(t *testing.T) {
 	}
 	if err := os.WriteFile(filepath.Join(dir, "mqtt.yaml"), []byte("users: []\n"), 0o600); err != nil {
 		t.Fatal(err)
+	}
+	bridged := on
+	bridged.mqtt.bridge = filepath.Join(dir, "missing-bridge.yaml")
+	if _, err := newMQTTBroker(ctx, bridged, ca, serverCert, st, log); err == nil || !strings.Contains(err.Error(), "--mqtt-bridge") {
+		t.Fatalf("missing bridge file: %v", err)
 	}
 	b, err := newMQTTBroker(ctx, on, ca, serverCert, st, log)
 	if err != nil || b == nil {

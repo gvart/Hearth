@@ -79,6 +79,12 @@ const testPassword = "correct horse battery staple"
 // startBroker starts a broker; each of tweak runs on it before it serves.
 func startBroker(t *testing.T, clients string, tweak ...func(*Broker)) *testBroker {
 	t.Helper()
+	return startBrokerWith(t, clients, nil, tweak...)
+}
+
+// startBrokerWith starts a broker bridged to a remote by bridge, if not nil.
+func startBrokerWith(t *testing.T, clients string, bridge *BridgeConfig, tweak ...func(*Broker)) *testBroker {
+	t.Helper()
 	now := time.Now()
 	ca, err := pki.LoadOrCreateCA(t.TempDir(), now)
 	if err != nil {
@@ -104,7 +110,7 @@ func startBroker(t *testing.T, clients string, tweak ...func(*Broker)) *testBrok
 	certs := &fakeCerts{m: map[string]error{}}
 	b, err := New(Config{
 		Listener: ln, CA: ca, ServerCert: func() *tls.Certificate { return &serverCert },
-		Clients: c, Certs: certs, Recheck: 50 * time.Millisecond, Log: slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
+		Clients: c, Certs: certs, Bridge: bridge, Recheck: 50 * time.Millisecond, Log: slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
 	})
 	if err != nil {
 		t.Fatal(err)

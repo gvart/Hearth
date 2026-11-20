@@ -62,7 +62,10 @@ type Config struct {
 	// again, so a revoked device or one of a retired hub CA is dropped
 	// (default DefaultRecheck).
 	Recheck time.Duration
-	Log     *slog.Logger
+	// Bridge, if set, connects the broker to a remote broker, with the
+	// rules of the clients file's bridge section.
+	Bridge *BridgeConfig
+	Log    *slog.Logger
 }
 
 // Broker is the embedded MQTT broker.
@@ -72,6 +75,7 @@ type Broker struct {
 	ln      net.Listener
 	conns   *connListener
 	recheck time.Duration
+	bridge  *bridge
 }
 
 // New returns a broker serving on cfg.Listener once Run is called. The caller
@@ -83,7 +87,8 @@ func New(cfg Config) (*Broker, error) {
 	// topic alias, so aliases are off: a publish carrying one is refused.
 	caps.TopicAliasMaximum = 0
 	cfg.Log = slog.New(redactPackets{cfg.Log.Handler()})
-	srv := mochi.New(&mochi.Options{Logger: cfg.Log, Capabilities: caps})
+	// The bridge publishes and subscribes through the inline client.
+	srv := mochi.New(&mochi.Options{Logger: cfg.Log, Capabilities: caps, InlineClient: cfg.Bridge != nil})
 	auth := newAuthHook(srv, cfg)
 	if err := srv.AddHook(auth, nil); err != nil {
 		return nil, fmt.Errorf("mqtt: add auth hook: %w", err)
@@ -97,7 +102,15 @@ func New(cfg Config) (*Broker, error) {
 	if recheck <= 0 {
 		recheck = DefaultRecheck
 	}
-	return &Broker{srv: srv, auth: auth, ln: ln, conns: conns, recheck: recheck}, nil
+	b := &Broker{srv: srv, auth: auth, ln: ln, conns: conns, recheck: recheck}
+	if cfg.Bridge != nil {
+		br, err := newBridge(srv, cfg.Bridge, cfg.Clients, cfg.Log)
+		if err != nil {
+			return nil, err
+		}
+		b.bridge = br
+	}
+	return b, nil
 }
 
 // Addr is the address the broker listens on.
@@ -111,6 +124,10 @@ func (b *Broker) Run(ctx context.Context) error {
 		_ = b.ln.Close()
 		return fmt.Errorf("mqtt: serve: %w", err)
 	}
+	var wg sync.WaitGroup
+	if b.bridge != nil {
+		wg.Go(func() { b.bridge.run(ctx) })
+	}
 	t := time.NewTicker(b.recheck)
 	defer t.Stop()
 	for ctx.Err() == nil {
@@ -120,6 +137,7 @@ func (b *Broker) Run(ctx context.Context) error {
 		case <-ctx.Done():
 		}
 	}
+	wg.Wait()
 	// Connected clients are disconnected by Close; this ends the rest.
 	b.conns.stop()
 	if err := b.srv.Close(); err != nil {

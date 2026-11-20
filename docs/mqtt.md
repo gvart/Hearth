@@ -1,6 +1,6 @@
 ---
 title: MQTT broker
-description: An MQTT broker built into the hub, over TLS, for enrolled devices and password users, with per-client topic rules.
+description: An MQTT broker built into the hub, over TLS, for enrolled devices and password users, with per-client topic rules and a bridge to another broker.
 ---
 
 The hub can run an MQTT broker of its own ([mochi-mqtt](https://github.com/mochi-mqtt/server)), so
@@ -108,6 +108,78 @@ client is disconnected. A denied subscription is answered with a failure code.
 A client ID belongs to the client that holds its session. A client of another user or device that
 connects with that ID is refused.
 
+## Bridge to another broker
+
+If you already run a broker (Mosquitto, EMQX, HiveMQ...), the hub's broker can connect to it as a
+client and forward topics in either direction. Start the hub with `--mqtt-bridge` and a bridge
+file:
+
+```yaml
+# /etc/hearth/mqtt-bridge.yaml
+address: broker.lan:8883             # the remote broker, always over TLS
+ca_file: /etc/hearth/remote-ca.crt   # CA of its certificate (default: the system's)
+client_id: hearth-hub1               # default hearth-<hostname>; one per hub
+protocol: 5                          # 5 (default) or 4 for an MQTT 3.1.1 broker
+username: hearth
+password_file: /etc/hearth/mqtt-bridge.pass   # chmod 600; or HEARTH_MQTT_BRIDGE_PASSWORD
+# cert_file: /etc/hearth/bridge.crt  # or a client certificate,
+# key_file: /etc/hearth/bridge.key   # its key chmod 600
+topics:
+  - prefix: sensors/                 # topics under sensors/ on the hub's broker
+    remote_prefix: home/sensors/     # are home/sensors/... on the remote (default: the same)
+    direction: both                  # in (remote to hub), out (hub to remote) or both
+```
+
+```sh
+hearth hub --mqtt-listen :8883 --mqtt-bridge /etc/hearth/mqtt-bridge.yaml
+```
+
+| Flag | Env | |
+| --- | --- | --- |
+| `--mqtt-bridge` | `HEARTH_MQTT_BRIDGE` | The bridge file. Needs `--mqtt-listen`. Default: off |
+| | `HEARTH_MQTT_BRIDGE_PASSWORD` | The remote password. Wins over `password_file` |
+
+The bridge file holds no secret, and the hub refuses a `password:` in it. The password comes from
+`HEARTH_MQTT_BRIDGE_PASSWORD` or from `password_file`, whose first line is the password. The hub
+refuses a password file or a client key that group or others can read. It never logs the password.
+The remote's certificate is always checked: there is no plain-text or skip-verify mode.
+
+**The bridge is bound by the clients file.** It acts on the hub's broker as a client of its own,
+whose rules go in a `bridge` section of the clients file. A message comes in only on a topic the
+bridge may `write`, and goes out only from a topic it may `read`. Anything else is dropped and
+logged at debug level. Without a `bridge` section the hub refuses to start, since the bridge could
+forward nothing.
+
+```yaml
+# <data-dir>/mqtt.yaml
+bridge:
+  allow:
+    - topic: sensors/#
+      access: readwrite
+```
+
+The remote broker's own rules apply too, to the user or certificate the bridge logs in with.
+
+**Loops.** A prefix bridged both ways does not loop. The bridge never sends out a message it brought
+in. With MQTT 5 it subscribes with No Local, so the remote does not send back what the bridge
+published. An MQTT 3.1.1 broker has no No Local, so the bridge remembers what it sent for 10
+seconds and drops the copy that comes back. Each subscriber on either side gets each message once.
+
+**Reconnects.** When the remote goes away, the bridge reconnects with a backoff from 1 second up to
+2 minutes, and logs each attempt with its reason. It subscribes again each time, so the remote sends
+its retained messages again. A failing remote never stops the hub.
+
+Bridge limits:
+
+- Messages are forwarded at QoS 0, keeping their retain flag. A message sent while the remote is
+  unreachable is dropped, as is one that arrives when 256 messages are already waiting to go out.
+- MQTT 5 properties, such as user properties or a content type, are not forwarded.
+- A packet from the remote may be at most 256 KiB. With MQTT 5 the bridge tells the remote so, and
+  it drops larger messages. An MQTT 3.1.1 remote that sends one makes the bridge reconnect.
+- One remote broker per hub. Bridge more prefixes by adding entries to `topics`.
+- A prefix ends in `/`, has no wildcard, and forwards the topics below it, not the prefix itself.
+- The hub reads the bridge file when it starts. Restart it after you change the file.
+
 ## What the hub logs
 
 The hub logs every refused connection with its reason, the user or device, the client ID and the
@@ -124,4 +196,3 @@ clients file is the rule that guards it.
 - MQTT 5 topic aliases are not supported. A publish that uses one ends the connection.
 - Password checks run one at a time. At most 32 logins wait for one, each for up to 2 seconds.
   Beyond that a login is refused as busy, and the client should retry.
-- Bridging to another broker is not built in yet ([#221](https://github.com/gvart/hearth/issues/221)).
