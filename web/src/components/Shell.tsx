@@ -1,7 +1,9 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { isNotAPCluster, useClusterMembers } from '../api/cluster.ts';
 import { useApprovals, useDeviceEvents, useLogout } from '../api/hooks.ts';
 import { ApprovalsPage } from './ApprovalsPage.tsx';
 import { AuditPage } from './AuditPage.tsx';
+import { ClusterPage } from './ClusterPage.tsx';
 import { ConfigDriftBanner } from './ConfigDriftBanner.tsx';
 import { DevicesPage } from './DevicesPage.tsx';
 import { KubernetesPage } from './KubernetesPage.tsx';
@@ -26,7 +28,8 @@ type Page =
   | 'notifications'
   | 'panels'
   | 'audit'
-  | 'approvals';
+  | 'approvals'
+  | 'cluster';
 
 const pages: { id: Page; label: string; hash: string }[] = [
   { id: 'devices', label: 'Devices', hash: '#/' },
@@ -39,11 +42,15 @@ const pages: { id: Page; label: string; hash: string }[] = [
   { id: 'notifications', label: 'Notifications', hash: '#/notifications' },
   { id: 'audit', label: 'Audit', hash: '#/audit' },
   { id: 'approvals', label: 'Approvals', hash: '#/approvals' },
+  { id: 'cluster', label: 'Cluster', hash: '#/cluster' },
 ];
 
 function pageOf(hash: string): Page {
   if (hash.startsWith('#/approvals')) {
     return 'approvals';
+  }
+  if (hash.startsWith('#/cluster')) {
+    return 'cluster';
   }
   if (hash.startsWith('#/network')) {
     return 'network';
@@ -90,6 +97,9 @@ export function Shell() {
   const logout = useLogout();
   const page = usePage();
   const waiting = useApprovals('pending').data?.length ?? 0;
+  // The Cluster page is offered on a member of an AP cluster only.
+  const cluster = useClusterMembers();
+  const apCluster = cluster.isSuccess || (cluster.isError && !isNotAPCluster(cluster.error));
   const nav = useRef<HTMLElement>(null);
   const activeLink = useRef<HTMLAnchorElement>(null);
 
@@ -117,22 +127,24 @@ export function Shell() {
             <span>Hearth</span>
           </div>
           <nav ref={nav} className="nav" aria-label="Sections">
-            {pages.map((p) => (
-              <a
-                key={p.id}
-                ref={page === p.id ? activeLink : undefined}
-                href={p.hash}
-                className="nav-link"
-                aria-current={page === p.id ? 'page' : undefined}
-              >
-                {p.label}
-                {p.id === 'approvals' && waiting > 0 ? (
-                  <span className="badge nav-badge" aria-label={`${String(waiting)} waiting`}>
-                    {waiting}
-                  </span>
-                ) : null}
-              </a>
-            ))}
+            {pages
+              .filter((p) => p.id !== 'cluster' || apCluster || page === 'cluster')
+              .map((p) => (
+                <a
+                  key={p.id}
+                  ref={page === p.id ? activeLink : undefined}
+                  href={p.hash}
+                  className="nav-link"
+                  aria-current={page === p.id ? 'page' : undefined}
+                >
+                  {p.label}
+                  {p.id === 'approvals' && waiting > 0 ? (
+                    <span className="badge nav-badge" aria-label={`${String(waiting)} waiting`}>
+                      {waiting}
+                    </span>
+                  ) : null}
+                </a>
+              ))}
           </nav>
         </div>
         <button
@@ -167,6 +179,8 @@ export function Shell() {
         <NotificationsPage />
       ) : page === 'audit' ? (
         <AuditPage />
+      ) : page === 'cluster' ? (
+        <ClusterPage />
       ) : (
         <DevicesPage />
       )}
