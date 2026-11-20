@@ -27,7 +27,8 @@ HEARTH_DISCOVER_SUBNETS=192.168.1.0/24,192.168.20.0/24 hearth hub
 
 The hub scans once at start and then every interval. A scan of a /24 takes about 5 seconds. Subnets
 must be IPv4, at most 1024 addresses in all (a /22), and directly attached to the hub: the sweep sees
-only hosts on the hub's own layer-2 network, not hosts behind a router.
+only hosts on the hub's own layer-2 network, not hosts behind a router. For a subnet the hub is not
+on, have a device that is on it [scan it](#scan-from-a-device).
 
 ## How a scan works
 
@@ -57,6 +58,38 @@ enrolled device's interfaces is that device, and is not listed as unmanaged.
 To add names from your Pi-hole or DHCP server, and hosts on VLANs the sweep cannot reach, see
 [Pi-hole and DHCP leases](pihole.md).
 
+## Scan from a device
+
+A VLAN, another site, or a LAN the hub cannot reach from its container: the hub's sweep cannot see
+it, but an enrolled device on that network can. Name the device after the subnet, and its agent runs
+the same scan (ARP sweep, mDNS, LAN reverse DNS) there and sends the hosts it found to the hub:
+
+```sh
+# on the device on 10.0.5.0/24: let the hub sweep that subnet from here
+hearth agent run --allow-scan 10.0.5.0/24
+# on the hub: the LAN from the hub itself, the VLAN from the device named nas
+hearth hub --discover-subnet 192.168.1.0/24 --discover-subnet 10.0.5.0/24@nas
+```
+
+`CIDR@device` names the device by id, name or hostname. Each subnet has one scanner, the hub or a
+device; a device's subnets are limited to 1024 addresses, as the hub's are.
+
+**The device has the last word.** Scanning is off on every agent until `--allow-scan` names a
+subnet (repeatable). A scan is sent only if each of its subnets lies within one the agent allows:
+`--allow-scan 10.0.0.0/16` allows `10.0.5.0/24`, `--allow-scan 10.0.5.0/25` does not. The hub checks
+the ceiling the agent reported before sending, and the agent checks again before it sends a single
+datagram. A scan beyond the ceiling is denied and audited, like any other action beyond it.
+
+The agent needs no privilege either, and runs one scan at a time. It does not load the vendor
+table: the hub names each host's vendor from its MAC. Nothing of a scan stays in the agent's memory
+once it is done. The hub checks what the agent sends back: hosts outside the subnets, broken MACs
+and repeats are dropped.
+
+On the Devices page each host a device found shows **Scanned by** that device in its Source column.
+The first scan of a subnet is its baseline, whoever runs it: a device's first scan of a VLAN does not
+report its hosts as new. A host found by both the hub and a device shows the scanner that found it
+last.
+
 ## Events
 
 Each scan publishes, on the hub's event stream (`/api/v1/events`):
@@ -64,8 +97,9 @@ Each scan publishes, on the hub's event stream (`/api/v1/events`):
 - `network.device.new` for a host no scan had found before;
 - `network.device.returned` for a known host that no scan had found for an hour or more.
 
-The first scan on an empty database is the baseline: it records every host and publishes nothing,
-so turning discovery on does not report the whole LAN as new.
+The first scan of a subnet (one that finds no host a scan found before in it) is its baseline: it
+records every host and publishes nothing, so turning discovery on, or adding a subnet, does not
+report the whole LAN as new.
 
 ## New-device alerts
 
@@ -123,11 +157,19 @@ A scan is the hub action `network.scan` (class `read`, actor `hub/discovery`). E
 audit entry whatever the number of hosts, with the subnets as target and the counts (hosts, new,
 returned, duration) in its detail. A policy that denies the `read` class stops scanning.
 
+Each device's scan is a scan of its own, with `from` (the device as configured) and `device_id` in
+its detail. A scan its ceiling does not allow is a `deny` entry naming the subnet beyond it; one its
+agent refuses, fails or does not answer (it is offline, or the hub just started) is an `allow` entry
+whose result is the error.
+
 ## In a cluster
 
 Only the leader scans; the results are replicated to every hub through Raft (one log entry per scan).
 Set the discovery flags on every hub, so the new leader keeps scanning after a failover. The scan
-needs schema 12: run `hearth cluster migrate` after upgrading every hub.
+needs schema 12: run `hearth cluster migrate` after upgrading every hub. A scan from a device runs
+only if that device's agent is connected to the leader: an agent connected to another hub fails the
+scan (audited) until it reconnects to the leader. Hosts show the device that scanned them from
+schema 26.
 
 ## In a container
 
@@ -151,7 +193,8 @@ dropped. In Kubernetes, the same applies: `hostNetwork: true` on the hub's pod.
   "vendor": "Raspberry Pi", "device_id": "", "first_seen": "...", "last_seen": "..."}]}
 ```
 
-`device_id` is the enrolled device with that MAC, or empty for an unmanaged host. `state` is `""`,
+`device_id` is the enrolled device with that MAC, or empty for an unmanaged host. `scanned_by` is
+the device whose agent last found it in a scan, or empty when the hub did. `state` is `""`,
 `"known"` or `"ignored"`. Each host also has `sources` (`scan`, `pihole`, `dhcp`) and
 `hostname_source`; see [Pi-hole and DHCP leases](pihole.md#api).
 
