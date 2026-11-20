@@ -25,7 +25,7 @@ func allCommands() []Command {
 			Facts: `{ "cpu": 4 }`, Labels: `{"room":"attic"}`, FirstSeen: 1, LastSeen: 2, Status: StatusOnline, BootTime: &boot,
 		},
 		ReportFacts{ID: "pi", Hostname: "pi.lan", OS: "linux", Arch: "arm64", Facts: `{"cpu":4}`, Now: 3},
-		MarkSeen{ID: "pi", Now: 4},
+		MarkSeen{Stamp: Stamp{HLC: 1 << 40, Origin: "hub-a"}, ID: "pi", Now: 4},
 		SetBootTime{ID: "pi", BootTime: &boot},
 		MarkOffline{Cutoff: 5},
 		MarkSeenBatch{Seen: []Seen{{ID: "nas", LastSeen: 14}, {ID: "pi", LastSeen: 15}}},
@@ -49,7 +49,8 @@ func allCommands() []Command {
 		},
 		AppendAuditOnce{
 			AppendAudit: AppendAudit{
-				TS: 9, ActorKind: "hub", ActorID: "n1", Action: "device.revoke", Target: "pi",
+				Stamp: Stamp{HLC: 1<<40 + 1, Origin: "hub-b"},
+				TS:    9, ActorKind: "hub", ActorID: "n1", Action: "device.revoke", Target: "pi",
 				Decision: "allow", Result: "ok", Detail: `{"audit_outcome_of":"op1"}`,
 			},
 			Key: "k1",
