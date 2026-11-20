@@ -67,6 +67,8 @@ type Config struct {
 	Agents Agents
 	// Kube is nil when Kubernetes clusters are not served.
 	Kube Kube
+	// Plugins is nil when the hub runs no exec plugins.
+	Plugins Plugins
 	// Metrics reads device metrics from Prometheus or the hub's built-in
 	// metrics; nil when the hub has neither.
 	Metrics automation.Metrics

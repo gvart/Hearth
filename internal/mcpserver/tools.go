@@ -97,7 +97,7 @@ func (s *session) tools() []tool {
 				s.kubeAction),
 		)
 	}
-	return out
+	return append(out, s.pluginTools()...)
 }
 
 // deviceView is a device as list_devices shows it.
