@@ -16,6 +16,10 @@
 #     a control-plane address to run the health checks from, the installer image
 #     and the version it installs, and the cluster's name on the Kubernetes page.
 #   - Upgrade one node at a time: workers first, then control planes, one by one.
+#   - The upgrade step waits for talosctl to finish, at most 9 minutes (exec
+#     actions run for 10 at most). A slower upgrade ends the step as unknown:
+#     look at the node, then retry or pass over. Never roll back a node that
+#     did not reboot into the new version.
 #
 # The talosctl steps are exec actions, which are dangerous: they are held or
 # denied until the hub grants them, for example:
@@ -79,13 +83,15 @@ steps:
     type: prompt
     prompt: confirm
     message: >-
-      Upgrade ${{ vars.node-name }} to ${{ vars.installer-image }} now? The node reboots, and its pods
-      move or wait until it is back.
+      Upgrade ${{ vars.node-name }} at ${{ vars.node-ip }} to ${{ vars.installer-image }} now? The
+      node reboots, and its pods move or wait until it is back.
     timeout: 1h
 
   - id: upgrade
     type: action
-    description: Start the upgrade; the node installs the new image and reboots into it.
+    description: >-
+      Upgrade the node and wait until it has rebooted into the new image; talosctl fails the
+      step if the upgrade fails.
     action:
       type: exec
       device: ${{ vars.talosctl-device }}
@@ -99,8 +105,10 @@ steps:
         - --image
         - ${{ vars.installer-image }}
         - --preserve
-        - --wait=false
-      timeout: 5m
+        - --wait
+        - --timeout
+        - 9m
+      timeout: 10m
     rollback:
       type: exec
       device: ${{ vars.talosctl-device }}
@@ -112,11 +120,6 @@ steps:
         - ${{ vars.node-ip }}
         - rollback
       timeout: 5m
-
-  - id: reboot-settle
-    type: wait
-    description: Give the node time to install the image and reboot.
-    duration: 3m
 
   - id: api-back
     type: check
@@ -142,7 +145,9 @@ steps:
     prompt: confirm
     message: >-
       Does the From Talos table on the Devices page show ${{ vars.node-name }} at ${{ vars.version }}
-      and healthy? Answer no to stop here and roll back to the previous version.
+      and healthy? Answer no to stop here. Roll back only if the node runs ${{ vars.version }} and
+      misbehaves: if it never rebooted and still shows the old version, do NOT roll back, as
+      talosctl rollback would boot the version before that one.
     timeout: 1h
 
   - id: health-after

@@ -156,10 +156,13 @@ Upgrades one Talos node to a new installer image. Before it changes anything it 
 (etcd healthy, every node Ready, control plane up), checks that the node is Ready, and asks you to
 confirm that taking the node down keeps etcd's quorum: on the only control-plane node, the Kubernetes
 API and etcd are down while it reboots, so answer no there unless you accept that outage. A last prompt
-asks for the go-ahead, then `talosctl upgrade --preserve` starts the upgrade, and the run waits for the
-node's Talos API and its Ready condition to come back. You confirm the new version on the
+asks for the go-ahead, then `talosctl upgrade --preserve --wait` upgrades the node and waits until it has
+rebooted into the new image, and the run waits for the node's Talos API and its Ready condition. An
+exec action runs for 10 minutes at most, so an upgrade that takes longer ends that step as `unknown`:
+look at the node, then retry or pass over. You confirm the new version on the
 [From Talos](talos.md) table, and `talosctl health` checks the cluster again. Rollback runs
-`talosctl rollback`, which boots the node back into its previous Talos version.
+`talosctl rollback`, which boots the node back into its previous Talos version. Never roll back a node
+that did not reboot into the new version: the rollback would boot the version before the current one.
 
 Runbooks have no step that reads the output of a command or a node's Talos version, so the version
 check is a prompt: compare the version the Devices page shows with the one you upgraded to.
@@ -187,6 +190,10 @@ The file: [`docs/recipes/runbooks/upgrade-talos-node.yaml`](recipes/runbooks/upg
 #     a control-plane address to run the health checks from, the installer image
 #     and the version it installs, and the cluster's name on the Kubernetes page.
 #   - Upgrade one node at a time: workers first, then control planes, one by one.
+#   - The upgrade step waits for talosctl to finish, at most 9 minutes (exec
+#     actions run for 10 at most). A slower upgrade ends the step as unknown:
+#     look at the node, then retry or pass over. Never roll back a node that
+#     did not reboot into the new version.
 #
 # The talosctl steps are exec actions, which are dangerous: they are held or
 # denied until the hub grants them, for example:
@@ -250,13 +257,15 @@ steps:
     type: prompt
     prompt: confirm
     message: >-
-      Upgrade ${{ vars.node-name }} to ${{ vars.installer-image }} now? The node reboots, and its pods
-      move or wait until it is back.
+      Upgrade ${{ vars.node-name }} at ${{ vars.node-ip }} to ${{ vars.installer-image }} now? The
+      node reboots, and its pods move or wait until it is back.
     timeout: 1h
 
   - id: upgrade
     type: action
-    description: Start the upgrade; the node installs the new image and reboots into it.
+    description: >-
+      Upgrade the node and wait until it has rebooted into the new image; talosctl fails the
+      step if the upgrade fails.
     action:
       type: exec
       device: ${{ vars.talosctl-device }}
@@ -270,8 +279,10 @@ steps:
         - --image
         - ${{ vars.installer-image }}
         - --preserve
-        - --wait=false
-      timeout: 5m
+        - --wait
+        - --timeout
+        - 9m
+      timeout: 10m
     rollback:
       type: exec
       device: ${{ vars.talosctl-device }}
@@ -283,11 +294,6 @@ steps:
         - ${{ vars.node-ip }}
         - rollback
       timeout: 5m
-
-  - id: reboot-settle
-    type: wait
-    description: Give the node time to install the image and reboot.
-    duration: 3m
 
   - id: api-back
     type: check
@@ -313,7 +319,9 @@ steps:
     prompt: confirm
     message: >-
       Does the From Talos table on the Devices page show ${{ vars.node-name }} at ${{ vars.version }}
-      and healthy? Answer no to stop here and roll back to the previous version.
+      and healthy? Answer no to stop here. Roll back only if the node runs ${{ vars.version }} and
+      misbehaves: if it never rebooted and still shows the old version, do NOT roll back, as
+      talosctl rollback would boot the version before that one.
     timeout: 1h
 
   - id: health-after

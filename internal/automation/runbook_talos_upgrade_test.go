@@ -16,8 +16,8 @@ import (
 )
 
 // talosUpgradeHarness runs the upgrade-talos-node recipe as shipped, with the
-// cluster renamed to the fake's "lab", the Talos API check pointed at a local
-// listener and the reboot wait cut to 10ms: nothing else of the file changes. talosctl never runs: a
+// cluster renamed to the fake's "lab" and the Talos API check pointed at a
+// local listener: nothing else of the file changes. talosctl never runs: a
 // recording agent stands in for the device.
 func talosUpgradeHarness(t *testing.T) (*rbHarness, *recordingAgents) {
 	t.Helper()
@@ -28,7 +28,6 @@ func talosUpgradeHarness(t *testing.T) (*rbHarness, *recordingAgents) {
 	src := string(b)
 	for old, repl := range map[string]string{
 		"  cluster: homelab\n":                 "  cluster: lab\n",
-		"    duration: 3m\n":                   "    duration: 10ms\n",
 		`address: "${{ vars.node-ip }}:50000"`: `address: "` + tcpListener(t) + `"`,
 	} {
 		if !strings.Contains(src, old) {
@@ -67,7 +66,7 @@ func (a *recordingAgents) all() [][]string {
 var (
 	talosctl      = []string{"/usr/local/bin/talosctl", "--talosconfig", "/etc/talos/talosconfig", "--nodes"}
 	talosHealth   = append(slices.Clone(talosctl), "192.0.2.10", "health", "--wait-timeout", "5m")
-	talosUpgrade  = append(slices.Clone(talosctl), "192.0.2.50", "upgrade", "--image", "ghcr.io/siderolabs/installer:v1.12.8", "--preserve", "--wait=false")
+	talosUpgrade  = append(slices.Clone(talosctl), "192.0.2.50", "upgrade", "--image", "ghcr.io/siderolabs/installer:v1.12.8", "--preserve", "--wait", "--timeout", "9m")
 	talosRollback = append(slices.Clone(talosctl), "192.0.2.50", "rollback")
 )
 
@@ -91,7 +90,7 @@ func TestTalosUpgradeRecipeRunsInOrder(t *testing.T) {
 	}
 	want := []string{
 		"ready", "quorum", "health-before", "node-ready-before", "approve", "upgrade",
-		"reboot-settle", "api-back", "node-ready-after", "version-after", "health-after", "done",
+		"api-back", "node-ready-after", "version-after", "health-after", "done",
 	}
 	if !slices.Equal(order, want) {
 		t.Errorf("steps %v; want %v", order, want)
@@ -132,5 +131,30 @@ func TestTalosUpgradeRecipeRollsBack(t *testing.T) {
 	h.await(id, RunbookRolledBack)
 	if got := agents.all(); !reflect.DeepEqual(got, [][]string{talosHealth, talosUpgrade, talosRollback}) {
 		t.Errorf("ran %q; want health, upgrade, rollback", got)
+	}
+}
+
+// The upgrade step waits for talosctl, so the checks after it cannot pass on
+// a node that has not rebooted yet; the approval names the node's address;
+// the version prompt warns against rolling back a node that never rebooted.
+func TestTalosUpgradeRecipeWaitsAndWarns(t *testing.T) {
+	rb, err := LoadRunbookFile(recipesDir+"/upgrade-talos-node.yaml", recipeKinds())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range rb.Steps {
+		switch s.ID {
+		case "approve":
+			if !strings.Contains(s.Prompt.Message, "192.0.2.50") || !strings.Contains(s.Prompt.Message, "talos-worker-1") {
+				t.Errorf("approve prompt %q does not name the node and its address", s.Prompt.Message)
+			}
+		case "version-after":
+			if !strings.Contains(s.Prompt.Message, "do NOT roll back") {
+				t.Errorf("version prompt %q does not warn against a rollback", s.Prompt.Message)
+			}
+		}
+		if s.Type == RunbookStepWait {
+			t.Errorf("step %s: a fixed wait could end before the node reboots", s.ID)
+		}
 	}
 }
