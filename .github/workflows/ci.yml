@@ -85,23 +85,7 @@ jobs:
       - uses: go-task/setup-task@v2
         with:
           version: ${{ env.TASK_VERSION }}
-      - name: DIAG memory monitor
-        run: |
-          nproc; free -m; systemctl is-active systemd-oomd || true; cat /proc/sys/kernel/pid_max
-          T=/sys/kernel/tracing; [ -d $T/events ] || T=/sys/kernel/debug/tracing; echo "tracefs=$T"
-          sudo sh -c "echo 'sig == 15 || sig == 1' > $T/events/signal/signal_generate/filter; echo 1 > $T/events/signal/signal_generate/enable; echo 1 > $T/tracing_on" || echo "ftrace setup failed"
-          echo "$T" > /tmp/tracefs
-          (while true; do ps -eo pid,ppid,pgid,sid,rss,args --forest | cut -c1-200 > /tmp/ps.$(( $(date +%s) / 5 % 3 )).log; sleep 5; done) &
-          (while true; do echo "MEM $(date +%T) $(free -m | awk '/Mem:/{print "used="$3" avail="$7}') $(free -m | awk '/Swap:/{print "swap="$3}')"; ps -eo rss,comm --sort=-rss | head -4 | tr '\n' ' '; echo; sleep 5; done) > /tmp/mem.log 2>&1 &
       - run: task test
-      - name: DIAG dump
-        if: always()
-        run: |
-          cat /tmp/mem.log
-          sudo cat "$(cat /tmp/tracefs)/trace" | grep -v '^#' | tail -300
-          for f in $(ls -tr /tmp/ps.*.log); do echo "== $f"; grep -vE '^\s*[0-9]+\s+2\s' "$f" | grep -vE '\[.*\]$' | tail -120; done
-          sudo dmesg -T | tail -80
-          sudo journalctl --since "-20min" --no-pager | grep -iE "oom|kill|memory|terminat" | tail -60 || true
 
   shellcheck:
     name: Shellcheck
