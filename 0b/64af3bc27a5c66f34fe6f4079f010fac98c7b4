@@ -1,0 +1,48 @@
+cmd/hearth/carotation.go
+  s_87f1c7baee7d5a::t_5d0dcc04dc5962 14,24-26,70,73,91-93,110,129-130
+cmd/hearth/hub_approvals_test.go
+  s_87f1c7baee7d5a::t_4a06820146f227 7,12-13,17,20-23,27-60,64-78,80-81,83-110,112-113
+internal/cluster/drift.go
+  s_87f1c7baee7d5a::t_663092b48e18e8 23-30,32-33,35-38
+internal/cluster/configdigest_test.go
+  s_87f1c7baee7d5a::t_5c8b69167a0e53 10-13,15,18,21-22,26-29,32,34-35,37-38
+internal/hubconfig/docs.go
+  s_87f1c7baee7d5a::t_8f102f4093796b 55-58
+  s_87f1c7baee7d5a::t_3683f3d048cee8 238,270-271,273,276
+  s_87f1c7baee7d5a::t_333c433c139392 1-54,59-237,239-269,272,274-275,277-344
+cmd/hearth/common.go
+  s_87f1c7baee7d5a::t_190552dc1853dc 77-80,84-88,92-115,122
+internal/cluster/configdigest.go
+  s_87f1c7baee7d5a::t_db34dc05100d9c 11-15,17-18,21-22
+cmd/hearth/hub.go
+  s_87f1c7baee7d5a::t_5d0dcc04dc5962 30,184,186,188,191,378-401,454,460-464,523-529,547,555-556,630-633,636,699-714,847,854,923,925-957,959-967,969-971,973-990,993-995
+  s_87f1c7baee7d5a::t_045885709e55e2 996
+internal/cluster/membership_test.go
+  s_87f1c7baee7d5a::t_663092b48e18e8 349
+internal/cluster/drift_test.go
+  s_87f1c7baee7d5a::t_663092b48e18e8 133-134,136-137,162,176-177,197-201,205,208-210,317,326
+cmd/hearth/approval.go
+  s_87f1c7baee7d5a::t_190552dc1853dc 118
+cmd/hearth/root.go
+  s_87f1c7baee7d5a::t_190552dc1853dc 18
+cmd/hearth/config.go
+  s_87f1c7baee7d5a::t_085e148e2fe264 1-250
+internal/hubconfig/watcher.go
+  s_87f1c7baee7d5a::t_6e9c42034b35b3 1-278
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0b64af3bc27a5c66f34fe6f4079f010fac98c7b4",
+  "prompts": {},
+  "sessions": {
+    "s_87f1c7baee7d5a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "45cc2cdf-3130-4caa-8cb4-8cb365d2150d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
