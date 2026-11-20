@@ -12,10 +12,13 @@
 #     Allowing sh is a wide grant: the agent can then run anything. Remove it
 #     from the agent again after the run.
 #   - The agent's systemd unit keeps /usr and /etc read-only (ProtectSystem=full)
-#     and forbids setuid files (RestrictSUIDSGID=yes), which apt needs. For the
-#     run, lift both with a drop-in, and remove the drop-in after:
+#     and forbids setuid files (RestrictSUIDSGID=yes), which a package may
+#     install. For the run, lift both with a drop-in, and restart the agent:
 #       sudo systemctl edit hearth-agent
 #       # add: [Service] ProtectSystem=no RestrictSUIDSGID=no (one per line)
+#       sudo systemctl restart hearth-agent
+#     After the run, remove the drop-in (sudo systemctl revert hearth-agent)
+#     and restart the agent again.
 #   - The machine answers on SSH (port 22), which the first check uses to see it
 #     is on the network. Change the port in that check if it runs no SSH.
 #   - Edit the vars below: the device, its address, Docker's repository for the
@@ -28,8 +31,8 @@
 # repository or key is needed (apt-get install podman); this runbook does Docker.
 #
 # Afterwards, let the agent restart containers with --allow-restart
-# docker:<container>, or report them with --allow-docker once that flag ships
-# (issue #64).
+# docker:<container>. The Docker integration (issue #64) adds --allow-docker
+# for containers once it ships.
 #
 # The exec actions are dangerous: they are held or denied until the hub grants
 # them, for example:

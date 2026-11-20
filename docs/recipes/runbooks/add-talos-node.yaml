@@ -116,7 +116,9 @@ steps:
       The node is in maintenance mode, so talosctl cannot verify who answers at that address: the config,
       with the cluster's secrets in it, goes to whatever does (trust on first use). Answer yes only on a
       network you trust, with the address checked on the node's console. The node installs Talos and
-      reboots. Nothing is undone automatically: a rollback only shows how to remove the node by hand.
+      reboots. Nothing is undone automatically. To remove the node later: for a worker, kubectl drain
+      it, then talosctl -n ${{ vars.node-ip }} reset; for a control plane, talosctl -n ${{ vars.node-ip }}
+      reset --graceful; then kubectl delete node ${{ vars.node-name }}.
     timeout: 1h
 
   - id: apply-config

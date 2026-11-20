@@ -271,8 +271,13 @@ func TestK3sAddRecipeRunsInOrderWithTheTokenInAFile(t *testing.T) {
 		!strings.Contains(install[2], "sha256sum -c") || !strings.Contains(install[2], `--token-file "$4"`) {
 		t.Errorf("install = %q; want the sha256 checked again and the token read from its file", install)
 	}
-	// The token never passes through the hub: no prompt asks for it, and
-	// nothing the run records names more than its file.
+	// The token never passes through the hub: every prompt is yes or no, so
+	// none can ask for it, and nothing the run records names more than its file.
+	for _, s := range h.get(id).Steps {
+		if s.Prompt != nil && s.Prompt.Kind != PromptConfirm {
+			t.Errorf("step %s asks for text; the token belongs in its file", s.ID)
+		}
+	}
 	secretish := regexp.MustCompile(`(?i)(--token[ =]|K3S_TOKEN=|K10[0-9a-f]{20})`)
 	audit, err := json.Marshal(h.audit.all())
 	if err != nil {

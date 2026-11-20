@@ -56,7 +56,8 @@ service healthy, a `kube_node` check waits for it to be Ready, and `talosctl hea
 again.
 
 Rollback does not reset the node: a reset of a node that may already be an etcd member is a decision
-for a person. Rolling back logs how to remove it by hand, as the file's comment does.
+for a person. The go-ahead prompt and the file's comment say how to remove the node by hand, and a
+roll back writes the same to the hub's log.
 
 The `talos_node` check of the new node needs its address among the nodes the hub reads: add it to
 `--talos-nodes` (or the talosconfig context's nodes) before the run (see [Talos](talos.md)).
@@ -182,7 +183,9 @@ steps:
       The node is in maintenance mode, so talosctl cannot verify who answers at that address: the config,
       with the cluster's secrets in it, goes to whatever does (trust on first use). Answer yes only on a
       network you trust, with the address checked on the node's console. The node installs Talos and
-      reboots. Nothing is undone automatically: a rollback only shows how to remove the node by hand.
+      reboots. Nothing is undone automatically. To remove the node later: for a worker, kubectl drain
+      it, then talosctl -n ${{ vars.node-ip }} reset; for a control plane, talosctl -n ${{ vars.node-ip }}
+      reset --graceful; then kubectl delete node ${{ vars.node-name }}.
     timeout: 1h
 
   - id: apply-config
@@ -501,9 +504,12 @@ The file: [`docs/recipes/runbooks/add-k3s-node.yaml`](recipes/runbooks/add-k3s-n
 #     Allowing sh is a wide grant: the agent can then run anything. Remove it
 #     from the agent again after the run.
 #   - The agent's systemd unit keeps /usr and /etc read-only (ProtectSystem=full).
-#     For the run, let it write there with a drop-in, and remove the drop-in after:
+#     For the run, let it write there with a drop-in, and restart the agent:
 #       sudo systemctl edit hearth-agent    # add: [Service] ProtectSystem=no
-#     Keep PrivateTmp=yes: the installer is downloaded to the agent's own /tmp.
+#       sudo systemctl restart hearth-agent
+#     After the run, remove the drop-in (sudo systemctl revert hearth-agent)
+#     and restart the agent again. Keep PrivateTmp=yes: the installer is
+#     downloaded to the agent's own /tmp.
 #   - The cluster's join token is in a root-only file on the new machine,
 #     /etc/hearth/k3s-token (mode 0600). Put it there yourself: this runbook only
 #     names the file. k3s reads it there, and Hearth never sees it, so it is in
@@ -667,8 +673,8 @@ the group membership, the packages and the repository. For Podman, which is in D
 repositories, no recipe is needed: `apt-get install podman`.
 
 As for k3s, the agent needs a systemd drop-in for the run, shown in the file's comment. Afterwards the
-agent can be allowed to restart containers (`--allow-restart docker:NAME`), or, once it ships
-(#64), to report them with `--allow-docker`.
+agent can be allowed to restart containers (`--allow-restart docker:NAME`). The Docker integration
+(#64) adds `--allow-docker` for containers once it ships.
 
 The file: [`docs/recipes/runbooks/add-docker-host.yaml`](recipes/runbooks/add-docker-host.yaml).
 
@@ -687,10 +693,13 @@ The file: [`docs/recipes/runbooks/add-docker-host.yaml`](recipes/runbooks/add-do
 #     Allowing sh is a wide grant: the agent can then run anything. Remove it
 #     from the agent again after the run.
 #   - The agent's systemd unit keeps /usr and /etc read-only (ProtectSystem=full)
-#     and forbids setuid files (RestrictSUIDSGID=yes), which apt needs. For the
-#     run, lift both with a drop-in, and remove the drop-in after:
+#     and forbids setuid files (RestrictSUIDSGID=yes), which a package may
+#     install. For the run, lift both with a drop-in, and restart the agent:
 #       sudo systemctl edit hearth-agent
 #       # add: [Service] ProtectSystem=no RestrictSUIDSGID=no (one per line)
+#       sudo systemctl restart hearth-agent
+#     After the run, remove the drop-in (sudo systemctl revert hearth-agent)
+#     and restart the agent again.
 #   - The machine answers on SSH (port 22), which the first check uses to see it
 #     is on the network. Change the port in that check if it runs no SSH.
 #   - Edit the vars below: the device, its address, Docker's repository for the
@@ -703,8 +712,8 @@ The file: [`docs/recipes/runbooks/add-docker-host.yaml`](recipes/runbooks/add-do
 # repository or key is needed (apt-get install podman); this runbook does Docker.
 #
 # Afterwards, let the agent restart containers with --allow-restart
-# docker:<container>, or report them with --allow-docker once that flag ships
-# (issue #64).
+# docker:<container>. The Docker integration (issue #64) adds --allow-docker
+# for containers once it ships.
 #
 # The exec actions are dangerous: they are held or denied until the hub grants
 # them, for example:

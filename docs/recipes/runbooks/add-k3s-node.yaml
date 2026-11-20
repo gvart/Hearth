@@ -10,9 +10,12 @@
 #     Allowing sh is a wide grant: the agent can then run anything. Remove it
 #     from the agent again after the run.
 #   - The agent's systemd unit keeps /usr and /etc read-only (ProtectSystem=full).
-#     For the run, let it write there with a drop-in, and remove the drop-in after:
+#     For the run, let it write there with a drop-in, and restart the agent:
 #       sudo systemctl edit hearth-agent    # add: [Service] ProtectSystem=no
-#     Keep PrivateTmp=yes: the installer is downloaded to the agent's own /tmp.
+#       sudo systemctl restart hearth-agent
+#     After the run, remove the drop-in (sudo systemctl revert hearth-agent)
+#     and restart the agent again. Keep PrivateTmp=yes: the installer is
+#     downloaded to the agent's own /tmp.
 #   - The cluster's join token is in a root-only file on the new machine,
 #     /etc/hearth/k3s-token (mode 0600). Put it there yourself: this runbook only
 #     names the file. k3s reads it there, and Hearth never sees it, so it is in
