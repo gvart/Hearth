@@ -1,0 +1,23 @@
+internal/cluster/carotation_review_test.go
+  s_26e932fc13ca45::t_8f2999a167db54 470-471
+  s_26e932fc13ca45::t_4d8e56adbf4474 468-469,472-567
+  s_26e932fc13ca45::t_30de56fc0a7c66 9,13
+internal/cluster/carotation.go
+  s_26e932fc13ca45::t_f5e935e4ce6ff4 892-896
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d162ce93fc203129dd589785d5834952b8ece45c",
+  "prompts": {},
+  "sessions": {
+    "s_26e932fc13ca45": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea42b0cd-7455-494b-8071-e63f36b98d4d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
