@@ -86,10 +86,19 @@ func TestSweeperRunsOnlyOnTheLeaderAndMovesOnFailover(t *testing.T) {
 	if sweptOffline(next) != 1 {
 		t.Errorf("new leader %s: swept %d devices, want 1", next.ID(), sweptOffline(next))
 	}
-	// Give the remaining follower several sweep periods: it does not sweep,
-	// and every hub publishes each offline event once.
+	// The follower publishes quiet-2 offline when it applies the entry, which
+	// trails the leader by at least one replication round: under load that
+	// can take longer than any fixed sleep (#240). Wait for it, then give the
+	// hubs several sweep periods: the follower does not sweep, and every hub
+	// publishes each offline event once.
+	live := append(followers(hubs, next), next)
+	for _, h := range live {
+		eventually(t, h.ID()+" to publish quiet-2 offline", func() bool {
+			return len(h.eventsOf(hub.EventDeviceOffline)) >= 2
+		})
+	}
 	time.Sleep(300 * time.Millisecond)
-	for _, h := range append(followers(hubs, next), next) {
+	for _, h := range live {
 		if ids := eventIDs(h.eventsOf(hub.EventDeviceOffline)); !reflect.DeepEqual(ids, []string{"quiet-1", "quiet-2"}) {
 			t.Errorf("%s published offline events for %v, want quiet-1 and quiet-2 once", h.ID(), ids)
 		}
