@@ -1,0 +1,63 @@
+internal/store/certs.go
+  s_87f1c7baee7d5a::t_2999b036e02d02 49
+internal/store/store.go
+  s_87f1c7baee7d5a::t_e2be6b217c96a3 192-194
+  s_87f1c7baee7d5a::t_ec5fce5d2da077 96-101
+  s_87f1c7baee7d5a::t_03afd33e27fa0c 41-47
+internal/store/automationruns.go
+  s_87f1c7baee7d5a::t_2459b6bdb5588a 79,81-84
+internal/store/applier.go
+  s_87f1c7baee7d5a::t_9260b2fa7b977e 43-44
+  s_87f1c7baee7d5a::t_f59e5485d3d7d6 142
+  s_87f1c7baee7d5a::t_16802a4a986c29 149
+internal/store/approvallinks.go
+  s_87f1c7baee7d5a::t_ee57ae268d5abd 57
+internal/store/digest.go
+  s_87f1c7baee7d5a::t_302e2871e2b5cc 1-465,519-530
+  s_87f1c7baee7d5a::t_bcdbb0cbc5d429 466-518
+internal/store/remote.go
+  s_87f1c7baee7d5a::t_5d76af5b3a75fe 278-287
+  s_87f1c7baee7d5a::t_6b94d8a07bf611 1-277,288-392
+internal/store/wire.go
+  s_87f1c7baee7d5a::t_eb42874ea8f020 1-183
+internal/store/merge.go
+  s_87f1c7baee7d5a::t_26ae0ed5de68fd 52,54-60,68
+  s_87f1c7baee7d5a::t_19130e235768e9 104-106
+internal/store/runbookruns.go
+  s_87f1c7baee7d5a::t_ba0394558359ff 262-266
+  s_87f1c7baee7d5a::t_73acfe11c0a853 122
+internal/store/audit.go
+  s_87f1c7baee7d5a::t_226b0c1b7eb8fb 460-464
+internal/store/partition.go
+  s_87f1c7baee7d5a::t_7bc65b082ca32e 264,266-270
+  s_87f1c7baee7d5a::t_f3bc567090d8a2 1-263,265,271-397
+internal/store/version.go
+  s_87f1c7baee7d5a::t_16a51078eab5a6 230,237-239
+  s_87f1c7baee7d5a::t_4023eb00ae7cd7 240-289
+  s_87f1c7baee7d5a::t_f239e8353ef4ec 319-320
+  s_87f1c7baee7d5a::t_fb068731bf1707 460-463
+  s_87f1c7baee7d5a::t_23ad5d67c515f3 290-291
+internal/store/admin.go
+  s_87f1c7baee7d5a::t_ee57ae268d5abd 70
+internal/store/pins.go
+  s_87f1c7baee7d5a::t_ce31999c589798 74,135
+internal/store/devices.go
+  s_87f1c7baee7d5a::t_c0b8371706c19a 78-79
+  s_87f1c7baee7d5a::t_ee57ae268d5abd 65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "acffa15e993e2c71ecaf6f59183bf46433aa482a",
+  "prompts": {},
+  "sessions": {
+    "s_87f1c7baee7d5a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "45cc2cdf-3130-4caa-8cb4-8cb365d2150d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
