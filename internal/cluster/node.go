@@ -165,6 +165,10 @@ type Node struct {
 	recMu          sync.Mutex
 	halted         atomic.Bool
 	rotateProposed func(error) error
+	// trustAt, guarded by recMu, is the index the store must have applied
+	// through before this follower trusts the new CA trustFP (settledOn).
+	trustAt uint64
+	trustFP string
 }
 
 var _ store.Applier = (*Node)(nil)
