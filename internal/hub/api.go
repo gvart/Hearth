@@ -89,7 +89,7 @@ func newAPI(cfg Config) *api {
 		drift:         cfg.ConfigDrift,
 		runbooks:      cfg.Runbooks,
 		leadership:    leadershipOf(cfg),
-		automations:   automation.Files{Dir: cfg.AutomationsDir, Kinds: cfg.AutomationKinds},
+		automations:   automation.Files{Dir: cfg.AutomationsDir, Docs: cfg.AutomationDocs, Kinds: cfg.AutomationKinds},
 		automationsMu: automationsLock(cfg.AutomationsLock),
 		agents:        cfg.Agents,
 		dryRuns:       newLoginLimiter(time.Now, dryRunBurst, dryRunEvery),

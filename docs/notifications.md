@@ -5,13 +5,15 @@ description: Phone notifications through ntfy or a Telegram bot, from automation
 
 Hearth sends phone notifications through [ntfy](https://ntfy.sh) or a Telegram bot, so you need no
 Hearth app. A **channel** is one ntfy topic or one Telegram chat, with its credentials. Channels are
-configured in a file on the hub, and everything else — automations, the web UI, the audit log, run
+configured in `notify.yaml`, sealed in the hub's store, and everything else — automations, the web UI, the audit log, run
 history — names them only: no token or topic ever leaves that file. (A failed send may name the
 server it could not reach, as `dial tcp ntfy.lan:443: ...`, like a webhook names its site.)
 
 ## The channels file
 
-`<data-dir>/notify.yaml`, or `hearth hub --notify-config FILE` (env `HEARTH_NOTIFY_CONFIG`):
+`notify.yaml`, imported with `hearth config import` (see
+[guardrails](guardrails.md#configuration-documents)). On its first start a hub imports
+`<data-dir>/notify.yaml`, or `hearth hub --notify-config FILE` (env `HEARTH_NOTIFY_CONFIG`), once:
 
 ```yaml
 channels:
@@ -26,9 +28,9 @@ channels:
     chat_id: "-1001234567890"       # the chat's id, or "@channelname"
 ```
 
-Keep it readable by the hub's user only (`chmod 600`): the hub warns at start if it is not. The file
-is read when the hub starts; restart the hub after changing it. A file that cannot be read or has
-an error stops the hub from starting, naming the field but never quoting a value.
+The store keeps it sealed with a key derived from the hub CA key, and no API returns it. Keep your
+copy readable by its owner only (`chmod 600`). Every hub applies an import within seconds, without a
+restart. A file with an error is refused at import, naming the field but never quoting a value.
 
 On ntfy.sh a topic without an access token is readable by anyone who guesses its name: pick a long
 random topic, or run your own ntfy server.
@@ -36,8 +38,8 @@ random topic, or run your own ntfy server.
 For Telegram, create a bot with [@BotFather](https://t.me/BotFather), send it a message (or add it
 to a group), and read the chat id from `https://api.telegram.org/bot<TOKEN>/getUpdates`.
 
-In a cluster, notify actions run on the leader, which may be any voter: give every hub the same
-file, as with the automations directory.
+In a cluster, every hub holds the same channels, so the leader, whichever hub it is, sends the same
+way.
 
 ## Sending from an automation
 

@@ -115,7 +115,7 @@ func runApprovalDecide(ctx context.Context, dataDir, id string, approve bool, pa
 		return err
 	}
 	defer st.Close()
-	pol, err := cliPolicy(dataDir, st)
+	pol, err := cliPolicy(ctx, dataDir, st)
 	if err != nil {
 		return err
 	}

@@ -74,12 +74,43 @@ func loadPolicyConfig(dataDir string) (policy.Config, error) {
 
 // cliPolicy is the policy engine of a CLI command on the hub host: the
 // hub's configuration, holding actions in st for the command to wait on.
-func cliPolicy(dataDir string, st *store.Store) (*policy.Engine, error) {
-	cfg, err := loadPolicyConfig(dataDir)
+// It is the stored policy document once the store holds documents, and the
+// policy file until then, as the hub decides.
+func cliPolicy(ctx context.Context, dataDir string, st *store.Store) (*policy.Engine, error) {
+	cfg, stored, err := storedPolicy(ctx, st)
 	if err != nil {
 		return nil, err
 	}
+	if !stored {
+		if cfg, err = loadPolicyConfig(dataDir); err != nil {
+			return nil, err
+		}
+	}
 	return policy.NewWithConfig(st.Audit(), st.Approvals(), cfg), nil
+}
+
+// storedPolicy reads the policy document, and reports whether the store
+// holds configuration documents; when it holds some but no policy, the
+// policy is the zero Config.
+func storedPolicy(ctx context.Context, st *store.Store) (policy.Config, bool, error) {
+	docs := st.ConfigDocs()
+	if ok, err := docs.Available(ctx); err != nil || !ok {
+		return policy.Config{}, false, err
+	}
+	all, err := docs.List(ctx, "")
+	if err != nil || len(all) == 0 {
+		return policy.Config{}, false, err
+	}
+	for _, d := range all {
+		if d.Kind == store.ConfigPolicy {
+			cfg, err := policy.ParseConfig(d.Content)
+			if err != nil {
+				return policy.Config{}, true, fmt.Errorf("the stored %s: %w", d.Name, err)
+			}
+			return cfg, true, nil
+		}
+	}
+	return policy.Config{}, true, nil
 }
 
 // adminDo runs fn as the local operator through the hub's policy. An action
@@ -88,7 +119,7 @@ func cliPolicy(dataDir string, st *store.Store) (*policy.Engine, error) {
 func adminDo(ctx context.Context, dataDir string, st *store.Store, out io.Writer, dryRun bool,
 	req policy.Request, fn func(context.Context) error,
 ) (bool, error) {
-	pol, err := cliPolicy(dataDir, st)
+	pol, err := cliPolicy(ctx, dataDir, st)
 	if err != nil {
 		return false, err
 	}

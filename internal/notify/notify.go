@@ -20,6 +20,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"go.yaml.in/yaml/v3"
@@ -45,8 +46,25 @@ type ChannelInfo struct {
 
 // Notifier sends to the configured channels. The zero value has none.
 type Notifier struct {
+	mu       sync.RWMutex
 	client   *http.Client
 	channels map[string]channel
+}
+
+// Replace makes n send to the channels of other from now on, which the hub
+// does when the notify document changes: everything holding n sees them.
+// A send under way finishes on the channel it started with.
+func (n *Notifier) Replace(other *Notifier) {
+	var client *http.Client
+	var channels map[string]channel
+	if other != nil {
+		other.mu.RLock()
+		client, channels = other.client, other.channels
+		other.mu.RUnlock()
+	}
+	n.mu.Lock()
+	n.client, n.channels = client, channels
+	n.mu.Unlock()
 }
 
 type channel struct {
@@ -153,6 +171,8 @@ func (n *Notifier) Channels() []ChannelInfo {
 	if n == nil {
 		return out
 	}
+	n.mu.RLock()
+	defer n.mu.RUnlock()
 	for name, c := range n.channels {
 		out = append(out, ChannelInfo{Name: name, Type: c.typ})
 	}
@@ -165,6 +185,8 @@ func (n *Notifier) Has(channel string) bool {
 	if n == nil {
 		return false
 	}
+	n.mu.RLock()
+	defer n.mu.RUnlock()
 	_, ok := n.channels[channel]
 	return ok
 }
@@ -181,13 +203,16 @@ func (n *Notifier) SendMessage(ctx context.Context, channel string, m Message) e
 	if n == nil {
 		return fmt.Errorf("%w %q", ErrNoChannel, channel)
 	}
+	n.mu.RLock()
 	c, ok := n.channels[channel]
+	client := n.client
+	n.mu.RUnlock()
 	if !ok {
 		return fmt.Errorf("%w %q", ErrNoChannel, channel)
 	}
 	ctx, cancel := context.WithTimeout(ctx, sendTimeout)
 	defer cancel()
-	if err := c.send(ctx, n.client, m); err != nil {
+	if err := c.send(ctx, client, m); err != nil {
 		return fmt.Errorf("notify %s (%s): %w", channel, c.typ, err)
 	}
 	return nil

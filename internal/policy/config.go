@@ -151,14 +151,24 @@ func LoadConfig(path string) (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("read policy config: %w", err)
 	}
+	c, err := ParseConfig(b)
+	if err != nil {
+		return Config{}, fmt.Errorf("policy config %s: %w", path, err)
+	}
+	return c, nil
+}
+
+// ParseConfig reads and validates a configuration file's content. An empty
+// one is the zero Config.
+func ParseConfig(b []byte) (Config, error) {
 	var c Config
 	dec := yaml.NewDecoder(bytes.NewReader(b))
 	dec.KnownFields(true)
 	if err := dec.Decode(&c); err != nil && !errors.Is(err, io.EOF) {
-		return Config{}, fmt.Errorf("policy config %s: %w", path, err)
+		return Config{}, err
 	}
 	if err := c.Validate(); err != nil {
-		return Config{}, fmt.Errorf("policy config %s: %w", path, err)
+		return Config{}, err
 	}
 	return c, nil
 }

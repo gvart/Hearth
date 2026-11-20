@@ -1,11 +1,10 @@
 import type { ConfigDrift, ConfigDriftItem } from '../api/client.ts';
 import { useConfigDrift } from '../api/hooks.ts';
 
-const docsURL = 'https://github.com/gvart/hearth/blob/main/docs/cluster.md#configuration-drift';
+const docsURL = 'https://github.com/gvart/hearth/blob/main/docs/cluster.md#host-flag-drift';
 
 const itemLabels: Record<string, string> = {
-  automations: 'automations directory',
-  runbooks: 'runbooks directory',
+  host_flags: '--allow-dangerous-automation',
 };
 
 function itemLabel(item: string) {
@@ -35,9 +34,10 @@ function DriftLine({ item }: { item: ConfigDriftItem }) {
 }
 
 /**
- * Warns when the hubs of a cluster run different per-hub configuration, which
- * a failover would then change. It names items and hubs only: the API holds
- * no digests or file contents.
+ * Warns when the hubs of a cluster run with different host flags, the grants
+ * each host sets for itself, which a failover would then change. Policy,
+ * notification channels, automations and runbooks are in the replicated store
+ * and cannot differ. It names items and hubs only: the API holds no digests.
  */
 export function ConfigDriftBanner() {
   const report = useConfigDrift().data;
@@ -53,15 +53,16 @@ export function ConfigDriftBanner() {
 
   if (differing.length === 0) {
     return (
-      <aside className="drift-banner drift-banner-quiet" aria-label="Hub configuration">
-        <p className="small muted">Hub configuration check incomplete. {hubsLine}</p>
+      <aside className="drift-banner drift-banner-quiet" aria-label="Hub host flags">
+        <p className="small muted">Host flag check incomplete. {hubsLine}</p>
       </aside>
     );
   }
   return (
-    <aside className="drift-banner" role="alert" aria-label="Hub configuration">
+    <aside className="drift-banner" role="alert" aria-label="Hub host flags">
       <p>
-        <strong>Hubs run different configuration.</strong> A failover changes how Hearth behaves.{' '}
+        <strong>Hubs run with different host flags.</strong> Policy and automations are the same on every hub, but
+        these per-host grants are not: a failover changes which automations may act.{' '}
         <a href={docsURL} target="_blank" rel="noreferrer">
           How to resolve this
         </a>

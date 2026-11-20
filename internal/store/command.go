@@ -809,6 +809,10 @@ func DecodeCommand(b []byte) (Command, error) {
 		cmd, err = decodeAs[CreateDashboardToken](env.Cmd)
 	case RevokeDashboardToken{}.Op():
 		cmd, err = decodeAs[RevokeDashboardToken](env.Cmd)
+	case PutConfigDocs{}.Op():
+		cmd, err = decodeAs[PutConfigDocs](env.Cmd)
+	case DeleteConfigDoc{}.Op():
+		cmd, err = decodeAs[DeleteConfigDoc](env.Cmd)
 	default:
 		return nil, fmt.Errorf("decode command: unknown op %q", env.Op)
 	}

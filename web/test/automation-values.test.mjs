@@ -344,6 +344,12 @@ describe('the notice after saving', () => {
     assert.doesNotMatch(notice, /loads it within seconds\.$/);
   });
 
+  test('a stored automation is on every hub', () => {
+    const notice = savedNotice({ ...saved, cluster: true, leader: false, stored: true });
+    assert.match(notice, /Every hub/);
+    assert.doesNotMatch(notice, /copy/i);
+  });
+
   test('a cluster follower says the file does not run from here', () => {
     const notice = savedNotice({ ...saved, cluster: true, leader: false });
     assert.match(notice, /hub-b:8443/);

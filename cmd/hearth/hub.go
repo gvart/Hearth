@@ -27,6 +27,7 @@ import (
 	"github.com/gvart/hearth/internal/cluster"
 	"github.com/gvart/hearth/internal/discovery"
 	"github.com/gvart/hearth/internal/hub"
+	"github.com/gvart/hearth/internal/hubconfig"
 	"github.com/gvart/hearth/internal/integrations/beszel"
 	"github.com/gvart/hearth/internal/integrations/kubernetes"
 	"github.com/gvart/hearth/internal/integrations/prometheus"
@@ -180,14 +181,14 @@ func newHubCmd() *cobra.Command {
 	cmd.Flags().StringVar(&opts.prometheusURL, "prometheus-url", os.Getenv("HEARTH_PROMETHEUS_URL"),
 		"Prometheus server to read device charts from, e.g. http://prometheus.lan:9090 (env HEARTH_PROMETHEUS_URL)")
 	cmd.Flags().StringVar(&opts.automationsDir, "automations-dir", "",
-		"directory of automation YAML files, reloaded when they change (default <data-dir>/automations)")
+		"directory of automation YAML files the hub imports into its store once, on its first start (default <data-dir>/automations; see docs/automations.md)")
 	cmd.Flags().StringVar(&opts.runbooksDir, "runbooks-dir", "",
-		"directory of runbook YAML files (default <data-dir>/runbooks; see docs/runbooks.md)")
+		"directory of runbook YAML files the hub imports into its store once, on its first start (default <data-dir>/runbooks; see docs/runbooks.md)")
 	cmd.Flags().StringVar(&opts.notifyConfig, "notify-config", os.Getenv("HEARTH_NOTIFY_CONFIG"),
-		"file of notification channels (ntfy, Telegram) for notify actions (env HEARTH_NOTIFY_CONFIG; default <data-dir>/notify.yaml if it exists; see docs/notifications.md)")
+		"file of notification channels (ntfy, Telegram) the hub imports into its store once, on its first start (env HEARTH_NOTIFY_CONFIG; default <data-dir>/notify.yaml if it exists; see docs/notifications.md)")
 	cmd.Flags().StringArrayVar(&opts.dangerousAutomations, "allow-dangerous-automation", nil,
 		"id of an automation allowed to take dangerous actions, such as exec, without approval; repeatable, "+
-			"added to dangerous_automations of <data-dir>/policy.yaml (default: none)")
+			"added to dangerous_automations of the policy; a grant of this host only (default: none)")
 	cmd.Flags().BoolVar(&opts.automationsDryRun, "automations-dry-run", false,
 		"run automations as dry runs: each action's policy decision is audited, and no action runs")
 	cmd.Flags().StringSliceVar(&opts.discoverSubnets, "discover-subnet", splitList(os.Getenv("HEARTH_DISCOVER_SUBNETS")),
@@ -310,13 +311,6 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		}
 		manifests = append(manifests, m)
 	}
-	polCfg, err := loadPolicyConfig(opts.dataDir)
-	if err != nil {
-		return err
-	}
-	polCfg.DangerousAutomations = append(polCfg.DangerousAutomations, opts.dangerousAutomations...)
-	// Digested as loaded: the hub applies these two files only when it starts.
-	policyDigest := cluster.ConfigFileDigest(filepath.Join(opts.dataDir, policy.ConfigFile), opts.dangerousAutomations...)
 	hosts := opts.hosts
 	if len(hosts) == 0 {
 		hosts = []string{hostnameOr("localhost"), "localhost", "127.0.0.1", "::1"}
@@ -381,7 +375,30 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		node.SetResealer(sealers.reseal)
 	}
 
-	pol := policy.NewWithConfig(st.Audit(), st.Approvals(), polCfg)
+	// The configuration is set below, before anything decides: from the
+	// store's documents, or from the files until the store holds any.
+	pol := policy.NewWithConfig(st.Audit(), st.Approvals(), policy.Config{})
+	notifier := &notify.Notifier{}
+	automationsDir := opts.automationsDir
+	if automationsDir == "" {
+		automationsDir = filepath.Join(opts.dataDir, "automations")
+	}
+	hubID := hostnameOr("hub")
+	if node != nil {
+		hubID = node.ID()
+	}
+	configWatcher := hubconfig.NewWatcher(hubconfig.WatcherConfig{
+		Store: st.ConfigDocs(), Sealer: sealers.notify, Policy: pol, Notifier: notifier,
+		HostDangerous: opts.dangerousAutomations, Actor: hubID, Log: log.With("component", "config"),
+		Files: hubconfig.Files{
+			Policy: filepath.Join(opts.dataDir, policy.ConfigFile), Notify: notifyConfigPath(opts),
+			AutomationsDir: automationsDir, RunbooksDir: runbooksDirOf(opts),
+		},
+	})
+	configDocs, err := applyHubConfig(ctx, opts, st, node == nil, configWatcher, pol, notifier, log)
+	if err != nil {
+		return err
+	}
 	// An outcome a cluster without quorum cannot take waits here for it.
 	spool, err := policy.OpenSpool(filepath.Join(opts.dataDir, auditSpoolDir), st.Audit(), log.With("component", "audit-spool"))
 	if err != nil {
@@ -427,11 +444,6 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	notifier, err := loadNotifier(opts, log)
-	if err != nil {
-		return err
-	}
-	notifyDigest := cluster.ConfigFileDigest(notifyConfigPath(opts))
 	if opts.newDeviceAlerts != "" && !notifier.Has(opts.newDeviceAlerts) {
 		return fmt.Errorf("--new-device-alerts: no notification channel %q (see --notify-config)", opts.newDeviceAlerts)
 	}
@@ -439,15 +451,17 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	if err := notifyApprovals(pol, polCfg.ApprovalNotify, st, notifier, hosts[0], agentPort, log); err != nil {
-		return err
-	}
+	notifyApprovals(pol, st, notifier, hosts[0], agentPort, log)
 	// stopping ends agent streams and /events subscriptions as soon as either
 	// server begins shutting down, so Shutdown waits only on ordinary requests
 	// and agents see a clean end of stream and reconnect at once.
 	stopping, stop := context.WithCancel(context.WithoutCancel(ctx))
 	defer stop()
-	runbooks, err := newRunbooks(opts, st, sealers.runbook, pol, agents, notifier, kube, pluginMgr, talosClient, log)
+	var runbookDocs automation.DocSource
+	if configDocs {
+		runbookDocs = hubconfig.StoreDocs(st.ConfigDocs(), store.ConfigRunbook, runbooksDirOf(opts), "", time.Now)
+	}
+	runbooks, err := newRunbooks(opts, st, sealers.runbook, pol, agents, notifier, kube, pluginMgr, talosClient, runbookDocs, log)
 	if err != nil {
 		return err
 	}
@@ -492,10 +506,6 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if _, port, err := net.SplitHostPort(opts.httpListen); err == nil && port != "0" {
 		cfg.HTTPPort = port
 	}
-	automationsDir := opts.automationsDir
-	if automationsDir == "" {
-		automationsDir = filepath.Join(opts.dataDir, "automations")
-	}
 	kinds := automation.Builtin(log)
 	maps.Copy(kinds.Triggers, automation.Triggers(automation.TriggerDeps{
 		Devices: hub.AutomationDevices(reg),
@@ -510,6 +520,13 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	}))
 	kinds.Actions["script"] = automation.Script(automation.ScriptDeps{Devices: st.Devices(), Live: reg.Live})
 	cfg.AutomationsDir, cfg.AutomationKinds = automationsDir, kinds
+	var automationDocs automation.DocStore
+	if configDocs {
+		// Saved by the web editor or MCP: automation.apply, audited.
+		automationDocs = hubconfig.StoreDocs(st.ConfigDocs(), store.ConfigAutomation, automationsDir,
+			string(policy.AutomationApply), time.Now)
+		cfg.AutomationDocs = automationDocs
+	}
 	// The web editor and MCP write the same directory under one lock.
 	var automationsMu sync.Mutex
 	cfg.AutomationsLock = &automationsMu
@@ -527,7 +544,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	uiMux.Handle("GET /api/v1/devices/{id}/shell", hub.EndOnStop(stopping, webH))
 	uiMux.Handle("GET /api/v1/guest/{token}/events", hub.EndOnStop(stopping, webH))
 	if node != nil {
-		node.SetConfigSource(cluster.FileConfigSource(policyDigest, notifyDigest, automationsDir, runbooksDirOf(opts)))
+		node.SetConfigSource(cluster.HostFlagsSource(opts.dangerousAutomations))
 	}
 	var mcpPlugins mcpserver.Plugins
 	if pluginMgr != nil {
@@ -535,7 +552,8 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	}
 	uiMux.Handle(mcpserver.Path, hub.EndOnStop(stopping, mcpserver.Handler(mcpserver.Config{
 		Devices: st.Devices(), Live: reg.Live, Tokens: st.MCPTokens(), Policy: pol, Agents: agents, Kube: kube, Plugins: mcpPlugins,
-		Metrics: hub.AutomationMetrics(st, prom, ms), AutomationsDir: automationsDir, AutomationKinds: kinds, AutomationsLock: &automationsMu, Version: opts.version, Log: log,
+		Metrics: hub.AutomationMetrics(st, prom, ms), AutomationsDir: automationsDir, AutomationDocs: automationDocs, AutomationKinds: kinds, AutomationsLock: &automationsMu,
+		Version: opts.version, Log: log,
 	})))
 	var tlsWeb http.Handler = uiMux
 	tlsCfg := hub.TLSConfigFunc(ca, serverCert.Load)
@@ -609,8 +627,13 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 			log.WarnContext(ctx, "new-device alerts are on but network discovery is off: set --discover-subnet")
 		}
 	}
+	var automationSource automation.DocSource
+	if configDocs {
+		automationSource = configWatcher.Automations()
+	}
 	automations := automation.New(automation.Config{
 		Dir:     automationsDir,
+		Source:  automationSource,
 		Builtin: builtin,
 		Kinds:   kinds,
 		Policy:  pol,
@@ -672,6 +695,22 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	// And runs the exec plugins itself, if any: commands may reach any hub.
 	if pluginMgr != nil {
 		g.Go(func() error { return pluginMgr.Run(gctx) })
+	}
+	// Every hub applies the configuration documents, whichever hub wrote
+	// them; a cluster member imports its files once it has caught up.
+	if configDocs {
+		g.Go(func() error { return configWatcher.Run(gctx) })
+		if node != nil {
+			g.Go(func() error {
+				if node.WaitReady(gctx) != nil {
+					return nil
+				}
+				if err := configWatcher.ImportFirst(gctx); err != nil {
+					log.ErrorContext(gctx, "configuration files not imported", "err", err)
+				}
+				return nil
+			})
+		}
 	}
 	// Every hub prunes its own metrics.
 	g.Go(func() error { return ms.Run(gctx) })
@@ -805,14 +844,14 @@ func newProxmoxManager(st *store.Store, sealer *kubernetes.Sealer, pol *policy.E
 // file, sealed with sealer (hubSealers).
 func newRunbooks(opts hubOptions, st *store.Store, sealer *kubernetes.Sealer, pol *policy.Engine, agents *hub.Agents,
 	notifier *notify.Notifier, kube *kubernetes.Manager, pluginMgr *plugins.Manager,
-	talosClient *talos.Client, log *slog.Logger,
+	talosClient *talos.Client, docs automation.DocSource, log *slog.Logger,
 ) (*automation.Runbooks, error) {
 	kinds := automation.Builtin(log)
 	maps.Copy(kinds.Actions, automation.Actions(automation.ActionDeps{
 		Agents: agents, Notifier: notifier, Kube: kube, Plugins: pluginMgr,
 	}))
 	return automation.NewRunbooks(automation.RunbooksConfig{
-		Dir: runbooksDirOf(opts), Kinds: kinds, Policy: pol, Runs: st.RunbookRuns(), Sealer: sealer, Probers: agents,
+		Dir: runbooksDirOf(opts), Source: docs, Kinds: kinds, Policy: pol, Runs: st.RunbookRuns(), Sealer: sealer, Probers: agents,
 		KubeNodes: kube, TalosNodes: talosNodes(talosClient), Log: log.With("component", "runbooks"),
 		DryRun: opts.automationsDryRun,
 	}), nil
@@ -881,34 +920,79 @@ func ensureAdminPassword(ctx context.Context, st *store.Store, pol *policy.Engin
 	return nil
 }
 
+// notifyApprovals sends every action pol holds to the policy's
+// approval_notify channel, with an approval link based at its url or, by
+// default, the hub's HTTPS address for host. It reads the policy in effect
+// at each hold, so a new policy document applies at once.
+func notifyApprovals(pol *policy.Engine, st *store.Store, n *notify.Notifier, host, port string, log *slog.Logger) {
+	if port == "" {
+		port = defaultPort
+	}
+	defaultBase := "https://" + net.JoinHostPort(host, port)
+	pol.OnHeld(func(ctx context.Context, ap store.Approval) {
+		cfg := pol.Config().ApprovalNotify
+		if cfg.Channel == "" {
+			return
+		}
+		base := cfg.URL
+		if base == "" {
+			base = defaultBase
+		}
+		hub.NewApprovalNotifier(hub.ApprovalNotifierConfig{
+			Links: st.ApprovalLinks(), Notifier: n, Channel: cfg.Channel, BaseURL: base, Log: log,
+		})(ctx, ap)
+	})
+}
+
+// applyHubConfig puts the hub's configuration in effect before anything
+// decides, and reports whether the store's documents are its source (schema
+// 28 or newer). A standalone hub first imports its files into an empty
+// store; a cluster member does once it has caught up. Until the store holds
+// documents, the files are in effect, as they always were.
+func applyHubConfig(ctx context.Context, opts hubOptions, st *store.Store, standalone bool, w *hubconfig.Watcher,
+	pol *policy.Engine, notifier *notify.Notifier, log *slog.Logger,
+) (bool, error) {
+	docs, err := st.ConfigDocs().Available(ctx)
+	if err != nil {
+		return false, err
+	}
+	applied := false
+	if docs {
+		if standalone {
+			if err := w.ImportFirst(ctx); err != nil {
+				return false, err
+			}
+		}
+		if applied, err = w.Sync(ctx); err != nil {
+			return false, err
+		}
+	} else {
+		log.WarnContext(ctx, "the database predates configuration documents: this hub reads its configuration files "+
+			"until `hearth cluster migrate` and a restart", "schema_needed", store.ConfigDocsSchema)
+	}
+	if applied {
+		return docs, nil
+	}
+	polCfg, err := loadPolicyConfig(opts.dataDir)
+	if err != nil {
+		return false, err
+	}
+	polCfg.DangerousAutomations = append(polCfg.DangerousAutomations, opts.dangerousAutomations...)
+	n, err := loadNotifier(opts, log)
+	if err != nil {
+		return false, err
+	}
+	if ch := polCfg.ApprovalNotify.Channel; ch != "" && !n.Has(ch) {
+		return false, fmt.Errorf("policy config: approval_notify.channel %q is not in the notification channels file", ch)
+	}
+	pol.SetConfig(polCfg)
+	notifier.Replace(n)
+	return docs, nil
+}
+
 // loadNotifier reads the notification channels file: --notify-config, or
 // <data-dir>/notify.yaml if it exists. Without one the hub has no channels.
 // It logs channel names only, never their addresses or credentials.
-// notifyApprovals sends every action pol holds to the policy file's
-// approval_notify channel, with an approval link based at its url or, by
-// default, the hub's HTTPS address for host.
-func notifyApprovals(pol *policy.Engine, cfg policy.ApprovalNotify, st *store.Store, n *notify.Notifier,
-	host, port string, log *slog.Logger,
-) error {
-	if cfg.Channel == "" {
-		return nil
-	}
-	if !n.Has(cfg.Channel) {
-		return fmt.Errorf("policy config: approval_notify.channel %q is not in the notification channels file", cfg.Channel)
-	}
-	base := cfg.URL
-	if base == "" {
-		if port == "" {
-			port = defaultPort
-		}
-		base = "https://" + net.JoinHostPort(host, port)
-	}
-	pol.OnHeld(hub.NewApprovalNotifier(hub.ApprovalNotifierConfig{
-		Links: st.ApprovalLinks(), Notifier: n, Channel: cfg.Channel, BaseURL: base, Log: log,
-	}))
-	log.Info("held actions are notified", "channel", cfg.Channel, "link_base", base)
-	return nil
-}
 
 // notifyConfigPath is the notification channels file the hub reads.
 func notifyConfigPath(opts hubOptions) string {

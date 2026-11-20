@@ -3,9 +3,13 @@ title: Automation reference
 description: Triggers, conditions, actions and templates of automation YAML files.
 ---
 
-An automation is a YAML file in the hub's automations directory: `<data-dir>/automations` by default,
-or `hearth hub --automations-dir DIR`. Every `*.yaml` and `*.yml` file in it (not in subdirectories)
-is one automation. Keep the directory in git.
+An automation is a YAML file held in the hub's store, the same on every hub of a cluster. Write files
+in a directory (keep it in git) and load them with `hearth config import DIR` on the hub host, which
+imports `automations/*.yaml` and `*.yml` (not in subdirectories) of DIR, one automation per file, along
+with the rest of the configuration (see [guardrails](guardrails.md#configuration-documents)). `hearth
+config export DIR` writes them back, byte for byte, and `hearth config delete automation FILE` removes
+one. On its first start a hub imports its `<data-dir>/automations` directory (or `--automations-dir`)
+once; after that the directory is not read.
 
 ```yaml
 id: hello                  # lowercase letters, digits, - and _; unique across files
@@ -183,9 +187,9 @@ reported with their line, as `file:line: message`.
 
 ## The visual editor
 
-The web UI's **Automations** page lists the files of the automations directory, and edits them as
+The web UI's **Automations** page lists the automation files of the store, and edits them as
 trigger, condition and action blocks or as YAML. Both views change the same file: switch between them
-at any time. The file stays the source of truth, so keep it in git as before.
+at any time. Export the files with `hearth config export` to keep them in git.
 
 - **Your file stays yours.** An edit replaces only the text of what you changed: every other byte of
   the file, comments, key order, quoting and spacing included, stays as written. An edit that cannot
@@ -205,8 +209,8 @@ at any time. The file stays the source of truth, so keep it in git as before.
   its trigger starts, and is not part of the dry run.
 - **Save** needs a signed-in session. The hub validates the file again, with the notification channels
   and other settings it really has, and refuses it, with the line of each problem, if it would not load.
-  It also refuses a save when another file of the directory is invalid, since one invalid file stops
-  the reload of all of them, when the file changed on disk since you opened it, and when the file has
+  It also refuses a save when another automation file is invalid, since one invalid file stops
+  the reload of all of them, when the file changed since you opened it, and when the file has
   more than 64 steps. The form is locked until the save is answered.
 
 Saving goes through policy as `automation.apply` (class `dangerous`) with actor `web/<address>`. The
@@ -235,18 +239,18 @@ always asks for it again, so a session alone cannot approve its own save.
 An automation's id cannot be changed in the editor: create a new one and remove the old file. Files
 that are symbolic links are not opened or saved here, and nothing of what they point to is shown. The
 built-in [new-device alerts](discovery.md#new-device-alerts) automation has no file, so it is not
-listed. In a cluster, a save writes to the directory of the hub you are connected to only, and the
-editor names that hub. Only the leader runs automations, so copy the file to the other hubs, as
-[configuration drift](cluster.md#configuration-drift) will remind you.
+listed. In a cluster, a save is in the store, so every hub has it within seconds; the leader runs it.
+The MCP `apply_automation` tool writes the same store.
 
 ## How the hub runs them
 
-- The hub checks the directory every 2 s. A new or changed file is loaded; a changed automation
+- The hub checks its automation files every 2 s, whichever hub or command wrote them. A new or
+  changed file is loaded; a changed automation
   is stopped (its run in progress cancelled) and started again; a removed one is stopped. If any
   file is invalid, the reload is refused as a whole and logged, and the automations already running
   carry on.
-- In a cluster, automations run on the leader only, and move with leadership. Each hub reads its own
-  directory, so keep it the same on every hub.
+- In a cluster, automations run on the leader only, and move with leadership. Every hub holds the
+  same files, so a new leader runs the same automations.
 - Every action goes through policy with actor `automation/<id>`, and is in the audit log.
   `hearth hub --automations-dry-run` sends every action to policy as a dry run: the decisions are
   audited (result `dry-run`) and nothing runs. Kubernetes actions are also planned (see

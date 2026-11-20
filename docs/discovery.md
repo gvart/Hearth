@@ -148,7 +148,7 @@ host to discovery after every rotation, and alerts again each time: discovery kn
 MAC, and a mark on one address does not carry over to the next.
 
 **Changing it.** To change the message, the channel, or to alert on new hosts only, write your own
-automation with the id `new-device-alerts` in the automations directory: it replaces the built-in.
+automation with the id `new-device-alerts`: it replaces the built-in.
 The `network` trigger is in the [automation reference](automations.md#network-hosts). Give its
 triggers `batch: true`: without it a scan fires once per host, and hosts past the 11 runs an
 automation can hold at a time are dropped.

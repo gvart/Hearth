@@ -304,9 +304,10 @@ so a member without a working majority refuses the backup. Take backups before y
    Every hub must run a Hearth version that supports restored clusters, so use the same version as the
    restored hub. An older hub is refused with a message to upgrade it first, and its join token stays valid.
 
-6. **Copy the configuration** to the hubs that joined: `policy.yaml`, `notify.yaml`, the automations
-   directory and the runbooks directory are not replicated. `hearth cluster status` shows `in_sync` when they match (see
-   [Configuration drift](cluster.md#configuration-drift)).
+6. **Check the host flags** of the hubs that joined: the configuration documents (policy, notify,
+   automations, runbooks) are in the restored store and replicate to them, but each hub's
+   `--allow-dangerous-automation` flags are its own. `hearth cluster status` shows `in_sync` when they match
+   (see [Host flag drift](cluster.md#host-flag-drift)).
 
 Agents need nothing: they try the hubs they know, and learn the new list once they reach one.
 

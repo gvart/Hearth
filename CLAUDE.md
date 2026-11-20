@@ -48,6 +48,7 @@ internal/cluster/      Raft replication of the hub store (hashicorp/raft), hub j
 internal/s3/           minimal SigV4 S3 client (put, list, delete) for scheduled backups
 internal/plugins/      exec plugins: child processes speaking JSON lines over stdio (docs/plugins.md)
 internal/mqtt/         embedded MQTT broker (mochi-mqtt): TLS, device-cert or password auth, topic ACLs
+internal/hubconfig/    config documents (policy, notify, automations, runbooks) in the store: live apply, import/export
 pkg/sdk/               public agent/plugin SDK — Apache-2.0 licensed
 proto/                 .proto sources
 web/                   Vite + React + TypeScript UI, embedded via embed.FS

@@ -244,6 +244,20 @@ const (
 	DashboardTokenCreate Action = "dashboard.token.create"
 	// DashboardTokenRevoke revokes a dashboard's token.
 	DashboardTokenRevoke Action = "dashboard.token.revoke"
+	// ConfigImport writes configuration documents (policy.yaml, notify.yaml,
+	// automation and runbook files) into the store, or deletes an automation
+	// or runbook document, with `hearth config import` or `hearth config
+	// delete` on a hub host. Every hub applies them: a policy import changes
+	// what every other action may do.
+	ConfigImport Action = "config.import"
+	// ConfigImportFirst is a hub's one-time import of its own configuration
+	// files into an empty store, when it first starts at schema 28. The files
+	// were the configuration in effect already.
+	ConfigImportFirst Action = "config.import.first"
+	// ConfigExport writes the configuration documents to files, with
+	// `hearth config export` on a hub host, notify.yaml's credentials in
+	// clear: only the hub host's CLI exports, no API does.
+	ConfigExport Action = "config.export"
 	// PluginStart starts a configured exec plugin's process on the hub, or
 	// restarts it after it stopped (docs/plugins.md).
 	PluginStart Action = "plugin.start"
@@ -482,6 +496,16 @@ var rules = map[Action]rule{
 	// passphrase file and the bucket's credentials: that is the grant. No one
 	// is there to approve each run.
 	HubScheduledBackup: {class: Dangerous, actors: []string{ActorHub}, fixed: true},
+	// A config import replaces the policy itself, notification credentials
+	// and what automations and runbooks do, on every hub: only the operator
+	// on a hub host, and never fixed, so a policy may hold it for approval.
+	ConfigImport: {class: Dangerous, actors: []string{ActorAdmin}},
+	// The first import records the files a hub already runs with: nothing
+	// changes, and the hub is starting, with no one to approve it.
+	ConfigImportFirst: {class: Dangerous, actors: []string{ActorHub}, fixed: true},
+	// An export reads the configuration, notify.yaml's credentials too, to
+	// the hub host's disk, where the files were before.
+	ConfigExport: {class: Read, actors: []string{ActorAdmin}},
 	// The answer changes only whether the hub sends a few anonymous counts a
 	// week (docs/telemetry.md); it touches no device. Only a signed-in admin
 	// answers.

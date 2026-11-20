@@ -9,6 +9,8 @@ export interface SaveAnswer {
   cluster: boolean;
   /** This hub runs automations now. */
   leader: boolean;
+  /** The automation is in the cluster's store, on every hub. */
+  stored?: boolean;
   /** What to know about a save that worked. */
   warning?: string;
 }
@@ -34,11 +36,13 @@ export function mayEdit(savePending: boolean): boolean {
 }
 
 /** Says where the file is, and what still has to happen for it to run. */
-export function savedNotice({ file, hub, cluster, leader, warning }: SaveAnswer): string {
+export function savedNotice({ file, hub, cluster, leader, stored, warning }: SaveAnswer): string {
   const where = `Saved to ${file} on ${hub} only.`;
   const notice = !cluster
     ? `Saved to ${file}. The hub loads it within seconds.`
-    : leader
+    : stored
+      ? `Saved to ${file}. Every hub has it within seconds, and the cluster's leader runs it.`
+      : leader
       ? `${where} This hub leads the cluster and runs it now. Copy the file to the other hubs, or it stops running when another hub takes over.`
       : `${where} This hub is a follower and only the leader runs automations: copy the file to the leader and the other hubs.`;
   return warning ? `${notice} ${warning}` : notice;

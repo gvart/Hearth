@@ -3,6 +3,7 @@
 package automation
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -93,16 +94,27 @@ type File struct {
 	Linked bool
 }
 
-// Files reads and writes the automation files of a directory, as the hub
-// that loads them would judge them.
+// Files reads and writes the automation files of a directory, or the
+// automation documents of the hub's store, as the hub that loads them would
+// judge them.
 type Files struct {
-	Dir   string
+	// Dir holds the files, when Docs is nil.
+	Dir string
+	// Docs holds the automations as documents; a File's Path is then the
+	// document's name.
+	Docs  DocStore
 	Kinds Kinds
 }
 
+// Enabled says whether f has somewhere to read and write.
+func (f Files) Enabled() bool { return f.Dir != "" || f.Docs != nil }
+
 // List reads every automation file. A file repeating the id of an earlier
 // one is invalid, as it is to the hub.
-func (f Files) List() ([]File, error) {
+func (f Files) List(ctx context.Context) ([]File, error) {
+	if f.Docs != nil {
+		return f.listDocs(ctx)
+	}
 	paths, err := automationFiles(f.Dir)
 	if err != nil {
 		return nil, err
@@ -141,6 +153,37 @@ func (f Files) List() ([]File, error) {
 	return out, nil
 }
 
+// listDocs is List for documents.
+func (f Files) listDocs(ctx context.Context) ([]File, error) {
+	docs, err := f.Docs.Docs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]File, 0, len(docs))
+	seen := map[string]string{}
+	for _, d := range docs {
+		file := File{Path: d.Name, ID: declaredID(d.Content), Content: d.Content}
+		file.Automation, file.Err = Parse(d.Name, d.Content, f.Kinds)
+		if prev, dup := seen[file.ID]; dup && file.ID != "" && file.Err == nil {
+			file.Automation, file.Err = nil, fmt.Errorf("automation id %q is already used by %s", file.ID, prev)
+		}
+		if file.ID != "" && seen[file.ID] == "" {
+			seen[file.ID] = d.Name
+		}
+		out = append(out, file)
+	}
+	return out, nil
+}
+
+// Write saves b as the file at path, which Target returned: a document
+// named path, or a file of the directory written in one step.
+func (f Files) Write(ctx context.Context, path string, b []byte) error {
+	if f.Docs != nil {
+		return f.Docs.Put(ctx, path, b)
+	}
+	return WriteFile(f.Dir, path, b)
+}
+
 // linkState reports whether path is something other than a regular file, and
 // whether it can be read without blocking: a named pipe would never answer.
 func linkState(path string) (linked, readable bool, err error) {
@@ -168,11 +211,11 @@ func declaredID(b []byte) string {
 }
 
 // Get returns the file that defines the automation id.
-func (f Files) Get(id string) (File, error) {
+func (f Files) Get(ctx context.Context, id string) (File, error) {
 	if !ValidID(id) {
 		return File{}, fmt.Errorf("automation %q: %w", id, ErrNotFound)
 	}
-	files, err := f.List()
+	files, err := f.List(ctx)
 	if err != nil {
 		return File{}, err
 	}
@@ -193,8 +236,8 @@ func (f Files) Get(id string) (File, error) {
 // defines a.ID, which must still have the content revision names. The path
 // comes from the directory's listing, or from a.ID, which Parse has
 // validated: never from a request.
-func (f Files) Target(a *Automation, create bool, revision string) (string, error) {
-	files, err := f.List()
+func (f Files) Target(ctx context.Context, a *Automation, create bool, revision string) (string, error) {
+	files, err := f.List(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -224,6 +267,15 @@ func (f Files) Target(a *Automation, create bool, revision string) (string, erro
 		if path == "" {
 			return "", fmt.Errorf("automation %s: %w", a.ID, ErrNotFound)
 		}
+	} else if f.Docs != nil {
+		path = a.ID + ".yaml"
+		// A document may be named after an id it does not declare.
+		for _, file := range files {
+			if file.Path == path {
+				return "", fmt.Errorf("file %s.yaml holds another automation: %w", a.ID, ErrExists)
+			}
+		}
+		return path, nil
 	} else {
 		path = filepath.Join(f.Dir, a.ID+".yaml")
 		// A file may be named after an id it does not declare.
@@ -232,6 +284,9 @@ func (f Files) Target(a *Automation, create bool, revision string) (string, erro
 		} else if !errors.Is(err, fs.ErrNotExist) {
 			return "", fmt.Errorf("check automation file: %w", err)
 		}
+		return path, nil
+	}
+	if f.Docs != nil {
 		return path, nil
 	}
 	info, err := os.Lstat(path)

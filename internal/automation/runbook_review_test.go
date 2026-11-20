@@ -317,7 +317,7 @@ func mustJSON(t *testing.T, v any) []byte {
 // startedRun is a stored run of rb that no engine has picked up yet.
 func startedRun(t *testing.T, e *Runbooks) store.RunbookRun {
 	t.Helper()
-	rb, err := e.find("rb")
+	rb, err := e.find(t.Context(), "rb")
 	if err != nil {
 		t.Fatal(err)
 	}

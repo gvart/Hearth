@@ -48,8 +48,8 @@ type RunbookJSON struct {
 }
 
 // listRunbooks serves the valid runbooks, and what is wrong with the others.
-func (a *api) listRunbooks(w http.ResponseWriter, _ *http.Request) {
-	all, errs := a.runbooks.List()
+func (a *api) listRunbooks(w http.ResponseWriter, r *http.Request) {
+	all, errs := a.runbooks.List(r.Context())
 	out := struct {
 		Runbooks []RunbookJSON `json:"runbooks"`
 		Errors   []string      `json:"errors"`
