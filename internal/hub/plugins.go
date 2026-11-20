@@ -27,10 +27,25 @@ func (a *api) pluginRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /api/v1/plugins/{name}/commands", a.auth(a.pluginCommand))
 }
 
-func (a *api) listPlugins(w http.ResponseWriter, _ *http.Request) {
+// pluginCommandActions are the policy actions of plugin commands, by the
+// class a manifest declares.
+var pluginCommandActions = map[policy.Class]policy.Action{
+	policy.Read: policy.PluginCommandRead, policy.Safe: policy.PluginCommandSafe, policy.Dangerous: policy.PluginCommandDangerous,
+}
+
+// listPlugins answers every plugin's status and, by command class, what
+// policy decides now for the caller's commands (allow, confirm or deny), so
+// that the UI can say before a run that one would be held or refused. Each
+// command is decided again when it runs.
+func (a *api) listPlugins(w http.ResponseWriter, r *http.Request) {
+	decisions := make(map[policy.Class]string, len(pluginCommandActions))
+	for class, action := range pluginCommandActions {
+		decisions[class], _ = a.policy.Check(policy.Request{ActorKind: policy.ActorWeb, ActorID: remoteHost(r), Action: action})
+	}
 	writeJSON(w, http.StatusOK, struct {
-		Plugins []plugins.Status `json:"plugins"`
-	}{Plugins: a.plugins.Plugins()})
+		Plugins   []plugins.Status        `json:"plugins"`
+		Decisions map[policy.Class]string `json:"decisions"`
+	}{Plugins: a.plugins.Plugins(), Decisions: decisions})
 }
 
 // pluginCommand runs a command of a plugin, through policy. One policy holds
