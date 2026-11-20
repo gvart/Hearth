@@ -1,0 +1,30 @@
+internal/cluster/node.go
+  s_26e932fc13ca45::t_0882152e5720dd 168-169,171-172,301-304
+  s_26e932fc13ca45::t_a3a1482cf8be30 170,173
+internal/cluster/carotation_review_test.go
+  s_26e932fc13ca45::t_06354887979ede 569-592,600,605-611,636-666
+  s_26e932fc13ca45::t_c574fbb433acca 667-698
+  s_26e932fc13ca45::t_993340d06cf067 8
+  s_26e932fc13ca45::t_9cf71ac0de8183 593-599,601-604,612-635
+internal/cluster/carotation.go
+  s_26e932fc13ca45::t_0e59e0f7fa95ba 907-912
+  s_26e932fc13ca45::t_e8bc272c964826 1194,1199,1205
+  s_26e932fc13ca45::t_0882152e5720dd 1172-1180,1190-1193,1195-1198,1200-1204
+  s_26e932fc13ca45::t_11e0a2b599ecc2 913,1171,1181-1189,1206-1210
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7820ac1fc9909d099646ca7a6549a18d7e0004c6",
+  "prompts": {},
+  "sessions": {
+    "s_26e932fc13ca45": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea42b0cd-7455-494b-8071-e63f36b98d4d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
