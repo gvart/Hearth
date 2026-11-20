@@ -1,0 +1,24 @@
+test/e2e/ap_test.go
+  s_87f1c7baee7d5a::t_046a0ab82b4505 47
+  s_87f1c7baee7d5a::t_50cbc76058ed6c 190-284
+internal/hub/cluster_test.go
+  s_87f1c7baee7d5a::t_07ee282e97859a 1-209
+test/e2e/ap.compose.yaml
+  s_87f1c7baee7d5a::t_0a09cda4057010 5-6,55-62,75
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6b88b922c5c23363a7897391aa78751b16a49647",
+  "prompts": {},
+  "sessions": {
+    "s_87f1c7baee7d5a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "45cc2cdf-3130-4caa-8cb4-8cb365d2150d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
