@@ -154,3 +154,56 @@ func TestAppliedLocalAfterStepDown(t *testing.T) {
 		t.Error("an entry this node proposed and answered was reported as not local")
 	}
 }
+
+// TestCaughtUpWaitsForTheStore: a follower is caught up only once its store
+// reflects the committed log, not once raft handed the entries to the state
+// machine. A hub restarted at a hub CA rotation's cutover restores a
+// snapshot from before the rotation; taking that store for caught up
+// dropped its new CA, and its calls to the other hubs failed.
+func TestCaughtUpWaitsForTheStore(t *testing.T) {
+	nodes := threeNodes(t, newTestCA(t))
+	leader := leaderOf(t, nodes...)
+	upsert(t, leader, "pi")
+	follower := nodes[0]
+	if follower == leader {
+		follower = nodes[1]
+	}
+	for _, n := range nodes {
+		eventually(t, "the device on "+n.ID(), func() bool { return hasDevice(n, "pi") })
+	}
+	eventually(t, follower.ID()+" to catch up", follower.caughtUp)
+
+	gate, last := time.UnixMilli(1_000_000).UTC(), time.UnixMilli(2_000_000).UTC()
+	obs := &gatedObserver{
+		gate: gate.UnixMilli(), entered: make(chan struct{}), release: make(chan struct{}),
+		local: map[int64]bool{},
+	}
+	follower.ObserveApplies(obs)
+	var release sync.Once
+	open := func() { release.Do(func() { close(obs.release) }) }
+	t.Cleanup(open)
+
+	ctx := t.Context()
+	if _, err := leader.st.Devices().SetBootTime(ctx, "pi", gate); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-obs.entered:
+	case <-time.After(waitFor):
+		t.Fatal("the gate entry was not applied on the follower")
+	}
+	// The follower's state machine holds the gate entry; raft there commits
+	// the next one and hands it over all the same.
+	if _, err := leader.st.Devices().SetBootTime(ctx, "pi", last); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "raft on the follower to hand the last entry over", func() bool {
+		return follower.raft.AppliedIndex() == leader.raft.LastIndex() &&
+			follower.raft.LastIndex() == leader.raft.LastIndex()
+	})
+	if follower.caughtUp() {
+		t.Fatal("caughtUp while the store has not applied the last committed entry")
+	}
+	open()
+	eventually(t, follower.ID()+" to catch up once the store applied it", follower.caughtUp)
+}

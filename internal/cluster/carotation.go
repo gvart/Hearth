@@ -1166,7 +1166,10 @@ func (n *Node) dropLeftoverNext(ctx context.Context) {
 
 // caughtUp reports whether this follower has a leader, and has applied every
 // entry of its log, all of them committed: an entry this hub appended as an
-// earlier leader is then either applied or gone.
+// earlier leader is then either applied or gone. Applied means the store
+// reflects it (appliedThrough), not only that raft handed it to the state
+// machine: a hub that restarted restores its latest snapshot first, which
+// may predate the rotation, and must not take that store for the cluster's.
 func (n *Node) caughtUp() bool {
 	if n.raft == nil || n.Leader().ID == "" {
 		return false
@@ -1175,8 +1178,7 @@ func (n *Node) caughtUp() bool {
 	if err != nil {
 		return false
 	}
-	last, applied := n.raft.LastIndex(), n.raft.AppliedIndex()
-	return commit > 0 && last == commit && applied == commit
+	return commit > 0 && n.raft.LastIndex() == commit && n.appliedThrough(commit)
 }
 
 // dropOrphanNext drops this follower's next CA unless the store, caught up,
