@@ -597,6 +597,17 @@ table {
   text-align: right;
 }
 
+/* The device a scan ran from, under the source pills: narrow, so the actions stay in view. */
+.scanned-by {
+  display: block;
+  max-width: 8rem;
+  margin-top: 0.15rem;
+  overflow: hidden;
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .host-actions {
   display: inline-flex;
   gap: 0.25rem;

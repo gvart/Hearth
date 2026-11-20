@@ -31,6 +31,12 @@ func TestAPINetworkHosts(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	// The Pi swept a VLAN the hub is not on and found a camera.
+	if _, err := f.st.NetworkHosts().RecordScanFrom(ctx, now, time.Hour, store.ScanScope{ScannedBy: "pi"}, []store.NetworkHost{
+		{MAC: "00:11:32:00:00:04", IP: "10.0.5.7"},
+	}); err != nil {
+		t.Fatal(err)
+	}
 	// Pi-hole names the NAS and knows a TV on another VLAN.
 	if err := f.st.NetworkHosts().RecordImport(ctx, now, []store.ImportedHost{
 		{MAC: "00:11:32:00:00:02", IP: "192.168.2.20", Hostname: "nas", HostnameSource: store.SourcePihole, Sources: []string{store.SourcePihole}},
@@ -50,7 +56,7 @@ func TestAPINetworkHosts(t *testing.T) {
 	got := decode[struct {
 		Hosts []NetworkHostJSON `json:"hosts"`
 	}](t, resp).Hosts
-	if len(got) != 3 {
+	if len(got) != 4 {
 		t.Fatalf("hosts = %+v", got)
 	}
 	byMAC := map[string]NetworkHostJSON{}
@@ -67,6 +73,9 @@ func TestAPINetworkHosts(t *testing.T) {
 	}
 	if h := byMAC["aa:bb:cc:00:00:03"]; h.Hostname != "tv" || strings.Join(h.Sources, ",") != "dhcp" {
 		t.Errorf("TV = %+v; want the lease-only host", h)
+	}
+	if h := byMAC["00:11:32:00:00:04"]; h.ScannedBy != "pi" || byMAC["00:11:32:00:00:02"].ScannedBy != "" {
+		t.Errorf("camera = %+v; want it scanned by pi, the NAS by the hub", h)
 	}
 }
 

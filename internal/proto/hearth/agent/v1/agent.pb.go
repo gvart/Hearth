@@ -38,6 +38,7 @@ type AgentMessage struct {
 	//	*AgentMessage_ProbeResult
 	//	*AgentMessage_LogLines
 	//	*AgentMessage_ShellEvent
+	//	*AgentMessage_ScanResult
 	Payload       isAgentMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -152,6 +153,15 @@ func (x *AgentMessage) GetShellEvent() *ShellEvent {
 	return nil
 }
 
+func (x *AgentMessage) GetScanResult() *ScanResult {
+	if x != nil {
+		if x, ok := x.Payload.(*AgentMessage_ScanResult); ok {
+			return x.ScanResult
+		}
+	}
+	return nil
+}
+
 type isAgentMessage_Payload interface {
 	isAgentMessage_Payload()
 }
@@ -189,6 +199,10 @@ type AgentMessage_ShellEvent struct {
 	ShellEvent *ShellEvent `protobuf:"bytes,8,opt,name=shell_event,json=shellEvent,proto3,oneof"`
 }
 
+type AgentMessage_ScanResult struct {
+	ScanResult *ScanResult `protobuf:"bytes,9,opt,name=scan_result,json=scanResult,proto3,oneof"`
+}
+
 func (*AgentMessage_Hello) isAgentMessage_Payload() {}
 
 func (*AgentMessage_Heartbeat) isAgentMessage_Payload() {}
@@ -205,6 +219,8 @@ func (*AgentMessage_LogLines) isAgentMessage_Payload() {}
 
 func (*AgentMessage_ShellEvent) isAgentMessage_Payload() {}
 
+func (*AgentMessage_ScanResult) isAgentMessage_Payload() {}
+
 // HubMessage is anything the hub sends to an agent.
 type HubMessage struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -217,6 +233,7 @@ type HubMessage struct {
 	//	*HubMessage_LogRequest
 	//	*HubMessage_LogCancel
 	//	*HubMessage_ShellRequest
+	//	*HubMessage_ScanRequest
 	Payload       isHubMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -322,6 +339,15 @@ func (x *HubMessage) GetShellRequest() *ShellRequest {
 	return nil
 }
 
+func (x *HubMessage) GetScanRequest() *ScanRequest {
+	if x != nil {
+		if x, ok := x.Payload.(*HubMessage_ScanRequest); ok {
+			return x.ScanRequest
+		}
+	}
+	return nil
+}
+
 type isHubMessage_Payload interface {
 	isHubMessage_Payload()
 }
@@ -354,6 +380,10 @@ type HubMessage_ShellRequest struct {
 	ShellRequest *ShellRequest `protobuf:"bytes,7,opt,name=shell_request,json=shellRequest,proto3,oneof"`
 }
 
+type HubMessage_ScanRequest struct {
+	ScanRequest *ScanRequest `protobuf:"bytes,8,opt,name=scan_request,json=scanRequest,proto3,oneof"`
+}
+
 func (*HubMessage_Welcome) isHubMessage_Payload() {}
 
 func (*HubMessage_ExecRequest) isHubMessage_Payload() {}
@@ -367,6 +397,8 @@ func (*HubMessage_LogRequest) isHubMessage_Payload() {}
 func (*HubMessage_LogCancel) isHubMessage_Payload() {}
 
 func (*HubMessage_ShellRequest) isHubMessage_Payload() {}
+
+func (*HubMessage_ScanRequest) isHubMessage_Payload() {}
 
 // ProtocolVersion is the agent<->hub protocol version. A major bump is incompatible;
 // the hub rejects majors it does not know.
@@ -596,7 +628,12 @@ type Ceiling struct {
 	// shell allows ShellRequests: the hub may open an interactive shell, on a
 	// pseudo-terminal, as the agent's user. Reported by agents of protocol
 	// minor 6 and later.
-	Shell         bool `protobuf:"varint,5,opt,name=shell,proto3" json:"shell,omitempty"`
+	Shell bool `protobuf:"varint,5,opt,name=shell,proto3" json:"shell,omitempty"`
+	// scan are the IPv4 subnets (CIDRs) the hub may have this device sweep for
+	// network discovery: a ScanRequest's subnets must each lie within one of
+	// them. Empty allows no scan. Reported by agents of protocol minor 7 and
+	// later.
+	Scan          []string `protobuf:"bytes,6,rep,name=scan,proto3" json:"scan,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -664,6 +701,13 @@ func (x *Ceiling) GetShell() bool {
 		return x.Shell
 	}
 	return false
+}
+
+func (x *Ceiling) GetScan() []string {
+	if x != nil {
+		return x.Scan
+	}
+	return nil
 }
 
 // Disk is a mounted filesystem.
@@ -2635,11 +2679,216 @@ func (x *ShellExited) GetError() string {
 	return ""
 }
 
+// ScanRequest asks the agent to run a network discovery scan from the device
+// (an ARP sweep of each subnet, with names from mDNS and LAN reverse DNS), for
+// subnets the hub itself is not attached to. The agent runs it only if each
+// subnet lies within its ceiling's scan subnets, and answers with a ScanResult
+// of the same id. Hubs send it only to agents of protocol minor 7 and later.
+type ScanRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// id correlates the ScanResult; unique per stream.
+	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// subnets are IPv4 CIDRs, at most 1024 addresses in all.
+	Subnets []string `protobuf:"bytes,2,rep,name=subnets,proto3" json:"subnets,omitempty"`
+	// timeout bounds the scan.
+	Timeout       *durationpb.Duration `protobuf:"bytes,3,opt,name=timeout,proto3" json:"timeout,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ScanRequest) Reset() {
+	*x = ScanRequest{}
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScanRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScanRequest) ProtoMessage() {}
+
+func (x *ScanRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScanRequest.ProtoReflect.Descriptor instead.
+func (*ScanRequest) Descriptor() ([]byte, []int) {
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *ScanRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ScanRequest) GetSubnets() []string {
+	if x != nil {
+		return x.Subnets
+	}
+	return nil
+}
+
+func (x *ScanRequest) GetTimeout() *durationpb.Duration {
+	if x != nil {
+		return x.Timeout
+	}
+	return nil
+}
+
+// ScanResult is the outcome of a ScanRequest.
+type ScanResult struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// id is the id of the ScanRequest it answers.
+	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// denied is set when the agent refused the request: a subnet is beyond its
+	// ceiling. Nothing was sent on the network.
+	Denied bool `protobuf:"varint,2,opt,name=denied,proto3" json:"denied,omitempty"`
+	// error says why the scan failed or was denied; empty when it ran.
+	Error string `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
+	// hosts are the hosts that answered, one per MAC address.
+	Hosts         []*ScannedHost `protobuf:"bytes,4,rep,name=hosts,proto3" json:"hosts,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ScanResult) Reset() {
+	*x = ScanResult{}
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScanResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScanResult) ProtoMessage() {}
+
+func (x *ScanResult) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScanResult.ProtoReflect.Descriptor instead.
+func (*ScanResult) Descriptor() ([]byte, []int) {
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *ScanResult) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ScanResult) GetDenied() bool {
+	if x != nil {
+		return x.Denied
+	}
+	return false
+}
+
+func (x *ScanResult) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *ScanResult) GetHosts() []*ScannedHost {
+	if x != nil {
+		return x.Hosts
+	}
+	return nil
+}
+
+// ScannedHost is a host a scan found. The hub looks up its vendor.
+type ScannedHost struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// mac is lower-case and colon-separated.
+	Mac string `protobuf:"bytes,1,opt,name=mac,proto3" json:"mac,omitempty"`
+	Ip  string `protobuf:"bytes,2,opt,name=ip,proto3" json:"ip,omitempty"`
+	// hostname is from mDNS or LAN reverse DNS; empty if neither named it.
+	Hostname      string `protobuf:"bytes,3,opt,name=hostname,proto3" json:"hostname,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ScannedHost) Reset() {
+	*x = ScannedHost{}
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScannedHost) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScannedHost) ProtoMessage() {}
+
+func (x *ScannedHost) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScannedHost.ProtoReflect.Descriptor instead.
+func (*ScannedHost) Descriptor() ([]byte, []int) {
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *ScannedHost) GetMac() string {
+	if x != nil {
+		return x.Mac
+	}
+	return ""
+}
+
+func (x *ScannedHost) GetIp() string {
+	if x != nil {
+		return x.Ip
+	}
+	return ""
+}
+
+func (x *ScannedHost) GetHostname() string {
+	if x != nil {
+		return x.Hostname
+	}
+	return ""
+}
+
 var File_hearth_agent_v1_agent_proto protoreflect.FileDescriptor
 
 const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"\n" +
-	"\x1bhearth/agent/v1/agent.proto\x12\x0fhearth.agent.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xf8\x03\n" +
+	"\x1bhearth/agent/v1/agent.proto\x12\x0fhearth.agent.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb8\x04\n" +
 	"\fAgentMessage\x12.\n" +
 	"\x05hello\x18\x01 \x01(\v2\x16.hearth.agent.v1.HelloH\x00R\x05hello\x12:\n" +
 	"\theartbeat\x18\x02 \x01(\v2\x1a.hearth.agent.v1.HeartbeatH\x00R\theartbeat\x12D\n" +
@@ -2650,8 +2899,10 @@ const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"\fprobe_result\x18\x06 \x01(\v2\x1c.hearth.agent.v1.ProbeResultH\x00R\vprobeResult\x128\n" +
 	"\tlog_lines\x18\a \x01(\v2\x19.hearth.agent.v1.LogLinesH\x00R\blogLines\x12>\n" +
 	"\vshell_event\x18\b \x01(\v2\x1b.hearth.agent.v1.ShellEventH\x00R\n" +
-	"shellEventB\t\n" +
-	"\apayload\"\xc6\x03\n" +
+	"shellEvent\x12>\n" +
+	"\vscan_result\x18\t \x01(\v2\x1b.hearth.agent.v1.ScanResultH\x00R\n" +
+	"scanResultB\t\n" +
+	"\apayload\"\x89\x04\n" +
 	"\n" +
 	"HubMessage\x124\n" +
 	"\awelcome\x18\x01 \x01(\v2\x18.hearth.agent.v1.WelcomeH\x00R\awelcome\x12A\n" +
@@ -2662,7 +2913,8 @@ const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"logRequest\x12;\n" +
 	"\n" +
 	"log_cancel\x18\x06 \x01(\v2\x1a.hearth.agent.v1.LogCancelH\x00R\tlogCancel\x12D\n" +
-	"\rshell_request\x18\a \x01(\v2\x1d.hearth.agent.v1.ShellRequestH\x00R\fshellRequestB\t\n" +
+	"\rshell_request\x18\a \x01(\v2\x1d.hearth.agent.v1.ShellRequestH\x00R\fshellRequest\x12A\n" +
+	"\fscan_request\x18\b \x01(\v2\x1c.hearth.agent.v1.ScanRequestH\x00R\vscanRequestB\t\n" +
 	"\apayload\"=\n" +
 	"\x0fProtocolVersion\x12\x14\n" +
 	"\x05major\x18\x01 \x01(\rR\x05major\x12\x14\n" +
@@ -2684,13 +2936,14 @@ const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"interfaces\x12#\n" +
 	"\ragent_version\x18\f \x01(\tR\fagentVersion\x12\"\n" +
 	"\fcapabilities\x18\r \x03(\tR\fcapabilities\x122\n" +
-	"\aceiling\x18\x0e \x01(\v2\x18.hearth.agent.v1.CeilingR\aceiling\"w\n" +
+	"\aceiling\x18\x0e \x01(\v2\x18.hearth.agent.v1.CeilingR\aceiling\"\x8b\x01\n" +
 	"\aCeiling\x12\x12\n" +
 	"\x04exec\x18\x01 \x03(\tR\x04exec\x12\x18\n" +
 	"\arestart\x18\x02 \x03(\tR\arestart\x12\x14\n" +
 	"\x05probe\x18\x03 \x01(\bR\x05probe\x12\x12\n" +
 	"\x04logs\x18\x04 \x03(\tR\x04logs\x12\x14\n" +
-	"\x05shell\x18\x05 \x01(\bR\x05shell\"w\n" +
+	"\x05shell\x18\x05 \x01(\bR\x05shell\x12\x12\n" +
+	"\x04scan\x18\x06 \x03(\tR\x04scan\"w\n" +
 	"\x04Disk\x12\x16\n" +
 	"\x06device\x18\x01 \x01(\tR\x06device\x12\x1e\n" +
 	"\n" +
@@ -2812,7 +3065,21 @@ const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"\vShellExited\x12\x16\n" +
 	"\x06denied\x18\x01 \x01(\bR\x06denied\x12\x1b\n" +
 	"\texit_code\x18\x02 \x01(\x05R\bexitCode\x12\x14\n" +
-	"\x05error\x18\x03 \x01(\tR\x05error2Y\n" +
+	"\x05error\x18\x03 \x01(\tR\x05error\"l\n" +
+	"\vScanRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
+	"\asubnets\x18\x02 \x03(\tR\asubnets\x123\n" +
+	"\atimeout\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\atimeout\"~\n" +
+	"\n" +
+	"ScanResult\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
+	"\x06denied\x18\x02 \x01(\bR\x06denied\x12\x14\n" +
+	"\x05error\x18\x03 \x01(\tR\x05error\x122\n" +
+	"\x05hosts\x18\x04 \x03(\v2\x1c.hearth.agent.v1.ScannedHostR\x05hosts\"K\n" +
+	"\vScannedHost\x12\x10\n" +
+	"\x03mac\x18\x01 \x01(\tR\x03mac\x12\x0e\n" +
+	"\x02ip\x18\x02 \x01(\tR\x02ip\x12\x1a\n" +
+	"\bhostname\x18\x03 \x01(\tR\bhostname2Y\n" +
 	"\fAgentService\x12I\n" +
 	"\aConnect\x12\x1d.hearth.agent.v1.AgentMessage\x1a\x1b.hearth.agent.v1.HubMessage(\x010\x01B\xbf\x01\n" +
 	"\x13com.hearth.agent.v1B\n" +
@@ -2830,7 +3097,7 @@ func file_hearth_agent_v1_agent_proto_rawDescGZIP() []byte {
 	return file_hearth_agent_v1_agent_proto_rawDescData
 }
 
-var file_hearth_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 36)
+var file_hearth_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 39)
 var file_hearth_agent_v1_agent_proto_goTypes = []any{
 	(*AgentMessage)(nil),          // 0: hearth.agent.v1.AgentMessage
 	(*HubMessage)(nil),            // 1: hearth.agent.v1.HubMessage
@@ -2867,9 +3134,12 @@ var file_hearth_agent_v1_agent_proto_goTypes = []any{
 	(*ShellEvent)(nil),            // 32: hearth.agent.v1.ShellEvent
 	(*ShellStarted)(nil),          // 33: hearth.agent.v1.ShellStarted
 	(*ShellExited)(nil),           // 34: hearth.agent.v1.ShellExited
-	nil,                           // 35: hearth.agent.v1.MetricSample.LabelsEntry
-	(*timestamppb.Timestamp)(nil), // 36: google.protobuf.Timestamp
-	(*durationpb.Duration)(nil),   // 37: google.protobuf.Duration
+	(*ScanRequest)(nil),           // 35: hearth.agent.v1.ScanRequest
+	(*ScanResult)(nil),            // 36: hearth.agent.v1.ScanResult
+	(*ScannedHost)(nil),           // 37: hearth.agent.v1.ScannedHost
+	nil,                           // 38: hearth.agent.v1.MetricSample.LabelsEntry
+	(*timestamppb.Timestamp)(nil), // 39: google.protobuf.Timestamp
+	(*durationpb.Duration)(nil),   // 40: google.protobuf.Duration
 }
 var file_hearth_agent_v1_agent_proto_depIdxs = []int32{
 	3,  // 0: hearth.agent.v1.AgentMessage.hello:type_name -> hearth.agent.v1.Hello
@@ -2880,47 +3150,51 @@ var file_hearth_agent_v1_agent_proto_depIdxs = []int32{
 	21, // 5: hearth.agent.v1.AgentMessage.probe_result:type_name -> hearth.agent.v1.ProbeResult
 	25, // 6: hearth.agent.v1.AgentMessage.log_lines:type_name -> hearth.agent.v1.LogLines
 	32, // 7: hearth.agent.v1.AgentMessage.shell_event:type_name -> hearth.agent.v1.ShellEvent
-	11, // 8: hearth.agent.v1.HubMessage.welcome:type_name -> hearth.agent.v1.Welcome
-	14, // 9: hearth.agent.v1.HubMessage.exec_request:type_name -> hearth.agent.v1.ExecRequest
-	27, // 10: hearth.agent.v1.HubMessage.ping:type_name -> hearth.agent.v1.Ping
-	17, // 11: hearth.agent.v1.HubMessage.probe_request:type_name -> hearth.agent.v1.ProbeRequest
-	22, // 12: hearth.agent.v1.HubMessage.log_request:type_name -> hearth.agent.v1.LogRequest
-	24, // 13: hearth.agent.v1.HubMessage.log_cancel:type_name -> hearth.agent.v1.LogCancel
-	28, // 14: hearth.agent.v1.HubMessage.shell_request:type_name -> hearth.agent.v1.ShellRequest
-	2,  // 15: hearth.agent.v1.Hello.protocol_version:type_name -> hearth.agent.v1.ProtocolVersion
-	5,  // 16: hearth.agent.v1.Hello.disks:type_name -> hearth.agent.v1.Disk
-	6,  // 17: hearth.agent.v1.Hello.interfaces:type_name -> hearth.agent.v1.NetworkInterface
-	4,  // 18: hearth.agent.v1.Hello.ceiling:type_name -> hearth.agent.v1.Ceiling
-	36, // 19: hearth.agent.v1.Heartbeat.ts:type_name -> google.protobuf.Timestamp
-	37, // 20: hearth.agent.v1.Heartbeat.uptime:type_name -> google.protobuf.Duration
-	9,  // 21: hearth.agent.v1.MetricsBatch.samples:type_name -> hearth.agent.v1.MetricSample
-	35, // 22: hearth.agent.v1.MetricSample.labels:type_name -> hearth.agent.v1.MetricSample.LabelsEntry
-	36, // 23: hearth.agent.v1.MetricSample.ts:type_name -> google.protobuf.Timestamp
-	36, // 24: hearth.agent.v1.Welcome.server_time:type_name -> google.protobuf.Timestamp
-	37, // 25: hearth.agent.v1.Welcome.heartbeat_interval:type_name -> google.protobuf.Duration
-	37, // 26: hearth.agent.v1.ExecRequest.timeout:type_name -> google.protobuf.Duration
-	15, // 27: hearth.agent.v1.ExecRequest.command:type_name -> hearth.agent.v1.Command
-	16, // 28: hearth.agent.v1.ExecRequest.restart:type_name -> hearth.agent.v1.RestartService
-	37, // 29: hearth.agent.v1.ProbeRequest.timeout:type_name -> google.protobuf.Duration
-	18, // 30: hearth.agent.v1.ProbeRequest.http:type_name -> hearth.agent.v1.HTTPProbe
-	19, // 31: hearth.agent.v1.ProbeRequest.tcp:type_name -> hearth.agent.v1.TCPProbe
-	20, // 32: hearth.agent.v1.ProbeRequest.dns:type_name -> hearth.agent.v1.DNSProbe
-	23, // 33: hearth.agent.v1.LogRequest.source:type_name -> hearth.agent.v1.LogSource
-	26, // 34: hearth.agent.v1.LogLines.lines:type_name -> hearth.agent.v1.LogLine
-	36, // 35: hearth.agent.v1.LogLine.ts:type_name -> google.protobuf.Timestamp
-	29, // 36: hearth.agent.v1.ShellRequest.open:type_name -> hearth.agent.v1.ShellOpen
-	30, // 37: hearth.agent.v1.ShellRequest.resize:type_name -> hearth.agent.v1.TerminalSize
-	31, // 38: hearth.agent.v1.ShellRequest.close:type_name -> hearth.agent.v1.ShellClose
-	30, // 39: hearth.agent.v1.ShellOpen.size:type_name -> hearth.agent.v1.TerminalSize
-	33, // 40: hearth.agent.v1.ShellEvent.started:type_name -> hearth.agent.v1.ShellStarted
-	34, // 41: hearth.agent.v1.ShellEvent.exited:type_name -> hearth.agent.v1.ShellExited
-	0,  // 42: hearth.agent.v1.AgentService.Connect:input_type -> hearth.agent.v1.AgentMessage
-	1,  // 43: hearth.agent.v1.AgentService.Connect:output_type -> hearth.agent.v1.HubMessage
-	43, // [43:44] is the sub-list for method output_type
-	42, // [42:43] is the sub-list for method input_type
-	42, // [42:42] is the sub-list for extension type_name
-	42, // [42:42] is the sub-list for extension extendee
-	0,  // [0:42] is the sub-list for field type_name
+	36, // 8: hearth.agent.v1.AgentMessage.scan_result:type_name -> hearth.agent.v1.ScanResult
+	11, // 9: hearth.agent.v1.HubMessage.welcome:type_name -> hearth.agent.v1.Welcome
+	14, // 10: hearth.agent.v1.HubMessage.exec_request:type_name -> hearth.agent.v1.ExecRequest
+	27, // 11: hearth.agent.v1.HubMessage.ping:type_name -> hearth.agent.v1.Ping
+	17, // 12: hearth.agent.v1.HubMessage.probe_request:type_name -> hearth.agent.v1.ProbeRequest
+	22, // 13: hearth.agent.v1.HubMessage.log_request:type_name -> hearth.agent.v1.LogRequest
+	24, // 14: hearth.agent.v1.HubMessage.log_cancel:type_name -> hearth.agent.v1.LogCancel
+	28, // 15: hearth.agent.v1.HubMessage.shell_request:type_name -> hearth.agent.v1.ShellRequest
+	35, // 16: hearth.agent.v1.HubMessage.scan_request:type_name -> hearth.agent.v1.ScanRequest
+	2,  // 17: hearth.agent.v1.Hello.protocol_version:type_name -> hearth.agent.v1.ProtocolVersion
+	5,  // 18: hearth.agent.v1.Hello.disks:type_name -> hearth.agent.v1.Disk
+	6,  // 19: hearth.agent.v1.Hello.interfaces:type_name -> hearth.agent.v1.NetworkInterface
+	4,  // 20: hearth.agent.v1.Hello.ceiling:type_name -> hearth.agent.v1.Ceiling
+	39, // 21: hearth.agent.v1.Heartbeat.ts:type_name -> google.protobuf.Timestamp
+	40, // 22: hearth.agent.v1.Heartbeat.uptime:type_name -> google.protobuf.Duration
+	9,  // 23: hearth.agent.v1.MetricsBatch.samples:type_name -> hearth.agent.v1.MetricSample
+	38, // 24: hearth.agent.v1.MetricSample.labels:type_name -> hearth.agent.v1.MetricSample.LabelsEntry
+	39, // 25: hearth.agent.v1.MetricSample.ts:type_name -> google.protobuf.Timestamp
+	39, // 26: hearth.agent.v1.Welcome.server_time:type_name -> google.protobuf.Timestamp
+	40, // 27: hearth.agent.v1.Welcome.heartbeat_interval:type_name -> google.protobuf.Duration
+	40, // 28: hearth.agent.v1.ExecRequest.timeout:type_name -> google.protobuf.Duration
+	15, // 29: hearth.agent.v1.ExecRequest.command:type_name -> hearth.agent.v1.Command
+	16, // 30: hearth.agent.v1.ExecRequest.restart:type_name -> hearth.agent.v1.RestartService
+	40, // 31: hearth.agent.v1.ProbeRequest.timeout:type_name -> google.protobuf.Duration
+	18, // 32: hearth.agent.v1.ProbeRequest.http:type_name -> hearth.agent.v1.HTTPProbe
+	19, // 33: hearth.agent.v1.ProbeRequest.tcp:type_name -> hearth.agent.v1.TCPProbe
+	20, // 34: hearth.agent.v1.ProbeRequest.dns:type_name -> hearth.agent.v1.DNSProbe
+	23, // 35: hearth.agent.v1.LogRequest.source:type_name -> hearth.agent.v1.LogSource
+	26, // 36: hearth.agent.v1.LogLines.lines:type_name -> hearth.agent.v1.LogLine
+	39, // 37: hearth.agent.v1.LogLine.ts:type_name -> google.protobuf.Timestamp
+	29, // 38: hearth.agent.v1.ShellRequest.open:type_name -> hearth.agent.v1.ShellOpen
+	30, // 39: hearth.agent.v1.ShellRequest.resize:type_name -> hearth.agent.v1.TerminalSize
+	31, // 40: hearth.agent.v1.ShellRequest.close:type_name -> hearth.agent.v1.ShellClose
+	30, // 41: hearth.agent.v1.ShellOpen.size:type_name -> hearth.agent.v1.TerminalSize
+	33, // 42: hearth.agent.v1.ShellEvent.started:type_name -> hearth.agent.v1.ShellStarted
+	34, // 43: hearth.agent.v1.ShellEvent.exited:type_name -> hearth.agent.v1.ShellExited
+	40, // 44: hearth.agent.v1.ScanRequest.timeout:type_name -> google.protobuf.Duration
+	37, // 45: hearth.agent.v1.ScanResult.hosts:type_name -> hearth.agent.v1.ScannedHost
+	0,  // 46: hearth.agent.v1.AgentService.Connect:input_type -> hearth.agent.v1.AgentMessage
+	1,  // 47: hearth.agent.v1.AgentService.Connect:output_type -> hearth.agent.v1.HubMessage
+	47, // [47:48] is the sub-list for method output_type
+	46, // [46:47] is the sub-list for method input_type
+	46, // [46:46] is the sub-list for extension type_name
+	46, // [46:46] is the sub-list for extension extendee
+	0,  // [0:46] is the sub-list for field type_name
 }
 
 func init() { file_hearth_agent_v1_agent_proto_init() }
@@ -2937,6 +3211,7 @@ func file_hearth_agent_v1_agent_proto_init() {
 		(*AgentMessage_ProbeResult)(nil),
 		(*AgentMessage_LogLines)(nil),
 		(*AgentMessage_ShellEvent)(nil),
+		(*AgentMessage_ScanResult)(nil),
 	}
 	file_hearth_agent_v1_agent_proto_msgTypes[1].OneofWrappers = []any{
 		(*HubMessage_Welcome)(nil),
@@ -2946,6 +3221,7 @@ func file_hearth_agent_v1_agent_proto_init() {
 		(*HubMessage_LogRequest)(nil),
 		(*HubMessage_LogCancel)(nil),
 		(*HubMessage_ShellRequest)(nil),
+		(*HubMessage_ScanRequest)(nil),
 	}
 	file_hearth_agent_v1_agent_proto_msgTypes[14].OneofWrappers = []any{
 		(*ExecRequest_Command)(nil),
@@ -2974,7 +3250,7 @@ func file_hearth_agent_v1_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_hearth_agent_v1_agent_proto_rawDesc), len(file_hearth_agent_v1_agent_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   36,
+			NumMessages:   39,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

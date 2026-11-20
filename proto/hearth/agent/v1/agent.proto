@@ -26,6 +26,7 @@ message AgentMessage {
     ProbeResult probe_result = 6;
     LogLines log_lines = 7;
     ShellEvent shell_event = 8;
+    ScanResult scan_result = 9;
   }
 }
 
@@ -39,6 +40,7 @@ message HubMessage {
     LogRequest log_request = 5;
     LogCancel log_cancel = 6;
     ShellRequest shell_request = 7;
+    ScanRequest scan_request = 8;
   }
 }
 
@@ -92,6 +94,11 @@ message Ceiling {
   // pseudo-terminal, as the agent's user. Reported by agents of protocol
   // minor 6 and later.
   bool shell = 5;
+  // scan are the IPv4 subnets (CIDRs) the hub may have this device sweep for
+  // network discovery: a ScanRequest's subnets must each lie within one of
+  // them. Empty allows no scan. Reported by agents of protocol minor 7 and
+  // later.
+  repeated string scan = 6;
 }
 
 // Disk is a mounted filesystem.
@@ -384,4 +391,40 @@ message ShellExited {
   // error says why the session failed or was denied; empty when the shell
   // exited by itself.
   string error = 3;
+}
+
+// ScanRequest asks the agent to run a network discovery scan from the device
+// (an ARP sweep of each subnet, with names from mDNS and LAN reverse DNS), for
+// subnets the hub itself is not attached to. The agent runs it only if each
+// subnet lies within its ceiling's scan subnets, and answers with a ScanResult
+// of the same id. Hubs send it only to agents of protocol minor 7 and later.
+message ScanRequest {
+  // id correlates the ScanResult; unique per stream.
+  string id = 1;
+  // subnets are IPv4 CIDRs, at most 1024 addresses in all.
+  repeated string subnets = 2;
+  // timeout bounds the scan.
+  google.protobuf.Duration timeout = 3;
+}
+
+// ScanResult is the outcome of a ScanRequest.
+message ScanResult {
+  // id is the id of the ScanRequest it answers.
+  string id = 1;
+  // denied is set when the agent refused the request: a subnet is beyond its
+  // ceiling. Nothing was sent on the network.
+  bool denied = 2;
+  // error says why the scan failed or was denied; empty when it ran.
+  string error = 3;
+  // hosts are the hosts that answered, one per MAC address.
+  repeated ScannedHost hosts = 4;
+}
+
+// ScannedHost is a host a scan found. The hub looks up its vendor.
+message ScannedHost {
+  // mac is lower-case and colon-separated.
+  string mac = 1;
+  string ip = 2;
+  // hostname is from mDNS or LAN reverse DNS; empty if neither named it.
+  string hostname = 3;
 }

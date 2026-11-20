@@ -37,7 +37,9 @@ func newAgentRunCmd() *cobra.Command {
 			"--allow-logs names the logs the hub's UI may stream from here; logs can hold secrets, so none\n" +
 			"are readable without it.\n" +
 			"--allow-shell lets an admin open a shell here from the web UI's terminal, as this agent's user\n" +
-			"(Linux and macOS).",
+			"(Linux and macOS).\n" +
+			"--allow-scan lets the hub's network discovery sweep a subnet from here (--discover-subnet\n" +
+			"CIDR@device on the hub), for a subnet the hub is not on; none may be swept without it.",
 		Example: "  hearth agent run --allow-restart systemd:pihole-FTL.service --allow-restart docker:jellyfin \\\n" +
 			"    --allow-exec /usr/bin/df --allow-logs 'systemd:pihole-FTL.service' --allow-logs 'docker:*'",
 		Args: cobra.NoArgs,
@@ -45,6 +47,11 @@ func newAgentRunCmd() *cobra.Command {
 			for _, e := range ceiling.Logs {
 				if err := agent.ParseLogs(e); err != nil {
 					return fmt.Errorf("--allow-logs: %w", err)
+				}
+			}
+			for _, e := range ceiling.Scan {
+				if err := agent.ParseScan(e); err != nil {
+					return fmt.Errorf("--allow-scan: %w", err)
 				}
 			}
 			for _, e := range ceiling.Restart {
@@ -79,6 +86,9 @@ func newAgentRunCmd() *cobra.Command {
 			"name may be a glob (systemd:*, docker:*); repeatable")
 	cmd.Flags().BoolVar(&ceiling.Shell, "allow-shell", false,
 		"let an admin open an interactive shell on this device from the web UI, as this agent's user")
+	cmd.Flags().StringArrayVar(&ceiling.Scan, "allow-scan", nil,
+		"IPv4 subnet the hub's network discovery may sweep from this device, e.g. 10.0.5.0/24 (or a part of it);\n"+
+			"repeatable (default: none)")
 	return cmd
 }
 

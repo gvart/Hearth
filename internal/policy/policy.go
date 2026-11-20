@@ -145,7 +145,9 @@ const (
 	// MCPTokenRevoke revokes an MCP client's token.
 	MCPTokenRevoke Action = "mcp.token.revoke" //nolint:gosec // an action name
 	// NetworkScan is one network discovery scan by the hub: an ARP sweep
-	// and an mDNS browse of the configured subnets.
+	// and an mDNS browse of the configured subnets, from the hub or, for a
+	// subnet configured with a device, from that device's agent, within its
+	// capability ceiling.
 	NetworkScan Action = "network.scan"
 	// NetworkHostMark marks a host network discovery found known or
 	// ignored, or neither again, which silences or restores its new-device
@@ -379,7 +381,8 @@ var rules = map[Action]rule{
 	MCPTokenCreate: {class: Dangerous, actors: []string{ActorAdmin}},
 	MCPTokenRevoke: {class: Safe, actors: []string{ActorAdmin}},
 	// A scan only asks who is there (one datagram per address, one mDNS
-	// query) and changes nothing on any host.
+	// query) and changes nothing on any host, whether the hub or a device's
+	// agent sends it; an agent scans only subnets its ceiling allows.
 	NetworkScan: {class: Read, actors: []string{ActorHub}},
 	// Marking a host changes only which alerts the operator gets about it.
 	NetworkHostMark: {class: Safe, actors: []string{ActorWeb}},

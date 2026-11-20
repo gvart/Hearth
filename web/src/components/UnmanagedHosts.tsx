@@ -1,5 +1,5 @@
 import type { NetworkHost, NetworkHostSource } from '../api/client.ts';
-import { useMarkNetworkHost, useNetworkHosts } from '../api/hooks.ts';
+import { useDevices, useMarkNetworkHost, useNetworkHosts } from '../api/hooks.ts';
 import { relativeTime } from '../format.ts';
 
 /** A MAC whose locally administered bit is set: a randomized ("private") address. */
@@ -36,7 +36,10 @@ function byIP(a: NetworkHost, b: NetworkHost) {
  */
 export function UnmanagedHosts({ now, onAdd }: { now: number; onAdd: () => void }) {
   const hosts = useNetworkHosts();
+  const devices = useDevices();
   const mark = useMarkNetworkHost();
+  /** The name of the device a scan ran from: hosts on a subnet only that device is on. */
+  const scannerName = (id: string) => devices.data?.find((d) => d.id === id)?.name ?? id;
   const list = (hosts.data ?? []).filter((h) => h.device_id === '').sort(byIP);
   if (list.length === 0) {
     return null;
@@ -94,6 +97,14 @@ export function UnmanagedHosts({ now, onAdd }: { now: number; onAdd: () => void 
                       </span>
                     ))}
                   </span>
+                  {h.scanned_by ? (
+                    <span
+                      className="scanned-by muted"
+                      title={`Found by the ARP sweep from ${scannerName(h.scanned_by)}'s agent`}
+                    >
+                      Scanned by {scannerName(h.scanned_by)}
+                    </span>
+                  ) : null}
                 </td>
                 <td className="row-end">
                   <span className="host-actions">

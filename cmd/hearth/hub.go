@@ -125,7 +125,8 @@ func newHubCmd() *cobra.Command {
 			"--prometheus-url points the hub at an existing Prometheus; device charts then show its\n" +
 			"node-exporter data (see docs/prometheus.md).\n\n" +
 			"--discover-subnet turns on network discovery: hosts without an agent show up as\n" +
-			"unmanaged devices (see docs/discovery.md). --new-device-alerts CHANNEL then sends a\n" +
+			"unmanaged devices (see docs/discovery.md); CIDR@device sweeps a subnet from that device's\n" +
+			"agent instead, within its --allow-scan. --new-device-alerts CHANNEL then sends a\n" +
 			"notification for every new host (see docs/discovery.md). --pihole-url and --dhcp-leases add\n" +
 			"the hosts a Pi-hole or a DHCP server knows, with their names, on every VLAN (see docs/pihole.md);\n" +
 			"--netalertx-url adds the devices a NetAlertX knows (see docs/netalertx.md).\n\n" +
@@ -176,7 +177,8 @@ func newHubCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.automationsDryRun, "automations-dry-run", false,
 		"run automations as dry runs: each action's policy decision is audited, and no action runs")
 	cmd.Flags().StringSliceVar(&opts.discoverSubnets, "discover-subnet", splitList(os.Getenv("HEARTH_DISCOVER_SUBNETS")),
-		"IPv4 subnet to discover hosts on with an ARP sweep and mDNS, e.g. 192.168.1.0/24, or \"auto\" for the hub's own LANs; "+
+		"IPv4 subnet to discover hosts on with an ARP sweep and mDNS, e.g. 192.168.1.0/24, or \"auto\" for the hub's own LANs, "+
+			"or CIDR@device to sweep it from that device's agent (within its --allow-scan); "+
 			"repeatable (env HEARTH_DISCOVER_SUBNETS, comma-separated; default: off; see docs/discovery.md)")
 	cmd.Flags().DurationVar(&opts.discoverInterval, "discover-interval", discovery.DefaultInterval,
 		"time between network discovery scans, Pi-hole/DHCP lease/NetAlertX imports and Beszel reads (env HEARTH_DISCOVER_INTERVAL)")
@@ -250,9 +252,10 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	}
 	var subnets []netip.Prefix
 	var autoSubnets bool
+	var scanFrom map[string][]netip.Prefix
 	if len(opts.discoverSubnets) > 0 {
 		var err error
-		if subnets, autoSubnets, err = discovery.ParseSubnets(opts.discoverSubnets); err != nil {
+		if subnets, autoSubnets, scanFrom, err = discovery.ParseSubnetsFrom(opts.discoverSubnets); err != nil {
 			return fmt.Errorf("--discover-subnet: %w", err)
 		}
 	}
@@ -528,7 +531,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 			return fmt.Errorf("--new-device-alerts: %w", err)
 		}
 		builtin = append(builtin, a)
-		if len(subnets) == 0 && !autoSubnets {
+		if len(subnets) == 0 && !autoSubnets && len(scanFrom) == 0 {
 			log.WarnContext(ctx, "new-device alerts are on but network discovery is off: set --discover-subnet")
 		}
 	}
@@ -543,9 +546,9 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	})
 
 	var scanner *discovery.Scanner
-	if len(subnets) > 0 || autoSubnets {
+	if len(subnets) > 0 || autoSubnets || len(scanFrom) > 0 {
 		scanner = discovery.New(discovery.Config{
-			Subnets: subnets, Auto: autoSubnets, Interval: opts.discoverInterval,
+			Subnets: subnets, Auto: autoSubnets, From: scanFrom, Agents: agents, Interval: opts.discoverInterval,
 			Hosts: st.NetworkHosts(), Policy: pol, Events: reg, Log: log.With("component", "discovery"),
 		})
 	}

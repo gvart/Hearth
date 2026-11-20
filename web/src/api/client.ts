@@ -42,6 +42,8 @@ export interface Ceiling {
   logs?: string[];
   /** Whether an admin may open a terminal (the agent runs with --allow-shell). */
   shell?: boolean;
+  /** IPv4 subnets network discovery may sweep from the device (--allow-scan). */
+  scan?: string[];
 }
 
 export interface Device {
@@ -161,6 +163,8 @@ export interface NetworkHost {
   last_seen: string;
   /** What the operator marked it: known and ignored hosts fire no new-device alerts. */
   state: NetworkHostState;
+  /** The device whose agent last found the host in a scan; empty when the hub did. */
+  scanned_by: string;
 }
 
 export type NetworkHostState = '' | 'known' | 'ignored';
