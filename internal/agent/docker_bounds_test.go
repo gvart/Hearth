@@ -37,14 +37,16 @@ func jsonArray(t *testing.T, n int, elem func(i int) any) []byte {
 func TestDockerListBounded(t *testing.T) {
 	t.Parallel()
 	f := startFakeDocker(t)
-	big := strings.Repeat("x", 20<<10)
+	// Over maxDockerField and maxDockerTags, yet small: the answer stays a
+	// few MiB (20 KiB strings made a 1.6 GB one, over 6 GB of RSS under -race).
+	big := strings.Repeat("x", 4*maxDockerField)
 	f.containers = jsonArray(t, 400, func(i int) any {
 		return map[string]any{
 			"Id": big + strconv.Itoa(i), "Names": []string{"/" + big}, "Image": big, "State": big, "Status": big,
 			"Labels": map[string]string{"com.docker.compose.project": big, "com.docker.compose.service": big},
 		}
 	})
-	tags := make([]string, 200)
+	tags := make([]string, 2*maxDockerTags)
 	for i := range tags {
 		tags[i] = big + strconv.Itoa(i)
 	}
