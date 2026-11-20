@@ -2,6 +2,7 @@ internal/mqtt/config.go
   s_26e932fc13ca45::t_be35cd186fccdb 76-79
 cmd/hearth/hub.go
   s_26e932fc13ca45::t_89d43340ecdde9 618-624
+  s_26e932fc13ca45::t_240ab6e91ae79b 579
 internal/mqtt/hardening_test.go
   s_26e932fc13ca45::t_2adebc073542c6 6,35
   s_26e932fc13ca45::t_286202f7a74eb1 1-5,7-34,36-272
