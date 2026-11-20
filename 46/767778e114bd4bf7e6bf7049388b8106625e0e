@@ -18,6 +18,7 @@ internal/hub/api.go
   s_26e932fc13ca45::t_cc209e5e861691 29
 cmd/hearth/hub.go
   s_26e932fc13ca45::t_62422a1e9fda5f 39,109-110,145,226-228,295-302,404-411,457,643-646
+  s_26e932fc13ca45::t_559ab4a47a0b1e 575-576
 internal/plugins/plugin.go
   s_26e932fc13ca45::t_d8880ad30fbe3c 182-186,191,194-195,383-384,388-389
 examples/plugins/python-load/plugin.yaml
@@ -29,6 +30,8 @@ internal/hub/plugins_test.go
   s_26e932fc13ca45::t_40892facaf2504 1-89
 docs/plugins.md
   s_26e932fc13ca45::t_43a93996fb27eb 1-189
+site/src/pages.mjs
+  s_26e932fc13ca45::t_559ab4a47a0b1e 11
 ---
 {
   "schema_version": "authorship/3.0.0",
