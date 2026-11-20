@@ -44,7 +44,7 @@ func (ts Timestamp) Time() time.Time {
 }
 
 // Logical is the logical counter of ts.
-func (ts Timestamp) Logical() uint16 { return uint16(ts) }
+func (ts Timestamp) Logical() uint16 { return uint16(ts & 0xffff) }
 
 // String formats ts as its physical time and logical counter.
 func (ts Timestamp) String() string {
