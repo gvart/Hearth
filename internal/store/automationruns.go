@@ -76,10 +76,12 @@ func (r AutomationRuns) List(ctx context.Context, automationID string, limit int
 		return nil, nil
 	}
 	// liveOnly is a constant clause; values are bound.
-	q := `SELECT id, automation_id, trigger_id, started_at, finished_at, status, error, steps ` + //nolint:gosec // see above
-		`FROM automation_runs WHERE (? = '' OR automation_id = ?)` + liveOnly(v >= VersionedSchema) +
+	rest := ` FROM automation_runs WHERE (? = '' OR automation_id = ?)` + liveOnly(v >= VersionedSchema) + //nolint:gosec // see above
 		` ORDER BY started_at DESC, rowid DESC LIMIT ?`
-	rows, err := r.s.db.QueryContext(ctx, q, automationID, automationID, limit)
+	rows, err := r.s.list(ctx, automationID,
+		gather{table: "automation_runs", order: then(desc(byInt(3)), desc(byText(0))), limit: limit},
+		`SELECT id, automation_id, trigger_id, started_at, finished_at, status, error, steps`, rest,
+		automationID, automationID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list automation runs: %w", err)
 	}

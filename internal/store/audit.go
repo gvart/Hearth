@@ -457,8 +457,11 @@ func (w *writer) appendAudit(ctx context.Context, c AppendAudit, key string) (in
 			"decision": c.Decision, "result": c.Result, "detail": c.Detail, "audit_key": optString(key),
 		},
 	}
-	id, err := insertAudit(ctx, w.tx, m)
-	if err != nil {
+	var id int64
+	if err := w.dt.merge(ctx, w.tx, m, func() (err error) {
+		id, err = insertAudit(ctx, w.tx, m)
+		return err
+	}); err != nil {
 		return 0, err
 	}
 	w.muts = append(w.muts, m)

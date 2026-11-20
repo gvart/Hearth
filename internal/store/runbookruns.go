@@ -119,6 +119,7 @@ func (r RunbookRuns) Save(ctx context.Context, run RunbookRun) (int64, error) {
 	if _, err := r.s.apply(ctx, SaveRunbookRun{
 		ID: run.ID, Version: run.Version, Status: run.Status,
 		UpdatedAt: toMillis(run.UpdatedAt), FinishedAt: finished, State: string(run.State),
+		RunbookID: r.s.shardedOnly(run.RunbookID),
 	}); err != nil {
 		return 0, fmt.Errorf("save runbook run %s: %w", run.ID, err)
 	}
@@ -258,6 +259,11 @@ type SaveRunbookRun struct {
 	UpdatedAt  int64  `json:"updated_at"`
 	FinishedAt int64  `json:"finished_at"`
 	State      string `json:"state"`
+	// RunbookID routes the command to the run's replicas in a sharded
+	// cluster, which shards runs by runbook; apply does not read it. It is
+	// set only there, so a Raft member whose binary predates it still
+	// decodes the command.
+	RunbookID string `json:"runbook_id,omitempty"`
 }
 
 // Op implements Command.

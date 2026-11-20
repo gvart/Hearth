@@ -46,7 +46,7 @@ func (r Certs) RevokeDevice(ctx context.Context, deviceID string, now time.Time)
 // ErrCertRevoked if it was revoked.
 func (r Certs) Check(ctx context.Context, serial, deviceID string) error {
 	var revokedAt sql.NullInt64
-	err := r.s.db.QueryRowContext(ctx,
+	err := r.s.queryRowKey(ctx, deviceID,
 		`SELECT revoked_at FROM certs WHERE serial = ? AND device_id = ?`, serial, deviceID).Scan(&revokedAt)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):

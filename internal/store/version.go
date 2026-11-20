@@ -236,52 +236,66 @@ func (s rowScan) Scan(dest ...any) error {
 		return fmt.Errorf("scan row: %d destinations for %d columns", len(dest), len(s.cols))
 	}
 	for i, d := range dest {
-		v := s.r[s.cols[i]]
-		var err error
-		switch d := d.(type) {
-		case *string:
-			*d, err = asString(v)
-		case *int64:
-			n, ok := v.(int64)
-			if !ok {
-				err = fmt.Errorf("not an integer: %T", v)
-			}
-			*d = n
-		case *int:
-			n, ok := v.(int64)
-			if !ok {
-				err = fmt.Errorf("not an integer: %T", v)
-			}
-			*d = int(n)
-		case *bool:
-			n, ok := v.(int64)
-			if !ok {
-				err = fmt.Errorf("not an integer: %T", v)
-			}
-			*d = n != 0
-		case *[]byte:
-			switch v := v.(type) {
-			case []byte:
-				*d = slices.Clone(v)
-			case string:
-				*d = []byte(v)
-			case nil:
-				*d = nil
-			default:
-				err = fmt.Errorf("not a blob: %T", v)
-			}
-		case *sql.NullInt64:
-			err = d.Scan(v)
-		case *sql.NullString:
-			err = d.Scan(v)
-		default:
-			err = fmt.Errorf("unsupported destination %T", d)
-		}
-		if err != nil {
+		if err := scanValue(s.r[s.cols[i]], d); err != nil {
 			return fmt.Errorf("scan column %s: %w", s.cols[i], err)
 		}
 	}
 	return nil
+}
+
+// scanValue assigns v, a value SQLite returned, to d like sql.Rows.Scan,
+// for the destination types the store's scanners use.
+func scanValue(v any, d any) error {
+	var err error
+	switch d := d.(type) {
+	case *string:
+		*d, err = asString(v)
+	case *int64:
+		n, ok := v.(int64)
+		if !ok {
+			err = fmt.Errorf("not an integer: %T", v)
+		}
+		*d = n
+	case *int:
+		n, ok := v.(int64)
+		if !ok {
+			err = fmt.Errorf("not an integer: %T", v)
+		}
+		*d = int(n)
+	case *bool:
+		n, ok := v.(int64)
+		if !ok {
+			err = fmt.Errorf("not an integer: %T", v)
+		}
+		*d = n != 0
+	case *float64:
+		switch v := v.(type) {
+		case float64:
+			*d = v
+		case int64:
+			*d = float64(v)
+		default:
+			err = fmt.Errorf("not a number: %T", v)
+		}
+	case *[]byte:
+		switch v := v.(type) {
+		case []byte:
+			*d = slices.Clone(v)
+		case string:
+			*d = []byte(v)
+		case nil:
+			*d = nil
+		default:
+			err = fmt.Errorf("not a blob: %T", v)
+		}
+	case *any:
+		*d = v
+	case sql.Scanner:
+		err = d.Scan(v)
+	default:
+		err = fmt.Errorf("unsupported destination %T", d)
+	}
+	return err
 }
 
 func asString(v any) (string, error) {
@@ -311,6 +325,8 @@ type writer struct {
 	versioned bool
 	// muts are the mutations merged so far, in order.
 	muts []Mutation
+	// dt collects the digest changes (nil without digests).
+	dt *digestTx
 }
 
 // get returns the live row of table with primary key pk (in the order of
@@ -450,7 +466,10 @@ func (w *writer) write(ctx context.Context, table string, r, old row, deleted bo
 		Table: table, Row: data, Deleted: deleted,
 		HLC: max(w.stamp.HLC, stored+1), Origin: w.stamp.Origin,
 	}
-	if _, err := mergeRow(ctx, w.s, w.tx, m, w.versioned); err != nil {
+	if err := w.dt.merge(ctx, w.tx, m, func() error {
+		_, err := mergeRow(ctx, w.s, w.tx, m, w.versioned)
+		return err
+	}); err != nil {
 		return err
 	}
 	if w.versioned {
