@@ -68,14 +68,29 @@ func TestGoExamplePlugin(t *testing.T) {
 }
 
 func TestPythonExamplePlugin(t *testing.T) {
-	if _, err := exec.LookPath("python3"); err != nil {
-		t.Skip("python3 not installed")
+	// The hub runs only an interpreter no one else can change: Homebrew's,
+	// in a group-writable Cellar, is refused, so the system one may do.
+	var python string
+	for _, c := range []string{"python3", "/usr/bin/python3"} {
+		path, err := exec.LookPath(c)
+		if err != nil {
+			continue
+		}
+		if f, _, err := openTrusted(path); err == nil {
+			_ = f.Close()
+			python = path
+			break
+		}
+	}
+	if python == "" {
+		t.Skip("no python3 the hub would trust")
 	}
 	dir := copyExample(t, "python-load", "plugin.yaml", "plugin.py")
 	man, err := LoadManifest(filepath.Join(dir, "plugin.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	man.Command = python
 	m, audit := startManager(t, policy.Config{}, man)
 	waitFor(t, "the host's load", func() bool { return entityState(m, "python-load", "host", "load1") != "" })
 	if s := status(m, "python-load"); len(s.Devices) != 1 || len(s.Devices[0].Entities) != 3 {

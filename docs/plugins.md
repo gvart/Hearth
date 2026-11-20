@@ -60,9 +60,25 @@ commands:
 | `capabilities` | What the plugin may do. `discover`: report devices. `state`: push entity states. `command`: run the commands below. A message the manifest's capabilities do not allow is a protocol violation. |
 | `commands` | The only commands the hub sends the plugin, each with its [policy class](guardrails.md). Commands need the `command` capability. |
 
-The hub refuses a manifest that a group or other users can write (`chmod go-w plugin.yaml`). Keep
-the plugin's program and its directory as tightly held: whoever can change them runs code as the
-hub's user.
+### Who may change a plugin
+
+Whoever can change a plugin's manifest, its program, or a script its `args` name (such as
+`plugin.py`) runs code as the hub's user. So on Linux and macOS the hub refuses each of them, and
+every directory above them, unless it is owned by the hub's user or root and no one else can write
+it. A root-owned sticky directory, such as `/tmp`, is allowed. The hub checks the manifest when it
+starts, and the program and scripts again before every start and restart. The error names the fix,
+such as `run chmod go-w /opt/plugins/lamp/lamp`.
+
+- `go build` under umask 002 (the default for users with a group of their own, as on Ubuntu)
+  writes a group-writable binary: `chmod g-w lamp` after building.
+- Homebrew's Python lives in a group-writable Cellar and is refused. Name a trusted interpreter
+  by its absolute path, such as `command: /usr/bin/python3`.
+- The program's real path (after symlinks) and its SHA-256 go into every `plugin.start` audit
+  entry, so the log shows exactly what ran.
+
+`env` is for settings such as an API token. A manifest that sets `env` must be readable by its
+owner only: `chmod 600 plugin.yaml`. The hub refuses one that group or others can read. 0600 is the
+right mode for every manifest.
 
 ## Isolation
 
@@ -78,9 +94,13 @@ hub's user.
   protocol in any other way is killed and started again, with a backoff that doubles from 1 second
   up to 5 minutes. It starts over from 1 second once the plugin has run for a minute. The hub and
   its other plugins carry on.
-- The hub keeps the last 20 lines the plugin printed on stderr, each cut to 512 bytes, and shows
-  them with its status. It never writes the plugin's output to its own log.
-- The hub stops a plugin by killing it. A process the plugin started itself is not killed with it.
+- The hub keeps the last 20 lines the plugin printed on stderr, each cut to 512 bytes, and returns
+  them to signed-in admins with its status (`GET /api/v1/plugins`). It never writes the plugin's
+  output to its own log. Do not print secrets to stderr.
+- The hub stops a plugin by killing it. On Linux and macOS the plugin runs in a process group of its
+  own and the hub kills the whole group, so a wrapper (`sh`, `npx`, `uv run`) leaves nothing behind.
+  On Linux the kernel also kills the plugin should the hub die without stopping it.
+- At most 32 commands are in flight per plugin. More get 503 at once; the plugin is not touched.
 
 ## Commands and policy
 
@@ -112,7 +132,7 @@ actors:
 | | |
 | --- | --- |
 | `GET /api/v1/plugins` | Every plugin's status: state (`starting`, `running`, `restarting`, `stopped`), the last error, restarts, its commands, devices and entities with their last state, and the tail of its stderr. |
-| `POST /api/v1/plugins/{name}/commands` | Runs a command: `{"command": "turn_on", "device": "lamp", "args": {}}`. Answers `{"output": "..."}`, 403 when policy denies it, 503 when the plugin is not running, 502 when the plugin reports it failed. |
+| `POST /api/v1/plugins/{name}/commands` | Runs a command: `{"command": "turn_on", "device": "lamp", "args": {}}`. Answers `{"output": "..."}`, 403 when policy denies it, 503 when the plugin is not running or already runs 32 commands, 502 when the plugin reports it failed. |
 
 Both need the admin session. Without `--plugin` neither exists.
 
@@ -136,6 +156,9 @@ hub sends nothing else.
 ### Ping
 
 Every 30 seconds. Answer within 10 seconds, with the same `id`, or the hub restarts the plugin.
+While a command is in flight the hub sends no ping and no discover, and a ping or discover that the
+plugin does not answer in time is forgiven: a plugin may handle one message at a time, and the
+command has its own timeout.
 
 ```json
 {"type":"ping","id":"7"}

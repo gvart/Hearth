@@ -24,6 +24,9 @@ var (
 	// ErrUnavailable is a plugin that is not running, or stopped while the
 	// hub waited for it.
 	ErrUnavailable = errors.New("plugin not running")
+	// ErrBusy is a plugin with as many commands in flight as it is sent.
+	// It matches ErrUnavailable.
+	ErrBusy = fmt.Errorf("plugin busy: %w", ErrUnavailable)
 	// ErrCommandFailed is a command the plugin ran and reported as failed.
 	ErrCommandFailed = errors.New("plugin command failed")
 )
@@ -212,6 +215,12 @@ func (p *plugin) command(ctx context.Context, req CommandRequest) (CommandResult
 	p.mu.Unlock()
 	if pr == nil {
 		return CommandResult{}, ErrUnavailable
+	}
+	select {
+	case pr.slots <- struct{}{}:
+		defer func() { <-pr.slots }()
+	default:
+		return CommandResult{}, fmt.Errorf("%w: %d commands in flight", ErrBusy, maxInFlight)
 	}
 	r, err := pr.request(ctx, message{Type: typeCommand, Command: req.Command, Device: req.Device, Args: req.Args},
 		typeResult, p.o.CommandTimeout)

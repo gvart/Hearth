@@ -17,10 +17,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"slices"
 	"strings"
 
@@ -154,52 +152,42 @@ func commandAction(c policy.Class) (policy.Action, bool) {
 	return "", false
 }
 
-// LoadManifest reads and validates the manifest file at path. A manifest
-// anyone but its owner can write is refused: it says what the hub runs.
+// LoadManifest reads and validates the manifest file at path. It says what
+// the hub runs: on Unix, a manifest, or a directory above it, that is not
+// owned by the hub's user or root, or that others can write, is refused
+// (see checkInfo). So is one that sets env, which may hold secrets, and that
+// group or others can read.
 func LoadManifest(path string) (Manifest, error) {
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return Manifest{}, fmt.Errorf("plugin manifest %s: %w", path, err)
-	}
-	f, err := os.Open(abs)
+	f, resolved, err := openTrusted(path)
 	if err != nil {
 		return Manifest{}, fmt.Errorf("plugin manifest: %w", err)
 	}
 	defer func() { _ = f.Close() }()
-	if err := checkNotShared(f); err != nil {
-		return Manifest{}, fmt.Errorf("plugin manifest %s: %w", abs, err)
-	}
 	b, err := io.ReadAll(io.LimitReader(f, maxManifest+1))
 	if err != nil {
-		return Manifest{}, fmt.Errorf("plugin manifest %s: %w", abs, err)
+		return Manifest{}, fmt.Errorf("plugin manifest %s: %w", resolved, err)
 	}
 	if len(b) > maxManifest {
-		return Manifest{}, fmt.Errorf("plugin manifest %s: larger than %d bytes", abs, maxManifest)
+		return Manifest{}, fmt.Errorf("plugin manifest %s: larger than %d bytes", resolved, maxManifest)
 	}
 	var m Manifest
 	dec := yaml.NewDecoder(bytes.NewReader(b))
 	dec.KnownFields(true)
 	if err := dec.Decode(&m); err != nil {
-		return Manifest{}, fmt.Errorf("plugin manifest %s: %w", abs, err)
+		return Manifest{}, fmt.Errorf("plugin manifest %s: %w", resolved, err)
 	}
-	m.Dir = filepath.Dir(abs)
+	m.Dir = filepath.Dir(resolved)
 	if err := m.Validate(); err != nil {
-		return Manifest{}, fmt.Errorf("plugin manifest %s: %w", abs, err)
+		return Manifest{}, fmt.Errorf("plugin manifest %s: %w", resolved, err)
+	}
+	if len(m.Env) > 0 {
+		fi, err := f.Stat()
+		if err == nil {
+			err = checkPrivate(resolved, fi)
+		}
+		if err != nil {
+			return Manifest{}, fmt.Errorf("plugin manifest: %w", err)
+		}
 	}
 	return m, nil
-}
-
-// checkNotShared refuses a file its group or others can write.
-func checkNotShared(f *os.File) error {
-	if runtime.GOOS == "windows" {
-		return nil
-	}
-	fi, err := f.Stat()
-	if err != nil {
-		return err
-	}
-	if fi.Mode().Perm()&0o022 != 0 {
-		return fmt.Errorf("writable by group or others (mode %v): chmod go-w it", fi.Mode().Perm())
-	}
-	return nil
 }

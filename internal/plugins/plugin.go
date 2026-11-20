@@ -113,7 +113,11 @@ type plugin struct {
 type proc struct {
 	// send queues lines for the plugin's stdin; a full queue means the
 	// plugin stopped reading, and stops it.
-	send   chan []byte
+	send chan []byte
+	// slots caps the commands in flight; while any is, a plugin that
+	// handles one message at a time cannot answer a ping, and is not taken
+	// for hung.
+	slots  chan struct{}
 	dead   <-chan struct{}
 	cancel context.CancelCauseFunc
 	seq    atomic.Uint64
@@ -173,6 +177,11 @@ func (p *plugin) runOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// Checked before every start: a restart runs what is on disk now.
+	path, digest, err := p.trustedProgram(path)
+	if err != nil {
+		return err
+	}
 	pctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
 
@@ -195,20 +204,21 @@ func (p *plugin) runOnce(ctx context.Context) error {
 	cmd := exec.Command(path, p.m.Args...)
 	cmd.Dir, cmd.Env = p.m.Dir, p.env()
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = inR, outW, errW
+	inOwnGroup(cmd)
 
 	err = p.pol.Do(ctx, policy.Request{
 		ActorKind: policy.ActorHub,
 		ActorID:   actorID,
 		Action:    policy.PluginStart,
 		Target:    p.m.Name,
-		Detail:    map[string]any{"version": p.m.Version, "command": path},
+		Detail:    map[string]any{"version": p.m.Version, "command": path, "sha256": digest},
 	}, func(context.Context) error { return cmd.Start() })
 	// The child holds its ends now, if it started.
 	_, _, _ = inR.Close(), outW.Close(), errW.Close()
 	if err != nil {
 		if cmd.Process != nil {
 			// It started, but its outcome could not be audited.
-			_ = cmd.Process.Kill()
+			killTree(cmd.Process)
 			_ = cmd.Wait()
 		}
 		_, _, _ = inW.Close(), outR.Close(), errR.Close()
@@ -218,7 +228,10 @@ func (p *plugin) runOnce(ctx context.Context) error {
 	p.startedAt = p.now()
 	p.mu.Unlock()
 
-	pr := &proc{send: make(chan []byte, 64), dead: pctx.Done(), cancel: cancel, pending: map[string]pendingReply{}}
+	pr := &proc{
+		send: make(chan []byte, maxInFlight+8), dead: pctx.Done(), cancel: cancel,
+		pending: map[string]pendingReply{}, slots: make(chan struct{}, maxInFlight),
+	}
 	hello := make(chan struct{})
 	var wg sync.WaitGroup
 	wg.Go(func() {
@@ -252,9 +265,9 @@ func (p *plugin) runOnce(ctx context.Context) error {
 	p.mu.Lock()
 	p.proc = nil
 	p.mu.Unlock()
-	// The hub stops a plugin by killing it; closing its ends of the pipes
-	// ends the loops.
-	_ = cmd.Process.Kill()
+	// The hub stops a plugin by killing it, with whatever it started in its
+	// process group; closing its ends of the pipes ends the loops.
+	killTree(cmd.Process)
 	_, _, _ = inW.Close(), outR.Close(), errR.Close()
 	wg.Wait()
 	if ctx.Err() != nil {
@@ -503,16 +516,34 @@ func (p *plugin) keepalive(pctx context.Context, pr *proc) error {
 		case <-pctx.Done():
 			return nil
 		case <-ping.C:
+			if pr.busy() {
+				continue // a command has its own timeout
+			}
 			if _, err := pr.request(pctx, message{Type: typePing}, typePong, p.o.ReplyTimeout); err != nil {
+				if errors.Is(err, errNoReply) && pr.busy() {
+					continue
+				}
 				return fmt.Errorf("ping: %w", err)
 			}
 		case <-disc.C:
+			if pr.busy() {
+				continue
+			}
 			if err := discover(); err != nil {
+				if errors.Is(err, errNoReply) && pr.busy() {
+					continue
+				}
 				return err
 			}
 		}
 	}
 }
+
+// maxInFlight is the most commands a plugin is sent at once.
+const maxInFlight = 32
+
+// busy reports whether a command is in flight.
+func (pr *proc) busy() bool { return len(pr.slots) > 0 }
 
 // errNoReply is a request the plugin did not answer in time.
 var errNoReply = errors.New("no reply in time")
@@ -534,6 +565,8 @@ func (pr *proc) request(ctx context.Context, m message, want string, timeout tim
 	case <-pr.dead:
 		return message{}, ErrUnavailable
 	default:
+		// Commands are capped well below the queue's size: only a plugin
+		// that stopped reading its stdin fills it.
 		pr.cancel(errors.New("plugin stopped reading its stdin"))
 		return message{}, ErrUnavailable
 	}

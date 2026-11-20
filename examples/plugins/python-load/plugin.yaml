@@ -7,8 +7,8 @@ version: 0.1.0
 # directory, so plugin.py is the file next to this manifest.
 command: python3
 args: [plugin.py]
-env:
-  LOAD_INTERVAL: "10"
+# env: {LOAD_INTERVAL: "5"} would set the push interval; a manifest with env
+# must be readable by its owner only (chmod 600).
 capabilities: [discover, state, command]
 commands:
   - name: refresh

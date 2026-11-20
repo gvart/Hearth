@@ -31,8 +31,11 @@ func TestMain(m *testing.M) {
 func runHelper(mode string) int {
 	name := os.Getenv("HEARTH_PLUGIN")
 	out := bufio.NewWriter(os.Stdout)
+	var outMu sync.Mutex
 	send := func(m map[string]any) {
 		b, _ := json.Marshal(m)
+		outMu.Lock()
+		defer outMu.Unlock()
 		_, _ = out.Write(append(b, '\n'))
 		_ = out.Flush()
 	}
@@ -85,6 +88,17 @@ func runHelper(mode string) int {
 		case "command":
 			commands++
 			send(map[string]any{"type": "state", "device": "lamp", "entity": "commands", "state": commands})
+			switch m.Command {
+			case "slow":
+				// One message at a time: no pong while it sleeps.
+				time.Sleep(15 * time.Second)
+			case "async":
+				go func(id string) {
+					time.Sleep(300 * time.Millisecond)
+					send(map[string]any{"type": "result", "id": id, "ok": true})
+				}(m.ID)
+				continue
+			}
 			if m.Command == "fail" {
 				send(map[string]any{"type": "result", "id": m.ID, "ok": false, "error": "boom"})
 				continue
@@ -109,6 +123,8 @@ func helperManifest(t *testing.T, name, mode string) Manifest {
 			{Name: "toggle", Class: policy.Safe},
 			{Name: "fail", Class: policy.Read},
 			{Name: "wipe", Class: policy.Dangerous},
+			{Name: "slow", Class: policy.Read},
+			{Name: "async", Class: policy.Read},
 		},
 		Dir: t.TempDir(),
 	}
@@ -117,7 +133,7 @@ func helperManifest(t *testing.T, name, mode string) Manifest {
 // fastOptions make failures and restarts quick.
 var fastOptions = Options{
 	BackoffMin: 10 * time.Millisecond, BackoffMax: 50 * time.Millisecond,
-	StartTimeout: 2 * time.Second, PingEvery: 50 * time.Millisecond, ReplyTimeout: 500 * time.Millisecond,
+	StartTimeout: 5 * time.Second, PingEvery: 50 * time.Millisecond, ReplyTimeout: 500 * time.Millisecond,
 	CommandTimeout: 2 * time.Second, MaxLine: 64 << 10, MaxRate: 100,
 }
 
@@ -186,10 +202,10 @@ func status(m *Manager, name string) Status {
 	return Status{}
 }
 
-// waitFor polls cond until it holds or fails the test after 10s.
+// waitFor polls cond until it holds or fails the test after 30s.
 func waitFor(t *testing.T, what string, cond func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(30 * time.Second)
 	for !cond() {
 		if time.Now().After(deadline) {
 			t.Fatalf("timed out waiting for %s", what)
