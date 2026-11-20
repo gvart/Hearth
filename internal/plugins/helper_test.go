@@ -205,7 +205,9 @@ func startManager(t *testing.T, cfg policy.Config, manifests ...Manifest) (*Mana
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithCancel(t.Context())
+	// Not t.Context(): it is cancelled before cleanups run, which would end
+	// Run before the check below.
+	ctx, cancel := context.WithCancel(context.WithoutCancel(t.Context()))
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
