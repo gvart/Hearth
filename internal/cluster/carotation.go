@@ -479,12 +479,20 @@ func (n *Node) hubCAInfoServedBy(ctx context.Context, id, addr, caFP string) (CA
 	if id == n.cfg.NodeID {
 		return n.localCAInfo(), nil
 	}
-	hc := n.fwdHTTP
+	var (
+		c   clusterv1connect.ClusterServiceClient
+		err error
+	)
 	if caFP != "" {
-		hc = newForwardClientServedBy(n.cfg.CA, n.stream.currentCert, n.epoch, caFP)
+		// The hub listener's server certificate, not the node
+		// certificate: the server certificate changes CA at the cutover
+		// only, so its issuer says whether the hub cut over.
+		hc := newForwardClientServedBy(n.cfg.CA, n.stream.currentCert, n.epoch, caFP)
 		defer hc.CloseIdleConnections()
+		c, err = n.memberClientWith(ctx, hc, id, addr)
+	} else {
+		c, err = n.memberClient(ctx, id, addr)
 	}
-	c, err := n.memberClientWith(ctx, hc, id, addr)
 	if err != nil {
 		return CAInfo{}, err
 	}
@@ -506,7 +514,11 @@ func (n *Node) hubCAInfoServedBy(ctx context.Context, id, addr, caFP string) (CA
 }
 
 func (n *Node) memberClient(ctx context.Context, id, addr string) (clusterv1connect.ClusterServiceClient, error) {
-	return n.memberClientWith(ctx, n.fwdHTTP, id, addr)
+	hc, err := n.clusterHTTP(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return n.memberClientWith(ctx, hc, id, addr)
 }
 
 func (n *Node) memberClientWith(ctx context.Context, hc *http.Client, id, addr string) (clusterv1connect.ClusterServiceClient, error) {
@@ -910,6 +922,7 @@ func (n *Node) reconcileCA(ctx context.Context) {
 		}
 		n.stream.setCert(n.nextCert.Load())
 		n.fwdHTTP.CloseIdleConnections()
+		n.pinHTTP.CloseIdleConnections()
 		n.log.InfoContext(ctx, "serving the new hub CA")
 	}
 }
@@ -1124,6 +1137,7 @@ func (n *Node) finishLocal(ctx context.Context, rot store.CARotation) {
 	}
 	k := n.stream.closeRevoked(func(c *x509.Certificate) bool { return ca.IssuerOf(c) == nil })
 	n.fwdHTTP.CloseIdleConnections()
+	n.pinHTTP.CloseIdleConnections()
 	n.log.InfoContext(ctx, "finished the hub CA rotation here: the old CA is no longer trusted and its key is deleted",
 		"closed_connections", k)
 }
@@ -1210,6 +1224,7 @@ func (n *Node) missedRotation(ctx context.Context, rot store.CARotation) {
 	n.nextCert.Store(nil)
 	k := n.stream.closeRevoked(func(*x509.Certificate) bool { return true })
 	n.fwdHTTP.CloseIdleConnections()
+	n.pinHTTP.CloseIdleConnections()
 	n.log.ErrorContext(ctx, "stopping: closed every raft connection", "closed_connections", k)
 	// OnFatal must not block, and the FSM may have called it already.
 	go n.cfg.OnFatal(errMissedRotation)

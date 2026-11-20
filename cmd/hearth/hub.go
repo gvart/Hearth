@@ -462,7 +462,11 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		Metrics: hub.AutomationMetrics(st, prom, ms), AutomationsDir: automationsDir, AutomationKinds: kinds, AutomationsLock: &automationsMu, Version: opts.version, Log: log,
 	})))
 	var tlsWeb http.Handler = uiMux
+	tlsCfg := hub.TLSConfigFunc(ca, serverCert.Load)
 	if node != nil {
+		// During a hub CA rotation other hubs call ClusterService
+		// against this hub's pinned node certificate.
+		tlsCfg = node.ServeNodeCert(tlsCfg)
 		// ClusterService is served over TLS only: Promote authenticates
 		// hubs by their client certificate.
 		m := http.NewServeMux()
@@ -472,7 +476,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	}
 	agentSrv := &http.Server{
 		Handler:           hub.NewTLSHandler(cfg, tlsWeb),
-		TLSConfig:         hub.TLSConfigFunc(ca, serverCert.Load),
+		TLSConfig:         tlsCfg,
 		ReadHeaderTimeout: 10 * time.Second,
 		ErrorLog:          errLog,
 		BaseContext:       baseCtx,

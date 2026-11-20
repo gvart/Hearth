@@ -144,9 +144,14 @@ func (n *Node) hubDigests(ctx context.Context, urls map[string]string, id, addr 
 		if base == "" {
 			return nil, DriftUnreachable
 		}
+		hc, err := n.clusterHTTP(ctx)
+		if err != nil {
+			n.log.DebugContext(ctx, "cannot read a hub's configuration digests", "hub", id, "err", err)
+			return nil, DriftUnreachable
+		}
 		ctx, cancel := context.WithTimeout(ctx, configDigestsTimeout)
 		defer cancel()
-		resp, err := clusterv1connect.NewClusterServiceClient(n.fwdHTTP, base).
+		resp, err := clusterv1connect.NewClusterServiceClient(hc, base).
 			ConfigDigests(ctx, connect.NewRequest(&clusterv1.ConfigDigestsRequest{}))
 		if err != nil {
 			var ce *connect.Error
