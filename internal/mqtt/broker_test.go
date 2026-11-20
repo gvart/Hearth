@@ -333,8 +333,10 @@ func TestRefusedConnections(t *testing.T) {
 			if err != nil {
 				t.Fatalf("dial: %v", err)
 			}
-			if rc == accepted {
-				t.Fatal("accepted")
+			// mochi answers an empty password with a protocol error;
+			// every other refusal is "not authorized".
+			if want := byte(notAuthorized); rc != want && (name != "empty password" || rc == accepted) {
+				t.Fatalf("CONNACK %#x, want %#x", rc, want)
 			}
 		})
 	}
