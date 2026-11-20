@@ -318,7 +318,7 @@ func mergeRows(g gather, parts []Rows) ([][]any, []RowRef) {
 			}
 			if (b.hlc != h || b.origin != o) && !differs[k] {
 				differs[k] = true
-				repair = append(repair, RowRef{Table: g.table, Key: slices.Clone(Values(key))})
+				repair = append(repair, RowRef{Table: g.table, Key: slices.Clone(key)})
 			}
 			if h > b.hlc || (h == b.hlc && o > b.origin) {
 				*b = seen{vals: vals[:n], hlc: h, origin: o}

@@ -130,7 +130,7 @@ func (r Panels) query(ctx context.Context, key string, g gather, where, tail str
 	if err != nil || v < panelsSchema {
 		return nil, err
 	}
-	rest := ` FROM panels WHERE (` + where + `)` + //nolint:gosec // see above
+	rest := ` FROM panels WHERE (` + where + `)` +
 		liveOnly(v >= VersionedSchema) + ` ` + tail
 	g.table = "panels"
 	rows, err := r.s.list(ctx, key, g, `SELECT id, name, widgets, created_at, updated_at`, rest, args...)
@@ -230,7 +230,7 @@ func (r Panels) queryLinks(ctx context.Context, g gather, where, tail string, ar
 	if err != nil || v < panelsSchema {
 		return nil, err
 	}
-	rest := ` FROM panel_links WHERE (` + where + `)` + //nolint:gosec // see query
+	rest := ` FROM panel_links WHERE (` + where + `)` +
 		liveOnly(v >= VersionedSchema) + ` ` + tail
 	g.table = "panel_links"
 	rows, err := r.s.list(ctx, "", g, `SELECT id, panel_id, created_at, expires_at, revoked_at`, rest, args...)

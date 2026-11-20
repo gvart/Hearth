@@ -85,7 +85,7 @@ func (r MCPTokens) Revoke(ctx context.Context, name string, at time.Time) error 
 	return nil
 }
 
-const mcpTokenColumns = `SELECT name, scope, created_at, revoked_at`
+const mcpTokenColumns = `SELECT name, scope, created_at, revoked_at` //nolint:gosec // G101: column names, no credential
 
 // query selects mcpTokenColumns of the tokens matching rest (WHERE and
 // ORDER BY clauses), on every member merged by g; before schema 11 it

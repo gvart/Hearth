@@ -66,7 +66,12 @@ type ReplicatorConfig struct {
 	Log         *slog.Logger
 
 	// Tuning; zero values use the defaults.
-	RequestTimeout   time.Duration
+	RequestTimeout time.Duration
+	// QuickTimeout bounds the requests a client waits on: a read, and a
+	// replica's acknowledgement of a critical write. A member that does not
+	// answer in time is taken as down for SuspectFor.
+	QuickTimeout     time.Duration
+	SuspectFor       time.Duration
 	AntiEntropyEvery time.Duration
 	HintsEvery       time.Duration
 	GCEvery          time.Duration
@@ -75,6 +80,8 @@ type ReplicatorConfig struct {
 
 const (
 	defaultRequestTimeout   = 10 * time.Second
+	defaultQuickTimeout     = 1500 * time.Millisecond
+	defaultSuspectFor       = 5 * time.Second
 	defaultAntiEntropyEvery = 30 * time.Second
 	defaultHintsEvery       = 5 * time.Second
 	defaultGCEvery          = time.Hour
@@ -108,6 +115,13 @@ type Replicator struct {
 
 	contactMu   sync.Mutex
 	contactSeen time.Time
+
+	// suspect holds the members a request just failed to reach, until when
+	// they count as down whatever the gossip says: a member that died a
+	// moment ago, or behind a cut link, costs one timeout, not one per
+	// request until the gossip notices.
+	suspectMu sync.Mutex
+	suspect   map[string]time.Time
 }
 
 // NewReplicator returns a Replicator; bind it to the store with Bind (or
@@ -127,6 +141,8 @@ func NewReplicator(cfg ReplicatorConfig) (*Replicator, error) {
 		cfg.Log = slog.New(slog.DiscardHandler)
 	}
 	setIfZero(&cfg.RequestTimeout, defaultRequestTimeout)
+	setIfZero(&cfg.QuickTimeout, defaultQuickTimeout)
+	setIfZero(&cfg.SuspectFor, defaultSuspectFor)
 	setIfZero(&cfg.AntiEntropyEvery, defaultAntiEntropyEvery)
 	setIfZero(&cfg.HintsEvery, defaultHintsEvery)
 	setIfZero(&cfg.GCEvery, defaultGCEvery)
@@ -136,6 +152,7 @@ func NewReplicator(cfg ReplicatorConfig) (*Replicator, error) {
 	r := &Replicator{
 		cfg: cfg, log: cfg.Log.With("component", "replication"),
 		pool: map[string][]net.Conn{}, jobs: make(chan func(context.Context), asyncQueue),
+		suspect: map[string]time.Time{},
 	}
 	bg := context.Background()
 	r.ctx.Store(&bg)
@@ -178,7 +195,7 @@ func (r *Replicator) view() view {
 			continue
 		}
 		ids = append(ids, m.ID)
-		if m.State == MemberAlive || m.State == MemberSuspect {
+		if (m.State == MemberAlive || m.State == MemberSuspect) && !r.suspected(m.ID) {
 			live[m.ID] = true
 		}
 	}
@@ -355,7 +372,10 @@ func (r *Replicator) applyOn(ctx context.Context, m string, cmd store.Command) (
 	if err != nil {
 		return store.Result{}, err
 	}
-	resp, err := r.call(ctx, m, apRequest{Op: opApply, Cmd: b})
+	// The member applies it and may wait for its replicas: two quick rounds.
+	actx, cancel := context.WithTimeout(ctx, 3*r.cfg.QuickTimeout)
+	defer cancel()
+	resp, err := r.call(actx, m, apRequest{Op: opApply, Cmd: b})
 	if err != nil {
 		return store.Result{}, err
 	}
@@ -525,7 +545,9 @@ func (r *Replicator) sendCritical(ctx context.Context, batches map[string][]stor
 	var wg sync.WaitGroup
 	for t, ms := range batches {
 		wg.Go(func() {
-			_, err := r.call(ctx, t, apRequest{Op: opMerge, Muts: ms})
+			qctx, cancel := context.WithTimeout(ctx, r.cfg.QuickTimeout)
+			defer cancel()
+			_, err := r.call(qctx, t, apRequest{Op: opMerge, Muts: ms})
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
@@ -592,7 +614,7 @@ func (v view) readOrder(bucket int) []string {
 // ReadKey implements store.Shards.
 func (r *Replicator) ReadKey(ctx context.Context, key, query string, args store.Values) (store.Rows, error) {
 	v := r.view()
-	var lastErr error = store.ErrUnavailable
+	lastErr := store.ErrUnavailable
 	for _, m := range v.readOrder(store.BucketOf(store.Token(key))) {
 		rows, err := r.readOn(ctx, m, query, args)
 		if err == nil {
@@ -883,30 +905,78 @@ func (r *Replicator) call(ctx context.Context, m string, req apRequest) (apRespo
 		}
 		return resp, nil
 	}
-	ctx, cancel := context.WithTimeout(ctx, r.cfg.RequestTimeout)
+	parent := ctx
+	timeout := r.cfg.RequestTimeout
+	if req.Op == opRead {
+		timeout = r.cfg.QuickTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	unreachable := func(err error) (apResponse, error) {
+		if !errors.Is(parent.Err(), context.Canceled) {
+			// Not the caller giving up: the member is taken as down for a
+			// while, and its other connections, likely dead too, dropped.
+			r.markSuspect(m)
+		}
+		return apResponse{}, fmt.Errorf("%s: %w: %w", m, errUnreachable, err)
+	}
 	c, err := r.conn(ctx, m)
 	if err != nil {
-		return apResponse{}, fmt.Errorf("%s: %w: %w", m, errUnreachable, err)
+		return unreachable(err)
 	}
 	d, _ := ctx.Deadline()
 	_ = c.SetDeadline(d)
 	var resp apResponse
 	if err := writeFrame(c, req); err != nil {
 		_ = c.Close()
-		return apResponse{}, fmt.Errorf("%s: %w: %w", m, errUnreachable, err)
+		return unreachable(err)
 	}
 	if err := readFrame(c, &resp); err != nil {
 		_ = c.Close()
-		return apResponse{}, fmt.Errorf("%s: %w: %w", m, errUnreachable, err)
+		return unreachable(err)
 	}
 	_ = c.SetDeadline(time.Time{})
 	r.putConn(m, c)
+	r.clearSuspect(m)
 	r.touchContact()
 	if resp.Error != nil {
 		return resp, apError(resp.Error)
 	}
 	return resp, nil
+}
+
+// markSuspect takes m as down for SuspectFor and drops its pooled
+// connections.
+func (r *Replicator) markSuspect(m string) {
+	r.suspectMu.Lock()
+	r.suspect[m] = r.cfg.Now().Add(r.cfg.SuspectFor)
+	r.suspectMu.Unlock()
+	r.poolMu.Lock()
+	cs := r.pool[m]
+	delete(r.pool, m)
+	r.poolMu.Unlock()
+	for _, c := range cs {
+		_ = c.Close()
+	}
+}
+
+// clearSuspect forgets that a request failed to reach m: m was heard from.
+func (r *Replicator) clearSuspect(m string) {
+	r.suspectMu.Lock()
+	delete(r.suspect, m)
+	r.suspectMu.Unlock()
+}
+
+// suspected reports whether a request failed to reach m a moment ago.
+func (r *Replicator) suspected(m string) bool {
+	r.suspectMu.Lock()
+	defer r.suspectMu.Unlock()
+	until, ok := r.suspect[m]
+	if ok && !r.cfg.Now().Before(until) {
+		delete(r.suspect, m)
+		return false
+	}
+	return ok
 }
 
 func (r *Replicator) conn(ctx context.Context, m string) (net.Conn, error) {
@@ -958,6 +1028,7 @@ func (r *Replicator) ServeConn(c net.Conn, peer string) {
 		rctx, cancel := context.WithTimeout(ctx, r.cfg.RequestTimeout)
 		var resp apResponse
 		if r.isMember(peer) {
+			r.clearSuspect(peer) // it reached this member: it is up
 			resp = r.handle(rctx, peer, req)
 		} else {
 			r.log.Warn("refused a replication request from a non-member", "peer", peer, "op", req.Op)

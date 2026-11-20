@@ -178,7 +178,7 @@ func (r RunbookRuns) query(ctx context.Context, key string, g gather, source, wh
 	if v < runbookRunsSchema {
 		return nil, nil
 	}
-	rest := ` FROM runbook_runs WHERE (` + where + `)` + //nolint:gosec // see above
+	rest := ` FROM runbook_runs WHERE (` + where + `)` +
 		liveOnly(v >= VersionedSchema) + ` ` + tail
 	g.table = "runbook_runs"
 	rows, err := r.s.list(ctx, key, g, `SELECT `+runbookRunColumns+`, `+source, rest, args...)

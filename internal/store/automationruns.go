@@ -76,7 +76,7 @@ func (r AutomationRuns) List(ctx context.Context, automationID string, limit int
 		return nil, nil
 	}
 	// liveOnly is a constant clause; values are bound.
-	rest := ` FROM automation_runs WHERE (? = '' OR automation_id = ?)` + liveOnly(v >= VersionedSchema) + //nolint:gosec // see above
+	rest := ` FROM automation_runs WHERE (? = '' OR automation_id = ?)` + liveOnly(v >= VersionedSchema) +
 		` ORDER BY started_at DESC, rowid DESC LIMIT ?`
 	rows, err := r.s.list(ctx, automationID,
 		gather{table: "automation_runs", order: then(desc(byInt(3)), desc(byText(0))), limit: limit},

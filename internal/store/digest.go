@@ -10,7 +10,6 @@ import (
 	"hash/fnv"
 	"maps"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -84,7 +83,11 @@ func rowHash(table, pk string, st rowState) uint64 {
 	binary.BigEndian.PutUint64(b[:], uint64(st.hlc)) //nolint:gosec // a bit pattern
 	_, _ = h.Write(b[:])
 	_, _ = h.Write([]byte(st.origin))
-	_, _ = h.Write([]byte{0, byte(st.deleted)})
+	del := byte(0)
+	if st.deleted != 0 {
+		del = 1
+	}
+	_, _ = h.Write([]byte{0, del})
 	_, _ = h.Write([]byte(st.setOnce))
 	return h.Sum64()
 }
@@ -221,7 +224,7 @@ func scanDigests(ctx context.Context, q interface {
 ) error {
 	kc, pc := keyCols(table), placeCols(table)
 	// Identifiers are constants of the tables spec.
-	query := `SELECT ` + strings.Join(kc, `, `) + `, ` + stateCols(table) //nolint:gosec // see above
+	query := `SELECT ` + strings.Join(kc, `, `) + `, ` + stateCols(table)
 	if len(pc) > 0 {
 		query += `, ` + strings.Join(pc, `, `)
 	}
@@ -343,7 +346,7 @@ func (s *Store) readRow(ctx context.Context, q interface {
 		return Mutation{}, false, fmt.Errorf("read row of %s: %d key values for %d columns", ref.Table, len(ref.Key), len(kc))
 	}
 	// Identifiers are constants of the tables spec.
-	rows, err := q.QueryContext(ctx, `SELECT * FROM `+ref.Table+` WHERE `+pkWhere(kc), ref.Key...) //nolint:gosec // see above
+	rows, err := q.QueryContext(ctx, `SELECT * FROM `+ref.Table+` WHERE `+pkWhere(kc), ref.Key...)
 	if err != nil {
 		return Mutation{}, false, fmt.Errorf("read row of %s: %w", ref.Table, err)
 	}
@@ -385,14 +388,14 @@ func (s *Store) newDigestTx() *digestTx {
 func (d *digestTx) state(ctx context.Context, tx *sql.Tx, table string, key []any) (rowState, bool, error) {
 	n := 3 + len(tables[table].setOnce)
 	// Identifiers are constants of the tables spec.
-	row := tx.QueryRowContext(ctx, `SELECT `+stateCols(table)+` FROM `+table+` WHERE `+pkWhere(keyCols(table)), key...) //nolint:gosec // see above
+	row := tx.QueryRowContext(ctx, `SELECT `+stateCols(table)+` FROM `+table+` WHERE `+pkWhere(keyCols(table)), key...) //nolint:gosec // table and columns from the store's own list
 	vals := make([]any, n)
 	ptrs := make([]any, n)
 	for i := range vals {
 		ptrs[i] = &vals[i]
 	}
 	if err := row.Scan(ptrs...); err != nil {
-		if err == sql.ErrNoRows { //nolint:errorlint // Scan returns it unwrapped
+		if err == sql.ErrNoRows {
 			return rowState{}, false, nil
 		}
 		return rowState{}, false, err
@@ -500,7 +503,7 @@ func (s *Store) gcTombstonesDigested(ctx context.Context, cutoff int64) (n int, 
 				return n, fmt.Errorf("gc tombstones of %s: %w", table, err)
 			}
 			// Identifiers are constants of the tables spec.
-			if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE `+pkWhere(keyCols(table)), key...); err != nil { //nolint:gosec // see above
+			if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE `+pkWhere(keyCols(table)), key...); err != nil { //nolint:gosec // table and columns from the store's own list
 				return n, fmt.Errorf("gc tombstones of %s: %w", table, err)
 			}
 			if err := dt.dropped(table, key, st, m.Row); err != nil {
@@ -525,6 +528,3 @@ func sortDevices(ds []Device) {
 }
 
 // auditRef renders an audit entry's global id as a key string, for logs.
-func auditRef(h hlc.Timestamp, origin string, seq int64) string {
-	return strconv.FormatUint(uint64(h), 10) + "/" + origin + "/" + strconv.FormatInt(seq, 10)
-}

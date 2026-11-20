@@ -100,7 +100,7 @@ func (v view) sharedRanges(peer string) []bucketRange {
 			if k := len(out); k > 0 && out[k-1].End == seg.Start {
 				out[k-1].End = seg.End
 			} else {
-				out = append(out, bucketRange{seg.Start, seg.End})
+				out = append(out, bucketRange(seg))
 			}
 		}
 	}

@@ -215,7 +215,6 @@ func TestDigestIncremental(t *testing.T) {
 // fakeShards serves the reads of a sharded store from member stores.
 type fakeShards struct {
 	self    string
-	held    map[string]bool
 	members map[string]*Store
 	key     func(string) string // member holding a key
 	repairs []RowRef
@@ -255,21 +254,25 @@ func mapsKeys(m map[string]*Store) []string {
 // read on the replica, a list merged from all, a stale copy repaired.
 func TestShardedReads(t *testing.T) {
 	ctx := t.Context()
-	sh := &fakeShards{self: "a", members: map[string]*Store{},
+	sh := &fakeShards{
+		self: "a", members: map[string]*Store{},
 		key: func(k string) string {
 			if k == "far" {
 				return "b"
 			}
 			return "a"
-		}}
+		},
+	}
 	a := openTestWith(t, WithShards(sh), WithOrigin("a"))
 	b := openTestWith(t, WithDigest(), WithOrigin("b"))
 	sh.members["a"], sh.members["b"] = a, b
 	now := time.UnixMilli(1_700_000_000_000)
 	put := func(s *Store, id, name string) {
 		t.Helper()
-		if _, err := s.ApplyLocal(ctx, withStamp(UpsertDevice{ID: id, Name: name, Facts: "{}", Labels: "{}",
-			FirstSeen: toMillis(now), LastSeen: toMillis(now), Status: StatusOnline}, Stamp{HLC: a.clock.Now(), Origin: s.origin})); err != nil {
+		if _, err := s.ApplyLocal(ctx, withStamp(UpsertDevice{
+			ID: id, Name: name, Facts: "{}", Labels: "{}",
+			FirstSeen: toMillis(now), LastSeen: toMillis(now), Status: StatusOnline,
+		}, Stamp{HLC: a.clock.Now(), Origin: s.origin})); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -319,13 +322,17 @@ func TestShardedAuditPaging(t *testing.T) {
 		}
 		action := "act" + string(rune('0'+i))
 		detail := `{"audit_op":"op` + action + `"}`
-		if _, err := s.ApplyLocal(ctx, withStamp(AppendAudit{TS: int64(i), ActorKind: "user", ActorID: "u", Action: action,
-			Decision: "allow", Result: "pending", Detail: detail}, Stamp{HLC: a.clock.Now(), Origin: s.origin})); err != nil {
+		if _, err := s.ApplyLocal(ctx, withStamp(AppendAudit{
+			TS: int64(i), ActorKind: "user", ActorID: "u", Action: action,
+			Decision: "allow", Result: "pending", Detail: detail,
+		}, Stamp{HLC: a.clock.Now(), Origin: s.origin})); err != nil {
 			t.Fatal(err)
 		}
 		// The outcome lands on the same member.
-		if _, err := s.ApplyLocal(ctx, withStamp(AppendAudit{TS: int64(i), ActorKind: "user", ActorID: "u", Action: action,
-			Decision: "allow", Result: "ok", Detail: `{"audit_outcome_of":"op` + action + `"}`},
+		if _, err := s.ApplyLocal(ctx, withStamp(AppendAudit{
+			TS: int64(i), ActorKind: "user", ActorID: "u", Action: action,
+			Decision: "allow", Result: "ok", Detail: `{"audit_outcome_of":"op` + action + `"}`,
+		},
 			Stamp{HLC: a.clock.Now(), Origin: s.origin})); err != nil {
 			t.Fatal(err)
 		}

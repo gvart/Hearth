@@ -31,8 +31,8 @@ const (
 	APWritesWithin = 5 * time.Second
 	// APConvergeWithin bounds how long after a partition heals every hub
 	// answers the same queries byte for byte: failure detection, hints and
-	// an anti-entropy round (every 10 s).
-	APConvergeWithin = 45 * time.Second
+	// an anti-entropy round (every 30 s).
+	APConvergeWithin = 60 * time.Second
 )
 
 var apHubs = []string{"hub-a", "hub-b", "hub-c"}

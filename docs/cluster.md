@@ -55,6 +55,33 @@ finds the others at its Raft peers' hosts on its own gossip port. Agents never g
 gossip only reports membership, next to Raft, which still replicates everything; gossip and
 replication will share one port once Raft is replaced.
 
+## AP mode (preview)
+
+`--cluster-mode ap` (env `HEARTH_CLUSTER_MODE`, default `raft`) runs a hub in a leaderless, sharded
+cluster instead (docs/design/ap-cluster.md). It is a preview: the Raft mode above is unchanged and
+stays the default. An AP hub starts no Raft node; a hub alone is a cluster of one, and `hearth cluster
+status` says it is not highly available.
+
+- **Placement.** A consistent-hash ring over the `storage` members places each row on `--replicas`
+  members (env `HEARTH_REPLICAS`, default min(2, storage members)). A device's certificates go with
+  the device, runs with their automation or runbook, an action's audit entries with each other.
+  Small global tables (the admin password, hub certificates, Kubernetes and Proxmox connections,
+  network hosts, telemetry settings) are on every storage member.
+- **Writes.** Audit entries, certificates, tokens, sessions and approvals need two replicas
+  (W = min(2, N)) and fail at once with 503 `cluster_unavailable` when fewer are reachable; other
+  writes need one and reach the other replicas in the background. A replica that is down is replaced
+  by the next live member, and gets the write later from a hint (kept in `hints.db`, bounded).
+- **Reads.** A read by key goes to the nearest replica; a list asks every member and merges the
+  answers; a stale copy it sees is repaired. Members compare digests of the rows they share every 30
+  seconds and copy what differs (anti-entropy), so a split cluster converges once healed.
+- **Joining.** `hearth cluster token create` on a member prints the command for a new hub:
+  `--cluster-mode ap --join <url>` with the token, plus `--gossip-advertise` and, if needed,
+  `--gossip-seeds`. Replication runs over the gossip port with the same mutual TLS.
+- **Away too long.** Deleted rows are forgotten after 7 days. A member that has not reached the
+  cluster for longer refuses to start with its old data: clear its data dir and join it again.
+
+Not in AP mode yet: hub CA rotation, `cluster remove` and `transfer-leadership`.
+
 ## Forming the cluster
 
 On the first hub, with or without existing data (its devices, tokens and password are kept):

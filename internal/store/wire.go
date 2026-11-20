@@ -160,8 +160,10 @@ type wireMutation struct {
 
 // MarshalJSON implements json.Marshaler, keeping the row's value types.
 func (m Mutation) MarshalJSON() ([]byte, error) {
-	w := wireMutation{Table: m.Table, HLC: m.HLC, Origin: m.Origin, Deleted: m.Deleted, Seq: m.Seq,
-		Row: make(map[string]wireValue, len(m.Row))}
+	w := wireMutation{
+		Table: m.Table, HLC: m.HLC, Origin: m.Origin, Deleted: m.Deleted, Seq: m.Seq,
+		Row: make(map[string]wireValue, len(m.Row)),
+	}
 	for k, v := range m.Row {
 		w.Row[k] = wireValue{v}
 	}
@@ -174,8 +176,10 @@ func (m *Mutation) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &w); err != nil {
 		return err
 	}
-	*m = Mutation{Table: w.Table, HLC: w.HLC, Origin: w.Origin, Deleted: w.Deleted, Seq: w.Seq,
-		Row: make(map[string]any, len(w.Row))}
+	*m = Mutation{
+		Table: w.Table, HLC: w.HLC, Origin: w.Origin, Deleted: w.Deleted, Seq: w.Seq,
+		Row: make(map[string]any, len(w.Row)),
+	}
 	for k, v := range w.Row {
 		m.Row[k] = v.v
 	}

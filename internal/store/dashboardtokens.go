@@ -117,7 +117,7 @@ func (r DashboardTokens) Check(ctx context.Context, secret string, now time.Time
 	return t, nil
 }
 
-const dashboardTokenColumns = `SELECT id, name, created_at, expires_at, revoked_at`
+const dashboardTokenColumns = `SELECT id, name, created_at, expires_at, revoked_at` //nolint:gosec // G101: column names, no credential
 
 // query selects dashboardTokenColumns of the tokens matching rest (WHERE
 // and ORDER BY clauses), on every member merged by g; before

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -30,7 +31,10 @@ type apNet struct {
 	// crashed members refuse connections but still look alive in the
 	// gossip, as in the moments after a crash.
 	crashed map[string]bool
-	cut     map[[2]string]bool
+	// hung members take connections and never answer, as a host that
+	// vanished from the network does.
+	hung map[string]bool
+	cut  map[[2]string]bool
 }
 
 type apMember struct {
@@ -63,26 +67,31 @@ func (p apPeers) DialReplica(_ context.Context, id string) (net.Conn, error) {
 	p.net.mu.Lock()
 	m, ok := p.net.members[id]
 	blocked := p.net.down[id] || p.net.crashed[id] || p.net.down[p.self] || p.net.cut[[2]string{p.self, id}]
+	hung := p.net.hung[id]
 	p.net.mu.Unlock()
 	if !ok || blocked {
 		return nil, fmt.Errorf("dial %s: unreachable", id)
 	}
 	a, b := net.Pipe()
+	if hung {
+		go func() { _, _ = io.Copy(io.Discard, b) }()
+		return a, nil
+	}
 	go m.rep.ServeConn(b, p.self)
 	return a, nil
 }
 
 // newAPNet starts members ids with replication factor n (0: default).
-func newAPNet(t *testing.T, n int, ids ...string) *apNet {
+func newAPNet(t testing.TB, n int, ids ...string) *apNet {
 	t.Helper()
-	an := &apNet{members: map[string]*apMember{}, down: map[string]bool{}, crashed: map[string]bool{}, cut: map[[2]string]bool{}}
+	an := &apNet{members: map[string]*apMember{}, down: map[string]bool{}, crashed: map[string]bool{}, hung: map[string]bool{}, cut: map[[2]string]bool{}}
 	for _, id := range ids {
 		an.add(t, n, id)
 	}
 	return an
 }
 
-func (an *apNet) add(t *testing.T, n int, id string) *apMember {
+func (an *apNet) add(t testing.TB, n int, id string) *apMember {
 	t.Helper()
 	hints, err := OpenHints(t.Context(), filepath.Join(t.TempDir(), HintsFile), 0)
 	if err != nil {
@@ -152,8 +161,10 @@ func keyOwnedBy(t *testing.T, ids []string, n int, prefix string, owners ...stri
 
 func device(id, name string) store.Device {
 	now := time.Now().UTC().Truncate(time.Millisecond)
-	return store.Device{ID: id, Name: name, Hostname: id, OS: "linux", Arch: "arm64", Facts: json.RawMessage(`{}`),
-		FirstSeen: now, LastSeen: now, Status: store.StatusOnline}
+	return store.Device{
+		ID: id, Name: name, Hostname: id, OS: "linux", Arch: "arm64", Facts: json.RawMessage(`{}`),
+		FirstSeen: now, LastSeen: now, Status: store.StatusOnline,
+	}
 }
 
 // localDevice reads device id from member m's own database, bypassing the
@@ -370,8 +381,10 @@ func TestAntiEntropyConverges(t *testing.T) {
 	for i := range 20 {
 		m := an.m(ids[i%2])
 		d := fmt.Sprintf("dev%02d", i)
-		if _, err := m.st.ApplyLocal(ctx, store.UpsertDevice{Stamp: stamp(m.id), ID: d, Name: d, Facts: "{}", Labels: "{}",
-			Status: store.StatusOnline}); err != nil {
+		if _, err := m.st.ApplyLocal(ctx, store.UpsertDevice{
+			Stamp: stamp(m.id), ID: d, Name: d, Facts: "{}", Labels: "{}",
+			Status: store.StatusOnline,
+		}); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := m.st.ApplyLocal(ctx, store.CreateCert{Stamp: stamp(m.id), Serial: "s" + d, DeviceID: d}); err != nil {
@@ -495,8 +508,10 @@ func TestReplicationRefusals(t *testing.T) {
 		"first_seen": int64(0), "last_seen": int64(0), "status": "online", "boot_time": nil,
 	}}
 	skewed := ok
-	skewed.Row = map[string]any{"id": "y", "name": "y", "hostname": "", "os": "", "arch": "", "facts": "{}", "labels": "{}",
-		"first_seen": int64(0), "last_seen": int64(0), "status": "online", "boot_time": nil}
+	skewed.Row = map[string]any{
+		"id": "y", "name": "y", "hostname": "", "os": "", "arch": "", "facts": "{}", "labels": "{}",
+		"first_seen": int64(0), "last_seen": int64(0), "status": "online", "boot_time": nil,
+	}
 	skewed.HLC = future
 	_, err := an.m("a").rep.call(ctx, "b", apRequest{Op: opMerge, Muts: []store.Mutation{ok, skewed}})
 	if !errors.Is(err, hlc.ErrSkew) {
@@ -600,10 +615,57 @@ func TestCriticalWriteFallsBackToStandIn(t *testing.T) {
 		if err := an.m(ids[i%3]).st.Tokens().Create(ctx, k, nil, time.Now().Add(time.Hour)); err != nil && ids[i%3] != "b" {
 			t.Fatalf("token %d on %s: %v", i, ids[i%3], err)
 		}
-		if _, err := an.m("c").st.Audit().Append(ctx, store.AuditEntry{TS: time.Now(), ActorKind: "user", ActorID: "a",
-			Action: k, Decision: "allow", Result: "ok"}); err != nil {
+		if _, err := an.m("c").st.Audit().Append(ctx, store.AuditEntry{
+			TS: time.Now(), ActorKind: "user", ActorID: "a",
+			Action: k, Decision: "allow", Result: "ok",
+		}); err != nil {
 			t.Fatalf("audit %d: %v", i, err)
 		}
+	}
+}
+
+// A member that vanished without closing its connections (a killed
+// container, a cut cable) costs one quick timeout, not one per request
+// until the gossip notices: reads and critical writes go on.
+func TestHungMemberCostsOneTimeout(t *testing.T) {
+	ctx := t.Context()
+	ids := []string{"a", "b", "c"}
+	an := newAPNet(t, 2, ids...)
+	for i := range 12 {
+		if err := an.m(ids[i%3]).st.Devices().Upsert(ctx, device(fmt.Sprintf("d%02d", i), "n")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	apEventually(t, "replicas", func() bool {
+		l, err := an.m("a").st.Devices().List(ctx)
+		return err == nil && len(l) == 12
+	})
+	an.mu.Lock()
+	an.hung["c"] = true
+	an.mu.Unlock()
+	an.m("a").rep.closePool() // new connections reach the hung c
+
+	start := time.Now()
+	if l, err := an.m("a").st.Devices().List(ctx); err != nil || len(l) != 12 {
+		t.Fatalf("list with c hung: %d, %v", len(l), err)
+	}
+	if took := time.Since(start); took > 2*defaultQuickTimeout {
+		t.Errorf("first list took %v", took)
+	}
+	start = time.Now()
+	for i := range 5 {
+		if _, err := an.m("a").st.Audit().Append(ctx, store.AuditEntry{
+			TS: time.Now(), ActorKind: "user", ActorID: "a",
+			Action: fmt.Sprint("x", i), Decision: "allow", Result: "ok",
+		}); err != nil {
+			t.Fatalf("critical write with c hung: %v", err)
+		}
+		if l, err := an.m("a").st.Devices().List(ctx); err != nil || len(l) != 12 {
+			t.Fatalf("list with c hung: %d, %v", len(l), err)
+		}
+	}
+	if took := time.Since(start); took > time.Second {
+		t.Errorf("writes and reads after the first timeout took %v", took)
 	}
 }
 
@@ -614,8 +676,10 @@ func TestSingleMemberWorks(t *testing.T) {
 	if m.rep.N() != 1 {
 		t.Errorf("N = %d, want 1", m.rep.N())
 	}
-	if _, err := m.st.Audit().Append(ctx, store.AuditEntry{TS: time.Now(), ActorKind: "user", ActorID: "a",
-		Action: "x", Decision: "allow", Result: "ok"}); err != nil {
+	if _, err := m.st.Audit().Append(ctx, store.AuditEntry{
+		TS: time.Now(), ActorKind: "user", ActorID: "a",
+		Action: "x", Decision: "allow", Result: "ok",
+	}); err != nil {
 		t.Fatalf("critical write alone: %v", err)
 	}
 	if err := m.st.Devices().Upsert(ctx, device("d", "d")); err != nil {
@@ -644,9 +708,12 @@ func TestCheckMode(t *testing.T) {
 		dir, mode string
 		ok        bool
 	}{
-		{fresh, "ap", true}, {fresh, "raft", true},
-		{apDir, "ap", true}, {apDir, "raft", false},
-		{raftDir, "raft", true}, {raftDir, "ap", false},
+		{fresh, "ap", true},
+		{fresh, "raft", true},
+		{apDir, "ap", true},
+		{apDir, "raft", false},
+		{raftDir, "raft", true},
+		{raftDir, "ap", false},
 	} {
 		err := CheckMode(tt.dir, tt.mode)
 		if (err == nil) != tt.ok || (err != nil && !errors.Is(err, ErrModeMismatch)) {

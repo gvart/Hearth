@@ -202,7 +202,7 @@ func (n *APNode) Bind(ctx context.Context, st *store.Store) error {
 func hasRows(ctx context.Context, st *store.Store) (bool, error) {
 	for _, t := range store.ReplicatedTables() {
 		// t is a table name of the store's own list.
-		rows, err := st.ReadLocal(ctx, `SELECT 1 FROM `+t+` LIMIT 1`, nil) //nolint:gosec // see above
+		rows, err := st.ReadLocal(ctx, `SELECT 1 FROM `+t+` LIMIT 1`, nil)
 		if err != nil {
 			return false, err
 		}
