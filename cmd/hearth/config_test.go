@@ -205,7 +205,7 @@ func TestConfigImportDeniedByPolicy(t *testing.T) {
 // notify.yaml is sealed in the store and never in the logs or the audit log;
 // export gives it back, and every other document byte for byte.
 func TestConfigNotifySealedAndExport(t *testing.T) {
-	const token = "tk_sentinel5ecret0123456789"
+	const token = "tk_sentinel5ecret0123456789" //nolint:gosec // a test sentinel, not a credential
 	notifyFile := phoneChannel + "    token: " + token + "\n"
 	h := startConfigHub(t, nil)
 	files := map[string]string{
