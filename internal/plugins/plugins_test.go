@@ -74,7 +74,7 @@ func TestCommandsWithoutPolicyAllowAreDeniedAndAudited(t *testing.T) {
 			policy.Config{Classes: map[policy.Class]policy.Mode{policy.Dangerous: policy.ModeDeny}},
 			policy.ActorWeb, "wipe", policy.PluginCommandDangerous,
 		},
-		{"actor kind not admitted", policy.Config{}, policy.ActorAutomation, "toggle", policy.PluginCommandSafe},
+		{"actor kind not admitted", policy.Config{}, policy.ActorGuest, "toggle", policy.PluginCommandSafe},
 		{
 			"confirm without approvals",
 			policy.Config{Classes: map[policy.Class]policy.Mode{policy.Safe: policy.ModeConfirm}},
