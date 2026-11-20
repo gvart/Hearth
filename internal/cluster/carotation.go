@@ -1173,10 +1173,11 @@ func (n *Node) dropLeftoverNext(ctx context.Context) {
 // widens the hub's trust, and a hub replaying its log after a restart may
 // show a rotation that was aborted since, whose CA no hub may trust any
 // more. The leader settles after a barrier. A follower settles once its
-// store applied through an index it took on an earlier run: at least the
-// commit index it had learned from the leader, and the last index of the
-// log it restarted with. Under steady writes it rarely reaches the commit
-// index of the moment (caughtUp), but always one it took a run earlier.
+// store applied through the commit index it had learned from the leader on
+// an earlier run: raft starts it at 0 and sets it from the leader, so after
+// a restart it covers the log the hub replays. Under steady writes the
+// store rarely reaches the commit index of the moment (caughtUp), but
+// always one taken a run earlier.
 // Called with recMu held.
 func (n *Node) settledOn(ctx context.Context, newCAFP string) bool {
 	if n.IsLeader() {
@@ -1196,7 +1197,7 @@ func (n *Node) settledOn(ctx context.Context, newCAFP string) bool {
 			if err != nil || commit == 0 {
 				return false
 			}
-			n.trustAt, n.trustFP = max(commit, n.startLast), newCAFP
+			n.trustAt, n.trustFP = commit, newCAFP
 			return false
 		}
 		if !n.appliedThrough(n.trustAt) {

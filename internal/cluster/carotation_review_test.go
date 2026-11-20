@@ -573,7 +573,7 @@ func TestCARotationRestartKeepsNextOfALaterRotation(t *testing.T) {
 // CA signed (#232).
 func TestCARotationReplayDoesNotTrustAnAbortedCA(t *testing.T) {
 	ctx := t.Context()
-	hubs, _ := startRotationHubs(t)
+	hubs, thief := startRotationHubs(t)
 	leader := rotLeader(t, hubs)
 	recordHubCerts(t, hubs)
 	follower := otherHubs(hubs, leader)[0]
@@ -649,9 +649,17 @@ func TestCARotationReplayDoesNotTrustAnAbortedCA(t *testing.T) {
 		}
 		return nil
 	}
-	restarted.reconcileCA(ctx)
+	// A run takes the index the store must reach; later runs check it.
+	for range 3 {
+		restarted.reconcileCA(ctx)
+	}
 	if err := trusts(); err != nil {
 		t.Fatalf("the replaying hub trusts the aborted rotation's CA: %v", err)
+	}
+	// The pins still hold meanwhile (#216): an old-CA hub certificate other
+	// than the pinned one is refused.
+	if err := restarted.checkPeerCert(mintHubCert(t, thief, leader.ID()).Leaf); !errors.Is(err, errNotPinned) {
+		t.Fatalf("peer check of an unpinned old-CA certificate while replaying = %v, want errNotPinned", err)
 	}
 	open()
 	eventually(t, restarted.ID()+" to catch up", func() bool {
