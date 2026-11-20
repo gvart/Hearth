@@ -1,0 +1,27 @@
+docs/talos.md
+  s_26e932fc13ca45::t_b4aa61d5ab0f25 1-74,76-79,81-151
+  s_26e932fc13ca45::t_1caff6a29a3d3f 75,80
+deploy/kubernetes/agent-daemonset.yaml
+  s_26e932fc13ca45::t_2965bb6bef1a4b 1-10,13,15,17,19-151
+  s_26e932fc13ca45::t_c362950c843137 11-12,14,16,18
+site/src/pages.mjs
+  s_26e932fc13ca45::t_1caff6a29a3d3f 11
+docs/kubernetes.md
+  s_26e932fc13ca45::t_f52167439fa270 52-53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d74a6563e177fea92a7ab8c724128f229d76e13b",
+  "prompts": {},
+  "sessions": {
+    "s_26e932fc13ca45": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea42b0cd-7455-494b-8071-e63f36b98d4d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
