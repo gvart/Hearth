@@ -1,0 +1,21 @@
+web/src/automations/schema.json
+  s_26e932fc13ca45::t_bedb67128c79b4 110-118
+internal/automation/editorschema_test.go
+  s_26e932fc13ca45::t_df68679c392bf2 59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ba483683af080d108060a8f876f9ac715891e4a9",
+  "prompts": {},
+  "sessions": {
+    "s_26e932fc13ca45": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea42b0cd-7455-494b-8071-e63f36b98d4d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
