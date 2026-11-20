@@ -1,0 +1,42 @@
+docs/notifications.md
+  s_87f1c7baee7d5a::t_cd5d0ef6864441 8,14-16,31-33,41-42
+docs/security.md
+  s_87f1c7baee7d5a::t_b2b04959c00886 82-83,151-158
+docs/automations.md
+  s_87f1c7baee7d5a::t_d3f957c4c247d0 6-12,190,192,212-213,242-243,247-248,252-253
+docs/guardrails.md
+  s_87f1c7baee7d5a::t_cd5d0ef6864441 15-17,138-180,188
+docs/runbooks.md
+  s_87f1c7baee7d5a::t_cd5d0ef6864441 15-17
+  s_87f1c7baee7d5a::t_d3f957c4c247d0 13-14,318-319
+docs/backup.md
+  s_87f1c7baee7d5a::t_d3f957c4c247d0 307-310
+docs/cluster.md
+  s_87f1c7baee7d5a::t_a80a372fc120b1 99,103,105-110,112-125,128-129,132-136,139-147
+CLAUDE.md
+  s_87f1c7baee7d5a::t_9e179bad3ec31f 51
+docs/concepts.md
+  s_87f1c7baee7d5a::t_9c645fa29b0e53 103
+docs/discovery.md
+  s_87f1c7baee7d5a::t_861a8840489e0e 151
+docs/impl/ap-cluster.md
+  s_87f1c7baee7d5a::t_52d5137679e131 42
+docs/mcp.md
+  s_87f1c7baee7d5a::t_fbbd76c6975ecc 83,122
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3029ee16dd7b9277288111c990d0b8827d193dbc",
+  "prompts": {},
+  "sessions": {
+    "s_87f1c7baee7d5a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "45cc2cdf-3130-4caa-8cb4-8cb365d2150d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
