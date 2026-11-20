@@ -265,11 +265,29 @@ func scanDigests(ctx context.Context, q interface {
 	return rows.Err()
 }
 
+// TablesHere are the replicated tables, in dependency order, that this
+// database's schema has: a table a later migration adds is left out until
+// the schema reaches it.
+func (s *Store) TablesHere(ctx context.Context) ([]string, error) {
+	v, err := schemaVersion(ctx, s.db)
+	if err != nil {
+		return nil, err
+	}
+	return slices.DeleteFunc(ReplicatedTables(), func(t string) bool {
+		spec, ok := tables[t]
+		return ok && !spec.existsAt(v)
+	}), nil
+}
+
 // buildDigest computes every bucket digest from the rows: one scan of each
 // table, when the store opens.
 func (s *Store) buildDigest(ctx context.Context) error {
 	d := newDigest()
-	for _, table := range ReplicatedTables() {
+	here, err := s.TablesHere(ctx)
+	if err != nil {
+		return fmt.Errorf("build digests: %w", err)
+	}
+	for _, table := range here {
 		err := scanDigests(ctx, s.db, table, func(key []any, sp Space, b int, st rowState) error {
 			d.space[sp][b] ^= rowHash(table, pkString(key), st)
 			return nil
@@ -287,7 +305,11 @@ func (s *Store) buildDigest(ctx context.Context) error {
 // only for the buckets whose digests differ.
 func (s *Store) BucketRows(ctx context.Context, sp Space, want func(bucket int) bool) ([]RowDigest, error) {
 	var out []RowDigest
-	for _, table := range ReplicatedTables() {
+	here, err := s.TablesHere(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, table := range here {
 		if (sp == SpaceGlobal) != globalTables[table] {
 			continue
 		}
@@ -469,6 +491,10 @@ func (d *digestTx) dropped(table string, key []any, st rowState, r map[string]an
 // gcTombstonesDigested is GCTombstones for a store keeping digests: the
 // tombstones dropped leave the digests too.
 func (s *Store) gcTombstonesDigested(ctx context.Context, cutoff int64) (n int, err error) {
+	here, err := s.TablesHere(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("gc tombstones: %w", err)
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, fmt.Errorf("gc tombstones: %w", err)
@@ -480,7 +506,7 @@ func (s *Store) gcTombstonesDigested(ctx context.Context, cutoff int64) (n int, 
 	}()
 	dt := s.newDigestTx()
 	for _, table := range sortedTables() {
-		if !tables[table].deletable {
+		if !tables[table].deletable || !slices.Contains(here, table) {
 			continue
 		}
 		var gone [][]any

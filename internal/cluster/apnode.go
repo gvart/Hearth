@@ -200,7 +200,11 @@ func (n *APNode) Bind(ctx context.Context, st *store.Store) error {
 
 // hasRows reports whether st holds any replicated row.
 func hasRows(ctx context.Context, st *store.Store) (bool, error) {
-	for _, t := range store.ReplicatedTables() {
+	here, err := st.TablesHere(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, t := range here {
 		// t is a table name of the store's own list.
 		rows, err := st.ReadLocal(ctx, `SELECT 1 FROM `+t+` LIMIT 1`, nil)
 		if err != nil {

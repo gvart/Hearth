@@ -39,7 +39,13 @@ func TestRouteOfEveryCommand(t *testing.T) {
 		StartCARotation{}.Op(): true, AdvanceCARotation{}.Op(): true, ResealSecrets{}.Op(): true,
 		MigrateSchema{}.Op(): true, // the schema moves on each member (docs/design/ap-cluster.md §8)
 	}
-	for _, cmd := range allCommands() {
+	configCmds := []Command{PutConfigDocs{By: "x"}, DeleteConfigDoc{Kind: ConfigRunbook, Name: "r.yaml"}}
+	for _, cmd := range configCmds {
+		if r, err := RouteOf(cmd); err != nil || r.Kind != RouteGlobal || !r.Critical {
+			t.Errorf("%s: route %+v, %v; want global and critical", cmd.Op(), r, err)
+		}
+	}
+	for _, cmd := range append(allCommands(), configCmds...) {
 		r, err := RouteOf(cmd)
 		if refused[cmd.Op()] {
 			if !errors.Is(err, ErrNoRoute) {

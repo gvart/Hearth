@@ -285,7 +285,7 @@ func RouteOf(cmd Command) (Route, error) {
 		return Route{Kind: RouteSplit}, nil
 	case SetHubURL:
 		return global(false)
-	case RecordHubCert, RevokeHubCerts, SetPasswordHash:
+	case RecordHubCert, RevokeHubCerts, SetPasswordHash, PutConfigDocs, DeleteConfigDoc:
 		return global(true)
 	case StartCARotation, AdvanceCARotation, ResealSecrets:
 		// A rotation reseals runbook runs and revokes certificates on
