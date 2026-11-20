@@ -6,9 +6,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -462,4 +464,104 @@ func TestCARotationOrphanNextOnFollower(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitNext(t, hubs, plan.NewCAFP)
+}
+
+// A hub that restarts restores a snapshot and replays the log after it.
+// Taken during a rotation that was then aborted, the snapshot shows that
+// rotation under way, not the one that followed: until the replay is done, the hub
+// must keep the next CA of the later rotation, key, node certificate and
+// files (#230).
+func TestCARotationRestartKeepsNextOfALaterRotation(t *testing.T) {
+	ctx := t.Context()
+	hubs, _ := startRotationHubs(t)
+	leader := rotLeader(t, hubs)
+	recordHubCerts(t, hubs)
+	follower := otherHubs(hubs, leader)[0]
+
+	first, err := leader.RotateCA(ctx, RotateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitNext(t, hubs, first.NewCAFP)
+	if err := follower.raft.Snapshot().Error(); err != nil {
+		t.Fatalf("snapshot with the first rotation under way: %v", err)
+	}
+	// The gate entry follows the snapshot, so a replay held on it still
+	// shows the first rotation under way.
+	upsert(t, leader.testNode, "pi")
+	gate := time.UnixMilli(1_000_000).UTC()
+	if _, err := leader.st.Devices().SetBootTime(ctx, "pi", gate); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the gate entry on "+follower.ID(), func() bool {
+		d, err := follower.st.Devices().Get(ctx, "pi")
+		return err == nil && d.BootTime.Equal(gate)
+	})
+	if _, err := leader.AbortCA(ctx, AbortOptions{}); err != nil {
+		t.Fatalf("AbortCA: %v", err)
+	}
+	eventually(t, follower.ID()+" to drop the first rotation's CA", func() bool {
+		return follower.localCAInfo().NextFP == ""
+	})
+	second, err := leader.RotateCA(ctx, RotateOptions{})
+	if err != nil {
+		t.Fatalf("RotateCA after the abort: %v", err)
+	}
+	waitNext(t, hubs, second.NewCAFP)
+
+	// Restart the follower with its apply held on the gate entry.
+	obs := &gatedObserver{
+		gate: gate.UnixMilli(), entered: make(chan struct{}), release: make(chan struct{}),
+		local: map[int64]bool{},
+	}
+	dir, addr, id := follower.dir, follower.Addr(), follower.ID()
+	follower.stop()
+	ca, err := pki.LoadOrCreateCA(dir, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	bind := func(n *Node, s *store.Store) store.Applier {
+		n.ObserveApplies(obs)
+		return n.BindForwarding(s)
+	}
+	restarted := &rotHub{testNode: startNodeBound(t, ca, id, dir, addr, false, bind, rotTune), ca: ca}
+	var release sync.Once
+	open := func() { release.Do(func() { close(obs.release) }) }
+	t.Cleanup(open)
+	select {
+	case <-obs.entered:
+	case <-time.After(waitFor):
+		t.Fatal("the restarted hub did not replay the gate entry")
+	}
+	rot, err := restarted.st.CARotations().Latest(ctx)
+	if err != nil || rot.NewCAFP != first.NewCAFP || !rot.Active() {
+		t.Fatalf("the replaying store shows %+v, %v; want the first rotation under way", rot, err)
+	}
+
+	holdsSecond := func() error {
+		i := restarted.localCAInfo()
+		if i.NextFP != second.NewCAFP || !i.HasNextKey || !i.HasNextCert {
+			return fmt.Errorf("next CA %s, key %v, node certificate %v; want %s with both",
+				i.NextFP, i.HasNextKey, i.HasNextCert, second.NewCAFP)
+		}
+		for _, f := range []string{pki.NextCACertFile, pki.NextCAKeyFile, filepath.Join(RaftDir, nextNodeCertFile), filepath.Join(RaftDir, nextNodeKeyFile)} {
+			if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
+				return fmt.Errorf("%s: %w", f, err)
+			}
+		}
+		return nil
+	}
+	restarted.reconcileCA(ctx)
+	if err := holdsSecond(); err != nil {
+		t.Fatalf("the hub dropped the next CA of the later rotation while replaying: %v", err)
+	}
+	open()
+	eventually(t, id+" to catch up", func() bool {
+		rot, err := restarted.st.CARotations().Latest(ctx)
+		return err == nil && rot.NewCAFP == second.NewCAFP && restarted.caughtUp()
+	})
+	restarted.reconcileCA(ctx)
+	if err := holdsSecond(); err != nil {
+		t.Fatalf("after the replay: %v", err)
+	}
 }

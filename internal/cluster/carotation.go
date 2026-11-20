@@ -889,10 +889,11 @@ func (n *Node) reconcileCA(ctx context.Context) {
 		return
 	}
 	if next != nil && pki.FingerprintHex(next) != rot.NewCAFP {
-		// A next CA of an attempt that did not start: only one rotation
-		// is under way at a time.
-		if err := n.dropNextLocal(ctx); err != nil {
-			n.log.ErrorContext(ctx, "drop a leftover next CA", "err", err)
+		// A next CA of an attempt that did not start, or of a later
+		// rotation a store still replaying after a restart does not show
+		// yet: drop it only once the log shows it is not under way.
+		n.dropLeftoverNext(ctx)
+		if ca.Next() != nil {
 			return
 		}
 	}
