@@ -1,0 +1,52 @@
+internal/hub/api.go
+  s_87f1c7baee7d5a::t_e087279b14570e 92
+internal/automation/docs.go
+  s_87f1c7baee7d5a::t_f279e0ca8c6beb 1-119
+internal/automation/runbook_recipes_test.go
+  s_87f1c7baee7d5a::t_63b3f295ffe19e 178
+internal/policy/hold.go
+  s_87f1c7baee7d5a::t_452d00c0d04f2d 5-8,14-15,19-21,23,28-30
+internal/policy/policy.go
+  s_87f1c7baee7d5a::t_452d00c0d04f2d 247-260,499-508
+internal/policy/config.go
+  s_87f1c7baee7d5a::t_452d00c0d04f2d 154-163,168,171
+internal/notify/notify.go
+  s_87f1c7baee7d5a::t_003f1f72ea5d7f 23,49,54-69,174-175,188-189,206,208-209,215
+internal/automation/runbook_engine.go
+  s_87f1c7baee7d5a::t_02b084ed1e7622 76-80,138-148,151-152,191,278
+internal/automation/runtime.go
+  s_87f1c7baee7d5a::t_02b084ed1e7622 55-59,111,115,131-142
+  s_87f1c7baee7d5a::t_ca0069ae9a2876 143-144
+internal/hub/automations.go
+  s_87f1c7baee7d5a::t_e087279b14570e 37,61,104,191,200,204,208,229-230,234-236,247-248,380,383
+internal/automation/runbook_review_test.go
+  s_87f1c7baee7d5a::t_63b3f295ffe19e 320
+internal/hub/server.go
+  s_87f1c7baee7d5a::t_d9fd409a0258fb 112-113,115-117
+internal/mcpserver/tools.go
+  s_87f1c7baee7d5a::t_84bd6ac1164a42 398-399,414,424,428,432,449-450,462,464-470
+internal/automation/files.go
+  s_87f1c7baee7d5a::t_c3fe8a99097d2f 6,97-99,101-105,109-111,114-117,156-186,214,218,239-240,270-278,289-291
+internal/mcpserver/server.go
+  s_87f1c7baee7d5a::t_84bd6ac1164a42 75-76,78-80
+internal/policy/engine.go
+  s_87f1c7baee7d5a::t_452d00c0d04f2d 14,116-119,163-175,179,182-184,461,665
+internal/hub/runbooks.go
+  s_87f1c7baee7d5a::t_84bd6ac1164a42 51-52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cc282cad3b5d3fcb05d2f45acc86e97b418aaa88",
+  "prompts": {},
+  "sessions": {
+    "s_87f1c7baee7d5a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "45cc2cdf-3130-4caa-8cb4-8cb365d2150d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
