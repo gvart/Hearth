@@ -76,7 +76,7 @@ func startFakeDocker(t *testing.T) *fakeDocker {
 	})
 	mux.HandleFunc("GET /images/json", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSONBody(w, []map[string]any{
-			{"Id": "sha256:111", "RepoTags": []string{"nginx:1.27"}, "Size": 5 << 30, "Created": 1690000000},
+			{"Id": "sha256:111", "RepoTags": []string{"nginx:1.27"}, "Size": int64(5) << 30, "Created": 1690000000},
 			{"Id": "sha256:222", "RepoTags": []string{"<none>:<none>"}, "Size": 1000, "Created": 1690000000},
 		})
 	})
