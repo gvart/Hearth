@@ -59,7 +59,8 @@ function AutomationList() {
         <div className="empty">
           <h2>Automate something</h2>
           <p className="muted">
-            An automation is a YAML file in the hub&apos;s automations directory. Create one here, or add a file there.
+            An automation is a YAML file every hub of the cluster holds. Create one here, or import files with{' '}
+            <code>hearth config import</code>.
           </p>
         </div>
       ) : (

@@ -77,7 +77,7 @@ export interface CreatedToken {
   join_command: string;
 }
 
-/** One per-hub configuration item compared across the cluster's hubs. */
+/** One per-hub configuration item compared across the cluster's hubs: host_flags. */
 export interface ConfigDriftItem {
   item: string;
   status: 'in_sync' | 'differs' | 'unknown';

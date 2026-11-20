@@ -61,6 +61,8 @@ export interface SavedAutomation {
   cluster: boolean;
   /** This hub runs automations now. */
   leader: boolean;
+  /** The automation is in the cluster's store, on every hub. */
+  stored?: boolean;
   /** What to know about a save that worked. */
   warning?: string;
 }

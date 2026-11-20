@@ -4,8 +4,8 @@ package main
 
 import (
 	"bytes"
-	"errors"
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -152,13 +152,13 @@ func TestConfigImportReloadsPolicy(t *testing.T) {
 func TestConfigImportRejectsInvalid(t *testing.T) {
 	h := startConfigHub(t, map[string]string{"notify.yaml": phoneChannel})
 	for name, files := range map[string]map[string]string{
-		"invalid policy":   {policy.ConfigFile: "classes:\n  dangerous: maybe\n"},
-		"unknown field":    {policy.ConfigFile: "clases: {}\n"},
-		"unknown channel":  {policy.ConfigFile: "approval_notify:\n  channel: pager\n"},
-		"bad automation":   {"automations/a.yaml": "id: a\ntriggers: []\n"},
+		"invalid policy":    {policy.ConfigFile: "classes:\n  dangerous: maybe\n"},
+		"unknown field":     {policy.ConfigFile: "clases: {}\n"},
+		"unknown channel":   {policy.ConfigFile: "approval_notify:\n  channel: pager\n"},
+		"bad automation":    {"automations/a.yaml": "id: a\ntriggers: []\n"},
 		"automation notify": {"automations/a.yaml": "id: a\ntriggers:\n  - type: manual\nactions:\n  - type: notify\n    channel: pager\n    message: hi\n"},
-		"locks out import": {policy.ConfigFile: "actors:\n  admin:\n    dangerous: deny\n"},
-		"bad notify":       {"notify.yaml": "channels:\n  phone:\n    type: smoke\n"},
+		"locks out import":  {policy.ConfigFile: "actors:\n  admin:\n    dangerous: deny\n"},
+		"bad notify":        {"notify.yaml": "channels:\n  phone:\n    type: smoke\n"},
 		"half invalid": {
 			policy.ConfigFile: "classes:\n  dangerous: allow\n", "runbooks/r.yaml": "not: a runbook\n",
 		},
@@ -298,4 +298,3 @@ func TestConfigMergedEditApplied(t *testing.T) {
 		t.Fatalf("merged policy not applied: %s", d)
 	}
 }
-
