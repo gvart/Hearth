@@ -151,6 +151,7 @@ type PeerJSON struct {
 
 func (a *api) netEdgeRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /api/v1/devices/{id}/net-edges", a.auth(a.deviceNetEdges))
+	mux.Handle("GET /api/v1/net-edges", a.auth(a.netTopology))
 }
 
 // deviceNetEdges serves GET /api/v1/devices/{id}/net-edges: the network
@@ -195,11 +196,7 @@ func (a *api) deviceNetEdges(w http.ResponseWriter, r *http.Request) {
 // them (its ceiling dropped --allow-net-edges) lists none, whatever it
 // reported before.
 func (a *api) readNetEdges(ctx context.Context, d store.Device) (NetEdgesJSON, error) {
-	out := NetEdgesJSON{Neighbors: []NeighborJSON{}, Connections: []ConnectionJSON{}}
-	var f Facts
-	if json.Unmarshal(d.Facts, &f) == nil && f.Ceiling != nil {
-		out.Enabled = f.Ceiling.NetEdges
-	}
+	out := NetEdgesJSON{Neighbors: []NeighborJSON{}, Connections: []ConnectionJSON{}, Enabled: netEdgesEnabled(d)}
 	if !out.Enabled {
 		return out, nil
 	}
@@ -225,6 +222,13 @@ func (a *api) readNetEdges(ctx context.Context, d store.Device) (NetEdgesJSON, e
 		})
 	}
 	return out, nil
+}
+
+// netEdgesEnabled reports whether d's agent last reported a ceiling that
+// allows network edges (it runs with --allow-net-edges).
+func netEdgesEnabled(d store.Device) bool {
+	var f Facts
+	return json.Unmarshal(d.Facts, &f) == nil && f.Ceiling != nil && f.Ceiling.NetEdges
 }
 
 // peerIndex maps MACs and IPs to what the hub knows them to be.

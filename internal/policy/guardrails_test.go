@@ -163,6 +163,7 @@ var expected = map[Action]struct {
 	DeviceMetrics:             {Read, []string{ActorMCP}, false},
 	DeviceLogs:                {Read, []string{ActorWeb}, false},
 	DeviceNetEdges:            {Read, []string{ActorWeb}, false},
+	NetworkTopology:           {Read, []string{ActorWeb}, false},
 	KubeRead:                  {Read, []string{ActorMCP}, false},
 	DeviceRestart:             {Safe, []string{ActorMCP, ActorGuest}, false},
 	DeviceExec:                {Dangerous, []string{ActorMCP}, false},

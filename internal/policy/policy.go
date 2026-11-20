@@ -147,6 +147,9 @@ const (
 	// DeviceNetEdges reads the network edges a device's agent reported: its
 	// neighbours and who it holds TCP connections with.
 	DeviceNetEdges Action = "device.net_edges"
+	// NetworkTopology reads the network edges every device's agent reported,
+	// at once, for the topology view.
+	NetworkTopology Action = "network.topology"
 	// MCPTokenCreate creates a bearer token for an MCP client.
 	MCPTokenCreate Action = "mcp.token.create" //nolint:gosec // an action name
 	// MCPTokenRevoke revokes an MCP client's token.
@@ -399,6 +402,8 @@ var rules = map[Action]rule{
 	// Connections say who talks to whom, so every read is audited, and only
 	// an agent started with --allow-net-edges reports them.
 	DeviceNetEdges: {class: Read, actors: []string{ActorWeb}},
+	// As device.net_edges, for every device at once.
+	NetworkTopology: {class: Read, actors: []string{ActorWeb}},
 	// A plan only parses the file.
 	AutomationPlan: {class: Read, actors: []string{ActorMCP}},
 	// An applied automation runs on its own, again and again, long after the
