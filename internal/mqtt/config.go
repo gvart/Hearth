@@ -66,9 +66,21 @@ type Device struct {
 //	    allow:
 //	      - topic: hearth/3f2a9c/#
 //	        access: write
+//	bridge:
+//	  allow:
+//	    - topic: sensors/#
+//	      access: readwrite
 type Clients struct {
 	Users   []User   `yaml:"users"`
 	Devices []Device `yaml:"devices"`
+	// Bridge holds the topics the bridge to a remote broker may write
+	// (bring in) and read (send out) on this broker.
+	Bridge *BridgeRules `yaml:"bridge"`
+}
+
+// BridgeRules are the bridge's rules, as a local client's.
+type BridgeRules struct {
+	Allow []Rule `yaml:"allow"`
 }
 
 // LoadClients reads and checks the clients file at path.
@@ -134,6 +146,11 @@ func ParseClients(b []byte) (*Clients, error) {
 		devices[d.ID] = true
 		if err := checkRules(d.Allow); err != nil {
 			return nil, fmt.Errorf("device %q: %w", d.ID, err)
+		}
+	}
+	if c.Bridge != nil {
+		if err := checkRules(c.Bridge.Allow); err != nil {
+			return nil, fmt.Errorf("bridge: %w", err)
 		}
 	}
 	return &c, nil
