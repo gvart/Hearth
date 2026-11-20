@@ -39,9 +39,10 @@ const (
 	Beszel     = "beszel"
 	DHCP       = "dhcp"
 	Discovery  = "discovery"
+	Talos      = "talos"
 )
 
-var allowed = []string{Beszel, DHCP, Discovery, Kubernetes, NetAlertX, PiHole, Prometheus, Proxmox}
+var allowed = []string{Beszel, DHCP, Discovery, Kubernetes, NetAlertX, PiHole, Prometheus, Proxmox, Talos}
 
 // Payload is everything sent, and nothing else may be. Its JSON keys are the
 // collector's whole schema.
