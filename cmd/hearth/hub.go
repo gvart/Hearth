@@ -326,8 +326,17 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		ca         *pki.CA
 		node       *cluster.Node
 		membership *cluster.Membership
+		apNode     *cluster.APNode
 	)
-	if opts.cluster.clustered(opts.dataDir) {
+	if err := opts.cluster.checkMode(); err != nil {
+		return err
+	}
+	if opts.cluster.ap() {
+		if st, ca, apNode, err = startAPNode(ctx, opts, allowedRoles, log); err != nil {
+			return err
+		}
+		defer st.Close()
+	} else if opts.cluster.clustered(opts.dataDir) {
 		// Agents and other hubs reach this hub by its first --host name.
 		var agentURL string
 		if agentPort != "" {
@@ -421,7 +430,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 			Standby: node != nil,
 		})
 	}
-	if node == nil {
+	if node == nil && apNode == nil {
 		if err := ensureAdminPassword(ctx, st, pol, opts, log); err != nil {
 			return err
 		}
@@ -503,6 +512,10 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		cfg.Ready = ready
 		cfg.ConfigDrift = func(ctx context.Context) (any, error) { return node.ConfigDrift(ctx) }
 	}
+	if apNode != nil {
+		// Requests wait for the first sync with the cluster.
+		cfg.Ready = ready
+	}
 	if _, port, err := net.SplitHostPort(opts.httpListen); err == nil && port != "0" {
 		cfg.HTTPPort = port
 	}
@@ -566,6 +579,13 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		m := http.NewServeMux()
 		m.Handle("/", uiMux)
 		m.Handle(cluster.NewJoinServer(node, st, ca, pol, log).Handler())
+		tlsWeb = m
+	}
+	if apNode != nil {
+		// Joining hubs call ClusterService.Join over TLS.
+		m := http.NewServeMux()
+		m.Handle("/", uiMux)
+		m.Handle(cluster.NewAPJoinServer(apNode, st, ca, pol, log).Handler())
 		tlsWeb = m
 	}
 	agentSrv := &http.Server{
@@ -821,6 +841,15 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 			case <-gctx.Done():
 				return nil
 			}
+		})
+	}
+	if apNode != nil {
+		g.Go(func() error { return apNode.Run(gctx) })
+		g.Go(func() error { return cluster.ServeAPControl(gctx, opts.dataDir, apNode, log) })
+		g.Go(func() error {
+			return runAPMember(gctx, apNode, func(ctx context.Context) error {
+				return ensureAdminPassword(ctx, st, pol, opts, log)
+			}, ready, log)
 		})
 	}
 	err = g.Wait()

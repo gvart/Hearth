@@ -27,6 +27,9 @@ type apNet struct {
 	mu      sync.Mutex
 	members map[string]*apMember
 	down    map[string]bool
+	// crashed members refuse connections but still look alive in the
+	// gossip, as in the moments after a crash.
+	crashed map[string]bool
 	cut     map[[2]string]bool
 }
 
@@ -59,7 +62,7 @@ func (p apPeers) Members() []MemberInfo {
 func (p apPeers) DialReplica(_ context.Context, id string) (net.Conn, error) {
 	p.net.mu.Lock()
 	m, ok := p.net.members[id]
-	blocked := p.net.down[id] || p.net.down[p.self] || p.net.cut[[2]string{p.self, id}]
+	blocked := p.net.down[id] || p.net.crashed[id] || p.net.down[p.self] || p.net.cut[[2]string{p.self, id}]
 	p.net.mu.Unlock()
 	if !ok || blocked {
 		return nil, fmt.Errorf("dial %s: unreachable", id)
@@ -72,7 +75,7 @@ func (p apPeers) DialReplica(_ context.Context, id string) (net.Conn, error) {
 // newAPNet starts members ids with replication factor n (0: default).
 func newAPNet(t *testing.T, n int, ids ...string) *apNet {
 	t.Helper()
-	an := &apNet{members: map[string]*apMember{}, down: map[string]bool{}, cut: map[[2]string]bool{}}
+	an := &apNet{members: map[string]*apMember{}, down: map[string]bool{}, crashed: map[string]bool{}, cut: map[[2]string]bool{}}
 	for _, id := range ids {
 		an.add(t, n, id)
 	}
@@ -567,6 +570,43 @@ func TestGCAndRejoinEmpty(t *testing.T) {
 	}
 }
 
+// A replica that crashed a moment ago, still alive in the gossip, does not
+// fail a critical write: the rows go to the next live stand-in, and the
+// crashed replica gets a hint.
+func TestCriticalWriteFallsBackToStandIn(t *testing.T) {
+	ctx := t.Context()
+	ids := []string{"a", "b", "c"}
+	an := newAPNet(t, 2, ids...)
+	id := keyOwnedBy(t, ids, 2, "dev", "a", "b")
+	if err := an.m("a").st.Devices().Upsert(ctx, device(id, "d")); err != nil {
+		t.Fatal(err)
+	}
+	an.mu.Lock()
+	an.crashed["b"] = true
+	an.mu.Unlock()
+	if err := an.m("a").st.Certs().Create(ctx, "serial-x", id); err != nil {
+		t.Fatalf("critical write with a just-crashed replica: %v", err)
+	}
+	rows, _ := an.m("c").st.ReadLocal(ctx, `SELECT count(*) FROM certs WHERE serial = 'serial-x'`, nil)
+	if rows.Vals[0][0].(int64) != 1 {
+		t.Error("the stand-in did not take the write")
+	}
+	if n, _ := an.m("a").hints.Count(ctx, "b"); n == 0 {
+		t.Error("no hint kept for the crashed replica")
+	}
+	// Forwarded writes, and audit entries, on any member go on too.
+	for i := range 20 {
+		k := fmt.Sprintf("tok%d", i)
+		if err := an.m(ids[i%3]).st.Tokens().Create(ctx, k, nil, time.Now().Add(time.Hour)); err != nil && ids[i%3] != "b" {
+			t.Fatalf("token %d on %s: %v", i, ids[i%3], err)
+		}
+		if _, err := an.m("c").st.Audit().Append(ctx, store.AuditEntry{TS: time.Now(), ActorKind: "user", ActorID: "a",
+			Action: k, Decision: "allow", Result: "ok"}); err != nil {
+			t.Fatalf("audit %d: %v", i, err)
+		}
+	}
+}
+
 func TestSingleMemberWorks(t *testing.T) {
 	ctx := t.Context()
 	an := newAPNet(t, 0, "solo")
@@ -583,5 +623,37 @@ func TestSingleMemberWorks(t *testing.T) {
 	}
 	if l, err := m.st.Devices().List(ctx); err != nil || len(l) != 1 {
 		t.Fatalf("list = %v, %v", l, err)
+	}
+}
+
+// A data dir runs in one cluster mode only.
+func TestCheckMode(t *testing.T) {
+	raftDir, apDir, fresh := t.TempDir(), t.TempDir(), t.TempDir()
+	for _, f := range []struct{ dir, name, body string }{
+		{raftDir, boltFile, ""},
+		{apDir, apModeFile, "ap\n"},
+	} {
+		if err := os.MkdirAll(filepath.Join(f.dir, RaftDir), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(f.dir, RaftDir, f.name), []byte(f.body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tt := range []struct {
+		dir, mode string
+		ok        bool
+	}{
+		{fresh, "ap", true}, {fresh, "raft", true},
+		{apDir, "ap", true}, {apDir, "raft", false},
+		{raftDir, "raft", true}, {raftDir, "ap", false},
+	} {
+		err := CheckMode(tt.dir, tt.mode)
+		if (err == nil) != tt.ok || (err != nil && !errors.Is(err, ErrModeMismatch)) {
+			t.Errorf("CheckMode(%s, %s) = %v", tt.dir, tt.mode, err)
+		}
+	}
+	if !IsAPMember(apDir) || IsAPMember(raftDir) {
+		t.Error("IsAPMember")
 	}
 }

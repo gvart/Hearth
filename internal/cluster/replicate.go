@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net"
 	"os"
 	"slices"
@@ -398,37 +399,17 @@ func (r *Replicator) applyHere(ctx context.Context, cmd store.Command, route sto
 
 // replicate sends muts, written here, to the other members that take them.
 // Replicas that are down get hints. A critical write waits for W - 1 other
-// replicas of every row; any other is sent in the background.
+// replicas of every row; any other is sent in the background. A replica
+// that fails to take a critical write though the gossip still has it live
+// (it died a moment ago) is treated as down: it gets a hint, and the rows
+// go to the next live stand-in instead.
 func (r *Replicator) replicate(ctx context.Context, muts []store.Mutation, critical bool, v view) error {
 	if len(muts) == 0 {
 		return nil
 	}
-	type group struct {
-		live []string
-		w    int
-	}
-	batches := map[string][]store.Mutation{}
-	hinted := map[string][]store.Mutation{}
-	var groups []group
-	for _, m := range muts {
-		p, err := m.Placement()
-		if err != nil {
-			return err
-		}
-		live, down := v.placementTargets(p)
-		n := v.n
-		if p.Global {
-			n = v.ring.Size()
-		}
-		groups = append(groups, group{live: live, w: writeQuorum(critical, n)})
-		for _, t := range live {
-			if t != v.self {
-				batches[t] = append(batches[t], m)
-			}
-		}
-		for _, t := range down {
-			hinted[t] = append(hinted[t], m)
-		}
+	batches, hinted, groups, err := r.plan(ctx, muts, critical, v)
+	if err != nil {
+		return err
 	}
 	for t, ms := range hinted {
 		r.hint(t, ms)
@@ -445,22 +426,32 @@ func (r *Replicator) replicate(ctx context.Context, muts []store.Mutation, criti
 		return nil
 	}
 	acked := map[string]bool{v.self: true}
-	var mu sync.Mutex
-	var wg sync.WaitGroup
-	for t, ms := range batches {
-		wg.Go(func() {
-			_, err := r.call(ctx, t, apRequest{Op: opMerge, Muts: ms})
-			if err != nil {
-				r.log.WarnContext(ctx, "replicate a critical write: hinted", "member", t, "err", err)
-				r.hint(t, ms)
-				return
+	failed := map[string]bool{}
+	for round := 0; ; round++ {
+		r.sendCritical(ctx, batches, acked, failed)
+		err := shortOf(groups, acked)
+		if err == nil || round == 1 || len(failed) == 0 {
+			return err
+		}
+		// Once more, with the members that failed as down.
+		live := maps.Clone(v.live)
+		for m := range failed {
+			delete(live, m)
+		}
+		v.live = live
+		if batches, _, groups, err = r.plan(ctx, muts, critical, v); err != nil {
+			return err
+		}
+		for t := range batches {
+			if acked[t] || failed[t] {
+				delete(batches, t)
 			}
-			mu.Lock()
-			acked[t] = true
-			mu.Unlock()
-		})
+		}
 	}
-	wg.Wait()
+}
+
+// shortOf returns ErrUnavailable if a row has fewer than W acks.
+func shortOf(groups []writeGroup, acked map[string]bool) error {
 	for _, g := range groups {
 		n := 0
 		for _, t := range g.live {
@@ -473,6 +464,80 @@ func (r *Replicator) replicate(ctx context.Context, muts []store.Mutation, criti
 		}
 	}
 	return nil
+}
+
+// writeGroup is the live targets of one row and how many must take it.
+type writeGroup struct {
+	live []string
+	w    int
+}
+
+// plan returns, for muts written here, the rows to send to each other live
+// target, the rows to hint to each replica that is down, and each row's
+// targets and W. A stand-in, which may lack the parent row of a child
+// (a certificate's device), gets the parent first.
+func (r *Replicator) plan(ctx context.Context, muts []store.Mutation, critical bool, v view) (batches, hinted map[string][]store.Mutation, groups []writeGroup, err error) {
+	batches, hinted = map[string][]store.Mutation{}, map[string][]store.Mutation{}
+	parents := map[string][]store.RowRef{}
+	for _, m := range muts {
+		p, err := m.Placement()
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		live, down := v.placementTargets(p)
+		n := v.n
+		if p.Global {
+			n = v.ring.Size()
+		}
+		groups = append(groups, writeGroup{live: live, w: writeQuorum(critical, n)})
+		ref, hasParent := m.ParentRef()
+		var owners []string
+		if hasParent && !p.Global {
+			owners = v.ring.Owners(store.BucketOf(store.Token(p.Key)), v.n)
+		}
+		for _, t := range live {
+			if t == v.self {
+				continue
+			}
+			batches[t] = append(batches[t], m)
+			if hasParent && !slices.Contains(owners, t) {
+				parents[t] = append(parents[t], ref)
+			}
+		}
+		for _, t := range down {
+			hinted[t] = append(hinted[t], m)
+		}
+	}
+	for t, refs := range parents {
+		ps, err := r.store().ReadRows(ctx, refs)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		batches[t] = append(ps, batches[t]...)
+	}
+	return batches, hinted, groups, nil
+}
+
+// sendCritical sends each batch and waits: a member that takes it goes in
+// acked; one that does not gets a hint and goes in failed.
+func (r *Replicator) sendCritical(ctx context.Context, batches map[string][]store.Mutation, acked, failed map[string]bool) {
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	for t, ms := range batches {
+		wg.Go(func() {
+			_, err := r.call(ctx, t, apRequest{Op: opMerge, Muts: ms})
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				r.log.WarnContext(ctx, "replicate a critical write: hinted", "member", t, "err", err)
+				r.hint(t, ms)
+				failed[t] = true
+				return
+			}
+			acked[t] = true
+		})
+	}
+	wg.Wait()
 }
 
 // hint keeps ms for member t.

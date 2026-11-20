@@ -1,0 +1,66 @@
+# Three hubs in an AP cluster (--cluster-mode ap: leaderless, sharded, N=2),
+# each master and storage, and one idle agent, all built from the current
+# checkout. Driven by ap_test.go (`task e2e:ap`): hub-a forms the cluster on
+# `up`; the test starts hub-b and hub-c itself, each with a fresh join token
+# in HEARTH_JOIN_TOKEN. Members gossip and replicate on port 7445.
+
+x-hearth: &hearth
+  image: hearth-e2e:local
+  init: true
+
+x-hub: &hub
+  <<: *hearth
+  pull_policy: never
+  environment:
+    HEARTH_ADMIN_PASSWORD: e2e-admin-password
+    HEARTH_JOIN_TOKEN: ${HEARTH_JOIN_TOKEN:-}
+    HEARTH_CLUSTER_MODE: ap
+    HEARTH_REPLICAS: "2"
+  ports:
+    - "127.0.0.1::7080"
+  healthcheck:
+    test: [CMD, nc, -z, 127.0.0.1, "7080"]
+    interval: 1s
+    timeout: 1s
+    retries: 60
+
+services:
+  hub-a:
+    <<: *hub
+    build:
+      context: ../..
+      dockerfile: test/e2e/Dockerfile
+    hostname: hub-a
+    command: [hearth, hub, --data-dir, /var/lib/hearth/hub, --node-id, hub-a, --host, hub-a, --gossip-advertise, "hub-a:7445"]
+    volumes:
+      - hub-a-data:/var/lib/hearth/hub
+
+  hub-b:
+    <<: *hub
+    hostname: hub-b
+    command: [hearth, hub, --data-dir, /var/lib/hearth/hub, --node-id, hub-b, --host, hub-b, --gossip-advertise, "hub-b:7445",
+      --join, "https://hub-a:7443", --gossip-seeds, "hub-a:7445"]
+    volumes:
+      - hub-b-data:/var/lib/hearth/hub
+
+  hub-c:
+    <<: *hub
+    hostname: hub-c
+    command: [hearth, hub, --data-dir, /var/lib/hearth/hub, --node-id, hub-c, --host, hub-c, --gossip-advertise, "hub-c:7445",
+      --join, "https://hub-a:7443", --gossip-seeds, "hub-a:7445,hub-b:7445"]
+    volumes:
+      - hub-c-data:/var/lib/hearth/hub
+
+  agent:
+    <<: *hearth
+    pull_policy: never
+    hostname: agent
+    command: [sleep, infinity]
+    volumes:
+      - agent-data:/var/lib/hearth/agent
+
+volumes:
+  hub-a-data:
+  hub-b-data:
+  hub-c-data:
+  agent-data:

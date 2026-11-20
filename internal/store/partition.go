@@ -62,12 +62,14 @@ var globalTables = map[string]bool{
 	"kube_clusters":   true,
 	"proxmox_servers": true,
 	"network_hosts":   true,
+	"config_docs":     true, // item 5 (ap-config): every member serves the configuration
 }
 
 // criticalTables are written with W = min(2, N) acknowledgements.
 var criticalTables = map[string]bool{
 	auditTable:         true,
 	"certs":            true,
+	"config_docs":      true,
 	"hub_certs":        true,
 	"tokens":           true,
 	"join_tokens":      true,
@@ -167,6 +169,28 @@ func PlacementOf(table string, r map[string]any) (Placement, error) {
 
 // Placement returns where m's row lives.
 func (m Mutation) Placement() (Placement, error) { return PlacementOf(m.Table, m.Row) }
+
+// parentKeys are the tables with a foreign key: the column, and the table
+// it references. A child has its parent's partition key, so every replica
+// of the child holds the parent, except a stand-in.
+var parentKeys = map[string][2]string{
+	"certs":       {"device_id", "devices"},
+	"panel_links": {"panel_id", "panels"},
+}
+
+// ParentRef returns the row m's row references, if its table has a foreign
+// key: a member that takes m must hold it first.
+func (m Mutation) ParentRef() (RowRef, bool) {
+	fk, ok := parentKeys[m.Table]
+	if !ok {
+		return RowRef{}, false
+	}
+	v, ok := m.Row[fk[0]]
+	if !ok || v == nil {
+		return RowRef{}, false
+	}
+	return RowRef{Table: fk[1], Key: Values{v}}, true
+}
 
 // auditPartition is the partition key of an audit entry: its operation, so
 // an action's entry and its outcome stay on the same replicas and the fold
