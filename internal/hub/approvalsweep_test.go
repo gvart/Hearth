@@ -6,7 +6,6 @@ import (
 	"context"
 	"io"
 	"log/slog"
-	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -22,10 +21,7 @@ func (n *fakeLeaderNode) WaitReady(context.Context) error { return nil }
 
 func sweepFixture(t *testing.T) (*store.Store, *policy.Engine) {
 	t.Helper()
-	s, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "hearth.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := newTestStore(t)
 	t.Cleanup(func() { _ = s.Close() })
 	created := time.Now().Add(-time.Hour)
 	if err := s.Approvals().Create(t.Context(), store.Approval{

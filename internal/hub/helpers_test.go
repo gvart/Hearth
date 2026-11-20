@@ -4,22 +4,17 @@ package hub
 
 import (
 	"bytes"
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/gvart/hearth/internal/store"
+	"github.com/gvart/hearth/internal/store/storetest"
 )
 
 func newTestStore(t *testing.T) *store.Store {
 	t.Helper()
-	st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "hearth.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = st.Close() })
-	return st
+	return storetest.Open(t)
 }
 
 // enrollDevice inserts a device as enrollment does: status unknown, with a

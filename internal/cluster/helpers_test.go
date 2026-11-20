@@ -4,6 +4,8 @@ package cluster
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"log/slog"
 	"net"
 	"os"
@@ -17,6 +19,7 @@ import (
 
 	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/store"
+	"github.com/gvart/hearth/internal/store/storetest"
 )
 
 const waitFor = 15 * time.Second
@@ -125,8 +128,14 @@ func startNodeStore(t *testing.T, ca *pki.CA, id, dir, addr string, bootstrap bo
 		store.WithoutUpgrade(),
 		store.WithApplier(func(s *store.Store) store.Applier { return bind(n, s) }),
 	}
+	path := filepath.Join(dir, "hearth.db")
+	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) && storeOpts == nil {
+		// A new hub's database, migrated as Open would migrate it, from a
+		// template: migrating is the costliest part of starting a node.
+		storetest.Migrated(t, path)
+	}
 	opts = append(opts, storeOpts...)
-	st, err := store.Open(t.Context(), filepath.Join(dir, "hearth.db"), opts...)
+	st, err := store.Open(t.Context(), path, opts...)
 	if err != nil {
 		t.Fatal(err)
 	}
