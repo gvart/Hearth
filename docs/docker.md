@@ -57,7 +57,9 @@ name, letters, digits, `_`, `.` and `-` only, so no request can add a path or a 
 
 - **List**: every container, running or not, with its image, state, status and Compose project and
   service (the `com.docker.compose.project` and `com.docker.compose.service` labels), and every
-  image with its tags and size. At most 500 of each.
+  image with its tags and size. At most 500 of each and about 1 MiB in all; each name, label and
+  tag is cut at 256 bytes, and an image lists at most 16 tags. The agent reads the engine's answer
+  one entry at a time and stops there, so a huge engine costs it little.
 - **Logs**: stdout and stderr with their timestamps, at most the last 200 lines, read once; never a
   follow. Lines are cut at 4 KiB.
 - **Stop** gives the container the engine's default 10 seconds to exit before it is killed. A start

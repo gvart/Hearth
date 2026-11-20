@@ -45,6 +45,8 @@ type fakeDocker struct {
 	// logsType is the Content-Type of a logs answer; logs is its body.
 	logsType string
 	logs     []byte
+	// containers and images, when set, are the bodies of the lists.
+	containers, images []byte
 
 	mu   sync.Mutex
 	reqs []string
@@ -65,6 +67,10 @@ func startFakeDocker(t *testing.T) *fakeDocker {
 			http.Error(w, "want all=1", http.StatusBadRequest)
 			return
 		}
+		if f.containers != nil {
+			_, _ = w.Write(f.containers)
+			return
+		}
 		writeJSONBody(w, []map[string]any{
 			{
 				"Id": "aaa111", "Names": []string{"/web"}, "Image": "nginx:1.27", "State": "running", "Status": "Up 2 hours",
@@ -75,6 +81,10 @@ func startFakeDocker(t *testing.T) *fakeDocker {
 		})
 	})
 	mux.HandleFunc("GET /images/json", func(w http.ResponseWriter, _ *http.Request) {
+		if f.images != nil {
+			_, _ = w.Write(f.images)
+			return
+		}
 		writeJSONBody(w, []map[string]any{
 			{"Id": "sha256:111", "RepoTags": []string{"nginx:1.27"}, "Size": int64(5) << 30, "Created": 1690000000},
 			{"Id": "sha256:222", "RepoTags": []string{"<none>:<none>"}, "Size": 1000, "Created": 1690000000},
@@ -86,6 +96,8 @@ func startFakeDocker(t *testing.T) *fakeDocker {
 			w.WriteHeader(http.StatusNoContent)
 		case "already":
 			w.WriteHeader(http.StatusNotModified)
+		case "moved":
+			http.Redirect(w, r, "/containers/web/kill", http.StatusTemporaryRedirect)
 		default:
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusNotFound)

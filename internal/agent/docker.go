@@ -22,7 +22,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/gvart/hearth/internal/policy"
@@ -51,6 +53,14 @@ const (
 	maxDockerLogBytes = 4 << 20
 	// maxDockerError bounds an error answer of the engine.
 	maxDockerError = 4 << 10
+	// maxDockerField bounds each string of a listed container or image, and
+	// maxDockerTags the tags of an image.
+	maxDockerField = 256
+	maxDockerTags  = 16
+	// maxDockerResult bounds the encoded entries of a list, well below the
+	// hub's cap on one agent message (4 MiB): a larger message would end
+	// the agent's whole stream.
+	maxDockerResult = 1 << 20
 )
 
 // DefaultDockerSocket is the Docker engine's socket. Without
@@ -159,7 +169,11 @@ func dockerClient(socket string) *http.Client {
 		},
 		DisableKeepAlives: true,
 	}
-	return &http.Client{Transport: tr}
+	// A redirect is never followed: it could send a request to a path
+	// the agent did not choose.
+	return &http.Client{Transport: tr, CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
 }
 
 // dockerURL is the engine URL of path, which callers build only from
@@ -212,75 +226,135 @@ func dockerError(resp *http.Response) error {
 	return fmt.Errorf("docker engine: %s (HTTP %d)", clipLine(msg), resp.StatusCode)
 }
 
-// getJSON GETs u and decodes its JSON answer into v.
-func getJSON(ctx context.Context, cl *http.Client, u string, v any) error {
+// getArray GETs u, a JSON array, and decodes its elements one at a time
+// with each, at most max of them. The rest of the answer is never read.
+// It reports truncated when elements were left out: beyond max, or beyond
+// maxDockerBody bytes, or when each says to stop.
+func getArray(ctx context.Context, cl *http.Client, u string, maxN int, each func(*json.Decoder) (stop bool, err error)) (truncated bool, err error) {
 	resp, err := dockerDo(ctx, cl, http.MethodGet, u)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxDockerBody)).Decode(v); err != nil {
-		return fmt.Errorf("docker engine: read answer: %w", err)
+	body := &limitedReader{r: resp.Body, left: maxDockerBody}
+	dec := json.NewDecoder(body)
+	if t, err := dec.Token(); err != nil {
+		return false, fmt.Errorf("docker engine: read answer: %w", err)
+	} else if t != json.Delim('[') {
+		return false, errors.New("docker engine: read answer: not a JSON array")
 	}
-	return nil
+	for n := 0; dec.More(); n++ {
+		if n == maxN {
+			return true, nil
+		}
+		stop, err := each(dec)
+		if body.hit {
+			return true, nil // the rest is beyond maxDockerBody
+		}
+		if err != nil {
+			return false, fmt.Errorf("docker engine: read answer: %w", err)
+		}
+		if stop {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
-// Compose labels of a container.
-const (
-	composeProject = "com.docker.compose.project"
-	composeService = "com.docker.compose.service"
-)
+// clip cuts s to maxDockerField bytes on a rune boundary.
+func clip(s string) string {
+	if len(s) <= maxDockerField {
+		return s
+	}
+	s = s[:maxDockerField]
+	for len(s) > 0 && !utf8.ValidString(s) {
+		s = s[:len(s)-1]
+	}
+	return s
+}
 
 // dockerList fills res with the engine's containers, running or not, and
-// images.
+// images, within maxDockerContainers, maxDockerImages and, encoded,
+// maxDockerResult; res.Truncated tells that some were left out.
 func dockerList(ctx context.Context, cl *http.Client, res *agentv1.DockerResult) error {
-	var cs []struct {
-		ID      string            `json:"Id"`
-		Names   []string          `json:"Names"`
-		Image   string            `json:"Image"`
-		State   string            `json:"State"`
-		Status  string            `json:"Status"`
-		Labels  map[string]string `json:"Labels"`
-		Created int64             `json:"Created"`
+	size := 0
+	// fits adds an entry's encoded size, and reports whether it still fits.
+	fits := func(m proto.Message) bool {
+		size += proto.Size(m) + 8 // the field's tag and length
+		return size <= maxDockerResult
 	}
-	if err := getJSON(ctx, cl, dockerURL("/containers/json", url.Values{"all": {"1"}}), &cs); err != nil {
+	var c struct {
+		ID     string   `json:"Id"`
+		Names  []string `json:"Names"`
+		Image  string   `json:"Image"`
+		State  string   `json:"State"`
+		Status string   `json:"Status"`
+		// Labels decodes only the Compose labels: the others are skipped,
+		// never allocated.
+		Labels struct {
+			Project string `json:"com.docker.compose.project"`
+			Service string `json:"com.docker.compose.service"`
+		} `json:"Labels"`
+		Created int64 `json:"Created"`
+	}
+	truncated, err := getArray(ctx, cl, dockerURL("/containers/json", url.Values{"all": {"1"}}), maxDockerContainers,
+		func(dec *json.Decoder) (bool, error) {
+			c.Names, c.Labels.Project, c.Labels.Service = nil, "", ""
+			if err := dec.Decode(&c); err != nil {
+				return false, err
+			}
+			name := ""
+			if len(c.Names) > 0 {
+				name = strings.TrimPrefix(c.Names[0], "/")
+			}
+			dc := &agentv1.DockerContainer{
+				Id: clip(c.ID), Name: clip(name), Image: clip(c.Image), State: clip(c.State), Status: clip(c.Status),
+				ComposeProject: clip(c.Labels.Project), ComposeService: clip(c.Labels.Service),
+				Created: unixTime(c.Created),
+			}
+			if !fits(dc) {
+				return true, nil
+			}
+			res.Containers = append(res.Containers, dc)
+			return false, nil
+		})
+	if err != nil {
 		return fmt.Errorf("list containers: %w", err)
 	}
-	if len(cs) > maxDockerContainers {
-		cs, res.Truncated = cs[:maxDockerContainers], true
-	}
-	for _, c := range cs {
-		name := ""
-		if len(c.Names) > 0 {
-			name = strings.TrimPrefix(c.Names[0], "/")
-		}
-		res.Containers = append(res.Containers, &agentv1.DockerContainer{
-			Id: c.ID, Name: name, Image: c.Image, State: c.State, Status: c.Status,
-			ComposeProject: c.Labels[composeProject], ComposeService: c.Labels[composeService],
-			Created: unixTime(c.Created),
-		})
-	}
-	var is []struct {
+	res.Truncated = res.Truncated || truncated
+	var i struct {
 		ID       string   `json:"Id"`
 		RepoTags []string `json:"RepoTags"`
 		Size     int64    `json:"Size"`
 		Created  int64    `json:"Created"`
 	}
-	if err := getJSON(ctx, cl, dockerURL("/images/json", nil), &is); err != nil {
+	truncated, err = getArray(ctx, cl, dockerURL("/images/json", nil), maxDockerImages,
+		func(dec *json.Decoder) (bool, error) {
+			i.RepoTags = nil
+			if err := dec.Decode(&i); err != nil {
+				return false, err
+			}
+			img := &agentv1.DockerImage{Id: clip(i.ID), SizeBytes: i.Size, Created: unixTime(i.Created)}
+			for _, t := range i.RepoTags {
+				if t == "<none>:<none>" {
+					continue
+				}
+				if len(img.Tags) == maxDockerTags {
+					res.Truncated = true
+					break
+				}
+				img.Tags = append(img.Tags, clip(t))
+			}
+			if !fits(img) {
+				return true, nil
+			}
+			res.Images = append(res.Images, img)
+			return false, nil
+		})
+	if err != nil {
 		return fmt.Errorf("list images: %w", err)
 	}
-	if len(is) > maxDockerImages {
-		is, res.Truncated = is[:maxDockerImages], true
-	}
-	for _, i := range is {
-		img := &agentv1.DockerImage{Id: i.ID, SizeBytes: i.Size, Created: unixTime(i.Created)}
-		for _, t := range i.RepoTags {
-			if t != "<none>:<none>" {
-				img.Tags = append(img.Tags, t)
-			}
-		}
-		res.Images = append(res.Images, img)
-	}
+	res.Truncated = res.Truncated || truncated
 	return nil
 }
 
@@ -367,15 +441,41 @@ func logStream(contentType string, body io.Reader) (io.Reader, error) {
 	case rawStream:
 		return body, nil
 	}
-	br := bufio.NewReader(body)
-	h, err := br.Peek(8)
-	if err != nil && !errors.Is(err, io.EOF) {
+	br := bufio.NewReaderSize(body, sniffBuffer)
+	h, err := br.Peek(sniffBuffer)
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, bufio.ErrBufferFull) {
 		return nil, err
 	}
-	if len(h) == 8 && h[0] <= 2 && h[1] == 0 && h[2] == 0 && h[3] == 0 {
+	if looksMultiplexed(h) {
 		return &demux{r: br}, nil
 	}
 	return br, nil
+}
+
+// sniffBuffer is how much of a logs answer is peeked at to tell its form.
+const sniffBuffer = 64 << 10
+
+// looksMultiplexed reports whether b, the start of a logs answer, is
+// multiplexed frames: a header of a stream number (0 to 2), three zero
+// bytes and a size within maxDockerLogBytes, and, when the peek reaches it,
+// a second header just as valid right after the first frame.
+func looksMultiplexed(b []byte) bool {
+	frame := func(h []byte) (uint32, bool) {
+		if len(h) < 8 || h[0] > 2 || h[1] != 0 || h[2] != 0 || h[3] != 0 {
+			return 0, false
+		}
+		n := binary.BigEndian.Uint32(h[4:8])
+		return n, n <= maxDockerLogBytes
+	}
+	n, ok := frame(b)
+	if !ok {
+		return false
+	}
+	if next := 8 + uint64(n); next < uint64(len(b)) {
+		_, ok = frame(b[next:])
+		return ok || uint64(len(b))-next < 8 // a second header cut by the peek
+	}
+	return true
 }
 
 // demux reads the payload of a multiplexed stream's frames, stdout and
