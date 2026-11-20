@@ -1,0 +1,22 @@
+internal/store/networkhosts_test.go
+  s_26e932fc13ca45::t_d65ab399b84858 329-383
+internal/store/networkhosts.go
+  s_26e932fc13ca45::t_bfe63908c7811e 283-284
+  s_26e932fc13ca45::t_1bc99cab5e2cc0 247-251,269,272,274-275,286,291-295,344,349,354-356,359,362-375,378,381-382,386,388-394,397-409
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e3cbc8a8d7fdaeb7cec9b3b38ebe29e58edd1089",
+  "prompts": {},
+  "sessions": {
+    "s_26e932fc13ca45": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea42b0cd-7455-494b-8071-e63f36b98d4d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
