@@ -221,8 +221,10 @@ func TestRoleChangeRefusals(t *testing.T) {
 		apSpec{"b", storageOnly, storageOnly}, // does not allow master
 	)
 	a, b := c["a"].node, c["b"].node
-	if err := c["a"].st.Devices().Upsert(ctx, store.Device{ID: "pi", Name: "pi", Hostname: "pi", OS: "linux",
-		Arch: "arm64", Facts: []byte(`{}`), FirstSeen: time.Now(), LastSeen: time.Now(), Status: store.StatusOnline}); err != nil {
+	if err := c["a"].st.Devices().Upsert(ctx, store.Device{
+		ID: "pi", Name: "pi", Hostname: "pi", OS: "linux",
+		Arch: "arm64", Facts: []byte(`{}`), FirstSeen: time.Now(), LastSeen: time.Now(), Status: store.StatusOnline,
+	}); err != nil {
 		t.Fatal(err)
 	}
 	cases := []struct {

@@ -252,7 +252,7 @@ func (v view) ownedRanges() []bucketRange {
 	return out
 }
 
-// catchUp copies, to a member promoted to storage, the rows of every
+// CatchUp copies, to a member promoted to storage, the rows of every
 // bucket it owns from every live storage member, whether that one owns the
 // bucket or held it before the promotion moved it. Once a round reached
 // every one of them, the member has caught up: it serves reads again

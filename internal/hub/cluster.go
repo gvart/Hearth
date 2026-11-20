@@ -47,11 +47,14 @@ type ClusterChange struct {
 // member or role.
 var errBadClusterChange = errors.New("a change is promote or demote with a role (storage or master), or remove, of a member")
 
+// memberIDChars are the characters of a node ID.
+const memberIDChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._"
+
 // Check refuses a malformed change before it reaches policy, so the audit
 // log only names well-formed ones.
 func (c ClusterChange) Check() error {
 	if c.Member == "" || len(c.Member) > 128 || strings.ContainsFunc(c.Member, func(r rune) bool {
-		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '.' || r == '_')
+		return !strings.ContainsRune(memberIDChars, r)
 	}) {
 		return errBadClusterChange
 	}

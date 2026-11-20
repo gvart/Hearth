@@ -162,7 +162,7 @@ func alive(m MemberInfo) bool { return m.State == MemberAlive || m.State == Memb
 func (n *APNode) count(role Role, but string) int {
 	c := 0
 	for _, m := range n.membership.Members() {
-		if m.ID != but && m.State != MemberLeft && m.Roles.Has(role) && !(role == RoleStorage && m.Draining) {
+		if m.ID != but && m.State != MemberLeft && m.Roles.Has(role) && (role != RoleStorage || !m.Draining) {
 			c++
 		}
 	}
@@ -371,7 +371,7 @@ func (n *APNode) setLocal(lr LocalRoles) error {
 	}
 	wasMaster := n.local.Roles.Has(RoleMaster)
 	n.local = lr
-	n.roles.Store(uint32(lr.Roles))
+	n.setRoles(lr.Roles)
 	n.rep.SetLocal(lr.Roles.Has(RoleStorage), lr.Syncing)
 	if n.membership != nil {
 		if err := n.membership.SetLocal(LocalState{Roles: lr.Roles, Syncing: lr.Syncing, Draining: lr.Draining}); err != nil {

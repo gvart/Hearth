@@ -25,7 +25,12 @@ func (n *APNode) LocalRoles() LocalRoles {
 
 // IsMaster reports whether this member is a master now: one serves the API,
 // agents and enrollments, and holds the CA key.
-func (n *APNode) IsMaster() bool { return RoleSet(n.roles.Load()).Has(RoleMaster) }
+func (n *APNode) IsMaster() bool {
+	r := n.roles.Load()
+	return r != nil && r.Has(RoleMaster)
+}
+
+func (n *APNode) setRoles(r RoleSet) { n.roles.Store(&r) }
 
 // RoleChanges returns a channel signalled (without blocking) whenever this
 // member gains or loses the master role, and a function that stops it.

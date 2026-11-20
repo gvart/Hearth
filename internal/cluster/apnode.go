@@ -126,7 +126,7 @@ type APNode struct {
 	rolesMu sync.Mutex
 	local   LocalRoles
 	// roles is local.Roles, read without rolesMu.
-	roles atomic.Uint32
+	roles atomic.Pointer[RoleSet]
 	// roleSubs are told when this member gains or loses the master role.
 	subsMu   sync.Mutex
 	roleSubs []chan struct{}
@@ -177,8 +177,10 @@ func NewAPNode(ctx context.Context, cfg APConfig) (*APNode, error) {
 	if cfg.RolesEvery <= 0 {
 		cfg.RolesEvery = 2 * time.Second
 	}
-	n := &APNode{cfg: cfg, log: cfg.Log.With("component", "ap-cluster"), cert: cert, hints: hints,
-		local: local, rolesKick: make(chan struct{}, 1)}
+	n := &APNode{
+		cfg: cfg, log: cfg.Log.With("component", "ap-cluster"), cert: cert, hints: hints,
+		local: local, rolesKick: make(chan struct{}, 1),
+	}
 	rc := cfg.Gossip
 	rc.OnSynced = n.onSynced
 	rc.NodeID, rc.Peers, rc.Replicas, rc.Hints, rc.Log = cfg.NodeID, apNodePeers{n}, cfg.Replicas, hints, cfg.Log
@@ -193,7 +195,7 @@ func NewAPNode(ctx context.Context, cfg APConfig) (*APNode, error) {
 		return nil, err
 	}
 	n.rep.SetLocal(local.Roles.Has(RoleStorage), local.Syncing)
-	n.roles.Store(uint32(local.Roles))
+	n.setRoles(local.Roles)
 	return n, nil
 }
 

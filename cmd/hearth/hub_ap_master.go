@@ -152,6 +152,6 @@ func apRoleChanges(pol *policy.Engine, admin hub.ClusterAdmin) cluster.RoleChang
 			return out, err
 		}
 		decision, _ := pol.Check(hub.ClusterChangeRequest(c, policy.ActorAdmin, req.Actor))
-		return apDryRun{Decision: string(decision)}, nil
+		return apDryRun{Decision: decision}, nil
 	}
 }
