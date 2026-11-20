@@ -4,38 +4,112 @@ package main
 
 import (
 	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/gvart/hearth/internal/hubconfig"
+	"github.com/gvart/hearth/internal/integrations/kubernetes"
 	"github.com/gvart/hearth/internal/notify"
 	"github.com/gvart/hearth/internal/policy"
 	"github.com/gvart/hearth/internal/store"
+	"github.com/gvart/hearth/internal/store/storetest"
 )
 
-func TestNotifyApprovals(t *testing.T) {
-	st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "hearth.db"))
+// startConfig runs applyHubConfig as a standalone hub starting on dataDir.
+func startConfig(t *testing.T, st *store.Store, dataDir string) (*policy.Engine, *notify.Notifier, error) {
+	t.Helper()
+	sealer, err := kubernetes.NewPurposeSealer([]byte("test CA key"), notifySealInfo)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = st.Close() })
-	n, err := notify.Parse([]byte("channels:\n  phone:\n    type: ntfy\n    url: http://ntfy.lan\n    topic: lab\n"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	log := slog.New(slog.DiscardHandler)
+	opts := hubOptions{dataDir: dataDir}
 	pol := policy.New(st.Audit())
-	if err := notifyApprovals(pol, policy.ApprovalNotify{}, st, n, "hub", "", log); err != nil {
-		t.Errorf("no channel: %v", err)
+	n := &notify.Notifier{}
+	w := hubconfig.NewWatcher(hubconfig.WatcherConfig{
+		Store: st.ConfigDocs(), Sealer: sealer, Policy: pol, Notifier: n, Actor: "hub-a",
+		Files: hubconfig.Files{
+			Policy: filepath.Join(dataDir, policy.ConfigFile), Notify: notifyConfigPath(opts),
+			AutomationsDir: filepath.Join(dataDir, "automations"), RunbooksDir: runbooksDirOf(opts),
+		},
+	})
+	_, err = applyHubConfig(t.Context(), opts, st, true, w, pol, n, slog.New(slog.DiscardHandler))
+	return pol, n, err
+}
+
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	if err := notifyApprovals(pol, policy.ApprovalNotify{Channel: "phone"}, st, n, "hub", "", log); err != nil {
-		t.Errorf("known channel: %v", err)
-	}
-	err = notifyApprovals(pol, policy.ApprovalNotify{Channel: "pager"}, st, n, "hub", "", log)
-	if err == nil || !strings.Contains(err.Error(), `"pager"`) {
+}
+
+const phoneChannel = "channels:\n  phone:\n    type: ntfy\n    url: http://ntfy.lan\n    topic: lab\n"
+
+// The approval channel must be one of the notification channels, whether
+// the configuration comes from the files or the store.
+func TestApplyHubConfigApprovalChannel(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "notify.yaml"), phoneChannel)
+	writeFile(t, filepath.Join(dir, policy.ConfigFile), "approval_notify:\n  channel: pager\n")
+	if _, _, err := startConfig(t, storetest.Open(t), dir); err == nil || !strings.Contains(err.Error(), `"pager"`) {
 		t.Errorf("unknown channel = %v, want an error naming it", err)
 	}
-	if err := notifyApprovals(pol, policy.ApprovalNotify{Channel: "phone"}, st, &notify.Notifier{}, "hub", "", log); err == nil {
-		t.Error("channel without a channels file: no error")
+	writeFile(t, filepath.Join(dir, policy.ConfigFile), "approval_notify:\n  channel: phone\n")
+	pol, n, err := startConfig(t, storetest.Open(t), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pol.Config().ApprovalNotify.Channel != "phone" || !n.Has("phone") {
+		t.Errorf("config = %+v, channels = %v", pol.Config(), n.Channels())
+	}
+}
+
+// A hub imports its files into an empty store once, audited; after that
+// the store is the configuration and the files are not read.
+func TestApplyHubConfigImportsOnce(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, policy.ConfigFile), "classes:\n  dangerous: deny\n")
+	st := storetest.Open(t)
+	pol, _, err := startConfig(t, st, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pol.Config().Classes[policy.Dangerous] != policy.ModeDeny {
+		t.Fatalf("policy = %+v", pol.Config())
+	}
+	entries, err := st.Audit().List(ctx, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	imports := 0
+	for _, e := range entries {
+		if e.Action == string(policy.ConfigImportFirst) {
+			imports++
+		}
+	}
+	if imports == 0 {
+		t.Fatal("first import not audited")
+	}
+	// A restart with a changed file: the store wins, nothing is imported.
+	writeFile(t, filepath.Join(dir, policy.ConfigFile), "classes:\n  dangerous: allow\n")
+	pol, _, err = startConfig(t, st, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pol.Config().Classes[policy.Dangerous] != policy.ModeDeny {
+		t.Fatalf("the file was read again: policy = %+v", pol.Config())
+	}
+	entries, _ = st.Audit().List(ctx, 100)
+	again := 0
+	for _, e := range entries {
+		if e.Action == string(policy.ConfigImportFirst) {
+			again++
+		}
+	}
+	if again != imports {
+		t.Errorf("imported again: %d import entries, want %d", again, imports)
 	}
 }

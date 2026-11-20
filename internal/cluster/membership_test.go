@@ -346,7 +346,7 @@ func TestMemberMetaFits(t *testing.T) {
 	m := &Membership{cfg: MembershipConfig{
 		Roles: all, Allowed: all,
 		Schema:       func(context.Context) (int64, error) { return 1<<63 - 1, nil },
-		ConfigDigest: func() string { return digestOf(map[string]string{ConfigPolicy: strings.Repeat("f", 64)}) },
+		ConfigDigest: func() string { return digestOf(map[string]string{ConfigHostFlags: strings.Repeat("f", 64)}) },
 	}}
 	if err := m.setMeta(t.Context(), true); err != nil {
 		t.Fatal(err)

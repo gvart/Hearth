@@ -20,24 +20,22 @@ import (
 
 // Configuration drift.
 //
-// The automations and runbooks directories, notify.yaml and policy.yaml live on each hub and
-// are not replicated. Each hub digests them and serves the digests to the other
-// members through ClusterService.ConfigDigests, over the hub mTLS channel. A
-// DriftReport says which items differ on which hubs; it never holds a digest,
-// and neither does anything that is logged.
+// policy.yaml, notify.yaml, automations and runbooks are documents of the
+// replicated store (internal/hubconfig): every hub holds the same ones, so
+// they cannot drift. What stays per hub are the host flags that grant beyond
+// the policy, --allow-dangerous-automation: a ceiling of each host. Each hub
+// digests them and serves the digest to the other members through
+// ClusterService.ConfigDigests, over the hub mTLS channel. A DriftReport
+// says which items differ on which hubs; it never holds a digest, and
+// neither does anything that is logged.
 
-// The configuration items hubs compare.
-const (
-	ConfigPolicy      = "policy.yaml"
-	ConfigNotify      = "notify.yaml"
-	ConfigAutomations = "automations"
-	ConfigRunbooks    = "runbooks"
-)
+// ConfigHostFlags is the item of the host flags hubs compare.
+const ConfigHostFlags = "host_flags"
 
-// configItems are the items of a DriftReport. An item a newer hub reports
-// beyond these is ignored, and an item an older hub does not report is
-// unknown for that hub.
-var configItems = []string{ConfigPolicy, ConfigNotify, ConfigAutomations, ConfigRunbooks}
+// configItems are the items of a DriftReport. An item a hub reports beyond
+// these (an older hub's policy.yaml, notify.yaml, automations and runbooks)
+// is ignored, and an item a hub does not report is unknown for that hub.
+var configItems = []string{ConfigHostFlags}
 
 // Item states of a DriftReport.
 const (

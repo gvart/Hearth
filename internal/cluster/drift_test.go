@@ -130,11 +130,11 @@ func TestConfigDriftDetected(t *testing.T) {
 func TestConfigDriftFollowsChanges(t *testing.T) {
 	hubs := startHubs(t, hubOpts{offlineAfter: time.Minute, flushEvery: time.Minute})
 	configs := sameConfig(hubs)
-	configs["n2"].set(ConfigAutomations, "one more automation")
-	wantItem(t, itemOf(t, driftOf(t, hubs[0].testNode), ConfigAutomations), DriftDiffers,
+	configs["n2"].set(ConfigHostFlags, "one more automation")
+	wantItem(t, itemOf(t, driftOf(t, hubs[0].testNode), ConfigHostFlags), DriftDiffers,
 		[][]string{{"n1", "n3"}, {"n2"}}, []string{})
-	configs["n2"].set(ConfigAutomations, "shared")
-	wantItem(t, itemOf(t, driftOf(t, hubs[0].testNode), ConfigAutomations), DriftInSync, allThree, []string{})
+	configs["n2"].set(ConfigHostFlags, "shared")
+	wantItem(t, itemOf(t, driftOf(t, hubs[0].testNode), ConfigHostFlags), DriftInSync, allThree, []string{})
 }
 
 func TestConfigDriftSingleHub(t *testing.T) {
@@ -159,7 +159,7 @@ func TestConfigDriftHubDown(t *testing.T) {
 	leader := leaderHub(t, hubs)
 	down := followers(hubs, leader)[0]
 	up := followers(hubs, leader)[1]
-	configs[down.ID()].set(ConfigPolicy, "different, but about to go down")
+	configs[down.ID()].set(ConfigHostFlags, "different, but about to go down")
 	down.kill()
 
 	r := driftOf(t, leader.testNode)
@@ -173,8 +173,8 @@ func TestConfigDriftHubDown(t *testing.T) {
 	}
 
 	// The hubs that are up still differ from each other.
-	configs[up.ID()].set(ConfigPolicy, "edited")
-	got := itemOf(t, driftOf(t, leader.testNode), ConfigPolicy)
+	configs[up.ID()].set(ConfigHostFlags, "edited")
+	got := itemOf(t, driftOf(t, leader.testNode), ConfigHostFlags)
 	if got.Status != DriftDiffers || len(got.Groups) != 2 || !slices.Equal(got.Unknown, []string{down.ID()}) {
 		t.Errorf("two live hubs differing with one down = %+v", got)
 	}
@@ -194,34 +194,20 @@ func TestConfigDriftNotReportedYet(t *testing.T) {
 	}
 }
 
-// TestConfigDriftPartialReport: an item one hub could not read is unknown for
-// that item alone.
-func TestConfigDriftPartialReport(t *testing.T) {
+// TestConfigDriftOlderItems: a hub whose Hearth compares the files it used to
+// read (policy.yaml, notify.yaml, automations, runbooks) and not the host
+// flags is unknown for the host flags, and its old items are ignored: they
+// are documents of the store now, the same on every hub.
+func TestConfigDriftOlderItems(t *testing.T) {
 	hubs := startHubs(t, hubOpts{offlineAfter: time.Minute, flushEvery: time.Minute})
 	configs := sameConfig(hubs)
 	configs["n2"].mu.Lock()
-	delete(configs["n2"].digests, ConfigAutomations)
+	configs["n2"].digests = map[string]string{"policy.yaml": digestMark + "x", "automations": digestMark + "y"}
 	configs["n2"].mu.Unlock()
 	r := driftOf(t, hubs[0].testNode)
-	wantItem(t, itemOf(t, r, ConfigAutomations), DriftUnknown, [][]string{{"n1", "n3"}}, []string{"n2"})
-	wantItem(t, itemOf(t, r, ConfigPolicy), DriftInSync, allThree, []string{})
-}
-
-// TestConfigDriftHubWithoutRunbooks: a hub whose Hearth predates the runbooks
-// item reports the other items only. Runbooks are unknown for it alone, never
-// differing, and the other items still compare.
-func TestConfigDriftHubWithoutRunbooks(t *testing.T) {
-	hubs := startHubs(t, hubOpts{offlineAfter: time.Minute, flushEvery: time.Minute})
-	configs := sameConfig(hubs)
-	configs["n2"].mu.Lock()
-	delete(configs["n2"].digests, ConfigRunbooks)
-	configs["n2"].mu.Unlock()
-	r := driftOf(t, hubs[0].testNode)
-	wantItem(t, itemOf(t, r, ConfigRunbooks), DriftUnknown, [][]string{{"n1", "n3"}}, []string{"n2"})
-	wantItem(t, itemOf(t, r, ConfigAutomations), DriftInSync, allThree, []string{})
-	wantItem(t, itemOf(t, r, ConfigPolicy), DriftInSync, allThree, []string{})
-	if h := hubOf(t, r, "n2"); !h.Reported {
-		t.Errorf("hub n2 answered with digests but is not reported: %+v", h)
+	wantItem(t, itemOf(t, r, ConfigHostFlags), DriftUnknown, [][]string{{"n1", "n3"}}, []string{"n2"})
+	if len(r.Items) != 1 {
+		t.Errorf("items = %+v, want the host flags only", r.Items)
 	}
 }
 
@@ -328,7 +314,7 @@ func TestConfigDigestsRejectsNonMembers(t *testing.T) {
 func TestConfigDriftHoldsNoDigests(t *testing.T) {
 	hubs := startHubs(t, hubOpts{offlineAfter: time.Minute, flushEvery: time.Minute})
 	configs := sameConfig(hubs)
-	configs["n3"].set(ConfigNotify, "token: s3cret")
+	configs["n3"].set(ConfigHostFlags, "s3cret")
 
 	ctx, cancel := context.WithTimeout(t.Context(), waitFor)
 	defer cancel()
@@ -337,7 +323,7 @@ func TestConfigDriftHoldsNoDigests(t *testing.T) {
 		var err error
 		st, err = hubs[0].StatusWithSchemas(ctx)
 		return err == nil && st.ConfigDrift != nil &&
-			itemOf(t, *st.ConfigDrift, ConfigNotify).Status == DriftDiffers
+			itemOf(t, *st.ConfigDrift, ConfigHostFlags).Status == DriftDiffers
 	})
 	b, err := json.Marshal(st)
 	if err != nil {
