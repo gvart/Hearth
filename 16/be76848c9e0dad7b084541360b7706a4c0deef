@@ -1,0 +1,32 @@
+internal/mqtt/config.go
+  s_26e932fc13ca45::t_be35cd186fccdb 76-79
+cmd/hearth/hub.go
+  s_26e932fc13ca45::t_89d43340ecdde9 618-624
+internal/mqtt/hardening_test.go
+  s_26e932fc13ca45::t_2adebc073542c6 6,35
+  s_26e932fc13ca45::t_286202f7a74eb1 1-5,7-34,36-272
+internal/mqtt/auth.go
+  s_26e932fc13ca45::t_47f6ad587164a8 28-33,55-72,78-80,96,108-109,144-150,152-155,157,160,198-272
+  s_26e932fc13ca45::t_9040b2a2ffc252 273
+internal/mqtt/broker_test.go
+  s_26e932fc13ca45::t_e4f561e45ccd32 29-32,34-43,71,79-80,104,107,114-116,407,428,430,432,456
+internal/mqtt/broker.go
+  s_26e932fc13ca45::t_6a1d4bdf362087 32-41,61-65,73-74,80-86,96-100,114-122,206-236
+  s_26e932fc13ca45::t_2adebc073542c6 70-72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "16be76848c9e0dad7b084541360b7706a4c0deef",
+  "prompts": {},
+  "sessions": {
+    "s_26e932fc13ca45": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea42b0cd-7455-494b-8071-e63f36b98d4d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
