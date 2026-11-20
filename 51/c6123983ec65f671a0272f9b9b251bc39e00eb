@@ -1,0 +1,52 @@
+web/src/topology.ts
+  s_26e932fc13ca45::t_96e33a937da9dc 1-90,115-117,127-129,131-133,144,150,153-154,157-160,165-168,213-214,225,227
+  s_26e932fc13ca45::t_473a9556c54da0 187-188,193,203-204
+  s_26e932fc13ca45::t_9cd1d19374e7cc 134
+  s_26e932fc13ca45::t_6622801cee7256 215-224,226
+  s_26e932fc13ca45::t_da533084568494 99-102,104-110,113,118-119,122-126,130,135-140,142-143,146-149,151-152,155-156,163-164
+  s_26e932fc13ca45::t_3336d885fedd1e 112
+  s_26e932fc13ca45::t_da3e0ff61f9bf3 103,120-121
+  s_26e932fc13ca45::t_3efdae91c0f0f4 111,114,141,145
+  s_26e932fc13ca45::t_4b6d97591177b7 161-162,169-186,189-192,194-202,205-212
+  s_26e932fc13ca45::t_3afa0323350560 91-98
+web/src/components/NetworkPage.css
+  s_26e932fc13ca45::t_11005b4f6888ca 34,40-41
+  s_26e932fc13ca45::t_3b34c8899850f9 91
+  s_26e932fc13ca45::t_71aa7b8fa2a4a5 1-33,35-39,42-90,92-157
+web/src/components/Shell.tsx
+  s_26e932fc13ca45::t_17283dc167b1ba 21
+  s_26e932fc13ca45::t_04de77a2ba22ba 48-50
+  s_26e932fc13ca45::t_dd4a14df14eb90 9
+  s_26e932fc13ca45::t_44fa985d5600a6 152-153
+  s_26e932fc13ca45::t_9d52862a7b6d52 33
+web/src/api/netedges.ts
+  s_26e932fc13ca45::t_b3887685e334be 1-2
+  s_26e932fc13ca45::t_08c46f49d3137e 39-71,74,77-91
+  s_26e932fc13ca45::t_dcbf81a84408ee 92
+web/src/components/NetworkPage.tsx
+  s_26e932fc13ca45::t_f979c97150dd48 1-64,66-74,76-201,203-236,238,240-251
+  s_26e932fc13ca45::t_75cf2ea211aecc 237,239
+  s_26e932fc13ca45::t_5c1e7536fde558 252-262,265-266,268-270
+  s_26e932fc13ca45::t_6efde4b3e9b72f 65,75
+  s_26e932fc13ca45::t_e785b590254f7d 263-264,267
+  s_26e932fc13ca45::t_f095ab250fb9cf 202
+web/test/topology.test.mjs
+  s_26e932fc13ca45::t_cc09b834fe2f12 1-87,92
+  s_26e932fc13ca45::t_d126dca0c2b66b 88-91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "51c6123983ec65f671a0272f9b9b251bc39e00eb",
+  "prompts": {},
+  "sessions": {
+    "s_26e932fc13ca45": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea42b0cd-7455-494b-8071-e63f36b98d4d",
+        "model": "unknown"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
