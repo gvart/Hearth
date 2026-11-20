@@ -50,9 +50,6 @@ type hubOptions struct {
 	// httpListen, which the hub serves on and closes. Tests bind port 0
 	// and pass them, so no other process can take the port first.
 	agentLn, webLn net.Listener
-	// apm, on a member of an AP cluster, is the member runHub serves the
-	// master layer of (runAPHub): set while it is a master.
-	apm *apMember
 	hosts          []string
 	assetsDir      string
 	// automationsDir holds the automation files; default <dataDir>/automations.
@@ -121,6 +118,10 @@ type hubOptions struct {
 	version string
 	// shellIdle and shellMax limit web terminal sessions.
 	shellIdle, shellMax time.Duration
+
+	// apm, on a member of an AP cluster, is the member runHub serves the
+	// master layer of (runAPHub): set while it is a master.
+	apm *apMember
 }
 
 func newHubCmd() *cobra.Command {
