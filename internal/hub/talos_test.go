@@ -34,18 +34,18 @@ func TestAPITalosNodesNotConfigured(t *testing.T) {
 func TestAPITalosNodes(t *testing.T) {
 	now := time.UnixMilli(1_700_000_000_000).UTC()
 	snap := fixedTalos{State: talos.StateOK, ReadAt: now, Nodes: []talos.Node{
-		{Address: "192.168.2.196", Hostname: "k8s-cp-01", Version: "v1.12.7", Healthy: true},
-		{Address: "192.168.2.197", Hostname: "k8s-worker-01", Version: "v1.12.7"},
-		{Address: "192.168.2.198", Hostname: "k8s-worker-02"},
-		{Address: "192.168.2.224", Error: "no route to host"},
+		{Address: "10.0.0.11", Hostname: "talos-cp-1", Version: "v1.12.7", Healthy: true},
+		{Address: "10.0.0.12", Hostname: "talos-worker-1", Version: "v1.12.7"},
+		{Address: "10.0.0.13", Hostname: "talos-worker-2"},
+		{Address: "10.0.0.99", Error: "no route to host"},
 	}}
 	f := newAPIFixture(t, true, func(c *Config) { c.Talos = snap })
 	for _, d := range []store.Device{
 		{
-			ID: "cp", Name: "k8s-cp-01", Hostname: "k8s-cp-01", FirstSeen: now, LastSeen: now, Status: store.StatusOnline,
-			Facts: json.RawMessage(`{"interfaces":[{"name":"enp1s0","ips":["192.168.2.196/24"]}]}`),
+			ID: "cp", Name: "talos-cp-1", Hostname: "talos-cp-1", FirstSeen: now, LastSeen: now, Status: store.StatusOnline,
+			Facts: json.RawMessage(`{"interfaces":[{"name":"enp1s0","ips":["10.0.0.11/24"]}]}`),
 		},
-		{ID: "w1", Name: "worker one", Hostname: "K8S-WORKER-01.lan", FirstSeen: now, LastSeen: now, Status: store.StatusOnline},
+		{ID: "w1", Name: "worker one", Hostname: "TALOS-WORKER-1.lan", FirstSeen: now, LastSeen: now, Status: store.StatusOnline},
 	} {
 		if err := f.st.Devices().Upsert(t.Context(), d); err != nil {
 			t.Fatal(err)

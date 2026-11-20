@@ -133,7 +133,7 @@ func TestAgentJoinTokenFileIfNotEnrolled(t *testing.T) {
 	url, tok := startTestHub(t)
 	t.Setenv(tokenEnv, "")
 	dataDir := filepath.Join(t.TempDir(), "agent")
-	tokenFile := filepath.Join(t.TempDir(), "k8s-cp-01")
+	tokenFile := filepath.Join(t.TempDir(), "talos-cp-1")
 	if err := os.WriteFile(tokenFile, []byte(tok+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
