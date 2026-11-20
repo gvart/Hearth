@@ -1,0 +1,151 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+#
+# The Hearth agent as a DaemonSet, for nodes that cannot run a host agent
+# (Talos Linux and other immutable systems). One agent per node reports the
+# node's host facts and metrics as a Hearth device. See docs/talos.md.
+#
+# Before applying:
+#   1. Set HEARTH_HUB_URL below to your hub's agent URL, and the image tag to
+#      your hub's version.
+#   2. Create one enrollment token per node (tokens are single-use) in the
+#      Secret hearth-agent-tokens, keyed by node name. On the hub host:
+#        mkdir -m 700 tokens
+#        for n in $(kubectl get nodes -o name | cut -d/ -f2); do
+#          hearth token create --ttl 1h | sed -n 2p | tr -d ' ' > "tokens/$n"
+#        done
+#        kubectl apply -f agent-daemonset.yaml   # the namespace first
+#        kubectl -n hearth create secret generic hearth-agent-tokens --from-file=tokens/
+#        rm -r tokens
+#
+# The agent only reads: no exec, restart, logs or shell (its capability
+# ceiling is empty), all Linux capabilities dropped, read-only host /proc and
+# /sys, no service account token. Its identity is kept on the node in
+# /var/lib/hearth-agent, so a restarted pod is the same device.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hearth
+  labels:
+    # hostNetwork and hostPath volumes need the privileged Pod Security level.
+    pod-security.kubernetes.io/enforce: privileged
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: hearth-agent
+  namespace: hearth
+  labels:
+    app.kubernetes.io/name: hearth-agent
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hearth-agent
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: hearth-agent
+    spec:
+      # The node's own interfaces and addresses, and its hostname: the device
+      # is the node, matched to its Kubernetes and Talos entries by them.
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      priorityClassName: system-node-critical
+      tolerations:
+        # Every node, control planes included.
+        - operator: Exists
+      securityContext:
+        # Root, without any capability, to write the root-owned hostPath
+        # identity dir; nothing else needs it.
+        runAsUser: 0
+        runAsGroup: 0
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: join
+          image: ghcr.io/gvart/hearth:v0.1.0
+          args:
+            - agent
+            - join
+            - --if-not-enrolled
+            - --data-dir=/var/lib/hearth-agent
+            - --token-file=/etc/hearth-tokens/$(NODE_NAME)
+            - $(HEARTH_HUB_URL)
+          env:
+            - name: HEARTH_HUB_URL
+              value: https://hub.lan:7443
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          securityContext: &restricted
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources: &resources
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/hearth-agent
+            - name: tokens
+              mountPath: /etc/hearth-tokens
+              readOnly: true
+      containers:
+        - name: agent
+          image: ghcr.io/gvart/hearth:v0.1.0
+          args:
+            - agent
+            - run
+            - --data-dir=/var/lib/hearth-agent
+          env:
+            # The host's /proc, /sys and os-release, for the facts and metrics.
+            - name: HOST_PROC
+              value: /host/proc
+            - name: HOST_SYS
+              value: /host/sys
+            - name: HOST_ETC
+              value: /host/etc
+          securityContext: *restricted
+          resources: *resources
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/hearth-agent
+            - name: proc
+              mountPath: /host/proc
+              readOnly: true
+            - name: sys
+              mountPath: /host/sys
+              readOnly: true
+            - name: os-release
+              mountPath: /host/etc/os-release
+              readOnly: true
+      volumes:
+        - name: data
+          hostPath:
+            path: /var/lib/hearth-agent
+            type: DirectoryOrCreate
+        - name: tokens
+          secret:
+            secretName: hearth-agent-tokens
+            defaultMode: 0400
+        - name: proc
+          hostPath:
+            path: /proc
+            type: Directory
+        - name: sys
+          hostPath:
+            path: /sys
+            type: Directory
+        - name: os-release
+          hostPath:
+            path: /etc/os-release
+            type: File
