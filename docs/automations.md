@@ -406,7 +406,7 @@ actions:
     plugin: go-lamp              # the plugin's name in its manifest
     command: turn_on             # a command the manifest declares
     device: lamp                 # optional: the plugin's device id; may be a template
-    args: {brightness: 80}       # optional: the command's arguments, as is
+    args: {scene: evening}       # optional: the command's arguments, as is
 ```
 
 - Its policy action is `plugin.command.read`, `plugin.command.safe` or `plugin.command.dangerous`,
