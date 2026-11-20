@@ -73,6 +73,9 @@ func runHelper(mode string) int {
 		}
 		switch m.Type {
 		case "ping":
+			if mode == "nopong" {
+				continue
+			}
 			send(map[string]any{"type": "pong", "id": m.ID})
 		case "discover":
 			send(map[string]any{"type": "devices", "id": m.ID, "devices": []any{map[string]any{

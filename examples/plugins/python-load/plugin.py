@@ -39,12 +39,14 @@ def pusher(stop):
         push_state()
 
 
-def handle(msg):
+def handle(msg, stop):
     kind = msg.get("type")
     if kind == "hello":
         if msg.get("protocol") != 1:
             sys.exit("hub speaks protocol %r, this plugin 1" % msg.get("protocol"))
         send({"type": "hello", "protocol": 1, "name": NAME, "version": "0.1.0"})
+        # Push states only after hello: the hub refuses anything before it.
+        threading.Thread(target=pusher, args=(stop,), daemon=True).start()
     elif kind == "ping":
         send({"type": "pong", "id": msg["id"]})
     elif kind == "discover":
@@ -64,10 +66,9 @@ def handle(msg):
 
 def main():
     stop = threading.Event()
-    threading.Thread(target=pusher, args=(stop,), daemon=True).start()
     for line in sys.stdin:
         if line.strip():
-            handle(json.loads(line))
+            handle(json.loads(line), stop)
     stop.set()
 
 

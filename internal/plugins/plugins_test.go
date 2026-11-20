@@ -141,7 +141,8 @@ func TestCommandErrors(t *testing.T) {
 func TestMisbehavingPluginIsContained(t *testing.T) {
 	tests := []struct{ mode, wantErr string }{
 		{"crash", "plugin process: exit status 3"},
-		{"hang", "no reply in time"},
+		{"hang", "discover: no reply in time"},
+		{"nopong", "ping: no reply in time"},
 		{"silent", "no hello within"},
 		{"junk", "a line is not a JSON message"},
 		{"huge", "a line is longer than 65536 bytes"},

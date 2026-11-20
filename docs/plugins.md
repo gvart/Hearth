@@ -60,7 +60,9 @@ commands:
 | `capabilities` | What the plugin may do. `discover`: report devices. `state`: push entity states. `command`: run the commands below. A message the manifest's capabilities do not allow is a protocol violation. |
 | `commands` | The only commands the hub sends the plugin, each with its [policy class](guardrails.md). Commands need the `command` capability. |
 
-The hub refuses a manifest, or the plugin's program, that a group or other users can write.
+The hub refuses a manifest that a group or other users can write (`chmod go-w plugin.yaml`). Keep
+the plugin's program and its directory as tightly held: whoever can change them runs code as the
+hub's user.
 
 ## Isolation
 
@@ -148,8 +150,7 @@ also send `devices` on its own, without an `id`, whenever its devices change.
 
 ```json
 {"type":"discover","id":"8"}
-{"type":"devices","id":"8","devices":[{"id":"lamp","name":"Desk lamp","kind":"light",
-  "entities":[{"id":"on","name":"On","kind":"switch","state":false}]}]}
+{"type":"devices","id":"8","devices":[{"id":"lamp","name":"Desk lamp","kind":"light","entities":[{"id":"on","name":"On","kind":"switch","state":false}]}]}
 ```
 
 | Field | |

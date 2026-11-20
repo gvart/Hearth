@@ -281,15 +281,6 @@ func (p *plugin) resolve() (string, error) {
 			return "", fmt.Errorf("plugin %s: %w", p.m.Name, err)
 		}
 	}
-	if runtime.GOOS != "windows" {
-		fi, err := os.Stat(path)
-		if err != nil {
-			return "", fmt.Errorf("plugin %s: %w", p.m.Name, err)
-		}
-		if fi.Mode().Perm()&0o022 != 0 {
-			return "", fmt.Errorf("plugin %s: %s is writable by group or others (mode %v)", p.m.Name, path, fi.Mode().Perm())
-		}
-	}
 	return path, nil
 }
 
