@@ -1,63 +1,131 @@
-# Add a Talos worker node to an existing cluster.
+# Add a Talos node, worker or control plane, to an existing cluster.
+#
+# Not yet run on real hardware: try it on a spare cluster first.
 #
 # Prerequisites:
 #   - A Hearth agent runs on the machine that has talosctl and your Talos
 #     configs (a workstation or the hub host). Its flags let it run talosctl:
 #       hearth agent run --allow-exec /usr/local/bin/talosctl
-#   - /etc/talos/worker.yaml (the worker machine config) and
-#     /etc/talos/talosconfig (client config with the cluster endpoints) exist on
-#     that machine. Hearth never sees their content, so no secret is in this file.
+#   - On that machine: the new node's machine config (worker.yaml or
+#     controlplane.yaml from talosctl gen config, with your patches applied),
+#     and /etc/talos/talosconfig (client config with the cluster endpoints).
+#     Hearth never sees their content, so no secret is in this file.
 #   - The new node is booted from the Talos image and waits in maintenance mode.
+#   - The hub reads the Talos nodes (hearth hub --talosconfig, see docs/talos.md),
+#     and the new node's address is among the nodes it reads: add it to
+#     --talos-nodes (or to the talosconfig context's nodes) and restart the hub
+#     before the run. Otherwise the check that waits for the new node never passes.
 #   - The cluster is adopted on the hub's Kubernetes page, so the hub can check
-#     the node and delete its Node object on a rollback.
-#   - Edit the vars below: the device with talosctl, the new node's address and
-#     the name it registers with (its hostname, as worker.yaml sets it), and the
-#     cluster's name on the Kubernetes page.
+#     that the node is Ready.
+#   - Edit the vars below: the device with talosctl, the new node's address,
+#     the name it registers with (its hostname, as the machine config sets it),
+#     its role, the machine config's path, a control-plane address to run the
+#     health checks from, and the cluster's name on the Kubernetes page.
 #
-# apply-config, the reset and the Node deletion are dangerous: they are held or
+# apply-config --insecure trusts on first use: talosctl cannot verify the node
+# it talks to, so the machine config, with the cluster's secrets in it, goes to
+# whatever answers at node-ip. Run this on a network you trust, and check that
+# the address is the one the new node's console shows.
+#
+# Rollback is guidance only: nothing is reset or deleted automatically. A node
+# that did not install can be powered off and booted again. A node that joined
+# is removed by hand:
+#   - worker: kubectl drain <node-name> --ignore-daemonsets --delete-emptydir-data,
+#     then talosctl -n <node-ip> reset, then kubectl delete node <node-name>.
+#   - control plane: talosctl -n <node-ip> reset --graceful (it leaves etcd first),
+#     then kubectl delete node <node-name>. If the node cannot leave on its own,
+#     run talosctl -n <healthy control plane> etcd remove-member <member> first.
+#
+# The talosctl steps are exec actions, which are dangerous: they are held or
 # denied until the hub grants them, for example:
 #   hearth hub --allow-dangerous-automation runbook/add-talos-node
 id: add-talos-node
-description: Join a Talos worker node, check it is Ready, undo with a node reset and a Node deletion.
+description: >-
+  Join a Talos node after checks of the cluster's health, apply its machine config in maintenance
+  mode, wait until it is healthy through the Talos API and Ready in Kubernetes. No automatic rollback.
 vars:
   talosctl-device: workstation
   node-ip: 192.0.2.50
   node-name: talos-worker-1
+  role: worker
+  machine-config: /etc/talos/worker.yaml
+  health-node: 192.0.2.10
   cluster: homelab
 steps:
   - id: ready
     type: prompt
     prompt: confirm
     message: >-
-      Is the new node booted from the Talos image, are worker.yaml and talosconfig
-      in place on ${{ vars.talosctl-device }}, and are the vars in this runbook edited?
+      Is the new node booted from the Talos image, are ${{ vars.machine-config }} and the talosconfig in
+      place on ${{ vars.talosctl-device }}, is ${{ vars.node-ip }} among the nodes the hub reads, and
+      are the vars in this runbook edited?
     timeout: 30m
+
+  - id: hub-talos-access
+    type: check
+    description: The hub reads the cluster through the Talos API, and every service on a control-plane node is healthy.
+    check:
+      type: talos_node
+      node: ${{ vars.health-node }}
+      healthy: true
+    within: 2m
+    every: 10s
+
+  - id: health-before
+    type: action
+    description: The cluster is healthy before the node joins (etcd, every node Ready, control plane up). Changes nothing.
+    action:
+      type: exec
+      device: ${{ vars.talosctl-device }}
+      command:
+        - /usr/local/bin/talosctl
+        - --talosconfig
+        - /etc/talos/talosconfig
+        - --nodes
+        - ${{ vars.health-node }}
+        - health
+        - --wait-timeout
+        - 5m
+      timeout: 6m
 
   - id: maintenance-api
     type: check
-    description: The node's Talos API answers in maintenance mode.
+    description: The new node's Talos API answers in maintenance mode.
     check:
       type: tcp
       address: "${{ vars.node-ip }}:50000"
     within: 10m
     every: 10s
 
-  - id: forget-node
-    type: action
-    description: >-
-      Nothing to do on the way forward. On a rollback, this runs after the node is
-      reset and deletes the Node object it left in the cluster.
-    action:
-      type: log
-      message: On a rollback, the Node ${{ vars.node-name }} is deleted after the reset.
-    rollback:
-      type: kube_node_delete
-      cluster: ${{ vars.cluster }}
-      node: ${{ vars.node-name }}
+  - id: quorum
+    type: prompt
+    prompt: confirm
+    message: >-
+      The new node's role is ${{ vars.role }}. For a worker, answer yes. For a control-plane node: it
+      becomes an etcd member, and etcd needs a majority of its members up. Going from one to two
+      members means both must be up, so a second control plane that fails to join stops the
+      Kubernetes API; go on to three soon after. Answer yes only if every etcd member is healthy now
+      and you accept that.
+    timeout: 30m
+
+  - id: approve
+    type: prompt
+    prompt: confirm
+    message: >-
+      Send ${{ vars.machine-config }} to ${{ vars.node-ip }} now, with talosctl apply-config --insecure?
+      The node is in maintenance mode, so talosctl cannot verify who answers at that address: the config,
+      with the cluster's secrets in it, goes to whatever does (trust on first use). Answer yes only on a
+      network you trust, with the address checked on the node's console. The node installs Talos and
+      reboots. Nothing is undone automatically. To remove the node later: for a worker, kubectl drain
+      it, then talosctl -n ${{ vars.node-ip }} reset; for a control plane, talosctl -n ${{ vars.node-ip }}
+      reset --graceful; then kubectl delete node ${{ vars.node-name }}.
+    timeout: 1h
 
   - id: apply-config
     type: action
-    description: Send the worker machine config to the node; it installs and reboots.
+    description: >-
+      Send the machine config to the node in maintenance mode; it installs Talos, reboots and joins.
+      Not undone automatically: see the rollback note.
     action:
       type: exec
       device: ${{ vars.talosctl-device }}
@@ -68,30 +136,28 @@ steps:
         - --nodes
         - ${{ vars.node-ip }}
         - --file
-        - /etc/talos/worker.yaml
+        - ${{ vars.machine-config }}
       timeout: 5m
     rollback:
-      type: exec
-      device: ${{ vars.talosctl-device }}
-      command:
-        - /usr/local/bin/talosctl
-        - --talosconfig
-        - /etc/talos/talosconfig
-        - reset
-        - --nodes
-        - ${{ vars.node-ip }}
-        - --graceful=false
-        - --reboot
-      timeout: 5m
+      type: log
+      message: >-
+        Nothing was undone on ${{ vars.node-name }} (${{ vars.node-ip }}). If it never installed, power it off.
+        If it joined: for a worker, kubectl drain it, then talosctl -n ${{ vars.node-ip }} reset; for a
+        control plane, talosctl -n ${{ vars.node-ip }} reset --graceful. Then kubectl delete node ${{ vars.node-name }}.
 
-  - id: install-settle
-    type: wait
-    description: Give the node time to install Talos and reboot.
-    duration: 2m
+  - id: node-healthy
+    type: check
+    description: The new node answers through the Talos API with its own certificates, and every service on it is healthy.
+    check:
+      type: talos_node
+      node: ${{ vars.node-ip }}
+      healthy: true
+    within: 20m
+    every: 15s
 
   - id: node-ready
     type: check
-    description: The node registered and is Ready.
+    description: The new node registered and is Ready.
     check:
       type: kube_node
       cluster: ${{ vars.cluster }}
@@ -99,8 +165,25 @@ steps:
     within: 15m
     every: 15s
 
+  - id: health-after
+    type: action
+    description: The cluster is healthy with the new node (for a control plane, etcd with the new member). Changes nothing.
+    action:
+      type: exec
+      device: ${{ vars.talosctl-device }}
+      command:
+        - /usr/local/bin/talosctl
+        - --talosconfig
+        - /etc/talos/talosconfig
+        - --nodes
+        - ${{ vars.health-node }}
+        - health
+        - --wait-timeout
+        - 5m
+      timeout: 6m
+
   - id: done
     type: action
     action:
       type: log
-      message: Talos node ${{ vars.node-name }} joined and is Ready.
+      message: Talos ${{ vars.role }} node ${{ vars.node-name }} joined, is healthy and Ready.

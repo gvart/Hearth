@@ -1,38 +1,62 @@
 # Add a k3s agent (worker) node to an existing k3s cluster.
 #
+# Not yet run on real hardware: try it on a spare machine first.
+#
 # Prerequisites:
-#   - The new machine runs a Hearth agent that is enrolled with the hub and
-#     allowed to run the programs below:
-#       hearth agent run --allow-exec /usr/bin/curl --allow-exec /bin/sh \
+#   - The new machine runs a Hearth agent that is enrolled with the hub, runs
+#     as root and is allowed to run the programs below:
+#       hearth agent run --allow-exec /bin/sh \
 #         --allow-exec /usr/local/bin/k3s-agent-uninstall.sh --allow-exec /bin/rm
-#     Allowing sh is a wide grant: remove it from the agent again after the run.
+#     Allowing sh is a wide grant: the agent can then run anything. Remove it
+#     from the agent again after the run.
+#   - The agent's systemd unit keeps /usr and /etc read-only (ProtectSystem=full).
+#     For the run, let it write there with a drop-in, and restart the agent:
+#       sudo systemctl edit hearth-agent    # add: [Service] ProtectSystem=no
+#       sudo systemctl restart hearth-agent
+#     After the run, remove the drop-in (sudo systemctl revert hearth-agent)
+#     and restart the agent again. Keep PrivateTmp=yes: the installer is
+#     downloaded to the agent's own /tmp.
 #   - The cluster's join token is in a root-only file on the new machine,
-#     /etc/hearth/k3s-token (mode 0600). Put it there yourself: this runbook
-#     only names the file and never holds the token.
+#     /etc/hearth/k3s-token (mode 0600). Put it there yourself: this runbook only
+#     names the file. k3s reads it there, and Hearth never sees it, so it is in
+#     no prompt, step or audit entry.
+#   - curl and sha256sum are on the machine, and it can reach GitHub.
 #   - The server answers on port 6443 and the machine can reach it.
 #   - The cluster is adopted on the hub's Kubernetes page, so the hub can check
 #     the node and delete its Node object on a rollback.
 #   - Edit the vars below: the new device, the k3s server's address, the name
-#     the node registers with (its hostname, by default) and the cluster's name
-#     on the Kubernetes page.
+#     the node registers with (its hostname, by default), the cluster's name on
+#     the Kubernetes page, the k3s version (use the server's) and the sha256 of
+#     install.sh at that version. The two go together: when you change the
+#     version, download install.sh from the same tag and put its sha256 here:
+#       curl -sfL https://raw.githubusercontent.com/k3s-io/k3s/<version>/install.sh | sha256sum
+#
+# Nothing is piped from curl into a shell: install.sh is downloaded at the
+# pinned tag, checked against the pinned sha256, and checked again right
+# before it runs. install.sh itself installs the pinned k3s version and checks
+# the binary against the release's sha256sum file.
 #
 # Install, uninstall and the Node deletion are dangerous: they are held or
 # denied until the hub grants them, for example:
 #   hearth hub --allow-dangerous-automation runbook/add-k3s-node
 id: add-k3s-node
-description: Join a machine to a k3s cluster as an agent, check it is Ready, undo with the k3s uninstaller.
+description: >-
+  Join a machine to a k3s cluster as an agent with a pinned, checksum-verified installer, check it is
+  Ready, undo with the k3s uninstaller.
 vars:
   device: k3s-new
   server-ip: 192.0.2.10
   node-name: k3s-new
   cluster: homelab
+  k3s-version: v1.37.2+k3s1
+  installer-sha256: ed01f89fd977bf20ac1516bbebf8370bf3ddbaa55dac8aba610956a4c78cc00b
 steps:
   - id: ready
     type: prompt
     prompt: confirm
     message: >-
-      Is the agent on ${{ vars.device }} enrolled and allowed to run curl and sh, is the
-      join token in /etc/hearth/k3s-token, and are the vars in this runbook edited?
+      Is the agent on ${{ vars.device }} enrolled, allowed to run sh, and able to write /usr and /etc,
+      is the join token in /etc/hearth/k3s-token, and are the vars in this runbook edited?
     timeout: 30m
 
   - id: server-up
@@ -44,13 +68,32 @@ steps:
     within: 2m
     every: 10s
 
+  - id: approve-download
+    type: prompt
+    prompt: confirm
+    message: >-
+      Download install.sh of k3s ${{ vars.k3s-version }} from GitHub to ${{ vars.device }}, and check its
+      sha256 is ${{ vars.installer-sha256 }}? Nothing runs yet.
+    timeout: 1h
+
   - id: fetch-installer
     type: action
-    description: Download the k3s install script.
+    description: >-
+      Download install.sh at the pinned tag to the agent's private /tmp and check its sha256; a file
+      that does not match is deleted and fails the step.
     action:
       type: exec
       device: ${{ vars.device }}
-      command: [/usr/bin/curl, -sfL, -o, /tmp/k3s-install.sh, "https://get.k3s.io"]
+      command:
+        - /bin/sh
+        - -c
+        - |-
+          set -eu
+          curl -sfL -o /tmp/k3s-install.sh "https://raw.githubusercontent.com/k3s-io/k3s/$1/install.sh"
+          echo "$2  /tmp/k3s-install.sh" | sha256sum -c - || { rm -f /tmp/k3s-install.sh; exit 1; }
+        - sh
+        - ${{ vars.k3s-version }}
+        - ${{ vars.installer-sha256 }}
       timeout: 2m
     rollback:
       type: exec
@@ -70,19 +113,37 @@ steps:
       cluster: ${{ vars.cluster }}
       node: ${{ vars.node-name }}
 
+  - id: approve-install
+    type: prompt
+    prompt: confirm
+    message: >-
+      The installer matched its sha256. Install k3s ${{ vars.k3s-version }} as an agent on
+      ${{ vars.device }} now, joining https://${{ vars.server-ip }}:6443 with the token in
+      /etc/hearth/k3s-token? It starts the k3s-agent service; a rollback runs k3s-agent-uninstall.sh
+      and deletes the Node ${{ vars.node-name }}.
+    timeout: 1h
+
   - id: install
     type: action
-    description: Install k3s as an agent and join the server, reading the token from its file.
+    description: >-
+      Check the installer's sha256 again, then install k3s as an agent and join the server; k3s reads
+      the token from its file.
     action:
       type: exec
       device: ${{ vars.device }}
       command:
         - /bin/sh
-        - /tmp/k3s-install.sh
-        - agent
-        - --server
+        - -c
+        - |-
+          set -eu
+          umask 022
+          test -s "$4" || { echo "no join token in $4" >&2; exit 1; }
+          echo "$2  /tmp/k3s-install.sh" | sha256sum -c -
+          INSTALL_K3S_VERSION="$1" sh /tmp/k3s-install.sh agent --server "$3" --token-file "$4"
+        - sh
+        - ${{ vars.k3s-version }}
+        - ${{ vars.installer-sha256 }}
         - "https://${{ vars.server-ip }}:6443"
-        - --token-file
         - /etc/hearth/k3s-token
       timeout: 10m
     rollback:
@@ -105,4 +166,4 @@ steps:
     type: action
     action:
       type: log
-      message: k3s node ${{ vars.node-name }} joined and is Ready.
+      message: k3s ${{ vars.k3s-version }} node ${{ vars.node-name }} joined and is Ready.

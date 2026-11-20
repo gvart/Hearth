@@ -22,15 +22,23 @@ const recipesPage = "../../docs/runbook-recipes.md"
 
 var wantRecipes = []string{"add-talos-node", "add-k3s-node", "add-docker-host", "upgrade-talos-node"}
 
-// readOnlySteps are action steps that only read, so they need no rollback.
+// readOnlySteps are action steps that only read, so they need no rollback
+// and no approval prompt before them.
 var readOnlySteps = map[string]bool{
 	"add-docker-host/verify":           true,
+	"add-talos-node/health-before":     true,
+	"add-talos-node/health-after":      true,
 	"upgrade-talos-node/health-before": true,
 	"upgrade-talos-node/health-after":  true,
 }
 
-// addNodeRecipes add a node, and delete its Node object on a rollback.
+// addNodeRecipes add a node, and wait for it with a kube_node check.
 var addNodeRecipes = map[string]bool{"add-talos-node": true, "add-k3s-node": true}
+
+// deleteNodeRecipes delete the new node's Node object on a rollback, after
+// the step that uninstalls it. add-talos-node undoes nothing on a device:
+// resetting a node that may be an etcd member is left to a person.
+var deleteNodeRecipes = map[string]bool{"add-k3s-node": true}
 
 func recipeKinds() Kinds {
 	k := builtinKinds()
@@ -207,9 +215,9 @@ func TestRecipesPlanInADryRun(t *testing.T) {
 	}
 }
 
-// The node recipes wait for the node with a kube_node check and delete its
-// Node object on a rollback, after the step that resets or uninstalls it; every
-// recipe names its targets once, in vars.
+// The node recipes wait for the node with a kube_node check; the k3s recipe
+// deletes its Node object on a rollback, after the step that uninstalls it;
+// every recipe names its targets once, in vars.
 func TestRecipesUseVarsAndTheKubernetesSteps(t *testing.T) {
 	kinds := recipeKinds()
 	for _, f := range recipeFiles(t) {
@@ -240,6 +248,9 @@ func TestRecipesUseVarsAndTheKubernetesSteps(t *testing.T) {
 		}
 		if !kubeCheck {
 			t.Errorf("%s has no kube_node check", rb.ID)
+		}
+		if !deleteNodeRecipes[rb.ID] {
+			continue
 		}
 		// Rollback runs last step first: the Node is deleted after the node
 		// is reset or uninstalled, so its kubelet cannot register it again.
