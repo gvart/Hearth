@@ -119,7 +119,13 @@ type tableSpec struct {
 	// (secrets) or hold (values of a UNIQUE column, so a deleted row does
 	// not keep a name taken).
 	tombstone func(r row)
+	// since is the schema version whose migration added the table, for a
+	// table newer than VersionedSchema: below it the table does not exist.
+	since int64
 }
+
+// existsAt reports whether the table is in a database at schema v.
+func (t tableSpec) existsAt(v int64) bool { return v >= max(t.since, VersionedSchema) }
 
 // auditTable is the append-only audit log, merged by mergeAudit.
 const auditTable = "audit_log"
@@ -153,6 +159,9 @@ var tables = map[string]tableSpec{
 	"panel_links":      {pk: []string{"id"}, deletable: true, setOnce: []string{"revoked_at"}},
 	"dashboard_tokens": {pk: []string{"id"}, setOnce: []string{"revoked_at"}},
 	"ca_rotations":     {pk: []string{"new_ca_fp"}},
+	"config_docs": {pk: []string{"id"}, deletable: true, since: configDocsSchema, tombstone: func(r row) {
+		r["content"], r["digest"] = []byte{}, ""
+	}},
 }
 
 // deletedName is the name a tombstone of a table with a UNIQUE name holds:

@@ -93,13 +93,14 @@ func checkMutation(m Mutation) error {
 // member's own memory of a delete, and no read sees it. The hub calls it
 // periodically.
 func (s *Store) GCTombstones(ctx context.Context, now time.Time) (int, error) {
-	if ok, err := isVersioned(ctx, s.db); err != nil || !ok {
+	v, err := schemaVersion(ctx, s.db)
+	if err != nil || v < VersionedSchema {
 		return 0, err
 	}
 	cutoff := int64(hlc.New(now.Add(-TombstoneTTL))) //nolint:gosec // an HLC fits in 63 bits
 	n := 0
 	for _, table := range slices.Sorted(maps.Keys(tables)) {
-		if !tables[table].deletable {
+		if !tables[table].deletable || !tables[table].existsAt(v) {
 			continue
 		}
 		// table is a key of the tables spec.
@@ -120,10 +121,14 @@ func (s *Store) GCTombstones(ctx context.Context, now time.Time) (int, error) {
 // wall clock went back (a Pi without an RTC) still stamps writes that
 // supersede its own earlier ones.
 func (s *Store) observeStored(ctx context.Context) error {
-	if ok, err := isVersioned(ctx, s.db); err != nil || !ok {
+	v, err := schemaVersion(ctx, s.db)
+	if err != nil || v < VersionedSchema {
 		return err
 	}
 	for _, table := range append(slices.Sorted(maps.Keys(tables)), auditTable) {
+		if spec, ok := tables[table]; ok && !spec.existsAt(v) {
+			continue
+		}
 		var h int64
 		// table is a key of the tables spec.
 		if err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(_hlc), 0) FROM `+table).Scan(&h); err != nil {

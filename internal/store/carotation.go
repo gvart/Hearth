@@ -258,6 +258,9 @@ const (
 	SealedKubeClusters   = "kube_clusters"
 	SealedProxmoxServers = "proxmox_servers"
 	SealedRunbookRuns    = "runbook_runs"
+	// SealedConfigDocs holds the sealed notify documents; its other
+	// documents are not secret.
+	SealedConfigDocs = "config_docs"
 )
 
 // sealedColumns maps each table of sealed secrets to its sealed column.
@@ -265,7 +268,15 @@ var sealedColumns = map[string]string{
 	SealedKubeClusters:   "kubeconfig",
 	SealedProxmoxServers: "connection",
 	SealedRunbookRuns:    "source",
+	SealedConfigDocs:     "content",
 }
+
+// sealedWhere narrows a table of sealedColumns to its sealed rows, and
+// sealedSince is the schema a table of it needs.
+var (
+	sealedWhere = map[string]string{SealedConfigDocs: ` AND kind = '` + ConfigNotify + `'`}
+	sealedSince = map[string]int64{SealedConfigDocs: configDocsSchema}
+)
 
 // SealedSecret is one sealed secret: the row id of table, and its sealed
 // value. In ResealSecrets, Sealed is the value read and Resealed the new one.
@@ -303,18 +314,23 @@ func readSealed(ctx context.Context, q interface {
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 },
 ) ([]SealedSecret, error) {
-	versioned, err := isVersioned(ctx, q)
+	v, err := schemaVersion(ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("read sealed: %w", err)
 	}
+	versioned := v >= VersionedSchema
 	var out []SealedSecret
-	for _, table := range []string{SealedKubeClusters, SealedProxmoxServers, SealedRunbookRuns} {
-		// table and column are constants of this file. A tombstone keeps no
-		// secret.
-		where := ``
-		if versioned {
-			where = ` WHERE _deleted = 0`
+	for _, table := range []string{SealedKubeClusters, SealedProxmoxServers, SealedRunbookRuns, SealedConfigDocs} {
+		if v < sealedSince[table] {
+			continue
 		}
+		// table, column and the conditions are constants of this file. A
+		// tombstone keeps no secret.
+		where := ` WHERE 1 = 1`
+		if versioned {
+			where += ` AND _deleted = 0`
+		}
+		where += sealedWhere[table]
 		rows, err := q.QueryContext(ctx, `SELECT id, `+sealedColumns[table]+` FROM `+table+where+` ORDER BY id`)
 		if err != nil {
 			return nil, fmt.Errorf("read sealed %s: %w", table, err)
