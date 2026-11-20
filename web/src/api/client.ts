@@ -44,6 +44,8 @@ export interface Ceiling {
   shell?: boolean;
   /** IPv4 subnets network discovery may sweep from the device (--allow-scan). */
   scan?: string[];
+  /** Whether the agent reports its neighbours and connections (--allow-net-edges). */
+  net_edges?: boolean;
 }
 
 export interface Device {

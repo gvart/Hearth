@@ -85,7 +85,8 @@ func netEdgesFrom(e *agentv1.NetEdges) []store.NetEdge {
 			break
 		}
 		out = append(out, store.NetEdge{
-			Kind: store.EdgeConnection, IP: ip.Unmap().String(), Port: uint16(c.GetPort()), Inbound: c.GetInbound(), Count: c.GetCount(),
+			Kind: store.EdgeConnection, IP: ip.Unmap().String(), Port: uint16(c.GetPort()), //nolint:gosec // checked above
+			Inbound: c.GetInbound(), Count: c.GetCount(),
 		})
 	}
 	return out

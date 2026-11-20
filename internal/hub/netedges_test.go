@@ -190,8 +190,10 @@ func TestAPIDeviceNetEdgesDenied(t *testing.T) {
 		})
 	})
 	ctx := t.Context()
-	if err := f.st.Devices().Upsert(ctx, store.Device{ID: "pi", Name: "pi", Status: store.StatusOnline,
-		Facts: json.RawMessage(`{"ceiling":{"net_edges":true}}`)}); err != nil {
+	if err := f.st.Devices().Upsert(ctx, store.Device{
+		ID: "pi", Name: "pi", Status: store.StatusOnline,
+		Facts: json.RawMessage(`{"ceiling":{"net_edges":true}}`),
+	}); err != nil {
 		t.Fatal(err)
 	}
 	cookie := sessionCookie(t, f.login(t, testPassword))

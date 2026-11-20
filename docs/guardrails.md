@@ -176,7 +176,7 @@ approval waits as it would anyway.
 
 ## Device capability ceiling
 
-An agent runs only what its own flags allow (`--allow-exec`, `--allow-restart`, `--allow-probe`, `--allow-shell`, `--allow-scan`, see
+An agent runs only what its own flags allow (`--allow-exec`, `--allow-restart`, `--allow-probe`, `--allow-shell`, `--allow-scan`, `--allow-net-edges`, see
 [automations.md](automations.md)) and reports that ceiling to the hub with its facts. The hub
 denies an action beyond the reported ceiling in policy, before it could be held for approval, and
 never sends it; the agent checks again before running anything. Agents older than this release
