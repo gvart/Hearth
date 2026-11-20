@@ -125,7 +125,8 @@ type ConnectionJSON struct {
 // PeerJSON is what the hub knows the other end of an edge to be; null when
 // it knows nothing of it.
 type PeerJSON struct {
-	// Kind is "device" (an enrolled device), "hub" (this hub) or "host" (a
+	// Kind is "device" (an enrolled device), "hub" (the hub's own host: an
+	// address of its interfaces, which other services there share) or "host" (a
 	// host network discovery found).
 	Kind string `json:"kind"`
 	// ID is the device's id, or the host's MAC; empty for the hub.
@@ -269,7 +270,7 @@ func (p peerIndex) resolve(mac, ip string) *PeerJSON {
 		return d
 	}
 	if p.hub[ip] {
-		return &PeerJSON{Kind: "hub", Name: "this hub"}
+		return &PeerJSON{Kind: "hub", Name: "hub host"}
 	}
 	if h := p.hostByMAC[mac]; mac != "" && h != nil {
 		return h

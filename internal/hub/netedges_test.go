@@ -208,3 +208,33 @@ func TestAPIDeviceNetEdgesDenied(t *testing.T) {
 		t.Errorf("last audit entry = %+v, want a denied device.net_edges", es)
 	}
 }
+
+// A peer resolves to an enrolled device first, by MAC then by IP, then to
+// the hub's own host, then to a discovered host.
+func TestPeerIndexResolve(t *testing.T) {
+	dev := &PeerJSON{Kind: "device", ID: "pi", Name: "pi"}
+	host := &PeerJSON{Kind: "host", ID: "aa:bb:cc:00:00:07", Name: "nas"}
+	p := peerIndex{
+		deviceByMAC: map[string]*PeerJSON{"aa:bb:cc:00:00:05": dev},
+		deviceByIP:  map[string]*PeerJSON{"192.0.2.5": dev},
+		hostByMAC:   map[string]*PeerJSON{"aa:bb:cc:00:00:07": host},
+		hostByIP:    map[string]*PeerJSON{"192.0.2.7": host, "192.0.2.10": host},
+		hub:         map[string]bool{"192.0.2.10": true, "192.0.2.5": true},
+	}
+	for _, tc := range []struct{ mac, ip, want string }{
+		{"aa:bb:cc:00:00:05", "192.0.2.99", "device:pi"}, // the device's MAC at a new address
+		{"", "192.0.2.5", "device:pi"},                   // a device on the hub's host is the device
+		{"", "192.0.2.10", "hub:"},                       // the hub before a host of the same IP
+		{"aa:bb:cc:00:00:07", "192.0.2.99", "host:aa:bb:cc:00:00:07"},
+		{"", "192.0.2.7", "host:aa:bb:cc:00:00:07"},
+		{"aa:bb:cc:00:00:99", "198.51.100.1", "-"},
+	} {
+		got := "-"
+		if r := p.resolve(tc.mac, tc.ip); r != nil {
+			got = r.Kind + ":" + r.ID
+		}
+		if got != tc.want {
+			t.Errorf("resolve(%q, %q) = %s, want %s", tc.mac, tc.ip, got, tc.want)
+		}
+	}
+}
