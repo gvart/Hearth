@@ -74,8 +74,10 @@ func TestOversizedPacketRefused(t *testing.T) {
 	if err != nil || rc != accepted {
 		t.Fatalf("connect: rc %d, %v", rc, err)
 	}
+	// The broker may close the connection while the packet is still being
+	// written: that is the refusal too.
 	if _, err := c.conn.Write(packet(0x30, make([]byte, MaxPacketSize))); err != nil {
-		t.Fatal(err)
+		return
 	}
 	if closed, got := c.closedSoon(); !closed {
 		t.Fatalf("oversized PUBLISH answered with %#x", got)
