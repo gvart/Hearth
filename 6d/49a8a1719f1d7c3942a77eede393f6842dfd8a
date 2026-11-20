@@ -1,0 +1,21 @@
+internal/hub/talos.go
+  s_26e932fc13ca45::t_b5cdb433a4ceb0 69-71,78-82,86,90
+internal/hub/talos_test.go
+  s_26e932fc13ca45::t_03b811b4151331 81-102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6d49a8a1719f1d7c3942a77eede393f6842dfd8a",
+  "prompts": {},
+  "sessions": {
+    "s_26e932fc13ca45": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea42b0cd-7455-494b-8071-e63f36b98d4d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
