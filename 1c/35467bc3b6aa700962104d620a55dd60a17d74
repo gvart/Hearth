@@ -1,0 +1,29 @@
+internal/store/carotation.go
+  s_26e932fc13ca45::t_5d70431581e0cd 117-136
+internal/cluster/carotation_review_test.go
+  s_26e932fc13ca45::t_b40df896ff426c 860-905,913-931
+  s_26e932fc13ca45::t_143bec5a76de87 906-912
+internal/cluster/carotation.go
+  s_26e932fc13ca45::t_ae848ddfc6c597 237,1167,1297
+  s_26e932fc13ca45::t_50dd46cd82175f 1272
+  s_26e932fc13ca45::t_f6ea13744e6c90 1293-1294
+  s_26e932fc13ca45::t_a0ead1355727dd 233-234
+  s_26e932fc13ca45::t_db8d3ac545e743 1181-1205
+  s_26e932fc13ca45::t_6fdab50af056bb 1156-1159,1168-1169
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1c35467bc3b6aa700962104d620a55dd60a17d74",
+  "prompts": {},
+  "sessions": {
+    "s_26e932fc13ca45": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea42b0cd-7455-494b-8071-e63f36b98d4d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
