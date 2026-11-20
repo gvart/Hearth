@@ -12,8 +12,9 @@ the audit log. Three guardrails sit on top of the built-in action table:
 
 ## Policy file
 
-`<data-dir>/policy.yaml` on the hub host. The hub reads it at start; CLI commands on the hub host
-read it on every run. Without it, every action the table allows is allowed, except dangerous actions
+`policy.yaml`, a document of the hub's store (see [Configuration documents](#configuration-documents)):
+every hub applies a new one within seconds, without a restart, and CLI commands on a hub host read it
+on every run. Without it, every action the table allows is allowed, except dangerous actions
 of automations, which are denied unless granted, and dangerous actions of MCP clients, which are held
 for approval ([mcp.md](mcp.md)). The holder of a panel's share link is the actor `guest`
 ([panels.md](panels.md)): it may only take the read and safe actions a panel allows, and setting
@@ -134,6 +135,49 @@ Treat the data directory as holding secrets: keep it readable by the hub's user 
 After a rolling upgrade, nothing can be held until `hearth cluster migrate` brings the cluster to
 schema 9: until then `confirm` actions are denied.
 
+## Configuration documents
+
+`policy.yaml`, `notify.yaml`, every automation file and every runbook file are documents of the hub's
+store, the same on every hub of a cluster. Files on disk are import and export only:
+
+```sh
+hearth config import /etc/hearth/config      # policy.yaml, notify.yaml, automations/, runbooks/
+hearth config import ./policy.yaml           # or one file; --kind for a name it cannot tell
+hearth config import --dry-run ./policy.yaml # validate and audit the decision; write nothing
+hearth config export ./backup-of-config      # every document, as files (0600)
+hearth config delete automation backup.yaml  # an automation or runbook document
+```
+
+Run them on a hub host, as the hub's user: they open the data dir directly, like `hearth admin
+set-password`. An import adds or replaces the documents it holds and leaves the others. It first
+validates the whole configuration it would leave: the policy, the notification channels, the policy's
+approval channel, and every automation and runbook as the hub loads them (notify actions against the
+imported channels). Anything invalid refuses the whole import and writes nothing, so a configuration is
+never half applied. Every hub then applies the documents within seconds; a stored configuration whose
+policy or notify document does not parse is not applied, and the hub keeps the one in effect.
+
+| Action               | Class       | Actor                                                   |
+| -------------------- | ----------- | ------------------------------------------------------- |
+| `config.import`      | `dangerous` | `admin` (an import or a delete)                         |
+| `config.export`      | `read`      | `admin`                                                 |
+| `config.import.first`| `dangerous` | `hub`, fixed: a hub's one-time import of its own files  |
+
+`config.import` follows the modes, so `classes: {dangerous: confirm}` holds every import for approval.
+An import of a policy that would deny `config.import` to `admin` is refused: nothing could change the
+policy back. A policy import is the most powerful change there is, since it decides every other action.
+
+`notify.yaml` holds credentials: it is sealed (AES-256-GCM, with a key derived from the hub CA key)
+before it enters the store, so the database, the replication log and snapshots hold ciphertext only. It
+is never logged, and no API returns it; the audit entry of an import names documents, never content.
+`hearth config export` writes it in clear, mode 0600, on the hub host only.
+
+On its first start at schema 28, a hub imports its files once: `<data-dir>/policy.yaml`,
+`notify.yaml` (or `--notify-config`), `automations/` (or `--automations-dir`) and `runbooks/` (or
+`--runbooks-dir`), audited as `config.import.first`. After that the hub reads only the store and logs
+once that the files are import/export only. In a cluster, the first hub to import wins, and the others
+take its documents. `--allow-dangerous-automation` is not a document: it stays a flag of each host, a
+grant on that host only, added to the policy's `dangerous_automations` there.
+
 ### Approve from your phone
 
 With a notification channel (see [notifications.md](notifications.md)), the hub sends every action
@@ -141,7 +185,7 @@ it holds to your phone:
 
 ```yaml
 approval_notify:
-  channel: phone                  # a channel of notify.yaml; the hub refuses to start without it
+  channel: phone                  # a channel of notify.yaml; an import without it is refused
   url: https://hearth.lan:8443    # optional: the web UI as the phone reaches it
                                   # (default https://<first --host>:<port>)
 ```

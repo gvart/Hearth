@@ -80,7 +80,7 @@ program the agent does not allow is denied before anything is sent. `exec_comman
 exit code, not the output. The command it runs is in the approval and the audit log, so the
 operator sees what they approve: keep secrets out of commands.
 
-`apply_automation` writes `<id>.yaml` to the hub's automations directory, which the hub then loads;
+`apply_automation` writes the automation file `<id>.yaml` into the hub's store, which every hub then loads;
 its plan is in the approval, and the audit log names only the file. Every action also takes `dry_run`: the decision is
 audited, and nothing runs.
 
@@ -119,4 +119,4 @@ without approval, unless `actors.mcp` says otherwise.
 
 The MCP endpoint is on every hub, but only the leader has the agents' streams: point clients at
 the leader (or at an address that follows it) to restart services or run commands. Automations
-written by `apply_automation` go to that hub's automations directory, which is not replicated.
+written by `apply_automation` go into the replicated store, so every hub has them.

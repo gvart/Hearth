@@ -100,7 +100,7 @@ The web UI's **Audit** page lists it with filters (time, actor, action, class, d
 
 ## Automations and integrations
 
-**Automations** are YAML files in the hub's automations directory: a trigger (a device goes offline,
+**Automations** are YAML files held in the hub's store, the same on every hub: a trigger (a device goes offline,
 a check fails, a metric runs hot, a schedule) starts actions (restart a service, run a command, send
 a notification, call a webhook). They act through the same policy and audit log as everything else. See the
 [automation reference](automations.md).

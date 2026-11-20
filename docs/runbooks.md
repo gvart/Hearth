@@ -10,9 +10,11 @@ what the run already did.
 An [automation](automations.md) reacts to an event and runs by itself. A runbook is started by someone
 signed in, and keeps its place across hub restarts until someone finishes it.
 
-Runbooks are YAML files in the hub's runbooks directory: `<data-dir>/runbooks` by default, or
-`hearth hub --runbooks-dir DIR`. Every `*.yaml` and `*.yml` file in it (not in subdirectories) is one
-runbook. A file is read when it is listed, planned or started, so an edit needs no restart.
+Runbooks are YAML files held in the hub's store, the same on every hub of a cluster, imported with
+`hearth config import DIR` from `DIR/runbooks` (see [guardrails](guardrails.md#configuration-documents));
+on its first start a hub imports its `<data-dir>/runbooks` directory (or `--runbooks-dir`) once. Every
+`*.yaml` and `*.yml` file (not in subdirectories) is one runbook. A runbook is read when it is listed,
+planned or started, so an import needs no restart.
 
 ## A worked example
 
@@ -313,9 +315,8 @@ The hub keeps the newest 100 finished runs, and every unfinished one.
 ## In a cluster
 
 Run state is replicated through the store like other hub state, so any hub can show a run or take an
-operator's decision, and the leader runs the steps. Give every hub the same runbook files: which file a
-new run starts from depends on the hub that takes the request. Hearth does not sync them, but it warns
-when hubs differ (see [configuration drift](cluster.md#configuration-drift)).
+operator's decision, and the leader runs the steps. Runbook files are documents of the replicated
+store, so every hub starts a run from the same file.
 
 ## Commands
 

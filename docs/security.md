@@ -79,8 +79,8 @@ All three are dangerous policy actions for the local admin, audited. What it doe
   rotate.
 - Backups taken before the finish with the CA key still hold the old key. Destroy them if its leak is
   why you rotate.
-- A leaked database also leaked the Kubernetes and Proxmox credentials sealed in it, whatever the key:
-  rotate them at their source.
+- A leaked database also leaked the Kubernetes and Proxmox credentials and the notification channel
+  credentials sealed in it, whatever the key: rotate them at their source.
 - Enrollment and join tokens created before the finish stop working.
 - Standalone hubs have no rotation: delete `ca.crt` and `ca.key` and enroll every agent again.
 
@@ -148,7 +148,13 @@ running it.
   dashboard summary alone (device counts and states, no addresses, facts or labels), stored as a
   SHA-256 hash, and created and revoked by a signed-in admin through policy. See
   [Homepage](homepage.md).
-- **Notifications**: channel credentials (ntfy tokens, Telegram bot tokens) stay in the channels
-  file on the hub; automations, the UI, run history and the audit log name a channel only.
+- **Notifications**: channel credentials (ntfy tokens, Telegram bot tokens) are in the `notify.yaml`
+  document, sealed with AES-256-GCM (key derived from the hub CA key) before it enters the store, and
+  re-sealed by a hub CA rotation. No API returns it; only `hearth config export` on a hub host writes it
+  in clear. Automations, the UI, run history and the audit log name a channel only.
+- **Configuration documents**: policy, automations and runbooks are documents of the replicated store
+  (see [guardrails](guardrails.md#configuration-documents)). Changing them is `config.import`
+  (dangerous, audited), or `automation.apply` from the web editor and MCP. Automation and runbook files
+  are stored as written, not sealed: keep secrets such as webhook tokens out of them where you can.
 - **Webhooks**: errors and the audit log name only a webhook URL's scheme and host, as URLs and
   headers often carry secrets.

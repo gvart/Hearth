@@ -96,72 +96,55 @@ newest its Hearth supports (`?` and the reason when the hub does not answer). Al
 with their address, roles, allowed roles, state and schema. A member is `alive`, `suspect` (gossip
 holds it alive but this hub has heard nothing from it directly for about two probe rounds), `dead`
 (failed) or `left` (stopped cleanly); `dead` and `left` members stay listed until this hub restarts. The `CONFIG` table compares each hub's
-local configuration (see [Configuration drift](#configuration-drift)). In the hub logs, `leading the cluster` and `no longer leading the
+host flags (see [Host flag drift](#host-flag-drift)). In the hub logs, `leading the cluster` and `no longer leading the
 cluster` mark leadership changes, and `caught up with the cluster` marks a hub that is ready after a
 start.
 
-## Configuration drift
+## Configuration
 
-The database is replicated, but four things stay on each hub and are **not** copied between hubs:
-`policy.yaml`, `notify.yaml`, the automations directory and the runbooks directory. Keep them identical on every hub: after a
-failover, the new leader acts on its own copy, so a hub with a looser policy or missing notification
-channels changes how Hearth behaves. Hearth does not sync them; it detects when hubs disagree and warns.
+`policy.yaml`, `notify.yaml`, the automation files and the runbook files are **documents of the
+replicated store**, not files on each hub. Every hub holds the same documents and applies a change
+within a few seconds, whichever hub it was written on, without a restart. They cannot differ between
+hubs. Change them with `hearth config import` on any hub's host (see
+[guardrails](guardrails.md#configuration-documents)), or with the web UI's automation editor and the
+MCP `apply_automation` tool, which write automation documents.
 
-Each hub computes a SHA-256 digest of each item and shares it with the other hubs over the mutual-TLS
-hub channel. The web UI shows a warning under the top bar, and `hearth cluster status` has a `CONFIG`
-table:
+The first hub to start on a database without documents imports its own files once (`config.import.first`
+in the audit log); after that the files on disk are not read, and the hub says so once in its log. A hub
+that joins later takes the cluster's documents. A cluster whose database is older than schema 28 keeps
+reading each hub's files until `hearth cluster migrate` and a restart of each hub.
+
+## Host flag drift
+
+What still belongs to each host is its command line. `--allow-dangerous-automation` grants an
+automation dangerous actions on that host only: a ceiling each host sets for itself. If hubs differ,
+a failover changes which automations may act, so Hearth compares this flag across hubs and warns.
+
+Each hub computes a SHA-256 digest of its `--allow-dangerous-automation` ids (in any order) and shares
+it with the other hubs over the mutual-TLS hub channel. The web UI shows a warning under the top bar,
+and `hearth cluster status` has a `CONFIG` table:
 
 ```text
-CONFIG       STATE    HUBS
-policy.yaml  differs  hub-a, hub-b | hub-c
-notify.yaml  in_sync  hub-a, hub-b, hub-c
-automations  unknown  hub-a, hub-b | unknown: hub-c
-runbooks     differs  hub-a, hub-b | hub-c
+CONFIG      STATE    HUBS
+host_flags  differs  hub-a, hub-b | hub-c
 ```
 
-| State     | Meaning                                                                    |
-| --------- | -------------------------------------------------------------------------- |
-| `in_sync` | Every hub reported the same content.                                       |
-| `differs` | At least two hubs reported different content. Hubs are grouped by content. |
-| `unknown` | No two hubs differ, but at least one hub could not be compared.            |
+| State     | Meaning                                                                  |
+| --------- | ------------------------------------------------------------------------ |
+| `in_sync` | Every hub reported the same flags.                                       |
+| `differs` | At least two hubs reported different flags. Hubs are grouped by flags.   |
+| `unknown` | No two hubs differ, but at least one hub could not be compared.          |
 
 A hub is unknown, never counted as different, while it is down, still starting, or running a Hearth
-too old to report digests. A single hub has nothing to compare and shows no warning. The warning needs
-a signed-in session, like the rest of the API (`GET /api/v1/cluster/config-drift`). It names items and
-hubs only: digests and file contents are never shown, and never logged.
+too old to report host flags (an older hub's comparison of its files is ignored). A single hub has
+nothing to compare and shows no warning. The warning needs a signed-in session, like the rest of the
+API (`GET /api/v1/cluster/config-drift`). It names items and hubs only: digests are never shown, and
+never logged.
 
-**What is compared.** The bytes, so a changed comment or whitespace counts as a difference. A missing
-file counts the same as an empty one. The policy digest also covers `--allow-dangerous-automation`
-flags, since they grant what the file could. Paths do not matter: `--notify-config` and
-`--automations-dir` and `--runbooks-dir` may differ between hubs. In the automations and runbooks
-directories, only the files Hearth loads count (`.yaml` and `.yml`, not hidden), by name and content, so
-a runbook that differs, one missing on a hub and an extra one all show as a difference. A value that is specific to one hub inside a compared file
-shows as a permanent difference: leave `approval_notify.url` in `policy.yaml` empty, or give it the
-same address on every hub, such as a DNS name all hubs share.
-
-**When a change is noticed.**
-
-- **`policy.yaml` and `notify.yaml`:** when that hub restarts. A hub reads these two files only when it
-  starts, so the digest describes the configuration the hub is running. Editing the file on disk
-  changes nothing until the restart, in the hub's behaviour or in the warning. The exception is
-  `hearth` CLI commands on the hub's host, which read `policy.yaml` each time they run, so they follow
-  an edit at once, before the warning does.
-- **The automations and runbooks directories:** at the next comparison. The UI compares every 30 seconds, and
-  `hearth cluster status` compares each time it runs.
-
-**Resolving a warning.**
-
-1. Find the hubs in each group, in the UI or with `hearth cluster status`. Hearth cannot tell which
-   copy is right, and the larger group is not necessarily the correct one: decide which you want.
-2. Copy that version to the other hubs, for example with `scp`. Keep `notify.yaml` at mode 0600, since
-   it holds credentials.
-3. For `policy.yaml` or `notify.yaml`, restart each hub you changed, one at a time, waiting for
-   `caught up with the cluster` in its log before the next. Automations need no restart.
-4. Check that `hearth cluster status` shows `in_sync`. An automation applied through MCP is written to
-   the hub that received it, so copy it to the other hubs too.
-
-For an `unknown` state, bring the hub back or upgrade it to this version; it is compared as soon as it
-answers.
+**Resolving a warning.** Decide which grants you want, and start every hub with the same
+`--allow-dangerous-automation` flags, restarting one hub at a time and waiting for `caught up with the
+cluster` in its log before the next. To grant an automation everywhere instead, add it to
+`dangerous_automations` in `policy.yaml` and import that.
 
 ## What happens when a hub fails
 
