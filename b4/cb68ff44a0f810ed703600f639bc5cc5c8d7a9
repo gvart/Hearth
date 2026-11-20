@@ -1,0 +1,24 @@
+cmd/hearth/hub.go
+  s_87f1c7baee7d5a::t_76588b36b433d7 273-279,331-334,348-350,769-777
+cmd/hearth/hub_cluster.go
+  s_87f1c7baee7d5a::t_85c9fac5a3e90c 13,122-125
+  s_87f1c7baee7d5a::t_76588b36b433d7 14,36-42,60-121,126-135
+cmd/hearth/hub_gossip_test.go
+  s_87f1c7baee7d5a::t_43d096c9cb1e4e 1-133
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b4cb68ff44a0f810ed703600f639bc5cc5c8d7a9",
+  "prompts": {},
+  "sessions": {
+    "s_87f1c7baee7d5a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "45cc2cdf-3130-4caa-8cb4-8cb365d2150d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
