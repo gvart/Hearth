@@ -1,0 +1,16 @@
+# Example Hearth exec plugin in Python: the hub host's load average.
+# See docs/plugins.md.
+protocol: 1
+name: python-load
+version: 0.1.0
+# A bare name is looked up in the hub's PATH; the plugin runs in this
+# directory, so plugin.py is the file next to this manifest.
+command: python3
+args: [plugin.py]
+env:
+  LOAD_INTERVAL: "10"
+capabilities: [discover, state, command]
+commands:
+  - name: refresh
+    class: read
+    description: Read the load average now

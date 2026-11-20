@@ -26,6 +26,7 @@ import (
 	"github.com/gvart/hearth/internal/metrics"
 	"github.com/gvart/hearth/internal/notify"
 	"github.com/gvart/hearth/internal/pki"
+	"github.com/gvart/hearth/internal/plugins"
 	"github.com/gvart/hearth/internal/policy"
 	"github.com/gvart/hearth/internal/store"
 )
@@ -79,6 +80,7 @@ func newAPI(cfg Config) *api {
 		talos:   cfg.Talos,
 		kube:    cfg.Kube,
 		proxmox: cfg.Proxmox,
+		plugins: cfg.Plugins,
 		notify:  cfg.Notify,
 		verify:  newVerifyGate(), verifyWait: verifyWait, verifyPassword: verifier,
 		logins:        newLoginLimiter(time.Now, loginBurst, loginEvery),
@@ -139,6 +141,7 @@ func (a *api) routes() http.Handler {
 	mux.Handle("POST /api/v1/tokens", a.auth(a.createToken))
 	a.kubeRoutes(mux)
 	a.proxmoxRoutes(mux)
+	a.pluginRoutes(mux)
 	a.notifyRoutes(mux)
 	a.automationRoutes(mux)
 	mux.Handle("GET /api/v1/cluster/config-drift", a.auth(a.configDrift))
@@ -222,6 +225,8 @@ type api struct {
 	kube *kubernetes.Manager
 	// proxmox is Config.Proxmox; nil when Proxmox servers are not served.
 	proxmox *proxmox.Manager
+	// plugins is Config.Plugins; nil when no exec plugin is configured.
+	plugins *plugins.Manager
 	// notify is Config.Notify; nil when notification channels are not served.
 	notify *notify.Notifier
 	// drift is Config.ConfigDrift; nil on a standalone hub.

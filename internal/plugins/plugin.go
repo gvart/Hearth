@@ -179,22 +179,20 @@ func (p *plugin) runOnce(ctx context.Context) error {
 	// The hub holds the pipes itself, so that closing its ends unblocks
 	// every read and write whatever the plugin (or a child it left behind)
 	// does with its own.
-	var pipes [6]*os.File
-	closeAll := func() {
-		for _, f := range pipes {
-			if f != nil {
+	var pipes []*os.File
+	for range 3 {
+		r, w, err := os.Pipe()
+		if err != nil {
+			for _, f := range pipes {
 				_ = f.Close()
 			}
-		}
-	}
-	for i := 0; i < len(pipes); i += 2 {
-		if pipes[i], pipes[i+1], err = os.Pipe(); err != nil {
-			closeAll()
 			return fmt.Errorf("plugin %s: pipe: %w", p.m.Name, err)
 		}
+		pipes = append(pipes, r, w)
 	}
 	inR, inW, outR, outW, errR, errW := pipes[0], pipes[1], pipes[2], pipes[3], pipes[4], pipes[5]
-	cmd := exec.Command(path, p.m.Args...) //nolint:gosec // the operator's manifest names the program; no shell
+	// The operator's manifest names the program and its args; no shell.
+	cmd := exec.Command(path, p.m.Args...)
 	cmd.Dir, cmd.Env = p.m.Dir, p.env()
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = inR, outW, errW
 
@@ -382,13 +380,13 @@ func (p *plugin) readLoop(pctx context.Context, pr *proc, r io.Reader, hello cha
 	}
 }
 
-// readLine reads one line of at most max bytes, without its newline.
-func readLine(br *bufio.Reader, max int) ([]byte, error) {
+// readLine reads one line of at most limit bytes, without its newline.
+func readLine(br *bufio.Reader, limit int) ([]byte, error) {
 	var buf []byte
 	for {
 		chunk, err := br.ReadSlice('\n')
-		if len(buf)+len(chunk) > max+1 {
-			return nil, violation("a line is longer than %d bytes", max)
+		if len(buf)+len(chunk) > limit+1 {
+			return nil, violation("a line is longer than %d bytes", limit)
 		}
 		switch {
 		case err == nil:

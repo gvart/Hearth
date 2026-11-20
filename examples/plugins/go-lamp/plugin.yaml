@@ -1,0 +1,14 @@
+# Example Hearth exec plugin in Go: a virtual lamp. See docs/plugins.md.
+# Build the binary next to this file first: go build -o lamp .
+protocol: 1
+name: go-lamp
+version: 0.1.0
+command: ./lamp
+capabilities: [discover, state, command]
+commands:
+  - name: turn_on
+    class: safe
+    description: Turn the lamp on
+  - name: turn_off
+    class: safe
+    description: Turn the lamp off

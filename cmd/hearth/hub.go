@@ -36,6 +36,7 @@ import (
 	"github.com/gvart/hearth/internal/metrics"
 	"github.com/gvart/hearth/internal/notify"
 	"github.com/gvart/hearth/internal/pki"
+	"github.com/gvart/hearth/internal/plugins"
 	"github.com/gvart/hearth/internal/policy"
 	"github.com/gvart/hearth/internal/store"
 )
@@ -105,6 +106,8 @@ type hubOptions struct {
 	talosNodes   []string
 	// dhcpLeases are DHCP lease files (dnsmasq, ISC dhcpd) to import.
 	dhcpLeases []string
+	// plugins are the manifests of the exec plugins to run; none by default.
+	plugins []string
 	// backup schedules encrypted backups to an S3-compatible bucket.
 	backup    scheduledBackupOptions
 	cluster   clusterOptions
@@ -139,6 +142,7 @@ func newHubCmd() *cobra.Command {
 			"--netalertx-url adds the devices a NetAlertX knows (see docs/netalertx.md).\n\n" +
 			"--beszel-url reads the systems a Beszel hub monitors, with their status and usage (see docs/beszel.md).\n\n" +
 			"--talosconfig reads Talos nodes through the Talos API: versions, services, memory and load (see docs/talos.md).\n\n" +
+			"--plugin runs the exec plugin a manifest describes, as a child process of the hub (see docs/plugins.md).\n\n" +
 			"--backup-interval uploads an encrypted backup to an S3-compatible bucket at that interval and keeps\n" +
 			"the newest --backup-keep, without the CA key unless --backup-include-ca; in a cluster the leader does (see docs/backup.md).",
 		Args: cobra.NoArgs,
@@ -219,6 +223,9 @@ func newHubCmd() *cobra.Command {
 	cmd.Flags().StringArrayVar(&opts.dhcpLeases, "dhcp-leases", splitList(os.Getenv("HEARTH_DHCP_LEASES")),
 		"DHCP lease file to import hosts from, dnsmasq (/var/lib/misc/dnsmasq.leases) or ISC dhcpd (dhcpd.leases); "+
 			"repeatable (env HEARTH_DHCP_LEASES, comma-separated)")
+	cmd.Flags().StringArrayVar(&opts.plugins, "plugin", splitList(os.Getenv("HEARTH_PLUGINS")),
+		"manifest of an exec plugin to run on the hub, e.g. /etc/hearth/plugins/lamp/plugin.yaml; repeatable "+
+			"(env HEARTH_PLUGINS, comma-separated; default: none; see docs/plugins.md)")
 	addBackupFlags(cmd, &opts.backup)
 	addTelemetryFlags(cmd, &opts.telemetry)
 	cmd.Flags().DurationVar(&opts.shellIdle, "terminal-idle-timeout", hub.DefaultShellIdleTimeout,
@@ -284,6 +291,14 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	talosClient, err := talosSource(opts)
 	if err != nil {
 		return err
+	}
+	var manifests []plugins.Manifest
+	for _, path := range opts.plugins {
+		m, err := plugins.LoadManifest(path)
+		if err != nil {
+			return fmt.Errorf("--plugin: %w", err)
+		}
+		manifests = append(manifests, m)
 	}
 	polCfg, err := loadPolicyConfig(opts.dataDir)
 	if err != nil {
@@ -386,6 +401,14 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	var pluginMgr *plugins.Manager
+	if len(manifests) > 0 {
+		if pluginMgr, err = plugins.New(plugins.Config{
+			Manifests: manifests, Policy: pol, Log: log.With("component", "plugins"),
+		}); err != nil {
+			return fmt.Errorf("--plugin: %w", err)
+		}
+	}
 	pve, err := newProxmoxManager(st, sealers.proxmox, pol, log)
 	if err != nil {
 		return err
@@ -431,6 +454,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		Agents:            agents,
 		Kube:              kube,
 		Proxmox:           pve,
+		Plugins:           pluginMgr,
 		Notify:            notifier,
 		Version:           opts.version,
 		Runbooks:          runbooks,
@@ -548,7 +572,8 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		logAttrs = append(logAttrs, "node_id", node.ID(), "raft_addr", node.Addr())
 	}
 	logAttrs = append(logAttrs, "prometheus", prom != nil, "pihole", opts.piholeURL != "", "netalertx", opts.netalertxURL != "",
-		"beszel", opts.beszelURL != "", "talos", opts.talosconfig != "", "dhcp_lease_files", len(opts.dhcpLeases))
+		"beszel", opts.beszelURL != "", "talos", opts.talosconfig != "", "dhcp_lease_files", len(opts.dhcpLeases),
+		"plugins", len(manifests))
 	log.InfoContext(ctx, "hub listening", logAttrs...)
 
 	var builtin []*automation.Automation
@@ -615,6 +640,10 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	g.Go(func() error { return kube.Run(gctx) })
 	// And reads the Proxmox servers itself.
 	g.Go(func() error { return pve.Run(gctx) })
+	// And runs the exec plugins itself, if any: commands may reach any hub.
+	if pluginMgr != nil {
+		g.Go(func() error { return pluginMgr.Run(gctx) })
+	}
 	// Every hub prunes its own metrics.
 	g.Go(func() error { return ms.Run(gctx) })
 	g.Go(func() error { return dashboardAudit.Run(gctx) })

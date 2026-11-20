@@ -75,8 +75,11 @@ func TestCommandsWithoutPolicyAllowAreDeniedAndAudited(t *testing.T) {
 			policy.ActorWeb, "wipe", policy.PluginCommandDangerous,
 		},
 		{"actor kind not admitted", policy.Config{}, policy.ActorAutomation, "toggle", policy.PluginCommandSafe},
-		{"confirm without approvals", policy.Config{Classes: map[policy.Class]policy.Mode{policy.Safe: policy.ModeConfirm}},
-			policy.ActorWeb, "toggle", policy.PluginCommandSafe},
+		{
+			"confirm without approvals",
+			policy.Config{Classes: map[policy.Class]policy.Mode{policy.Safe: policy.ModeConfirm}},
+			policy.ActorWeb, "toggle", policy.PluginCommandSafe,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

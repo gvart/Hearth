@@ -161,7 +161,7 @@ func LoadManifest(path string) (Manifest, error) {
 	if err != nil {
 		return Manifest{}, fmt.Errorf("plugin manifest %s: %w", path, err)
 	}
-	f, err := os.Open(abs) //nolint:gosec // the operator names the manifest
+	f, err := os.Open(abs)
 	if err != nil {
 		return Manifest{}, fmt.Errorf("plugin manifest: %w", err)
 	}
