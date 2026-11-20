@@ -1,0 +1,24 @@
+deploy/kubernetes/agent-daemonset.yaml
+  s_26e932fc13ca45::t_668d5769505321 9-11,21-23,74,110,147-148
+deploy/daemonset_test.go
+  s_26e932fc13ca45::t_4f48af897b1cff 1-46,51-137
+  s_26e932fc13ca45::t_799c79a5200794 47-50
+docs/talos.md
+  s_26e932fc13ca45::t_668d5769505321 102-104,120-125,136-138,156-157
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c4b8500574411bc0b82d0a0c2e0bc47eb9895d71",
+  "prompts": {},
+  "sessions": {
+    "s_26e932fc13ca45": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea42b0cd-7455-494b-8071-e63f36b98d4d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
