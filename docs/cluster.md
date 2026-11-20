@@ -20,18 +20,40 @@ others elect a new one in a few seconds, agents reconnect to it, and everything 
 
 ## Ports and names
 
-Each hub uses three ports. The defaults are below; all hubs must be reachable from each other on
-the Raft port, and from agents and browsers on the TLS port.
+Each hub uses four ports. The defaults are below; all hubs must be reachable from each other on
+the Raft and gossip ports, and from agents and browsers on the TLS port.
 
-| Port | Flag            | Used by                                                       |
-| ---- | --------------- | ------------------------------------------------------------- |
-| 7443 | `--listen`      | agents, the HTTPS UI and API, and hub-to-hub joins and writes |
-| 7080 | `--http-listen` | the plain HTTP UI and API, the installer, `/ca.crt`           |
-| 7444 | `--raft-listen` | Raft between hubs (mutual TLS with hub certificates)          |
+| Port | Flag              | Used by                                                       |
+| ---- | ----------------- | ------------------------------------------------------------- |
+| 7443 | `--listen`        | agents, the HTTPS UI and API, and hub-to-hub joins and writes |
+| 7080 | `--http-listen`   | the plain HTTP UI and API, the installer, `/ca.crt`           |
+| 7444 | `--raft-listen`   | Raft between hubs (mutual TLS with hub certificates)          |
+| 7445 | `--gossip-listen` | membership gossip between hubs (TCP, mutual TLS, no UDP)      |
 
 Give each hub its name with `--host`: the **first** `--host` is the name agents and the other hubs use
 to reach that hub's TLS port, so it must resolve from your devices. `--advertise host:7444` is the
 address the other hubs dial for Raft (default: this machine's hostname).
+
+## Roles and membership gossip
+
+Every host has a set of roles: `node` (the agent), `storage` (a store replica) and `master` (API,
+UI, agent streams, automations). `hearth hub` is `master` and `storage`; `hearth agent` is `node`.
+`--allow-roles` (env `HEARTH_ALLOW_ROLES`, default `storage,master` on a hub) lists the roles a host
+may take; it is the host's capability ceiling, and a hub refuses to start if it does not allow both
+of its roles.
+
+Clustered hubs gossip their membership (hashicorp/memberlist) over TCP with mutual TLS on
+`--gossip-listen` (default `:7445`, empty turns it off), with the same hub node certificates and
+revocation checks as Raft: an enrolled device's certificate, a certificate of another CA or a
+revoked hub certificate is refused. A member's gossip name is bound to its certificate: a hub adds a
+member only after a TLS handshake it made itself to that member's address showed a hub certificate
+for that name, so no hub can join, or be added, under another hub's name. What other hubs relay about
+a member (its metadata, or that it is suspect or dead) is trusted as coming from a cluster hub, not
+checked against the member itself. `--gossip-advertise` is the address the other hubs dial (default:
+the `--advertise` host and the gossip port); every hub must gossip on the same port, because a hub
+finds the others at its Raft peers' hosts on its own gossip port. Agents never gossip. For now
+gossip only reports membership, next to Raft, which still replicates everything; gossip and
+replication will share one port once Raft is replaced.
 
 ## Forming the cluster
 
@@ -70,7 +92,10 @@ hearth cluster status --json
 It shows this hub's state, the leader, the Raft term and indexes, and every peer with its suffrage
 and its database schema as `DATABASE/SUPPORTED`: the schema version its database is at and the
 newest its Hearth supports (`?` and the reason when the hub does not answer). All peers should be
-`Voter`, and every DATABASE column shows the same version. The `CONFIG` table compares each hub's
+`Voter`, and every DATABASE column shows the same version. The `MEMBER` table lists the gossip members
+with their address, roles, allowed roles, state and schema. A member is `alive`, `suspect` (gossip
+holds it alive but this hub has heard nothing from it directly for about two probe rounds), `dead`
+(failed) or `left` (stopped cleanly); `dead` and `left` members stay listed until this hub restarts. The `CONFIG` table compares each hub's
 local configuration (see [Configuration drift](#configuration-drift)). In the hub logs, `leading the cluster` and `no longer leading the
 cluster` mark leadership changes, and `caught up with the cluster` marks a hub that is ready after a
 start.

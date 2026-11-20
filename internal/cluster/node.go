@@ -149,6 +149,9 @@ type Node struct {
 	// configSource digests this hub's configuration; see SetConfigSource.
 	configSource atomic.Pointer[ConfigSource]
 
+	// membership is the gossip membership, once NewMembership made it.
+	membership atomic.Pointer[Membership]
+
 	// Hub CA rotation (carotation.go): nextCert is this hub's node
 	// certificate of the new CA, presented from the cutover; rotMu
 	// serializes the rotation steps; caKick wakes the reconcile loop, which
@@ -614,6 +617,9 @@ type Status struct {
 	// ConfigDrift compares the hubs' configuration, filled by
 	// StatusWithSchemas; nil when it could not be read.
 	ConfigDrift *DriftReport `json:"config_drift,omitempty"`
+	// Members are the gossip members this node sees; empty when it does not
+	// gossip.
+	Members []MemberInfo `json:"members,omitempty"`
 }
 
 // Status returns this node's view of the cluster.
@@ -638,6 +644,9 @@ func (n *Node) Status() (Status, error) {
 	}
 	for _, s := range cf.Configuration().Servers {
 		st.Peers = append(st.Peers, Peer{ID: string(s.ID), Address: string(s.Address), Suffrage: s.Suffrage.String()})
+	}
+	if m := n.membership.Load(); m != nil {
+		st.Members = m.Members()
 	}
 	return st, nil
 }

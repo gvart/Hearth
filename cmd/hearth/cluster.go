@@ -356,7 +356,8 @@ func newClusterStatusCmd() *cobra.Command {
 		Use:   "status",
 		Short: "Show this hub's view of the cluster",
 		Long: "Show the node ID, Raft state, leader, peers and log indexes as the hub on this host sees them,\n" +
-			"and each hub's database schema version and the newest its hearth supports.",
+			"and each hub's database schema version and the newest its hearth supports. MEMBERS lists the\n" +
+			"gossip members with their roles, allowed roles, state (alive, suspect, dead, left) and schema.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runClusterStatus(cmd.Context(), dataDir, asJSON, cmd.OutOrStdout())
@@ -402,6 +403,7 @@ func runClusterStatus(ctx context.Context, dataDir string, asJSON bool, out io.W
 		}
 		_, _ = fmt.Fprintf(tw, "%s%s\t%s\t%s\t%s\t\n", p.ID, mark, p.Address, p.Suffrage, schemaColumn(p))
 	}
+	writeMembers(tw, st.Members)
 	if st.ConfigDrift != nil {
 		_, _ = fmt.Fprintln(tw, "\nCONFIG\tSTATE\tHUBS\t")
 		for _, it := range st.ConfigDrift.Items {
@@ -412,6 +414,18 @@ func runClusterStatus(ctx context.Context, dataDir string, asJSON bool, out io.W
 		return fmt.Errorf("write status: %w", err)
 	}
 	return nil
+}
+
+// writeMembers writes the gossip members table; nothing when the hub does
+// not gossip.
+func writeMembers(tw io.Writer, members []cluster.MemberInfo) {
+	if len(members) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintln(tw, "\nMEMBER\tADDRESS\tROLES\tALLOWED ROLES\tSTATE\tSCHEMA\t")
+	for _, m := range members {
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%d\t\n", m.ID, m.Address, m.Roles, m.AllowedRoles, m.State, m.Schema)
+	}
 }
 
 // driftHubsColumn lists the hubs of a configuration item: those with the same

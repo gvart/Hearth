@@ -10,6 +10,8 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -31,6 +33,13 @@ type clusterOptions struct {
 	// raftLn, if set, is a listener already bound to raftListen (see
 	// cluster.Config.Listener).
 	raftLn net.Listener
+	// allowRoles is this host's --allow-roles, the roles it may take; empty
+	// means the hub's own, master and storage.
+	allowRoles string
+	// gossipListen is the membership gossip address; empty turns gossip
+	// off. gossipAdvertise is the host:port other hubs dial for it.
+	gossipListen    string
+	gossipAdvertise string
 }
 
 func addClusterFlags(cmd *cobra.Command, o *clusterOptions) {
@@ -48,6 +57,83 @@ func addClusterFlags(cmd *cobra.Command, o *clusterOptions) {
 		"address for Raft traffic between hubs (mutual TLS) in a cluster")
 	cmd.Flags().StringVar(&o.advertise, "advertise", "",
 		"host:port other hubs use to reach this hub's --raft-listen (default: this hostname and the Raft port)")
+	allow := os.Getenv("HEARTH_ALLOW_ROLES")
+	if allow == "" {
+		allow = cluster.HubRoles.String()
+	}
+	cmd.Flags().StringVar(&o.allowRoles, "allow-roles", allow,
+		"cluster roles this host may take, comma-separated from node, storage and master (env HEARTH_ALLOW_ROLES); "+
+			"a hub is master and storage, so both must be allowed")
+	cmd.Flags().StringVar(&o.gossipListen, "gossip-listen", ":"+cluster.DefaultGossipPort,
+		"address for membership gossip between cluster hubs (TCP, mutual TLS); empty turns gossip off")
+	cmd.Flags().StringVar(&o.gossipAdvertise, "gossip-advertise", "",
+		"host:port other hubs use to reach this hub's --gossip-listen (default: the --advertise host and the gossip port)")
+}
+
+// allowedRoles parses --allow-roles; empty means the hub's roles.
+func (o clusterOptions) allowedRoles() (cluster.RoleSet, error) {
+	if strings.TrimSpace(o.allowRoles) == "" {
+		return cluster.HubRoles, nil
+	}
+	allowed, err := cluster.ParseRoles(o.allowRoles)
+	if err != nil {
+		return 0, fmt.Errorf("--allow-roles: %w", err)
+	}
+	return allowed, nil
+}
+
+// gossipAdvertiseAddr is --gossip-advertise, or the host other hubs reach
+// this one by (see advertiseAddr) with the --gossip-listen port.
+func (o clusterOptions) gossipAdvertiseAddr() (string, error) {
+	if o.gossipAdvertise != "" {
+		if _, _, err := net.SplitHostPort(o.gossipAdvertise); err != nil {
+			return "", fmt.Errorf("--gossip-advertise %s: %w", o.gossipAdvertise, err)
+		}
+		return o.gossipAdvertise, nil
+	}
+	_, port, err := net.SplitHostPort(o.gossipListen)
+	if err != nil {
+		return "", fmt.Errorf("--gossip-listen %s: %w", o.gossipListen, err)
+	}
+	raft, err := o.advertiseAddr()
+	if err != nil {
+		return "", err
+	}
+	host, _, _ := net.SplitHostPort(raft)
+	return net.JoinHostPort(host, port), nil
+}
+
+// newMembership returns the started node's gossip membership, its listener
+// bound; nil when gossip is off or its port is taken. The caller runs it.
+func newMembership(ctx context.Context, o clusterOptions, node *cluster.Node, allowed cluster.RoleSet, log *slog.Logger) (
+	*cluster.Membership, error,
+) {
+	if o.gossipListen == "" {
+		return nil, nil
+	}
+	advertise, err := o.gossipAdvertiseAddr()
+	if err != nil {
+		return nil, err
+	}
+	ln, err := (&net.ListenConfig{}).Listen(ctx, "tcp", o.gossipListen)
+	if err != nil {
+		// Gossip only reports membership for now; the hub runs on without it.
+		log.WarnContext(ctx, "gossip membership off: cannot listen", "gossip_listen", o.gossipListen, "err", err)
+		return nil, nil
+	}
+	if host, port, err := net.SplitHostPort(advertise); err == nil && port == "0" {
+		// Listening on port 0 (tests): advertise the port taken.
+		advertise = net.JoinHostPort(host, strconv.Itoa(ln.Addr().(*net.TCPAddr).Port))
+	}
+	m, err := node.NewMembership(cluster.MembershipConfig{
+		Roles: cluster.HubRoles, Allowed: allowed,
+		Listen: o.gossipListen, Listener: ln, Advertise: advertise, Log: log,
+	})
+	if err != nil {
+		_ = ln.Close()
+		return nil, err
+	}
+	return m, nil
 }
 
 // clustered reports whether the hub runs as a Raft cluster member: it was
