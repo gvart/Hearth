@@ -37,8 +37,14 @@ const (
 	// ClusterJoin admits a new hub: it receives a node certificate and the CA
 	// key, and is added to the Raft configuration as a non-voter.
 	ClusterJoin Action = "cluster.join"
-	// ClusterPromote makes a joined, caught-up hub a Raft voter.
+	// ClusterPromote makes a joined, caught-up hub a Raft voter (actor hub)
+	// or, in an AP cluster, gives a member the storage or master role
+	// (actor admin or web).
 	ClusterPromote Action = "cluster.promote"
+	// ClusterDemote takes the storage or master role from a member of an AP
+	// cluster: a storage member hands its rows off first; a master spends
+	// its tokens, expires its approvals and deletes the CA key.
+	ClusterDemote Action = "cluster.demote"
 	// ClusterRemove removes a hub from the Raft configuration and revokes
 	// its hub node certificates.
 	ClusterRemove Action = "cluster.remove"
@@ -328,6 +334,9 @@ type rule struct {
 	// of a protocol no operator could stop to approve, or they are the
 	// operator's own approval and recovery paths.
 	fixed bool
+	// fixedFor are the actors for whom the rule is fixed, when not every
+	// actor's is.
+	fixedFor []string
 }
 
 // rules is the action table. Anything not listed here is denied.
@@ -345,9 +354,15 @@ var rules = map[Action]rule{
 	// Joining hands out the CA key: every step of it is dangerous.
 	ClusterTokenCreate: {class: Dangerous, actors: []string{ActorAdmin}},
 	ClusterJoin:        {class: Dangerous, actors: []string{ActorJoinToken}, fixed: true},
-	ClusterPromote:     {class: Dangerous, actors: []string{ActorHub}, fixed: true},
+	// A Raft voter promotes itself with its certificate, in the join
+	// protocol: fixed. An admin's promotion in an AP cluster moves the CA
+	// key or the rows: dangerous, and held or denied as the policy says.
+	ClusterPromote: {class: Dangerous, actors: []string{ActorHub, ActorAdmin, ActorWeb}, fixedFor: []string{ActorHub}},
+	// A demotion takes a master's CA key and tokens away, or moves a
+	// storage member's rows; the last master or storage member stays.
+	ClusterDemote: {class: Dangerous, actors: []string{ActorAdmin, ActorWeb}},
 	// Removal changes the quorum and locks a hub out for good.
-	ClusterRemove: {class: Dangerous, actors: []string{ActorAdmin}},
+	ClusterRemove: {class: Dangerous, actors: []string{ActorAdmin, ActorWeb}},
 	// A transfer changes no state: the cluster elects the chosen voter, with
 	// a write pause no longer than an ordinary election.
 	ClusterTransferLeadership: {class: Safe, actors: []string{ActorAdmin}},

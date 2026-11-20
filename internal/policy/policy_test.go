@@ -154,13 +154,6 @@ func TestEngineDo(t *testing.T) {
 			wantResult:   "actor kind not allowed",
 		},
 		{
-			name:         "web session cannot remove a hub",
-			req:          Request{ActorKind: ActorWeb, ActorID: "192.0.2.1", Action: ClusterRemove, Target: "hub-c"},
-			wantErr:      ErrDenied,
-			wantDecision: Deny,
-			wantResult:   "actor kind not allowed",
-		},
-		{
 			name:         "join token cannot remove a hub",
 			req:          Request{ActorKind: ActorJoinToken, ActorID: "abc", Action: ClusterRemove, Target: "hub-c"},
 			wantErr:      ErrDenied,

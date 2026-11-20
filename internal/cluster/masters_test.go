@@ -256,6 +256,7 @@ func TestAgentURLsReachEveryMaster(t *testing.T) {
 		cfg: APConfig{NodeID: "b", AgentURL: "https://b:7443"}, st: an.m("b").st, log: testLogger(t),
 		masters: NewMasterRing("b", fm.Members, nil),
 	}
+	node.roles.Store(uint32(HubRoles))
 	apEventually(t, "b to list every master's agent URL", func() bool {
 		got := node.AgentURLs()
 		return len(got) == 3 && got[0] == "https://b:7443"

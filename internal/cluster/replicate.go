@@ -79,6 +79,9 @@ type ReplicatorConfig struct {
 	HintsEvery       time.Duration
 	GCEvery          time.Duration
 	Now              func() time.Time
+	// OnSynced, if set, is called once a member promoted to storage has
+	// copied the rows of every bucket it owns (see SetLocal).
+	OnSynced func()
 }
 
 const (
@@ -133,6 +136,17 @@ type Replicator struct {
 
 	// uses are the master-owned rows this member used (owned.go).
 	uses *ownedUses
+
+	// local is this member's own part in the storage ring (SetLocal).
+	local atomic.Pointer[replicaLocal]
+	// catchUpMu runs one CatchUp at a time.
+	catchUpMu sync.Mutex
+}
+
+// replicaLocal is whether this member is a storage member, and whether it
+// is still catching up after its promotion.
+type replicaLocal struct {
+	storage, syncing bool
 }
 
 // NewReplicator returns a Replicator; bind it to the store with Bind (or
@@ -171,8 +185,21 @@ func NewReplicator(cfg ReplicatorConfig) (*Replicator, error) {
 	}
 	bg := context.Background()
 	r.ctx.Store(&bg)
+	r.local.Store(&replicaLocal{storage: true})
 	return r, nil
 }
+
+// SetLocal sets this member's part in the storage ring: storage puts it on
+// the ring; syncing, after a promotion, keeps reads off it until it has
+// copied the rows of its buckets from the others (OnSynced). A member that
+// is not storage still holds the global rows.
+func (r *Replicator) SetLocal(storage, syncing bool) {
+	r.local.Store(&replicaLocal{storage: storage, syncing: storage && syncing})
+}
+
+// Syncing reports whether this member is still catching up after its
+// promotion to storage.
+func (r *Replicator) Syncing() bool { return r.local.Load().syncing }
 
 func setIfZero[T comparable](dst *T, v T) {
 	var zero T
@@ -196,6 +223,12 @@ type view struct {
 	ring *Ring
 	live map[string]bool
 	n    int
+	// everyone are the members holding the global rows: the storage
+	// members and the masters, live or not.
+	everyone []string
+	// syncing are the storage members still catching up after their
+	// promotion: on the ring for writes, last for reads.
+	syncing map[string]bool
 }
 
 // view returns the current view: the ring over the storage members not
@@ -203,22 +236,39 @@ type view struct {
 // members reachable now.
 func (r *Replicator) view() view {
 	members := r.cfg.Peers.Members()
-	ids := []string{r.cfg.NodeID}
+	local := r.local.Load()
+	var ids []string
+	everyone := []string{r.cfg.NodeID}
 	live := map[string]bool{r.cfg.NodeID: true}
+	syncing := map[string]bool{}
+	if local.storage {
+		ids = append(ids, r.cfg.NodeID)
+		if local.syncing {
+			syncing[r.cfg.NodeID] = true
+		}
+	}
 	for _, m := range members {
-		if !m.Roles.Has(RoleStorage) || m.State == MemberLeft {
+		if m.ID == r.cfg.NodeID || !m.Roles.Gossips() || m.State == MemberLeft {
 			continue
 		}
-		ids = append(ids, m.ID)
+		everyone = append(everyone, m.ID)
 		if (m.State == MemberAlive || m.State == MemberSuspect) && !r.suspected(m.ID) {
 			live[m.ID] = true
 		}
+		if m.Roles.Has(RoleStorage) {
+			ids = append(ids, m.ID)
+			if m.Syncing {
+				syncing[m.ID] = true
+			}
+		}
 	}
+	slices.Sort(everyone)
+	everyone = slices.Compact(everyone)
 	slices.Sort(ids)
 	ids = slices.Compact(ids)
 	key := strings.Join(ids, ",")
 	r.ringMu.Lock()
-	if key != r.ringKey {
+	if key != r.ringKey || r.ring == nil {
 		r.ring, r.ringKey = NewRing(ids), key
 	}
 	ring := r.ring
@@ -228,7 +278,7 @@ func (r *Replicator) view() view {
 		n = 2
 	}
 	n = max(1, min(n, ring.Size()))
-	return view{self: r.cfg.NodeID, ring: ring, live: live, n: n}
+	return view{self: r.cfg.NodeID, ring: ring, live: live, n: n, everyone: everyone, syncing: syncing}
 }
 
 // N is the replication factor in effect.
@@ -252,10 +302,20 @@ func (v view) targets(bucket int) (live, down []string) {
 	return live, down
 }
 
-// all returns every storage member, live and down: the targets of a
-// global row.
+// all returns every storage member, live and down: where a command that
+// runs on every shard runs.
 func (v view) all() (live, down []string) {
-	for _, m := range v.ring.Members() {
+	return v.split(v.ring.Members())
+}
+
+// globals returns every member holding the global rows, live and down:
+// the storage members and the masters, which read them locally.
+func (v view) globals() (live, down []string) {
+	return v.split(v.everyone)
+}
+
+func (v view) split(ms []string) (live, down []string) {
+	for _, m := range ms {
 		if v.live[m] {
 			live = append(live, m)
 		} else {
@@ -268,7 +328,7 @@ func (v view) all() (live, down []string) {
 // placementTargets returns the targets of a row placed at p.
 func (v view) placementTargets(p store.Placement) (live, down []string) {
 	if p.Global {
-		return v.all()
+		return v.globals()
 	}
 	return v.targets(store.BucketOf(store.Token(p.Key)))
 }
@@ -425,8 +485,8 @@ func (r *Replicator) applyHere(ctx context.Context, cmd store.Command, route sto
 		if route.Kind == store.RouteKey {
 			live, _ = v.targets(store.BucketOf(store.Token(route.Key)))
 		} else {
-			live, _ = v.all()
-			n = v.ring.Size()
+			live, _ = v.globals()
+			n = len(v.everyone)
 		}
 		if w := writeQuorum(true, n); len(live) < w {
 			return store.Result{}, fmt.Errorf("apply %s: %d of %d replicas reachable, %d needed: %w",
@@ -536,7 +596,7 @@ func (r *Replicator) plan(ctx context.Context, muts []store.Mutation, critical b
 		live, down := v.placementTargets(p)
 		n := v.n
 		if p.Global {
-			n = v.ring.Size()
+			n = len(v.everyone)
 		}
 		groups = append(groups, writeGroup{live: live, w: writeQuorum(critical, n)})
 		ref, hasParent := m.ParentRef()
@@ -612,20 +672,26 @@ func (r *Replicator) enqueue(job func(context.Context), full func()) {
 	}
 }
 
-// Holds implements store.Shards.
+// Holds implements store.Shards: this member reads its own copy of the
+// rows it holds, unless it is still catching up after its promotion.
 func (r *Replicator) Holds(key string) bool {
 	v := r.view()
-	return slices.Contains(v.ring.Owners(store.BucketOf(store.Token(key)), v.n), v.self)
+	return !v.syncing[v.self] && slices.Contains(v.ring.Owners(store.BucketOf(store.Token(key)), v.n), v.self)
 }
 
 // readOrder is where a read of bucket is tried: its live replicas in
 // preference order, this member first, then the other live members (which
-// may hold rows as stand-ins).
+// may hold rows as stand-ins), and last the replicas still catching up
+// after their promotion.
 func (v view) readOrder(bucket int) []string {
 	pref := v.ring.Preference(bucket)
-	var out []string
+	var out, late []string
 	for i, m := range pref {
-		if v.live[m] && i < v.n {
+		switch {
+		case !v.live[m] || i >= v.n:
+		case v.syncing[m]:
+			late = append(late, m)
+		default:
 			out = append(out, m)
 		}
 	}
@@ -637,7 +703,7 @@ func (v view) readOrder(bucket int) []string {
 			out = append(out, m)
 		}
 	}
-	return out
+	return append(out, late...)
 }
 
 // ReadKey implements store.Shards.
@@ -693,7 +759,9 @@ func (r *Replicator) ReadAll(ctx context.Context, query string, args store.Value
 			}
 			continue
 		}
-		answered[live[i]] = true
+		if !v.syncing[live[i]] {
+			answered[live[i]] = true
+		}
 		rows = append(rows, out[i])
 	}
 	for _, seg := range v.ring.Segments() {
@@ -717,7 +785,7 @@ func (r *Replicator) Repair(refs []store.RowRef) {
 
 func (r *Replicator) repair(ctx context.Context, refs []store.RowRef) error {
 	v := r.view()
-	live, _ := v.all()
+	live, _ := v.globals()
 	var muts []store.Mutation
 	for _, m := range live {
 		ms, err := r.fetch(ctx, m, refs)
@@ -904,8 +972,8 @@ var apKinds = map[string]error{
 }
 
 // errNotMember refuses a replication request from a hub that is not a
-// storage member.
-var errNotMember = errors.New("not a storage member of this cluster")
+// storage member or a master.
+var errNotMember = errors.New("not a member of this cluster")
 
 func apWireError(err error) *wireError {
 	for kind, target := range apKinds {
@@ -1074,13 +1142,15 @@ func (r *Replicator) ServeConn(c net.Conn, peer string) {
 	}
 }
 
-// isMember reports whether peer is a storage member this member knows.
+// isMember reports whether peer is a storage member or a master this
+// member knows: a master that holds no shard still coordinates writes and
+// reads, and holds the global rows.
 func (r *Replicator) isMember(peer string) bool {
 	if peer == "" || peer == r.cfg.NodeID {
 		return false
 	}
 	for _, m := range r.cfg.Peers.Members() {
-		if m.ID == peer && m.Roles.Has(RoleStorage) && m.State != MemberLeft {
+		if m.ID == peer && m.Roles.Gossips() && m.State != MemberLeft {
 			return true
 		}
 	}

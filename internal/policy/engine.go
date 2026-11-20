@@ -684,7 +684,7 @@ func (e *Engine) decide(req Request) (decision, reason string, class Class) {
 	if !slices.Contains(r.actors, req.ActorKind) {
 		return Deny, "actor kind not allowed", r.class
 	}
-	if r.fixed {
+	if r.fixed || slices.Contains(r.fixedFor, req.ActorKind) {
 		return Allow, "", r.class
 	}
 	mode, configured := e.Config().mode(r.class, req.ActorKind, req.ActorID)

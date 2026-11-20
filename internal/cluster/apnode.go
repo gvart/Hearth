@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -79,7 +80,8 @@ type APConfig struct {
 	DataDir string
 	NodeID  string
 	CA      *pki.CA
-	// Allowed is the host's --allow-roles; the hub takes HubRoles.
+	// Allowed is the host's --allow-roles, the ceiling of its roles. The
+	// roles themselves are recorded in the data dir (LoadLocalRoles).
 	Allowed RoleSet
 	// Listen, Listener and Advertise are the gossip address (see
 	// MembershipConfig).
@@ -96,6 +98,11 @@ type APConfig struct {
 	Log      *slog.Logger
 	// Tuning for tests; zero uses the defaults.
 	Gossip ReplicatorConfig
+	// RolesEvery is how often a drain or a catch-up after a promotion
+	// runs a round; zero means 2 s.
+	RolesEvery time.Duration
+	// tuneGossip, in tests, speeds the membership up.
+	tuneGossip func(*MembershipConfig)
 }
 
 // APNode is a hub's place in an AP cluster.
@@ -113,6 +120,25 @@ type APNode struct {
 	link     *MasterLink
 	masterH  atomic.Pointer[http.Handler]
 	isolated Isolation
+
+	// rolesMu guards local, this member's roles and the change under way
+	// (promote.go).
+	rolesMu sync.Mutex
+	local   LocalRoles
+	// roles is local.Roles, read without rolesMu.
+	roles atomic.Uint32
+	// roleSubs are told when this member gains or loses the master role.
+	subsMu   sync.Mutex
+	roleSubs []chan struct{}
+	// rolesKick starts a drain or catch-up round at once.
+	rolesKick chan struct{}
+	// grants are the members this master is promoting to master, which may
+	// fetch the CA key until then (apcakey.go).
+	grantsMu sync.Mutex
+	grants   map[string]time.Time
+	// changeFn runs the CLI's role changes while this member is a master
+	// (apcontrol.go).
+	changeFn atomic.Pointer[RoleChangeFunc]
 }
 
 // NewAPNode prepares this hub's AP membership: its node certificate
@@ -143,8 +169,18 @@ func NewAPNode(ctx context.Context, cfg APConfig) (*APNode, error) {
 	if err != nil {
 		return nil, err
 	}
-	n := &APNode{cfg: cfg, log: cfg.Log.With("component", "ap-cluster"), cert: cert, hints: hints}
+	local, err := LoadLocalRoles(cfg.DataDir, cfg.Allowed, cfg.Log)
+	if err != nil {
+		_ = hints.Close()
+		return nil, err
+	}
+	if cfg.RolesEvery <= 0 {
+		cfg.RolesEvery = 2 * time.Second
+	}
+	n := &APNode{cfg: cfg, log: cfg.Log.With("component", "ap-cluster"), cert: cert, hints: hints,
+		local: local, rolesKick: make(chan struct{}, 1)}
 	rc := cfg.Gossip
+	rc.OnSynced = n.onSynced
 	rc.NodeID, rc.Peers, rc.Replicas, rc.Hints, rc.Log = cfg.NodeID, apNodePeers{n}, cfg.Replicas, hints, cfg.Log
 	rc.LastContact = filepath.Join(dir, lastContactFile)
 	rc.Broadcast = func(b []byte) {
@@ -156,6 +192,8 @@ func NewAPNode(ctx context.Context, cfg APConfig) (*APNode, error) {
 		_ = hints.Close()
 		return nil, err
 	}
+	n.rep.SetLocal(local.Roles.Has(RoleStorage), local.Syncing)
+	n.roles.Store(uint32(local.Roles))
 	return n, nil
 }
 
@@ -196,8 +234,8 @@ func (n *APNode) Bind(ctx context.Context, st *store.Store) error {
 	}
 	n.st = st
 	cert := n.cert
-	m, err := NewMembership(MembershipConfig{
-		NodeID: n.cfg.NodeID, Roles: HubRoles, Allowed: n.cfg.Allowed,
+	mc := MembershipConfig{
+		NodeID: n.cfg.NodeID, Roles: n.local.Roles, Allowed: n.cfg.Allowed,
 		Listen: n.cfg.Listen, Listener: n.cfg.Listener, Advertise: n.cfg.Advertise,
 		Seeds:  n.seeds,
 		Schema: func(ctx context.Context) (int64, error) { return st.SchemaVersion(ctx) },
@@ -206,13 +244,22 @@ func (n *APNode) Bind(ctx context.Context, st *store.Store) error {
 		Check:   n.checkPeer,
 		Replica: n.rep.ServeConn,
 		Master:  func(c net.Conn, peer string) { n.link.Accept(c, peer) },
-		Message: n.rep.HandleMessage,
-	})
+		Message: n.handleMessage,
+		Removed: n.removed,
+	}
+	if n.cfg.tuneGossip != nil {
+		n.cfg.tuneGossip(&mc)
+	}
+	m, err := NewMembership(mc)
 	if err != nil {
+		return err
+	}
+	if err := m.SetLocal(LocalState{Roles: n.local.Roles, Syncing: n.local.Syncing, Draining: n.local.Draining}); err != nil {
 		return err
 	}
 	n.membership = m
 	n.masters = NewMasterRing(n.cfg.NodeID, m.Members, time.Now)
+	n.masters.SelfMaster(n.IsMaster)
 	n.link = NewMasterLink(n.cfg.NodeID, m.DialMaster, m.Members, http.HandlerFunc(n.serveMaster), n.log)
 	n.isolated = Isolation{
 		LastContact: m.LastContact, Now: time.Now, Bound: IsolationBound,
@@ -231,9 +278,13 @@ func (n *APNode) Bind(ctx context.Context, st *store.Store) error {
 	return nil
 }
 
-// serveMaster serves another master's call with the handler SetMasterHandler
-// set; none answers 503.
+// serveMaster serves another master's call: a role change (promote.go), or
+// one for the handler SetMasterHandler set; none answers 503.
 func (n *APNode) serveMaster(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == rolesPath {
+		n.serveRoles(w, r)
+		return
+	}
 	h := n.masterH.Load()
 	if h == nil {
 		http.Error(w, "this master serves no calls yet", http.StatusServiceUnavailable)
@@ -244,7 +295,13 @@ func (n *APNode) serveMaster(w http.ResponseWriter, r *http.Request) {
 
 // SetMasterHandler sets the handler of the calls other masters make to this
 // one (cluster.MasterPeer names the caller in its context).
-func (n *APNode) SetMasterHandler(h http.Handler) { n.masterH.Store(&h) }
+func (n *APNode) SetMasterHandler(h http.Handler) {
+	if h == nil {
+		n.masterH.Store(nil)
+		return
+	}
+	n.masterH.Store(&h)
+}
 
 // Masters returns the ring over the live masters (nil before Bind).
 func (n *APNode) Masters() *MasterRing { return n.masters }
@@ -262,15 +319,25 @@ func (n *APNode) Isolated() bool {
 	return n.isolated.Isolated()
 }
 
-// IsLeader is true: in an AP cluster every master serves agents and
-// enrollments (hub.Leadership).
-func (n *APNode) IsLeader() bool { return true }
+// IsLeader reports whether this member is a master: in an AP cluster every
+// master serves agents and enrollments (hub.Leadership).
+func (n *APNode) IsLeader() bool { return n.IsMaster() }
 
-// LeaderAgentURL is empty: an AP cluster has no leader (hub.Leadership).
-func (n *APNode) LeaderAgentURL() string { return "" }
+// LeaderAgentURL is empty on a master: an AP cluster has no leader. A
+// member that is no master names a live master, where its agents go
+// (hub.Leadership).
+func (n *APNode) LeaderAgentURL() string {
+	if n.IsMaster() {
+		return ""
+	}
+	if urls := n.AgentURLs(); len(urls) > 0 {
+		return urls[0]
+	}
+	return ""
+}
 
-// AgentURLs are the agent-facing URLs of the live masters, this one first,
-// as each recorded its own (Announce) (hub.Leadership).
+// AgentURLs are the agent-facing URLs of the live masters, this one first
+// if it is one, as each recorded its own (Announce) (hub.Leadership).
 func (n *APNode) AgentURLs() []string {
 	if n.st == nil || n.masters == nil {
 		return nil
@@ -280,7 +347,7 @@ func (n *APNode) AgentURLs() []string {
 		n.log.Warn("read hub URLs", "err", err)
 	}
 	var out []string
-	if n.cfg.AgentURL != "" {
+	if n.cfg.AgentURL != "" && n.IsMaster() {
 		out = append(out, n.cfg.AgentURL)
 	}
 	for _, id := range n.masters.Masters() {
@@ -433,6 +500,7 @@ func (n *APNode) Run(ctx context.Context) error {
 		n.masters.Run(gctx, changes)
 		return nil
 	})
+	g.Go(func() error { n.runRoles(gctx); return nil })
 	return g.Wait()
 }
 
@@ -477,6 +545,7 @@ func ServeAPControl(ctx context.Context, dataDir string, n *APNode, log *slog.Lo
 	mux.HandleFunc("GET /v1/status", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, n.Status())
 	})
+	mux.HandleFunc("POST /v1/change", n.serveRoleChange)
 	mux.HandleFunc("POST /v1/apply", func(w http.ResponseWriter, r *http.Request) {
 		b, err := io.ReadAll(io.LimitReader(r.Body, maxCommandSize))
 		if err != nil {
@@ -547,6 +616,8 @@ type APJoinServer struct {
 	policy *policy.Engine
 	log    *slog.Logger
 	now    func() time.Time
+	// fetchRefused rate-limits the audit entries of refused FetchCAKey calls.
+	fetchRefused fetchRefusals
 }
 
 // NewAPJoinServer returns the join service of node.
@@ -555,9 +626,13 @@ func NewAPJoinServer(node *APNode, st *store.Store, ca *pki.CA, pol *policy.Engi
 }
 
 // Handler returns the service's path prefix and HTTP handler, for the hub's
-// TLS listener.
+// TLS listener only: FetchCAKey authenticates callers by their client
+// certificate.
 func (s *APJoinServer) Handler() (string, http.Handler) {
-	return clusterv1connect.NewClusterServiceHandler(s)
+	path, h := clusterv1connect.NewClusterServiceHandler(s)
+	return path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), tlsStateKey{}, r.TLS)))
+	})
 }
 
 // Join admits a new hub into the AP cluster.

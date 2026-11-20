@@ -115,7 +115,7 @@ func (r *Replicator) antiEntropy(ctx context.Context) {
 	}
 	v := r.view()
 	peers := 0
-	for _, p := range v.ring.Members() {
+	for _, p := range v.everyone {
 		if p == v.self || !v.live[p] {
 			continue
 		}
@@ -124,9 +124,12 @@ func (r *Replicator) antiEntropy(ctx context.Context) {
 			r.log.DebugContext(ctx, "anti-entropy", "peer", p, "err", err)
 		}
 	}
-	if peers == 0 && v.ring.Size() == 1 {
+	if peers == 0 && len(v.everyone) == 1 {
 		// Alone in the cluster: in contact with all of it.
 		r.touchContact()
+	}
+	if v.syncing[v.self] {
+		r.CatchUp(ctx)
 	}
 	if err := r.handOff(ctx, v); err != nil {
 		r.log.DebugContext(ctx, "hand-off", "err", err)
@@ -224,16 +227,85 @@ func (r *Replicator) handOff(ctx context.Context, v view) error {
 // shard buckets both hold.
 func (r *Replicator) SyncWith(ctx context.Context, peer string) error {
 	v := r.view()
-	if err := r.syncSpace(ctx, peer, store.SpaceGlobal, []bucketRange{{0, store.GlobalBuckets}}); err != nil {
+	if err := r.syncSpace(ctx, peer, store.SpaceGlobal, []bucketRange{{0, store.GlobalBuckets}}, false); err != nil {
 		return err
 	}
 	if ranges := v.sharedRanges(peer); len(ranges) > 0 {
-		return r.syncSpace(ctx, peer, store.SpaceShard, ranges)
+		return r.syncSpace(ctx, peer, store.SpaceShard, ranges, false)
 	}
 	return nil
 }
 
-func (r *Replicator) syncSpace(ctx context.Context, peer string, sp store.Space, ranges []bucketRange) error {
+// ownedRanges are the shard buckets this member owns.
+func (v view) ownedRanges() []bucketRange {
+	var out []bucketRange
+	for _, seg := range v.ring.Segments() {
+		if !slices.Contains(v.ring.Owners(seg.Start, v.n), v.self) {
+			continue
+		}
+		if k := len(out); k > 0 && out[k-1].End == seg.Start {
+			out[k-1].End = seg.End
+		} else {
+			out = append(out, bucketRange(seg))
+		}
+	}
+	return out
+}
+
+// catchUp copies, to a member promoted to storage, the rows of every
+// bucket it owns from every live storage member, whether that one owns the
+// bucket or held it before the promotion moved it. Once a round reached
+// every one of them, the member has caught up: it serves reads again
+// (OnSynced). It reports whether the member has caught up; a round already
+// running elsewhere makes it return false at once.
+func (r *Replicator) CatchUp(ctx context.Context) bool {
+	if !r.catchUpMu.TryLock() {
+		return false
+	}
+	defer r.catchUpMu.Unlock()
+	if !r.Syncing() {
+		return true
+	}
+	v := r.view()
+	ranges := v.ownedRanges()
+	ok := true
+	for _, p := range v.ring.Members() {
+		if p == v.self {
+			continue
+		}
+		if !v.live[p] {
+			// A member that is down may hold the only copy of some rows: wait
+			// for it.
+			ok = false
+			continue
+		}
+		if err := r.syncSpace(ctx, p, store.SpaceGlobal, []bucketRange{{0, store.GlobalBuckets}}, false); err != nil {
+			r.log.DebugContext(ctx, "catch up after the promotion", "peer", p, "err", err)
+			ok = false
+			continue
+		}
+		if len(ranges) == 0 {
+			continue
+		}
+		if err := r.syncSpace(ctx, p, store.SpaceShard, ranges, true); err != nil {
+			r.log.DebugContext(ctx, "catch up after the promotion", "peer", p, "err", err)
+			ok = false
+		}
+	}
+	if !ok || ctx.Err() != nil || !r.Syncing() {
+		return false
+	}
+	r.SetLocal(true, false)
+	r.log.InfoContext(ctx, "caught up after the promotion to storage: serving reads", "buckets", len(bucketsOf(ranges)))
+	if r.cfg.OnSynced != nil {
+		r.cfg.OnSynced()
+	}
+	return true
+}
+
+// syncSpace compares the ranges of sp with peer and copies the rows that
+// differ both ways; with pullOnly, only from peer to this member.
+func (r *Replicator) syncSpace(ctx context.Context, peer string, sp store.Space, ranges []bucketRange, pullOnly bool) error {
 	st := r.store()
 	cs := chunks(ranges)
 	resp, err := r.call(ctx, peer, apRequest{Op: opTree, Space: sp, Ranges: ranges})
@@ -281,6 +353,9 @@ func (r *Replicator) syncSpace(ctx context.Context, peer string, sp store.Space,
 		return err
 	}
 	pull, push := diffRows(ours, resp.Digests)
+	if pullOnly {
+		push = nil
+	}
 	cutoff := hlc.New(r.cfg.Now().Add(-store.TombstoneTTL))
 	for refs := range slices.Chunk(pull, refBatch) {
 		ms, err := r.fetch(ctx, peer, refs)
@@ -384,7 +459,7 @@ func (r *Replicator) WaitSynced(ctx context.Context, limit time.Duration) error 
 	for {
 		v := r.view()
 		ok := true
-		for _, p := range v.ring.Members() {
+		for _, p := range v.everyone {
 			if p == v.self || !v.live[p] {
 				continue
 			}

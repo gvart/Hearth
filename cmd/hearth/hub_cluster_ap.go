@@ -94,7 +94,8 @@ func startAPNode(ctx context.Context, opts hubOptions, allowed cluster.RoleSet, 
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	_, statErr := os.Stat(filepath.Join(opts.dataDir, pki.CAKeyFile))
+	// A member that is no master holds the CA certificate only.
+	_, statErr := os.Stat(filepath.Join(opts.dataDir, pki.CACertFile))
 	hasCA := statErr == nil
 	seeds := o.gossipSeeds
 	if o.join != "" {
@@ -117,8 +118,11 @@ func startAPNode(ctx context.Context, opts hubOptions, allowed cluster.RoleSet, 
 			return nil, nil, nil, err
 		}
 		log.InfoContext(ctx, "joined the ap cluster", "node_id", nodeID, "via", o.join)
+	} else if !hasCA && !allowed.Has(cluster.RoleMaster) {
+		return nil, nil, nil, errors.New("the first hub of an ap cluster is a master: allow the master role " +
+			"(--allow-roles), or join a cluster with --join")
 	}
-	ca, err := pki.LoadOrCreateCA(opts.dataDir, time.Now())
+	ca, err := pki.LoadCA(opts.dataDir, time.Now())
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -137,6 +141,14 @@ func startAPNode(ctx context.Context, opts hubOptions, allowed cluster.RoleSet, 
 	if err != nil {
 		_ = ln.Close()
 		return nil, nil, nil, err
+	}
+	if !node.Roles().Has(cluster.RoleMaster) && ca.HasKey() {
+		// Demoted, or no longer allowed the role: the key goes.
+		if err := ca.DropKey(); err != nil {
+			_ = ln.Close()
+			return nil, nil, nil, fmt.Errorf("delete the CA key of a member that is no master: %w", err)
+		}
+		log.InfoContext(ctx, "not a master: deleted the CA key")
 	}
 	st, err := store.Open(ctx, filepath.Join(opts.dataDir, dbFile), node.StoreOptions()...)
 	if err != nil {
