@@ -1,0 +1,53 @@
+cmd/hearth/admin.go
+  s_26e932fc13ca45::t_7f7e0fe86709d8 72-76,88
+go.sum
+  s_26e932fc13ca45::t_ee974db0b7f329 32-33,59-60,73-74,88-89
+cmd/hearth/mqtt.go
+  s_26e932fc13ca45::t_76b115ad4f10ae 1-37
+internal/mqtt/broker_test.go
+  s_26e932fc13ca45::t_ac09ec085feb78 1-332,335-493,496,502,504
+  s_26e932fc13ca45::t_22c40b81ea4dbd 333-334,497-501,503
+  s_26e932fc13ca45::t_7d0f8349a1db22 494-495
+cmd/hearth/root.go
+  s_26e932fc13ca45::t_76b115ad4f10ae 18
+internal/mqtt/acl_test.go
+  s_26e932fc13ca45::t_125137292f79d4 1-132
+internal/mqtt/broker.go
+  s_26e932fc13ca45::t_0ce17cd396f8ed 49,123-125,147-153,161
+  s_26e932fc13ca45::t_f1f0a7fe21ff0f 1-11,13-48,53-62,65-67,69-82,85-115,141-144,165
+  s_26e932fc13ca45::t_7d0f8349a1db22 12,50-52,63-64,68,83-84,116-122,126-140,145-146,154-160,162-164
+go.mod
+  s_26e932fc13ca45::t_cdbc23c92bd691 11
+  s_26e932fc13ca45::t_af190f7de6191a 35,48
+cmd/hearth/hub.go
+  s_26e932fc13ca45::t_fdebc0dafcf849 105,136-137,212,518-523,533,612-615
+cmd/hearth/hub_mqtt_test.go
+  s_26e932fc13ca45::t_d73da03a848c88 1-91
+cmd/hearth/hub_mqtt.go
+  s_26e932fc13ca45::t_1c0cd3e5b2efe9 1-71
+internal/mqtt/auth.go
+  s_26e932fc13ca45::t_c41f8ea804b236 9,13,29-34,115,118-119,134
+  s_26e932fc13ca45::t_df42015735e8e4 1-8,10-12,14-28,35-114,116-117,120-133,135-186
+internal/mqtt/config.go
+  s_26e932fc13ca45::t_7e5459444b78da 15,99-100
+  s_26e932fc13ca45::t_76b115ad4f10ae 151-163
+  s_26e932fc13ca45::t_ee4d9680a804fc 1-14,16-98,101-150
+internal/mqtt/acl.go
+  s_26e932fc13ca45::t_ceffe551964a07 1-66
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8eb216188c519d21c567303ceaf3e3a57c902b58",
+  "prompts": {},
+  "sessions": {
+    "s_26e932fc13ca45": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea42b0cd-7455-494b-8071-e63f36b98d4d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": null
+    }
+  }
+}
