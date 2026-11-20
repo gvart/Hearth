@@ -107,6 +107,15 @@
         { "key": "timeout", "label": "Timeout", "kind": "duration" }
       ]
     },
+    "script": {
+      "label": "Run a script",
+      "fields": [
+        { "key": "source", "label": "Starlark script", "kind": "multiline", "required": true, "help": "Each device read and action it calls is decided by policy." },
+        { "key": "timeout", "label": "Timeout", "kind": "duration" },
+        { "key": "max_steps", "label": "Max steps", "kind": "number" },
+        { "key": "max_memory_mib", "label": "Max memory (MiB)", "kind": "number" }
+      ]
+    },
     "kube_restart": {
       "label": "Restart a workload",
       "fields": [

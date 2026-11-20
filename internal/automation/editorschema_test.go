@@ -56,6 +56,7 @@ func TestEditorSchemaMatchesTheHub(t *testing.T) {
 	kinds := Builtin(slog.New(slog.DiscardHandler))
 	maps.Copy(kinds.Triggers, Triggers(TriggerDeps{}))
 	maps.Copy(kinds.Actions, Actions(ActionDeps{}))
+	kinds.Actions["script"] = Script(ScriptDeps{})
 
 	build := func(section, typ string, p Params) error {
 		if section == "triggers" {
