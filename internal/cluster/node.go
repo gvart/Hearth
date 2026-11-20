@@ -169,6 +169,11 @@ type Node struct {
 	// through before this follower trusts the new CA trustFP (settledOn).
 	trustAt uint64
 	trustFP string
+	// dropAt, guarded by recMu, is the last log index this follower held
+	// when it last saw the next CA dropFP; it may drop that CA once the log
+	// is committed and applied through it (settledPast).
+	dropAt uint64
+	dropFP string
 }
 
 var _ store.Applier = (*Node)(nil)

@@ -230,10 +230,11 @@ func notProposed(err error) bool {
 // it, once the log shows no rotation to it can still start: on the leader,
 // after a barrier, which applies every earlier entry, the latest rotation is
 // another one or was aborted. Elsewhere it does nothing. The caller holds
-// rotMu, so no RotateCA is between generating a CA and proposing it.
+// rotMu, so no RotateCA is between generating a CA and proposing it. It
+// never drops a next CA the hub trusts or serves (see endStartedNext).
 func (n *Node) dropUncommittedNext(ctx context.Context) error {
 	next := n.cfg.CA.Next()
-	if next == nil || !n.IsLeader() {
+	if next == nil || !n.IsLeader() || n.cfg.CA.NextActive() || n.cfg.CA.CutOver() {
 		return nil
 	}
 	timeout := applyTimeout
@@ -1148,24 +1149,58 @@ func (n *Node) finishLocal(ctx context.Context, rot store.CARotation) {
 
 // dropLeftoverNext drops a next CA no rotation under way uses, once the log
 // shows its start cannot commit any more: on the leader after a barrier, on
-// a follower once it has applied every entry of its log and the leader
-// committed them all. Until then the next CA neither signs nor is trusted
-// (pki.CA.TrustNext). It skips a run while RotateCA, FinishCA or AbortCA
-// holds rotMu.
+// a follower once it is caught up (caughtUp) or has settled past the log it
+// held on an earlier run (settledPast). Until then the next CA neither signs
+// nor is trusted (pki.CA.TrustNext). It skips a run while RotateCA,
+// FinishCA or AbortCA holds rotMu.
+//
+// A next CA this hub trusts or serves is not a leftover: its rotation
+// started. While the latest rotation is another one, only that rotation's
+// own end settles it (endStartedNext).
+// Called with recMu held.
 func (n *Node) dropLeftoverNext(ctx context.Context) {
 	if n.cfg.CA.Next() == nil || !n.rotMu.TryLock() {
 		return
 	}
 	defer n.rotMu.Unlock()
 	var err error
-	if n.IsLeader() {
+	if n.cfg.CA.NextActive() || n.cfg.CA.CutOver() {
+		err = n.endStartedNext(ctx)
+	} else if n.IsLeader() {
+		n.dropFP = ""
 		err = n.dropUncommittedNext(ctx)
-	} else if n.caughtUp() {
+	} else if n.caughtUp() || n.settledPast() {
+		n.dropFP = ""
 		err = n.dropOrphanNext(ctx)
 	}
 	if err != nil && ctx.Err() == nil {
 		n.log.WarnContext(ctx, "drop a leftover next CA; retrying", "err", err)
 	}
+}
+
+// endStartedNext ends this hub's next CA, which it trusts or serves, by the
+// stage of its own rotation: finished, the hub finishes it too (a hub cut
+// over to a CA that a finish and a later rotation's start then overtook);
+// aborted, the CA is dropped. Both are terminal: a longer log cannot undo
+// them, and no other rotation uses that fingerprint. Otherwise it waits:
+// the store has not applied that rotation's end, or its start.
+func (n *Node) endStartedNext(ctx context.Context) error {
+	next := n.cfg.CA.Next()
+	if next == nil {
+		return nil
+	}
+	rot, err := n.store.CARotations().Get(ctx, pki.FingerprintHex(next))
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		return nil
+	case err != nil:
+		return err
+	case rot.Stage == store.CAStageFinished:
+		n.finishLocal(ctx, rot)
+	case rot.Stage == store.CAStageAborted:
+		return n.dropNextLocal(ctx)
+	}
+	return nil
 }
 
 // settledOn reports whether the log has settled on a rotation to newCAFP
@@ -1209,6 +1244,34 @@ func (n *Node) settledOn(ctx context.Context, newCAFP string) bool {
 	return err == nil && rot.NewCAFP == newCAFP && rot.Active()
 }
 
+// settledPast reports whether this follower has settled past the log it
+// held, with the next CA it holds now, on an earlier run: the leader has
+// committed every entry up to that log's last index, and the store applied
+// them. Under steady writes a follower's log rarely ends at the commit index
+// (caughtUp), but its commit index and store pass a last index taken a run
+// earlier.
+//
+// It is as safe as caughtUp. Only the hub that generated a next CA proposes
+// a start of a rotation to it, once, as leader, under rotMu (RotateCA). An
+// entry this hub appended for that CA is in its log at or below the
+// recorded index, or was truncated, which a leader does only with entries of
+// its own that are now committed there: either way, committed and applied
+// through that index, the store shows the start if it committed, and it can
+// never commit otherwise. A different next CA records a new target, and so
+// does a run as leader in between (dropLeftoverNext clears it).
+// Called with recMu and rotMu held.
+func (n *Node) settledPast() bool {
+	next := n.cfg.CA.Next()
+	if n.raft == nil || next == nil || n.Leader().ID == "" {
+		return false
+	}
+	if fp := pki.FingerprintHex(next); n.dropFP != fp {
+		n.dropAt, n.dropFP = n.raft.LastIndex(), fp
+		return false
+	}
+	return n.raft.CommitIndex() >= n.dropAt && n.appliedThrough(n.dropAt)
+}
+
 // caughtUp reports whether this follower has a leader, and has applied every
 // entry of its log, all of them committed: an entry this hub appended as an
 // earlier leader is then either applied or gone. Applied means the store
@@ -1227,10 +1290,11 @@ func (n *Node) caughtUp() bool {
 }
 
 // dropOrphanNext drops this follower's next CA unless the store, caught up,
-// has a rotation to it that is not aborted.
+// has a rotation to it that is not aborted. It never drops a next CA the hub
+// trusts or serves (see endStartedNext).
 func (n *Node) dropOrphanNext(ctx context.Context) error {
 	next := n.cfg.CA.Next()
-	if next == nil {
+	if next == nil || n.cfg.CA.NextActive() || n.cfg.CA.CutOver() {
 		return nil
 	}
 	rot, err := n.store.CARotations().Latest(ctx)
