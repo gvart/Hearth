@@ -1,0 +1,47 @@
+internal/agent/run.go
+  s_26e932fc13ca45::t_b667c71eb392fd 32-33,68-70,98-99,148-149,451-457
+  s_26e932fc13ca45::t_c04a7cb0728b4a 458
+cmd/hearth/agent.go
+  s_26e932fc13ca45::t_4948423f0f4607 27-29,46-48,71-73,83-86,107-112
+  s_26e932fc13ca45::t_e90bd8d371a732 80-82
+internal/policy/docker_test.go
+  s_26e932fc13ca45::t_1248fafa64734e 1-105
+internal/agent/docker_test.go
+  s_26e932fc13ca45::t_55a95c00467d30 1-412
+internal/policy/ceiling.go
+  s_26e932fc13ca45::t_c5b4617766aa12 110-164
+internal/policy/policy.go
+  s_26e932fc13ca45::t_116432606581a6 150-160
+  s_26e932fc13ca45::t_d62a9c2e376b73 413-422
+internal/agent/exec.go
+  s_26e932fc13ca45::t_b667c71eb392fd 45-48,74
+internal/policy/guardrails_test.go
+  s_26e932fc13ca45::t_17546e1f298b3a 166-170
+internal/agent/docker.go
+  s_26e932fc13ca45::t_3299476188ed0d 21,192
+  s_26e932fc13ca45::t_43dcbbc6796305 136-148
+  s_26e932fc13ca45::t_6e17f6230aae89 1-20,22-135,149-191,193-442
+proto/hearth/agent/v1/agent.proto
+  s_26e932fc13ca45::t_e94387a1e731a0 31
+  s_26e932fc13ca45::t_3d6ae991dff951 46
+  s_26e932fc13ca45::t_cb33abab6b259a 110-114
+  s_26e932fc13ca45::t_f125fa77f905ee 482-567
+internal/proto/hearth/agent/v1/agent.pb.go
+  s_26e932fc13ca45::t_284776d237cfdd 43,176-184,230-233,254-255,269,384-392,429-432,449-450,689-694,778-784,3159-3708,3713,3728-3730,3742-3743,3765,3773-3774,3923-3964,3982,4025-4034,4047-4103,4122,4133,4156-4160,4167
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f38f6b3ba2cda58ed474d6cc006dc55c22161142",
+  "prompts": {},
+  "sessions": {
+    "s_26e932fc13ca45": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea42b0cd-7455-494b-8071-e63f36b98d4d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
