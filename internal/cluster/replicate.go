@@ -1036,7 +1036,13 @@ func (r *Replicator) call(ctx context.Context, m string, req apRequest) (apRespo
 		}
 		return apResponse{}, fmt.Errorf("%s: %w: %w", m, errUnreachable, err)
 	}
-	c, err := r.conn(ctx, m)
+	// A member that cannot be connected to in a quick timeout is down,
+	// whatever the request may take once it is: a write forwarded to a
+	// member cut off a moment ago costs that, not the request's timeout,
+	// before the next target is tried.
+	dctx, dcancel := context.WithTimeout(ctx, r.cfg.QuickTimeout)
+	c, err := r.conn(dctx, m)
+	dcancel()
 	if err != nil {
 		return unreachable(err)
 	}
@@ -1052,7 +1058,13 @@ func (r *Replicator) call(ctx context.Context, m string, req apRequest) (apRespo
 		return unreachable(err)
 	}
 	_ = c.SetDeadline(time.Time{})
-	r.putConn(m, c)
+	if resp.Error != nil && resp.Error.Kind == "not_member" {
+		// The member hung up after refusing this one (ServeConn): a
+		// pooled connection would fail the next request as unreachable.
+		_ = c.Close()
+	} else {
+		r.putConn(m, c)
+	}
 	r.clearSuspect(m)
 	r.touchContact()
 	if resp.Error != nil {

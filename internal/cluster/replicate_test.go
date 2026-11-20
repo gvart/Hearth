@@ -34,7 +34,15 @@ type apNet struct {
 	// hung members take connections and never answer, as a host that
 	// vanished from the network does.
 	hung map[string]bool
-	cut  map[[2]string]bool
+	// unroutable links, {from, to}, cannot be connected over: a dial waits
+	// until it gives up, as one to a host whose network went away does.
+	unroutable map[[2]string]bool
+	cut        map[[2]string]bool
+	// unknown hides a member from another's membership, {viewer, member}:
+	// the gossip has not told the viewer about it yet.
+	unknown map[[2]string]bool
+	// tune, if set, changes each member's replicator configuration.
+	tune func(*ReplicatorConfig)
 }
 
 type apMember struct {
@@ -54,6 +62,9 @@ func (p apPeers) Members() []MemberInfo {
 	defer p.net.mu.Unlock()
 	var out []MemberInfo
 	for id := range p.net.members {
+		if p.net.unknown[[2]string{p.self, id}] {
+			continue
+		}
 		state := MemberAlive
 		if p.net.down[id] || p.net.cut[[2]string{p.self, id}] {
 			state = MemberDead
@@ -63,12 +74,17 @@ func (p apPeers) Members() []MemberInfo {
 	return out
 }
 
-func (p apPeers) DialReplica(_ context.Context, id string) (net.Conn, error) {
+func (p apPeers) DialReplica(ctx context.Context, id string) (net.Conn, error) {
 	p.net.mu.Lock()
 	m, ok := p.net.members[id]
 	blocked := p.net.down[id] || p.net.crashed[id] || p.net.down[p.self] || p.net.cut[[2]string{p.self, id}]
 	hung := p.net.hung[id]
+	unroutable := p.net.unroutable[[2]string{p.self, id}]
 	p.net.mu.Unlock()
+	if unroutable {
+		<-ctx.Done()
+		return nil, fmt.Errorf("dial %s: %w", id, ctx.Err())
+	}
 	if !ok || blocked {
 		return nil, fmt.Errorf("dial %s: unreachable", id)
 	}
@@ -84,7 +100,14 @@ func (p apPeers) DialReplica(_ context.Context, id string) (net.Conn, error) {
 // newAPNet starts members ids with replication factor n (0: default).
 func newAPNet(t testing.TB, n int, ids ...string) *apNet {
 	t.Helper()
-	an := &apNet{members: map[string]*apMember{}, down: map[string]bool{}, crashed: map[string]bool{}, hung: map[string]bool{}, cut: map[[2]string]bool{}}
+	return newAPNetWith(t, n, nil, ids...)
+}
+
+// newAPNetWith starts members ids with replication factor n, their
+// replicators' configuration changed by tune.
+func newAPNetWith(t testing.TB, n int, tune func(*ReplicatorConfig), ids ...string) *apNet {
+	t.Helper()
+	an := &apNet{tune: tune, members: map[string]*apMember{}, down: map[string]bool{}, crashed: map[string]bool{}, hung: map[string]bool{}, unroutable: map[[2]string]bool{}, cut: map[[2]string]bool{}, unknown: map[[2]string]bool{}}
 	for _, id := range ids {
 		an.add(t, n, id)
 	}
@@ -98,22 +121,28 @@ func (an *apNet) add(t testing.TB, n int, id string) *apMember {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = hints.Close() })
-	rep, err := NewReplicator(ReplicatorConfig{
+	cfg := ReplicatorConfig{
 		NodeID: id, Peers: apPeers{net: an, self: id}, Replicas: n, Hints: hints,
 		RequestTimeout: 2 * time.Second, AntiEntropyEvery: time.Hour, HintsEvery: time.Hour, GCEvery: time.Hour,
-	})
+	}
+	if an.tune != nil {
+		an.tune(&cfg)
+	}
+	rep, err := NewReplicator(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	st := storetest.Open(t, store.WithShards(rep), store.WithApplier(rep.Bind), store.WithOrigin(id))
+	m := &apMember{id: id, rep: rep, st: st, hints: hints}
+	// A member of the cluster before it runs: its first anti-entropy round
+	// is not refused by peers that do not know it yet.
+	an.mu.Lock()
+	an.members[id] = m
+	an.mu.Unlock()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { _ = rep.Run(ctx); close(done) }()
 	t.Cleanup(func() { cancel(); <-done })
-	m := &apMember{id: id, rep: rep, st: st, hints: hints}
-	an.mu.Lock()
-	an.members[id] = m
-	an.mu.Unlock()
 	return m
 }
 
@@ -497,6 +526,31 @@ func TestAuditPagesAcrossMembers(t *testing.T) {
 	}
 }
 
+// A member that refused this one, not knowing it yet (its gossip is behind),
+// hangs up: the connection is not pooled, so the next request, once the
+// member knows this one, reaches it instead of failing on a dead pipe and
+// taking the member as down.
+func TestRefusedConnectionIsNotPooled(t *testing.T) {
+	ctx := t.Context()
+	an := newAPNet(t, 2, "a", "b")
+	an.mu.Lock()
+	an.unknown[[2]string{"b", "a"}] = true
+	an.mu.Unlock()
+	read := apRequest{Op: opRead, Query: `SELECT 1`}
+	if _, err := an.m("a").rep.call(ctx, "b", read); !errors.Is(err, errNotMember) {
+		t.Fatalf("read on a member that does not know this one: %v, want errNotMember", err)
+	}
+	an.mu.Lock()
+	an.unknown[[2]string{"b", "a"}] = false
+	an.mu.Unlock()
+	if _, err := an.m("a").rep.call(ctx, "b", read); err != nil {
+		t.Fatalf("read once the member knows this one: %v", err)
+	}
+	if an.m("a").rep.suspected("b") {
+		t.Error("b taken as down after its refusal")
+	}
+}
+
 // Negative: a merge stamped beyond the skew bound is refused whole, and a
 // hub that is not a member gets nothing.
 func TestReplicationRefusals(t *testing.T) {
@@ -666,6 +720,71 @@ func TestHungMemberCostsOneTimeout(t *testing.T) {
 	}
 	if took := time.Since(start); took > time.Second {
 		t.Errorf("writes and reads after the first timeout took %v", took)
+	}
+}
+
+// auditKeyPreferring returns an audit once-key whose entry's preference
+// list starts with first.
+func auditKeyPreferring(t *testing.T, ids []string, prefix string, first ...string) string {
+	t.Helper()
+	ring := NewRing(ids)
+	for i := range 100000 {
+		k := prefix + strconv.Itoa(i)
+		if slices.Equal(ring.Preference(store.BucketOf(store.Token("audit-key:" + k)))[:len(first)], first) {
+			return k
+		}
+	}
+	t.Fatalf("no key preferring %v", first)
+	return ""
+}
+
+// appendKeyed appends a critical audit entry with once-key k on m.
+func appendKeyed(ctx context.Context, m *apMember, k string) error {
+	_, err := m.st.Audit().Append(ctx, store.AuditEntry{
+		TS: time.Now(), ActorKind: "user", ActorID: "u", Action: "x", Decision: "allow", Result: "ok", Key: k,
+	})
+	return err
+}
+
+// A member cut off a moment ago, still alive in the gossip, whose dials
+// hang (its network went away): a critical write forwarded to it costs one
+// quick timeout, not the forward's request timeout, before the next target
+// takes it; and on the cut-off side the write fails fast, well within an
+// API client's patience (the e2e's 5 s).
+func TestCriticalWriteToAnUnroutableMemberFailsOverFast(t *testing.T) {
+	ctx := t.Context()
+	ids := []string{"a", "b", "c"}
+	// The requests' own timeout as in production: only the connection is
+	// bounded by the quick one.
+	an := newAPNetWith(t, 2, func(c *ReplicatorConfig) { c.RequestTimeout = defaultRequestTimeout }, ids...)
+	cut := func(from string, to ...string) {
+		an.mu.Lock()
+		defer an.mu.Unlock()
+		for _, t := range to {
+			an.unroutable[[2]string{from, t}] = true
+		}
+	}
+	bound := 3 * defaultQuickTimeout
+
+	// Majority side: c's write goes first to a, which it cannot reach.
+	cut("b", "a")
+	cut("c", "a")
+	start := time.Now()
+	if err := appendKeyed(ctx, an.m("c"), auditKeyPreferring(t, ids, "k", "a", "b")); err != nil {
+		t.Fatalf("critical write with a unreachable: %v", err)
+	}
+	if took := time.Since(start); took > bound {
+		t.Errorf("critical write with a unreachable took %v, want under %v", took, bound)
+	}
+
+	// Cut-off side: a reaches nobody, though the gossip still has them.
+	cut("a", "b", "c")
+	start = time.Now()
+	if err := appendKeyed(ctx, an.m("a"), auditKeyPreferring(t, ids, "k", "b", "c")); !errors.Is(err, store.ErrUnavailable) {
+		t.Fatalf("critical write on the cut-off member: %v, want ErrUnavailable", err)
+	}
+	if took := time.Since(start); took > bound {
+		t.Errorf("critical write on the cut-off member failed after %v, want under %v", took, bound)
 	}
 }
 
