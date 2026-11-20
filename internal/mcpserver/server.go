@@ -72,8 +72,12 @@ type Config struct {
 	// Metrics reads device metrics from Prometheus or the hub's built-in
 	// metrics; nil when the hub has neither.
 	Metrics automation.Metrics
-	// AutomationsDir is where apply_automation writes automation files.
+	// AutomationsDir is where apply_automation writes automation files,
+	// when AutomationDocs is nil.
 	AutomationsDir string
+	// AutomationDocs are the automation documents of the store, which
+	// apply_automation writes instead of files.
+	AutomationDocs automation.DocStore
 	// AutomationKinds are the step types with the hub's dependencies, as the
 	// web editor validates a file with them; the zero value validates
 	// without those dependencies.

@@ -73,8 +73,11 @@ type RunbookSealer interface {
 
 // RunbooksConfig holds the dependencies of Runbooks.
 type RunbooksConfig struct {
-	// Dir holds the runbook files.
-	Dir    string
+	// Dir holds the runbook files, when Source is nil.
+	Dir string
+	// Source holds the runbooks as documents: the hub's store. It replaces
+	// Dir.
+	Source DocSource
 	Kinds  Kinds
 	Policy RunbookPolicy
 	Runs   RunbookStore
@@ -132,12 +135,21 @@ func NewRunbooks(cfg RunbooksConfig) *Runbooks {
 	return &Runbooks{cfg: cfg, wake: make(chan struct{}, 1), secrets: map[string]map[string]string{}}
 }
 
-// List loads the runbooks in the directory. The errors are the files left out.
-func (r *Runbooks) List() ([]*Runbook, []error) { return LoadRunbooks(r.cfg.Dir, r.cfg.Kinds) }
+// List loads the runbooks. The errors are the files left out.
+func (r *Runbooks) List(ctx context.Context) ([]*Runbook, []error) {
+	if r.cfg.Source == nil {
+		return LoadRunbooks(r.cfg.Dir, r.cfg.Kinds)
+	}
+	docs, err := r.cfg.Source.Docs(ctx)
+	if err != nil {
+		return nil, []error{err}
+	}
+	return LoadRunbookDocs(docs, r.cfg.Kinds)
+}
 
 // find returns the runbook id, or an error wrapping store.ErrNotFound.
-func (r *Runbooks) find(id string) (*Runbook, error) {
-	all, _ := r.List()
+func (r *Runbooks) find(ctx context.Context, id string) (*Runbook, error) {
+	all, _ := r.List(ctx)
 	for _, rb := range all {
 		if rb.ID == id {
 			return rb, nil
@@ -176,7 +188,7 @@ type RunbookPlan struct {
 // on each action step, including whether the device's capability ceiling
 // allows it. Nothing is executed or audited.
 func (r *Runbooks) Plan(ctx context.Context, id string) (*RunbookPlan, error) {
-	rb, err := r.find(id)
+	rb, err := r.find(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -263,7 +275,7 @@ func (r *Runbooks) planAction(ctx context.Context, rb *Runbook, a *Step[Action],
 
 // Start begins a run of the runbook id, as actorKind/actorID, and returns it.
 func (r *Runbooks) Start(ctx context.Context, actorKind, actorID, id string) (RunbookRunJSON, error) {
-	rb, err := r.find(id)
+	rb, err := r.find(ctx, id)
 	if err != nil {
 		return RunbookRunJSON{}, err
 	}

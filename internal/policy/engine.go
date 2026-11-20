@@ -11,6 +11,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/gvart/hearth/internal/store"
@@ -112,8 +113,10 @@ func Within(class, scope Class) bool {
 type Engine struct {
 	audit     Auditor
 	approvals Approvals
-	cfg       Config
-	now       func() time.Time
+	// cfg is the configuration in effect; SetConfig replaces it while the
+	// engine is in use.
+	cfg *atomic.Pointer[Config]
+	now func() time.Time
 	// poll is how often a held request reads its approval.
 	poll time.Duration
 	// auditTimeout bounds one audit write.
@@ -157,11 +160,27 @@ func New(audit Auditor) *Engine { return NewWithConfig(audit, nil, Config{}) }
 // holds the requests cfg says to confirm in approvals. With nil approvals
 // those requests are denied. cfg must be valid (see Config.Validate).
 func NewWithConfig(audit Auditor, approvals Approvals, cfg Config) *Engine {
+	e := &Engine{
+		audit: audit, approvals: approvals, cfg: &atomic.Pointer[Config]{},
+		now: time.Now, poll: time.Second, sweepEvery: time.Minute, auditTimeout: auditTimeout,
+	}
+	e.SetConfig(cfg)
+	return e
+}
+
+// SetConfig makes cfg the configuration of e, for every decision from now
+// on: the hub applies a new policy document without a restart. cfg must be
+// valid (see Config.Validate). An engine Holding returned keeps the
+// configuration it was made with.
+func (e *Engine) SetConfig(cfg Config) {
 	if cfg.ApprovalTimeout <= 0 {
 		cfg.ApprovalTimeout = DefaultApprovalTimeout
 	}
-	return &Engine{audit: audit, approvals: approvals, cfg: cfg, now: time.Now, poll: time.Second, sweepEvery: time.Minute, auditTimeout: auditTimeout}
+	e.cfg.Store(&cfg)
 }
+
+// Config returns the configuration in effect.
+func (e *Engine) Config() Config { return *e.cfg.Load() }
 
 // Do decides on req and, if allowed, runs fn. A request the configuration
 // says to confirm is first held as a pending approval, and Do waits until
@@ -439,7 +458,7 @@ func (e *Engine) hold(ctx context.Context, req Request, class Class) (decision, 
 	}
 	now := e.now()
 	ap := store.Approval{
-		ID: strings.ToLower(rand.Text()), CreatedAt: now, ExpiresAt: now.Add(e.cfg.ApprovalTimeout),
+		ID: strings.ToLower(rand.Text()), CreatedAt: now, ExpiresAt: now.Add(e.Config().ApprovalTimeout),
 		ActorKind: orUnknown(req.ActorKind), ActorID: orUnknown(req.ActorID), Action: string(req.Action),
 		Class: string(class), Target: req.Target, Detail: detail,
 	}
@@ -643,7 +662,7 @@ func (e *Engine) decide(req Request) (decision, reason string, class Class) {
 	if r.fixed {
 		return Allow, "", r.class
 	}
-	mode, configured := e.cfg.mode(r.class, req.ActorKind, req.ActorID)
+	mode, configured := e.Config().mode(r.class, req.ActorKind, req.ActorID)
 	switch mode {
 	case ModeAllow:
 		return Allow, "", r.class

@@ -34,7 +34,7 @@ const (
 // automationRoutes registers the automation editor's API, behind the admin
 // session. Without an automations directory there are no routes.
 func (a *api) automationRoutes(mux *http.ServeMux) {
-	if a.automations.Dir == "" {
+	if !a.automations.Enabled() {
 		return
 	}
 	mux.Handle("GET /api/v1/automations", a.auth(a.listAutomations))
@@ -58,7 +58,7 @@ type AutomationJSON struct {
 }
 
 func (a *api) listAutomations(w http.ResponseWriter, r *http.Request) {
-	files, err := a.automations.List()
+	files, err := a.automations.List(r.Context())
 	if err != nil {
 		a.log.ErrorContext(r.Context(), "list automations", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal", "cannot read the automations directory")
@@ -101,7 +101,7 @@ func (a *api) getAutomation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_id", "not an automation id")
 		return
 	}
-	f, err := a.automations.Get(id)
+	f, err := a.automations.Get(r.Context(), id)
 	if err != nil {
 		a.writeAutomationError(w, r, "get automation", err)
 		return
@@ -188,7 +188,7 @@ func (a *api) saveAutomation(w http.ResponseWriter, r *http.Request, body automa
 		return
 	}
 	// Refused now, a stale save is not held for approval first.
-	path, err := a.automations.Target(parsed, create, body.Revision)
+	path, err := a.automations.Target(ctx, parsed, create, body.Revision)
 	if err != nil {
 		a.writeAutomationError(w, r, "save automation", err)
 		return
@@ -197,15 +197,15 @@ func (a *api) saveAutomation(w http.ResponseWriter, r *http.Request, body automa
 	req.Target, req.Detail = parsed.ID, automationAuditDetail(parsed, path, revision, create)
 	req.ApprovalDetail = map[string]any{policy.DetailPlan: automationPlan(parsed)}
 	written := false
-	err = a.savePolicy(parsed).Do(ctx, req, func(context.Context) error {
+	err = a.savePolicy(parsed).Do(ctx, req, func(ctx context.Context) error {
 		a.automationsMu.Lock()
 		defer a.automationsMu.Unlock()
 		// Approval can take minutes: judge the directory as it is now.
-		path, err := a.automations.Target(parsed, create, body.Revision)
+		path, err := a.automations.Target(ctx, parsed, create, body.Revision)
 		if err != nil {
 			return err
 		}
-		err = automation.WriteFile(a.automations.Dir, path, content)
+		err = a.automations.Write(ctx, path, content)
 		written = err == nil
 		return err
 	})
@@ -226,12 +226,14 @@ func (a *api) saveAutomation(w http.ResponseWriter, r *http.Request, body automa
 	}
 	writeJSON(w, status, AutomationSavedJSON{
 		ID: parsed.ID, File: filepath.Base(path), Revision: revision,
-		Hub: r.Host, Cluster: len(a.leadership.AgentURLs()) > 0, Leader: a.leadership.IsLeader(), Warning: warning,
+		Hub: r.Host, Cluster: len(a.leadership.AgentURLs()) > 0, Leader: a.leadership.IsLeader(),
+		Stored: a.automations.Docs != nil, Warning: warning,
 	})
 }
 
-// AutomationSavedJSON answers a save. The file is written on this hub only,
-// and only the cluster's leader runs automations.
+// AutomationSavedJSON answers a save. Stored, the automation is a document
+// of the store, which every hub of a cluster holds; otherwise the file is
+// written on this hub only. Only the cluster's leader runs automations.
 type AutomationSavedJSON struct {
 	ID       string `json:"id"`
 	File     string `json:"file"`
@@ -242,6 +244,8 @@ type AutomationSavedJSON struct {
 	Cluster bool `json:"cluster"`
 	// Leader says this hub runs automations now.
 	Leader bool `json:"leader"`
+	// Stored says the automation is in the store, on every hub.
+	Stored bool `json:"stored"`
 	// Warning is what the person saving should know about a save that worked.
 	Warning string `json:"warning,omitempty"`
 }
@@ -373,10 +377,10 @@ func (a *api) dryRunAutomation(w http.ResponseWriter, r *http.Request) {
 	out.Plan = plan.String()
 
 	create := body.ID == ""
-	path := filepath.Join(a.automations.Dir, parsed.ID+".yaml")
+	path := parsed.ID + ".yaml"
 	if !create && parsed.ID != body.ID {
 		out.Blocked = "the file's id must stay " + body.ID + ": renaming is not supported"
-	} else if p, err := a.automations.Target(parsed, create, body.Revision); err != nil {
+	} else if p, err := a.automations.Target(ctx, parsed, create, body.Revision); err != nil {
 		_, _, out.Blocked = automationRefusal(err)
 		a.log.WarnContext(ctx, "dry run automation: the save would be refused", "automation", parsed.ID, "err", err)
 	} else {

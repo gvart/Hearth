@@ -52,8 +52,11 @@ type RunRecorder interface {
 
 // Config holds a Runtime's dependencies.
 type Config struct {
-	// Dir holds the automation files.
-	Dir    string
+	// Dir holds the automation files, when Source is nil.
+	Dir string
+	// Source holds the automations as documents: the hub's store. It
+	// replaces Dir.
+	Source DocSource
 	Kinds  Kinds
 	Policy Policy
 	Runs   RunRecorder
@@ -105,11 +108,11 @@ func (r *Runtime) Run(ctx context.Context) error {
 	defer tick.Stop()
 	last := "\x00" // never a fingerprint: the first check always loads
 	for {
-		if fp, err := fingerprint(r.cfg.Dir); err != nil {
+		if fp, load, err := r.check(ctx); err != nil {
 			r.cfg.Log.ErrorContext(ctx, "automations not reloaded", "dir", r.cfg.Dir, "err", err)
 		} else if fp != last {
 			last = fp
-			set, err := LoadDir(r.cfg.Dir, r.cfg.Kinds)
+			set, err := load()
 			if err != nil {
 				r.cfg.Log.ErrorContext(ctx, "automations not reloaded: invalid files", "dir", r.cfg.Dir, "err", err)
 			} else {
@@ -123,6 +126,20 @@ func (r *Runtime) Run(ctx context.Context) error {
 		case <-tick.C:
 		}
 	}
+}
+
+// check returns the fingerprint of the automations, which changes whenever
+// one is added, removed or changed, and the function that loads them.
+func (r *Runtime) check(ctx context.Context) (string, func() ([]*Automation, error), error) {
+	if r.cfg.Source == nil {
+		fp, err := fingerprint(r.cfg.Dir)
+		return fp, func() ([]*Automation, error) { return LoadDir(r.cfg.Dir, r.cfg.Kinds) }, err
+	}
+	docs, err := r.cfg.Source.Docs(ctx)
+	if err != nil {
+		return "", nil, err
+	}
+	return docsFingerprint(docs), func() ([]*Automation, error) { return LoadDocs(docs, r.cfg.Kinds) }, nil
 }
 
 // warn logs what loaded but will fail when it runs.

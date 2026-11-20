@@ -395,7 +395,8 @@ type applyIn struct {
 }
 
 func (s *session) applyAutomation(ctx context.Context, in applyIn) (any, error) {
-	if s.cfg.AutomationsDir == "" {
+	files := s.automationFiles()
+	if !files.Enabled() {
 		return nil, errors.New("this hub has no automations directory")
 	}
 	req := policy.Request{Action: policy.AutomationApply, DryRun: in.DryRun, ActorKind: policy.ActorMCP, ActorID: s.tok.Name}
@@ -410,7 +411,7 @@ func (s *session) applyAutomation(ctx context.Context, in applyIn) (any, error) 
 		return nil, err
 	}
 	// Refused now, a misplaced save is not held for approval first.
-	path, err := s.saveTarget(a)
+	path, err := s.saveTarget(ctx, files, a)
 	if err != nil {
 		return nil, err
 	}
@@ -420,15 +421,15 @@ func (s *session) applyAutomation(ctx context.Context, in applyIn) (any, error) 
 	req.Target = a.ID
 	req.Detail = map[string]any{"file": path}
 	req.ApprovalDetail = map[string]any{policy.DetailPlan: desc}
-	err = s.doOn(ctx, engine, req, func(context.Context) error {
+	err = s.doOn(ctx, engine, req, func(ctx context.Context) error {
 		s.cfg.AutomationsLock.Lock()
 		defer s.cfg.AutomationsLock.Unlock()
 		// Approval can take minutes: judge the directory as it is now.
-		path, err := s.saveTarget(a)
+		path, err := s.saveTarget(ctx, files, a)
 		if err != nil {
 			return err
 		}
-		return automation.WriteFile(s.cfg.AutomationsDir, path, []byte(in.YAML))
+		return files.Write(ctx, path, []byte(in.YAML))
 	})
 	if err != nil {
 		return nil, err
@@ -445,9 +446,8 @@ func (s *session) applyAutomation(ctx context.Context, in applyIn) (any, error) 
 // after another automation's id, an id defined in a file of another name, and
 // a directory the hub could not load: two files with one id, or one invalid
 // file, fail the hub's whole reload.
-func (s *session) saveTarget(a *automation.Automation) (string, error) {
-	files := automation.Files{Dir: s.cfg.AutomationsDir, Kinds: s.kinds()}
-	existing, err := files.List()
+func (s *session) saveTarget(ctx context.Context, files automation.Files, a *automation.Automation) (string, error) {
+	existing, err := files.List(ctx)
 	if err != nil {
 		return "", fmt.Errorf("read the automations directory: %w", err)
 	}
@@ -459,9 +459,15 @@ func (s *session) saveTarget(a *automation.Automation) (string, error) {
 			return "", fmt.Errorf("automation %s is defined in %s: edit that file instead", a.ID, name)
 		}
 		// Replacing the file as it is now: the client has no revision to give.
-		return files.Target(a, false, automation.Revision(f.Content))
+		return files.Target(ctx, a, false, automation.Revision(f.Content))
 	}
-	return files.Target(a, true, "")
+	return files.Target(ctx, a, true, "")
+}
+
+// automationFiles are the automations apply_automation writes: documents of
+// the store, or the files of the automations directory.
+func (s *session) automationFiles() automation.Files {
+	return automation.Files{Dir: s.cfg.AutomationsDir, Docs: s.cfg.AutomationDocs, Kinds: s.kinds()}
 }
 
 type kubeObjectsIn struct {

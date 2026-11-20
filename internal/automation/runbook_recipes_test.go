@@ -175,7 +175,7 @@ func TestRecipesPlanInADryRun(t *testing.T) {
 		Dir: recipesDir, Kinds: recipeKinds(),
 		Policy: policy.NewWithConfig(&auditLog{}, nil, policy.Config{}),
 	})
-	all, errs := e.List()
+	all, errs := e.List(t.Context())
 	if len(errs) > 0 || len(all) < len(wantRecipes) {
 		t.Fatalf("recipes: %d loaded, errors %v", len(all), errs)
 	}

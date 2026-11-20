@@ -109,8 +109,12 @@ type Config struct {
 	// /api/v1/runbook-runs. Nil disables them.
 	Runbooks *automation.Runbooks
 	// AutomationsDir is the directory of automation files the web UI's editor
-	// reads and writes under /api/v1/automations. Empty disables it.
+	// reads and writes under /api/v1/automations, when AutomationDocs is
+	// nil. Empty, with no AutomationDocs, disables it.
 	AutomationsDir string
+	// AutomationDocs are the automation documents of the store, which the
+	// editor reads and writes instead of AutomationsDir.
+	AutomationDocs automation.DocStore
 	// AutomationKinds are the step types the hub runs: the editor validates
 	// files with them, as the hub will when it loads them.
 	AutomationKinds automation.Kinds
