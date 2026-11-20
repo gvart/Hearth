@@ -1,0 +1,38 @@
+internal/plugins/plugin.go
+  s_26e932fc13ca45::t_3981c940c6231a 211-215
+  s_26e932fc13ca45::t_4fbcb698345aa0 1-210,216-583
+internal/plugins/manifest.go
+  s_26e932fc13ca45::t_398de93b986719 1-93,95-205
+  s_26e932fc13ca45::t_a7962817079069 94
+internal/plugins/manager.go
+  s_26e932fc13ca45::t_1ea08d46a9c7fd 1-225
+internal/policy/policy.go
+  s_26e932fc13ca45::t_2099c851b2da59 222-230,456-466
+internal/plugins/helper_test.go
+  s_26e932fc13ca45::t_730ae63f8501d8 41,52,56,60
+  s_26e932fc13ca45::t_b672557f954ed7 1-40,42-51,53-55,57-59,61-209
+internal/plugins/plugins_test.go
+  s_26e932fc13ca45::t_6dac04072e06d5 1-15,17-140,142-149,151-302
+  s_26e932fc13ca45::t_100d4c688a35fa 16,150
+  s_26e932fc13ca45::t_00364c91b315a6 141
+internal/policy/guardrails_test.go
+  s_26e932fc13ca45::t_2099c851b2da59 198-201
+internal/plugins/protocol.go
+  s_26e932fc13ca45::t_a66eca390648b5 1-140
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c92631b4e1f4d07570bfcb761471c49340791f5a",
+  "prompts": {},
+  "sessions": {
+    "s_26e932fc13ca45": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea42b0cd-7455-494b-8071-e63f36b98d4d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
