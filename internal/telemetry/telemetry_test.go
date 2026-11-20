@@ -238,7 +238,7 @@ func TestPayloadKeys(t *testing.T) {
 	f.answer(t, true)
 	s := f.sender(Config{
 		Endpoint: c.srv.URL, Client: c.srv.Client(),
-		Integrations: []string{Prometheus, "http://secret.lan:9090", PiHole, Prometheus},
+		Integrations: []string{Prometheus, "http://secret.lan:9090", PiHole, Talos, Prometheus},
 	})
 	if !s.Tick(ctx) || c.count() != 1 {
 		t.Fatalf("sent %d, want 1", c.count())
@@ -262,7 +262,7 @@ func TestPayloadKeys(t *testing.T) {
 	set, _ := f.st.Telemetry().Get(ctx)
 	want := Payload{
 		InstallID: set.InstallID, Version: "v0.1.0", OS: runtime.GOOS, Arch: runtime.GOARCH,
-		Devices: "1-5", Integrations: []string{Kubernetes, PiHole, Prometheus},
+		Devices: "1-5", Integrations: []string{Kubernetes, PiHole, Prometheus, Talos},
 	}
 	var p Payload
 	if err := json.Unmarshal(body, &p); err != nil {

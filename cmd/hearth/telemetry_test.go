@@ -3,6 +3,7 @@
 package main
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -43,6 +44,28 @@ func TestTelemetryFlags(t *testing.T) {
 			}
 			if tt.ok && tt.endpoint != "" && o.endpoint != tt.endpoint {
 				t.Errorf("endpoint = %q, want %q", o.endpoint, tt.endpoint)
+			}
+		})
+	}
+}
+
+// --talosconfig is reported as the name "talos" only: never the file's path,
+// its context or its nodes.
+func TestTelemetryIntegrationsTalos(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		opts hubOptions
+		want []string
+	}{
+		{name: "none", want: nil},
+		{name: "talosconfig", opts: hubOptions{
+			talosconfig: "/home/secret/.talos/config", talosContext: "secret-ctx", talosNodes: []string{"10.0.0.7"},
+		}, want: []string{"talos"}},
+		{name: "context without talosconfig", opts: hubOptions{talosContext: "secret-ctx"}, want: nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := telemetryIntegrations(tt.opts); !slices.Equal(got, tt.want) {
+				t.Errorf("telemetryIntegrations() = %v, want %v", got, tt.want)
 			}
 		})
 	}

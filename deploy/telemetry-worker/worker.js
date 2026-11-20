@@ -8,7 +8,7 @@
 
 const KEYS = ['arch', 'devices', 'install_id', 'integrations', 'os', 'version'];
 const DEVICES = ['0', '1-5', '6-20', '21-50', '51+'];
-const INTEGRATIONS = ['beszel', 'dhcp', 'discovery', 'kubernetes', 'netalertx', 'pihole', 'prometheus', 'proxmox'];
+const INTEGRATIONS = ['beszel', 'dhcp', 'discovery', 'kubernetes', 'netalertx', 'pihole', 'prometheus', 'proxmox', 'talos'];
 const MAX_BODY = 2048;
 
 /** Returns the payload if it is exactly what a hub sends, or null. */

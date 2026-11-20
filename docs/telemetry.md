@@ -27,7 +27,7 @@ One JSON object, with these keys and nothing else:
 | `os`           | The hub's operating system (`linux`, `darwin`, `windows`)                                        |
 | `arch`         | The hub's CPU architecture (`amd64`, `arm64`, ...)                                               |
 | `devices`      | How many devices the hub has enrolled, as a range: `0`, `1-5`, `6-20`, `21-50` or `51+`           |
-| `integrations` | Which kinds of integration are on, from this list only: `beszel`, `dhcp`, `discovery`, `kubernetes`, `netalertx`, `pihole`, `prometheus`, `proxmox` |
+| `integrations` | Which kinds of integration are on, from this list only: `beszel`, `dhcp`, `discovery`, `kubernetes`, `netalertx`, `pihole`, `prometheus`, `proxmox`, `talos` |
 
 For example:
 

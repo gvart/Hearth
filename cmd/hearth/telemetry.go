@@ -53,6 +53,18 @@ func (o telemetryOptions) off() (bool, error) {
 // newTelemetrySender builds the sender. It names the integrations the flags
 // turn on: kinds only, never their URLs.
 func newTelemetrySender(opts hubOptions, off bool, st *store.Store, node *cluster.Node, log *slog.Logger) *telemetry.Sender {
+	cfg := telemetry.Config{
+		Store: st, Endpoint: opts.telemetry.endpoint, Off: off, Version: opts.version,
+		Integrations: telemetryIntegrations(opts), Log: log,
+	}
+	if node != nil {
+		cfg.Leader = node
+	}
+	return telemetry.New(cfg)
+}
+
+// telemetryIntegrations names the integrations the flags turn on.
+func telemetryIntegrations(opts hubOptions) []string {
 	var names []string
 	for name, on := range map[string]bool{
 		telemetry.Prometheus: opts.prometheusURL != "",
@@ -61,17 +73,11 @@ func newTelemetrySender(opts hubOptions, off bool, st *store.Store, node *cluste
 		telemetry.Beszel:     opts.beszelURL != "",
 		telemetry.DHCP:       len(opts.dhcpLeases) > 0,
 		telemetry.Discovery:  len(opts.discoverSubnets) > 0,
+		telemetry.Talos:      opts.talosconfig != "",
 	} {
 		if on {
 			names = append(names, name)
 		}
 	}
-	cfg := telemetry.Config{
-		Store: st, Endpoint: opts.telemetry.endpoint, Off: off, Version: opts.version,
-		Integrations: names, Log: log,
-	}
-	if node != nil {
-		cfg.Leader = node
-	}
-	return telemetry.New(cfg)
+	return names
 }
