@@ -1,0 +1,24 @@
+internal/store/store.go
+  s_87f1c7baee7d5a::t_3b4ee34b309b37 41
+  s_87f1c7baee7d5a::t_f0ece1df37ee23 175-178
+internal/store/merge.go
+  s_87f1c7baee7d5a::t_3b4ee34b309b37 105-106,128-129
+internal/store/version.go
+  s_87f1c7baee7d5a::t_de378e22e89727 323,325-329,488,490-494,501,504-506,518,575-590,592
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "949698c7eabb178fe299e5656cb30a1bc287e070",
+  "prompts": {},
+  "sessions": {
+    "s_87f1c7baee7d5a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "45cc2cdf-3130-4caa-8cb4-8cb365d2150d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
