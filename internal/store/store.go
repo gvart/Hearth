@@ -38,7 +38,7 @@ type Store struct {
 	// clock stamps the writes this store accepts, as origin (see Stamp).
 	clock  *hlc.Clock
 	origin string
-	// stmts caches the statements the writer builds (see sqlFor).
+	// stmts caches the statements the writer builds (see stmtFor).
 	stmts sync.Map
 }
 
@@ -172,6 +172,10 @@ func (s *Store) apply(ctx context.Context, cmd Command) (Result, error) {
 
 // Close closes the database.
 func (s *Store) Close() error {
+	s.stmts.Range(func(_, st any) bool {
+		_ = st.(*sql.Stmt).Close() //nolint:forcetypeassert // the cache holds statements only
+		return true
+	})
 	return s.db.Close()
 }
 

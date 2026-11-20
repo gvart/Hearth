@@ -102,9 +102,8 @@ func (s *Store) GCTombstones(ctx context.Context, now time.Time) (int, error) {
 		if !tables[table].deletable {
 			continue
 		}
-		res, err := s.db.ExecContext(ctx, s.sqlFor(gcKey{table}, func() string {
-			return `DELETE FROM ` + table + ` WHERE _deleted = 1 AND _hlc < ?`
-		}), cutoff)
+		// table is a key of the tables spec.
+		res, err := s.db.ExecContext(ctx, `DELETE FROM `+table+` WHERE _deleted = 1 AND _hlc < ?`, cutoff) //nolint:gosec // see above
 		if err != nil {
 			return n, fmt.Errorf("gc tombstones of %s: %w", table, err)
 		}
@@ -117,8 +116,6 @@ func (s *Store) GCTombstones(ctx context.Context, now time.Time) (int, error) {
 	return n, nil
 }
 
-type gcKey struct{ table string }
-
 // observeStored moves the clock past every version stored, so a hub whose
 // wall clock went back (a Pi without an RTC) still stamps writes that
 // supersede its own earlier ones.
@@ -128,17 +125,14 @@ func (s *Store) observeStored(ctx context.Context) error {
 	}
 	for _, table := range append(slices.Sorted(maps.Keys(tables)), auditTable) {
 		var h int64
-		if err := s.db.QueryRowContext(ctx, s.sqlFor(maxKey{table}, func() string {
-			return `SELECT COALESCE(MAX(_hlc), 0) FROM ` + table
-		})).Scan(&h); err != nil {
+		// table is a key of the tables spec.
+		if err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(_hlc), 0) FROM `+table).Scan(&h); err != nil {
 			return fmt.Errorf("read versions of %s: %w", table, err)
 		}
 		s.clock.Observe(hlc.Timestamp(h)) //nolint:gosec // _hlc is never negative
 	}
 	return nil
 }
-
-type maxKey struct{ table string }
 
 // randomOrigin is the member id of a store opened without WithOrigin.
 func randomOrigin() string { return rand.Text()[:16] }

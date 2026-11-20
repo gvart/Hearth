@@ -320,9 +320,13 @@ func (w *writer) getAny(ctx context.Context, table string, pk ...any) (row, erro
 	if !ok {
 		return nil, fmt.Errorf("unknown table %q", table)
 	}
-	rows, err := w.tx.QueryContext(ctx, w.s.sqlFor(selectKey{table}, func() string {
+	st, err := w.s.stmtFor(ctx, w.tx, selectKey{table}, func() string {
 		return `SELECT * FROM ` + table + ` WHERE ` + pkWhere(spec.pk)
-	}), pk...)
+	})
+	if err != nil {
+		return nil, err
+	}
+	rows, err := st.QueryContext(ctx, pk...)
 	if err != nil {
 		return nil, err
 	}
@@ -481,18 +485,25 @@ func mergeRow(ctx context.Context, s *Store, tx *sql.Tx, m Mutation, versioned b
 		}
 	}
 	if m.Deleted && !versioned {
-		res, err := tx.ExecContext(ctx, s.sqlFor(deleteKey{m.Table}, func() string {
+		st, err := s.stmtFor(ctx, tx, deleteKey{m.Table}, func() string {
 			return `DELETE FROM ` + m.Table + ` WHERE ` + pkWhere(spec.pk)
-		}), pkOf(spec, m.Row)...)
+		})
+		if err != nil {
+			return false, err
+		}
+		res, err := st.ExecContext(ctx, pkOf(spec, m.Row)...)
 		if err != nil {
 			return false, err
 		}
 		n, err := res.RowsAffected()
 		return n > 0, err
 	}
-	q := s.sqlFor(upsertKey{table: m.Table, cols: strings.Join(cols, ","), versioned: versioned}, func() string {
+	st, err := s.stmtFor(ctx, tx, upsertKey{table: m.Table, cols: strings.Join(cols, ","), versioned: versioned}, func() string {
 		return upsertSQL(m.Table, spec, cols, versioned)
 	})
+	if err != nil {
+		return false, err
+	}
 	args := make([]any, 0, len(cols)+3)
 	for _, c := range cols {
 		args = append(args, m.Row[c])
@@ -504,7 +515,7 @@ func mergeRow(ctx context.Context, s *Store, tx *sql.Tx, m Mutation, versioned b
 		}
 		args = append(args, int64(m.HLC), m.Origin, deleted) //nolint:gosec // an HLC fits in 63 bits
 	}
-	res, err := tx.ExecContext(ctx, q, args...)
+	res, err := st.ExecContext(ctx, args...)
 	if err != nil {
 		return false, err
 	}
@@ -561,14 +572,24 @@ type (
 	}
 )
 
-// sqlFor returns the statement cached under key, building it the first time.
-func (s *Store) sqlFor(key any, build func() string) string {
-	if q, ok := s.stmts.Load(key); ok {
-		return q.(string) //nolint:forcetypeassert // the cache holds strings only
+// stmtFor returns the statement cached under key, prepared the first time,
+// bound to tx. database/sql keeps it prepared on each connection that ran
+// it, so a write does not parse its statements again; SQLite prepares it
+// again by itself after a schema change.
+func (s *Store) stmtFor(ctx context.Context, tx *sql.Tx, key any, build func() string) (*sql.Stmt, error) {
+	cached, ok := s.stmts.Load(key)
+	if !ok {
+		st, err := s.db.PrepareContext(ctx, build())
+		if err != nil {
+			return nil, err
+		}
+		if cached, ok = s.stmts.LoadOrStore(key, st); ok {
+			_ = st.Close()
+		} else {
+			cached = st
+		}
 	}
-	q := build()
-	s.stmts.Store(key, q)
-	return q
+	return tx.StmtContext(ctx, cached.(*sql.Stmt)), nil //nolint:forcetypeassert // the cache holds statements only
 }
 
 // liveOnly is the condition, ANDed into a read of a table with tombstones,
