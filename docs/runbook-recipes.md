@@ -1,6 +1,6 @@
 ---
 title: Runbook recipes
-description: Ready-to-copy runbooks to add a Talos node, a k3s node or a Docker host.
+description: Ready-to-copy runbooks to add or upgrade a Talos node, add a k3s node or a Docker host.
 ---
 
 Recipes are [runbooks](runbooks.md) for the jobs you do rarely enough to forget how: "how did I add a
@@ -13,7 +13,7 @@ cp docs/recipes/runbooks/add-k3s-node.yaml <data-dir>/runbooks/
 hearth runbook plan add-k3s-node
 ```
 
-All three are built from the step types that exist today, so they have the same limits as any runbook:
+All four are built from the step types that exist today, so they have the same limits as any runbook:
 
 - **Edit the vars at the top.** Devices, addresses, node and cluster names are
   [vars](runbooks.md#vars), named once and filled in where the steps use them. A prompt answer can never
@@ -30,8 +30,9 @@ All three are built from the step types that exist today, so they have the same 
   uninstall the node, then delete the Node object it left in the cluster. That needs the cluster
   [adopted](kubernetes.md) on the hub, as does the `kube_node` check that waits for the node to be Ready.
 
-These recipes were checked by the runbook parser and a plan (dry run) in the test suite. They have not
-been run against a real Talos, k3s or Docker host. Try one on a spare machine first, and tell us what
+These recipes were checked by the runbook parser and a plan (dry run) in the test suite, and the Talos
+upgrade's steps in order against a stand-in agent. They have not been run against a real Talos, k3s or
+Docker host. Try one on a spare machine first, and tell us what
 needs fixing.
 
 ## Add a Talos node
@@ -147,6 +148,196 @@ steps:
     action:
       type: log
       message: Talos node ${{ vars.node-name }} joined and is Ready.
+```
+
+## Upgrade a Talos node
+
+Upgrades one Talos node to a new installer image. Before it changes anything it runs `talosctl health`
+(etcd healthy, every node Ready, control plane up), checks that the node is Ready, and asks you to
+confirm that taking the node down keeps etcd's quorum: on the only control-plane node, the Kubernetes
+API and etcd are down while it reboots, so answer no there unless you accept that outage. A last prompt
+asks for the go-ahead, then `talosctl upgrade --preserve` starts the upgrade, and the run waits for the
+node's Talos API and its Ready condition to come back. You confirm the new version on the
+[From Talos](talos.md) table, and `talosctl health` checks the cluster again. Rollback runs
+`talosctl rollback`, which boots the node back into its previous Talos version.
+
+Runbooks have no step that reads the output of a command or a node's Talos version, so the version
+check is a prompt: compare the version the Devices page shows with the one you upgraded to.
+
+**Not run on real hardware yet.** Try it on a spare cluster first, one node at a time.
+
+The file: [`docs/recipes/runbooks/upgrade-talos-node.yaml`](recipes/runbooks/upgrade-talos-node.yaml).
+
+```yaml
+# Upgrade one Talos node to a new Talos version.
+#
+# Not yet run on real hardware: try it on a spare cluster first.
+#
+# Prerequisites:
+#   - A Hearth agent runs on the machine that has talosctl and your talosconfig
+#     (a workstation or the hub host). Its flags let it run talosctl:
+#       hearth agent run --allow-exec /usr/local/bin/talosctl
+#   - /etc/talos/talosconfig (client config with the cluster endpoints) exists
+#     on that machine. Hearth never sees its content.
+#   - The hub reads the Talos nodes (hearth hub --talosconfig, see docs/talos.md),
+#     so the Devices page shows each node's Talos version.
+#   - The cluster is adopted on the hub's Kubernetes page, so the hub can check
+#     that the node is Ready.
+#   - Edit the vars below: the device with talosctl, the node's name and address,
+#     a control-plane address to run the health checks from, the installer image
+#     and the version it installs, and the cluster's name on the Kubernetes page.
+#   - Upgrade one node at a time: workers first, then control planes, one by one.
+#
+# The talosctl steps are exec actions, which are dangerous: they are held or
+# denied until the hub grants them, for example:
+#   hearth hub --allow-dangerous-automation runbook/upgrade-talos-node
+id: upgrade-talos-node
+description: Upgrade one Talos node after health and quorum checks, wait for it to be Ready, undo with a talosctl rollback.
+vars:
+  talosctl-device: workstation
+  node-name: talos-worker-1
+  node-ip: 192.0.2.50
+  health-node: 192.0.2.10
+  installer-image: ghcr.io/siderolabs/installer:v1.12.8
+  version: v1.12.8
+  cluster: homelab
+steps:
+  - id: ready
+    type: prompt
+    prompt: confirm
+    message: >-
+      Is the talosconfig in place on ${{ vars.talosctl-device }}, and are the vars in this
+      runbook edited for ${{ vars.node-name }} (${{ vars.node-ip }}) and ${{ vars.installer-image }}?
+    timeout: 30m
+
+  - id: quorum
+    type: prompt
+    prompt: confirm
+    message: >-
+      Is ${{ vars.node-name }} a worker, or one of at least three control-plane nodes with every
+      etcd member healthy? Answer no if it is your only control-plane node: the Kubernetes API and
+      etcd are down while it reboots. Answer yes for that node only if you accept that outage.
+    timeout: 30m
+
+  - id: health-before
+    type: action
+    description: The cluster is healthy before the upgrade (etcd, every node Ready, control plane up).
+    action:
+      type: exec
+      device: ${{ vars.talosctl-device }}
+      command:
+        - /usr/local/bin/talosctl
+        - --talosconfig
+        - /etc/talos/talosconfig
+        - --nodes
+        - ${{ vars.health-node }}
+        - health
+        - --wait-timeout
+        - 5m
+      timeout: 6m
+
+  - id: node-ready-before
+    type: check
+    description: The node is Ready before it is upgraded.
+    check:
+      type: kube_node
+      cluster: ${{ vars.cluster }}
+      node: ${{ vars.node-name }}
+    within: 2m
+    every: 10s
+
+  - id: approve
+    type: prompt
+    prompt: confirm
+    message: >-
+      Upgrade ${{ vars.node-name }} to ${{ vars.installer-image }} now? The node reboots, and its pods
+      move or wait until it is back.
+    timeout: 1h
+
+  - id: upgrade
+    type: action
+    description: Start the upgrade; the node installs the new image and reboots into it.
+    action:
+      type: exec
+      device: ${{ vars.talosctl-device }}
+      command:
+        - /usr/local/bin/talosctl
+        - --talosconfig
+        - /etc/talos/talosconfig
+        - --nodes
+        - ${{ vars.node-ip }}
+        - upgrade
+        - --image
+        - ${{ vars.installer-image }}
+        - --preserve
+        - --wait=false
+      timeout: 5m
+    rollback:
+      type: exec
+      device: ${{ vars.talosctl-device }}
+      command:
+        - /usr/local/bin/talosctl
+        - --talosconfig
+        - /etc/talos/talosconfig
+        - --nodes
+        - ${{ vars.node-ip }}
+        - rollback
+      timeout: 5m
+
+  - id: reboot-settle
+    type: wait
+    description: Give the node time to install the image and reboot.
+    duration: 3m
+
+  - id: api-back
+    type: check
+    description: The node's Talos API answers again.
+    check:
+      type: tcp
+      address: "${{ vars.node-ip }}:50000"
+    within: 20m
+    every: 15s
+
+  - id: node-ready-after
+    type: check
+    description: The node is Ready again.
+    check:
+      type: kube_node
+      cluster: ${{ vars.cluster }}
+      node: ${{ vars.node-name }}
+    within: 20m
+    every: 15s
+
+  - id: version-after
+    type: prompt
+    prompt: confirm
+    message: >-
+      Does the From Talos table on the Devices page show ${{ vars.node-name }} at ${{ vars.version }}
+      and healthy? Answer no to stop here and roll back to the previous version.
+    timeout: 1h
+
+  - id: health-after
+    type: action
+    description: The cluster is healthy after the upgrade.
+    action:
+      type: exec
+      device: ${{ vars.talosctl-device }}
+      command:
+        - /usr/local/bin/talosctl
+        - --talosconfig
+        - /etc/talos/talosconfig
+        - --nodes
+        - ${{ vars.health-node }}
+        - health
+        - --wait-timeout
+        - 5m
+      timeout: 6m
+
+  - id: done
+    type: action
+    action:
+      type: log
+      message: Talos node ${{ vars.node-name }} runs ${{ vars.version }} and the cluster is healthy.
 ```
 
 ## Add a k3s node
@@ -388,8 +579,6 @@ steps:
 
 ## What the recipes cannot do yet
 
-- **No Talos integration.** Talos is driven through `talosctl` on a device with an agent, which needs
-  `--allow-exec` on that device and a grant for dangerous actions. The k3s and Docker recipes need a
-  wide `sh` grant for the same reason. Native, policy-classed Talos actions (apply-config, reset,
-  health) are planned in [#63](https://github.com/gvart/hearth/issues/63); the Talos recipe will move
-  to them when they land.
+- **Talos changes go through `talosctl`.** The [Talos integration](talos.md) only reads, so the Talos
+  recipes drive `talosctl` on a device with an agent, which needs `--allow-exec` on that device and a
+  grant for dangerous actions. The k3s and Docker recipes need a wide `sh` grant for the same reason.

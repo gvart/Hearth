@@ -20,10 +20,17 @@ const recipesDir = "../../docs/recipes/runbooks"
 // recipesPage is the docs page that shows every recipe.
 const recipesPage = "../../docs/runbook-recipes.md"
 
-var wantRecipes = []string{"add-talos-node", "add-k3s-node", "add-docker-host"}
+var wantRecipes = []string{"add-talos-node", "add-k3s-node", "add-docker-host", "upgrade-talos-node"}
 
 // readOnlySteps are action steps that only read, so they need no rollback.
-var readOnlySteps = map[string]bool{"add-docker-host/verify": true}
+var readOnlySteps = map[string]bool{
+	"add-docker-host/verify":           true,
+	"upgrade-talos-node/health-before": true,
+	"upgrade-talos-node/health-after":  true,
+}
+
+// addNodeRecipes add a node, and delete its Node object on a rollback.
+var addNodeRecipes = map[string]bool{"add-talos-node": true, "add-k3s-node": true}
 
 func recipeKinds() Kinds {
 	k := builtinKinds()
@@ -213,7 +220,7 @@ func TestRecipesUseVarsAndTheKubernetesSteps(t *testing.T) {
 		if len(rb.Vars) == 0 {
 			t.Errorf("%s has no vars", rb.ID)
 		}
-		if rb.ID == "add-docker-host" {
+		if !addNodeRecipes[rb.ID] {
 			continue
 		}
 		deleteAt, lastExecRollback, kubeCheck := -1, -1, false

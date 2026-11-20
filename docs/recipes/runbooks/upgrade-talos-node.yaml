@@ -1,0 +1,169 @@
+# Upgrade one Talos node to a new Talos version.
+#
+# Not yet run on real hardware: try it on a spare cluster first.
+#
+# Prerequisites:
+#   - A Hearth agent runs on the machine that has talosctl and your talosconfig
+#     (a workstation or the hub host). Its flags let it run talosctl:
+#       hearth agent run --allow-exec /usr/local/bin/talosctl
+#   - /etc/talos/talosconfig (client config with the cluster endpoints) exists
+#     on that machine. Hearth never sees its content.
+#   - The hub reads the Talos nodes (hearth hub --talosconfig, see docs/talos.md),
+#     so the Devices page shows each node's Talos version.
+#   - The cluster is adopted on the hub's Kubernetes page, so the hub can check
+#     that the node is Ready.
+#   - Edit the vars below: the device with talosctl, the node's name and address,
+#     a control-plane address to run the health checks from, the installer image
+#     and the version it installs, and the cluster's name on the Kubernetes page.
+#   - Upgrade one node at a time: workers first, then control planes, one by one.
+#
+# The talosctl steps are exec actions, which are dangerous: they are held or
+# denied until the hub grants them, for example:
+#   hearth hub --allow-dangerous-automation runbook/upgrade-talos-node
+id: upgrade-talos-node
+description: Upgrade one Talos node after health and quorum checks, wait for it to be Ready, undo with a talosctl rollback.
+vars:
+  talosctl-device: workstation
+  node-name: talos-worker-1
+  node-ip: 192.0.2.50
+  health-node: 192.0.2.10
+  installer-image: ghcr.io/siderolabs/installer:v1.12.8
+  version: v1.12.8
+  cluster: homelab
+steps:
+  - id: ready
+    type: prompt
+    prompt: confirm
+    message: >-
+      Is the talosconfig in place on ${{ vars.talosctl-device }}, and are the vars in this
+      runbook edited for ${{ vars.node-name }} (${{ vars.node-ip }}) and ${{ vars.installer-image }}?
+    timeout: 30m
+
+  - id: quorum
+    type: prompt
+    prompt: confirm
+    message: >-
+      Is ${{ vars.node-name }} a worker, or one of at least three control-plane nodes with every
+      etcd member healthy? Answer no if it is your only control-plane node: the Kubernetes API and
+      etcd are down while it reboots. Answer yes for that node only if you accept that outage.
+    timeout: 30m
+
+  - id: health-before
+    type: action
+    description: The cluster is healthy before the upgrade (etcd, every node Ready, control plane up).
+    action:
+      type: exec
+      device: ${{ vars.talosctl-device }}
+      command:
+        - /usr/local/bin/talosctl
+        - --talosconfig
+        - /etc/talos/talosconfig
+        - --nodes
+        - ${{ vars.health-node }}
+        - health
+        - --wait-timeout
+        - 5m
+      timeout: 6m
+
+  - id: node-ready-before
+    type: check
+    description: The node is Ready before it is upgraded.
+    check:
+      type: kube_node
+      cluster: ${{ vars.cluster }}
+      node: ${{ vars.node-name }}
+    within: 2m
+    every: 10s
+
+  - id: approve
+    type: prompt
+    prompt: confirm
+    message: >-
+      Upgrade ${{ vars.node-name }} to ${{ vars.installer-image }} now? The node reboots, and its pods
+      move or wait until it is back.
+    timeout: 1h
+
+  - id: upgrade
+    type: action
+    description: Start the upgrade; the node installs the new image and reboots into it.
+    action:
+      type: exec
+      device: ${{ vars.talosctl-device }}
+      command:
+        - /usr/local/bin/talosctl
+        - --talosconfig
+        - /etc/talos/talosconfig
+        - --nodes
+        - ${{ vars.node-ip }}
+        - upgrade
+        - --image
+        - ${{ vars.installer-image }}
+        - --preserve
+        - --wait=false
+      timeout: 5m
+    rollback:
+      type: exec
+      device: ${{ vars.talosctl-device }}
+      command:
+        - /usr/local/bin/talosctl
+        - --talosconfig
+        - /etc/talos/talosconfig
+        - --nodes
+        - ${{ vars.node-ip }}
+        - rollback
+      timeout: 5m
+
+  - id: reboot-settle
+    type: wait
+    description: Give the node time to install the image and reboot.
+    duration: 3m
+
+  - id: api-back
+    type: check
+    description: The node's Talos API answers again.
+    check:
+      type: tcp
+      address: "${{ vars.node-ip }}:50000"
+    within: 20m
+    every: 15s
+
+  - id: node-ready-after
+    type: check
+    description: The node is Ready again.
+    check:
+      type: kube_node
+      cluster: ${{ vars.cluster }}
+      node: ${{ vars.node-name }}
+    within: 20m
+    every: 15s
+
+  - id: version-after
+    type: prompt
+    prompt: confirm
+    message: >-
+      Does the From Talos table on the Devices page show ${{ vars.node-name }} at ${{ vars.version }}
+      and healthy? Answer no to stop here and roll back to the previous version.
+    timeout: 1h
+
+  - id: health-after
+    type: action
+    description: The cluster is healthy after the upgrade.
+    action:
+      type: exec
+      device: ${{ vars.talosctl-device }}
+      command:
+        - /usr/local/bin/talosctl
+        - --talosconfig
+        - /etc/talos/talosconfig
+        - --nodes
+        - ${{ vars.health-node }}
+        - health
+        - --wait-timeout
+        - 5m
+      timeout: 6m
+
+  - id: done
+    type: action
+    action:
+      type: log
+      message: Talos node ${{ vars.node-name }} runs ${{ vars.version }} and the cluster is healthy.
