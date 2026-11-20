@@ -269,6 +269,7 @@ People act through a signed-in session. These actions are audited with who took 
 | `runbook.check`    | read  | run a check step        |
 | `automation.probe` | read  | run a check step `from` a device |
 | `kube.node.ready`  | read  | run a `kube_node` check step |
+| `plugin.command.*` | the manifest's | run a `plugin_command` action step (see [automations.md](automations.md#plugin-commands)) |
 
 ## A run keeps its definition
 

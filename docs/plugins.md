@@ -112,9 +112,9 @@ the command's arguments, which may hold secrets.
 | Action | Class | Actors |
 | --- | --- | --- |
 | `plugin.start` | dangerous | `hub` (fixed: the `--plugin` flag is the grant) |
-| `plugin.command.read` | read | `web` |
-| `plugin.command.safe` | safe | `web` |
-| `plugin.command.dangerous` | dangerous | `web` |
+| `plugin.command.read` | read | `web`, `automation`, `mcp` |
+| `plugin.command.safe` | safe | `web`, `automation`, `mcp` |
+| `plugin.command.dangerous` | dangerous | `web`, `automation`, `mcp` |
 
 A command the manifest does not declare is denied, and audited as a denied
 `plugin.command.dangerous`. The plugin never sees it. With no `policy.yaml`, a signed-in admin may
@@ -127,11 +127,22 @@ actors:
     dangerous: confirm
 ```
 
+Every caller gets the class from the manifest; none can choose it:
+
+- **Web UI.** The Devices page lists each plugin's devices and entities under *From plugins*, with
+  a button for each command the plugin declares. A command policy would hold says so before it
+  runs, and the dialog waits for the approval; one policy denies is shown disabled.
+- **Automations and runbooks.** The `plugin_command` action, actor `automation/<id>` (see
+  [automations.md](automations.md#plugin-commands)). A dangerous command needs the automation's
+  grant, as `exec` does.
+- **MCP.** The `list_plugins` and `plugin_command` tools, actor `mcp/<token>`, capped by the
+  token's scope (see [mcp.md](mcp.md)).
+
 ## API
 
 | | |
 | --- | --- |
-| `GET /api/v1/plugins` | Every plugin's status: state (`starting`, `running`, `restarting`, `stopped`), the last error, restarts, its commands, devices and entities with their last state, and the tail of its stderr. |
+| `GET /api/v1/plugins` | Every plugin's status: state (`starting`, `running`, `restarting`, `stopped`), the last error, restarts, its commands, devices and entities with their last state, and the tail of its stderr. `decisions` says, by class, what policy decides now for the caller's commands: `allow`, `confirm` or `deny`. Each command is decided again when it runs. |
 | `POST /api/v1/plugins/{name}/commands` | Runs a command: `{"command": "turn_on", "device": "lamp", "args": {}}`. Answers `{"output": "..."}`, 403 when policy denies it, 503 when the plugin is not running or already runs 32 commands, 502 when the plugin reports it failed. |
 
 Both need the admin session. Without `--plugin` neither exists.
@@ -210,4 +221,3 @@ A plugin may handle commands one at a time or several at once: replies are match
 ## Not yet
 
 - Plugins on agents, within the device's capability ceiling ([#223](https://github.com/gvart/hearth/issues/223)).
-- Plugin devices in the device list and plugin commands in automations, runbooks and MCP ([#224](https://github.com/gvart/hearth/issues/224)).

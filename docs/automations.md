@@ -392,6 +392,33 @@ Webhook URLs and headers often carry secrets: errors, logs and the audit log nam
 scheme and host. Command arguments are never logged either; a failed command's error ends with up
 to 256 bytes of its stderr.
 
+## Plugin commands
+
+A `plugin_command` action runs a command an [exec plugin](plugins.md) declares. Automations and
+runbooks run on the cluster's leader, so the leader's own plugins (its `--plugin` flags) run it: in a
+cluster, give every hub the same `--plugin` flags, or the action is denied after a failover to a hub
+without the plugin.
+
+```yaml
+actions:
+  - id: lamp-on
+    type: plugin_command
+    plugin: go-lamp              # the plugin's name in its manifest
+    command: turn_on             # a command the manifest declares
+    device: lamp                 # optional: the plugin's device id; may be a template
+    args: {brightness: 80}       # optional: the command's arguments, as is
+```
+
+- Its policy action is `plugin.command.read`, `plugin.command.safe` or `plugin.command.dangerous`,
+  after the class the plugin's manifest declares for the command. The automation cannot set it. A
+  dangerous command needs the automation's grant, as `exec` does, or an approval when the policy
+  file says `confirm`.
+- The audit target is `<plugin>/<command>`, as for the web UI. The arguments are never audited.
+- A command the hub's plugins do not declare, or a plugin the hub does not run, still loads (a
+  hub of a cluster may run other plugins), as a dangerous command: when it runs it is denied, and
+  audited as a denied `plugin.command.dangerous`. The plugin never sees it.
+- `plugin` and `command` may not be templates: the class is known when the file loads.
+
 ## Using the trigger's event in actions
 
 Some action fields are [Go templates](https://pkg.go.dev/text/template) over the event that started
