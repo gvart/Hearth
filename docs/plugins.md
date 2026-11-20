@@ -186,5 +186,5 @@ A plugin may handle commands one at a time or several at once: replies are match
 
 ## Not yet
 
-- Plugins on agents, within the device's capability ceiling.
-- Plugin devices in the device list and plugin commands in automations, runbooks and MCP.
+- Plugins on agents, within the device's capability ceiling ([#223](https://github.com/gvart/hearth/issues/223)).
+- Plugin devices in the device list and plugin commands in automations, runbooks and MCP ([#224](https://github.com/gvart/hearth/issues/224)).
