@@ -7,9 +7,10 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/binary"
 	"errors"
 	"fmt"
-	"hash/maphash"
+	"hash/fnv"
 	"io"
 	"log/slog"
 	"math/rand/v2"
@@ -339,12 +340,15 @@ func (br *bridge) publish(conn net.Conn, m message) error {
 // is full), the message would reach local subscribers twice but go no
 // further: forward never sends out what the bridge brought in.
 type echoes struct {
-	mu   sync.Mutex
-	seed maphash.Seed
+	mu sync.Mutex
+	// salt keys the hash, so a remote client cannot craft a message that
+	// collides with one the bridge sent (hash/fnv is already in the binary;
+	// hash/maphash is not).
+	salt uint64
 	m    map[uint64]echo
 }
 
-func newEchoes() *echoes { return &echoes{seed: maphash.MakeSeed(), m: map[uint64]echo{}} }
+func newEchoes() *echoes { return &echoes{salt: rand.Uint64(), m: map[uint64]echo{}} } //nolint:gosec // a salt, see echoes
 
 type echo struct {
 	n     int
@@ -352,10 +356,10 @@ type echo struct {
 }
 
 func (e *echoes) key(topic string, payload []byte) uint64 {
-	var h maphash.Hash
-	h.SetSeed(e.seed)
-	_, _ = h.WriteString(topic)
-	_ = h.WriteByte(0)
+	h := fnv.New64a()
+	_, _ = h.Write(binary.LittleEndian.AppendUint64(nil, e.salt))
+	_, _ = h.Write([]byte(topic))
+	_, _ = h.Write([]byte{0})
 	_, _ = h.Write(payload)
 	return h.Sum64()
 }
