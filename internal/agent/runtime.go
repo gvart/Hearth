@@ -22,7 +22,7 @@ const collectionDelay = 30 * time.Second
 // 30 s of retries left about 600 kB of garbage.
 const failureGap = time.Second
 
-// TuneRuntime keeps the long-running agent under its 20 MB idle limit. Only
+// TuneRuntime keeps the long-running agent under its 25 MB idle limit. Only
 // `hearth agent run` calls it, as it changes the whole process. Pass connected
 // as Config.Connected and failed as Config.Failed; stop cancels a collection
 // that has not run yet.

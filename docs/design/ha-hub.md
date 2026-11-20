@@ -70,7 +70,7 @@ audit rows merges fine, but a total order and "the decision was durable before t
 do not. Rejected.
 
 **Principles check.** HA lives entirely in hub mode. Agents only gain an endpoint list and a
-rotation in their existing reconnect loop, so the < 20 MB idle agent target is unaffected (raft
+rotation in their existing reconnect loop, so the < 25 MB idle agent target is unaffected (raft
 code is linked into the binary but never initialized in agent mode). It stays one binary with
 `CGO_ENABLED=0` under (a) with an optional sidecar and under (b) with hashicorp/raft. A single-node
 hub stays the default and must not require any of this (principle 1: adopt, don't replace).
