@@ -85,11 +85,14 @@ func newBridge(srv *mochi.Server, cfg *BridgeConfig, clients *Clients, log *slog
 func (br *bridge) run(ctx context.Context) {
 	backoff := br.minBackoff
 	for {
+		start := time.Now()
 		connected, err := br.session(ctx)
 		if ctx.Err() != nil {
 			return
 		}
-		if connected {
+		// A remote that drops the bridge as soon as it subscribes (another
+		// hub with the same client ID, say) still backs off.
+		if connected && time.Since(start) > backoff {
 			backoff = br.minBackoff
 		}
 		wait := backoff/2 + rand.N(backoff/2+1) //nolint:gosec // jitter, not a secret

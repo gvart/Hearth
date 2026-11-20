@@ -14,6 +14,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/gvart/hearth/internal/pki"
 )
 
 // remoteYAML is the remote broker's clients file: the hub's bridge logs in
@@ -139,6 +141,32 @@ func TestBridgeBothWays(t *testing.T) {
 			lsub.none()
 			rsub.none()
 		})
+	}
+}
+
+// TestBridgeClientCertificate logs in to the remote with a client
+// certificate instead of a password.
+func TestBridgeClientCertificate(t *testing.T) {
+	rb := startBroker(t, remoteYAML+`devices:
+  - id: hub1
+    allow:
+      - topic: home/#
+        access: readwrite
+`)
+	cert := deviceCert(t, rb.ca, "hub1", time.Now())
+	rb.certs.set(pki.SerialString(cert.Leaf), nil)
+	cfg := bridgeTo(t, rb, rb.addr, 5, "")
+	cfg.Username = ""
+	cfg.TLS.Certificates = []tls.Certificate{cert}
+	lb := startBrokerWith(t, localYAML, cfg, fastRetry)
+	waitLog(t, lb, "mqtt bridge connected", 1)
+	waitLog(t, rb, "identity=device:hub1", 1)
+
+	rsub := connected(t, rb, "watcher", "rsub")
+	rsub.subscribe("home/#")
+	connected(t, lb, "local", "lpub").publish("sensors/ok/cert", "1")
+	if topic, _ := rsub.next(); topic != "home/sensors/ok/cert" {
+		t.Fatalf("remote got %s", topic)
 	}
 }
 
