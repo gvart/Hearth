@@ -1,0 +1,24 @@
+internal/automation/runbook_talos.go
+  s_26e932fc13ca45::t_4475cf3dedae39 67-75,84-95,97,99-103
+internal/automation/runbook_talos_test.go
+  s_26e932fc13ca45::t_8f35d9c8a77e84 67-69,118
+  s_26e932fc13ca45::t_4475cf3dedae39 61-66,113-117,119-120
+docs/runbooks.md
+  s_26e932fc13ca45::t_e7b6f629425037 172-175
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f034d52a4edaf875a2d68a1c2eea31ca0b4dc194",
+  "prompts": {},
+  "sessions": {
+    "s_26e932fc13ca45": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea42b0cd-7455-494b-8071-e63f36b98d4d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
