@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -93,7 +94,10 @@ func newAgentRunCmd() *cobra.Command {
 }
 
 func newAgentJoinCmd() *cobra.Command {
-	var dataDir string
+	var (
+		dataDir, tokenFile string
+		ifNotEnrolled      bool
+	)
 	cmd := &cobra.Command{
 		Use:   "join <hub-url> [<token> | -]",
 		Short: "Enroll this device with a hub",
@@ -101,11 +105,31 @@ func newAgentJoinCmd() *cobra.Command {
 			"The hub is verified against the CA fingerprint in the token before the token is sent.\n" +
 			"The token comes from the " + tokenEnv + " environment variable, or from the first line of\n" +
 			"stdin when the token argument is -. Both keep it out of argv, which any local user can read\n" +
-			"with ps; a token argument still works but warns for that reason.",
+			"with ps; a token argument still works but warns for that reason. --token-file reads it from\n" +
+			"the first line of a file instead, such as a Kubernetes Secret mounted in the agent's pod.\n\n" +
+			"--if-not-enrolled makes a join of a device that is already enrolled a success that does\n" +
+			"nothing, so a container can run it before every start (see docs/talos.md).",
 		Example: "  " + tokenEnv + "=<token> hearth agent join https://hub.lan:7443",
 		Args:    cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			token, err := joinToken(cmd, args[1:])
+			if ifNotEnrolled {
+				if _, err := os.Stat(filepath.Join(dataDir, agent.CertFile)); err == nil {
+					if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Already enrolled; identity in %s.\n", dataDir); err != nil {
+						return fmt.Errorf("write result: %w", err)
+					}
+					return nil
+				}
+			}
+			var token string
+			var err error
+			if tokenFile != "" {
+				if len(args) > 1 {
+					return errors.New("--token-file and a token argument are mutually exclusive")
+				}
+				token, err = readTokenFile(tokenFile)
+			} else {
+				token, err = joinToken(cmd, args[1:])
+			}
 			if err != nil {
 				return err
 			}
@@ -120,7 +144,28 @@ func newAgentJoinCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir("agent"), "agent data directory (env HEARTH_DATA_DIR)")
+	cmd.Flags().StringVar(&tokenFile, "token-file", "", "file whose first line is the enrollment token")
+	cmd.Flags().BoolVar(&ifNotEnrolled, "if-not-enrolled", false,
+		"do nothing, successfully, if this device is already enrolled")
 	return cmd
+}
+
+// readTokenFile reads an enrollment token from the first line of a file.
+func readTokenFile(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", fmt.Errorf("--token-file: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	line, err := bufio.NewReader(io.LimitReader(f, maxTokenLine)).ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", fmt.Errorf("--token-file: %w", err)
+	}
+	token := strings.TrimSpace(line)
+	if token == "" {
+		return "", fmt.Errorf("--token-file: no token in %s", path)
+	}
+	return token, nil
 }
 
 // tokenEnv names the environment variable `hearth agent join` reads the

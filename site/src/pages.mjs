@@ -8,7 +8,7 @@
 export const sections = [
 	{ label: 'Start here', pages: ['getting-started', 'concepts', 'comparison'] },
 	{ label: 'Automations', pages: ['automations', 'runbooks', 'runbook-recipes', 'notifications'] },
-	{ label: 'Integrations', pages: ['logs', 'prometheus', 'kubernetes', 'proxmox', 'discovery', 'pihole', 'netalertx', 'beszel', 'homepage', 'mcp'] },
+	{ label: 'Integrations', pages: ['logs', 'prometheus', 'kubernetes', 'proxmox', 'discovery', 'pihole', 'netalertx', 'beszel', 'talos', 'homepage', 'mcp'] },
 	{ label: 'Operating', pages: ['terminal', 'guardrails', 'panels', 'https', 'cluster', 'backup', 'security', 'telemetry'] },
 ];
 

@@ -125,3 +125,56 @@ func TestAgentJoinRejectsEmptyStdin(t *testing.T) {
 		}
 	}
 }
+
+// TestAgentJoinTokenFileIfNotEnrolled: the DaemonSet's join. The token comes
+// from a mounted file, and a second join of the enrolled device, as when its
+// pod restarts, succeeds without reading the file or reaching the hub.
+func TestAgentJoinTokenFileIfNotEnrolled(t *testing.T) {
+	url, tok := startTestHub(t)
+	t.Setenv(tokenEnv, "")
+	dataDir := filepath.Join(t.TempDir(), "agent")
+	tokenFile := filepath.Join(t.TempDir(), "talos-cp-1")
+	if err := os.WriteFile(tokenFile, []byte(tok+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	join := []string{"agent", "join", "--data-dir", dataDir, "--token-file", tokenFile, "--if-not-enrolled", url}
+	out, err := executeWithStdin(t, "", join...)
+	if err != nil || !strings.Contains(out, "Enrolled as device") {
+		t.Fatalf("first join: %v\n%s", err, out)
+	}
+	// The token is spent and the file gone: the join must not need either.
+	if err := os.Remove(tokenFile); err != nil {
+		t.Fatal(err)
+	}
+	out, err = executeWithStdin(t, "", join...)
+	if err != nil || !strings.Contains(out, "Already enrolled") {
+		t.Fatalf("second join with --if-not-enrolled: %v\n%s", err, out)
+	}
+	if _, err := executeWithStdin(t, "", "agent", "join", "--data-dir", dataDir, "--token-file", tokenFile, url); err == nil {
+		t.Error("second join without --if-not-enrolled succeeded")
+	}
+}
+
+func TestAgentJoinTokenFileRejectsBadInput(t *testing.T) {
+	empty := filepath.Join(t.TempDir(), "empty")
+	if err := os.WriteFile(empty, []byte("\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"missing file", []string{"--token-file", filepath.Join(t.TempDir(), "nope"), "https://127.0.0.1:7443"}, "--token-file"},
+		{"empty file", []string{"--token-file", empty, "https://127.0.0.1:7443"}, "no token in"},
+		{"file and argument", []string{"--token-file", empty, "https://127.0.0.1:7443", "tok"}, "mutually exclusive"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			args := append([]string{"agent", "join", "--data-dir", t.TempDir()}, tt.args...)
+			if _, err := executeWithStdin(t, "", args...); err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("err = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}

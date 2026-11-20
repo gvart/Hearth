@@ -49,7 +49,8 @@ changes.
   is replicated like any other write; the other hubs start or stop their watch within 5 seconds.
 - **Nodes and devices.** A node is linked to the Hearth device it runs on when one of the node's
   addresses is one of the device's addresses, or failing that, when the node's hostname or name matches
-  the device's hostname. A match that is not unique links nothing.
+  the device's hostname. A match that is not unique links nothing. Nodes that cannot run a host
+  agent, such as Talos nodes, become devices through the agent DaemonSet (see [talos.md](talos.md)).
 - **Pod logs** are read on demand (the last 100 to 2000 lines), not streamed, in the same viewer as
   device logs (see [logs.md](logs.md)).
 

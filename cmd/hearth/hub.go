@@ -31,6 +31,7 @@ import (
 	"github.com/gvart/hearth/internal/integrations/kubernetes"
 	"github.com/gvart/hearth/internal/integrations/prometheus"
 	"github.com/gvart/hearth/internal/integrations/proxmox"
+	"github.com/gvart/hearth/internal/integrations/talos"
 	"github.com/gvart/hearth/internal/mcpserver"
 	"github.com/gvart/hearth/internal/metrics"
 	"github.com/gvart/hearth/internal/notify"
@@ -96,6 +97,12 @@ type hubOptions struct {
 	beszelEmail        string
 	beszelPassword     string
 	beszelPasswordFile string
+	// talosconfig is a talosconfig file whose nodes the hub reads through
+	// the Talos API; empty means none. talosContext picks its context (the
+	// current one if empty) and talosNodes replaces the context's nodes.
+	talosconfig  string
+	talosContext string
+	talosNodes   []string
 	// dhcpLeases are DHCP lease files (dnsmasq, ISC dhcpd) to import.
 	dhcpLeases []string
 	// backup schedules encrypted backups to an S3-compatible bucket.
@@ -131,6 +138,7 @@ func newHubCmd() *cobra.Command {
 			"the hosts a Pi-hole or a DHCP server knows, with their names, on every VLAN (see docs/pihole.md);\n" +
 			"--netalertx-url adds the devices a NetAlertX knows (see docs/netalertx.md).\n\n" +
 			"--beszel-url reads the systems a Beszel hub monitors, with their status and usage (see docs/beszel.md).\n\n" +
+			"--talosconfig reads Talos nodes through the Talos API: versions, services, memory and load (see docs/talos.md).\n\n" +
 			"--backup-interval uploads an encrypted backup to an S3-compatible bucket at that interval and keeps\n" +
 			"the newest --backup-keep, without the CA key unless --backup-include-ca; in a cluster the leader does (see docs/backup.md).",
 		Args: cobra.NoArgs,
@@ -181,7 +189,7 @@ func newHubCmd() *cobra.Command {
 			"or CIDR@device to sweep it from that device's agent (within its --allow-scan); "+
 			"repeatable (env HEARTH_DISCOVER_SUBNETS, comma-separated; default: off; see docs/discovery.md)")
 	cmd.Flags().DurationVar(&opts.discoverInterval, "discover-interval", discovery.DefaultInterval,
-		"time between network discovery scans, Pi-hole/DHCP lease/NetAlertX imports and Beszel reads (env HEARTH_DISCOVER_INTERVAL)")
+		"time between network discovery scans, Pi-hole/DHCP lease/NetAlertX imports and Beszel and Talos reads (env HEARTH_DISCOVER_INTERVAL)")
 	cmd.Flags().StringVar(&opts.newDeviceAlerts, "new-device-alerts", os.Getenv("HEARTH_NEW_DEVICE_ALERTS"),
 		"notification channel to tell about every new host network discovery finds (env HEARTH_NEW_DEVICE_ALERTS; "+
 			"default: off; see docs/discovery.md)")
@@ -202,6 +210,12 @@ func newHubCmd() *cobra.Command {
 		"email of the Beszel user the hub logs in as; a read-only user is enough (env HEARTH_BESZEL_EMAIL)")
 	cmd.Flags().StringVar(&opts.beszelPasswordFile, "beszel-password-file", os.Getenv("HEARTH_BESZEL_PASSWORD_FILE"),
 		"file holding the Beszel user's password, mode 0600 (env HEARTH_BESZEL_PASSWORD_FILE)")
+	cmd.Flags().StringVar(&opts.talosconfig, "talosconfig", os.Getenv("HEARTH_TALOSCONFIG"),
+		"talosconfig to read Talos nodes with, read-only; an os:reader one is enough (env HEARTH_TALOSCONFIG; see docs/talos.md)")
+	cmd.Flags().StringVar(&opts.talosContext, "talos-context", os.Getenv("HEARTH_TALOS_CONTEXT"),
+		"context of the talosconfig to use (env HEARTH_TALOS_CONTEXT; default: its current context)")
+	cmd.Flags().StringSliceVar(&opts.talosNodes, "talos-nodes", splitList(os.Getenv("HEARTH_TALOS_NODES")),
+		"Talos nodes to read, replacing the talosconfig context's nodes (env HEARTH_TALOS_NODES, comma-separated)")
 	cmd.Flags().StringArrayVar(&opts.dhcpLeases, "dhcp-leases", splitList(os.Getenv("HEARTH_DHCP_LEASES")),
 		"DHCP lease file to import hosts from, dnsmasq (/var/lib/misc/dnsmasq.leases) or ISC dhcpd (dhcpd.leases); "+
 			"repeatable (env HEARTH_DHCP_LEASES, comma-separated)")
@@ -264,6 +278,10 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		return err
 	}
 	beszelClient, err := beszelSource(opts)
+	if err != nil {
+		return err
+	}
+	talosClient, err := talosSource(opts)
 	if err != nil {
 		return err
 	}
@@ -349,6 +367,14 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 			Standby: node != nil,
 		})
 	}
+	var talosReader *talos.Reader
+	if talosClient != nil {
+		talosReader = talos.NewReader(talos.ReaderConfig{
+			Client: talosClient, Interval: opts.discoverInterval, Policy: pol, Log: log.With("component", "talos"),
+			// In a cluster only the leader reads, as only it can audit.
+			Standby: node != nil,
+		})
+	}
 	if node == nil {
 		if err := ensureAdminPassword(ctx, st, pol, opts, log); err != nil {
 			return err
@@ -400,6 +426,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		Stopping:          stopping,
 		Prometheus:        prom,
 		Beszel:            beszelSnapshotter(beszelReader),
+		Talos:             talosSnapshotter(talosReader),
 		Metrics:           ms,
 		Agents:            agents,
 		Kube:              kube,
@@ -521,7 +548,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		logAttrs = append(logAttrs, "node_id", node.ID(), "raft_addr", node.Addr())
 	}
 	logAttrs = append(logAttrs, "prometheus", prom != nil, "pihole", opts.piholeURL != "", "netalertx", opts.netalertxURL != "",
-		"beszel", opts.beszelURL != "", "dhcp_lease_files", len(opts.dhcpLeases))
+		"beszel", opts.beszelURL != "", "talos", opts.talosconfig != "", "dhcp_lease_files", len(opts.dhcpLeases))
 	log.InfoContext(ctx, "hub listening", logAttrs...)
 
 	var builtin []*automation.Automation
@@ -576,6 +603,10 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		if beszelReader != nil {
 			g.Go(func() error { return beszelReader.Run(gctx) })
 		}
+		// And what a Talos read finds.
+		if talosReader != nil {
+			g.Go(func() error { return talosReader.Run(gctx) })
+		}
 		if backups != nil {
 			g.Go(func() error { return backups.Run(gctx) })
 		}
@@ -607,11 +638,12 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		// only and follow leadership.
 		changed, automationsChanged, discoveryChanged := make(chan struct{}, 1), make(chan struct{}, 1), make(chan struct{}, 1)
 		importChanged, runbooksChanged, beszelChanged := make(chan struct{}, 1), make(chan struct{}, 1), make(chan struct{}, 1)
+		talosChanged := make(chan struct{}, 1)
 		approvalsChanged, backupsChanged := make(chan struct{}, 1), make(chan struct{}, 1)
 		node.OnLeaderChange(func(cluster.LeaderInfo) {
 			for _, c := range []chan struct{}{
 				changed, automationsChanged, discoveryChanged, importChanged, runbooksChanged, approvalsChanged,
-				beszelChanged, backupsChanged,
+				beszelChanged, talosChanged, backupsChanged,
 			} {
 				select {
 				case c <- struct{}{}:
@@ -640,6 +672,11 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		if beszelReader != nil {
 			g.Go(func() error {
 				return automation.RunWhileLeading(gctx, node, beszelChanged, log.With("component", "beszel"), beszelReader.Run)
+			})
+		}
+		if talosReader != nil {
+			g.Go(func() error {
+				return automation.RunWhileLeading(gctx, node, talosChanged, log.With("component", "talos"), talosReader.Run)
 			})
 		}
 		if backups != nil {

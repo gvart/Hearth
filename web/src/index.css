@@ -586,6 +586,13 @@ table {
   text-overflow: ellipsis;
 }
 
+/* Talos nodes: on phones the address, services and uptime give way. */
+@media (max-width: 640px) {
+  .devices.talos :is(th, td):is(:nth-child(2), :nth-child(4), :nth-child(7)) {
+    display: none;
+  }
+}
+
 /* Beszel systems: on phones the host and uptime give way to the usage. */
 @media (max-width: 640px) {
   .devices.beszel :is(th, td):is(:nth-child(2), :nth-child(6)) {
@@ -1594,10 +1601,10 @@ dialog::backdrop {
   }
 
   /* Keep the table readable on phones: name, IP and last seen. */
-  .devices:not(.kube, .audit, .beszel) th:nth-child(2),
-  .devices:not(.kube, .audit, .beszel) td:nth-child(2),
-  .devices:not(.kube, .audit, .beszel) th:nth-child(5),
-  .devices:not(.kube, .audit, .beszel) td:nth-child(5) {
+  .devices:not(.kube, .audit, .beszel, .talos) th:nth-child(2),
+  .devices:not(.kube, .audit, .beszel, .talos) td:nth-child(2),
+  .devices:not(.kube, .audit, .beszel, .talos) th:nth-child(5),
+  .devices:not(.kube, .audit, .beszel, .talos) td:nth-child(5) {
     display: none;
   }
 

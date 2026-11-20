@@ -14,6 +14,7 @@ import (
 	"github.com/gvart/hearth/internal/integrations/beszel"
 	"github.com/gvart/hearth/internal/integrations/netalertx"
 	"github.com/gvart/hearth/internal/integrations/pihole"
+	"github.com/gvart/hearth/internal/integrations/talos"
 )
 
 // leaseSources returns the Pi-hole, NetAlertX and lease files the hub
@@ -89,6 +90,30 @@ func beszelSource(opts hubOptions) (*beszel.Client, error) {
 // beszelSnapshotter returns r as a hub.BeszelSnapshotter, nil if r is: a
 // nil *beszel.Reader in the interface would not be nil.
 func beszelSnapshotter(r *beszel.Reader) hub.BeszelSnapshotter {
+	if r == nil {
+		return nil
+	}
+	return r
+}
+
+// talosSource returns the client for --talosconfig; nil if it is not set.
+func talosSource(opts hubOptions) (*talos.Client, error) {
+	if opts.talosconfig == "" {
+		if opts.talosContext != "" || len(opts.talosNodes) > 0 {
+			return nil, errors.New("--talos-context and --talos-nodes need --talosconfig")
+		}
+		return nil, nil
+	}
+	cfg, err := talos.LoadConfig(opts.talosconfig, opts.talosContext, opts.talosNodes)
+	if err != nil {
+		return nil, fmt.Errorf("--talosconfig: %w", err)
+	}
+	return talos.New(cfg), nil
+}
+
+// talosSnapshotter returns r as a hub.TalosSnapshotter, nil if r is: a nil
+// *talos.Reader in the interface would not be nil.
+func talosSnapshotter(r *talos.Reader) hub.TalosSnapshotter {
 	if r == nil {
 		return nil
 	}

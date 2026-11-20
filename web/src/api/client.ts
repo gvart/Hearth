@@ -192,6 +192,48 @@ export interface BeszelSystem {
   network_mac: string;
 }
 
+/** A Talos system service (apid, etcd, kubelet, ...). */
+export interface TalosService {
+  id: string;
+  state: string;
+  /** unknown: a service without a health check. */
+  health: 'healthy' | 'unhealthy' | 'unknown';
+  message?: string;
+}
+
+/** A Talos node, as the hub last read it through the Talos API; see /api/v1/talos/nodes. */
+export interface TalosNode {
+  /** The address or name the node is read at. */
+  address: string;
+  hostname: string;
+  /** Why the node could not be read; the other fields are then empty. */
+  error?: string;
+  version: string;
+  arch: string;
+  platform: string;
+  /** Every service running and none failing its health check. */
+  healthy: boolean;
+  services: TalosService[] | null;
+  /** Bytes. */
+  mem_total: number;
+  mem_available: number;
+  load1: number;
+  load5: number;
+  load15: number;
+  boot_time: string;
+  /** The enrolled device this node is (its DaemonSet agent); empty if none. */
+  device_id: string;
+  device_name: string;
+}
+
+export interface TalosNodes {
+  /** standby: a hub of a cluster that does not lead it; only the leader reads Talos. */
+  status: 'not_configured' | 'connecting' | 'ok' | 'unavailable' | 'standby';
+  error?: string;
+  read_at: string | null;
+  nodes: TalosNode[];
+}
+
 export interface BeszelSystems {
   /** standby: a hub of a cluster that does not lead it; only the leader reads Beszel. */
   status: 'not_configured' | 'connecting' | 'ok' | 'unavailable' | 'standby';
@@ -635,6 +677,7 @@ export const api = {
   devices: async () => (await request<{ devices: Device[] }>('GET', '/devices')).devices,
   networkHosts: async () => (await request<{ hosts: NetworkHost[] }>('GET', '/network/hosts')).hosts,
   beszelSystems: () => request<BeszelSystems>('GET', '/beszel/systems'),
+  talosNodes: () => request<TalosNodes>('GET', '/talos/nodes'),
   deviceMetrics: (id: string, range: MetricsRange = '1h') =>
     request<DeviceMetrics>('GET', `/devices/${encodeURIComponent(id)}/metrics?range=${encodeURIComponent(range)}`),
   metricsSparklines: () => request<MetricsSparklines>('GET', '/metrics/sparklines'),
