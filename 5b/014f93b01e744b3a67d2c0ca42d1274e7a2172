@@ -1,6 +1,7 @@
 cmd/hearth/hub.go
   s_26e932fc13ca45::t_b4ba0bb11cdbe8 800-808
   s_26e932fc13ca45::t_1fbb17e2ae51e1 795-796
+  s_26e932fc13ca45::t_eaa67a5b455d5c 439,786-787
 internal/automation/runbook_test.go
   s_26e932fc13ca45::t_0cfbe47dc25a26 134-135,201
 docs/talos.md
