@@ -35,9 +35,12 @@ type ActionDeps struct {
 	Notifier Notifier
 	// Kube carries out the kube_* actions; nil fails them when they run.
 	Kube Kube
+	// Plugins runs plugin_command actions; nil (as in a dry run) leaves each
+	// one dangerous, and denies it when it runs.
+	Plugins Plugins
 }
 
-// Actions returns the exec, restart, webhook, notify and kube_* action kinds,
+// Actions returns the exec, restart, webhook, notify, plugin_command and kube_* action kinds,
 // to add to Builtin's.
 func Actions(d ActionDeps) map[string]Builder[Action] {
 	if d.HTTP == nil {
@@ -48,6 +51,9 @@ func Actions(d ActionDeps) map[string]Builder[Action] {
 		"restart": func(p Params) (Action, error) { return buildRestart(p, d.Agents) },
 		"webhook": func(p Params) (Action, error) { return buildWebhook(p, d.HTTP) },
 		"notify":  func(p Params) (Action, error) { return buildNotify(p, d.Notifier) },
+		"plugin_command": func(p Params) (Action, error) {
+			return buildPluginCommand(p, d.Plugins)
+		},
 	}
 	maps.Copy(out, kubeActions(d.Kube))
 	return out
