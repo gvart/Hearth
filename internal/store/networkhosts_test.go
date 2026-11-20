@@ -326,3 +326,58 @@ func TestNetworkHostsScannedByBeforeItsSchema(t *testing.T) {
 		t.Errorf("List = %+v, %v; want the host, with no scanner", list, err)
 	}
 }
+
+// Each subnet has its own baseline, even within one scan: adding a fresh
+// subnet next to a known one reports nothing new in it, while a new host in
+// the known one is new.
+func TestNetworkHostsBaselinePerSubnet(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	hosts := s.NetworkHosts()
+	t0 := time.UnixMilli(1_700_000_000_000).UTC()
+	lan, vlan := netip.MustParsePrefix("192.168.2.0/24"), netip.MustParsePrefix("192.168.3.0/24")
+	router := NetworkHost{MAC: "00:11:32:00:00:01", IP: "192.168.2.1"}
+	if _, err := hosts.RecordScanFrom(ctx, t0, time.Hour, ScanScope{Subnets: []netip.Prefix{lan}}, []NetworkHost{router}); err != nil {
+		t.Fatal(err)
+	}
+	phone := NetworkHost{MAC: "00:11:32:00:00:02", IP: "192.168.2.30"}
+	tv := NetworkHost{MAC: "00:11:32:00:00:03", IP: "192.168.3.8"}
+	cam := NetworkHost{MAC: "00:11:32:00:00:04", IP: "192.168.3.9"}
+	res, err := hosts.RecordScanFrom(ctx, t0.Add(time.Minute), time.Hour, ScanScope{Subnets: []netip.Prefix{lan, vlan}},
+		[]NetworkHost{router, phone, tv, cam})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.New) != 1 || res.New[0].MAC != phone.MAC {
+		t.Fatalf("new = %+v; want only the phone: the fresh subnet's hosts are its baseline", res.New)
+	}
+}
+
+// A device scan never moves a known host whose stored IP is outside the
+// scan's subnets: an agent cannot take over the router's MAC.
+func TestNetworkHostsDeviceScanStaysInItsSubnets(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	hosts := s.NetworkHosts()
+	t0 := time.UnixMilli(1_700_000_000_000).UTC()
+	router := NetworkHost{MAC: "00:11:32:00:00:01", IP: "192.168.2.1"}
+	if _, err := hosts.RecordScan(ctx, t0, time.Hour, []NetworkHost{router}); err != nil {
+		t.Fatal(err)
+	}
+	vlan := []netip.Prefix{netip.MustParsePrefix("10.0.5.0/24")}
+	fake := NetworkHost{MAC: router.MAC, IP: "10.0.5.1", Hostname: "evil"}
+	cam := NetworkHost{MAC: "00:11:32:00:00:05", IP: "10.0.5.7"}
+	if _, err := hosts.RecordScanFrom(ctx, t0.Add(time.Minute), time.Hour, ScanScope{ScannedBy: "dev-pi", Subnets: vlan},
+		[]NetworkHost{fake, cam}); err != nil {
+		t.Fatal(err)
+	}
+	list, err := hosts.List(ctx)
+	if err != nil || len(list) != 2 {
+		t.Fatalf("List = %+v, %v; want the router and the camera", list, err)
+	}
+	for _, h := range list {
+		if h.MAC == router.MAC && (h.IP != "192.168.2.1" || h.Hostname != "" || h.ScannedBy != "" || !h.LastSeen.Equal(t0)) {
+			t.Errorf("router = %+v; want it untouched by the device's scan", h)
+		}
+	}
+}

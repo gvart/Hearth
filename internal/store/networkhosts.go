@@ -244,9 +244,11 @@ type RecordNetworkScan struct {
 	// ScannedBy is the id of the device whose agent ran the scan; "" for
 	// the hub. Recorded from schema 26.
 	ScannedBy string `json:"scanned_by,omitempty"`
-	// Subnets are the CIDRs the scan swept: the first scan to find hosts in
-	// them is their baseline. Entries without them (written before it was
-	// added) have one baseline: the first scan ever recorded.
+	// Subnets are the CIDRs the scan swept: a host is new only if a scan
+	// found another host in its subnet before (each subnet has its own
+	// baseline). Entries without them (written before it was added) have
+	// one baseline: the first scan ever recorded. A scan by a device never
+	// moves a known host whose stored IP is outside them.
 	Subnets []string `json:"subnets,omitempty"`
 }
 
@@ -264,12 +266,13 @@ func (c RecordNetworkScan) apply(ctx context.Context, tx *sql.Tx) (Result, error
 	withScanner := v >= networkHostScannedBySchema
 	// New, baseline and returned are about scans: what an import stored
 	// (from schema 14) does not count.
-	knownIPs, lastScan := `SELECT ip FROM network_hosts`, `SELECT last_seen, '' FROM network_hosts WHERE mac = ?`
+	knownIPs, lastScan := `SELECT ip FROM network_hosts`, `SELECT last_seen, '', ip FROM network_hosts WHERE mac = ?`
 	if withSources {
 		knownIPs += ` WHERE (',' || sources || ',') LIKE '%,scan,%'`
-		lastScan = `SELECT last_scan, sources FROM network_hosts WHERE mac = ?`
+		lastScan = `SELECT last_scan, sources, ip FROM network_hosts WHERE mac = ?`
 	}
-	baseline, err := c.baseline(ctx, tx, knownIPs)
+	subnets := c.subnets()
+	inBaseline, err := c.baseline(ctx, tx, knownIPs, subnets)
 	if err != nil {
 		return Result{}, err
 	}
@@ -277,13 +280,18 @@ func (c RecordNetworkScan) apply(ctx context.Context, tx *sql.Tx) (Result, error
 	var res Result
 	for _, h := range c.Hosts {
 		var (
-			last    int64
-			sources string
+			last        int64
+			sources, ip string
 		)
-		err := tx.QueryRowContext(ctx, lastScan, h.MAC).Scan(&last, &sources)
+		err := tx.QueryRowContext(ctx, lastScan, h.MAC).Scan(&last, &sources, &ip)
 		isNew := errors.Is(err, sql.ErrNoRows)
 		if err != nil && !isNew {
 			return Result{}, err
+		}
+		if !isNew && c.ScannedBy != "" && len(subnets) > 0 && !within(subnets, ip) {
+			// A device answers for its subnets only: a MAC known elsewhere
+			// (the router's, say) is not its to move.
+			continue
 		}
 		if withSources && !slices.Contains(splitSources(sources), SourceScan) {
 			isNew = true
@@ -333,45 +341,72 @@ func (c RecordNetworkScan) apply(ctx context.Context, tx *sql.Tx) (Result, error
 			row.ScannedBy = c.ScannedBy
 		}
 		switch {
-		case isNew && !baseline:
+		case isNew && !inBaseline(h.IP):
 			res.NewHosts = append(res.NewHosts, row)
 		case !isNew && c.AbsentAfter > 0 && c.At-last >= c.AbsentAfter:
 			res.ReturnedHosts = append(res.ReturnedHosts, row)
 		}
+		res.Count++
 	}
-	res.Count = len(c.Hosts)
 	return res, nil
 }
 
-// baseline reports whether c is the baseline scan of its subnets: no host
-// knownIPs (a query for the addresses of the hosts a scan found) lists is in
-// them. Without subnets it is the baseline when there is no such host at all.
-func (c RecordNetworkScan) baseline(ctx context.Context, tx *sql.Tx, knownIPs string) (bool, error) {
-	var subnets []netip.Prefix
+// subnets are the scan's subnets that parse.
+func (c RecordNetworkScan) subnets() []netip.Prefix {
+	var out []netip.Prefix
 	for _, s := range c.Subnets {
 		if p, err := netip.ParsePrefix(s); err == nil {
-			subnets = append(subnets, p)
+			out = append(out, p.Masked())
 		}
 	}
+	return out
+}
+
+// within reports whether ip lies in one of subnets.
+func within(subnets []netip.Prefix, ip string) bool {
+	a, err := netip.ParseAddr(ip)
+	return err == nil && slices.ContainsFunc(subnets, func(p netip.Prefix) bool { return p.Contains(a) })
+}
+
+// baseline returns whether a host at an IP is in its subnet's baseline: no
+// host knownIPs (a query for the addresses of the hosts a scan found) lists
+// is in the same one of subnets. Without subnets, or for an IP in none of
+// them, it is when there is no such host at all.
+func (c RecordNetworkScan) baseline(ctx context.Context, tx *sql.Tx, knownIPs string, subnets []netip.Prefix) (func(ip string) bool, error) {
 	rows, err := tx.QueryContext(ctx, knownIPs)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	defer rows.Close()
+	anyKnown := false
+	known := map[netip.Prefix]bool{}
 	for rows.Next() {
 		var ip string
 		if err := rows.Scan(&ip); err != nil {
-			return false, err
+			return nil, err
 		}
-		if len(c.Subnets) == 0 {
-			return false, nil
-		}
-		a, err := netip.ParseAddr(ip)
-		if err == nil && slices.ContainsFunc(subnets, func(p netip.Prefix) bool { return p.Contains(a) }) {
-			return false, nil
+		anyKnown = true
+		if a, err := netip.ParseAddr(ip); err == nil {
+			for _, p := range subnets {
+				if p.Contains(a) {
+					known[p] = true
+				}
+			}
 		}
 	}
-	return true, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return func(ip string) bool {
+		if a, err := netip.ParseAddr(ip); err == nil {
+			for _, p := range subnets {
+				if p.Contains(a) {
+					return !known[p]
+				}
+			}
+		}
+		return !anyKnown
+	}, nil
 }
 
 // SetState marks the host with this MAC known, ignored or, with
