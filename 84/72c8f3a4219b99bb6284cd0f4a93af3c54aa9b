@@ -1,0 +1,21 @@
+CLAUDE.md
+  s_26e932fc13ca45::t_0b060af5300819 49
+internal/mqtt/broker_test.go
+  s_26e932fc13ca45::t_c1ec11ed096139 336-339
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8472c8f3a4219b99bb6284cd0f4a93af3c54aa9b",
+  "prompts": {},
+  "sessions": {
+    "s_26e932fc13ca45": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea42b0cd-7455-494b-8071-e63f36b98d4d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
