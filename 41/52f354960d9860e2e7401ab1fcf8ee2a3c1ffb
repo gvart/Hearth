@@ -9,6 +9,8 @@ internal/mqtt/broker_test.go
 internal/mqtt/broker.go
   s_26e932fc13ca45::t_929d423262efcd 17,22-26
   s_26e932fc13ca45::t_4e0cc9425ba03e 27
+site/src/pages.mjs
+  s_26e932fc13ca45::t_4240c1a2b7a33a 11
 ---
 {
   "schema_version": "authorship/3.0.0",
