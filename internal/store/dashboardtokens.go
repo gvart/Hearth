@@ -154,6 +154,7 @@ func (r DashboardTokens) query(ctx context.Context, q string, args ...any) ([]Da
 
 // CreateDashboardToken inserts a dashboard token by its hash.
 type CreateDashboardToken struct {
+	Stamp
 	ID        string `json:"id"`
 	Name      string `json:"name"`
 	Hash      []byte `json:"hash"`
@@ -167,16 +168,17 @@ func (CreateDashboardToken) Op() string { return "create_dashboard_token" }
 
 func (CreateDashboardToken) minSchema() int64 { return dashboardTokensSchema }
 
-func (c CreateDashboardToken) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	_, err := tx.ExecContext(ctx,
-		`INSERT INTO dashboard_tokens (id, name, hash, created_at, expires_at) VALUES (?, ?, ?, ?, ?)`,
-		c.ID, c.Name, c.Hash, c.CreatedAt, nullInt(c.ExpiresAt))
-	return Result{}, err
+func (c CreateDashboardToken) apply(ctx context.Context, w *writer) (Result, error) {
+	return Result{}, w.insert(ctx, "dashboard_tokens", row{
+		"id": c.ID, "name": c.Name, "hash": c.Hash, "created_at": c.CreatedAt,
+		"expires_at": optInt(c.ExpiresAt), "revoked_at": nil,
+	})
 }
 
 // RevokeDashboardToken revokes a dashboard token in use; ErrNotFound if
 // there is none by that ID.
 type RevokeDashboardToken struct {
+	Stamp
 	ID string `json:"id"`
 	At int64  `json:"at"`
 }
@@ -186,8 +188,6 @@ func (RevokeDashboardToken) Op() string { return "revoke_dashboard_token" }
 
 func (RevokeDashboardToken) minSchema() int64 { return dashboardTokensSchema }
 
-func (c RevokeDashboardToken) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	res, err := tx.ExecContext(ctx,
-		`UPDATE dashboard_tokens SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL`, c.At, c.ID)
-	return oneRow(res, err)
+func (c RevokeDashboardToken) apply(ctx context.Context, w *writer) (Result, error) {
+	return revokeOne(ctx, w, "dashboard_tokens", `id = ?`, c.At, c.ID)
 }

@@ -4,12 +4,15 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
 	"slices"
 	"time"
+
+	"github.com/gvart/hearth/internal/hlc"
 )
 
 // AuditEntry is one row of the append-only audit log.
@@ -65,6 +68,46 @@ const auditKeySchema = 20
 // statements below are whole constants, one per schema, so none is built at
 // run time.
 
+// auditMode is how a query reads the log, by schema: operation ids from the
+// detail (before auditOpSchema) or from the indexed columns, and in the
+// order of the local id or, from VersionedSchema, of the global id (_hlc,
+// _origin, _seq).
+type auditMode int
+
+const (
+	auditByDetail auditMode = iota
+	auditByColumn
+	auditByVersion
+)
+
+// auditModeAt is the mode of a database at schema v.
+func auditModeAt(v int64) auditMode {
+	switch {
+	case v >= VersionedSchema:
+		return auditByVersion
+	case v >= auditOpSchema:
+		return auditByColumn
+	}
+	return auditByDetail
+}
+
+// auditPageVersionSQL is auditPageIndexedSQL in the order of the global id:
+// the cursor ?8 is the local id of the last entry of the page before.
+const auditPageVersionSQL = `
+	SELECT id, ts, actor_kind, actor_id, action, target, decision, result, detail,
+	       coalesce(audit_op, '')
+	FROM audit_log
+	WHERE +audit_outcome_of IS NULL
+	  AND (?1 = '' OR actor_kind = ?1)
+	  AND (?2 = '' OR instr(actor_id, ?2) > 0)
+	  AND (?3 = '[]' OR action IN (SELECT value FROM json_each(?3)))
+	  AND (?4 = '[]' OR target IN (SELECT value FROM json_each(?4)))
+	  AND (?5 = '' OR decision = ?5)
+	  AND (?6 = 0 OR ts >= ?6)
+	  AND (?7 = 0 OR ts < ?7)
+	  AND (?8 = 0 OR (_hlc, _origin, _seq) < (SELECT _hlc, _origin, _seq FROM audit_log WHERE id = ?8))
+	ORDER BY _hlc DESC, _origin DESC, _seq DESC LIMIT ?9`
+
 // auditPageIndexedSQL and auditPageDetailSQL select a page of entries and the
 // operation each starts. The + before the outcome column makes SQLite scan by
 // id and stop at the limit, not walk the index, which holds nearly every row
@@ -110,6 +153,14 @@ const auditFoldDetailSQL = `
 	SELECT CASE WHEN json_valid(detail) THEN json_extract(detail, '$.audit_outcome_of') END, result, detail
 	FROM audit_log
 	WHERE id > ?1 AND CASE WHEN json_valid(detail) THEN json_extract(detail, '$.audit_outcome_of') END IN (SELECT value FROM json_each(?2))`
+
+// auditFoldVersionSQL is auditFoldIndexedSQL after the entry with local id ?1
+// in the order of the global id.
+const auditFoldVersionSQL = `
+	SELECT audit_outcome_of, result, detail
+	FROM audit_log
+	WHERE audit_outcome_of IN (SELECT value FROM json_each(?2))
+	  AND (_hlc, _origin, _seq) > (SELECT _hlc, _origin, _seq FROM audit_log WHERE id = ?1)`
 
 // AuditDetailTooDeep reports whether the valid JSON document detail nests
 // deeper than Audit.Append accepts.
@@ -216,12 +267,11 @@ func (r Audit) Query(ctx context.Context, f AuditFilter, limit int) ([]AuditEntr
 	if err != nil {
 		return nil, fmt.Errorf("list audit: %w", err)
 	}
-	return r.query(ctx, f, limit, v >= auditOpSchema)
+	return r.query(ctx, f, limit, auditModeAt(v))
 }
 
-// query is Query reading operation ids from the indexed columns, or from the
-// detail JSON when indexed is false.
-func (r Audit) query(ctx context.Context, f AuditFilter, limit int, indexed bool) ([]AuditEntry, error) {
+// query is Query reading the log in mode.
+func (r Audit) query(ctx context.Context, f AuditFilter, limit int, mode auditMode) ([]AuditEntry, error) {
 	if limit <= 0 {
 		return nil, errors.New("list audit: limit must be positive")
 	}
@@ -240,10 +290,9 @@ func (r Audit) query(ctx context.Context, f AuditFilter, limit int, indexed bool
 	if !f.Until.IsZero() {
 		until = toMillis(f.Until)
 	}
-	page := auditPageDetailSQL
-	if indexed {
-		page = auditPageIndexedSQL
-	}
+	page := map[auditMode]string{
+		auditByDetail: auditPageDetailSQL, auditByColumn: auditPageIndexedSQL, auditByVersion: auditPageVersionSQL,
+	}[mode]
 	rows, err := r.s.db.QueryContext(ctx, page,
 		f.ActorKind, f.ActorID, string(actions), string(targets), f.Decision, since, until, f.Before, limit)
 	if err != nil {
@@ -281,7 +330,7 @@ func (r Audit) query(ctx context.Context, f AuditFilter, limit int, indexed bool
 	if len(ops) == 0 {
 		return out, nil
 	}
-	if err := r.foldOutcomes(ctx, out, ops, oldest, indexed); err != nil {
+	if err := r.foldOutcomes(ctx, out, ops, oldest, mode); err != nil {
 		return nil, fmt.Errorf("list audit: %w", err)
 	}
 	return out, nil
@@ -290,15 +339,14 @@ func (r Audit) query(ctx context.Context, f AuditFilter, limit int, indexed bool
 // foldOutcomes gives the entries of out named by ops the result and detail of
 // their outcome entries, all of them newer than the entry with ID oldest, and
 // removes the keys that tie the two from every detail.
-func (r Audit) foldOutcomes(ctx context.Context, out []AuditEntry, ops map[string]int, oldest int64, indexed bool) error {
+func (r Audit) foldOutcomes(ctx context.Context, out []AuditEntry, ops map[string]int, oldest int64, mode auditMode) error {
 	ids, err := json.Marshal(slices.Collect(maps.Keys(ops)))
 	if err != nil {
 		return err
 	}
-	fold := auditFoldDetailSQL
-	if indexed {
-		fold = auditFoldIndexedSQL
-	}
+	fold := map[auditMode]string{
+		auditByDetail: auditFoldDetailSQL, auditByColumn: auditFoldIndexedSQL, auditByVersion: auditFoldVersionSQL,
+	}[mode]
 	rows, err := r.s.db.QueryContext(ctx, fold, oldest, string(ids))
 	if err != nil {
 		return err
@@ -341,4 +389,110 @@ func nonNilStrings(s []string) []string {
 		return []string{}
 	}
 	return s
+}
+
+// errAppendOnly refuses a change to an audit entry.
+var errAppendOnly = errors.New("audit_log is append-only")
+
+// The statements that append an entry, by schema. The operation columns come
+// from the detail (see above), selected from a one-row subquery to be read by
+// both the column and the expressions: from auditOpSchema, and the key from
+// auditKeySchema. Parameters: ts to result, then (auditInsertVersionSQL) the
+// global id _hlc, _origin, _seq, then the detail, then the key.
+const (
+	auditInsertSQL = `
+		INSERT INTO audit_log (ts, actor_kind, actor_id, action, target, decision, result, detail)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	auditInsertIndexedSQL = `
+		INSERT INTO audit_log (ts, actor_kind, actor_id, action, target, decision, result, detail, audit_op, audit_outcome_of)
+		SELECT ?, ?, ?, ?, ?, ?, ?, detail,
+		       CASE WHEN json_valid(detail) THEN json_extract(detail, '$.audit_op') END,
+		       CASE WHEN json_valid(detail) THEN json_extract(detail, '$.audit_outcome_of') END
+		FROM (SELECT ? AS detail)`
+	auditInsertKeyedSQL = `
+		INSERT INTO audit_log (ts, actor_kind, actor_id, action, target, decision, result, detail, audit_op, audit_outcome_of, audit_key)
+		SELECT ?, ?, ?, ?, ?, ?, ?, detail,
+		       CASE WHEN json_valid(detail) THEN json_extract(detail, '$.audit_op') END,
+		       CASE WHEN json_valid(detail) THEN json_extract(detail, '$.audit_outcome_of') END,
+		       nullif(k, '')
+		FROM (SELECT ? AS detail, ? AS k)`
+	auditInsertVersionSQL = `
+		INSERT INTO audit_log (ts, actor_kind, actor_id, action, target, decision, result, _hlc, _origin, _seq,
+		                       detail, audit_op, audit_outcome_of, audit_key)
+		SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, detail,
+		       CASE WHEN json_valid(detail) THEN json_extract(detail, '$.audit_op') END,
+		       CASE WHEN json_valid(detail) THEN json_extract(detail, '$.audit_outcome_of') END,
+		       nullif(k, '')
+		FROM (SELECT ? AS detail, ? AS k)`
+)
+
+// appendAudit appends entry c with key (none if empty) and returns its local
+// id. From VersionedSchema its global id is the command's stamp, or the
+// newest entry's HLC plus one if that is not newer: the log lists in the
+// order entries were applied, as it did by id.
+func (w *writer) appendAudit(ctx context.Context, c AppendAudit, key string) (int64, error) {
+	cols := []any{c.TS, c.ActorKind, c.ActorID, c.Action, c.Target, c.Decision, c.Result}
+	if !w.versioned {
+		q, args := auditInsertSQL, append(cols, c.Detail)
+		switch {
+		case key != "":
+			q, args = auditInsertKeyedSQL, append(args, key)
+		case w.schema >= auditOpSchema:
+			q = auditInsertIndexedSQL
+		}
+		res, err := w.tx.ExecContext(ctx, q, args...)
+		if err != nil {
+			return 0, err
+		}
+		return res.LastInsertId()
+	}
+	var top int64
+	if err := w.tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(_hlc), 0) FROM audit_log`).Scan(&top); err != nil {
+		return 0, err
+	}
+	m := Mutation{
+		Table: auditTable, HLC: max(w.stamp.HLC, hlc.Timestamp(top)+1), Origin: w.stamp.Origin, //nolint:gosec // _hlc is never negative
+		Row: map[string]any{
+			"ts": c.TS, "actor_kind": c.ActorKind, "actor_id": c.ActorID, "action": c.Action, "target": c.Target,
+			"decision": c.Decision, "result": c.Result, "detail": c.Detail, "audit_key": optString(key),
+		},
+	}
+	id, err := insertAudit(ctx, w.tx, m)
+	if err != nil {
+		return 0, err
+	}
+	w.muts = append(w.muts, m)
+	return id, nil
+}
+
+// insertAudit appends the entry of m and returns its local id.
+func insertAudit(ctx context.Context, tx *sql.Tx, m Mutation) (int64, error) {
+	r := row(m.Row)
+	key := ""
+	if !r.isNull("audit_key") {
+		key = r.str("audit_key")
+	}
+	res, err := tx.ExecContext(ctx, auditInsertVersionSQL,
+		r["ts"], r["actor_kind"], r["actor_id"], r["action"], r["target"], r["decision"], r["result"],
+		int64(m.HLC), m.Origin, m.Seq, r["detail"], key) //nolint:gosec // an HLC fits in 63 bits
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+// mergeAudit appends the entry of m unless the log has it: an entry with its
+// global id, or with its key. An entry is never changed or removed.
+func mergeAudit(ctx context.Context, tx *sql.Tx, m Mutation) error {
+	var exists bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM audit_log WHERE _hlc = ? AND _origin = ? AND _seq = ?)
+		OR EXISTS (SELECT 1 FROM audit_log WHERE audit_key = ?)`,
+		int64(m.HLC), m.Origin, m.Seq, m.Row["audit_key"]).Scan(&exists); err != nil { //nolint:gosec // an HLC fits in 63 bits
+		return err
+	}
+	if exists {
+		return nil
+	}
+	_, err := insertAudit(ctx, tx, m)
+	return err
 }

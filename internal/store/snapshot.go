@@ -89,6 +89,9 @@ func (s *Store) Restore(ctx context.Context, r io.Reader) error {
 	if err != nil {
 		return fmt.Errorf("restore: %w", err)
 	}
+	if err := s.observeStored(ctx); err != nil {
+		return fmt.Errorf("restore: %w", err)
+	}
 	return nil
 }
 

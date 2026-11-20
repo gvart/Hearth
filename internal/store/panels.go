@@ -58,12 +58,6 @@ func (r Panels) requireSchema(ctx context.Context) error {
 	return nil
 }
 
-// hasSchema reports whether the database has the panel tables.
-func (r Panels) hasSchema(ctx context.Context) (bool, error) {
-	v, err := schemaVersion(ctx, r.s.db)
-	return v >= panelsSchema, err
-}
-
 // Create stores a new panel. Before schema 22 it fails with ErrSchemaTooOld.
 func (r Panels) Create(ctx context.Context, p Panel) error {
 	if p.ID == "" || p.Name == "" || p.Widgets == "" {
@@ -109,7 +103,7 @@ func (r Panels) Delete(ctx context.Context, id string) error {
 
 // Get returns panel id, or ErrNotFound.
 func (r Panels) Get(ctx context.Context, id string) (Panel, error) {
-	out, err := r.query(ctx, panelSelect+` WHERE id = ?`, id)
+	out, err := r.query(ctx, `id = ?`, ``, id)
 	if err != nil {
 		return Panel{}, fmt.Errorf("get panel %s: %w", id, err)
 	}
@@ -121,19 +115,23 @@ func (r Panels) Get(ctx context.Context, id string) (Panel, error) {
 
 // List returns every panel, by name. Before schema 22 there are none.
 func (r Panels) List(ctx context.Context) ([]Panel, error) {
-	out, err := r.query(ctx, panelSelect+` ORDER BY name, id`)
+	out, err := r.query(ctx, `TRUE`, `ORDER BY name, id`)
 	if err != nil {
 		return nil, fmt.Errorf("list panels: %w", err)
 	}
 	return out, nil
 }
 
-const panelSelect = `SELECT id, name, widgets, created_at, updated_at FROM panels`
-
-func (r Panels) query(ctx context.Context, q string, args ...any) ([]Panel, error) {
-	if ok, err := r.hasSchema(ctx); err != nil || !ok {
+// query returns the live panels matching where, then tail (an ORDER BY
+// clause). The clauses are constants of this file's callers; values are
+// bound.
+func (r Panels) query(ctx context.Context, where, tail string, args ...any) ([]Panel, error) {
+	v, err := schemaVersion(ctx, r.s.db)
+	if err != nil || v < panelsSchema {
 		return nil, err
 	}
+	q := `SELECT id, name, widgets, created_at, updated_at FROM panels WHERE (` + where + `)` + //nolint:gosec // see above
+		liveOnly(v >= VersionedSchema) + ` ` + tail
 	rows, err := r.s.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
@@ -190,7 +188,7 @@ func (r Panels) RevokeLink(ctx context.Context, panelID, id string, at time.Time
 // Links returns every share link, revoked and expired ones included, oldest
 // first. Before schema 22 there are none.
 func (r Panels) Links(ctx context.Context) ([]PanelLink, error) {
-	out, err := r.queryLinks(ctx, panelLinkSelect+` ORDER BY created_at, id`)
+	out, err := r.queryLinks(ctx, `TRUE`, `ORDER BY created_at, id`)
 	if err != nil {
 		return nil, fmt.Errorf("list panel links: %w", err)
 	}
@@ -203,7 +201,7 @@ func (r Panels) Links(ctx context.Context) ([]PanelLink, error) {
 // for an expired one.
 func (r Panels) CheckLink(ctx context.Context, secret string, now time.Time) (Panel, PanelLink, error) {
 	h := hashSecret(secret)
-	links, err := r.queryLinks(ctx, panelLinkSelect+` WHERE hash = ?`, h[:])
+	links, err := r.queryLinks(ctx, `hash = ?`, ``, h[:])
 	if err != nil {
 		return Panel{}, PanelLink{}, fmt.Errorf("check panel link: %w", err)
 	}
@@ -224,12 +222,15 @@ func (r Panels) CheckLink(ctx context.Context, secret string, now time.Time) (Pa
 	return p, l, nil
 }
 
-const panelLinkSelect = `SELECT id, panel_id, created_at, expires_at, revoked_at FROM panel_links`
-
-func (r Panels) queryLinks(ctx context.Context, q string, args ...any) ([]PanelLink, error) {
-	if ok, err := r.hasSchema(ctx); err != nil || !ok {
+// queryLinks returns the live share links matching where, then tail, as
+// query does.
+func (r Panels) queryLinks(ctx context.Context, where, tail string, args ...any) ([]PanelLink, error) {
+	v, err := schemaVersion(ctx, r.s.db)
+	if err != nil || v < panelsSchema {
 		return nil, err
 	}
+	q := `SELECT id, panel_id, created_at, expires_at, revoked_at FROM panel_links WHERE (` + where + `)` + //nolint:gosec // see query
+		liveOnly(v >= VersionedSchema) + ` ` + tail
 	rows, err := r.s.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
@@ -259,6 +260,7 @@ func (r Panels) queryLinks(ctx context.Context, q string, args ...any) ([]PanelL
 
 // CreatePanel inserts a panel; its widgets are the JSON the hub validated.
 type CreatePanel struct {
+	Stamp
 	ID      string `json:"id"`
 	Name    string `json:"name"`
 	Widgets string `json:"widgets"`
@@ -270,16 +272,16 @@ func (CreatePanel) Op() string { return "create_panel" }
 
 func (CreatePanel) minSchema() int64 { return panelsSchema }
 
-func (c CreatePanel) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	_, err := tx.ExecContext(ctx,
-		`INSERT INTO panels (id, name, widgets, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
-		c.ID, c.Name, c.Widgets, c.At, c.At)
-	return Result{}, err
+func (c CreatePanel) apply(ctx context.Context, w *writer) (Result, error) {
+	return Result{}, w.insert(ctx, "panels", row{
+		"id": c.ID, "name": c.Name, "widgets": c.Widgets, "created_at": c.At, "updated_at": c.At,
+	})
 }
 
 // UpdatePanel replaces a panel's name and widgets; ErrNotFound if there is
 // no such panel.
 type UpdatePanel struct {
+	Stamp
 	ID      string `json:"id"`
 	Name    string `json:"name"`
 	Widgets string `json:"widgets"`
@@ -291,15 +293,22 @@ func (UpdatePanel) Op() string { return "update_panel" }
 
 func (UpdatePanel) minSchema() int64 { return panelsSchema }
 
-func (c UpdatePanel) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	res, err := tx.ExecContext(ctx, `UPDATE panels SET name = ?, widgets = ?, updated_at = ? WHERE id = ?`,
-		c.Name, c.Widgets, c.At, c.ID)
-	return oneRow(res, err)
+func (c UpdatePanel) apply(ctx context.Context, w *writer) (Result, error) {
+	r, err := w.get(ctx, "panels", c.ID)
+	if err != nil {
+		return Result{}, err
+	}
+	if r == nil {
+		return Result{}, ErrNotFound
+	}
+	r["name"], r["widgets"], r["updated_at"] = c.Name, c.Widgets, c.At
+	return Result{Count: 1}, w.put(ctx, "panels", r)
 }
 
 // DeletePanel deletes a panel and its share links; ErrNotFound if there is
 // no such panel.
 type DeletePanel struct {
+	Stamp
 	ID string `json:"id"`
 }
 
@@ -308,19 +317,19 @@ func (DeletePanel) Op() string { return "delete_panel" }
 
 func (DeletePanel) minSchema() int64 { return panelsSchema }
 
-func (c DeletePanel) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
+func (c DeletePanel) apply(ctx context.Context, w *writer) (Result, error) {
 	// The links go first, so the result does not depend on foreign keys
 	// being enforced.
-	if _, err := tx.ExecContext(ctx, `DELETE FROM panel_links WHERE panel_id = ?`, c.ID); err != nil {
+	if err := deleteWhere(ctx, w, "panel_links", `panel_id = ?`, c.ID); err != nil {
 		return Result{}, err
 	}
-	res, err := tx.ExecContext(ctx, `DELETE FROM panels WHERE id = ?`, c.ID)
-	return oneRow(res, err)
+	return deleteRow(ctx, w, "panels", c.ID)
 }
 
 // CreatePanelLink inserts a share link by its hash; ErrNotFound if there is
 // no such panel.
 type CreatePanelLink struct {
+	Stamp
 	ID        string `json:"id"`
 	PanelID   string `json:"panel_id"`
 	Hash      []byte `json:"hash"`
@@ -334,23 +343,24 @@ func (CreatePanelLink) Op() string { return "create_panel_link" }
 
 func (CreatePanelLink) minSchema() int64 { return panelsSchema }
 
-func (c CreatePanelLink) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	var exists bool
-	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM panels WHERE id = ?)`, c.PanelID).Scan(&exists); err != nil {
+func (c CreatePanelLink) apply(ctx context.Context, w *writer) (Result, error) {
+	p, err := w.get(ctx, "panels", c.PanelID)
+	if err != nil {
 		return Result{}, err
 	}
-	if !exists {
+	if p == nil {
 		return Result{}, ErrNotFound
 	}
-	_, err := tx.ExecContext(ctx,
-		`INSERT INTO panel_links (id, panel_id, hash, created_at, expires_at) VALUES (?, ?, ?, ?, ?)`,
-		c.ID, c.PanelID, c.Hash, c.CreatedAt, nullInt(c.ExpiresAt))
-	return Result{}, err
+	return Result{}, w.insert(ctx, "panel_links", row{
+		"id": c.ID, "panel_id": c.PanelID, "hash": c.Hash, "created_at": c.CreatedAt,
+		"expires_at": optInt(c.ExpiresAt), "revoked_at": nil,
+	})
 }
 
 // RevokePanelLink revokes a panel's share link in use; ErrNotFound if the
 // panel has no such link in use.
 type RevokePanelLink struct {
+	Stamp
 	PanelID string `json:"panel_id"`
 	ID      string `json:"id"`
 	At      int64  `json:"at"`
@@ -361,25 +371,6 @@ func (RevokePanelLink) Op() string { return "revoke_panel_link" }
 
 func (RevokePanelLink) minSchema() int64 { return panelsSchema }
 
-func (c RevokePanelLink) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	res, err := tx.ExecContext(ctx,
-		`UPDATE panel_links SET revoked_at = ? WHERE id = ? AND panel_id = ? AND revoked_at IS NULL`,
-		c.At, c.ID, c.PanelID)
-	return oneRow(res, err)
-}
-
-// oneRow is the result of a write that must change one row: ErrNotFound if
-// it changed none.
-func oneRow(res sql.Result, err error) (Result, error) {
-	if err != nil {
-		return Result{}, err
-	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return Result{}, err
-	}
-	if n == 0 {
-		return Result{}, ErrNotFound
-	}
-	return Result{Count: int(n)}, nil
+func (c RevokePanelLink) apply(ctx context.Context, w *writer) (Result, error) {
+	return revokeOne(ctx, w, "panel_links", `id = ? AND panel_id = ?`, c.At, c.ID, c.PanelID)
 }

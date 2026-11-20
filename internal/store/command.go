@@ -9,15 +9,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 )
 
 // Command is a typed, serializable description of one store write. It carries
-// every non-deterministic input (timestamps, hashes, encoded JSON), so applying
-// the same sequence of commands to the same starting state yields the same
-// rows on every node. Commands are built by the repository methods; the set is
-// closed to this package.
+// every non-deterministic input (timestamps, hashes, encoded JSON, and the
+// Stamp that versions its rows), so applying the same sequence of commands to
+// the same starting state yields the same rows on every node. Commands are
+// built by the repository methods; the set is closed to this package.
 //
 // Timestamps are unix milliseconds (UTC), matching the schema. JSON documents
 // (facts, labels, detail) are carried as strings so they are stored byte for
@@ -26,8 +25,9 @@ import (
 type Command interface {
 	// Op is the command's stable name in its encoded form.
 	Op() string
-	// apply executes the command inside tx.
-	apply(ctx context.Context, tx *sql.Tx) (Result, error)
+	// apply executes the command: it reads rows and writes the rows it
+	// changes, whole, through w (see version.go).
+	apply(ctx context.Context, w *writer) (Result, error)
 }
 
 // Result is what applying a Command returns. Each command fills only the
@@ -60,6 +60,7 @@ type Result struct {
 
 // UpsertDevice inserts a device or replaces every field but first_seen.
 type UpsertDevice struct {
+	Stamp
 	ID        string `json:"id"`
 	Name      string `json:"name"`
 	Hostname  string `json:"hostname"`
@@ -77,22 +78,24 @@ type UpsertDevice struct {
 // Op implements Command.
 func (UpsertDevice) Op() string { return "upsert_device" }
 
-func (c UpsertDevice) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	_, err := tx.ExecContext(ctx, `
-		INSERT INTO devices (id, name, hostname, os, arch, facts, labels, first_seen, last_seen, status, boot_time)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT (id) DO UPDATE SET
-			name = excluded.name, hostname = excluded.hostname, os = excluded.os,
-			arch = excluded.arch, facts = excluded.facts, labels = excluded.labels,
-			last_seen = excluded.last_seen, status = excluded.status, boot_time = excluded.boot_time`,
-		c.ID, c.Name, c.Hostname, c.OS, c.Arch, c.Facts, c.Labels,
-		c.FirstSeen, c.LastSeen, c.Status, nullInt(c.BootTime))
-	return Result{}, err
+func (c UpsertDevice) apply(ctx context.Context, w *writer) (Result, error) {
+	r, err := w.get(ctx, "devices", c.ID)
+	if err != nil {
+		return Result{}, err
+	}
+	if r == nil {
+		r = row{"id": c.ID, "first_seen": c.FirstSeen}
+	}
+	r["name"], r["hostname"], r["os"], r["arch"] = c.Name, c.Hostname, c.OS, c.Arch
+	r["facts"], r["labels"], r["last_seen"], r["status"] = c.Facts, c.Labels, c.LastSeen, c.Status
+	r["boot_time"] = optInt(c.BootTime)
+	return Result{}, w.put(ctx, "devices", r)
 }
 
 // ReportFacts records facts reported by a device and marks it online.
 // Result: Device, PrevStatus.
 type ReportFacts struct {
+	Stamp
 	ID       string `json:"id"`
 	Hostname string `json:"hostname"`
 	OS       string `json:"os"`
@@ -104,15 +107,17 @@ type ReportFacts struct {
 // Op implements Command.
 func (ReportFacts) Op() string { return "report_facts" }
 
-func (c ReportFacts) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	return updateDevice(ctx, tx, c.ID,
-		`hostname = ?, os = ?, arch = ?, facts = ?, last_seen = ?, status = '`+StatusOnline+`'`,
-		c.Hostname, c.OS, c.Arch, c.Facts, c.Now)
+func (c ReportFacts) apply(ctx context.Context, w *writer) (Result, error) {
+	return updateDevice(ctx, w, c.ID, func(r row) {
+		r["hostname"], r["os"], r["arch"], r["facts"] = c.Hostname, c.OS, c.Arch, c.Facts
+		r["last_seen"], r["status"] = c.Now, StatusOnline
+	})
 }
 
 // MarkSeen sets a device's last_seen and marks it online.
 // Result: Device, PrevStatus.
 type MarkSeen struct {
+	Stamp
 	ID  string `json:"id"`
 	Now int64  `json:"now"`
 }
@@ -120,33 +125,44 @@ type MarkSeen struct {
 // Op implements Command.
 func (MarkSeen) Op() string { return "mark_seen" }
 
-func (c MarkSeen) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	return updateDevice(ctx, tx, c.ID, `last_seen = ?, status = '`+StatusOnline+`'`, c.Now)
+func (c MarkSeen) apply(ctx context.Context, w *writer) (Result, error) {
+	return updateDevice(ctx, w, c.ID, func(r row) {
+		r["last_seen"], r["status"] = c.Now, StatusOnline
+	})
 }
 
 // updateDevice applies set to device id and returns the updated row and the
 // status it had before, or ErrNotFound.
-func updateDevice(ctx context.Context, tx *sql.Tx, id, set string, args ...any) (Result, error) {
-	var prev string
-	err := tx.QueryRowContext(ctx, `SELECT status FROM devices WHERE id = ?`, id).Scan(&prev)
-	if errors.Is(err, sql.ErrNoRows) {
-		return Result{}, ErrNotFound
-	}
+func updateDevice(ctx context.Context, w *writer, id string, set func(r row)) (Result, error) {
+	r, err := w.get(ctx, "devices", id)
 	if err != nil {
 		return Result{}, err
 	}
-	// set is a constant from this file's callers; values are bound parameters.
-	row := tx.QueryRowContext(ctx, `UPDATE devices SET `+set+` WHERE id = ? RETURNING `+deviceColumns, //nolint:gosec // see above
-		append(args, id)...)
-	d, err := scanDevice(row)
+	if r == nil {
+		return Result{}, ErrNotFound
+	}
+	prev := r.str("status")
+	set(r)
+	if err := w.put(ctx, "devices", r); err != nil {
+		return Result{}, err
+	}
+	d, err := deviceOf(r)
 	if err != nil {
 		return Result{}, err
 	}
 	return Result{Device: d, PrevStatus: prev}, nil
 }
 
+// deviceOf decodes a devices row.
+func deviceOf(r row) (Device, error) {
+	return scanDevice(r.scanner(deviceColumnList...))
+}
+
+var deviceColumnList = strings.Split(deviceColumns, ", ")
+
 // SetBootTime sets or clears a device's boot time. Result: Device.
 type SetBootTime struct {
+	Stamp
 	ID string `json:"id"`
 	// BootTime is nil to clear it.
 	BootTime *int64 `json:"boot_time,omitempty"`
@@ -155,49 +171,44 @@ type SetBootTime struct {
 // Op implements Command.
 func (SetBootTime) Op() string { return "set_boot_time" }
 
-func (c SetBootTime) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	row := tx.QueryRowContext(ctx, `UPDATE devices SET boot_time = ? WHERE id = ? RETURNING `+deviceColumns,
-		nullInt(c.BootTime), c.ID)
-	d, err := scanDevice(row)
-	if errors.Is(err, sql.ErrNoRows) {
-		return Result{}, ErrNotFound
-	}
-	if err != nil {
-		return Result{}, err
-	}
-	return Result{Device: d}, nil
+func (c SetBootTime) apply(ctx context.Context, w *writer) (Result, error) {
+	res, err := updateDevice(ctx, w, c.ID, func(r row) { r["boot_time"] = optInt(c.BootTime) })
+	res.PrevStatus = ""
+	return res, err
 }
 
 // MarkOffline marks every online device last seen before Cutoff as offline.
 // Result: Devices.
 type MarkOffline struct {
+	Stamp
 	Cutoff int64 `json:"cutoff"`
 }
 
 // Op implements Command.
 func (MarkOffline) Op() string { return "mark_offline" }
 
-func (c MarkOffline) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	rows, err := tx.QueryContext(ctx, `
-		UPDATE devices SET status = '`+StatusOffline+`'
-		WHERE status = '`+StatusOnline+`' AND last_seen < ?
-		RETURNING `+deviceColumns, c.Cutoff)
+func (c MarkOffline) apply(ctx context.Context, w *writer) (Result, error) {
+	rows, err := w.query(ctx, "devices", `status = '`+StatusOnline+`' AND last_seen < ?`, "id", c.Cutoff)
 	if err != nil {
 		return Result{}, err
 	}
-	defer rows.Close()
+	return markOffline(ctx, w, rows)
+}
+
+// markOffline marks the devices rows offline and returns them, in order.
+func markOffline(ctx context.Context, w *writer, rows []row) (Result, error) {
 	var out []Device
-	for rows.Next() {
-		d, err := scanDevice(rows)
+	for _, r := range rows {
+		r["status"] = StatusOffline
+		if err := w.put(ctx, "devices", r); err != nil {
+			return Result{}, err
+		}
+		d, err := deviceOf(r)
 		if err != nil {
 			return Result{}, err
 		}
 		out = append(out, d)
 	}
-	if err := rows.Err(); err != nil {
-		return Result{}, err
-	}
-	slices.SortFunc(out, func(a, b Device) int { return strings.Compare(a.ID, b.ID) })
 	return Result{Devices: out}, nil
 }
 
@@ -214,25 +225,28 @@ type Seen struct {
 // go through MarkSeen and MarkDevicesOffline. Unknown devices are skipped.
 // Result: Count, the number of rows changed.
 type MarkSeenBatch struct {
+	Stamp
 	Seen []Seen `json:"seen"`
 }
 
 // Op implements Command.
 func (MarkSeenBatch) Op() string { return "mark_seen_batch" }
 
-func (c MarkSeenBatch) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
+func (c MarkSeenBatch) apply(ctx context.Context, w *writer) (Result, error) {
 	n := 0
 	for _, s := range c.Seen {
-		res, err := tx.ExecContext(ctx,
-			`UPDATE devices SET last_seen = ? WHERE id = ? AND last_seen < ?`, s.LastSeen, s.ID, s.LastSeen)
+		r, err := w.get(ctx, "devices", s.ID)
 		if err != nil {
 			return Result{}, err
 		}
-		k, err := res.RowsAffected()
-		if err != nil {
+		if r == nil || r.int("last_seen") >= s.LastSeen {
+			continue
+		}
+		r["last_seen"] = s.LastSeen
+		if err := w.put(ctx, "devices", r); err != nil {
 			return Result{}, err
 		}
-		n += int(k)
+		n++
 	}
 	return Result{Count: n}, nil
 }
@@ -243,35 +257,36 @@ func (c MarkSeenBatch) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
 // stored last_seen with a cutoff as MarkOffline does. Result: Devices, the
 // rows changed, ordered by ID.
 type MarkDevicesOffline struct {
+	Stamp
 	IDs []string `json:"ids"`
 }
 
 // Op implements Command.
 func (MarkDevicesOffline) Op() string { return "mark_devices_offline" }
 
-func (c MarkDevicesOffline) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	var out []Device
+func (c MarkDevicesOffline) apply(ctx context.Context, w *writer) (Result, error) {
+	ids := map[string]bool{}
 	for _, id := range c.IDs {
-		row := tx.QueryRowContext(ctx, `
-			UPDATE devices SET status = '`+StatusOffline+`'
-			WHERE id = ? AND status = '`+StatusOnline+`'
-			RETURNING `+deviceColumns, id)
-		d, err := scanDevice(row)
-		if errors.Is(err, sql.ErrNoRows) {
-			continue
-		}
+		ids[id] = true
+	}
+	var online []row
+	for id := range ids {
+		r, err := w.get(ctx, "devices", id)
 		if err != nil {
 			return Result{}, err
 		}
-		out = append(out, d)
+		if r != nil && r.str("status") == StatusOnline {
+			online = append(online, r)
+		}
 	}
-	slices.SortFunc(out, func(a, b Device) int { return strings.Compare(a.ID, b.ID) })
-	return Result{Devices: out}, nil
+	sortRows(online, "id")
+	return markOffline(ctx, w, online)
 }
 
 // SetHubURL records the agent-facing URL of a cluster hub. Each hub writes
 // its own row when it starts; agents are sent these URLs to fail over to.
 type SetHubURL struct {
+	Stamp
 	NodeID   string `json:"node_id"`
 	AgentURL string `json:"agent_url"`
 }
@@ -279,11 +294,16 @@ type SetHubURL struct {
 // Op implements Command.
 func (SetHubURL) Op() string { return "set_hub_url" }
 
-func (c SetHubURL) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	_, err := tx.ExecContext(ctx, `
-		INSERT INTO cluster_hubs (node_id, agent_url) VALUES (?, ?)
-		ON CONFLICT (node_id) DO UPDATE SET agent_url = excluded.agent_url`, c.NodeID, c.AgentURL)
-	return Result{}, err
+func (c SetHubURL) apply(ctx context.Context, w *writer) (Result, error) {
+	r, err := w.get(ctx, "cluster_hubs", c.NodeID)
+	if err != nil {
+		return Result{}, err
+	}
+	if r == nil {
+		r = row{"node_id": c.NodeID}
+	}
+	r["agent_url"] = c.AgentURL
+	return Result{}, w.put(ctx, "cluster_hubs", r)
 }
 
 // RecordHubCert records a hub node certificate issued to a cluster node.
@@ -294,6 +314,7 @@ func (c SetHubURL) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
 // serial of the same node recorded without them. Below that schema they are
 // dropped, the same way on every node.
 type RecordHubCert struct {
+	Stamp
 	Serial      string `json:"serial"`
 	NodeID      string `json:"node_id"`
 	Fingerprint string `json:"fingerprint,omitempty"`
@@ -305,31 +326,40 @@ func (RecordHubCert) Op() string { return "record_hub_cert" }
 
 func (RecordHubCert) minSchema() int64 { return hubCertsSchema }
 
-func (c RecordHubCert) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	pinned, err := atSchema(ctx, tx, CertPinsSchema)
+func (c RecordHubCert) apply(ctx context.Context, w *writer) (Result, error) {
+	pinned := w.schema >= CertPinsSchema
+	r, err := w.get(ctx, "hub_certs", c.Serial)
 	if err != nil {
 		return Result{}, err
 	}
-	if !pinned {
-		_, err := tx.ExecContext(ctx,
-			`INSERT INTO hub_certs (serial, node_id) VALUES (?, ?) ON CONFLICT (serial) DO NOTHING`, c.Serial, c.NodeID)
-		return Result{}, err
+	if r == nil {
+		r = row{"serial": c.Serial, "node_id": c.NodeID, "revoked_at": nil}
+		if pinned {
+			r["fingerprint"], r["ca_fp"] = optString(c.Fingerprint), optString(c.CAFP)
+		}
+		return Result{}, w.put(ctx, "hub_certs", r)
 	}
 	// A known serial keeps its node ID and revocation; only a missing
 	// fingerprint is filled in.
-	_, err = tx.ExecContext(ctx, `
-		INSERT INTO hub_certs (serial, node_id, fingerprint, ca_fp) VALUES (?, ?, ?, ?)
-		ON CONFLICT (serial) DO UPDATE SET
-			fingerprint = COALESCE(hub_certs.fingerprint, excluded.fingerprint),
-			ca_fp = COALESCE(hub_certs.ca_fp, excluded.ca_fp)
-		WHERE hub_certs.node_id = excluded.node_id`,
-		c.Serial, c.NodeID, nullString(c.Fingerprint), nullString(c.CAFP))
-	return Result{}, err
+	if !pinned || r.str("node_id") != c.NodeID {
+		return Result{}, nil
+	}
+	changed := false
+	for col, v := range map[string]string{"fingerprint": c.Fingerprint, "ca_fp": c.CAFP} {
+		if r.isNull(col) && v != "" {
+			r[col], changed = v, true
+		}
+	}
+	if !changed {
+		return Result{}, nil
+	}
+	return Result{}, w.put(ctx, "hub_certs", r)
 }
 
 // RevokeHubCerts revokes every unrevoked hub certificate recorded for a node
 // at Now. Result: Count, which is zero when there was nothing to revoke.
 type RevokeHubCerts struct {
+	Stamp
 	NodeID string `json:"node_id"`
 	Now    int64  `json:"now"`
 }
@@ -339,21 +369,30 @@ func (RevokeHubCerts) Op() string { return "revoke_hub_certs" }
 
 func (RevokeHubCerts) minSchema() int64 { return hubCertsSchema }
 
-func (c RevokeHubCerts) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	res, err := tx.ExecContext(ctx,
-		`UPDATE hub_certs SET revoked_at = ? WHERE node_id = ? AND revoked_at IS NULL`, c.Now, c.NodeID)
+func (c RevokeHubCerts) apply(ctx context.Context, w *writer) (Result, error) {
+	n, err := revokeWhere(ctx, w, "hub_certs", `node_id = ?`, c.Now, c.NodeID)
+	return Result{Count: n}, err
+}
+
+// revokeWhere sets revoked_at to now on the unrevoked rows of table matching
+// where, and returns how many it revoked.
+func revokeWhere(ctx context.Context, w *writer, table, where string, now int64, args ...any) (int, error) {
+	rows, err := w.query(ctx, table, where+` AND revoked_at IS NULL`, tables[table].pk[0], args...)
 	if err != nil {
-		return Result{}, err
+		return 0, err
 	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return Result{}, err
+	for _, r := range rows {
+		r["revoked_at"] = now
+		if err := w.put(ctx, table, r); err != nil {
+			return 0, err
+		}
 	}
-	return Result{Count: int(n)}, nil
+	return len(rows), nil
 }
 
 // CreateToken stores a single-use enrollment token by its SHA-256 hash.
 type CreateToken struct {
+	Stamp
 	Hash      []byte `json:"hash"`
 	Labels    string `json:"labels"`
 	ExpiresAt int64  `json:"expires_at"`
@@ -362,10 +401,10 @@ type CreateToken struct {
 // Op implements Command.
 func (CreateToken) Op() string { return "create_token" }
 
-func (c CreateToken) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	_, err := tx.ExecContext(ctx,
-		`INSERT INTO tokens (hash, labels, expires_at) VALUES (?, ?, ?)`, c.Hash, c.Labels, c.ExpiresAt)
-	return Result{}, err
+func (c CreateToken) apply(ctx context.Context, w *writer) (Result, error) {
+	return Result{}, w.insert(ctx, "tokens", row{
+		"hash": c.Hash, "labels": c.Labels, "expires_at": c.ExpiresAt, "used_at": nil,
+	})
 }
 
 // ConsumeToken marks a token used at Now if it is unused and unexpired. The
@@ -373,6 +412,7 @@ func (c CreateToken) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
 // however often the log is replayed. Result: Labels. It fails with
 // ErrNotFound, ErrTokenUsed or ErrTokenExpired.
 type ConsumeToken struct {
+	Stamp
 	Hash []byte `json:"hash"`
 	Now  int64  `json:"now"`
 }
@@ -380,50 +420,40 @@ type ConsumeToken struct {
 // Op implements Command.
 func (ConsumeToken) Op() string { return "consume_token" }
 
-func (c ConsumeToken) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	var labels string
-	err := tx.QueryRowContext(ctx, `
-		UPDATE tokens SET used_at = ?
-		WHERE hash = ? AND used_at IS NULL AND expires_at > ?
-		RETURNING labels`, c.Now, c.Hash, c.Now).Scan(&labels)
-	if errors.Is(err, sql.ErrNoRows) {
-		return Result{}, whyUnusable(ctx, tx, c.Hash, c.Now)
-	}
+func (c ConsumeToken) apply(ctx context.Context, w *writer) (Result, error) {
+	r, err := consume(ctx, w, "tokens", c.Hash, c.Now)
 	if err != nil {
 		return Result{}, err
 	}
 	var out map[string]string
-	if err := json.Unmarshal([]byte(labels), &out); err != nil {
+	if err := json.Unmarshal([]byte(r.str("labels")), &out); err != nil {
 		return Result{}, fmt.Errorf("decode labels: %w", err)
 	}
 	return Result{Labels: out}, nil
 }
 
-// whyUnusable explains a failed ConsumeToken. It only classifies the error;
-// the atomic decision has already been made by the UPDATE.
-func whyUnusable(ctx context.Context, tx *sql.Tx, hash []byte, nowMs int64) error {
-	var (
-		expiresAt int64
-		usedAt    sql.NullInt64
-	)
-	err := tx.QueryRowContext(ctx, `SELECT expires_at, used_at FROM tokens WHERE hash = ?`, hash).
-		Scan(&expiresAt, &usedAt)
+// consume marks the single-use secret with hash in table (tokens,
+// join_tokens or approval_links) used at now, and returns its row. It fails
+// with ErrNotFound, ErrTokenUsed or ErrTokenExpired, in that order.
+func consume(ctx context.Context, w *writer, table string, hash []byte, now int64) (row, error) {
+	r, err := w.get(ctx, table, hash)
 	switch {
-	case errors.Is(err, sql.ErrNoRows):
-		return ErrNotFound
 	case err != nil:
-		return err
-	case usedAt.Valid:
-		return ErrTokenUsed
-	case expiresAt <= nowMs:
-		return ErrTokenExpired
-	default:
-		return errors.New("token not consumed") // unreachable: same transaction as the UPDATE
+		return nil, err
+	case r == nil:
+		return nil, ErrNotFound
+	case !r.isNull("used_at"):
+		return nil, ErrTokenUsed
+	case r.int("expires_at") <= now:
+		return nil, ErrTokenExpired
 	}
+	r["used_at"] = now
+	return r, w.put(ctx, table, r)
 }
 
 // CreateJoinToken stores a single-use cluster join token by its SHA-256 hash.
 type CreateJoinToken struct {
+	Stamp
 	Hash      []byte `json:"hash"`
 	ExpiresAt int64  `json:"expires_at"`
 }
@@ -431,15 +461,15 @@ type CreateJoinToken struct {
 // Op implements Command.
 func (CreateJoinToken) Op() string { return "create_join_token" }
 
-func (c CreateJoinToken) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	_, err := tx.ExecContext(ctx, `INSERT INTO join_tokens (hash, expires_at) VALUES (?, ?)`, c.Hash, c.ExpiresAt)
-	return Result{}, err
+func (c CreateJoinToken) apply(ctx context.Context, w *writer) (Result, error) {
+	return Result{}, w.insert(ctx, "join_tokens", row{"hash": c.Hash, "expires_at": c.ExpiresAt, "used_at": nil})
 }
 
 // ConsumeJoinToken marks a join token used at Now if it is unused and
 // unexpired, deciding inside apply like ConsumeToken. It fails with
 // ErrNotFound, ErrTokenUsed or ErrTokenExpired.
 type ConsumeJoinToken struct {
+	Stamp
 	Hash []byte `json:"hash"`
 	Now  int64  `json:"now"`
 }
@@ -447,36 +477,9 @@ type ConsumeJoinToken struct {
 // Op implements Command.
 func (ConsumeJoinToken) Op() string { return "consume_join_token" }
 
-func (c ConsumeJoinToken) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	res, err := tx.ExecContext(ctx, `
-		UPDATE join_tokens SET used_at = ?
-		WHERE hash = ? AND used_at IS NULL AND expires_at > ?`, c.Now, c.Hash, c.Now)
-	if err != nil {
-		return Result{}, err
-	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return Result{}, err
-	}
-	if n == 1 {
-		return Result{}, nil
-	}
-	var (
-		expiresAt int64
-		usedAt    sql.NullInt64
-	)
-	err = tx.QueryRowContext(ctx, `SELECT expires_at, used_at FROM join_tokens WHERE hash = ?`, c.Hash).
-		Scan(&expiresAt, &usedAt)
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
-		return Result{}, ErrNotFound
-	case err != nil:
-		return Result{}, err
-	case usedAt.Valid:
-		return Result{}, ErrTokenUsed
-	default:
-		return Result{}, ErrTokenExpired
-	}
+func (c ConsumeJoinToken) apply(ctx context.Context, w *writer) (Result, error) {
+	_, err := consume(ctx, w, "join_tokens", c.Hash, c.Now)
+	return Result{}, err
 }
 
 // CreateCert records a certificate issued to a device. From CertPinsSchema it also
@@ -484,6 +487,7 @@ func (c ConsumeJoinToken) apply(ctx context.Context, tx *sql.Tx) (Result, error)
 // issued it (CAFP); below that schema they are dropped, the same way on every
 // node.
 type CreateCert struct {
+	Stamp
 	Serial      string `json:"serial"`
 	DeviceID    string `json:"device_id"`
 	Fingerprint string `json:"fingerprint,omitempty"`
@@ -493,23 +497,18 @@ type CreateCert struct {
 // Op implements Command.
 func (CreateCert) Op() string { return "create_cert" }
 
-func (c CreateCert) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	pinned, err := atSchema(ctx, tx, CertPinsSchema)
-	if err != nil {
-		return Result{}, err
+func (c CreateCert) apply(ctx context.Context, w *writer) (Result, error) {
+	r := row{"serial": c.Serial, "device_id": c.DeviceID, "revoked_at": nil}
+	if w.schema >= CertPinsSchema {
+		r["fingerprint"], r["ca_fp"], r["pin_mismatch_at"] = optString(c.Fingerprint), optString(c.CAFP), nil
 	}
-	if !pinned {
-		_, err := tx.ExecContext(ctx, `INSERT INTO certs (serial, device_id) VALUES (?, ?)`, c.Serial, c.DeviceID)
-		return Result{}, err
-	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO certs (serial, device_id, fingerprint, ca_fp) VALUES (?, ?, ?, ?)`,
-		c.Serial, c.DeviceID, nullString(c.Fingerprint), nullString(c.CAFP))
-	return Result{}, err
+	return Result{}, w.insert(ctx, "certs", r)
 }
 
 // RevokeDevice revokes every unrevoked certificate of a device at Now.
 // Result: Count. It fails with ErrNotFound if the device has no certificates.
 type RevokeDevice struct {
+	Stamp
 	DeviceID string `json:"device_id"`
 	Now      int64  `json:"now"`
 }
@@ -517,33 +516,28 @@ type RevokeDevice struct {
 // Op implements Command.
 func (RevokeDevice) Op() string { return "revoke_device" }
 
-func (c RevokeDevice) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	res, err := tx.ExecContext(ctx,
-		`UPDATE certs SET revoked_at = ? WHERE device_id = ? AND revoked_at IS NULL`, c.Now, c.DeviceID)
-	if err != nil {
-		return Result{}, err
-	}
-	n, err := res.RowsAffected()
+func (c RevokeDevice) apply(ctx context.Context, w *writer) (Result, error) {
+	n, err := revokeWhere(ctx, w, "certs", `device_id = ?`, c.Now, c.DeviceID)
 	if err != nil {
 		return Result{}, err
 	}
 	if n == 0 {
-		var exists bool
-		if err := tx.QueryRowContext(ctx,
-			`SELECT EXISTS (SELECT 1 FROM certs WHERE device_id = ?)`, c.DeviceID).Scan(&exists); err != nil {
+		all, err := w.query(ctx, "certs", `device_id = ?`, "", c.DeviceID)
+		if err != nil {
 			return Result{}, err
 		}
-		if !exists {
+		if len(all) == 0 {
 			return Result{}, ErrNotFound
 		}
 	}
-	return Result{Count: int(n)}, nil
+	return Result{Count: n}, nil
 }
 
 // AppendAudit appends one audit log entry. IDs are assigned in apply order,
 // so every node that applies the same commands holds identical rows.
 // Result: ID.
 type AppendAudit struct {
+	Stamp
 	TS        int64  `json:"ts"`
 	ActorKind string `json:"actor_kind"`
 	ActorID   string `json:"actor_id"`
@@ -557,43 +551,9 @@ type AppendAudit struct {
 // Op implements Command.
 func (AppendAudit) Op() string { return "append_audit" }
 
-// auditInsertSQL is the insert before auditOpSchema; auditInsertIndexedSQL
-// sets the operation columns from the detail, as audit.go describes. The
-// detail is the last parameter, selected from a one-row subquery to be read
-// by both the column and the expressions.
-const (
-	auditInsertSQL = `
-		INSERT INTO audit_log (ts, actor_kind, actor_id, action, target, decision, result, detail)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-	auditInsertIndexedSQL = `
-		INSERT INTO audit_log (ts, actor_kind, actor_id, action, target, decision, result, detail, audit_op, audit_outcome_of)
-		SELECT ?, ?, ?, ?, ?, ?, ?, detail,
-		       CASE WHEN json_valid(detail) THEN json_extract(detail, '$.audit_op') END,
-		       CASE WHEN json_valid(detail) THEN json_extract(detail, '$.audit_outcome_of') END
-		FROM (SELECT ? AS detail)`
-)
-
-func (c AppendAudit) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	// The operation columns come from the detail here, so the command is the
-	// same on every binary. A node still before auditOpSchema has no columns.
-	v, err := schemaVersion(ctx, tx)
-	if err != nil {
-		return Result{}, err
-	}
-	insert := auditInsertSQL
-	if v >= auditOpSchema {
-		insert = auditInsertIndexedSQL
-	}
-	res, err := tx.ExecContext(ctx, insert,
-		c.TS, c.ActorKind, c.ActorID, c.Action, c.Target, c.Decision, c.Result, c.Detail)
-	if err != nil {
-		return Result{}, err
-	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		return Result{}, err
-	}
-	return Result{ID: id}, nil
+func (c AppendAudit) apply(ctx context.Context, w *writer) (Result, error) {
+	id, err := w.appendAudit(ctx, c, "")
+	return Result{ID: id}, err
 }
 
 // AppendAuditOnce is AppendAudit for an entry that may be written more than
@@ -610,59 +570,56 @@ func (AppendAuditOnce) Op() string { return "append_audit_once" }
 
 func (AppendAuditOnce) minSchema() int64 { return auditKeySchema }
 
-// auditInsertKeyedSQL is auditInsertIndexedSQL setting the key too, the last
-// parameter.
-const auditInsertKeyedSQL = `
-	INSERT INTO audit_log (ts, actor_kind, actor_id, action, target, decision, result, detail, audit_op, audit_outcome_of, audit_key)
-	SELECT ?, ?, ?, ?, ?, ?, ?, detail,
-	       CASE WHEN json_valid(detail) THEN json_extract(detail, '$.audit_op') END,
-	       CASE WHEN json_valid(detail) THEN json_extract(detail, '$.audit_outcome_of') END,
-	       nullif(k, '')
-	FROM (SELECT ? AS detail, ? AS k)`
-
-func (c AppendAuditOnce) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
+func (c AppendAuditOnce) apply(ctx context.Context, w *writer) (Result, error) {
 	var id int64
-	err := tx.QueryRowContext(ctx, `SELECT id FROM audit_log WHERE audit_key = ?`, c.Key).Scan(&id)
+	err := w.tx.QueryRowContext(ctx, `SELECT id FROM audit_log WHERE audit_key = ?`, c.Key).Scan(&id)
 	if err == nil {
 		return Result{ID: id}, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return Result{}, err
 	}
-	res, err := tx.ExecContext(ctx, auditInsertKeyedSQL,
-		c.TS, c.ActorKind, c.ActorID, c.Action, c.Target, c.Decision, c.Result, c.Detail, c.Key)
-	if err != nil {
-		return Result{}, err
-	}
-	if id, err = res.LastInsertId(); err != nil {
-		return Result{}, err
-	}
-	return Result{ID: id}, nil
+	id, err = w.appendAudit(ctx, c.AppendAudit, c.Key)
+	return Result{ID: id}, err
 }
 
 // SetPasswordHash sets the admin password hash and ends every session.
 type SetPasswordHash struct {
+	Stamp
 	Hash string `json:"hash"`
 }
 
 // Op implements Command.
 func (SetPasswordHash) Op() string { return "set_password_hash" }
 
-func (c SetPasswordHash) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO admin (id, password_hash) VALUES (1, ?)
-		ON CONFLICT (id) DO UPDATE SET password_hash = excluded.password_hash`, c.Hash); err != nil {
+func (c SetPasswordHash) apply(ctx context.Context, w *writer) (Result, error) {
+	if err := w.put(ctx, "admin", row{"id": int64(1), "password_hash": c.Hash}); err != nil {
 		return Result{}, err
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM sessions`); err != nil {
+	if err := deleteWhere(ctx, w, "sessions", `1 = 1`); err != nil {
 		return Result{}, fmt.Errorf("end sessions: %w", err)
 	}
 	return Result{}, nil
 }
 
+// deleteWhere deletes the live rows of table matching where.
+func deleteWhere(ctx context.Context, w *writer, table, where string, args ...any) error {
+	rows, err := w.query(ctx, table, where, tables[table].pk[0], args...)
+	if err != nil {
+		return err
+	}
+	for _, r := range rows {
+		if err := w.delete(ctx, table, r); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // CreateSession prunes sessions expired at Now and stores a new one by its
 // SHA-256 hash.
 type CreateSession struct {
+	Stamp
 	Hash      []byte `json:"hash"`
 	Now       int64  `json:"now"`
 	ExpiresAt int64  `json:"expires_at"`
@@ -671,36 +628,45 @@ type CreateSession struct {
 // Op implements Command.
 func (CreateSession) Op() string { return "create_session" }
 
-func (c CreateSession) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	if _, err := tx.ExecContext(ctx, `DELETE FROM sessions WHERE expires_at <= ?`, c.Now); err != nil {
+func (c CreateSession) apply(ctx context.Context, w *writer) (Result, error) {
+	if err := deleteWhere(ctx, w, "sessions", `expires_at <= ?`, c.Now); err != nil {
 		return Result{}, fmt.Errorf("prune: %w", err)
 	}
-	_, err := tx.ExecContext(ctx,
-		`INSERT INTO sessions (hash, created_at, expires_at) VALUES (?, ?, ?)`, c.Hash, c.Now, c.ExpiresAt)
-	return Result{}, err
+	return Result{}, w.insert(ctx, "sessions", row{"hash": c.Hash, "created_at": c.Now, "expires_at": c.ExpiresAt})
 }
 
 // DeleteSession ends a session; an unknown session is not an error.
 type DeleteSession struct {
+	Stamp
 	Hash []byte `json:"hash"`
 }
 
 // Op implements Command.
 func (DeleteSession) Op() string { return "delete_session" }
 
-func (c DeleteSession) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	_, err := tx.ExecContext(ctx, `DELETE FROM sessions WHERE hash = ?`, c.Hash)
-	return Result{}, err
-}
-
-func nullInt(v *int64) sql.NullInt64 {
-	if v == nil {
-		return sql.NullInt64{}
+func (c DeleteSession) apply(ctx context.Context, w *writer) (Result, error) {
+	r, err := w.get(ctx, "sessions", c.Hash)
+	if err != nil || r == nil {
+		return Result{}, err
 	}
-	return sql.NullInt64{Int64: *v, Valid: true}
+	return Result{}, w.delete(ctx, "sessions", r)
 }
 
-func nullString(s string) sql.NullString { return sql.NullString{String: s, Valid: s != ""} }
+// optInt is v as a column value: NULL for nil.
+func optInt(v *int64) any {
+	if v == nil {
+		return nil
+	}
+	return *v
+}
+
+// optString is s as a column value: NULL for "".
+func optString(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
+}
 
 // commandVersion is the encoding version written by EncodeCommand. Bump it
 // (and keep decoding the old one) when a command's fields change meaning.

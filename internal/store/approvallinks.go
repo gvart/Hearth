@@ -83,6 +83,7 @@ func (r ApprovalLinks) Use(ctx context.Context, secret string, now time.Time) (s
 
 // CreateApprovalLink stores an approval link by its SHA-256 hash.
 type CreateApprovalLink struct {
+	Stamp
 	Hash       []byte `json:"hash"`
 	ApprovalID string `json:"approval_id"`
 	ExpiresAt  int64  `json:"expires_at"`
@@ -93,14 +94,15 @@ func (CreateApprovalLink) Op() string { return "create_approval_link" }
 
 func (CreateApprovalLink) minSchema() int64 { return approvalLinksSchema }
 
-func (c CreateApprovalLink) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	_, err := tx.ExecContext(ctx, `INSERT INTO approval_links (hash, approval_id, expires_at) VALUES (?, ?, ?)`,
-		c.Hash, c.ApprovalID, c.ExpiresAt)
-	return Result{}, err
+func (c CreateApprovalLink) apply(ctx context.Context, w *writer) (Result, error) {
+	return Result{}, w.insert(ctx, "approval_links", row{
+		"hash": c.Hash, "approval_id": c.ApprovalID, "expires_at": c.ExpiresAt, "used_at": nil,
+	})
 }
 
 // UseApprovalLink spends an approval link. Result: ApprovalID.
 type UseApprovalLink struct {
+	Stamp
 	Hash []byte `json:"hash"`
 	Now  int64  `json:"now"`
 }
@@ -110,28 +112,10 @@ func (UseApprovalLink) Op() string { return "use_approval_link" }
 
 func (UseApprovalLink) minSchema() int64 { return approvalLinksSchema }
 
-func (c UseApprovalLink) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	var id string
-	err := tx.QueryRowContext(ctx, `
-		UPDATE approval_links SET used_at = ?
-		WHERE hash = ? AND used_at IS NULL AND expires_at > ?
-		RETURNING approval_id`, c.Now, c.Hash, c.Now).Scan(&id)
-	if err == nil {
-		return Result{ApprovalID: id}, nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
+func (c UseApprovalLink) apply(ctx context.Context, w *writer) (Result, error) {
+	r, err := consume(ctx, w, "approval_links", c.Hash, c.Now)
+	if err != nil {
 		return Result{}, err
 	}
-	// Only classifies the failure: the UPDATE made the decision.
-	var used sql.NullInt64
-	err = tx.QueryRowContext(ctx, `SELECT used_at FROM approval_links WHERE hash = ?`, c.Hash).Scan(&used)
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
-		return Result{}, ErrNotFound
-	case err != nil:
-		return Result{}, err
-	case used.Valid:
-		return Result{}, ErrTokenUsed
-	}
-	return Result{}, ErrTokenExpired
+	return Result{ApprovalID: r.str("approval_id")}, nil
 }

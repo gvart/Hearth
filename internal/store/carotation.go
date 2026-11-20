@@ -299,13 +299,23 @@ func SealedDigest(secrets []SealedSecret) string {
 }
 
 func readSealed(ctx context.Context, q interface {
+	querier
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 },
 ) ([]SealedSecret, error) {
+	versioned, err := isVersioned(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("read sealed: %w", err)
+	}
 	var out []SealedSecret
 	for _, table := range []string{SealedKubeClusters, SealedProxmoxServers, SealedRunbookRuns} {
-		// table and column are constants of this file.
-		rows, err := q.QueryContext(ctx, `SELECT id, `+sealedColumns[table]+` FROM `+table+` ORDER BY id`)
+		// table and column are constants of this file. A tombstone keeps no
+		// secret.
+		where := ``
+		if versioned {
+			where = ` WHERE _deleted = 0`
+		}
+		rows, err := q.QueryContext(ctx, `SELECT id, `+sealedColumns[table]+` FROM `+table+where+` ORDER BY id`)
 		if err != nil {
 			return nil, fmt.Errorf("read sealed %s: %w", table, err)
 		}
@@ -342,6 +352,7 @@ func (r CARotations) Reseal(ctx context.Context, newCAFP string, secrets []Seale
 // StartCARotation records a hub CA rotation at CAStageStarted; there must be
 // none under way.
 type StartCARotation struct {
+	Stamp
 	NewCAFP   string `json:"new_ca_fp"`
 	OldCAFP   string `json:"old_ca_fp"`
 	NewCACert string `json:"new_ca_cert"`
@@ -355,24 +366,24 @@ func (StartCARotation) Op() string { return "start_ca_rotation" }
 
 func (StartCARotation) minSchema() int64 { return CARotationSchema }
 
-func (c StartCARotation) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	var n int
-	if err := tx.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM ca_rotations WHERE stage NOT IN ('`+CAStageFinished+`', '`+CAStageAborted+`')`).Scan(&n); err != nil {
+func (c StartCARotation) apply(ctx context.Context, w *writer) (Result, error) {
+	active, err := w.query(ctx, "ca_rotations", `stage NOT IN ('`+CAStageFinished+`', '`+CAStageAborted+`')`, "")
+	if err != nil {
 		return Result{}, err
 	}
-	if n > 0 {
+	if len(active) > 0 {
 		return Result{}, ErrCARotationActive
 	}
-	_, err := tx.ExecContext(ctx, `INSERT INTO ca_rotations (`+caRotationColumns+`)
-		VALUES (?, ?, ?, ?, '`+CAStageStarted+`', ?, ?)`,
-		c.NewCAFP, c.OldCAFP, c.NewCACert, c.Pins, c.Now, c.Now)
-	return Result{}, err
+	return Result{}, w.insert(ctx, "ca_rotations", row{
+		"new_ca_fp": c.NewCAFP, "old_ca_fp": c.OldCAFP, "new_ca_cert": c.NewCACert, "pins": c.Pins,
+		"stage": CAStageStarted, "started_at": c.Now, "updated_at": c.Now,
+	})
 }
 
 // AdvanceCARotation moves the rotation to the CA NewCAFP from stage From to
 // stage To: started to cutover, cutover to finished, or started to aborted.
 type AdvanceCARotation struct {
+	Stamp
 	NewCAFP string `json:"new_ca_fp"`
 	From    string `json:"from"`
 	To      string `json:"to"`
@@ -389,7 +400,7 @@ func (AdvanceCARotation) Op() string { return "advance_ca_rotation" }
 
 func (AdvanceCARotation) minSchema() int64 { return CARotationSchema }
 
-func (c AdvanceCARotation) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
+func (c AdvanceCARotation) apply(ctx context.Context, w *writer) (Result, error) {
 	if step := c.From + ">" + c.To; step != CAStageStarted+">"+CAStageCutover && step != CAStageCutover+">"+CAStageFinished &&
 		step != CAStageStarted+">"+CAStageAborted {
 		return Result{}, fmt.Errorf("%w: no step from %q to %q", ErrCARotationConflict, c.From, c.To)
@@ -397,17 +408,14 @@ func (c AdvanceCARotation) apply(ctx context.Context, tx *sql.Tx) (Result, error
 	if c.To == CAStageAborted {
 		// Certificates the aborted CA issued, to agents and hubs, are revoked:
 		// nothing trusts that CA any more, and its key may live on in a copy.
-		for _, q := range []string{
-			`UPDATE certs SET revoked_at = ? WHERE ca_fp = ? AND revoked_at IS NULL`,
-			`UPDATE hub_certs SET revoked_at = ? WHERE ca_fp = ? AND revoked_at IS NULL`,
-		} {
-			if _, err := tx.ExecContext(ctx, q, c.Now, c.NewCAFP); err != nil {
+		for _, table := range []string{"certs", "hub_certs"} {
+			if _, err := revokeWhere(ctx, w, table, `ca_fp = ?`, c.Now, c.NewCAFP); err != nil {
 				return Result{}, err
 			}
 		}
 	}
 	if c.To == CAStageFinished {
-		secrets, err := readSealed(ctx, tx)
+		secrets, err := readSealed(ctx, w.tx)
 		if err != nil {
 			return Result{}, err
 		}
@@ -415,17 +423,15 @@ func (c AdvanceCARotation) apply(ctx context.Context, tx *sql.Tx) (Result, error
 			return Result{}, fmt.Errorf("%w: sealed secrets changed since they were checked", ErrCARotationConflict)
 		}
 	}
-	res, err := tx.ExecContext(ctx, `UPDATE ca_rotations SET stage = ?, updated_at = ? WHERE new_ca_fp = ? AND stage = ?`,
-		c.To, c.Now, c.NewCAFP, c.From)
+	r, err := w.get(ctx, "ca_rotations", c.NewCAFP)
 	if err != nil {
 		return Result{}, err
 	}
-	if n, err := res.RowsAffected(); err != nil {
-		return Result{}, err
-	} else if n == 0 {
+	if r == nil || r.str("stage") != c.From {
 		return Result{}, ErrCARotationConflict
 	}
-	return Result{}, nil
+	r["stage"], r["updated_at"] = c.To, c.Now
+	return Result{}, w.put(ctx, "ca_rotations", r)
 }
 
 // ResealSecrets replaces sealed secrets with the same secrets sealed with
@@ -433,6 +439,7 @@ func (c AdvanceCARotation) apply(ctx context.Context, tx *sql.Tx) (Result, error
 // secret is replaced only from the value it was read at; one that changed
 // fails the whole command.
 type ResealSecrets struct {
+	Stamp
 	NewCAFP string         `json:"new_ca_fp"`
 	Secrets []SealedSecret `json:"secrets"`
 }
@@ -442,14 +449,13 @@ func (ResealSecrets) Op() string { return "reseal_secrets" }
 
 func (ResealSecrets) minSchema() int64 { return CARotationSchema }
 
-func (c ResealSecrets) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
-	var stage string
-	err := tx.QueryRowContext(ctx, `SELECT stage FROM ca_rotations WHERE new_ca_fp = ?`, c.NewCAFP).Scan(&stage)
-	if errors.Is(err, sql.ErrNoRows) || (err == nil && stage != CAStageCutover) {
-		return Result{}, fmt.Errorf("%w: the rotation is not at its cutover", ErrCARotationConflict)
-	}
+func (c ResealSecrets) apply(ctx context.Context, w *writer) (Result, error) {
+	rot, err := w.get(ctx, "ca_rotations", c.NewCAFP)
 	if err != nil {
 		return Result{}, err
+	}
+	if rot == nil || rot.str("stage") != CAStageCutover {
+		return Result{}, fmt.Errorf("%w: the rotation is not at its cutover", ErrCARotationConflict)
 	}
 	for _, s := range c.Secrets {
 		col, ok := sealedColumns[s.Table]
@@ -459,16 +465,16 @@ func (c ResealSecrets) apply(ctx context.Context, tx *sql.Tx) (Result, error) {
 		if len(s.Resealed) == 0 || bytes.Equal(s.Sealed, s.Resealed) {
 			continue
 		}
-		// s.Table and col are keys and values of sealedColumns.
-		res, err := tx.ExecContext(ctx, `UPDATE `+s.Table+` SET `+col+` = ? WHERE id = ? AND `+col+` = ?`, //nolint:gosec // see above
-			s.Resealed, s.ID, s.Sealed)
+		r, err := w.get(ctx, s.Table, s.ID)
 		if err != nil {
 			return Result{}, err
 		}
-		if n, err := res.RowsAffected(); err != nil {
-			return Result{}, err
-		} else if n == 0 {
+		if cur, _ := r[col].([]byte); r == nil || !bytes.Equal(cur, s.Sealed) {
 			return Result{}, fmt.Errorf("%w: %s %s", ErrCARotationConflict, s.Table, s.ID)
+		}
+		r[col] = s.Resealed
+		if err := w.put(ctx, s.Table, r); err != nil {
+			return Result{}, err
 		}
 	}
 	return Result{}, nil
