@@ -1,0 +1,36 @@
+/* The drawer's "Containers" panel. */
+.containers {
+  width: 100%;
+}
+
+.containers-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0.75rem 0 0.25rem;
+}
+
+.containers-head h4 {
+  margin: 0;
+}
+
+.containers-table td {
+  vertical-align: top;
+}
+
+.containers-table .sub {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.containers-images {
+  margin-top: 0.75rem;
+}
+
+.containers-images summary {
+  cursor: pointer;
+  margin-bottom: 0.25rem;
+}
