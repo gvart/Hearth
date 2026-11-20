@@ -1,0 +1,157 @@
+/* The Network page: the topology graph. */
+.topo-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1.25rem;
+  margin-bottom: 0.75rem;
+}
+
+.topo-bar label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+}
+
+.topo-legend {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.9rem;
+  margin-left: auto;
+}
+
+.topo-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.topo-wrap {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow-x: auto;
+}
+
+.topo {
+  display: block;
+  width: 100%;
+  /* On a phone the graph scrolls sideways rather than shrinking past legibility. */
+  min-width: 720px;
+  height: auto;
+  font-family: inherit;
+}
+
+.topo-link {
+  stroke-linecap: round;
+}
+
+.topo-link.connection {
+  stroke: color-mix(in srgb, var(--accent) 70%, var(--muted));
+  stroke-width: 1.75;
+}
+
+.topo-link.neighbor {
+  stroke: color-mix(in srgb, var(--muted) 45%, transparent);
+  stroke-width: 1.25;
+  stroke-dasharray: 4 4;
+}
+
+.topo-arrow {
+  fill: color-mix(in srgb, var(--accent) 70%, var(--muted));
+}
+
+.topo-port {
+  font-family: var(--mono);
+  font-size: 11px;
+  fill: var(--text);
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: var(--surface);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+
+.topo-node {
+  stroke-width: 2;
+}
+
+.topo-node.hub {
+  fill: var(--accent);
+  stroke: var(--accent);
+}
+
+.topo-node.device {
+  fill: var(--surface-2);
+  stroke: var(--muted);
+}
+
+.topo-node.device.reports {
+  fill: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  stroke: var(--accent);
+}
+
+.topo-node.host {
+  fill: var(--surface-2);
+  stroke: var(--offline);
+}
+
+.topo-node.unknown {
+  fill: var(--surface);
+  stroke: var(--offline);
+  stroke-dasharray: 2 2;
+  stroke-width: 1.5;
+}
+
+.topo-label {
+  font-size: 13px;
+  fill: var(--text);
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: var(--surface);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+
+.topo-label.device,
+.topo-label.hub {
+  font-weight: 600;
+}
+
+.topo-label.unknown {
+  font-family: var(--mono);
+  font-size: 11px;
+  fill: var(--muted);
+}
+
+.topo-addr {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  fill: var(--muted);
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: var(--surface);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+
+.topo-item.clickable {
+  cursor: pointer;
+}
+
+.topo-item.clickable:focus-visible {
+  outline: none;
+}
+
+.topo-item.clickable:is(:hover, :focus-visible) .topo-node {
+  stroke-width: 3;
+}
+
+.topo .dim {
+  opacity: 0.2;
+}
+
+.topo g {
+  transition: opacity 120ms ease;
+}

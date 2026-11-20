@@ -6,6 +6,7 @@ import { ConfigDriftBanner } from './ConfigDriftBanner.tsx';
 import { DevicesPage } from './DevicesPage.tsx';
 import { KubernetesPage } from './KubernetesPage.tsx';
 import { Logo } from './Logo.tsx';
+import { NetworkPage } from './NetworkPage.tsx';
 import { NotificationsPage } from './NotificationsPage.tsx';
 import { PanelsPage } from './PanelsPage.tsx';
 import { ProxmoxPage } from './ProxmoxPage.tsx';
@@ -17,6 +18,7 @@ const AutomationsPage = lazy(() => import('./AutomationsPage.tsx'));
 
 type Page =
   | 'devices'
+  | 'network'
   | 'kubernetes'
   | 'proxmox'
   | 'runbooks'
@@ -28,6 +30,7 @@ type Page =
 
 const pages: { id: Page; label: string; hash: string }[] = [
   { id: 'devices', label: 'Devices', hash: '#/' },
+  { id: 'network', label: 'Network', hash: '#/network' },
   { id: 'kubernetes', label: 'Kubernetes', hash: '#/kubernetes' },
   { id: 'proxmox', label: 'Proxmox', hash: '#/proxmox' },
   { id: 'runbooks', label: 'Runbooks', hash: '#/runbooks' },
@@ -41,6 +44,9 @@ const pages: { id: Page; label: string; hash: string }[] = [
 function pageOf(hash: string): Page {
   if (hash.startsWith('#/approvals')) {
     return 'approvals';
+  }
+  if (hash.startsWith('#/network')) {
+    return 'network';
   }
   if (hash.startsWith('#/runbooks')) {
     return 'runbooks';
@@ -143,6 +149,8 @@ export function Shell() {
       <TelemetryPrompt />
       {page === 'approvals' ? (
         <ApprovalsPage />
+      ) : page === 'network' ? (
+        <NetworkPage />
       ) : page === 'kubernetes' ? (
         <KubernetesPage />
       ) : page === 'proxmox' ? (
