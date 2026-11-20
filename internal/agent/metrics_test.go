@@ -67,7 +67,7 @@ func TestCollect(t *testing.T) {
 }
 
 // BenchmarkCollect measures one collection, and what it allocates: the agent
-// runs it every 15 s and must idle under 20 MB.
+// runs it every 15 s and must idle under 25 MB.
 func BenchmarkCollect(b *testing.B) {
 	c := newCollector(slog.New(slog.DiscardHandler))
 	now := time.Now()

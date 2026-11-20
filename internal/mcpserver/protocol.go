@@ -22,7 +22,7 @@ import (
 // application/json response; initialize, ping, tools/list and tools/call.
 // It is written out rather than taken from an MCP SDK: the SDK's packages
 // and their dependencies would grow the one hearth binary by about 2 MB and
-// every idle agent by about 1 MB of RSS, near the agent's 20 MB budget.
+// every idle agent by about 1 MB of RSS, near the agent's 25 MB budget.
 
 // protocolVersions are the MCP revisions the hub speaks, newest first.
 var protocolVersions = []string{"2025-11-25", "2025-06-18", "2025-03-26"}

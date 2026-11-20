@@ -8,7 +8,7 @@ import "time"
 // encoding/json ignores the rest. They are hand-written rather than taken
 // from k8s.io/api: client-go and its API types would grow the one hearth
 // binary by about 9 MB and every idle agent by about 4 MB of RSS (their
-// package inits fault in code pages), past the agent's 20 MB budget.
+// package inits fault in code pages), past the agent's 25 MB budget.
 
 type objectMeta struct {
 	Name              string            `json:"name"`

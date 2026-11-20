@@ -43,7 +43,7 @@ the hub, so devices open no ports. It keeps one stream to the hub over mutual TL
 - runs the restarts and commands the hub asks for, but only those its own flags allow (see
   [the device's ceiling](#the-devices-ceiling)).
 
-An agent is small: it is meant to idle under 20 MB of memory and near-zero CPU.
+An agent is small: it is meant to idle under 25 MB of memory and near-zero CPU.
 
 ## Devices and enrollment
 

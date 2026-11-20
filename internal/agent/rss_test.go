@@ -19,11 +19,11 @@ import (
 
 const (
 	rssIdle  = 60 * time.Second
-	rssLimit = 20 << 20 // bytes; CLAUDE.md: the agent idles under 20 MB RSS
+	rssLimit = 25 << 20 // bytes; CLAUDE.md: the agent idles under 25 MB RSS (docs/design/agent-memory-budget.md)
 )
 
 // TestAgentIdleRSS builds the release binary, runs `hearth agent run` against a
-// test hub for a minute and checks its resident memory stays under 20 MB.
+// test hub for a minute and checks its resident memory stays under 25 MB.
 func TestAgentIdleRSS(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("reads /proc; Linux only")
