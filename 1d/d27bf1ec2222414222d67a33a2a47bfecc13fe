@@ -22,6 +22,8 @@ internal/hub/netedges_test.go
   s_26e932fc13ca45::t_d9a162c8f081d2 193-196
 docs/net-edges.md
   s_26e932fc13ca45::t_824bebfee50420 1-51
+site/src/pages.mjs
+  s_26e932fc13ca45::t_1f243cd2611f57 11
 ---
 {
   "schema_version": "authorship/3.0.0",
