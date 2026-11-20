@@ -139,6 +139,11 @@ func TestClusterFailover(t *testing.T) {
 		}
 	}
 	t.Logf("device stayed online on %s for %v after the election", leader, OfflineWithin)
+	// Gossip has noticed the killed hub by now: OfflineWithin is well past
+	// memberlist's failure detection.
+	if st := s.clusterStatus(ctx, leader).memberStates(); st[killed] == "alive" || st[follower] != "alive" {
+		t.Errorf("gossip members on %s after killing %s: %v", leader, killed, st)
+	}
 
 	// 5. Stop the follower: the leader alone has no quorum, and a write on it
 	// fails with 503 cluster_unavailable. Then start it again: writes work.
@@ -192,6 +197,19 @@ func TestClusterFailover(t *testing.T) {
 		t.Errorf("device id on the rejoined %s: %s, want %s", killed, got.ID, dev.ID)
 	}
 	t.Logf("TIMING start %s → follower serving the device in %v", killed, since(rejoinAt))
+	waitFor(ctx, t, rejoinAt.Add(RejoinWithin), "every hub alive in the gossip", func() (bool, string) {
+		st, err := s.status(ctx, killed)
+		if err != nil {
+			return false, err.Error()
+		}
+		ms := st.memberStates()
+		for _, h := range clusterHubs {
+			if ms[h] != "alive" {
+				return false, fmt.Sprintf("%v", ms)
+			}
+		}
+		return true, ""
+	})
 
 	// The agent finds its way back to the leader after the quorum loss.
 	apis[leader].waitDevice(ctx, agentName, startAt.Add(AgentBackWithin), "connected after the quorum loss", func(d device) bool {
@@ -249,6 +267,20 @@ type clusterStatusJSON struct {
 		ID       string `json:"id"`
 		Suffrage string `json:"suffrage"`
 	} `json:"peers"`
+	Members []struct {
+		ID    string   `json:"id"`
+		State string   `json:"state"`
+		Roles []string `json:"roles"`
+	} `json:"members"`
+}
+
+// memberStates maps the gossip members of a status to their states.
+func (st clusterStatusJSON) memberStates() map[string]string {
+	out := map[string]string{}
+	for _, m := range st.Members {
+		out[m.ID] = m.State
+	}
+	return out
 }
 
 // status runs `hearth cluster status --json` on the hub's host.
