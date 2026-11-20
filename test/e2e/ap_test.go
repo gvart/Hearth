@@ -120,15 +120,20 @@ func TestAPCluster(t *testing.T) {
 	for range 3 {
 		apis["hub-b"].createToken(ctx)
 		apis["hub-c"].createToken(ctx)
-		// hub-a alone takes what does not need a second replica, and refuses
-		// a critical write fast, with 503.
-		if status, code, err := apis["hub-a"].postStatus(ctx, "/api/v1/tokens", map[string]string{"ttl": "5m"}); err == nil &&
-			status != http.StatusCreated && (status != http.StatusServiceUnavailable || code != "cluster_unavailable") {
-			t.Errorf("critical write on the cut-off hub-a: %d %s", status, code)
-		}
 	}
+	// hub-a alone refuses a critical write (a token and its audit entry need
+	// two replicas). Its published API port went with the network, so the
+	// CLI on its host asks.
+	refuseAt := time.Now()
+	if out, err := s.run(ctx, "exec", "-T", "hub-a", "hearth", "token", "create", "--data-dir", hubDataDir); err == nil {
+		t.Errorf("critical write on the cut-off hub-a succeeded:\n%s", out)
+	} else if !strings.Contains(err.Error(), "unavailable") {
+		t.Errorf("critical write on the cut-off hub-a: %v, want cluster unavailable", err)
+	}
+	t.Logf("TIMING critical write on the cut-off hub-a refused in %v", since(refuseAt))
 	s.network(ctx, "connect", "hub-a")
 	healAt := time.Now()
+	apis["hub-a"] = s.loginTo(ctx, "hub-a")
 	waitFor(ctx, t, healAt.Add(APConvergeWithin), "byte-identical answers on every hub", func() (bool, string) {
 		for _, path := range []string{"/api/v1/devices", "/api/v1/audit?limit=500"} {
 			var first []byte
