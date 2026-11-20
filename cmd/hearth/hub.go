@@ -270,6 +270,13 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if err := backup.PrepareDataDir(opts.dataDir); err != nil {
 		return err
 	}
+	allowedRoles, err := opts.cluster.allowedRoles()
+	if err != nil {
+		return err
+	}
+	if err := cluster.CheckCeiling(cluster.HubRoles, allowedRoles); err != nil {
+		return fmt.Errorf("a hub is master and storage: %w", err)
+	}
 	telemetryOff, err := opts.telemetry.off()
 	if err != nil {
 		return err
@@ -321,9 +328,10 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	// A Raft node that fails to apply a committed write stops the hub.
 	fatal := make(chan error, 1)
 	var (
-		st   *store.Store
-		ca   *pki.CA
-		node *cluster.Node
+		st         *store.Store
+		ca         *pki.CA
+		node       *cluster.Node
+		membership *cluster.Membership
 	)
 	if opts.cluster.clustered(opts.dataDir) {
 		// Agents and other hubs reach this hub by its first --host name.
@@ -337,6 +345,9 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		}
 		defer st.Close()
 		defer func() { _ = node.Shutdown() }() // before the store closes
+		if membership, err = newMembership(ctx, opts.cluster, node, allowedRoles, log); err != nil {
+			return err
+		}
 	} else {
 		st, err = store.Open(ctx, filepath.Join(opts.dataDir, dbFile))
 		if err != nil {
@@ -755,6 +766,15 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 			return cluster.ServeControl(gctx, opts.dataDir, node, log)
 		})
 		g.Go(func() error { return promoteUntilVoter(gctx, node, opts.dataDir, log) })
+		if membership != nil {
+			// Gossip runs beside Raft; the hub runs on without it.
+			g.Go(func() error {
+				if err := membership.Run(gctx); err != nil {
+					log.ErrorContext(gctx, "gossip membership stopped", "err", err)
+				}
+				return nil
+			})
+		}
 		g.Go(func() error {
 			select {
 			case err := <-fatal:
