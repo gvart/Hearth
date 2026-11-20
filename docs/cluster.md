@@ -91,10 +91,14 @@ status` says it is not highly available.
 - **Presence.** The master holding a device's stream marks it online and offline. A device with no
   live stream is marked offline by the master that owns it on a hash ring over the live masters,
   once that master has owned it for 30 seconds.
-- **Automations and loops.** Each automation, runbook run and pending approval runs on the master
-  that owns it on the same ring; when a master dies, its share moves to the others. Network
-  discovery, the DHCP/Pi-hole import, Beszel and Talos reads, scheduled backups and telemetry run on
-  one master each. During a partition both sides may run one: accepted.
+- **Automations and loops.** An automation's schedule, check and metric triggers run on the master
+  that owns it on the same ring, as do runbook runs and the expiry of pending approvals; when a
+  master dies, its share moves to the others. Device and network-discovery triggers fire on the
+  master where the event happens (the one holding the device's stream, or running the scan), and a
+  manual run on the master it is asked of: each event happens on one master, so an automation fires
+  once. Rows copied from other members raise no events. Network discovery, the DHCP/Pi-hole import,
+  scheduled backups and telemetry run on one master each; Beszel and Talos reads on every master.
+  During a partition both sides may run one: accepted.
 - **Tokens and approvals have an owner.** An enrollment token, a join token, an approval and an
   approval link belong to the master that created it, and only that master consumes or decides it;
   another one refuses with an error naming it. An enrollment token from an AP master is a `hearth2.`
@@ -110,8 +114,16 @@ status` says it is not highly available.
   `safe` actions keep working, and the block lifts as soon as a peer answers. A cluster of one is
   never isolated.
 
-Not in AP mode yet: hub CA rotation (refused, as it needs the Raft leader), `cluster remove` and
-`transfer-leadership`.
+Known limitations of AP mode:
+
+- `hearth` commands run on a member's host (`hearth token create`, `hearth cluster token create`)
+  are not refused when that master is cut off: the 60-second fail-closed rule covers the hub's API,
+  agents, MCP and automations.
+- An approval link opens on the master that owns the approval. With `approval_notify.url` set to
+  one fixed address, a link for an approval owned by another master answers 409 `not_owner`, naming
+  the master to open it on.
+- Hub CA rotation (refused, as it needs the Raft leader), `cluster remove` and
+  `transfer-leadership` are not available yet.
 
 ## Forming the cluster
 
