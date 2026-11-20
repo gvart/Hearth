@@ -1,32 +1,56 @@
-# Prepare a new machine as a Docker host that Hearth can restart containers on.
+# Install Docker Engine on a Debian, Ubuntu or Raspberry Pi OS machine.
+#
+# Not yet run on real hardware: try it on a spare machine first.
 #
 # Prerequisites:
-#   - A Debian, Ubuntu or Raspberry Pi OS machine (any hardware) with internet
-#     access, running a Hearth agent that is enrolled with the hub and runs as
-#     root. Allow the programs this runbook runs:
-#       hearth agent run --allow-exec /usr/bin/curl --allow-exec /bin/sh \
-#         --allow-exec /usr/bin/systemctl --allow-exec /usr/bin/docker \
-#         --allow-exec /usr/bin/apt-get --allow-exec /bin/rm
-#     Allowing sh is a wide grant: remove it from the agent again after the run.
-#   - Edit the vars below: the new device and its address.
-#   - Afterwards, add --allow-restart docker:<container> to the agent for every
-#     container Hearth should be able to restart.
+#   - The machine (any hardware) has internet access, ca-certificates, curl and
+#     gpg (apt-get install ca-certificates curl gnupg), and runs a Hearth agent
+#     that is enrolled with the hub, runs as root and is allowed to run:
+#       hearth agent run --allow-exec /bin/sh --allow-exec /bin/rm \
+#         --allow-exec /usr/bin/apt-get --allow-exec /usr/bin/docker \
+#         --allow-exec /usr/sbin/usermod --allow-exec /usr/bin/gpasswd
+#     Allowing sh is a wide grant: the agent can then run anything. Remove it
+#     from the agent again after the run.
+#   - The agent's systemd unit keeps /usr and /etc read-only (ProtectSystem=full)
+#     and forbids setuid files (RestrictSUIDSGID=yes), which apt needs. For the
+#     run, lift both with a drop-in, and remove the drop-in after:
+#       sudo systemctl edit hearth-agent
+#       # add: [Service] ProtectSystem=no RestrictSUIDSGID=no (one per line)
+#   - The machine answers on SSH (port 22), which the first check uses to see it
+#     is on the network. Change the port in that check if it runs no SSH.
+#   - Edit the vars below: the device, its address, Docker's repository for the
+#     distribution (debian, ubuntu, or raspbian for 32-bit Raspberry Pi OS;
+#     64-bit Raspberry Pi OS is debian) and the user to add to the docker group.
+#   - key-fingerprint is the fingerprint of Docker's apt signing key, as Docker
+#     publishes it in its install guide. The run refuses a key that differs.
+#
+# For Podman instead: it is in Debian's and Ubuntu's own repositories, so no
+# repository or key is needed (apt-get install podman); this runbook does Docker.
+#
+# Afterwards, let the agent restart containers with --allow-restart
+# docker:<container>, or report them with --allow-docker once that flag ships
+# (issue #64).
 #
 # The exec actions are dangerous: they are held or denied until the hub grants
 # them, for example:
 #   hearth hub --allow-dangerous-automation runbook/add-docker-host
 id: add-docker-host
-description: Install Docker Engine on a machine, start it, verify it, undo with a purge.
+description: >-
+  Add Docker's apt repository with a pinned key fingerprint, install Docker Engine, add a user to the
+  docker group, verify with docker version and hello-world, undo with a purge.
 vars:
   device: docker-new
   address: 192.0.2.70
+  distro: debian
+  key-fingerprint: 9DC858229FC7DD38854AE2D88D81803C0EBFCD88
+  user: pi
 steps:
   - id: ready
     type: prompt
     prompt: confirm
     message: >-
-      Is the agent on the new machine enrolled and allowed to run the programs listed
-      in this runbook, and are the vars edited?
+      Is the agent on ${{ vars.device }} enrolled, allowed to run the programs listed in this runbook,
+      and able to write /usr and /etc, and are the vars edited?
     timeout: 30m
 
   - id: host-up
@@ -38,26 +62,71 @@ steps:
     within: 2m
     every: 10s
 
-  - id: fetch-installer
+  - id: approve-repo
+    type: prompt
+    prompt: confirm
+    message: >-
+      Add Docker's apt repository for ${{ vars.distro }} to ${{ vars.device }}? Its signing key is
+      downloaded and trusted only if its fingerprint is ${{ vars.key-fingerprint }}.
+    timeout: 1h
+
+  - id: add-repo
     type: action
-    description: Download Docker's convenience install script.
+    description: >-
+      Download Docker's signing key, check that it is one key with the pinned fingerprint, install it
+      in /etc/apt/keyrings and add the repository for this release.
     action:
       type: exec
       device: ${{ vars.device }}
-      command: [/usr/bin/curl, -fsSL, -o, /tmp/get-docker.sh, "https://get.docker.com"]
+      command:
+        - /bin/sh
+        - -c
+        - |-
+          set -eu
+          umask 022
+          tmp=$(mktemp -d)
+          trap 'rm -rf "$tmp"' EXIT
+          curl -fsSL -o "$tmp/docker.asc" "https://download.docker.com/linux/$1/gpg"
+          keys=$(GNUPGHOME="$tmp" gpg --batch --show-keys --with-colons "$tmp/docker.asc")
+          [ "$(printf '%s\n' "$keys" | grep -c '^pub:')" = 1 ] || { echo "want exactly one key" >&2; exit 1; }
+          got=$(printf '%s\n' "$keys" | grep -m1 '^fpr:' | cut -d: -f10)
+          [ "$got" = "$2" ] || { echo "key fingerprint is $got, want $2" >&2; exit 1; }
+          install -d -m 0755 /etc/apt/keyrings
+          install -m 0644 "$tmp/docker.asc" /etc/apt/keyrings/docker.asc
+          . /etc/os-release
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/$1 $VERSION_CODENAME stable" >/etc/apt/sources.list.d/docker.list
+        - sh
+        - ${{ vars.distro }}
+        - ${{ vars.key-fingerprint }}
       timeout: 2m
     rollback:
       type: exec
       device: ${{ vars.device }}
-      command: [/bin/rm, -f, /tmp/get-docker.sh]
+      command: [/bin/rm, -f, /etc/apt/sources.list.d/docker.list, /etc/apt/keyrings/docker.asc]
+
+  - id: approve-install
+    type: prompt
+    prompt: confirm
+    message: >-
+      Install Docker Engine (docker-ce, its CLI, containerd and the buildx and compose plugins) on
+      ${{ vars.device }} from that repository? Docker starts now and at every boot.
+    timeout: 1h
 
   - id: install
     type: action
-    description: Install Docker Engine from Docker's apt repository.
+    description: Install Docker Engine from Docker's apt repository; the package starts and enables it.
     action:
       type: exec
       device: ${{ vars.device }}
-      command: [/bin/sh, /tmp/get-docker.sh]
+      command:
+        - /bin/sh
+        - -c
+        - |-
+          set -eu
+          umask 022
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
       timeout: 10m
     rollback:
       type: exec
@@ -73,20 +142,6 @@ steps:
         - docker-compose-plugin
       timeout: 5m
 
-  - id: enable
-    type: action
-    description: Start Docker now and at every boot.
-    action:
-      type: exec
-      device: ${{ vars.device }}
-      command: [/usr/bin/systemctl, enable, --now, docker.service]
-      timeout: 2m
-    rollback:
-      type: exec
-      device: ${{ vars.device }}
-      command: [/usr/bin/systemctl, disable, --now, docker.service, docker.socket]
-      timeout: 2m
-
   - id: verify
     type: action
     description: Ask the daemon for its version, which fails if it is not running. Changes nothing.
@@ -96,16 +151,52 @@ steps:
       command: [/usr/bin/docker, version, --format, "{{.Server.Version}}"]
       timeout: 1m
 
-  - id: allow-restarts
+  - id: approve-group
     type: prompt
     prompt: confirm
     message: >-
-      Did you add --allow-restart docker:<container> to the agent for the containers
-      Hearth should restart? Answer no to stop here; the host itself is ready.
-    timeout: 30m
+      Add ${{ vars.user }} to the docker group on ${{ vars.device }}? Members of that group control the
+      daemon, which is the same as root on that machine. A rollback removes ${{ vars.user }} from the
+      group again, even if it was a member before.
+    timeout: 1h
+
+  - id: group
+    type: action
+    description: Let the user run docker without sudo, from their next login.
+    action:
+      type: exec
+      device: ${{ vars.device }}
+      command: [/usr/sbin/usermod, -aG, docker, "${{ vars.user }}"]
+    rollback:
+      type: exec
+      device: ${{ vars.device }}
+      command: [/usr/bin/gpasswd, -d, "${{ vars.user }}", docker]
+
+  - id: approve-hello
+    type: prompt
+    prompt: confirm
+    message: >-
+      Run the hello-world container on ${{ vars.device }} to check that containers start? It pulls the
+      hello-world image from Docker Hub.
+    timeout: 1h
+
+  - id: hello-world
+    type: action
+    description: Pull and run hello-world, which exits 0 when a container ran.
+    action:
+      type: exec
+      device: ${{ vars.device }}
+      command: [/usr/bin/docker, run, --rm, hello-world]
+      timeout: 5m
+    rollback:
+      type: exec
+      device: ${{ vars.device }}
+      command: [/usr/bin/docker, image, rm, hello-world]
 
   - id: done
     type: action
     action:
       type: log
-      message: Docker host is ready.
+      message: >-
+        Docker host ${{ vars.device }} is ready. Remove the agent's systemd drop-in and its sh grant, and
+        add --allow-restart docker:<container> for the containers Hearth should restart.
