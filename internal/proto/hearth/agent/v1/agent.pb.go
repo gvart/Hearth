@@ -40,6 +40,7 @@ type AgentMessage struct {
 	//	*AgentMessage_ShellEvent
 	//	*AgentMessage_ScanResult
 	//	*AgentMessage_NetEdges
+	//	*AgentMessage_DockerResult
 	Payload       isAgentMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -172,6 +173,15 @@ func (x *AgentMessage) GetNetEdges() *NetEdges {
 	return nil
 }
 
+func (x *AgentMessage) GetDockerResult() *DockerResult {
+	if x != nil {
+		if x, ok := x.Payload.(*AgentMessage_DockerResult); ok {
+			return x.DockerResult
+		}
+	}
+	return nil
+}
+
 type isAgentMessage_Payload interface {
 	isAgentMessage_Payload()
 }
@@ -217,6 +227,10 @@ type AgentMessage_NetEdges struct {
 	NetEdges *NetEdges `protobuf:"bytes,10,opt,name=net_edges,json=netEdges,proto3,oneof"`
 }
 
+type AgentMessage_DockerResult struct {
+	DockerResult *DockerResult `protobuf:"bytes,11,opt,name=docker_result,json=dockerResult,proto3,oneof"`
+}
+
 func (*AgentMessage_Hello) isAgentMessage_Payload() {}
 
 func (*AgentMessage_Heartbeat) isAgentMessage_Payload() {}
@@ -237,6 +251,8 @@ func (*AgentMessage_ScanResult) isAgentMessage_Payload() {}
 
 func (*AgentMessage_NetEdges) isAgentMessage_Payload() {}
 
+func (*AgentMessage_DockerResult) isAgentMessage_Payload() {}
+
 // HubMessage is anything the hub sends to an agent.
 type HubMessage struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -250,6 +266,7 @@ type HubMessage struct {
 	//	*HubMessage_LogCancel
 	//	*HubMessage_ShellRequest
 	//	*HubMessage_ScanRequest
+	//	*HubMessage_DockerRequest
 	Payload       isHubMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -364,6 +381,15 @@ func (x *HubMessage) GetScanRequest() *ScanRequest {
 	return nil
 }
 
+func (x *HubMessage) GetDockerRequest() *DockerRequest {
+	if x != nil {
+		if x, ok := x.Payload.(*HubMessage_DockerRequest); ok {
+			return x.DockerRequest
+		}
+	}
+	return nil
+}
+
 type isHubMessage_Payload interface {
 	isHubMessage_Payload()
 }
@@ -400,6 +426,10 @@ type HubMessage_ScanRequest struct {
 	ScanRequest *ScanRequest `protobuf:"bytes,8,opt,name=scan_request,json=scanRequest,proto3,oneof"`
 }
 
+type HubMessage_DockerRequest struct {
+	DockerRequest *DockerRequest `protobuf:"bytes,9,opt,name=docker_request,json=dockerRequest,proto3,oneof"`
+}
+
 func (*HubMessage_Welcome) isHubMessage_Payload() {}
 
 func (*HubMessage_ExecRequest) isHubMessage_Payload() {}
@@ -415,6 +445,8 @@ func (*HubMessage_LogCancel) isHubMessage_Payload() {}
 func (*HubMessage_ShellRequest) isHubMessage_Payload() {}
 
 func (*HubMessage_ScanRequest) isHubMessage_Payload() {}
+
+func (*HubMessage_DockerRequest) isHubMessage_Payload() {}
 
 // ProtocolVersion is the agent<->hub protocol version. A major bump is incompatible;
 // the hub rejects majors it does not know.
@@ -654,7 +686,12 @@ type Ceiling struct {
 	// neighbour table and a summary of its established TCP connections.
 	// Connections say who talks to whom, so it is off unless the operator
 	// turns it on. Reported by agents of protocol minor 8 and later.
-	NetEdges      bool `protobuf:"varint,7,opt,name=net_edges,json=netEdges,proto3" json:"net_edges,omitempty"`
+	NetEdges bool `protobuf:"varint,7,opt,name=net_edges,json=netEdges,proto3" json:"net_edges,omitempty"`
+	// docker allows DockerRequests: the hub may list the containers and
+	// images of the device's Docker or Podman engine, read a bounded tail of
+	// a container's log, and start, stop and restart containers; nothing else
+	// of the engine's API. Reported by agents of protocol minor 9 and later.
+	Docker        bool `protobuf:"varint,8,opt,name=docker,proto3" json:"docker,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -734,6 +771,13 @@ func (x *Ceiling) GetScan() []string {
 func (x *Ceiling) GetNetEdges() bool {
 	if x != nil {
 		return x.NetEdges
+	}
+	return false
+}
+
+func (x *Ceiling) GetDocker() bool {
+	if x != nil {
+		return x.Docker
 	}
 	return false
 }
@@ -3112,11 +3156,561 @@ func (x *Connection) GetCount() uint32 {
 	return 0
 }
 
+// DockerRequest asks the agent to talk to the device's Docker or Podman
+// engine, over its unix socket. The agent runs it only if its ceiling allows
+// docker, and answers with a DockerResult of the same id. Hubs send it only
+// to agents of protocol minor 9 and later.
+type DockerRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// id correlates the DockerResult; unique per stream.
+	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// timeout bounds the request.
+	Timeout *durationpb.Duration `protobuf:"bytes,2,opt,name=timeout,proto3" json:"timeout,omitempty"`
+	// Types that are valid to be assigned to Op:
+	//
+	//	*DockerRequest_List
+	//	*DockerRequest_Action
+	//	*DockerRequest_Logs
+	Op            isDockerRequest_Op `protobuf_oneof:"op"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DockerRequest) Reset() {
+	*x = DockerRequest{}
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[41]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DockerRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DockerRequest) ProtoMessage() {}
+
+func (x *DockerRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[41]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DockerRequest.ProtoReflect.Descriptor instead.
+func (*DockerRequest) Descriptor() ([]byte, []int) {
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{41}
+}
+
+func (x *DockerRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *DockerRequest) GetTimeout() *durationpb.Duration {
+	if x != nil {
+		return x.Timeout
+	}
+	return nil
+}
+
+func (x *DockerRequest) GetOp() isDockerRequest_Op {
+	if x != nil {
+		return x.Op
+	}
+	return nil
+}
+
+func (x *DockerRequest) GetList() *DockerList {
+	if x != nil {
+		if x, ok := x.Op.(*DockerRequest_List); ok {
+			return x.List
+		}
+	}
+	return nil
+}
+
+func (x *DockerRequest) GetAction() *DockerAction {
+	if x != nil {
+		if x, ok := x.Op.(*DockerRequest_Action); ok {
+			return x.Action
+		}
+	}
+	return nil
+}
+
+func (x *DockerRequest) GetLogs() *DockerLogs {
+	if x != nil {
+		if x, ok := x.Op.(*DockerRequest_Logs); ok {
+			return x.Logs
+		}
+	}
+	return nil
+}
+
+type isDockerRequest_Op interface {
+	isDockerRequest_Op()
+}
+
+type DockerRequest_List struct {
+	// list lists the engine's containers, running or not, and its images.
+	List *DockerList `protobuf:"bytes,3,opt,name=list,proto3,oneof"`
+}
+
+type DockerRequest_Action struct {
+	// action starts, stops or restarts a container.
+	Action *DockerAction `protobuf:"bytes,4,opt,name=action,proto3,oneof"`
+}
+
+type DockerRequest_Logs struct {
+	// logs reads the last lines of a container's log, once: never a follow.
+	Logs *DockerLogs `protobuf:"bytes,5,opt,name=logs,proto3,oneof"`
+}
+
+func (*DockerRequest_List) isDockerRequest_Op() {}
+
+func (*DockerRequest_Action) isDockerRequest_Op() {}
+
+func (*DockerRequest_Logs) isDockerRequest_Op() {}
+
+// DockerList lists containers and images.
+type DockerList struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DockerList) Reset() {
+	*x = DockerList{}
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[42]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DockerList) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DockerList) ProtoMessage() {}
+
+func (x *DockerList) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[42]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DockerList.ProtoReflect.Descriptor instead.
+func (*DockerList) Descriptor() ([]byte, []int) {
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{42}
+}
+
+// DockerAction starts, stops or restarts a container.
+type DockerAction struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// verb is "start", "stop" or "restart".
+	Verb string `protobuf:"bytes,1,opt,name=verb,proto3" json:"verb,omitempty"`
+	// container is the container's id or name: letters, digits, '_', '.' and
+	// '-', starting with a letter or digit, at most 128 characters.
+	Container     string `protobuf:"bytes,2,opt,name=container,proto3" json:"container,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DockerAction) Reset() {
+	*x = DockerAction{}
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[43]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DockerAction) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DockerAction) ProtoMessage() {}
+
+func (x *DockerAction) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[43]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DockerAction.ProtoReflect.Descriptor instead.
+func (*DockerAction) Descriptor() ([]byte, []int) {
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{43}
+}
+
+func (x *DockerAction) GetVerb() string {
+	if x != nil {
+		return x.Verb
+	}
+	return ""
+}
+
+func (x *DockerAction) GetContainer() string {
+	if x != nil {
+		return x.Container
+	}
+	return ""
+}
+
+// DockerLogs reads the last lines of a container's log.
+type DockerLogs struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// container is as in DockerAction.
+	Container string `protobuf:"bytes,1,opt,name=container,proto3" json:"container,omitempty"`
+	// tail is how many of the last lines to read; the agent caps it at 200.
+	Tail          uint32 `protobuf:"varint,2,opt,name=tail,proto3" json:"tail,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DockerLogs) Reset() {
+	*x = DockerLogs{}
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[44]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DockerLogs) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DockerLogs) ProtoMessage() {}
+
+func (x *DockerLogs) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[44]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DockerLogs.ProtoReflect.Descriptor instead.
+func (*DockerLogs) Descriptor() ([]byte, []int) {
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{44}
+}
+
+func (x *DockerLogs) GetContainer() string {
+	if x != nil {
+		return x.Container
+	}
+	return ""
+}
+
+func (x *DockerLogs) GetTail() uint32 {
+	if x != nil {
+		return x.Tail
+	}
+	return 0
+}
+
+// DockerResult is the outcome of a DockerRequest.
+type DockerResult struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// id is the id of the DockerRequest it answers.
+	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// denied is set when the agent refused the request: its ceiling does not
+	// allow docker, or it is not one the agent takes. Nothing was asked of the
+	// engine.
+	Denied bool `protobuf:"varint,2,opt,name=denied,proto3" json:"denied,omitempty"`
+	// error says why the request failed or was denied; empty on success.
+	Error string `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
+	// containers and images answer a list.
+	Containers []*DockerContainer `protobuf:"bytes,4,rep,name=containers,proto3" json:"containers,omitempty"`
+	Images     []*DockerImage     `protobuf:"bytes,5,rep,name=images,proto3" json:"images,omitempty"`
+	// lines answer logs, oldest first.
+	Lines []*LogLine `protobuf:"bytes,6,rep,name=lines,proto3" json:"lines,omitempty"`
+	// truncated is set when the agent left containers, images or log lines
+	// out to keep the answer bounded.
+	Truncated     bool `protobuf:"varint,7,opt,name=truncated,proto3" json:"truncated,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DockerResult) Reset() {
+	*x = DockerResult{}
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[45]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DockerResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DockerResult) ProtoMessage() {}
+
+func (x *DockerResult) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[45]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DockerResult.ProtoReflect.Descriptor instead.
+func (*DockerResult) Descriptor() ([]byte, []int) {
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{45}
+}
+
+func (x *DockerResult) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *DockerResult) GetDenied() bool {
+	if x != nil {
+		return x.Denied
+	}
+	return false
+}
+
+func (x *DockerResult) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *DockerResult) GetContainers() []*DockerContainer {
+	if x != nil {
+		return x.Containers
+	}
+	return nil
+}
+
+func (x *DockerResult) GetImages() []*DockerImage {
+	if x != nil {
+		return x.Images
+	}
+	return nil
+}
+
+func (x *DockerResult) GetLines() []*LogLine {
+	if x != nil {
+		return x.Lines
+	}
+	return nil
+}
+
+func (x *DockerResult) GetTruncated() bool {
+	if x != nil {
+		return x.Truncated
+	}
+	return false
+}
+
+// DockerContainer is a container of the engine.
+type DockerContainer struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// name is without the leading '/'.
+	Name  string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Image string `protobuf:"bytes,3,opt,name=image,proto3" json:"image,omitempty"`
+	// state is the engine's word for it: running, exited, created, paused, ...
+	State string `protobuf:"bytes,4,opt,name=state,proto3" json:"state,omitempty"`
+	// status is the engine's human summary, such as "Up 2 hours".
+	Status string `protobuf:"bytes,5,opt,name=status,proto3" json:"status,omitempty"`
+	// compose_project and compose_service are the container's Compose labels
+	// (com.docker.compose.project and com.docker.compose.service); empty
+	// outside a Compose project.
+	ComposeProject string                 `protobuf:"bytes,6,opt,name=compose_project,json=composeProject,proto3" json:"compose_project,omitempty"`
+	ComposeService string                 `protobuf:"bytes,7,opt,name=compose_service,json=composeService,proto3" json:"compose_service,omitempty"`
+	Created        *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created,proto3" json:"created,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *DockerContainer) Reset() {
+	*x = DockerContainer{}
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[46]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DockerContainer) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DockerContainer) ProtoMessage() {}
+
+func (x *DockerContainer) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[46]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DockerContainer.ProtoReflect.Descriptor instead.
+func (*DockerContainer) Descriptor() ([]byte, []int) {
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{46}
+}
+
+func (x *DockerContainer) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *DockerContainer) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *DockerContainer) GetImage() string {
+	if x != nil {
+		return x.Image
+	}
+	return ""
+}
+
+func (x *DockerContainer) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *DockerContainer) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *DockerContainer) GetComposeProject() string {
+	if x != nil {
+		return x.ComposeProject
+	}
+	return ""
+}
+
+func (x *DockerContainer) GetComposeService() string {
+	if x != nil {
+		return x.ComposeService
+	}
+	return ""
+}
+
+func (x *DockerContainer) GetCreated() *timestamppb.Timestamp {
+	if x != nil {
+		return x.Created
+	}
+	return nil
+}
+
+// DockerImage is an image of the engine, in summary.
+type DockerImage struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// tags are its repo:tag names; none for a dangling image.
+	Tags          []string               `protobuf:"bytes,2,rep,name=tags,proto3" json:"tags,omitempty"`
+	SizeBytes     int64                  `protobuf:"varint,3,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
+	Created       *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=created,proto3" json:"created,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DockerImage) Reset() {
+	*x = DockerImage{}
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[47]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DockerImage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DockerImage) ProtoMessage() {}
+
+func (x *DockerImage) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[47]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DockerImage.ProtoReflect.Descriptor instead.
+func (*DockerImage) Descriptor() ([]byte, []int) {
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{47}
+}
+
+func (x *DockerImage) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *DockerImage) GetTags() []string {
+	if x != nil {
+		return x.Tags
+	}
+	return nil
+}
+
+func (x *DockerImage) GetSizeBytes() int64 {
+	if x != nil {
+		return x.SizeBytes
+	}
+	return 0
+}
+
+func (x *DockerImage) GetCreated() *timestamppb.Timestamp {
+	if x != nil {
+		return x.Created
+	}
+	return nil
+}
+
 var File_hearth_agent_v1_agent_proto protoreflect.FileDescriptor
 
 const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"\n" +
-	"\x1bhearth/agent/v1/agent.proto\x12\x0fhearth.agent.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xf2\x04\n" +
+	"\x1bhearth/agent/v1/agent.proto\x12\x0fhearth.agent.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb8\x05\n" +
 	"\fAgentMessage\x12.\n" +
 	"\x05hello\x18\x01 \x01(\v2\x16.hearth.agent.v1.HelloH\x00R\x05hello\x12:\n" +
 	"\theartbeat\x18\x02 \x01(\v2\x1a.hearth.agent.v1.HeartbeatH\x00R\theartbeat\x12D\n" +
@@ -3131,8 +3725,9 @@ const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"\vscan_result\x18\t \x01(\v2\x1b.hearth.agent.v1.ScanResultH\x00R\n" +
 	"scanResult\x128\n" +
 	"\tnet_edges\x18\n" +
-	" \x01(\v2\x19.hearth.agent.v1.NetEdgesH\x00R\bnetEdgesB\t\n" +
-	"\apayload\"\x89\x04\n" +
+	" \x01(\v2\x19.hearth.agent.v1.NetEdgesH\x00R\bnetEdges\x12D\n" +
+	"\rdocker_result\x18\v \x01(\v2\x1d.hearth.agent.v1.DockerResultH\x00R\fdockerResultB\t\n" +
+	"\apayload\"\xd2\x04\n" +
 	"\n" +
 	"HubMessage\x124\n" +
 	"\awelcome\x18\x01 \x01(\v2\x18.hearth.agent.v1.WelcomeH\x00R\awelcome\x12A\n" +
@@ -3144,7 +3739,8 @@ const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"\n" +
 	"log_cancel\x18\x06 \x01(\v2\x1a.hearth.agent.v1.LogCancelH\x00R\tlogCancel\x12D\n" +
 	"\rshell_request\x18\a \x01(\v2\x1d.hearth.agent.v1.ShellRequestH\x00R\fshellRequest\x12A\n" +
-	"\fscan_request\x18\b \x01(\v2\x1c.hearth.agent.v1.ScanRequestH\x00R\vscanRequestB\t\n" +
+	"\fscan_request\x18\b \x01(\v2\x1c.hearth.agent.v1.ScanRequestH\x00R\vscanRequest\x12G\n" +
+	"\x0edocker_request\x18\t \x01(\v2\x1e.hearth.agent.v1.DockerRequestH\x00R\rdockerRequestB\t\n" +
 	"\apayload\"=\n" +
 	"\x0fProtocolVersion\x12\x14\n" +
 	"\x05major\x18\x01 \x01(\rR\x05major\x12\x14\n" +
@@ -3166,7 +3762,7 @@ const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"interfaces\x12#\n" +
 	"\ragent_version\x18\f \x01(\tR\fagentVersion\x12\"\n" +
 	"\fcapabilities\x18\r \x03(\tR\fcapabilities\x122\n" +
-	"\aceiling\x18\x0e \x01(\v2\x18.hearth.agent.v1.CeilingR\aceiling\"\xa8\x01\n" +
+	"\aceiling\x18\x0e \x01(\v2\x18.hearth.agent.v1.CeilingR\aceiling\"\xc0\x01\n" +
 	"\aCeiling\x12\x12\n" +
 	"\x04exec\x18\x01 \x03(\tR\x04exec\x12\x18\n" +
 	"\arestart\x18\x02 \x03(\tR\arestart\x12\x14\n" +
@@ -3174,7 +3770,8 @@ const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"\x04logs\x18\x04 \x03(\tR\x04logs\x12\x14\n" +
 	"\x05shell\x18\x05 \x01(\bR\x05shell\x12\x12\n" +
 	"\x04scan\x18\x06 \x03(\tR\x04scan\x12\x1b\n" +
-	"\tnet_edges\x18\a \x01(\bR\bnetEdges\"w\n" +
+	"\tnet_edges\x18\a \x01(\bR\bnetEdges\x12\x16\n" +
+	"\x06docker\x18\b \x01(\bR\x06docker\"w\n" +
 	"\x04Disk\x12\x16\n" +
 	"\x06device\x18\x01 \x01(\tR\x06device\x12\x1e\n" +
 	"\n" +
@@ -3323,7 +3920,48 @@ const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"\apeer_ip\x18\x01 \x01(\tR\x06peerIp\x12\x12\n" +
 	"\x04port\x18\x02 \x01(\rR\x04port\x12\x18\n" +
 	"\ainbound\x18\x03 \x01(\bR\ainbound\x12\x14\n" +
-	"\x05count\x18\x04 \x01(\rR\x05count2Y\n" +
+	"\x05count\x18\x04 \x01(\rR\x05count\"\xf9\x01\n" +
+	"\rDockerRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x123\n" +
+	"\atimeout\x18\x02 \x01(\v2\x19.google.protobuf.DurationR\atimeout\x121\n" +
+	"\x04list\x18\x03 \x01(\v2\x1b.hearth.agent.v1.DockerListH\x00R\x04list\x127\n" +
+	"\x06action\x18\x04 \x01(\v2\x1d.hearth.agent.v1.DockerActionH\x00R\x06action\x121\n" +
+	"\x04logs\x18\x05 \x01(\v2\x1b.hearth.agent.v1.DockerLogsH\x00R\x04logsB\x04\n" +
+	"\x02op\"\f\n" +
+	"\n" +
+	"DockerList\"@\n" +
+	"\fDockerAction\x12\x12\n" +
+	"\x04verb\x18\x01 \x01(\tR\x04verb\x12\x1c\n" +
+	"\tcontainer\x18\x02 \x01(\tR\tcontainer\">\n" +
+	"\n" +
+	"DockerLogs\x12\x1c\n" +
+	"\tcontainer\x18\x01 \x01(\tR\tcontainer\x12\x12\n" +
+	"\x04tail\x18\x02 \x01(\rR\x04tail\"\x92\x02\n" +
+	"\fDockerResult\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
+	"\x06denied\x18\x02 \x01(\bR\x06denied\x12\x14\n" +
+	"\x05error\x18\x03 \x01(\tR\x05error\x12@\n" +
+	"\n" +
+	"containers\x18\x04 \x03(\v2 .hearth.agent.v1.DockerContainerR\n" +
+	"containers\x124\n" +
+	"\x06images\x18\x05 \x03(\v2\x1c.hearth.agent.v1.DockerImageR\x06images\x12.\n" +
+	"\x05lines\x18\x06 \x03(\v2\x18.hearth.agent.v1.LogLineR\x05lines\x12\x1c\n" +
+	"\ttruncated\x18\a \x01(\bR\ttruncated\"\x81\x02\n" +
+	"\x0fDockerContainer\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
+	"\x05image\x18\x03 \x01(\tR\x05image\x12\x14\n" +
+	"\x05state\x18\x04 \x01(\tR\x05state\x12\x16\n" +
+	"\x06status\x18\x05 \x01(\tR\x06status\x12'\n" +
+	"\x0fcompose_project\x18\x06 \x01(\tR\x0ecomposeProject\x12'\n" +
+	"\x0fcompose_service\x18\a \x01(\tR\x0ecomposeService\x124\n" +
+	"\acreated\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\acreated\"\x86\x01\n" +
+	"\vDockerImage\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04tags\x18\x02 \x03(\tR\x04tags\x12\x1d\n" +
+	"\n" +
+	"size_bytes\x18\x03 \x01(\x03R\tsizeBytes\x124\n" +
+	"\acreated\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\acreated2Y\n" +
 	"\fAgentService\x12I\n" +
 	"\aConnect\x12\x1d.hearth.agent.v1.AgentMessage\x1a\x1b.hearth.agent.v1.HubMessage(\x010\x01B\xbf\x01\n" +
 	"\x13com.hearth.agent.v1B\n" +
@@ -3341,7 +3979,7 @@ func file_hearth_agent_v1_agent_proto_rawDescGZIP() []byte {
 	return file_hearth_agent_v1_agent_proto_rawDescData
 }
 
-var file_hearth_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 42)
+var file_hearth_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 49)
 var file_hearth_agent_v1_agent_proto_goTypes = []any{
 	(*AgentMessage)(nil),          // 0: hearth.agent.v1.AgentMessage
 	(*HubMessage)(nil),            // 1: hearth.agent.v1.HubMessage
@@ -3384,9 +4022,16 @@ var file_hearth_agent_v1_agent_proto_goTypes = []any{
 	(*NetEdges)(nil),              // 38: hearth.agent.v1.NetEdges
 	(*Neighbor)(nil),              // 39: hearth.agent.v1.Neighbor
 	(*Connection)(nil),            // 40: hearth.agent.v1.Connection
-	nil,                           // 41: hearth.agent.v1.MetricSample.LabelsEntry
-	(*timestamppb.Timestamp)(nil), // 42: google.protobuf.Timestamp
-	(*durationpb.Duration)(nil),   // 43: google.protobuf.Duration
+	(*DockerRequest)(nil),         // 41: hearth.agent.v1.DockerRequest
+	(*DockerList)(nil),            // 42: hearth.agent.v1.DockerList
+	(*DockerAction)(nil),          // 43: hearth.agent.v1.DockerAction
+	(*DockerLogs)(nil),            // 44: hearth.agent.v1.DockerLogs
+	(*DockerResult)(nil),          // 45: hearth.agent.v1.DockerResult
+	(*DockerContainer)(nil),       // 46: hearth.agent.v1.DockerContainer
+	(*DockerImage)(nil),           // 47: hearth.agent.v1.DockerImage
+	nil,                           // 48: hearth.agent.v1.MetricSample.LabelsEntry
+	(*timestamppb.Timestamp)(nil), // 49: google.protobuf.Timestamp
+	(*durationpb.Duration)(nil),   // 50: google.protobuf.Duration
 }
 var file_hearth_agent_v1_agent_proto_depIdxs = []int32{
 	3,  // 0: hearth.agent.v1.AgentMessage.hello:type_name -> hearth.agent.v1.Hello
@@ -3399,52 +4044,63 @@ var file_hearth_agent_v1_agent_proto_depIdxs = []int32{
 	32, // 7: hearth.agent.v1.AgentMessage.shell_event:type_name -> hearth.agent.v1.ShellEvent
 	36, // 8: hearth.agent.v1.AgentMessage.scan_result:type_name -> hearth.agent.v1.ScanResult
 	38, // 9: hearth.agent.v1.AgentMessage.net_edges:type_name -> hearth.agent.v1.NetEdges
-	11, // 10: hearth.agent.v1.HubMessage.welcome:type_name -> hearth.agent.v1.Welcome
-	14, // 11: hearth.agent.v1.HubMessage.exec_request:type_name -> hearth.agent.v1.ExecRequest
-	27, // 12: hearth.agent.v1.HubMessage.ping:type_name -> hearth.agent.v1.Ping
-	17, // 13: hearth.agent.v1.HubMessage.probe_request:type_name -> hearth.agent.v1.ProbeRequest
-	22, // 14: hearth.agent.v1.HubMessage.log_request:type_name -> hearth.agent.v1.LogRequest
-	24, // 15: hearth.agent.v1.HubMessage.log_cancel:type_name -> hearth.agent.v1.LogCancel
-	28, // 16: hearth.agent.v1.HubMessage.shell_request:type_name -> hearth.agent.v1.ShellRequest
-	35, // 17: hearth.agent.v1.HubMessage.scan_request:type_name -> hearth.agent.v1.ScanRequest
-	2,  // 18: hearth.agent.v1.Hello.protocol_version:type_name -> hearth.agent.v1.ProtocolVersion
-	5,  // 19: hearth.agent.v1.Hello.disks:type_name -> hearth.agent.v1.Disk
-	6,  // 20: hearth.agent.v1.Hello.interfaces:type_name -> hearth.agent.v1.NetworkInterface
-	4,  // 21: hearth.agent.v1.Hello.ceiling:type_name -> hearth.agent.v1.Ceiling
-	42, // 22: hearth.agent.v1.Heartbeat.ts:type_name -> google.protobuf.Timestamp
-	43, // 23: hearth.agent.v1.Heartbeat.uptime:type_name -> google.protobuf.Duration
-	9,  // 24: hearth.agent.v1.MetricsBatch.samples:type_name -> hearth.agent.v1.MetricSample
-	41, // 25: hearth.agent.v1.MetricSample.labels:type_name -> hearth.agent.v1.MetricSample.LabelsEntry
-	42, // 26: hearth.agent.v1.MetricSample.ts:type_name -> google.protobuf.Timestamp
-	42, // 27: hearth.agent.v1.Welcome.server_time:type_name -> google.protobuf.Timestamp
-	43, // 28: hearth.agent.v1.Welcome.heartbeat_interval:type_name -> google.protobuf.Duration
-	43, // 29: hearth.agent.v1.ExecRequest.timeout:type_name -> google.protobuf.Duration
-	15, // 30: hearth.agent.v1.ExecRequest.command:type_name -> hearth.agent.v1.Command
-	16, // 31: hearth.agent.v1.ExecRequest.restart:type_name -> hearth.agent.v1.RestartService
-	43, // 32: hearth.agent.v1.ProbeRequest.timeout:type_name -> google.protobuf.Duration
-	18, // 33: hearth.agent.v1.ProbeRequest.http:type_name -> hearth.agent.v1.HTTPProbe
-	19, // 34: hearth.agent.v1.ProbeRequest.tcp:type_name -> hearth.agent.v1.TCPProbe
-	20, // 35: hearth.agent.v1.ProbeRequest.dns:type_name -> hearth.agent.v1.DNSProbe
-	23, // 36: hearth.agent.v1.LogRequest.source:type_name -> hearth.agent.v1.LogSource
-	26, // 37: hearth.agent.v1.LogLines.lines:type_name -> hearth.agent.v1.LogLine
-	42, // 38: hearth.agent.v1.LogLine.ts:type_name -> google.protobuf.Timestamp
-	29, // 39: hearth.agent.v1.ShellRequest.open:type_name -> hearth.agent.v1.ShellOpen
-	30, // 40: hearth.agent.v1.ShellRequest.resize:type_name -> hearth.agent.v1.TerminalSize
-	31, // 41: hearth.agent.v1.ShellRequest.close:type_name -> hearth.agent.v1.ShellClose
-	30, // 42: hearth.agent.v1.ShellOpen.size:type_name -> hearth.agent.v1.TerminalSize
-	33, // 43: hearth.agent.v1.ShellEvent.started:type_name -> hearth.agent.v1.ShellStarted
-	34, // 44: hearth.agent.v1.ShellEvent.exited:type_name -> hearth.agent.v1.ShellExited
-	43, // 45: hearth.agent.v1.ScanRequest.timeout:type_name -> google.protobuf.Duration
-	37, // 46: hearth.agent.v1.ScanResult.hosts:type_name -> hearth.agent.v1.ScannedHost
-	39, // 47: hearth.agent.v1.NetEdges.neighbors:type_name -> hearth.agent.v1.Neighbor
-	40, // 48: hearth.agent.v1.NetEdges.connections:type_name -> hearth.agent.v1.Connection
-	0,  // 49: hearth.agent.v1.AgentService.Connect:input_type -> hearth.agent.v1.AgentMessage
-	1,  // 50: hearth.agent.v1.AgentService.Connect:output_type -> hearth.agent.v1.HubMessage
-	50, // [50:51] is the sub-list for method output_type
-	49, // [49:50] is the sub-list for method input_type
-	49, // [49:49] is the sub-list for extension type_name
-	49, // [49:49] is the sub-list for extension extendee
-	0,  // [0:49] is the sub-list for field type_name
+	45, // 10: hearth.agent.v1.AgentMessage.docker_result:type_name -> hearth.agent.v1.DockerResult
+	11, // 11: hearth.agent.v1.HubMessage.welcome:type_name -> hearth.agent.v1.Welcome
+	14, // 12: hearth.agent.v1.HubMessage.exec_request:type_name -> hearth.agent.v1.ExecRequest
+	27, // 13: hearth.agent.v1.HubMessage.ping:type_name -> hearth.agent.v1.Ping
+	17, // 14: hearth.agent.v1.HubMessage.probe_request:type_name -> hearth.agent.v1.ProbeRequest
+	22, // 15: hearth.agent.v1.HubMessage.log_request:type_name -> hearth.agent.v1.LogRequest
+	24, // 16: hearth.agent.v1.HubMessage.log_cancel:type_name -> hearth.agent.v1.LogCancel
+	28, // 17: hearth.agent.v1.HubMessage.shell_request:type_name -> hearth.agent.v1.ShellRequest
+	35, // 18: hearth.agent.v1.HubMessage.scan_request:type_name -> hearth.agent.v1.ScanRequest
+	41, // 19: hearth.agent.v1.HubMessage.docker_request:type_name -> hearth.agent.v1.DockerRequest
+	2,  // 20: hearth.agent.v1.Hello.protocol_version:type_name -> hearth.agent.v1.ProtocolVersion
+	5,  // 21: hearth.agent.v1.Hello.disks:type_name -> hearth.agent.v1.Disk
+	6,  // 22: hearth.agent.v1.Hello.interfaces:type_name -> hearth.agent.v1.NetworkInterface
+	4,  // 23: hearth.agent.v1.Hello.ceiling:type_name -> hearth.agent.v1.Ceiling
+	49, // 24: hearth.agent.v1.Heartbeat.ts:type_name -> google.protobuf.Timestamp
+	50, // 25: hearth.agent.v1.Heartbeat.uptime:type_name -> google.protobuf.Duration
+	9,  // 26: hearth.agent.v1.MetricsBatch.samples:type_name -> hearth.agent.v1.MetricSample
+	48, // 27: hearth.agent.v1.MetricSample.labels:type_name -> hearth.agent.v1.MetricSample.LabelsEntry
+	49, // 28: hearth.agent.v1.MetricSample.ts:type_name -> google.protobuf.Timestamp
+	49, // 29: hearth.agent.v1.Welcome.server_time:type_name -> google.protobuf.Timestamp
+	50, // 30: hearth.agent.v1.Welcome.heartbeat_interval:type_name -> google.protobuf.Duration
+	50, // 31: hearth.agent.v1.ExecRequest.timeout:type_name -> google.protobuf.Duration
+	15, // 32: hearth.agent.v1.ExecRequest.command:type_name -> hearth.agent.v1.Command
+	16, // 33: hearth.agent.v1.ExecRequest.restart:type_name -> hearth.agent.v1.RestartService
+	50, // 34: hearth.agent.v1.ProbeRequest.timeout:type_name -> google.protobuf.Duration
+	18, // 35: hearth.agent.v1.ProbeRequest.http:type_name -> hearth.agent.v1.HTTPProbe
+	19, // 36: hearth.agent.v1.ProbeRequest.tcp:type_name -> hearth.agent.v1.TCPProbe
+	20, // 37: hearth.agent.v1.ProbeRequest.dns:type_name -> hearth.agent.v1.DNSProbe
+	23, // 38: hearth.agent.v1.LogRequest.source:type_name -> hearth.agent.v1.LogSource
+	26, // 39: hearth.agent.v1.LogLines.lines:type_name -> hearth.agent.v1.LogLine
+	49, // 40: hearth.agent.v1.LogLine.ts:type_name -> google.protobuf.Timestamp
+	29, // 41: hearth.agent.v1.ShellRequest.open:type_name -> hearth.agent.v1.ShellOpen
+	30, // 42: hearth.agent.v1.ShellRequest.resize:type_name -> hearth.agent.v1.TerminalSize
+	31, // 43: hearth.agent.v1.ShellRequest.close:type_name -> hearth.agent.v1.ShellClose
+	30, // 44: hearth.agent.v1.ShellOpen.size:type_name -> hearth.agent.v1.TerminalSize
+	33, // 45: hearth.agent.v1.ShellEvent.started:type_name -> hearth.agent.v1.ShellStarted
+	34, // 46: hearth.agent.v1.ShellEvent.exited:type_name -> hearth.agent.v1.ShellExited
+	50, // 47: hearth.agent.v1.ScanRequest.timeout:type_name -> google.protobuf.Duration
+	37, // 48: hearth.agent.v1.ScanResult.hosts:type_name -> hearth.agent.v1.ScannedHost
+	39, // 49: hearth.agent.v1.NetEdges.neighbors:type_name -> hearth.agent.v1.Neighbor
+	40, // 50: hearth.agent.v1.NetEdges.connections:type_name -> hearth.agent.v1.Connection
+	50, // 51: hearth.agent.v1.DockerRequest.timeout:type_name -> google.protobuf.Duration
+	42, // 52: hearth.agent.v1.DockerRequest.list:type_name -> hearth.agent.v1.DockerList
+	43, // 53: hearth.agent.v1.DockerRequest.action:type_name -> hearth.agent.v1.DockerAction
+	44, // 54: hearth.agent.v1.DockerRequest.logs:type_name -> hearth.agent.v1.DockerLogs
+	46, // 55: hearth.agent.v1.DockerResult.containers:type_name -> hearth.agent.v1.DockerContainer
+	47, // 56: hearth.agent.v1.DockerResult.images:type_name -> hearth.agent.v1.DockerImage
+	26, // 57: hearth.agent.v1.DockerResult.lines:type_name -> hearth.agent.v1.LogLine
+	49, // 58: hearth.agent.v1.DockerContainer.created:type_name -> google.protobuf.Timestamp
+	49, // 59: hearth.agent.v1.DockerImage.created:type_name -> google.protobuf.Timestamp
+	0,  // 60: hearth.agent.v1.AgentService.Connect:input_type -> hearth.agent.v1.AgentMessage
+	1,  // 61: hearth.agent.v1.AgentService.Connect:output_type -> hearth.agent.v1.HubMessage
+	61, // [61:62] is the sub-list for method output_type
+	60, // [60:61] is the sub-list for method input_type
+	60, // [60:60] is the sub-list for extension type_name
+	60, // [60:60] is the sub-list for extension extendee
+	0,  // [0:60] is the sub-list for field type_name
 }
 
 func init() { file_hearth_agent_v1_agent_proto_init() }
@@ -3463,6 +4119,7 @@ func file_hearth_agent_v1_agent_proto_init() {
 		(*AgentMessage_ShellEvent)(nil),
 		(*AgentMessage_ScanResult)(nil),
 		(*AgentMessage_NetEdges)(nil),
+		(*AgentMessage_DockerResult)(nil),
 	}
 	file_hearth_agent_v1_agent_proto_msgTypes[1].OneofWrappers = []any{
 		(*HubMessage_Welcome)(nil),
@@ -3473,6 +4130,7 @@ func file_hearth_agent_v1_agent_proto_init() {
 		(*HubMessage_LogCancel)(nil),
 		(*HubMessage_ShellRequest)(nil),
 		(*HubMessage_ScanRequest)(nil),
+		(*HubMessage_DockerRequest)(nil),
 	}
 	file_hearth_agent_v1_agent_proto_msgTypes[14].OneofWrappers = []any{
 		(*ExecRequest_Command)(nil),
@@ -3495,13 +4153,18 @@ func file_hearth_agent_v1_agent_proto_init() {
 		(*ShellEvent_Output)(nil),
 		(*ShellEvent_Exited)(nil),
 	}
+	file_hearth_agent_v1_agent_proto_msgTypes[41].OneofWrappers = []any{
+		(*DockerRequest_List)(nil),
+		(*DockerRequest_Action)(nil),
+		(*DockerRequest_Logs)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_hearth_agent_v1_agent_proto_rawDesc), len(file_hearth_agent_v1_agent_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   42,
+			NumMessages:   49,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

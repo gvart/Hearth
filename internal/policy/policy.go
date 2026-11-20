@@ -150,6 +150,17 @@ const (
 	// NetworkTopology reads the network edges every device's agent reported,
 	// at once, for the topology view.
 	NetworkTopology Action = "network.topology"
+	// DeviceDockerList lists the containers and images of a device's Docker
+	// or Podman engine, through its agent.
+	DeviceDockerList Action = "device.docker.list"
+	// DeviceDockerLogs reads the last lines of a container's log on a
+	// device, through its agent: a bounded tail, never a follow.
+	DeviceDockerLogs Action = "device.docker.logs"
+	// DeviceDockerStart, DeviceDockerStop and DeviceDockerRestart start,
+	// stop and restart a container on a device, through its agent.
+	DeviceDockerStart   Action = "device.docker.start"
+	DeviceDockerStop    Action = "device.docker.stop"
+	DeviceDockerRestart Action = "device.docker.restart"
 	// MCPTokenCreate creates a bearer token for an MCP client.
 	MCPTokenCreate Action = "mcp.token.create" //nolint:gosec // an action name
 	// MCPTokenRevoke revokes an MCP client's token.
@@ -404,6 +415,16 @@ var rules = map[Action]rule{
 	DeviceNetEdges: {class: Read, actors: []string{ActorWeb}},
 	// As device.net_edges, for every device at once.
 	NetworkTopology: {class: Read, actors: []string{ActorWeb}},
+	// Listing containers changes nothing; a log may carry secrets, so every
+	// read is audited. Starting, stopping and restarting a container is
+	// bounded and undone by the next one, as a service restart is. The
+	// device's agent does any of it only with --allow-docker, and nothing
+	// else of the engine's API (no exec, create, remove or pull).
+	DeviceDockerList:    {class: Read, actors: []string{ActorWeb}},
+	DeviceDockerLogs:    {class: Read, actors: []string{ActorWeb}},
+	DeviceDockerStart:   {class: Safe, actors: []string{ActorWeb}},
+	DeviceDockerStop:    {class: Safe, actors: []string{ActorWeb}},
+	DeviceDockerRestart: {class: Safe, actors: []string{ActorWeb}},
 	// A plan only parses the file.
 	AutomationPlan: {class: Read, actors: []string{ActorMCP}},
 	// An applied automation runs on its own, again and again, long after the

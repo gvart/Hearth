@@ -42,6 +42,10 @@ type Ceiling struct {
 	// NetEdges lets the agent report its network edges: its neighbour table
 	// and a summary of its established TCP connections (see netedges.go).
 	NetEdges bool
+	// Docker lets the hub list the containers and images of this device's
+	// Docker or Podman engine, read a bounded tail of a container's log, and
+	// start, stop and restart its containers (see docker.go).
+	Docker bool
 }
 
 // Service managers a restart may name.
@@ -67,7 +71,7 @@ const (
 
 // proto is the ceiling as the agent reports it to the hub.
 func (c Ceiling) proto() *agentv1.Ceiling {
-	return &agentv1.Ceiling{Exec: slices.Clone(c.Exec), Restart: slices.Clone(c.Restart), Probe: c.Probe, Logs: slices.Clone(c.Logs), Shell: c.Shell, Scan: slices.Clone(c.Scan), NetEdges: c.NetEdges}
+	return &agentv1.Ceiling{Exec: slices.Clone(c.Exec), Restart: slices.Clone(c.Restart), Probe: c.Probe, Logs: slices.Clone(c.Logs), Shell: c.Shell, Scan: slices.Clone(c.Scan), NetEdges: c.NetEdges, Docker: c.Docker}
 }
 
 // command returns the program and arguments req runs, or an error wrapping
