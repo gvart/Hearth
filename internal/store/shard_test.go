@@ -1,0 +1,358 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package store
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+	"reflect"
+	"slices"
+	"testing"
+	"time"
+)
+
+func openTestWith(t *testing.T, opts ...Option) *Store {
+	t.Helper()
+	b, err := migratedDB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "hearth.db")
+	if err := os.WriteFile(path, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(t.Context(), path, opts...)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	return s
+}
+
+// Every command has a route in a sharded cluster, or is refused there on
+// purpose.
+func TestRouteOfEveryCommand(t *testing.T) {
+	refused := map[string]bool{
+		StartCARotation{}.Op(): true, AdvanceCARotation{}.Op(): true, ResealSecrets{}.Op(): true,
+		MigrateSchema{}.Op(): true, // the schema moves on each member (docs/design/ap-cluster.md §8)
+	}
+	for _, cmd := range allCommands() {
+		r, err := RouteOf(cmd)
+		if refused[cmd.Op()] {
+			if !errors.Is(err, ErrNoRoute) {
+				t.Errorf("%s: err = %v, want ErrNoRoute", cmd.Op(), err)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("%s: %v", cmd.Op(), err)
+			continue
+		}
+		if r.Kind == RouteKey && r.Key == "" {
+			t.Errorf("%s: keyed route without a key", cmd.Op())
+		}
+		if r.Kind == RouteSplit {
+			if _, err := SplitCommand(cmd, func(k string) string { return k }); err != nil {
+				t.Errorf("%s: %v", cmd.Op(), err)
+			}
+		}
+	}
+	if _, err := RouteOf(MigrateSchema{To: 99}); !errors.Is(err, ErrNoRoute) {
+		t.Errorf("migrate_schema: err = %v, want ErrNoRoute", err)
+	}
+}
+
+// A command's route key is the partition key of every row it writes, so a
+// replica of the key holds all the rows the command reads.
+func TestRouteKeyIsRowPartition(t *testing.T) {
+	ctx := t.Context()
+	s := openTest(t)
+	for _, cmd := range allCommands() {
+		r, err := RouteOf(cmd)
+		if err != nil || r.Kind != RouteKey {
+			continue
+		}
+		_, muts, err := s.ApplyLocalMutations(ctx, cmd)
+		if err != nil {
+			continue // a command the fixture order does not allow
+		}
+		for _, m := range muts {
+			p, err := m.Placement()
+			if err != nil {
+				t.Fatalf("%s: %v", cmd.Op(), err)
+			}
+			if p.Global || p.Key != r.Key {
+				t.Errorf("%s writes %s at %+v, routed to %q", cmd.Op(), m.Table, p, r.Key)
+			}
+		}
+	}
+}
+
+func TestSplitAndMergeResults(t *testing.T) {
+	cmd := MarkSeenBatch{Seen: []Seen{{ID: "a", LastSeen: 1}, {ID: "b", LastSeen: 2}, {ID: "c", LastSeen: 3}}}
+	parts, err := SplitCommand(cmd, func(k string) string {
+		if k == "b" {
+			return "m2"
+		}
+		return "m1"
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := parts["m1"].(MarkSeenBatch).Seen; len(got) != 2 || got[0].ID != "a" || got[1].ID != "c" {
+		t.Errorf("m1 = %+v", got)
+	}
+	if got := MergeResults(cmd, []Result{{Count: 2}, {Count: 1}}); got.Count != 3 {
+		t.Errorf("split count = %d, want 3", got.Count)
+	}
+	every := MergeResults(MarkOffline{}, []Result{
+		{Count: 2, Devices: []Device{{ID: "b"}, {ID: "a"}}}, {Count: 1, Devices: []Device{{ID: "a"}}},
+	})
+	if every.Count != 2 || len(every.Devices) != 2 || every.Devices[0].ID != "a" {
+		t.Errorf("every = %+v", every)
+	}
+}
+
+// Mutations keep their value types on the wire, for every table.
+func TestMutationWireRoundTrip(t *testing.T) {
+	ctx := t.Context()
+	s := openTest(t)
+	var all []Mutation
+	for _, cmd := range allCommands() {
+		_, muts, err := s.ApplyLocalMutations(ctx, cmd)
+		if err == nil {
+			all = append(all, muts...)
+		}
+	}
+	all = append(all, Mutation{Table: "devices", Row: map[string]any{"f": 1.5, "n": nil, "b": []byte{}, "i": int64(-7)}})
+	tables := map[string]bool{}
+	for _, m := range all {
+		tables[m.Table] = true
+		b, err := json.Marshal(m)
+		if err != nil {
+			t.Fatalf("%s: %v", m.Table, err)
+		}
+		var got Mutation
+		if err := json.Unmarshal(b, &got); err != nil {
+			t.Fatalf("%s: %v", m.Table, err)
+		}
+		if !reflect.DeepEqual(got, m) {
+			t.Errorf("%s: round trip\n got %#v\nwant %#v", m.Table, got, m)
+		}
+	}
+	if len(tables) < 15 {
+		t.Errorf("only %d tables covered", len(tables))
+	}
+	var bad Mutation
+	if err := json.Unmarshal([]byte(`{"table":"devices","row":{"x":{"q":"1"}}}`), &bad); err == nil {
+		t.Error("an unknown value tag was accepted")
+	}
+}
+
+// The digests kept up to date write by write equal those built from the
+// rows, through applies, merges and the tombstone GC.
+func TestDigestIncremental(t *testing.T) {
+	ctx := t.Context()
+	a := openTestWith(t, WithDigest(), WithOrigin("a"))
+	b := openTestWith(t, WithDigest(), WithOrigin("b"))
+	var muts []Mutation
+	for _, cmd := range allCommands() {
+		_, ms, err := a.ApplyLocalMutations(ctx, withStamp(cmd, Stamp{HLC: a.clock.Now(), Origin: "a"}))
+		if err == nil {
+			muts = append(muts, ms...)
+		}
+	}
+	if err := b.Merge(ctx, muts); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.GCTombstones(ctx, time.Now().Add(30*24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []*Store{a, b} {
+		for _, sp := range []Space{SpaceShard, SpaceGlobal} {
+			buckets := make([]int, sp.Buckets())
+			for i := range buckets {
+				buckets[i] = i
+			}
+			kept := s.BucketDigests(sp, buckets)
+			if err := s.buildDigest(ctx); err != nil {
+				t.Fatal(err)
+			}
+			if built := s.BucketDigests(sp, buckets); !slices.Equal(kept, built) {
+				t.Errorf("%s space %d: kept digests differ from built ones", s.origin, sp)
+			}
+		}
+	}
+	// a dropped its tombstones, b has them: their shard digests differ,
+	// and BucketRows finds the rows of a differing bucket.
+	buckets := make([]int, ShardBuckets)
+	for i := range buckets {
+		buckets[i] = i
+	}
+	da, db := a.BucketDigests(SpaceShard, buckets), b.BucketDigests(SpaceShard, buckets)
+	var diff []int
+	for i := range da {
+		if da[i] != db[i] {
+			diff = append(diff, i)
+		}
+	}
+	if len(diff) == 0 {
+		t.Fatal("no bucket differs after a GC on one side")
+	}
+	rows, err := b.BucketRows(ctx, SpaceShard, func(bk int) bool { return slices.Contains(diff, bk) })
+	if err != nil || len(rows) == 0 {
+		t.Fatalf("BucketRows = %v, %v", rows, err)
+	}
+	read, err := b.ReadRows(ctx, []RowRef{rows[0].RowRef})
+	if err != nil || len(read) != 1 {
+		t.Fatalf("ReadRows = %v, %v", read, err)
+	}
+}
+
+// fakeShards serves the reads of a sharded store from member stores.
+type fakeShards struct {
+	self    string
+	held    map[string]bool
+	members map[string]*Store
+	key     func(string) string // member holding a key
+	repairs []RowRef
+}
+
+func (f *fakeShards) Holds(key string) bool { return f.key(key) == f.self }
+
+func (f *fakeShards) ReadKey(ctx context.Context, key, q string, args Values) (Rows, error) {
+	return f.members[f.key(key)].ReadLocal(ctx, q, args)
+}
+
+func (f *fakeShards) ReadAll(ctx context.Context, q string, args Values) ([]Rows, error) {
+	var out []Rows
+	ids := mapsKeys(f.members)
+	slices.Sort(ids)
+	for _, id := range ids {
+		r, err := f.members[id].ReadLocal(ctx, q, args)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, nil
+}
+
+func (f *fakeShards) Repair(refs []RowRef) { f.repairs = append(f.repairs, refs...) }
+
+func mapsKeys(m map[string]*Store) []string {
+	var out []string
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}
+
+// Reads on a sharded store reach the members holding the rows: a point
+// read on the replica, a list merged from all, a stale copy repaired.
+func TestShardedReads(t *testing.T) {
+	ctx := t.Context()
+	sh := &fakeShards{self: "a", members: map[string]*Store{},
+		key: func(k string) string {
+			if k == "far" {
+				return "b"
+			}
+			return "a"
+		}}
+	a := openTestWith(t, WithShards(sh), WithOrigin("a"))
+	b := openTestWith(t, WithDigest(), WithOrigin("b"))
+	sh.members["a"], sh.members["b"] = a, b
+	now := time.UnixMilli(1_700_000_000_000)
+	put := func(s *Store, id, name string) {
+		t.Helper()
+		if _, err := s.ApplyLocal(ctx, withStamp(UpsertDevice{ID: id, Name: name, Facts: "{}", Labels: "{}",
+			FirstSeen: toMillis(now), LastSeen: toMillis(now), Status: StatusOnline}, Stamp{HLC: a.clock.Now(), Origin: s.origin})); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put(a, "near", "near")
+	put(b, "far", "far")
+	// Both hold "both"; b's copy is newer.
+	put(a, "both", "old")
+	put(b, "both", "new")
+
+	d, err := a.Devices().Get(ctx, "far")
+	if err != nil || d.Name != "far" {
+		t.Fatalf("Get(far) = %+v, %v", d, err)
+	}
+	list, err := a.Devices().List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, d := range list {
+		names = append(names, d.ID+"="+d.Name)
+	}
+	if want := []string{"both=new", "far=far", "near=near"}; !slices.Equal(names, want) {
+		t.Errorf("List = %v, want %v", names, want)
+	}
+	if len(sh.repairs) != 1 || sh.repairs[0].Table != "devices" || sh.repairs[0].Key[0] != "both" {
+		t.Errorf("repairs = %+v", sh.repairs)
+	}
+	// ReadLocal refuses writes.
+	if _, err := b.ReadLocal(ctx, `DELETE FROM devices`, nil); err == nil {
+		t.Error("ReadLocal ran a write")
+	}
+}
+
+// The audit log pages across members newest first with an HLC cursor, each
+// action's outcome folded in.
+func TestShardedAuditPaging(t *testing.T) {
+	ctx := t.Context()
+	sh := &fakeShards{self: "a", members: map[string]*Store{}, key: func(string) string { return "a" }}
+	a := openTestWith(t, WithShards(sh), WithOrigin("a"))
+	b := openTestWith(t, WithDigest(), WithOrigin("b"))
+	sh.members["a"], sh.members["b"] = a, b
+	var want []string
+	for i := range 6 {
+		s := a
+		if i%2 == 1 {
+			s = b
+		}
+		action := "act" + string(rune('0'+i))
+		detail := `{"audit_op":"op` + action + `"}`
+		if _, err := s.ApplyLocal(ctx, withStamp(AppendAudit{TS: int64(i), ActorKind: "user", ActorID: "u", Action: action,
+			Decision: "allow", Result: "pending", Detail: detail}, Stamp{HLC: a.clock.Now(), Origin: s.origin})); err != nil {
+			t.Fatal(err)
+		}
+		// The outcome lands on the same member.
+		if _, err := s.ApplyLocal(ctx, withStamp(AppendAudit{TS: int64(i), ActorKind: "user", ActorID: "u", Action: action,
+			Decision: "allow", Result: "ok", Detail: `{"audit_outcome_of":"op` + action + `"}`},
+			Stamp{HLC: a.clock.Now(), Origin: s.origin})); err != nil {
+			t.Fatal(err)
+		}
+		want = append([]string{action}, want...)
+	}
+	var got []string
+	var cursor int64
+	for {
+		page, err := a.Audit().Query(ctx, AuditFilter{Before: cursor}, 4)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(page) == 0 {
+			break
+		}
+		for _, e := range page {
+			if e.Result != "ok" {
+				t.Errorf("%s: result %q, want the outcome's", e.Action, e.Result)
+			}
+			if string(e.Detail) != "{}" {
+				t.Errorf("%s: detail %s keeps the op keys", e.Action, e.Detail)
+			}
+			got = append(got, e.Action)
+		}
+		cursor = page[len(page)-1].ID
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("pages = %v, want %v", got, want)
+	}
+}

@@ -290,6 +290,9 @@ func (r Audit) query(ctx context.Context, f AuditFilter, limit int, mode auditMo
 	if !f.Until.IsZero() {
 		until = toMillis(f.Until)
 	}
+	if r.s.shards != nil {
+		return r.queryShards(ctx, f, string(actions), string(targets), since, until, limit)
+	}
 	page := map[auditMode]string{
 		auditByDetail: auditPageDetailSQL, auditByColumn: auditPageIndexedSQL, auditByVersion: auditPageVersionSQL,
 	}[mode]
@@ -366,6 +369,62 @@ func (r Audit) foldOutcomes(ctx context.Context, out []AuditEntry, ops map[strin
 		out[i].Detail = withoutOpKeys(out[i].Detail)
 	}
 	return nil
+}
+
+// auditPageShardSQL is the audit page of a member of a sharded cluster: in
+// the order of the global id, an entry's id is its HLC (the cursor ?8 is the
+// HLC of the last entry of the page before), and the outcome folds in on the
+// member itself, which holds an action's entries together (auditPartition).
+// After its own columns it selects the hidden ones queryAll merges by.
+const auditPageShardSQL = `
+	SELECT _hlc, ts, actor_kind, actor_id, action, target, decision,
+	       coalesce((SELECT o.result FROM audit_log o WHERE a.audit_op IS NOT NULL AND o.audit_outcome_of = a.audit_op
+	                 ORDER BY o._hlc DESC, o._origin DESC, o._seq DESC LIMIT 1), result),
+	       coalesce((SELECT o.detail FROM audit_log o WHERE a.audit_op IS NOT NULL AND o.audit_outcome_of = a.audit_op
+	                 ORDER BY o._hlc DESC, o._origin DESC, o._seq DESC LIMIT 1), detail),
+	       coalesce(audit_op, ''),
+	       _hlc, _origin, _seq, _hlc, _origin
+	FROM audit_log a
+	WHERE +audit_outcome_of IS NULL
+	  AND (?1 = '' OR actor_kind = ?1)
+	  AND (?2 = '' OR instr(actor_id, ?2) > 0)
+	  AND (?3 = '[]' OR action IN (SELECT value FROM json_each(?3)))
+	  AND (?4 = '[]' OR target IN (SELECT value FROM json_each(?4)))
+	  AND (?5 = '' OR decision = ?5)
+	  AND (?6 = 0 OR ts >= ?6)
+	  AND (?7 = 0 OR ts < ?7)
+	  AND (?8 = 0 OR _hlc < ?8)
+	ORDER BY _hlc DESC, _origin DESC, _seq DESC LIMIT ?9`
+
+// queryShards is query in a sharded cluster: every member pages its own
+// entries, outcomes folded in, and the pages merge newest first (a k-way
+// merge by HLC). An entry's ID is its HLC, and f.Before an HLC cursor.
+func (r Audit) queryShards(ctx context.Context, f AuditFilter, actions, targets string, since, until int64, limit int) ([]AuditEntry, error) {
+	rows, err := r.s.queryAll(ctx, gather{table: auditTable, order: desc(byInt(0)), limit: limit}, auditPageShardSQL,
+		f.ActorKind, f.ActorID, actions, targets, f.Decision, since, until, f.Before, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list audit: %w", err)
+	}
+	defer rows.Close()
+	var out []AuditEntry
+	for rows.Next() {
+		var (
+			e          AuditEntry
+			ts         int64
+			detail, op string
+		)
+		if err := rows.Scan(&e.ID, &ts, &e.ActorKind, &e.ActorID, &e.Action, &e.Target,
+			&e.Decision, &e.Result, &detail, &op); err != nil {
+			return nil, fmt.Errorf("list audit: %w", err)
+		}
+		e.TS = fromMillis(ts)
+		e.Detail = json.RawMessage(detail)
+		if op != "" {
+			e.Detail = withoutOpKeys(e.Detail)
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
 }
 
 // withoutOpKeys returns detail without the keys that tie an action's entries,

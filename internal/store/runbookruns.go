@@ -128,7 +128,7 @@ func (r RunbookRuns) Save(ctx context.Context, run RunbookRun) (int64, error) {
 
 // Get returns one run with its source, or ErrNotFound.
 func (r RunbookRuns) Get(ctx context.Context, id string) (RunbookRun, error) {
-	out, err := r.query(ctx, `source`, `id = ?`, ``, id)
+	out, err := r.query(ctx, "", gather{}, `source`, `id = ?`, ``, id)
 	if err != nil {
 		return RunbookRun{}, fmt.Errorf("get runbook run %s: %w", id, err)
 	}
@@ -144,7 +144,8 @@ func (r RunbookRuns) List(ctx context.Context, runbookID string, limit int) ([]R
 	if limit <= 0 {
 		return nil, errors.New("list runbook runs: limit must be positive")
 	}
-	out, err := r.query(ctx, `x''`, `? = '' OR runbook_id = ?`, `ORDER BY started_at DESC, rowid DESC LIMIT ?`,
+	out, err := r.query(ctx, runbookID, gather{order: then(desc(byInt(5)), desc(byText(0))), limit: limit},
+		`x''`, `? = '' OR runbook_id = ?`, `ORDER BY started_at DESC, rowid DESC LIMIT ?`,
 		runbookID, runbookID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list runbook runs: %w", err)
@@ -155,7 +156,8 @@ func (r RunbookRuns) List(ctx context.Context, runbookID string, limit int) ([]R
 // Open returns every run the engine has work on, oldest first: not finished,
 // and not stopped for an operator's decision. Before schema 16 there are none.
 func (r RunbookRuns) Open(ctx context.Context) ([]RunbookRun, error) {
-	out, err := r.query(ctx, `x''`, `finished_at = 0 AND status NOT IN (`+runbookRunsStopped+`)`, `ORDER BY started_at, rowid`)
+	out, err := r.query(ctx, "", gather{order: then(byInt(5), byText(0))},
+		`x''`, `finished_at = 0 AND status NOT IN (`+runbookRunsStopped+`)`, `ORDER BY started_at, rowid`)
 	if err != nil {
 		return nil, fmt.Errorf("list open runbook runs: %w", err)
 	}
@@ -168,7 +170,7 @@ const runbookRunColumns = `id, runbook_id, status, version, started_by, started_
 // of the runs matching where, then tail (an ORDER BY or LIMIT clause). The
 // clauses are constants of this file's callers; values are bound. Before
 // schema 16 it finds none.
-func (r RunbookRuns) query(ctx context.Context, source, where, tail string, args ...any) ([]RunbookRun, error) {
+func (r RunbookRuns) query(ctx context.Context, key string, g gather, source, where, tail string, args ...any) ([]RunbookRun, error) {
 	v, err := schemaVersion(ctx, r.s.db)
 	if err != nil {
 		return nil, err
@@ -176,9 +178,10 @@ func (r RunbookRuns) query(ctx context.Context, source, where, tail string, args
 	if v < runbookRunsSchema {
 		return nil, nil
 	}
-	q := `SELECT ` + runbookRunColumns + `, ` + source + ` FROM runbook_runs WHERE (` + where + `)` + //nolint:gosec // see above
+	rest := ` FROM runbook_runs WHERE (` + where + `)` + //nolint:gosec // see above
 		liveOnly(v >= VersionedSchema) + ` ` + tail
-	rows, err := r.s.db.QueryContext(ctx, q, args...)
+	g.table = "runbook_runs"
+	rows, err := r.s.list(ctx, key, g, `SELECT `+runbookRunColumns+`, `+source, rest, args...)
 	if err != nil {
 		return nil, err
 	}
