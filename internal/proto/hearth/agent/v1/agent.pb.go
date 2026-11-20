@@ -2923,9 +2923,12 @@ type NetEdges struct {
 	Neighbors []*Neighbor `protobuf:"bytes,1,rep,name=neighbors,proto3" json:"neighbors,omitempty"`
 	// connections summarise the device's established TCP connections, one per
 	// peer address, port and direction, loopback excluded.
-	Connections   []*Connection `protobuf:"bytes,2,rep,name=connections,proto3" json:"connections,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Connections []*Connection `protobuf:"bytes,2,rep,name=connections,proto3" json:"connections,omitempty"`
+	// connections_dropped counts the established connections left out
+	// because the device holds more groups than the agent keeps.
+	ConnectionsDropped uint32 `protobuf:"varint,3,opt,name=connections_dropped,json=connectionsDropped,proto3" json:"connections_dropped,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *NetEdges) Reset() {
@@ -2970,6 +2973,13 @@ func (x *NetEdges) GetConnections() []*Connection {
 		return x.Connections
 	}
 	return nil
+}
+
+func (x *NetEdges) GetConnectionsDropped() uint32 {
+	if x != nil {
+		return x.ConnectionsDropped
+	}
+	return 0
 }
 
 // Neighbor is an entry of a neighbour table.
@@ -3300,10 +3310,11 @@ const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"\vScannedHost\x12\x10\n" +
 	"\x03mac\x18\x01 \x01(\tR\x03mac\x12\x0e\n" +
 	"\x02ip\x18\x02 \x01(\tR\x02ip\x12\x1a\n" +
-	"\bhostname\x18\x03 \x01(\tR\bhostname\"\x82\x01\n" +
+	"\bhostname\x18\x03 \x01(\tR\bhostname\"\xb3\x01\n" +
 	"\bNetEdges\x127\n" +
 	"\tneighbors\x18\x01 \x03(\v2\x19.hearth.agent.v1.NeighborR\tneighbors\x12=\n" +
-	"\vconnections\x18\x02 \x03(\v2\x1b.hearth.agent.v1.ConnectionR\vconnections\",\n" +
+	"\vconnections\x18\x02 \x03(\v2\x1b.hearth.agent.v1.ConnectionR\vconnections\x12/\n" +
+	"\x13connections_dropped\x18\x03 \x01(\rR\x12connectionsDropped\",\n" +
 	"\bNeighbor\x12\x0e\n" +
 	"\x02ip\x18\x01 \x01(\tR\x02ip\x12\x10\n" +
 	"\x03mac\x18\x02 \x01(\tR\x03mac\"i\n" +

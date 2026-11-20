@@ -19,73 +19,88 @@ import (
 	"github.com/gvart/hearth/internal/store"
 )
 
-// maxNetEdges bounds the neighbours, and apart from them the connections,
-// the hub keeps of one report.
-const maxNetEdges = 512
+const (
+	// maxNetEdges bounds the neighbours, and apart from them the connections,
+	// the hub keeps of one report.
+	maxNetEdges = 512
+	// minNetEdgesGap is the least time between two reports of one stream
+	// the hub takes; agents report every minute. A report sooner is dropped.
+	minNetEdgesGap = 30 * time.Second
+)
 
-// netEdgesRecorder stores the network edges agents report (store.NetEdges).
-type netEdgesRecorder interface {
-	Replace(ctx context.Context, deviceID string, at time.Time, edges []store.NetEdge) (bool, error)
-}
-
-// allowsNetEdges reports whether the agent's last reported ceiling allows
-// it to report network edges.
-func (s *agentSession) allowsNetEdges() bool {
+// takeNetEdges reports whether a report arriving at now is to be recorded:
+// the agent's last reported ceiling allows network edges, and the last
+// report of this stream is at least minNetEdgesGap old.
+func (s *agentSession) takeNetEdges(now time.Time) (allowed, due bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.ceiling.GetNetEdges()
+	if !s.ceiling.GetNetEdges() {
+		return false, false
+	}
+	if !s.lastNetEdges.IsZero() && now.Sub(s.lastNetEdges) < minNetEdgesGap {
+		return true, false
+	}
+	s.lastNetEdges = now
+	return true, true
 }
 
-// recordNetEdges stores the network edges a device's agent reported, if its
-// ceiling allows it to report them: the hub drops a report the device's own
-// configuration does not allow. Malformed entries are skipped.
+// recordNetEdges keeps the network edges a device's agent reported, if its
+// ceiling allows it to report them (the hub drops a report the device's own
+// configuration does not allow) and the stream's last report is at least
+// minNetEdgesGap old. Malformed entries are skipped.
 func (s *AgentStream) recordNetEdges(ctx context.Context, log *slog.Logger, deviceID string, sess *agentSession, e *agentv1.NetEdges) {
 	if s.netEdges == nil {
 		return
 	}
-	if !sess.allowsNetEdges() {
+	now := s.now()
+	switch allowed, due := sess.takeNetEdges(now); {
+	case !allowed:
 		log.WarnContext(ctx, "network edges dropped: the agent's ceiling does not allow them")
+		return
+	case !due:
+		log.WarnContext(ctx, "network edges dropped: the agent reports too often")
 		return
 	}
 	edges := netEdgesFrom(e)
-	changed, err := s.netEdges.Replace(ctx, deviceID, s.now(), edges)
-	switch {
-	case errors.Is(err, store.ErrSchemaTooOld):
-		log.DebugContext(ctx, "network edges dropped", "err", err)
-	case err != nil:
-		log.WarnContext(ctx, "record network edges", "err", err)
-	default:
-		log.DebugContext(ctx, "net edges", "edges", len(edges), "changed", changed)
+	changed := s.netEdges.set(deviceID, now, edges)
+	log.DebugContext(ctx, "net edges", "edges", len(edges), "changed", changed, "connections_dropped", e.GetConnectionsDropped())
+}
+
+// forgetNetEdges forgets the device's edges once its agent reports a
+// ceiling that does not allow them: the operator turned them off.
+func (s *AgentStream) forgetNetEdges(deviceID string, c *agentv1.Ceiling) {
+	if s.netEdges != nil && !c.GetNetEdges() {
+		s.netEdges.clear(deviceID)
 	}
 }
 
-// netEdgesFrom validates a report: addresses must parse, MACs must be
-// unicast Ethernet addresses, ports must be ports.
-func netEdgesFrom(e *agentv1.NetEdges) []store.NetEdge {
-	var out []store.NetEdge
+// netEdgesFrom validates a report: addresses must parse without a zone,
+// neighbours must be IPv4 with a unicast Ethernet MAC, ports must be ports.
+func netEdgesFrom(e *agentv1.NetEdges) []NetEdge {
+	var out []NetEdge
 	n := 0
 	for _, nb := range e.GetNeighbors() {
 		ip, err := netip.ParseAddr(nb.GetIp())
 		hw, merr := net.ParseMAC(nb.GetMac())
-		if err != nil || merr != nil || len(hw) != 6 || hw[0]&0x01 != 0 {
+		if err != nil || !ip.Is4() || merr != nil || len(hw) != 6 || hw[0]&0x01 != 0 {
 			continue
 		}
 		if n++; n > maxNetEdges {
 			break
 		}
-		out = append(out, store.NetEdge{Kind: store.EdgeNeighbor, IP: ip.Unmap().String(), MAC: hw.String()})
+		out = append(out, NetEdge{Kind: EdgeNeighbor, IP: ip.String(), MAC: hw.String()})
 	}
 	n = 0
 	for _, c := range e.GetConnections() {
 		ip, err := netip.ParseAddr(c.GetPeerIp())
-		if err != nil || c.GetPort() == 0 || c.GetPort() > 65535 || c.GetCount() == 0 {
+		if err != nil || ip.Zone() != "" || c.GetPort() == 0 || c.GetPort() > 65535 || c.GetCount() == 0 {
 			continue
 		}
 		if n++; n > maxNetEdges {
 			break
 		}
-		out = append(out, store.NetEdge{
-			Kind: store.EdgeConnection, IP: ip.Unmap().String(), Port: uint16(c.GetPort()), //nolint:gosec // checked above
+		out = append(out, NetEdge{
+			Kind: EdgeConnection, IP: ip.Unmap().String(), Port: uint16(c.GetPort()), //nolint:gosec // checked above
 			Inbound: c.GetInbound(), Count: c.GetCount(),
 		})
 	}
@@ -160,7 +175,7 @@ func (a *api) deviceNetEdges(w http.ResponseWriter, r *http.Request) {
 		ActorKind: policy.ActorWeb, ActorID: remoteHost(r), Action: policy.DeviceNetEdges, Target: d.ID,
 	}, func(ctx context.Context) error {
 		var err error
-		out, err = a.netEdges(ctx, d)
+		out, err = a.readNetEdges(ctx, d)
 		return err
 	})
 	switch {
@@ -176,10 +191,10 @@ func (a *api) deviceNetEdges(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// netEdges reads and resolves d's edges. An agent that no longer reports
+// readNetEdges reads and resolves d's edges. An agent that no longer reports
 // them (its ceiling dropped --allow-net-edges) lists none, whatever it
 // reported before.
-func (a *api) netEdges(ctx context.Context, d store.Device) (NetEdgesJSON, error) {
+func (a *api) readNetEdges(ctx context.Context, d store.Device) (NetEdgesJSON, error) {
 	out := NetEdgesJSON{Neighbors: []NeighborJSON{}, Connections: []ConnectionJSON{}}
 	var f Facts
 	if json.Unmarshal(d.Facts, &f) == nil && f.Ceiling != nil {
@@ -188,21 +203,20 @@ func (a *api) netEdges(ctx context.Context, d store.Device) (NetEdgesJSON, error
 	if !out.Enabled {
 		return out, nil
 	}
-	edges, err := a.store.NetEdges().Get(ctx, d.ID)
-	if err != nil {
-		return out, err
-	}
-	if len(edges.Edges) == 0 {
+	if a.netEdges == nil {
 		return out, nil
 	}
-	at := edges.UpdatedAt
+	edges, at := a.netEdges.Get(d.ID)
+	if len(edges) == 0 {
+		return out, nil
+	}
 	out.UpdatedAt = &at
 	peers, err := a.peerIndex(ctx)
 	if err != nil {
 		return out, err
 	}
-	for _, e := range edges.Edges {
-		if e.Kind == store.EdgeNeighbor {
+	for _, e := range edges {
+		if e.Kind == EdgeNeighbor {
 			out.Neighbors = append(out.Neighbors, NeighborJSON{IP: e.IP, MAC: e.MAC, Peer: peers.resolve(e.MAC, e.IP)})
 			continue
 		}

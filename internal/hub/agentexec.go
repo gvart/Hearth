@@ -89,6 +89,8 @@ type agentSession struct {
 	shells map[string]*Shell
 	// ceiling is the capability ceiling the agent last reported.
 	ceiling *agentv1.Ceiling
+	// lastNetEdges is when the hub last took the stream's network edges.
+	lastNetEdges time.Time
 }
 
 // attach records the stream of deviceID. A newer stream of the same device

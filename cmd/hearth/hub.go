@@ -454,6 +454,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		Beszel:            beszelSnapshotter(beszelReader),
 		Talos:             talosSnapshotter(talosReader),
 		Metrics:           ms,
+		NetEdges:          hub.NewNetEdges(),
 		Agents:            agents,
 		Kube:              kube,
 		Proxmox:           pve,

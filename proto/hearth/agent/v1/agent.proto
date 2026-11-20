@@ -446,6 +446,9 @@ message NetEdges {
   // connections summarise the device's established TCP connections, one per
   // peer address, port and direction, loopback excluded.
   repeated Connection connections = 2;
+  // connections_dropped counts the established connections left out
+  // because the device holds more groups than the agent keeps.
+  uint32 connections_dropped = 3;
 }
 
 // Neighbor is an entry of a neighbour table.

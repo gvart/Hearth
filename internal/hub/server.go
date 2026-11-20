@@ -76,6 +76,9 @@ type Config struct {
 	// talosconfig is configured: GET /api/v1/talos/nodes reports
 	// not_configured.
 	Talos TalosSnapshotter
+	// NetEdges keeps the network edges agents report and serves them under
+	// /api/v1/devices/{id}/net-edges. Nil drops them.
+	NetEdges *NetEdges
 	// Metrics stores the host metrics agents send and serves device charts
 	// when no Prometheus is configured. Nil drops the metrics.
 	Metrics *metrics.Store
@@ -144,14 +147,26 @@ func NewHandler(cfg Config) http.Handler {
 	stream.certs, stream.authority, stream.pins, stream.audit = cfg.Store.Certs(), authority, cfg.Store.Certs(), cfg.Store.Audit()
 	stream.ca, stream.rotations, stream.renew = cfg.CA, cfg.Store.CARotations(), cfg.Store.Certs()
 	stream.metrics = cfg.Metrics
-	stream.netEdges = cfg.Store.NetEdges()
+	stream.netEdges = cfg.NetEdges
 	if cfg.Agents != nil {
 		stream.agents = cfg.Agents
 	}
-	path, h := agentv1connect.NewAgentServiceHandler(stream)
+	path, h := agentServiceHandler(stream)
 	mux.Handle(path, requireClientCert(cfg.Store.Certs(), cfg.CA, cfg.Log, authority,
 		EndOnStop(cfg.Stopping, reg.endOnStepDown(abortableStream(h)))))
 	return mux
+}
+
+// maxAgentMessage caps one message an agent sends. The largest an agent
+// sends legitimately are well below it: a batch of 64 log lines of at most
+// 4 kB each, a shell output chunk of 32 kB, a scan of at most 1024 hosts,
+// network edges of at most 1024 entries, and its facts.
+const maxAgentMessage = 4 << 20
+
+// agentServiceHandler serves stream, refusing any message larger than
+// maxAgentMessage: the stream ends with ResourceExhausted.
+func agentServiceHandler(stream *AgentStream) (string, http.Handler) {
+	return agentv1connect.NewAgentServiceHandler(stream, connect.WithReadMaxBytes(maxAgentMessage))
 }
 
 // certAuthority returns what a hub that cannot vouch for its own store

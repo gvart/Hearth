@@ -52,13 +52,13 @@ func TestParseProcAddr(t *testing.T) {
 		"B80D0120000000000000000001000000:0050": "[2001:db8::1]:80",
 	}
 	for in, want := range tests {
-		got, ok := parseProcAddr(in)
+		got, ok := parseProcAddr([]byte(in))
 		if !ok || got.String() != want {
 			t.Errorf("parseProcAddr(%q) = %v, %v; want %s", in, got, ok, want)
 		}
 	}
 	for _, bad := range []string{"", "0100007F", "0100007F:", "0100007F:XYZ", "01007F:0016", "0100007F:10000", "zz00007F:0016"} {
-		if got, ok := parseProcAddr(bad); ok {
+		if got, ok := parseProcAddr([]byte(bad)); ok {
 			t.Errorf("parseProcAddr(%q) = %v, want refused", bad, got)
 		}
 	}
@@ -72,8 +72,11 @@ func TestTCPTableConnections(t *testing.T) {
 		tcpLine("192.0.2.5:22", "192.0.2.20:50002", "01"),
 		tcpLine("192.0.2.5:40000", "192.0.2.10:7443", "01"), // outbound to the hub, two sockets
 		tcpLine("192.0.2.5:40001", "192.0.2.10:7443", "01"),
-		tcpLine("192.0.2.5:40002", "192.0.2.30:443", "06"), // TIME_WAIT: not established
-		tcpLine("127.0.0.1:40003", "127.0.0.1:5432", "01"), // loopback: skipped
+		tcpLine("192.0.2.5:9000", "192.0.2.21:50003", "01"),   // inbound on 9000, read before its listener
+		tcpLine("192.0.2.5:9000", "0.0.0.0:0", "0A"),          // listens on 9000 on one address only
+		tcpLine("198.51.100.5:9000", "192.0.2.22:9000", "01"), // another address: outbound to the peer's 9000
+		tcpLine("192.0.2.5:40002", "192.0.2.30:443", "06"),    // TIME_WAIT: not established
+		tcpLine("127.0.0.1:40003", "127.0.0.1:5432", "01"),    // loopback: skipped
 		"   9: garbage line",
 	}, "\n")
 	tcp6 := strings.Join([]string{
@@ -95,6 +98,8 @@ func TestTCPTableConnections(t *testing.T) {
 		Connections: []*agentv1.Connection{
 			{PeerIp: "192.0.2.10", Port: 7443, Count: 3},
 			{PeerIp: "192.0.2.20", Port: 22, Inbound: true, Count: 2},
+			{PeerIp: "192.0.2.21", Port: 9000, Inbound: true, Count: 1},
+			{PeerIp: "192.0.2.22", Port: 9000, Count: 1},
 			{PeerIp: "2001:db8::9", Port: 8080, Inbound: true, Count: 1},
 		},
 	}
@@ -133,5 +138,37 @@ func TestCollectNetEdgesCaps(t *testing.T) {
 	if len(got.GetConnections()) != maxConnections || len(got.GetNeighbors()) != maxNeighbors {
 		t.Errorf("report holds %d connections and %d neighbours, want %d and %d",
 			len(got.GetConnections()), len(got.GetNeighbors()), maxConnections, maxNeighbors)
+	}
+}
+
+// A host with a hundred thousand sockets costs the agent no more than one
+// with a few thousand: groups are capped while parsing, the overflow is
+// counted, and lines are parsed without allocating.
+func TestCollectNetEdgesManySockets(t *testing.T) {
+	const sockets = 100_000
+	var b strings.Builder
+	b.WriteString(tcpHeader + "\n")
+	b.WriteString(tcpLine("0.0.0.0:22", "0.0.0.0:0", "0A") + "\n")
+	for i := range sockets {
+		peer := netip.AddrFrom4([4]byte{10, byte(i >> 16), byte(i >> 8), byte(i)})
+		b.WriteString(tcpLine("192.0.2.5:40000", netip.AddrPortFrom(peer, 443).String(), "01") + "\n")
+	}
+	fsys := fstest.MapFS{"tcp": {Data: []byte(b.String())}}
+	none := func() ([]discovery.Neighbor, error) { return nil, nil }
+
+	var got *agentv1.NetEdges
+	allocs := testing.AllocsPerRun(1, func() {
+		var err error
+		if got, err = collectNetEdges(fsys, none); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if len(got.GetConnections()) != maxConnections || got.GetConnectionsDropped() != sockets-maxGroups {
+		t.Errorf("report holds %d connections, %d dropped; want %d and %d",
+			len(got.GetConnections()), got.GetConnectionsDropped(), maxConnections, sockets-maxGroups)
+	}
+	// Per socket, nothing: what is allocated is the capped groups and the report.
+	if allocs > 10*maxGroups {
+		t.Errorf("collectNetEdges made %.0f allocations for %d sockets, want at most %d", allocs, sockets, 10*maxGroups)
 	}
 }

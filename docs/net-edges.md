@@ -19,7 +19,7 @@ hearth agent run --allow-net-edges
 
 The flag is part of the device's [capability ceiling](guardrails.md#device-capability-ceiling): the
 hub cannot turn it on from its side, and drops a report from an agent whose ceiling does not allow
-it. Drop the flag and restart the agent, and the hub stops listing what it reported before.
+it. Drop the flag and restart the agent, and the hub forgets what it reported before.
 
 Only Linux agents report edges for now; on other systems the agent refuses the flag.
 
@@ -31,15 +31,19 @@ Shortly after the agent connects, then every minute:
   the hub tells which device or host it is, even when its address changed.
 - **Connections**: the established TCP connections of `/proc/net/tcp` and `/proc/net/tcp6`, loopback
   excluded, grouped by peer, port and direction with a count. A connection to a port the device
-  listens on is *inbound* and keyed by that port (sshd's 22); any other is *outbound* and keyed by
-  the peer's port (the hub's 7443). Ephemeral ports never make new entries.
+  listens on (on that address, or on every address) is *inbound* and keyed by that port (sshd's
+  22); any other is *outbound* and keyed by the peer's port (the hub's 7443). Ephemeral ports never
+  make new entries.
 
-Each report is capped at 512 neighbours and 512 connection groups. The agent reads the files any
-user may read, needs no privilege, and keeps nothing between reports. IPv6 neighbours (NDP) are not
+Each report is capped at 512 neighbours and 512 connection groups; a host with more groups says how
+many connections were left out. The agent reads the files any user may read, needs no privilege,
+groups connections as it reads them, so a host with many sockets costs it no more, and keeps nothing
+between reports. IPv6 neighbours (NDP) are not
 reported yet.
 
-The hub stores the device's latest set, replacing the previous one, and writes nothing when a report
-is the same as the last.
+The hub keeps each device's latest set in its own memory, as it keeps host metrics on its own: edges
+never go into the replicated store. After a hub restart or a failover to another hub, the agents
+refill them within a minute. The hub takes at most one report every 30 seconds from an agent.
 
 ## Reading them
 

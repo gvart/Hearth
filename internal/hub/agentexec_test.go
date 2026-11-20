@@ -34,7 +34,6 @@ func newExecClient(t *testing.T, st *store.Store) (agentv1connect.AgentServiceCl
 func newExecClientWindow(t *testing.T, st *store.Store, window int, opts ...func(*Agents)) (agentv1connect.AgentServiceClient, *Agents) {
 	t.Helper()
 	as := NewAgentStream(slog.New(slog.DiscardHandler), 5*time.Second, NewRegistry(RegistryConfig{Store: st}))
-	as.netEdges = st.NetEdges()
 	for _, o := range opts {
 		o(as.agents)
 	}

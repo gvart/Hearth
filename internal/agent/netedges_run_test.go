@@ -32,8 +32,8 @@ func TestRunSendsNetEdges(t *testing.T) {
 	defer a.stop(t)
 
 	waitFor(t, 10*time.Second, "the agent's network edges", func() bool {
-		got, err := h.st.NetEdges().Get(t.Context(), id)
-		return err == nil && len(got.Edges) == 2
+		got, _ := h.netEdges.Get(id)
+		return len(got) == 2
 	})
 	waitFor(t, 10*time.Second, "a second report", func() bool { return reads.Load() >= 2 })
 }
@@ -59,7 +59,7 @@ func TestRunSendsNoNetEdgesWithoutTheCeiling(t *testing.T) {
 	if logs := h.logs.String(); strings.Contains(logs, "net edges") || strings.Contains(logs, "network edges") {
 		t.Errorf("the hub got network edges:\n%s", logs)
 	}
-	if got, err := h.st.NetEdges().Get(t.Context(), id); err != nil || len(got.Edges) != 0 {
-		t.Errorf("stored edges = %+v, %v; want none", got, err)
+	if got, _ := h.netEdges.Get(id); len(got) != 0 {
+		t.Errorf("kept edges = %+v; want none", got)
 	}
 }

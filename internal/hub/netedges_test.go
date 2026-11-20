@@ -5,15 +5,21 @@ package hub
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/gvart/hearth/internal/policy"
 	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
+	"github.com/gvart/hearth/internal/proto/hearth/agent/v1/agentv1connect"
 	"github.com/gvart/hearth/internal/store"
 )
 
@@ -31,7 +37,50 @@ var testNetEdges = &agentv1.NetEdges{
 	},
 }
 
-// The hub stores a report only from an agent whose ceiling allows it: an
+// newNetEdgesClient serves an AgentStream for dev-1 that keeps network
+// edges, as NewHandler serves it, and returns a client and the edges.
+func newNetEdgesClient(t *testing.T, st *store.Store) (agentv1connect.AgentServiceClient, *NetEdges) {
+	t.Helper()
+	as := NewAgentStream(slog.New(slog.DiscardHandler), 5*time.Second, NewRegistry(RegistryConfig{Store: st}))
+	as.netEdges = NewNetEdges()
+	path, h := agentServiceHandler(as)
+	mux := http.NewServeMux()
+	mux.Handle(path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.ServeHTTP(w, r.WithContext(withDeviceID(r.Context(), "dev-1")))
+	}))
+	srv := httptest.NewUnstartedServer(mux)
+	srv.Config.Protocols = new(http.Protocols)
+	srv.Config.Protocols.SetUnencryptedHTTP2(true)
+	srv.Start()
+	t.Cleanup(srv.Close)
+	transport := &http.Transport{Protocols: new(http.Protocols)}
+	transport.Protocols.SetUnencryptedHTTP2(true)
+	t.Cleanup(transport.CloseIdleConnections)
+	return agentv1connect.NewAgentServiceClient(&http.Client{Transport: transport}, srv.URL), as.netEdges
+}
+
+func sendNetEdges(t *testing.T, stream *connect.BidiStreamForClient[agentv1.AgentMessage, agentv1.HubMessage], e *agentv1.NetEdges) {
+	t.Helper()
+	if err := stream.Send(&agentv1.AgentMessage{Payload: &agentv1.AgentMessage_NetEdges{NetEdges: e}}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// settle waits until the hub handled every message sent before: a heartbeat
+// with uptime sets the device's boot time once it is handled.
+func settle(ctx context.Context, t *testing.T, st *store.Store, stream *connect.BidiStreamForClient[agentv1.AgentMessage, agentv1.HubMessage], uptime time.Duration) {
+	t.Helper()
+	if err := stream.Send(&agentv1.AgentMessage{Payload: &agentv1.AgentMessage_Heartbeat{Heartbeat: &agentv1.Heartbeat{Uptime: durationpb.New(uptime)}}}); err != nil {
+		t.Fatal(err)
+	}
+	want := time.Now().Add(-uptime)
+	waitUntil(t, func() bool {
+		d, err := st.Devices().Get(ctx, "dev-1")
+		return err == nil && !d.BootTime.IsZero() && d.BootTime.Sub(want).Abs() < time.Minute
+	})
+}
+
+// The hub keeps a report only from an agent whose ceiling allows it: an
 // agent that sends one without --allow-net-edges is ignored.
 func TestRecordNetEdges(t *testing.T) {
 	t.Parallel()
@@ -50,33 +99,128 @@ func TestRecordNetEdges(t *testing.T) {
 			defer cancel()
 			st := newTestStore(t)
 			enrollDevice(t, st, "dev-1")
-			client, _ := newExecClient(t, st)
+			client, edges := newNetEdgesClient(t, st)
 			stream := connectAgent(ctx, t, client, 8, tc.ceiling)
-			if err := stream.Send(&agentv1.AgentMessage{Payload: &agentv1.AgentMessage_NetEdges{NetEdges: testNetEdges}}); err != nil {
-				t.Fatal(err)
+			sendNetEdges(t, stream, testNetEdges)
+			settle(ctx, t, st, stream, time.Hour)
+			got, _ := edges.Get("dev-1")
+			if len(got) != tc.want {
+				t.Fatalf("kept edges = %+v; want %d", got, tc.want)
 			}
-			// A heartbeat after the report: once it is recorded, so is the report.
-			if err := stream.Send(&agentv1.AgentMessage{Payload: &agentv1.AgentMessage_Heartbeat{Heartbeat: &agentv1.Heartbeat{Uptime: durationpb.New(time.Hour)}}}); err != nil {
-				t.Fatal(err)
-			}
-			waitUntil(t, func() bool {
-				d, err := st.Devices().Get(ctx, "dev-1")
-				return err == nil && !d.BootTime.IsZero()
-			})
-			got, err := st.NetEdges().Get(ctx, "dev-1")
-			if tc.want > 0 {
-				waitUntil(t, func() bool {
-					got, err = st.NetEdges().Get(ctx, "dev-1")
-					return err == nil && len(got.Edges) == tc.want
-				})
-			}
-			if err != nil || len(got.Edges) != tc.want {
-				t.Fatalf("stored edges = %+v, %v; want %d", got.Edges, err, tc.want)
-			}
-			if tc.want > 0 && !slices.Contains(got.Edges, store.NetEdge{Kind: store.EdgeNeighbor, IP: "192.0.2.1", MAC: "aa:bb:cc:00:00:01"}) {
-				t.Errorf("stored edges = %+v, want the neighbour's MAC in lower case", got.Edges)
+			if tc.want > 0 && !slices.Contains(got, NetEdge{Kind: EdgeNeighbor, IP: "192.0.2.1", MAC: "aa:bb:cc:00:00:01"}) {
+				t.Errorf("kept edges = %+v, want the neighbour's MAC in lower case", got)
 			}
 		})
+	}
+}
+
+// Addresses with a zone, which may be of any length, and neighbours that
+// are not IPv4 are dropped.
+func TestNetEdgesFromRejects(t *testing.T) {
+	zone := strings.Repeat("z", 100<<10)
+	got := netEdgesFrom(&agentv1.NetEdges{
+		Neighbors: []*agentv1.Neighbor{
+			{Ip: "fe80::1%" + zone, Mac: "aa:bb:cc:00:00:01"},
+			{Ip: "2001:db8::1", Mac: "aa:bb:cc:00:00:02"},
+			{Ip: "::ffff:192.0.2.3", Mac: "aa:bb:cc:00:00:03"},
+			{Ip: "192.0.2.4", Mac: "aa:bb:cc:00:00:04"},
+		},
+		Connections: []*agentv1.Connection{
+			{PeerIp: "fe80::1%" + zone, Port: 22, Count: 1},
+			{PeerIp: "fe80::1", Port: 22, Count: 1},
+		},
+	})
+	want := []NetEdge{
+		{Kind: EdgeNeighbor, IP: "192.0.2.4", MAC: "aa:bb:cc:00:00:04"},
+		{Kind: EdgeConnection, IP: "fe80::1", Port: 22, Count: 1},
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("netEdgesFrom = %+v, want %+v", got, want)
+	}
+}
+
+// One stream's reports are taken at most every minNetEdgesGap: an agent that
+// reports in a loop changes nothing between two.
+func TestRecordNetEdgesRateLimit(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	st := newTestStore(t)
+	enrollDevice(t, st, "dev-1")
+	client, edges := newNetEdgesClient(t, st)
+	stream := connectAgent(ctx, t, client, 8, &agentv1.Ceiling{NetEdges: true})
+	first := &agentv1.NetEdges{Connections: []*agentv1.Connection{{PeerIp: "192.0.2.10", Port: 7443, Count: 1}}}
+	sendNetEdges(t, stream, first)
+	for range 50 {
+		sendNetEdges(t, stream, testNetEdges)
+	}
+	settle(ctx, t, st, stream, time.Hour)
+	if got, _ := edges.Get("dev-1"); len(got) != 1 || got[0].IP != "192.0.2.10" {
+		t.Errorf("kept edges = %+v, want only the first report's", got)
+	}
+}
+
+// When the agent reports a ceiling without net_edges, in its facts or when
+// it reconnects, the hub forgets what it reported before.
+func TestNetEdgesForgottenWhenTurnedOff(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	st := newTestStore(t)
+	enrollDevice(t, st, "dev-1")
+	client, edges := newNetEdgesClient(t, st)
+	stream := connectAgent(ctx, t, client, 8, &agentv1.Ceiling{NetEdges: true})
+	sendNetEdges(t, stream, testNetEdges)
+	settle(ctx, t, st, stream, time.Hour)
+	if got, _ := edges.Get("dev-1"); len(got) == 0 {
+		t.Fatal("no edges kept")
+	}
+	facts := hello(ProtocolMajor).GetHello()
+	facts.Ceiling = &agentv1.Ceiling{Probe: true}
+	if err := stream.Send(&agentv1.AgentMessage{Payload: &agentv1.AgentMessage_Facts{Facts: facts}}); err != nil {
+		t.Fatal(err)
+	}
+	settle(ctx, t, st, stream, 2*time.Hour)
+	if got, _ := edges.Get("dev-1"); len(got) != 0 {
+		t.Errorf("edges after the flag was turned off = %+v, want none", got)
+	}
+
+	// A reconnect without the flag forgets them too.
+	edges.set("dev-1", time.Now(), []NetEdge{{Kind: EdgeNeighbor, IP: "192.0.2.1", MAC: "aa:bb:cc:00:00:01"}})
+	_ = stream.CloseRequest()
+	stream2 := connectAgent(ctx, t, client, 8, &agentv1.Ceiling{Shell: true})
+	settle(ctx, t, st, stream2, 3*time.Hour)
+	if got, _ := edges.Get("dev-1"); len(got) != 0 {
+		t.Errorf("edges after a reconnect without the flag = %+v, want none", got)
+	}
+}
+
+// A message larger than maxAgentMessage ends the stream; a full batch of
+// log lines, the largest an agent sends, fits well within it.
+func TestAgentMessageCap(t *testing.T) {
+	t.Parallel()
+	batch := &agentv1.LogLines{Id: "l"}
+	for range 64 {
+		batch.Lines = append(batch.Lines, &agentv1.LogLine{Text: strings.Repeat("x", 4<<10)})
+	}
+	if n := proto.Size(&agentv1.AgentMessage{Payload: &agentv1.AgentMessage_LogLines{LogLines: batch}}); n > maxAgentMessage/8 {
+		t.Errorf("a full log batch is %d bytes, too close to the cap of %d", n, maxAgentMessage)
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	st := newTestStore(t)
+	enrollDevice(t, st, "dev-1")
+	client, edges := newNetEdgesClient(t, st)
+	stream := connectAgent(ctx, t, client, 8, &agentv1.Ceiling{NetEdges: true})
+	huge := &agentv1.NetEdges{Connections: []*agentv1.Connection{{PeerIp: "fe80::1%" + strings.Repeat("z", maxAgentMessage), Port: 22, Count: 1}}}
+	_ = stream.Send(&agentv1.AgentMessage{Payload: &agentv1.AgentMessage_NetEdges{NetEdges: huge}})
+	_, err := stream.Receive()
+	if connect.CodeOf(err) != connect.CodeResourceExhausted {
+		t.Errorf("stream after an oversized message: %v, want ResourceExhausted", err)
+	}
+	if got, _ := edges.Get("dev-1"); len(got) != 0 {
+		t.Errorf("kept edges = %+v, want none", got)
 	}
 }
 
@@ -92,7 +236,7 @@ func waitUntil(t *testing.T, cond func() bool) {
 }
 
 func TestAPIDeviceNetEdges(t *testing.T) {
-	f := newAPIFixture(t, true)
+	f := newAPIFixture(t, true, func(c *Config) { c.NetEdges = NewNetEdges() })
 	ctx := t.Context()
 	now := time.UnixMilli(1_700_000_000_000).UTC()
 	device := func(id, facts string) {
@@ -112,17 +256,15 @@ func TestAPIDeviceNetEdges(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	edges := []store.NetEdge{
-		{Kind: store.EdgeNeighbor, IP: "192.0.2.1", MAC: "aa:bb:cc:00:00:01"},  // a host, by MAC
-		{Kind: store.EdgeNeighbor, IP: "192.0.2.66", MAC: "aa:bb:cc:00:00:06"}, // the NAS, by MAC
-		{Kind: store.EdgeConnection, IP: "192.0.2.6", Port: 445, Count: 2},     // the NAS, by IP
-		{Kind: store.EdgeConnection, IP: "192.0.2.7", Port: 22, Inbound: true, Count: 1},
-		{Kind: store.EdgeConnection, IP: "198.51.100.9", Port: 443, Count: 1}, // unknown
+	edges := []NetEdge{
+		{Kind: EdgeNeighbor, IP: "192.0.2.1", MAC: "aa:bb:cc:00:00:01"},  // a host, by MAC
+		{Kind: EdgeNeighbor, IP: "192.0.2.66", MAC: "aa:bb:cc:00:00:06"}, // the NAS, by MAC
+		{Kind: EdgeConnection, IP: "192.0.2.6", Port: 445, Count: 2},     // the NAS, by IP
+		{Kind: EdgeConnection, IP: "192.0.2.7", Port: 22, Inbound: true, Count: 1},
+		{Kind: EdgeConnection, IP: "198.51.100.9", Port: 443, Count: 1}, // unknown
 	}
 	for _, id := range []string{"pi", "off"} {
-		if _, err := f.st.NetEdges().Replace(ctx, id, now, edges); err != nil {
-			t.Fatal(err)
-		}
+		f.api.netEdges.set(id, now, edges)
 	}
 
 	if resp := f.do(t, http.MethodGet, "/api/v1/devices/pi/net-edges", "", nil); resp.StatusCode != http.StatusUnauthorized {
