@@ -58,6 +58,16 @@ func talosLab() []talos.Node {
 			running("apid"), running("kubelet"),
 		}},
 		{Address: "192.0.2.51", Error: "rpc error: code = Unavailable desc = connection refused"},
+		// Just rebooted: kubelet runs, its health not checked yet. The
+		// Devices page counts it healthy; a talos_node check does not.
+		{Address: "192.0.2.52", Hostname: "talos-worker-2", Version: "v1.12.8", Healthy: true, Services: []talos.Service{
+			running("apid"),
+			{ID: "kubelet", State: "Running", Health: talos.HealthUnknown},
+			{ID: "dashboard", State: "Running", Health: talos.HealthUnknown},
+		}},
+		{Address: "192.0.2.53", Hostname: "talos-worker-3", Version: "v1.12.8", Healthy: true, Services: []talos.Service{
+			running("apid"), running("kubelet"), {ID: "dashboard", State: "Running", Health: talos.HealthUnknown},
+		}},
 	}
 }
 
@@ -100,6 +110,14 @@ func TestRunbookTalosNodeCheck(t *testing.T) {
 		{
 			name: "unhealthy service, polled", node: "talos-cp-1", fields: ", healthy: true", within: "2s",
 			status: RunbookFailed, step: stepFailed, errIn: "etcd Running unhealthy: no quorum", reads: -1, decision: policy.Allow,
+		},
+		{
+			name: "health check not run yet, polled", node: "192.0.2.52", fields: ", version: v1.12.8, healthy: true", within: "2s",
+			status: RunbookFailed, step: stepFailed, errIn: "is not healthy: kubelet Running unknown", reads: -1, decision: policy.Allow,
+		},
+		{
+			name: "a service without a health check may be unknown", node: "192.0.2.53", fields: ", version: v1.12.8, healthy: true", within: "0s",
+			status: RunbookSucceeded, step: stepOK, reads: 1, decision: policy.Allow,
 		},
 		{
 			name: "unreachable node, polled: it may be rebooting", node: "192.0.2.51", fields: ", version: v1.12.8", within: "2s",

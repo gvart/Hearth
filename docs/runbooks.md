@@ -169,8 +169,10 @@ healthy if `healthy: true` is set:
   for a reboot.
 - `version` is the Talos version tag; `v1.12.8` and `1.12.8` are the same. Without it, any version
   passes.
-- `healthy: true` needs every service Running (or Finished) and none failing its health check, as the
-  [From Talos](talos.md) table shows it. The error names the services that are not.
+- `healthy: true` needs every service Running (or Finished) and none failing its health check. It is
+  stricter than the [From Talos](talos.md) table: apid, containerd, cri, etcd, kubelet and trustd must
+  have passed their health check, as they may run with their health still unknown right after a
+  reboot. The error names the services that are not healthy.
 - Each attempt at the step is decided as `talos.read` (class `read`) on the node, with one audit entry,
   however often it polls. The hub reads every node of its talosconfig on each poll, with the same
   read-only client as its own reads.

@@ -64,6 +64,15 @@ func (t *talosNodeCheck) run(ctx context.Context, nodes TalosNodes) error {
 		t.node, nodes.Target(), strings.Join(read, ", "))
 }
 
+// healthChecked are the Talos services that have a health check. Talos
+// reports a service without one as unknown, and one with one as unknown too
+// until its first check: right after a reboot, etcd or kubelet may be
+// Running before their health is known. A service missing here is only
+// checked less strictly.
+var healthChecked = map[string]bool{
+	"apid": true, "containerd": true, "cri": true, "etcd": true, "kubelet": true, "trustd": true,
+}
+
 // verify checks the node n that was read.
 func (t *talosNodeCheck) verify(n talos.Node) error {
 	if n.Error != "" {
@@ -72,20 +81,26 @@ func (t *talosNodeCheck) verify(n talos.Node) error {
 	if t.version != "" && strings.TrimPrefix(n.Version, "v") != strings.TrimPrefix(t.version, "v") {
 		return fmt.Errorf("node %s runs %s, not %s", t.node, n.Version, t.version)
 	}
-	if t.healthy && !n.Healthy {
-		var bad []string
-		for _, s := range n.Services {
-			if s.State != "Running" && s.State != "Finished" || s.Health == talos.HealthUnhealthy {
-				msg := s.ID + " " + s.State + " " + s.Health
-				if s.Message != "" {
-					msg += ": " + s.Message
-				}
-				bad = append(bad, msg)
+	if !t.healthy {
+		return nil
+	}
+	// Stricter than n.Healthy, which the Devices page shows: a service with
+	// a health check must have passed it.
+	var bad []string
+	for _, s := range n.Services {
+		if s.State != "Running" && s.State != "Finished" || s.Health == talos.HealthUnhealthy ||
+			s.Health != talos.HealthHealthy && healthChecked[s.ID] {
+			msg := s.ID + " " + s.State + " " + s.Health
+			if s.Message != "" {
+				msg += ": " + s.Message
 			}
+			bad = append(bad, msg)
 		}
-		if len(bad) == 0 {
-			bad = append(bad, "no services reported")
-		}
+	}
+	if len(bad) == 0 && !n.Healthy {
+		bad = append(bad, "no services reported")
+	}
+	if len(bad) > 0 {
 		return fmt.Errorf("node %s (%s) is not healthy: %s", t.node, n.Version, strings.Join(bad, "; "))
 	}
 	return nil
