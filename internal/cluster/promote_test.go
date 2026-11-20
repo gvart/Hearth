@@ -531,3 +531,28 @@ func TestRemoveMember(t *testing.T) {
 		})
 	}
 }
+
+// TestDemoteLastLiveMaster: a dead master is no reason to let the last live
+// one go: its CA key would be the cluster's last.
+func TestDemoteLastLiveMaster(t *testing.T) {
+	ctx := t.Context()
+	c := newAPTestCluster(t, 2,
+		apSpec{"a", storageMaster, storageMaster},
+		apSpec{"b", storageMaster, storageMaster},
+	)
+	c["b"].stop()
+	waitUntil(t, 10*time.Second, "a to see b dead", func() bool {
+		s := c["b"].memberOn(c["a"]).State
+		return s == MemberDead || s == MemberLeft
+	})
+	if _, err := c["a"].node.Demote(ctx, "a", RoleMaster); !errors.Is(err, ErrLastMaster) {
+		t.Fatalf("demote the last live master: %v, want ErrLastMaster", err)
+	}
+	// The member refuses it itself too, whoever asks.
+	if _, err := c["a"].node.applyRoleChange(ctx, roleRequest{Role: RoleMaster}); !errors.Is(err, ErrLastMaster) {
+		t.Fatalf("the last live master demoted itself: %v", err)
+	}
+	if !c["a"].ca.HasKey() {
+		t.Fatal("a lost the CA key")
+	}
+}

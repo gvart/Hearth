@@ -157,14 +157,21 @@ func (n *APNode) member(ctx context.Context, id string) (MemberInfo, error) {
 
 func alive(m MemberInfo) bool { return m.State == MemberAlive || m.State == MemberSuspect }
 
-// count counts the members other than but with role, alive or not (a dead
-// member still counts until it is removed).
+// count counts the members other than but with role that would remain. A
+// storage member counts alive or not, as its rows are still there (a drain
+// waits for it); one being drained does not. A master counts only alive: a
+// dead one cannot serve, promote or hand out the CA key, so it is no
+// reason to let the last live master go.
 func (n *APNode) count(role Role, but string) int {
 	c := 0
 	for _, m := range n.membership.Members() {
-		if m.ID != but && m.State != MemberLeft && m.Roles.Has(role) && (role != RoleStorage || !m.Draining) {
-			c++
+		if m.ID == but || m.State == MemberLeft || !m.Roles.Has(role) {
+			continue
 		}
+		if role == RoleStorage && m.Draining || role == RoleMaster && !alive(m) {
+			continue
+		}
+		c++
 	}
 	return c
 }
@@ -301,6 +308,10 @@ func (n *APNode) applyRoleChange(ctx context.Context, req roleRequest) (string, 
 		return "", ErrNoChange
 	case !req.Promote && !(lr.Roles &^ req.Role.bit()).Gossips():
 		return "", ErrKeepsNoRole
+	case !req.Promote && req.Role == RoleMaster && n.membership != nil && n.count(RoleMaster, n.cfg.NodeID) == 0:
+		// Checked again here: two masters demoting each other at once
+		// must not both go.
+		return "", ErrLastMaster
 	}
 	switch {
 	case req.Promote && req.Role == RoleStorage:
