@@ -1,0 +1,30 @@
+internal/policy/guardrails_test.go
+  s_26e932fc13ca45::t_ad8e802f9a5494 166
+internal/hub/topology.go
+  s_26e932fc13ca45::t_1697b8dc80c8dd 1-135,138-180
+  s_26e932fc13ca45::t_22c49959ed670d 136-137
+internal/hub/netedges.go
+  s_26e932fc13ca45::t_561f4981d9adba 154,199,227-231
+  s_26e932fc13ca45::t_c8a4ab3c357b3b 232-233
+internal/hub/topology_test.go
+  s_26e932fc13ca45::t_2c3571d6c01f7f 137
+  s_26e932fc13ca45::t_4621648a95681f 1-136,138-169
+internal/policy/policy.go
+  s_26e932fc13ca45::t_ad8e802f9a5494 150-152,405-406
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "275ce48f0817e5e7228a7bb38aba046df793895f",
+  "prompts": {},
+  "sessions": {
+    "s_26e932fc13ca45": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea42b0cd-7455-494b-8071-e63f36b98d4d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
