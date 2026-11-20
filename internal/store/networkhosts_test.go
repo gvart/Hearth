@@ -4,6 +4,7 @@ package store
 
 import (
 	"errors"
+	"net/netip"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -236,5 +237,92 @@ func TestNetworkHostsImportBeforeItsSchema(t *testing.T) {
 	}
 	if got, err := s.NetworkHosts().List(ctx); err != nil || len(got) != 1 || got[0].Hostname != "x.local" || got[0].Sources != nil {
 		t.Errorf("List at schema 13 = %+v, %v; want the scanned host without sources", got, err)
+	}
+}
+
+// A scan from a device records the device as the scanner of the hosts it
+// found, and the first scan of a subnet is its own baseline: a device's first
+// scan of a subnet no scan covered does not report its hosts as new.
+func TestNetworkHostsScanFromDevice(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	hosts := s.NetworkHosts()
+	t0 := time.UnixMilli(1_700_000_000_000).UTC()
+	lan := []netip.Prefix{netip.MustParsePrefix("192.168.2.0/24")}
+	vlan := []netip.Prefix{netip.MustParsePrefix("10.0.5.0/24")}
+	router := NetworkHost{MAC: "00:11:32:00:00:01", IP: "192.168.2.1"}
+	cam := NetworkHost{MAC: "00:11:32:00:00:05", IP: "10.0.5.7"}
+	tv := NetworkHost{MAC: "00:11:32:00:00:06", IP: "10.0.5.8"}
+
+	if res, err := hosts.RecordScanFrom(ctx, t0, time.Hour, ScanScope{Subnets: lan}, []NetworkHost{router}); err != nil || len(res.New) != 0 {
+		t.Fatalf("hub baseline = %+v, %v", res, err)
+	}
+	res, err := hosts.RecordScanFrom(ctx, t0.Add(time.Minute), time.Hour, ScanScope{ScannedBy: "dev-pi", Subnets: vlan}, []NetworkHost{cam})
+	if err != nil || len(res.New) != 0 {
+		t.Fatalf("first scan of the VLAN = %+v, %v; want its baseline, nothing new", res, err)
+	}
+	res, err = hosts.RecordScanFrom(ctx, t0.Add(2*time.Minute), time.Hour, ScanScope{ScannedBy: "dev-pi", Subnets: vlan}, []NetworkHost{cam, tv})
+	if err != nil || len(res.New) != 1 || res.New[0].MAC != tv.MAC || res.New[0].ScannedBy != "dev-pi" {
+		t.Fatalf("second scan of the VLAN = %+v, %v; want the TV new, scanned by dev-pi", res, err)
+	}
+	// Without subnets (an entry from before them) the first scan ever is
+	// the only baseline.
+	res, err = hosts.RecordScanFrom(ctx, t0.Add(3*time.Minute), time.Hour, ScanScope{ScannedBy: "dev-x"},
+		[]NetworkHost{{MAC: "00:11:32:00:00:09", IP: "172.16.0.9"}})
+	if err != nil || len(res.New) != 1 {
+		t.Fatalf("scan without subnets = %+v, %v; want its host new", res, err)
+	}
+
+	list, err := hosts.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	by := map[string]string{}
+	for _, h := range list {
+		by[h.MAC] = h.ScannedBy
+	}
+	if by[router.MAC] != "" || by[cam.MAC] != "dev-pi" || by[tv.MAC] != "dev-pi" {
+		t.Errorf("scanned by = %v; want the router by the hub, the VLAN hosts by dev-pi", by)
+	}
+	// The hub finding a host last makes it the scanner again.
+	if _, err := hosts.RecordScan(ctx, t0.Add(4*time.Minute), time.Hour, []NetworkHost{cam}); err != nil {
+		t.Fatal(err)
+	}
+	list, _ = hosts.List(ctx)
+	for _, h := range list {
+		if h.MAC == cam.MAC && h.ScannedBy != "" {
+			t.Errorf("camera after a hub scan: scanned by %q, want the hub", h.ScannedBy)
+		}
+	}
+}
+
+// Before schema 26 a scan from a device is recorded without its scanner.
+func TestNetworkHostsScannedByBeforeItsSchema(t *testing.T) {
+	ctx := t.Context()
+	path := filepath.Join(t.TempDir(), "hearth.db")
+	s, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := s.newMigrator()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.DownTo(ctx, networkHostScannedBySchema-1); err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+	s, err = Open(ctx, path, WithoutUpgrade())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	host := NetworkHost{MAC: "aa:aa:aa:aa:aa:aa", IP: "10.0.0.2"}
+	if _, err := s.NetworkHosts().RecordScanFrom(ctx, time.Now(), time.Hour, ScanScope{ScannedBy: "dev-pi"}, []NetworkHost{host}); err != nil {
+		t.Fatal(err)
+	}
+	list, err := s.NetworkHosts().List(ctx)
+	if err != nil || len(list) != 1 || list[0].ScannedBy != "" {
+		t.Errorf("List = %+v, %v; want the host, with no scanner", list, err)
 	}
 }

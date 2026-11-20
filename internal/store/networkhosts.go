@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/netip"
 	"slices"
 	"strings"
 	"time"
@@ -26,6 +27,11 @@ const networkHostStateSchema = 13
 // added the sources, hostname_source and last_scan columns. Until a cluster
 // migrates to it, imports are not recorded and hosts list no source.
 const networkHostSourcesSchema = 14
+
+// networkHostScannedBySchema is the schema version whose migration (00026)
+// added network_hosts.scanned_by. Before it every host reads as found by the
+// hub, and a scan from a device records no scanner.
+const networkHostScannedBySchema = 26
 
 // What the operator said about a host (NetworkHost.State). Known and ignored
 // hosts never fire new-device alerts.
@@ -71,6 +77,9 @@ type NetworkHost struct {
 	Sources []string
 	// HostnameSource is the source that gave Hostname; "" if none did.
 	HostnameSource string
+	// ScannedBy is the id of the device whose agent last found the host in
+	// a scan; "" when the hub did, or no scan found it.
+	ScannedBy string
 }
 
 // NetworkHosts is the repository for hosts found by network discovery.
@@ -92,13 +101,38 @@ type ScanResult struct {
 	Returned []NetworkHost
 }
 
-// RecordScan stores the hosts one scan at time at found, in one write: a
-// known MAC gets the new IP, last_seen and any hostname or vendor found (an
-// empty one keeps the stored value), so re-scans never duplicate a host.
-// From schema 14 a hostname an import gave (see RecordImport) is kept.
+// RecordScan stores the hosts one scan by the hub at time at found, in one
+// write: a known MAC gets the new IP, last_seen and any hostname or vendor
+// found (an empty one keeps the stored value), so re-scans never duplicate a
+// host. From schema 14 a hostname an import gave (see RecordImport) is kept.
 // Before schema 12 it fails with ErrSchemaTooOld.
 func (r NetworkHosts) RecordScan(ctx context.Context, at time.Time, absentAfter time.Duration, hosts []NetworkHost) (ScanResult, error) {
-	cmd := RecordNetworkScan{At: toMillis(at), AbsentAfter: absentAfter.Milliseconds(), Hosts: make([]ScannedHost, 0, len(hosts))}
+	return r.RecordScanFrom(ctx, at, absentAfter, ScanScope{}, hosts)
+}
+
+// ScanScope is what one scan covered: who swept which subnets.
+type ScanScope struct {
+	// ScannedBy is the id of the device whose agent ran the scan; "" for the
+	// hub.
+	ScannedBy string
+	// Subnets are the subnets swept. The first scan to find hosts in them is
+	// their baseline (see ScanResult.New); without subnets, the first scan
+	// ever recorded is.
+	Subnets []netip.Prefix
+}
+
+// RecordScanFrom stores the hosts a scan of scope found, as RecordScan does,
+// and from schema 26 records scope.ScannedBy as the scanner of each.
+func (r NetworkHosts) RecordScanFrom(ctx context.Context, at time.Time, absentAfter time.Duration, scope ScanScope,
+	hosts []NetworkHost,
+) (ScanResult, error) {
+	cmd := RecordNetworkScan{
+		At: toMillis(at), AbsentAfter: absentAfter.Milliseconds(), ScannedBy: scope.ScannedBy,
+		Hosts: make([]ScannedHost, 0, len(hosts)),
+	}
+	for _, p := range scope.Subnets {
+		cmd.Subnets = append(cmd.Subnets, p.String())
+	}
 	for _, h := range hosts {
 		if h.MAC == "" || h.IP == "" {
 			return ScanResult{}, errors.New("record network scan: every host needs a MAC and an IP")
@@ -143,15 +177,18 @@ func (r NetworkHosts) List(ctx context.Context) ([]NetworkHost, error) {
 
 // networkHostSelect is the SELECT list of a host at schema v, for
 // scanNetworkHost: before schema 13 there is no state, and every host reads
-// as unreviewed; before schema 14 no host has a source.
+// as unreviewed; before schema 14 no host has a source; before schema 26
+// every host reads as found by the hub.
 func networkHostSelect(v int64) string {
 	switch {
 	case v < networkHostStateSchema:
-		return `SELECT mac, ip, hostname, vendor, first_seen, last_seen, '', '', ''`
+		return `SELECT mac, ip, hostname, vendor, first_seen, last_seen, '', '', '', ''`
 	case v < networkHostSourcesSchema:
-		return `SELECT mac, ip, hostname, vendor, first_seen, last_seen, state, '', ''`
+		return `SELECT mac, ip, hostname, vendor, first_seen, last_seen, state, '', '', ''`
+	case v < networkHostScannedBySchema:
+		return `SELECT mac, ip, hostname, vendor, first_seen, last_seen, state, sources, hostname_source, ''`
 	}
-	return `SELECT mac, ip, hostname, vendor, first_seen, last_seen, state, sources, hostname_source`
+	return `SELECT mac, ip, hostname, vendor, first_seen, last_seen, state, sources, hostname_source, scanned_by`
 }
 
 func scanNetworkHost(row interface{ Scan(...any) error }) (NetworkHost, error) {
@@ -160,7 +197,7 @@ func scanNetworkHost(row interface{ Scan(...any) error }) (NetworkHost, error) {
 		first, last int64
 		sources     string
 	)
-	if err := row.Scan(&h.MAC, &h.IP, &h.Hostname, &h.Vendor, &first, &last, &h.State, &sources, &h.HostnameSource); err != nil {
+	if err := row.Scan(&h.MAC, &h.IP, &h.Hostname, &h.Vendor, &first, &last, &h.State, &sources, &h.HostnameSource, &h.ScannedBy); err != nil {
 		return NetworkHost{}, err
 	}
 	h.FirstSeen, h.LastSeen = fromMillis(first), fromMillis(last)
@@ -204,6 +241,13 @@ type RecordNetworkScan struct {
 	// unseen to count as returned.
 	AbsentAfter int64         `json:"absent_after"`
 	Hosts       []ScannedHost `json:"hosts"`
+	// ScannedBy is the id of the device whose agent ran the scan; "" for
+	// the hub. Recorded from schema 26.
+	ScannedBy string `json:"scanned_by,omitempty"`
+	// Subnets are the CIDRs the scan swept: the first scan to find hosts in
+	// them is their baseline. Entries without them (written before it was
+	// added) have one baseline: the first scan ever recorded.
+	Subnets []string `json:"subnets,omitempty"`
 }
 
 // Op implements Command.
@@ -217,18 +261,18 @@ func (c RecordNetworkScan) apply(ctx context.Context, tx *sql.Tx) (Result, error
 		return Result{}, err
 	}
 	withSources := v >= networkHostSourcesSchema
+	withScanner := v >= networkHostScannedBySchema
 	// New, baseline and returned are about scans: what an import stored
 	// (from schema 14) does not count.
-	countKnown, lastScan := `SELECT COUNT(*) FROM network_hosts`, `SELECT last_seen, '' FROM network_hosts WHERE mac = ?`
+	knownIPs, lastScan := `SELECT ip FROM network_hosts`, `SELECT last_seen, '' FROM network_hosts WHERE mac = ?`
 	if withSources {
-		countKnown += ` WHERE (',' || sources || ',') LIKE '%,scan,%'`
+		knownIPs += ` WHERE (',' || sources || ',') LIKE '%,scan,%'`
 		lastScan = `SELECT last_scan, sources FROM network_hosts WHERE mac = ?`
 	}
-	var known int
-	if err := tx.QueryRowContext(ctx, countKnown).Scan(&known); err != nil {
+	baseline, err := c.baseline(ctx, tx, knownIPs)
+	if err != nil {
 		return Result{}, err
 	}
-	baseline := known == 0
 	returning := "RETURNING" + strings.TrimPrefix(networkHostSelect(v), "SELECT")
 	var res Result
 	for _, h := range c.Hosts {
@@ -282,6 +326,12 @@ func (c RecordNetworkScan) apply(ctx context.Context, tx *sql.Tx) (Result, error
 		if err != nil {
 			return Result{}, err
 		}
+		if withScanner {
+			if _, err := tx.ExecContext(ctx, `UPDATE network_hosts SET scanned_by = ? WHERE mac = ?`, c.ScannedBy, h.MAC); err != nil {
+				return Result{}, err
+			}
+			row.ScannedBy = c.ScannedBy
+		}
 		switch {
 		case isNew && !baseline:
 			res.NewHosts = append(res.NewHosts, row)
@@ -291,6 +341,37 @@ func (c RecordNetworkScan) apply(ctx context.Context, tx *sql.Tx) (Result, error
 	}
 	res.Count = len(c.Hosts)
 	return res, nil
+}
+
+// baseline reports whether c is the baseline scan of its subnets: no host
+// knownIPs (a query for the addresses of the hosts a scan found) lists is in
+// them. Without subnets it is the baseline when there is no such host at all.
+func (c RecordNetworkScan) baseline(ctx context.Context, tx *sql.Tx, knownIPs string) (bool, error) {
+	var subnets []netip.Prefix
+	for _, s := range c.Subnets {
+		if p, err := netip.ParsePrefix(s); err == nil {
+			subnets = append(subnets, p)
+		}
+	}
+	rows, err := tx.QueryContext(ctx, knownIPs)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var ip string
+		if err := rows.Scan(&ip); err != nil {
+			return false, err
+		}
+		if len(c.Subnets) == 0 {
+			return false, nil
+		}
+		a, err := netip.ParseAddr(ip)
+		if err == nil && slices.ContainsFunc(subnets, func(p netip.Prefix) bool { return p.Contains(a) }) {
+			return false, nil
+		}
+	}
+	return true, rows.Err()
 }
 
 // SetState marks the host with this MAC known, ignored or, with
