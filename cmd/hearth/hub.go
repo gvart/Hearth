@@ -112,6 +112,7 @@ type hubOptions struct {
 	backup    scheduledBackupOptions
 	cluster   clusterOptions
 	telemetry telemetryOptions
+	mqtt      mqttOptions
 	// version is the binary's version, which install commands pin agents to.
 	version string
 	// shellIdle and shellMax limit web terminal sessions.
@@ -144,7 +145,8 @@ func newHubCmd() *cobra.Command {
 			"--talosconfig reads Talos nodes through the Talos API: versions, services, memory and load (see docs/talos.md).\n\n" +
 			"--plugin runs the exec plugin a manifest describes, as a child process of the hub (see docs/plugins.md).\n\n" +
 			"--backup-interval uploads an encrypted backup to an S3-compatible bucket at that interval and keeps\n" +
-			"the newest --backup-keep, without the CA key unless --backup-include-ca; in a cluster the leader does (see docs/backup.md).",
+			"the newest --backup-keep, without the CA key unless --backup-include-ca; in a cluster the leader does (see docs/backup.md).\n\n" +
+			"--mqtt-listen serves an embedded MQTT broker over TLS for the users and devices of --mqtt-clients (see docs/mqtt.md).",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			opts.adminPassword = os.Getenv("HEARTH_ADMIN_PASSWORD")
@@ -228,6 +230,7 @@ func newHubCmd() *cobra.Command {
 			"(env HEARTH_PLUGINS, comma-separated; default: none; see docs/plugins.md)")
 	addBackupFlags(cmd, &opts.backup)
 	addTelemetryFlags(cmd, &opts.telemetry)
+	addMQTTFlags(cmd, &opts.mqtt)
 	cmd.Flags().DurationVar(&opts.shellIdle, "terminal-idle-timeout", hub.DefaultShellIdleTimeout,
 		"end a web terminal session after this long without input")
 	cmd.Flags().DurationVar(&opts.shellMax, "terminal-max-duration", hub.DefaultShellMaxDuration,
@@ -612,6 +615,13 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		})
 	}
 
+	// Bound last, after every early return, so Run always closes it.
+	broker, err := newMQTTBroker(ctx, opts, ca, serverCert.Load, st, log)
+	if err != nil {
+		_ = agentLn.Close()
+		_ = webLn.Close()
+		return err
+	}
 	g, gctx := errgroup.WithContext(ctx)
 	if node == nil {
 		g.Go(func() error { return reg.Run(gctx) })
@@ -660,6 +670,10 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	})
 	g.Go(func() error { return serve(gctx, agentSrv, func() error { return agentSrv.ServeTLS(agentLn, "", "") }) })
 	g.Go(func() error { return serve(gctx, webSrv, func() error { return webSrv.Serve(webLn) }) })
+	// Every hub with --mqtt-listen runs a broker of its own.
+	if broker != nil {
+		g.Go(func() error { return broker.Run(gctx) })
+	}
 	if node != nil {
 		// Followers publish device events from the entries they apply.
 		node.ObserveApplies(reg)
