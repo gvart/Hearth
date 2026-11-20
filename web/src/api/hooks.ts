@@ -106,8 +106,8 @@ export function useAudit(filter: AuditFilter) {
   return useInfiniteQuery({
     queryKey: keys.audit(filter),
     queryFn: ({ pageParam }) => api.audit(filter, pageParam),
-    initialPageParam: undefined as number | undefined,
-    getNextPageParam: (last) => last.next_before,
+    initialPageParam: undefined as number | string | undefined,
+    getNextPageParam: (last) => last.next_cursor ?? last.next_before,
   });
 }
 

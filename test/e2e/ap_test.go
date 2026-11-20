@@ -11,8 +11,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os/exec"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -89,7 +89,7 @@ func TestAPCluster(t *testing.T) {
 		got := apis[h].auditIDs(ctx)
 		for id, what := range acked {
 			if _, ok := got[id]; !ok {
-				t.Errorf("audit entry %d (%s) acknowledged before the kill is missing on %s", id, what, h)
+				t.Errorf("audit entry %s (%s) acknowledged before the kill is missing on %s", id, what, h)
 			}
 		}
 		if devs, err := apis[h].devices(ctx); err != nil || !hasHost(devs, agentName) {
@@ -202,10 +202,11 @@ func (s *stack) network(ctx context.Context, op, service string) {
 	}
 }
 
-// auditIDs returns the ids of every audit entry.
-func (c *apiClient) auditIDs(ctx context.Context) map[int64]string {
+// auditIDs returns every audit entry, by id (its HLC), action and time:
+// two entries of two hubs may share an HLC.
+func (c *apiClient) auditIDs(ctx context.Context) map[string]string {
 	c.t.Helper()
-	out := map[int64]string{}
+	out := map[string]string{}
 	path := "/api/v1/audit?limit=500"
 	for {
 		b, err := c.raw(ctx, path)
@@ -219,18 +220,18 @@ func (c *apiClient) auditIDs(ctx context.Context) map[int64]string {
 				Result string `json:"result"`
 				TS     string `json:"ts"`
 			} `json:"entries"`
-			NextBefore int64 `json:"next_before"`
+			NextCursor string `json:"next_cursor"`
 		}
 		if err := json.Unmarshal(b, &page); err != nil {
 			c.t.Fatalf("audit: %v", err)
 		}
 		for _, e := range page.Entries {
-			out[e.ID] = e.Action + " " + e.Result + " " + e.TS
+			out[fmt.Sprintf("%d %s %s", e.ID, e.Action, e.TS)] = e.Result
 		}
-		if page.NextBefore == 0 || len(page.Entries) == 0 {
+		if page.NextCursor == "" || len(page.Entries) == 0 {
 			return out
 		}
-		path = "/api/v1/audit?limit=500&before=" + strconv.FormatInt(page.NextBefore, 10)
+		path = "/api/v1/audit?limit=500&before=" + url.QueryEscape(page.NextCursor)
 	}
 }
 

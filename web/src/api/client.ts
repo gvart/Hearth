@@ -402,6 +402,8 @@ export interface AuditPage {
   entries: AuditEntry[];
   /** The before= cursor of the next, older page; absent on the last page. */
   next_before?: number;
+  /** The before= cursor of the next page on a hub of an AP cluster, where entry ids are not unique. */
+  next_cursor?: string;
   /** Every action policy knows, for the filter. */
   actions: string[];
 }
@@ -689,7 +691,7 @@ export const api = {
   configDrift: () => request<ConfigDrift>('GET', '/cluster/config-drift'),
   createToken: (opts: { ttl?: string; labels?: Record<string, string> } = {}) =>
     request<CreatedToken>('POST', '/tokens', opts),
-  audit: (filter: AuditFilter, before?: number) => {
+  audit: (filter: AuditFilter, before?: number | string) => {
     const q = new URLSearchParams();
     for (const [k, v] of Object.entries(filter)) {
       if (typeof v === 'string' && v !== '') {

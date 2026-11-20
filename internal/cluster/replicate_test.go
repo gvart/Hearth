@@ -478,9 +478,9 @@ func TestAuditPagesAcrossMembers(t *testing.T) {
 		}
 	}
 	var got []string
-	var cursor int64
+	var cursor string
 	for {
-		page, err := an.m("b").st.Audit().Query(ctx, store.AuditFilter{Before: cursor}, 5)
+		page, err := an.m("b").st.Audit().Query(ctx, store.AuditFilter{BeforeCursor: cursor}, 5)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -490,7 +490,7 @@ func TestAuditPagesAcrossMembers(t *testing.T) {
 		for _, e := range page {
 			got = append(got, e.Action)
 		}
-		cursor = page[len(page)-1].ID
+		cursor = page[len(page)-1].Cursor
 	}
 	if len(got) != 12 || got[0] != "act11" || got[11] != "act00" {
 		t.Errorf("pages = %v", got)

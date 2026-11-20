@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -345,9 +346,9 @@ func TestShardedAuditPaging(t *testing.T) {
 		want = append([]string{action}, want...)
 	}
 	var got []string
-	var cursor int64
+	var cursor string
 	for {
-		page, err := a.Audit().Query(ctx, AuditFilter{Before: cursor}, 4)
+		page, err := a.Audit().Query(ctx, AuditFilter{BeforeCursor: cursor}, 4)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -363,9 +364,65 @@ func TestShardedAuditPaging(t *testing.T) {
 			}
 			got = append(got, e.Action)
 		}
-		cursor = page[len(page)-1].ID
+		cursor = page[len(page)-1].Cursor
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("pages = %v, want %v", got, want)
+	}
+}
+
+// Entries of two members with the same HLC page in the strict order of the
+// global id: across every page boundary, each appears exactly once.
+func TestShardedAuditPagingHLCTies(t *testing.T) {
+	ctx := t.Context()
+	sh := &fakeShards{self: "a", members: map[string]*Store{}, key: func(string) string { return "a" }}
+	a := openTestWith(t, WithShards(sh), WithOrigin("a"))
+	b := openTestWith(t, WithDigest(), WithOrigin("b"))
+	sh.members["a"], sh.members["b"] = a, b
+	tie := a.clock.Now()
+	want := map[string]bool{}
+	for i := range 5 {
+		for _, s := range []*Store{a, b} {
+			action := fmt.Sprintf("%s-%d", s.origin, i)
+			if _, err := s.ApplyLocal(ctx, withStamp(AppendAudit{
+				TS: 1, ActorKind: "user", ActorID: "u", Action: action, Decision: "allow", Result: "ok", Detail: `{}`,
+			}, Stamp{HLC: tie, Origin: s.origin})); err != nil {
+				t.Fatal(err)
+			}
+			want[action] = true
+		}
+	}
+	for _, size := range []int{1, 2, 3, 4, 7} {
+		seen := map[string]int{}
+		cursor, pages := "", 0
+		for ; pages < 20; pages++ {
+			page, err := a.Audit().Query(ctx, AuditFilter{BeforeCursor: cursor}, size)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(page) == 0 {
+				break
+			}
+			for _, e := range page {
+				seen[e.Action]++
+			}
+			cursor = page[len(page)-1].Cursor
+		}
+		if len(seen) != len(want) {
+			t.Errorf("page size %d: %d of %d entries seen: %v", size, len(seen), len(want), seen)
+		}
+		for action, n := range seen {
+			if n != 1 || !want[action] {
+				t.Errorf("page size %d: %s seen %d times", size, action, n)
+			}
+		}
+	}
+	for _, bad := range []string{"x", "1.2", "0.0.a", "1.-1.a", "1.2."} {
+		if err := CheckAuditCursor(bad); !errors.Is(err, ErrBadCursor) {
+			t.Errorf("cursor %q: err = %v, want ErrBadCursor", bad, err)
+		}
+		if _, err := a.Audit().Query(ctx, AuditFilter{BeforeCursor: bad}, 5); !errors.Is(err, ErrBadCursor) {
+			t.Errorf("query with cursor %q: err = %v", bad, err)
+		}
 	}
 }
