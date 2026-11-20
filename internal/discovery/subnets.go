@@ -57,6 +57,44 @@ func ParseSubnets(vals []string) (subnets []netip.Prefix, auto bool, err error) 
 	return subnets, auto, nil
 }
 
+// ParseSubnetsFrom parses --discover-subnet values as ParseSubnets does,
+// where a value may also name the device to scan it from: CIDR@device, such
+// as 10.0.5.0/24@nas, has the agent of device (a device id, name or
+// hostname) sweep the subnet, for a subnet the hub is not attached to. It
+// returns the hub's subnets and auto as ParseSubnets does, and the subnets of
+// each device; MaxHosts applies to each scanner on its own. Auto names the
+// hub's LANs and takes no device.
+func ParseSubnetsFrom(vals []string) (subnets []netip.Prefix, auto bool, from map[string][]netip.Prefix, err error) {
+	var hub []string
+	byDevice := map[string][]string{}
+	for _, v := range vals {
+		cidr, device, ok := strings.Cut(v, "@")
+		if !ok {
+			hub = append(hub, v)
+			continue
+		}
+		cidr, device = strings.TrimSpace(cidr), strings.TrimSpace(device)
+		if device == "" || strings.EqualFold(cidr, Auto) {
+			return nil, false, nil, fmt.Errorf("discover subnet %q: want CIDR@device", v)
+		}
+		byDevice[device] = append(byDevice[device], cidr)
+	}
+	if subnets, auto, err = ParseSubnets(hub); err != nil {
+		return nil, false, nil, err
+	}
+	for device, vals := range byDevice {
+		p, _, err := ParseSubnets(vals)
+		if err != nil {
+			return nil, false, nil, fmt.Errorf("from %s: %w", device, err)
+		}
+		if from == nil {
+			from = map[string][]netip.Prefix{}
+		}
+		from[device] = p
+	}
+	return subnets, auto, from, nil
+}
+
 // hostsOf returns the host addresses of an IPv4 prefix no wider than
 // MaxHosts: every address but the network and broadcast ones.
 func hostsOf(p netip.Prefix) []netip.Addr {

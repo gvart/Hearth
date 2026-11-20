@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"connectrpc.com/connect"
@@ -28,8 +29,8 @@ import (
 // Protocol version this agent speaks.
 const (
 	ProtocolMajor = 1
-	// 1: answers ExecRequest; 2: reports its capability ceiling; 3: answers ProbeRequest; 4: sends MetricsBatch; 5: streams logs (LogRequest); 6: answers ShellRequest
-	ProtocolMinor = 6
+	// 1: answers ExecRequest; 2: reports its capability ceiling; 3: answers ProbeRequest; 4: sends MetricsBatch; 5: streams logs (LogRequest); 6: answers ShellRequest; 7: answers ScanRequest
+	ProtocolMinor = 7
 )
 
 const (
@@ -80,6 +81,8 @@ type runner struct {
 	// Only Run's goroutine touches them.
 	hubs []string
 	cur  int
+	// scanning is set while a network scan runs: one at a time.
+	scanning atomic.Bool
 }
 
 // ErrRevoked is returned by Run when a hub that can vouch for it says this
@@ -415,6 +418,14 @@ func (r *runner) receive(ctx context.Context, stream *connect.BidiStreamForClien
 			}
 		case *agentv1.HubMessage_ShellRequest:
 			shells.handle(ctx, p.ShellRequest)
+		case *agentv1.HubMessage_ScanRequest:
+			req := p.ScanRequest
+			execs.Go(func() {
+				res := r.scan(ctx, req)
+				r.log.InfoContext(ctx, "scan request", "id", req.GetId(), "subnets", req.GetSubnets(),
+					"denied", res.GetDenied(), "hosts", len(res.GetHosts()), "error", res.GetError())
+				reply(&agentv1.AgentMessage{Payload: &agentv1.AgentMessage_ScanResult{ScanResult: res}})
+			})
 		default:
 			// Ping needs no answer: any traffic keeps the stream alive.
 			r.log.DebugContext(ctx, "hub message ignored", "type", fmt.Sprintf("%T", msg.GetPayload()))

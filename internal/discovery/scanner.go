@@ -3,8 +3,10 @@
 // Package discovery finds the hosts on the hub's LAN that have no agent:
 // an unprivileged ARP sweep fills the OS neighbour table, which gives each
 // host's MAC (and so its vendor), and mDNS and LAN reverse DNS give names.
-// Results are stored keyed by MAC (store.NetworkHosts), so a host that
-// changes IP stays one host. Nothing leaves the LAN.
+// A subnet the hub is not attached to can be swept by a device's agent
+// instead (Config.From, Find). Results are stored keyed by MAC
+// (store.NetworkHosts), so a host that changes IP stays one host. Nothing
+// leaves the LAN.
 package discovery
 
 import (
@@ -17,8 +19,10 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gvart/hearth/internal/policy"
+	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
 	"github.com/gvart/hearth/internal/store"
 )
 
@@ -37,11 +41,27 @@ const (
 	DefaultAbsentAfter = time.Hour
 	// actorID is the audit actor of scans: hub/discovery.
 	actorID = "discovery"
+	// AgentScanTimeout bounds a scan from a device; the hub waits a little
+	// longer for the agent's answer.
+	AgentScanTimeout = 2 * time.Minute
+	agentScanGrace   = 10 * time.Second
 )
 
 // Hosts stores scan results: store.NetworkHosts.
 type Hosts interface {
-	RecordScan(ctx context.Context, at time.Time, absentAfter time.Duration, hosts []store.NetworkHost) (store.ScanResult, error)
+	RecordScanFrom(ctx context.Context, at time.Time, absentAfter time.Duration, scope store.ScanScope,
+		hosts []store.NetworkHost) (store.ScanResult, error)
+}
+
+// Agents runs scans on the agents of devices: *hub.Agents.
+type Agents interface {
+	// CheckScan fails, with an error wrapping policy.ErrBeyondCeiling, when
+	// the agent of device (an id, name or hostname) would not be sent a scan
+	// of subnets: it is too old, or its ceiling does not allow them.
+	CheckScan(ctx context.Context, device string, subnets []netip.Prefix) error
+	// Scan has the agent of device sweep subnets within timeout, and returns
+	// the device's id and the agent's answer.
+	Scan(ctx context.Context, device string, subnets []netip.Prefix, timeout time.Duration) (string, *agentv1.ScanResult, error)
 }
 
 // Policy decides on and audits each scan: *policy.Engine.
@@ -61,6 +81,13 @@ type Config struct {
 	// (see the Auto constant), looked up again on each scan.
 	Subnets []netip.Prefix
 	Auto    bool
+	// From are the subnets swept from devices, by device (an id, name or
+	// hostname): its agent sweeps them, if its ceiling allows, for subnets
+	// the hub is not attached to. Each device's scan is a scan of its own:
+	// one policy decision and audit entry.
+	From map[string][]netip.Prefix
+	// Agents runs the scans of From; required with it.
+	Agents Agents
 	// Interval is the time between scans; DefaultInterval if zero.
 	Interval time.Duration
 	// AbsentAfter is how long a host must go unseen to count as returned;
@@ -85,6 +112,9 @@ type Scanner struct {
 	neighbors func() ([]Neighbor, error)
 	mdns      func(ctx context.Context, ifaces []net.Interface, ips []netip.Addr) (map[netip.Addr]string, error)
 	rdns      func(ctx context.Context, ips []netip.Addr) map[netip.Addr]string
+	// vendor names a MAC's vendor; nil on an agent (see Find), which leaves
+	// it to the hub.
+	vendor func(net.HardwareAddr) string
 }
 
 // New returns a scanner. Call Run to start scanning.
@@ -105,17 +135,46 @@ func New(cfg Config) *Scanner {
 		rdns: func(ctx context.Context, ips []netip.Addr) map[netip.Addr]string {
 			return reverseNames(ctx, lanResolver(), ips)
 		},
+		vendor: Vendor,
 	}
 }
 
-// Run scans at once and then every Interval until ctx is done. A failed
-// scan is logged; the next one runs on schedule.
+// Find sweeps subnets from this host and names the hosts that answered, as a
+// scan does, but records nothing, decides nothing and leaves the vendor
+// empty: it is the agent's side of a scan from a device, within the agent's
+// ceiling. Nothing of it stays in memory once it returns: the vendor table
+// is the hub's to load.
+func Find(ctx context.Context, subnets []netip.Prefix, log *slog.Logger) ([]store.NetworkHost, error) {
+	s := New(Config{Log: log})
+	s.vendor = nil
+	nets, err := s.localNets()
+	if err != nil {
+		return nil, err
+	}
+	return s.find(ctx, subnets, nets)
+}
+
+// Run scans at once and then every Interval until ctx is done: the hub's
+// subnets, if any, then those of each device in From. A failed scan is
+// logged; the next one runs on schedule.
 func (s *Scanner) Run(ctx context.Context) error {
 	t := time.NewTicker(s.cfg.Interval)
 	defer t.Stop()
+	devices := make([]string, 0, len(s.cfg.From))
+	for d := range s.cfg.From {
+		devices = append(devices, d)
+	}
+	slices.Sort(devices)
 	for {
-		if err := s.Scan(ctx); err != nil && ctx.Err() == nil {
-			s.log.WarnContext(ctx, "network scan failed", "err", err)
+		if len(s.cfg.Subnets) > 0 || s.cfg.Auto {
+			if err := s.Scan(ctx); err != nil && ctx.Err() == nil {
+				s.log.WarnContext(ctx, "network scan failed", "err", err)
+			}
+		}
+		for _, d := range devices {
+			if err := s.ScanFrom(ctx, d); err != nil && ctx.Err() == nil {
+				s.log.WarnContext(ctx, "network scan failed", "from", d, "err", err)
+			}
 		}
 		select {
 		case <-ctx.Done():
@@ -165,7 +224,7 @@ func (s *Scanner) Scan(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		res, err = s.cfg.Hosts.RecordScan(ctx, start, s.cfg.AbsentAfter, hosts)
+		res, err = s.cfg.Hosts.RecordScanFrom(ctx, start, s.cfg.AbsentAfter, store.ScanScope{Subnets: subnets}, hosts)
 		if err != nil {
 			return err
 		}
@@ -186,6 +245,103 @@ func (s *Scanner) Scan(ctx context.Context) error {
 	return nil
 }
 
+// ScanFrom runs one scan of the subnets of device in From from its agent,
+// through policy as Scan does: one network.scan decision and audit entry,
+// with the device as "from" in its detail. A scan the device's ceiling does
+// not allow is denied, and audited, before anything is sent; one its agent
+// refuses fails with an error wrapping policy.ErrBeyondCeiling. The hosts it
+// finds are recorded with the device as their scanner.
+func (s *Scanner) ScanFrom(ctx context.Context, device string) error {
+	subnets := s.cfg.From[device]
+	if len(subnets) == 0 || s.cfg.Agents == nil {
+		return fmt.Errorf("network scan from %s: no subnet to scan from it", device)
+	}
+	names := make([]string, len(subnets))
+	for i, p := range subnets {
+		names[i] = p.String()
+	}
+	detail := map[string]any{"subnets": names, "from": device}
+	var res store.ScanResult
+	err := s.cfg.Policy.Do(ctx, policy.Request{
+		ActorKind:     policy.ActorHub,
+		ActorID:       actorID,
+		Action:        policy.NetworkScan,
+		Target:        strings.Join(names, ","),
+		Detail:        detail,
+		RecordOutcome: true,
+		// A scan beyond the ceiling the agent reported is denied, and
+		// audited as such, without being sent.
+		Precheck: func(ctx context.Context) error { return s.cfg.Agents.CheckScan(ctx, device, subnets) },
+	}, func(ctx context.Context) error {
+		start := s.now()
+		ctx, cancel := context.WithTimeout(ctx, AgentScanTimeout+agentScanGrace)
+		defer cancel()
+		id, r, err := s.cfg.Agents.Scan(ctx, device, subnets, AgentScanTimeout)
+		if err != nil {
+			return err
+		}
+		if r.GetDenied() {
+			return fmt.Errorf("device %s refused the scan: %s: %w", device, r.GetError(), policy.ErrBeyondCeiling)
+		}
+		if r.GetError() != "" {
+			return fmt.Errorf("device %s: %s", device, r.GetError())
+		}
+		hosts := agentHosts(r.GetHosts(), subnets, s.vendor)
+		res, err = s.cfg.Hosts.RecordScanFrom(ctx, start, s.cfg.AbsentAfter, store.ScanScope{ScannedBy: id, Subnets: subnets}, hosts)
+		if err != nil {
+			return err
+		}
+		took := s.now().Sub(start)
+		detail["device_id"] = id
+		detail["hosts"], detail["new"], detail["returned"] = len(hosts), len(res.New), len(res.Returned)
+		detail["duration_ms"] = took.Milliseconds()
+		s.log.InfoContext(ctx, "network scan", "from", device, "subnets", names, "hosts", len(hosts),
+			"new", len(res.New), "returned", len(res.Returned), "took", took.Round(time.Millisecond))
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("network scan from %s: %w", device, err)
+	}
+	if s.cfg.Events != nil {
+		s.cfg.Events.NetworkHosts(EventNew, res.New)
+		s.cfg.Events.NetworkHosts(EventReturned, res.Returned)
+	}
+	return nil
+}
+
+// agentHosts turns what an agent reported into hosts to record. The agent is
+// not trusted to send sane data: a host whose MAC is not a usable unicast
+// one, or whose IP is not in subnets, is dropped, as are repeats of a MAC and
+// anything past MaxHosts; names are clipped. vendor, if set, names each.
+func agentHosts(found []*agentv1.ScannedHost, subnets []netip.Prefix, vendor func(net.HardwareAddr) string) []store.NetworkHost {
+	seen := map[string]bool{}
+	var out []store.NetworkHost
+	for _, f := range found {
+		if len(out) == MaxHosts {
+			break
+		}
+		mac, err := net.ParseMAC(f.GetMac())
+		if err != nil || !usableMAC(mac) || seen[mac.String()] {
+			continue
+		}
+		ip, err := netip.ParseAddr(f.GetIp())
+		if err != nil || !ip.Is4() || !slices.ContainsFunc(subnets, func(p netip.Prefix) bool { return p.Contains(ip) }) {
+			continue
+		}
+		seen[mac.String()] = true
+		name := f.GetHostname()
+		if !utf8.ValidString(name) {
+			name = ""
+		}
+		h := store.NetworkHost{MAC: mac.String(), IP: ip.String(), Hostname: ClipText(strings.TrimSpace(name), maxTextLen)}
+		if vendor != nil {
+			h.Vendor = vendor(mac)
+		}
+		out = append(out, h)
+	}
+	return out
+}
+
 // find sweeps subnets and names the hosts that answered.
 func (s *Scanner) find(ctx context.Context, subnets []netip.Prefix, nets []localNet) ([]store.NetworkHost, error) {
 	own := map[netip.Addr]bool{}
@@ -199,7 +355,7 @@ func (s *Scanner) find(ctx context.Context, subnets []netip.Prefix, nets []local
 		}
 	}
 	if len(ifaces) == 0 {
-		s.log.WarnContext(ctx, "no interface of the hub is on the subnets to scan; "+
+		s.log.WarnContext(ctx, "no interface of this host is on the subnets to scan; "+
 			"the sweep only finds hosts on a directly attached network", "subnets", subnets)
 	}
 	var targets []netip.Addr
@@ -262,9 +418,11 @@ func (s *Scanner) find(ctx context.Context, subnets []netip.Prefix, nets []local
 
 	hosts := make([]store.NetworkHost, 0, len(found))
 	for _, n := range found {
-		hosts = append(hosts, store.NetworkHost{
-			MAC: n.MAC.String(), IP: n.IP.String(), Hostname: names[n.IP], Vendor: Vendor(n.MAC),
-		})
+		h := store.NetworkHost{MAC: n.MAC.String(), IP: n.IP.String(), Hostname: names[n.IP]}
+		if s.vendor != nil {
+			h.Vendor = s.vendor(n.MAC)
+		}
+		hosts = append(hosts, h)
 	}
 	return hosts, ctx.Err()
 }

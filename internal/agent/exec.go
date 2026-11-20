@@ -36,6 +36,9 @@ type Ceiling struct {
 	// Shell lets the hub open an interactive shell here, as the agent's
 	// user: the web UI's terminal. It is as much as the agent's user can do.
 	Shell bool
+	// Scan are the IPv4 subnets the hub may have this device sweep for
+	// network discovery (see ParseScan); none allows no scan.
+	Scan []string
 }
 
 // Service managers a restart may name.
@@ -61,7 +64,7 @@ const (
 
 // proto is the ceiling as the agent reports it to the hub.
 func (c Ceiling) proto() *agentv1.Ceiling {
-	return &agentv1.Ceiling{Exec: slices.Clone(c.Exec), Restart: slices.Clone(c.Restart), Probe: c.Probe, Logs: slices.Clone(c.Logs), Shell: c.Shell}
+	return &agentv1.Ceiling{Exec: slices.Clone(c.Exec), Restart: slices.Clone(c.Restart), Probe: c.Probe, Logs: slices.Clone(c.Logs), Shell: c.Shell, Scan: slices.Clone(c.Scan)}
 }
 
 // command returns the program and arguments req runs, or an error wrapping

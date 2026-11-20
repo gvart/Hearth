@@ -83,6 +83,7 @@ type agentSession struct {
 	mu      sync.Mutex
 	pending map[string]chan *agentv1.ExecResult
 	probes  map[string]chan *agentv1.ProbeResult
+	scans   map[string]chan *agentv1.ScanResult
 	// logs are the open log streams, by LogRequest id (see agentlogs.go).
 	logs   map[string]*logQueue
 	shells map[string]*Shell
@@ -97,7 +98,8 @@ func (a *Agents) attach(deviceID string, hello *agentv1.Hello, send func(*agentv
 		device: deviceID, sendTimeout: a.sendTimeout,
 		minor: hello.GetProtocolVersion().GetMinor(), send: send, abort: abort, done: make(chan struct{}),
 		pending: map[string]chan *agentv1.ExecResult{}, probes: map[string]chan *agentv1.ProbeResult{},
-		logs: map[string]*logQueue{}, shells: map[string]*Shell{}, ceiling: hello.GetCeiling(),
+		scans: map[string]chan *agentv1.ScanResult{},
+		logs:  map[string]*logQueue{}, shells: map[string]*Shell{}, ceiling: hello.GetCeiling(),
 	}
 	a.mu.Lock()
 	a.sessions[deviceID] = s
