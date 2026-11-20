@@ -14,9 +14,16 @@ import (
 
 	mochi "github.com/mochi-mqtt/server/v2"
 	"github.com/mochi-mqtt/server/v2/listeners"
+	"github.com/mochi-mqtt/server/v2/packets"
 
 	"github.com/gvart/hearth/internal/pki"
 )
+
+// The one binary is also the agent, so mochi's package initialisation runs on
+// every device. mochi/packets builds TPacketData, its own test fixtures
+// (about 370 KB of heap), in a non-test file; nothing outside its tests reads
+// it. Dropping it lets the agent's first GC reclaim that heap (issue #145).
+func init() { packets.TPacketData = nil }
 
 // connectTimeout bounds how long a new connection may take to finish its TLS
 // handshake and send CONNECT. After that the client's keepalive applies.

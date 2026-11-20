@@ -73,7 +73,7 @@ type Clients struct {
 
 // LoadClients reads and checks the clients file at path.
 func LoadClients(path string) (*Clients, error) {
-	b, err := os.ReadFile(path) //nolint:gosec // G304: the operator's own clients file
+	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read MQTT clients file: %w", err)
 	}

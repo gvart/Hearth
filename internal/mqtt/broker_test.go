@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -144,7 +145,9 @@ type connectOpts struct {
 	noUsername, noPasswd bool
 }
 
-func mqttString(s string) []byte { return append([]byte{byte(len(s) >> 8), byte(len(s))}, s...) }
+func mqttString(s string) []byte {
+	return append(binary.BigEndian.AppendUint16(nil, uint16(len(s))), s...) //nolint:gosec // test strings are short
+}
 
 func packet(typ byte, body []byte) []byte {
 	out := []byte{typ}
