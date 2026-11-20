@@ -85,7 +85,17 @@ jobs:
       - uses: go-task/setup-task@v2
         with:
           version: ${{ env.TASK_VERSION }}
+      - name: DIAG memory monitor
+        run: |
+          nproc; free -m; systemctl is-active systemd-oomd || true; cat /proc/sys/kernel/pid_max
+          (while true; do echo "MEM $(date +%T) $(free -m | awk '/Mem:/{print "used="$3" avail="$7}') $(free -m | awk '/Swap:/{print "swap="$3}')"; ps -eo rss,comm --sort=-rss | head -4 | tr '\n' ' '; echo; sleep 5; done) > /tmp/mem.log 2>&1 &
       - run: task test
+      - name: DIAG dump
+        if: always()
+        run: |
+          cat /tmp/mem.log
+          sudo dmesg -T | tail -80
+          sudo journalctl --since "-20min" --no-pager | grep -iE "oom|kill|memory|terminat" | tail -60 || true
 
   shellcheck:
     name: Shellcheck
