@@ -1,0 +1,24 @@
+internal/mqtt/bridge.go
+  s_26e932fc13ca45::t_9069201e83df87 275-280,355-357,381-384
+internal/mqtt/bridge_config.go
+  s_26e932fc13ca45::t_9069201e83df87 98-100
+internal/mqtt/bridge_test.go
+  s_26e932fc13ca45::t_4b3d506f614500 354-357
+  s_26e932fc13ca45::t_73d4c74e643c2c 16,19-20,330-353,358-390,495-498
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "098bf8a86418634de864d56e62b54a499de7c008",
+  "prompts": {},
+  "sessions": {
+    "s_26e932fc13ca45": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea42b0cd-7455-494b-8071-e63f36b98d4d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
