@@ -897,16 +897,19 @@ func (n *Node) reconcileCA(ctx context.Context) {
 			return
 		}
 	}
-	if err := ca.TrustNext(newCA); err != nil {
-		n.log.ErrorContext(ctx, "trust the new hub CA", "err", err)
-		return
-	}
 	// A connection opened before the rotation by a certificate other than
 	// the pinned one (minted with a stolen old key) does not outlive it.
 	if k := n.stream.closeRevoked(func(c *x509.Certificate) bool {
 		return errors.Is(n.checkPeerCert(c), errNotPinned)
 	}); k > 0 {
 		n.log.WarnContext(ctx, "closed raft connections of hub certificates this rotation did not pin", "count", k)
+	}
+	if ca.Next() == nil && !n.settledOn(ctx, rot.NewCAFP) {
+		return
+	}
+	if err := ca.TrustNext(newCA); err != nil {
+		n.log.ErrorContext(ctx, "trust the new hub CA", "err", err)
+		return
 	}
 	if !ca.HasNextKey() || n.nextCert.Load() == nil {
 		if err := n.obtainNext(ctx, rot); err != nil {
@@ -1163,6 +1166,46 @@ func (n *Node) dropLeftoverNext(ctx context.Context) {
 	if err != nil && ctx.Err() == nil {
 		n.log.WarnContext(ctx, "drop a leftover next CA; retrying", "err", err)
 	}
+}
+
+// settledOn reports whether the log has settled on a rotation to newCAFP
+// under way. A hub trusts a new CA it does not hold only then: trusting it
+// widens the hub's trust, and a hub replaying its log after a restart may
+// show a rotation that was aborted since, whose CA no hub may trust any
+// more. The leader settles after a barrier. A follower settles once its
+// store applied through an index it took on an earlier run: at least the
+// commit index it had learned from the leader, and the last index of the
+// log it restarted with. Under steady writes it rarely reaches the commit
+// index of the moment (caughtUp), but always one it took a run earlier.
+// Called with recMu held.
+func (n *Node) settledOn(ctx context.Context, newCAFP string) bool {
+	if n.IsLeader() {
+		timeout := applyTimeout
+		if dl, ok := ctx.Deadline(); ok {
+			timeout = time.Until(dl)
+		}
+		if err := n.raft.Barrier(timeout).Error(); err != nil {
+			return false
+		}
+	} else {
+		if n.Leader().ID == "" {
+			return false
+		}
+		if n.trustFP != newCAFP {
+			commit, err := strconv.ParseUint(n.raft.Stats()["commit_index"], 10, 64)
+			if err != nil || commit == 0 {
+				return false
+			}
+			n.trustAt, n.trustFP = max(commit, n.startLast), newCAFP
+			return false
+		}
+		if !n.appliedThrough(n.trustAt) {
+			return false
+		}
+		n.trustFP = ""
+	}
+	rot, err := n.store.CARotations().Latest(ctx)
+	return err == nil && rot.NewCAFP == newCAFP && rot.Active()
 }
 
 // caughtUp reports whether this follower has a leader, and has applied every

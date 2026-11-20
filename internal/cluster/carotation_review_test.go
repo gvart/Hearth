@@ -5,6 +5,7 @@ package cluster
 import (
 	"bytes"
 	"context"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"os"
@@ -564,4 +565,134 @@ func TestCARotationRestartKeepsNextOfALaterRotation(t *testing.T) {
 	if err := holdsSecond(); err != nil {
 		t.Fatalf("after the replay: %v", err)
 	}
+}
+
+// A hub restarted from a snapshot taken during a rotation that was aborted
+// since replays a store that shows it under way. It must not trust the
+// aborted rotation's CA meanwhile: the abort cut off the certificates that
+// CA signed (#232).
+func TestCARotationReplayDoesNotTrustAnAbortedCA(t *testing.T) {
+	ctx := t.Context()
+	hubs, _ := startRotationHubs(t)
+	leader := rotLeader(t, hubs)
+	recordHubCerts(t, hubs)
+	follower := otherHubs(hubs, leader)[0]
+
+	aborted, err := leader.RotateCA(ctx, RotateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitNext(t, hubs, aborted.NewCAFP)
+	// A node certificate the aborted rotation's CA signed.
+	signed, err := x509.ParseCertificate(follower.nextCert.Load().Certificate[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := follower.raft.Snapshot().Error(); err != nil {
+		t.Fatalf("snapshot with the rotation under way: %v", err)
+	}
+	// The gate entry follows the snapshot, so a replay held on it still
+	// shows the rotation under way.
+	upsert(t, leader.testNode, "pi")
+	gate := time.UnixMilli(1_000_000).UTC()
+	if _, err := leader.st.Devices().SetBootTime(ctx, "pi", gate); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the gate entry on "+follower.ID(), func() bool {
+		d, err := follower.st.Devices().Get(ctx, "pi")
+		return err == nil && d.BootTime.Equal(gate)
+	})
+	if _, err := leader.AbortCA(ctx, AbortOptions{}); err != nil {
+		t.Fatalf("AbortCA: %v", err)
+	}
+	eventually(t, follower.ID()+" to drop the aborted rotation's CA", func() bool {
+		return follower.localCAInfo().NextFP == ""
+	})
+
+	// Restart the follower with its apply held on the gate entry.
+	obs := &gatedObserver{
+		gate: gate.UnixMilli(), entered: make(chan struct{}), release: make(chan struct{}),
+		local: map[int64]bool{},
+	}
+	dir, addr, id := follower.dir, follower.Addr(), follower.ID()
+	follower.stop()
+	ca, err := pki.LoadOrCreateCA(dir, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	bind := func(n *Node, s *store.Store) store.Applier {
+		n.ObserveApplies(obs)
+		return n.BindForwarding(s)
+	}
+	restarted := &rotHub{testNode: startNodeBound(t, ca, id, dir, addr, false, bind, rotTune), ca: ca}
+	var release sync.Once
+	open := func() { release.Do(func() { close(obs.release) }) }
+	t.Cleanup(open)
+	select {
+	case <-obs.entered:
+	case <-time.After(waitFor):
+		t.Fatal("the restarted hub did not replay the gate entry")
+	}
+	rot, err := restarted.st.CARotations().Latest(ctx)
+	if err != nil || rot.NewCAFP != aborted.NewCAFP || !rot.Active() {
+		t.Fatalf("the replaying store shows %+v, %v; want the aborted rotation under way", rot, err)
+	}
+	trusts := func() error {
+		if fp := restarted.localCAInfo().NextFP; fp != "" {
+			return fmt.Errorf("next CA %s", fp)
+		}
+		if issuer := restarted.ca.IssuerOf(signed); issuer != nil {
+			return fmt.Errorf("trusted CA %s issued a certificate of the aborted CA", pki.FingerprintHex(issuer))
+		}
+		if _, err := signed.Verify(x509.VerifyOptions{Roots: restarted.ca.Pool(), KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny}}); err == nil {
+			return errors.New("the trust pool accepts a certificate of the aborted CA")
+		}
+		return nil
+	}
+	restarted.reconcileCA(ctx)
+	if err := trusts(); err != nil {
+		t.Fatalf("the replaying hub trusts the aborted rotation's CA: %v", err)
+	}
+	open()
+	eventually(t, restarted.ID()+" to catch up", func() bool {
+		rot, err := restarted.st.CARotations().Latest(ctx)
+		return err == nil && rot.Stage == store.CAStageAborted && restarted.caughtUp()
+	})
+	restarted.reconcileCA(ctx)
+	if err := trusts(); err != nil {
+		t.Fatalf("after the replay: %v", err)
+	}
+}
+
+// Under steady writes a follower's store rarely reflects the commit index of
+// the moment, but every follower still trusts the new CA and fetches its key.
+func TestCARotationTrustsTheNewCAUnderSteadyWrites(t *testing.T) {
+	ctx := t.Context()
+	hubs, _ := startRotationHubs(t)
+	leader := rotLeader(t, hubs)
+	recordHubCerts(t, hubs)
+
+	stop, done := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; ; i++ {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			now := time.Now()
+			id := fmt.Sprintf("d%d", i%50)
+			_ = leader.st.Devices().Upsert(ctx, store.Device{ID: id, Name: id, FirstSeen: now, LastSeen: now})
+		}
+	}()
+	defer func() {
+		close(stop)
+		<-done
+	}()
+	plan, err := leader.RotateCA(ctx, RotateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitNext(t, hubs, plan.NewCAFP)
 }

@@ -165,6 +165,12 @@ type Node struct {
 	recMu          sync.Mutex
 	halted         atomic.Bool
 	rotateProposed func(error) error
+	// startLast is the last index of the raft log when the hub started;
+	// trustAt, guarded by recMu, is the index the store must have applied
+	// through before this follower trusts the new CA trustFP (settledOn).
+	startLast uint64
+	trustAt   uint64
+	trustFP   string
 }
 
 var _ store.Applier = (*Node)(nil)
@@ -292,6 +298,10 @@ func (n *Node) Start(ctx context.Context) error {
 		n.log.InfoContext(ctx, "formed a new one-node cluster from the current database")
 	}
 
+	if n.startLast, err = n.bolt.LastIndex(); err != nil {
+		n.closeStores()
+		return fmt.Errorf("cluster: read the raft log: %w", err)
+	}
 	r, err := raft.NewRaft(conf, n.fsm, n.bolt, n.bolt, snaps, n.trans)
 	if err != nil {
 		n.closeStores()
