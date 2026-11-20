@@ -91,22 +91,20 @@ export function UnmanagedHosts({ now, onAdd }: { now: number; onAdd: () => void 
                 <td className="mono muted">{h.mac}</td>
                 <td>
                   <span className="chips">
-                    {h.sources.map((s) =>
-                      s === 'scan' && h.scanned_by ? (
-                        <span
-                          className="pill pill-muted"
-                          key={s}
-                          title={`Found by the ARP sweep from ${scannerName(h.scanned_by)}'s agent`}
-                        >
-                          Scanned by {scannerName(h.scanned_by)}
-                        </span>
-                      ) : (
-                        <span className="pill pill-muted" key={s} title={sourceLabels[s].title}>
-                          {sourceLabels[s].label}
-                        </span>
-                      ),
-                    )}
+                    {h.sources.map((s) => (
+                      <span className="pill pill-muted" key={s} title={sourceLabels[s].title}>
+                        {sourceLabels[s].label}
+                      </span>
+                    ))}
                   </span>
+                  {h.scanned_by ? (
+                    <span
+                      className="scanned-by muted"
+                      title={`Found by the ARP sweep from ${scannerName(h.scanned_by)}'s agent`}
+                    >
+                      Scanned by {scannerName(h.scanned_by)}
+                    </span>
+                  ) : null}
                 </td>
                 <td className="row-end">
                   <span className="host-actions">

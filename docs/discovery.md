@@ -79,14 +79,22 @@ subnet (repeatable). A scan is sent only if each of its subnets lies within one 
 `--allow-scan 10.0.0.0/16` allows `10.0.5.0/24`, `--allow-scan 10.0.5.0/25` does not. The hub checks
 the ceiling the agent reported before sending, and the agent checks again before it sends a single
 datagram. A scan beyond the ceiling is denied and audited, like any other action beyond it.
+The agent takes any IPv4 CIDR, `--allow-scan 0.0.0.0/0` included, which lets the hub choose any
+subnet from that device; each scan is still capped at 1024 addresses.
 
 The agent needs no privilege either, and runs one scan at a time. It does not load the vendor
 table: the hub names each host's vendor from its MAC. Nothing of a scan stays in the agent's memory
 once it is done. The hub checks what the agent sends back: hosts outside the subnets, broken MACs
-and repeats are dropped.
+and repeats are dropped. A device's scan never moves a known host whose last IP is outside the
+subnets it scanned, so an agent cannot claim another network's MAC, such as the router's; only a
+scan of that host's own subnet updates it.
+
+The hub runs its own scan and each device's at the same time, so one slow agent delays no other
+scan. A device that is unknown, or whose agent is not connected to the hub, is skipped with a line
+in the hub log and no audit entry: nothing was sent.
 
 On the Devices page each host a device found shows **Scanned by** that device in its Source column.
-The first scan of a subnet is its baseline, whoever runs it: a device's first scan of a VLAN does not
+Each subnet has its own baseline, whoever scans it: a device's first scan of a VLAN does not
 report its hosts as new. A host found by both the hub and a device shows the scanner that found it
 last.
 
@@ -97,9 +105,9 @@ Each scan publishes, on the hub's event stream (`/api/v1/events`):
 - `network.device.new` for a host no scan had found before;
 - `network.device.returned` for a known host that no scan had found for an hour or more.
 
-The first scan of a subnet (one that finds no host a scan found before in it) is its baseline: it
-records every host and publishes nothing, so turning discovery on, or adding a subnet, does not
-report the whole LAN as new.
+Each configured subnet has its own baseline: until a scan has found a host in it, the hosts found
+there are recorded and nothing is published, so turning discovery on, or adding a subnet next to
+known ones, does not report the whole new subnet as new.
 
 ## New-device alerts
 
@@ -159,16 +167,16 @@ returned, duration) in its detail. A policy that denies the `read` class stops s
 
 Each device's scan is a scan of its own, with `from` (the device as configured) and `device_id` in
 its detail. A scan its ceiling does not allow is a `deny` entry naming the subnet beyond it; one its
-agent refuses, fails or does not answer (it is offline, or the hub just started) is an `allow` entry
-whose result is the error.
+agent refuses, fails or does not answer in time is an `allow` entry whose result is the error. A
+device that is unknown or not connected is skipped without an entry (see above).
 
 ## In a cluster
 
 Only the leader scans; the results are replicated to every hub through Raft (one log entry per scan).
 Set the discovery flags on every hub, so the new leader keeps scanning after a failover. The scan
 needs schema 12: run `hearth cluster migrate` after upgrading every hub. A scan from a device runs
-only if that device's agent is connected to the leader: an agent connected to another hub fails the
-scan (audited) until it reconnects to the leader. Hosts show the device that scanned them from
+only if that device's agent is connected to the leader: an agent connected to another hub is skipped until it
+reconnects to the leader. Hosts show the device that scanned them from
 schema 26.
 
 ## In a container
