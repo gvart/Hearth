@@ -39,8 +39,9 @@ address the other hubs dial for Raft (default: this machine's hostname).
 Every host has a set of roles: `node` (the agent), `storage` (a store replica) and `master` (API,
 UI, agent streams, automations). `hearth hub` is `master` and `storage`; `hearth agent` is `node`.
 `--allow-roles` (env `HEARTH_ALLOW_ROLES`, default `storage,master` on a hub) lists the roles a host
-may take; it is the host's capability ceiling, and a hub refuses to start if it does not allow both
-of its roles.
+may take; it is the host's capability ceiling, and a Raft hub refuses to start if it does not allow
+both of its roles. In AP mode a member may hold either or both, and they change at runtime (see
+"Promote, demote and remove" below).
 
 Clustered hubs gossip their membership (hashicorp/memberlist) over TCP with mutual TLS on
 `--gossip-listen` (default `:7445`, empty turns it off), with the same hub node certificates and
@@ -105,7 +106,7 @@ status` says it is not highly available.
   token that carries the master's URL, and `hearth agent join` enrolls there; `hearth1.` tokens still
   work. Expiry by the sweep is the only decision another master makes.
 - **CA key on masters only.** A joining hub gets the CA key only when its `--allow-roles` include
-  `master`.
+  `master`; one without it holds the CA certificate only and runs no API, UI or agent port.
 - **Revocations travel fast.** A revocation (device or hub certificates, MCP or dashboard tokens,
   panel links) is also announced on the gossip at once; members that hold the row fetch it from the
   writer, without waiting for anti-entropy.
@@ -113,6 +114,42 @@ status` says it is not highly available.
   `dangerous` actions and new enrollments and joins (each denial audited with the reason); reads and
   `safe` actions keep working, and the block lifts as soon as a peer answers. A cluster of one is
   never isolated.
+
+### Promote, demote and remove
+
+A member's roles change at runtime, within its own `--allow-roles`. Each change is a `dangerous`
+policy action (`cluster.promote`, `cluster.demote`, `cluster.remove`), decided and audited with its
+outcome on the master asked, and refused by a master that is cut off (60-second rule above). Ask a
+master: on the **Cluster** page of its UI (members, roles, allowed roles, state and progress), its API
+(`POST /api/v1/cluster/members/{id}/promote|demote` with `{"role": "storage"}` or `"master"`,
+`DELETE /api/v1/cluster/members/{id}`), or its host's CLI:
+
+```sh
+hearth cluster promote hub-d storage
+hearth cluster demote hub-b master
+hearth cluster remove hub-c          # a member gone for good
+```
+
+- **The member decides its ceiling.** A role outside the member's `--allow-roles` is refused, by the
+  master and by the member itself. The roles are recorded in the member's data dir (`raft/roles`), so
+  they survive a restart, and are announced on the gossip. An agent host cannot take a role: run
+  `hearth hub --cluster-mode ap --join ...` on it to make it a member.
+- **Promote to storage.** The member drops the rows it kept from before, joins the ring and copies its
+  share from the others. It shows `syncing`, and serves no reads, until it holds them all.
+- **Promote to master.** The member fetches the CA key from the master promoting it, over that
+  master's mutually authenticated, pinned TLS port (allowed only during that promotion, audited as
+  `cluster.ca.fetch_key`), then serves the API, the UI and agents.
+- **Demote from storage.** The member hands its rows to the members that will own them and keeps the
+  role (`draining`, with its progress) until each row has its copies there; a future owner that is
+  down holds it up until it is back. The last storage member is not demoted.
+- **Demote from master.** The member spends its unused enrollment and join tokens, expires its pending
+  approvals (`expired: master demoted`), deletes its CA key and stops serving the API, the UI and
+  agents; its agents move to the other masters and its share of the masters' work moves with the
+  ring. The last master is not demoted, and every member keeps at least one of the two roles.
+- **Remove.** `cluster remove` revokes the member's hub certificates (announced on the gossip at
+  once), every member drops it from its listing, and the others re-replicate the rows it held. A hub
+  does not remove itself, nor the last master or storage member. To come back, it joins again with a
+  new token and an empty data dir.
 
 Known limitations of AP mode:
 
@@ -122,8 +159,11 @@ Known limitations of AP mode:
 - An approval link opens on the master that owns the approval. With `approval_notify.url` set to
   one fixed address, a link for an approval owned by another master answers 409 `not_owner`, naming
   the master to open it on.
-- Hub CA rotation (refused, as it needs the Raft leader), `cluster remove` and
-  `transfer-leadership` are not available yet.
+- Hub CA rotation (refused, as it needs the Raft leader) and `transfer-leadership` are not
+  available.
+- A member that is no master cannot renew its own hub node certificate: promote it, or join it again,
+  before the certificate expires.
+- A storage member that is down for good holds up a drain whose rows it would own: remove it first.
 
 ## Forming the cluster
 
