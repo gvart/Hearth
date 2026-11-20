@@ -53,3 +53,45 @@ reads once when the drawer opens; **Refresh** reads again.
 
 Every read is the policy action `device.net_edges` (class `read`) and is audited, as opening a log
 stream is. The API is `GET /api/v1/devices/{id}/net-edges`.
+
+## The topology view
+
+**Network** in the top bar draws the edges of every device at once, as a graph:
+
+- **Nodes**: the devices whose agents report edges, the hub's host, the hosts network discovery
+  found and, unless you untick **Unknown addresses**, addresses the hub knows nothing of (internet
+  peers, mostly).
+- **Connections**: a solid line from client to server, the arrow at the server, labelled with the
+  server's ports. When both ends report the same connection (both run with `--allow-net-edges`),
+  it is drawn once.
+- **Neighbours**: a dashed, lighter line between a device and an entry of its neighbour table. Untick
+  **Neighbours** to see only who talks to whom.
+
+Hover a node to bring out its own lines; click a device to open its drawer. A device whose agent
+does not report edges contributes none, even when it reported some before; it can still show up as
+the peer of a device that does.
+
+The page reads once when it opens and again on **Refresh**, never on its own: the whole graph is one
+read, the policy action `network.topology` (class `read`), audited once however many devices report.
+The API is `GET /api/v1/net-edges`:
+
+```json
+{
+  "reporting": 2,
+  "updated_at": "2026-01-01T12:00:00Z",
+  "nodes": [
+    {"id": "device:4f1c", "kind": "device", "name": "pi", "device_id": "4f1c", "reports": true},
+    {"id": "hub", "kind": "hub", "name": "hub host"},
+    {"id": "host:aa:bb:cc:00:00:01", "kind": "host", "name": "router", "ip": "192.0.2.1"},
+    {"id": "ip:198.51.100.9", "kind": "unknown", "name": "198.51.100.9", "ip": "198.51.100.9"}
+  ],
+  "edges": [
+    {"kind": "connection", "from": "device:4f1c", "to": "hub", "port": 7443, "count": 1},
+    {"kind": "neighbor", "from": "device:4f1c", "to": "host:aa:bb:cc:00:00:01"}
+  ]
+}
+```
+
+`reporting` is how many agents report edges; with none, the page says how to turn them on. A
+connection's `from` is the client and `to` the server, whose `port` it is; `count` is the most either
+end reported.
