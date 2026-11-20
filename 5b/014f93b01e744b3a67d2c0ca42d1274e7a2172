@@ -1,0 +1,54 @@
+cmd/hearth/hub.go
+  s_26e932fc13ca45::t_b4ba0bb11cdbe8 800-808
+  s_26e932fc13ca45::t_1fbb17e2ae51e1 795-796
+internal/automation/runbook_test.go
+  s_26e932fc13ca45::t_0cfbe47dc25a26 134-135,201
+docs/talos.md
+  s_26e932fc13ca45::t_1b078a57feab10 159-161
+  s_26e932fc13ca45::t_c217451407f781 90-93
+internal/automation/runbook_engine.go
+  s_26e932fc13ca45::t_af6261f0d3be03 88-91,228-230,1043-1044,1074-1079
+internal/policy/guardrails_test.go
+  s_26e932fc13ca45::t_dbd783986c99ac 176
+internal/automation/runbook_talos.go
+  s_26e932fc13ca45::t_af6261f0d3be03 63,70,73,89
+  s_26e932fc13ca45::t_920c5fdd4abdbf 1-62,64-69,71-72,74-88,90-125
+docs/recipes/runbooks/upgrade-talos-node.yaml
+  s_26e932fc13ca45::t_131de27bf412f2 11-14,25-32,38-40,84-93,109-112,149,151-154,156-159
+internal/automation/runbook.go
+  s_26e932fc13ca45::t_af6261f0d3be03 438,455
+  s_26e932fc13ca45::t_7e9f538b47fc7a 454
+internal/automation/trigger_check.go
+  s_26e932fc13ca45::t_af6261f0d3be03 63-65
+  s_26e932fc13ca45::t_7e9f538b47fc7a 66-69
+docs/runbooks.md
+  s_26e932fc13ca45::t_c217451407f781 100,153-181,302
+internal/automation/runbook_talos_upgrade_test.go
+  s_26e932fc13ca45::t_35cf55828baffe 15,20-24,31-32,42-45,77-80,82,96-97,109-119,125,135-137,139-141,146-158,167-170,176,178,181-183,188-200,204-205,210-214
+  s_26e932fc13ca45::t_4b5dde703c645f 203
+docs/runbook-recipes.md
+  s_26e932fc13ca45::t_c217451407f781 34
+  s_26e932fc13ca45::t_899595694f3125 156-168,170-171,188-191,202-209,215-217,261-270,286-289,326,328-331,333-336
+internal/policy/policy.go
+  s_26e932fc13ca45::t_dbd783986c99ac 167-168,417-419
+internal/automation/runbook_talos_test.go
+  s_26e932fc13ca45::t_331b14a745fd8f 180
+  s_26e932fc13ca45::t_36636ef12d540d 1-112,114-179,181-204
+  s_26e932fc13ca45::t_028fda72216350 113
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5b014f93b01e744b3a67d2c0ca42d1274e7a2172",
+  "prompts": {},
+  "sessions": {
+    "s_26e932fc13ca45": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea42b0cd-7455-494b-8071-e63f36b98d4d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
