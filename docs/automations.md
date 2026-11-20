@@ -480,6 +480,7 @@ actions:
     type: script
     timeout: 30s                 # optional, default 10s, at most 1m
     max_steps: 1000000           # optional, default 1,000,000, at most 100,000,000
+    max_memory_mib: 16           # optional, default 16, at most 256
     source: |
       for d in devices():
           if d["labels"].get("room") == "attic" and d["status"] == "online":
@@ -512,10 +513,14 @@ Scripts cannot get around policy:
   text from a device's name or labels cannot become one.
 - A script makes at most 100 calls per run.
 
-A script that runs too long is stopped: at `max_steps` Starlark steps, or at `timeout` of wall-clock
-time, including the time spent in the actions it calls (one waiting for approval too). The run
-fails with an error naming the limit. The step and time limits do not bound memory: keep data
-small.
+A script that runs too long or grows too big is stopped: at `max_steps` Starlark steps, at
+`max_memory_mib` of memory, or at `timeout` of wall-clock time, including the time spent in the
+actions it calls (one waiting for approval too). The run fails with an error naming the limit.
+Memory counts everything the script allocates in the run, including what it has since dropped, and
+is checked before an allocation is made: `"x" * 1000000000` or `list(range(100000000))` fails at
+once instead of taking the memory. Hearth runs scripts with
+[Canonical's Starlark](https://github.com/canonical/starlark), which accounts for the steps and
+memory of every built-in and refuses any that does not.
 
 The script is parsed when the file loads, so a syntax error or an unknown name is reported with its
 line. In a dry run (`--automations-dry-run`, or the web UI's dry run) policy decides on the

@@ -6,12 +6,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
-	"go.starlark.net/starlark"
+	"github.com/canonical/starlark/starlark"
 
 	"github.com/gvart/hearth/internal/policy"
 	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
@@ -102,6 +103,40 @@ func TestScriptTimeoutInsideCall(t *testing.T) {
 	}
 	if h.fake.started() != 1 {
 		t.Fatalf("fake ran %d times", h.fake.started())
+	}
+}
+
+// Scripts that would allocate a lot fail fast, before the memory is taken,
+// however few steps they take: at their memory limit, or at their step limit,
+// which counts a repetition's steps by its size.
+func TestScriptMemoryLimit(t *testing.T) {
+	for _, script := range []string{
+		`x = list(range(100000000))`,
+		`x = "x" * 1000000000`,
+		`x = [0] * 1000000000`,
+		`x = [i for i in range(10000000)]`,
+		`x = {i: i for i in range(10000000)}`,
+		"x = \"xx\"\nfor i in range(64):\n    x = x + x",
+		`x = ",".join(["abcdefgh"] * 10000000)`,
+	} {
+		t.Run(script, func(t *testing.T) {
+			var before, after runtime.MemStats
+			runtime.GC()
+			runtime.ReadMemStats(&before)
+			h := newScriptHarness(t, "    max_steps: 100000000\n    max_memory_mib: 1\n    timeout: 1m\n"+source(script), policy.Config{})
+			start := time.Now()
+			err := h.run(t.Context())
+			runtime.ReadMemStats(&after)
+			if !errors.Is(err, errScriptMemory) && !errors.Is(err, errScriptSteps) {
+				t.Fatalf("err = %v, want the memory or step limit", err)
+			}
+			if d := time.Since(start); d > 5*time.Second {
+				t.Fatalf("stopped after %s", d)
+			}
+			if grew := after.TotalAlloc - before.TotalAlloc; grew > 256<<20 {
+				t.Fatalf("allocated %d MiB", grew>>20)
+			}
+		})
 	}
 }
 
@@ -353,6 +388,7 @@ func TestScriptLoadErrors(t *testing.T) {
 		{"    timeout: 2m\n" + source("x = 1"), "timeout must be"},
 		{"    timeout: -1s\n" + source("x = 1"), "timeout must be"},
 		{"    max_steps: 1000000000\n" + source("x = 1"), "max_steps must be"},
+		{"    max_memory_mib: 1024\n" + source("x = 1"), "max_memory_mib must be"},
 		{"    source: ''\n", "source is required"},
 		{"    source: |\n      x = 1\n      y = (\n", "t.yaml:9: source:"},
 		{"    source: |\n      x = 1\n      y = undefined_name\n", "t.yaml:8: source: undefined: undefined_name"},

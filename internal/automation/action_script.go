@@ -10,25 +10,28 @@ import (
 	"math"
 	"slices"
 	"strings"
-	"sync/atomic"
 	"time"
 
-	"go.starlark.net/resolve"
-	"go.starlark.net/starlark"
-	"go.starlark.net/syntax"
+	"github.com/canonical/starlark/resolve"
+	"github.com/canonical/starlark/starlark"
+	"github.com/canonical/starlark/syntax"
 	"go.yaml.in/yaml/v3"
 
 	"github.com/gvart/hearth/internal/policy"
 	"github.com/gvart/hearth/internal/store"
 )
 
-// Script limits. A script's own timeout and max_steps may only lower the
-// ceilings, which hold for the whole hub.
+// Script limits. A script's own timeout, max_steps and max_memory_mib may
+// only lower the ceilings, which hold for the whole hub.
 const (
 	defaultScriptTimeout = 10 * time.Second
 	maxScriptTimeout     = time.Minute
 	defaultScriptSteps   = 1_000_000
 	maxScriptSteps       = 100_000_000
+	// The memory limits are in MiB of allocations over the whole run, as
+	// Starlark estimates them: memory freed along the way still counts.
+	defaultScriptMemoryMiB = 16
+	maxScriptMemoryMiB     = 256
 	// maxScriptSource bounds a script's source.
 	maxScriptSource = 64 << 10
 	// maxScriptCalls bounds the device reads and actions of one run: each is
@@ -41,7 +44,15 @@ var (
 	errScriptSteps = errors.New("script reached its step limit")
 	// errScriptTimeout is a script stopped at its timeout.
 	errScriptTimeout = errors.New("script reached its time limit")
+	// errScriptMemory is a script stopped at its max_memory_mib.
+	errScriptMemory = errors.New("script reached its memory limit")
 )
+
+// scriptSafety is what every function a script calls must declare: bounded
+// CPU and memory, respect for cancellation, and no access to the host. The
+// script's own builtins reach the hub only through policy, at most
+// maxScriptCalls times a run.
+const scriptSafety = starlark.CPUSafe | starlark.MemSafe | starlark.TimeSafe | starlark.IOSafe
 
 // DeviceLister lists the hub's devices for scripts: store.Devices.
 type DeviceLister interface {
@@ -73,7 +84,9 @@ type starlarkAction struct {
 	prog     *starlark.Program
 	lines    int
 	timeout  time.Duration
-	maxSteps uint64
+	maxSteps int64
+	// maxAllocs is in bytes.
+	maxAllocs int64
 	// actions are the types the script may call: the file's, but script.
 	actions map[string]Builder[Action]
 }
@@ -88,7 +101,8 @@ func buildScript(p Params, d ScriptDeps) (Action, error) {
 	var cfg struct {
 		Source   string        `yaml:"source"`
 		Timeout  time.Duration `yaml:"timeout"`
-		MaxSteps uint64        `yaml:"max_steps"`
+		MaxSteps int64         `yaml:"max_steps"`
+		MaxMemMB int64         `yaml:"max_memory_mib"`
 	}
 	if err := p.Decode(&cfg); err != nil {
 		return nil, err
@@ -108,8 +122,14 @@ func buildScript(p Params, d ScriptDeps) (Action, error) {
 	switch {
 	case cfg.MaxSteps == 0:
 		cfg.MaxSteps = defaultScriptSteps
-	case cfg.MaxSteps > maxScriptSteps:
+	case cfg.MaxSteps < 0 || cfg.MaxSteps > maxScriptSteps:
 		return nil, fmt.Errorf("max_steps must be between 0 and %d", maxScriptSteps)
+	}
+	switch {
+	case cfg.MaxMemMB == 0:
+		cfg.MaxMemMB = defaultScriptMemoryMiB
+	case cfg.MaxMemMB < 0 || cfg.MaxMemMB > maxScriptMemoryMiB:
+		return nil, fmt.Errorf("max_memory_mib must be between 0 and %d", maxScriptMemoryMiB)
 	}
 	f, err := scriptFileOptions.Parse("script", cfg.Source, 0)
 	if err != nil {
@@ -128,7 +148,7 @@ func buildScript(p Params, d ScriptDeps) (Action, error) {
 	delete(actions, "script")
 	return &starlarkAction{
 		deps: d, prog: prog, lines: strings.Count(strings.TrimRight(cfg.Source, "\n"), "\n") + 1,
-		timeout: cfg.Timeout, maxSteps: cfg.MaxSteps, actions: actions,
+		timeout: cfg.Timeout, maxSteps: cfg.MaxSteps, maxAllocs: cfg.MaxMemMB << 20, actions: actions,
 	}, nil
 }
 
@@ -172,8 +192,8 @@ func withCaller(ctx context.Context, c caller) context.Context {
 	return context.WithValue(ctx, callerKey{}, c)
 }
 
-// Run runs the script once, until it ends or reaches its step or time
-// limit. It runs only when policy allowed it as an automation's action.
+// Run runs the script once, until it ends or reaches its step, memory or
+// time limit. It runs only when policy allowed it as an automation's action.
 func (a *starlarkAction) Run(ctx context.Context, ev Event) error {
 	c, ok := ctx.Value(callerKey{}).(caller)
 	if !ok || c.policy == nil || !policy.Granted(ctx, policy.AutomationScript) {
@@ -183,22 +203,23 @@ func (a *starlarkAction) Run(ctx context.Context, ev Event) error {
 	ctx, cancel := context.WithTimeout(ctx, a.timeout)
 	defer cancel()
 	thread := &starlark.Thread{Name: "script", Print: func(*starlark.Thread, string) {}}
-	thread.SetMaxExecutionSteps(a.maxSteps)
-	var outOfSteps atomic.Bool
-	thread.OnMaxSteps = func(t *starlark.Thread) {
-		outOfSteps.Store(true)
-		t.Cancel("step limit reached")
-	}
-	stop := context.AfterFunc(ctx, func() { thread.Cancel("stopped") })
-	defer stop()
+	thread.RequireSafety(scriptSafety)
+	thread.SetMaxSteps(a.maxSteps)
+	thread.SetMaxAllocs(a.maxAllocs)
+	thread.SetParentContext(ctx) // the thread is cancelled when ctx ends
+	defer thread.Cancel("script ended")
 
 	run := &scriptRun{a: a, c: c, ev: ev, ctx: ctx}
 	_, err := a.prog.Init(thread, run.globals())
+	var stepsErr *starlark.StepsSafetyError
+	var allocsErr *starlark.AllocsSafetyError
 	switch {
 	case err == nil:
 		return nil
-	case outOfSteps.Load():
+	case errors.As(err, &stepsErr):
 		return fmt.Errorf("%w (max_steps %d): %w", errScriptSteps, a.maxSteps, err)
+	case errors.As(err, &allocsErr):
+		return fmt.Errorf("%w (max_memory_mib %d): %w", errScriptMemory, a.maxAllocs>>20, err)
 	case parent.Err() != nil:
 		return fmt.Errorf("script: %w: %w", context.Cause(parent), err)
 	case ctx.Err() != nil:
@@ -221,10 +242,10 @@ func (r *scriptRun) globals() starlark.StringDict {
 	trig.Freeze()
 	return starlark.StringDict{
 		"trigger": trig,
-		"action":  starlark.NewBuiltin("action", r.action),
-		"devices": starlark.NewBuiltin("devices", r.devices),
-		"device":  starlark.NewBuiltin("device", r.device),
-		"print": starlark.NewBuiltin("print", func(*starlark.Thread, *starlark.Builtin, starlark.Tuple, []starlark.Tuple) (starlark.Value, error) {
+		"action":  starlark.NewBuiltinWithSafety("action", scriptSafety, r.action),
+		"devices": starlark.NewBuiltinWithSafety("devices", scriptSafety, r.devices),
+		"device":  starlark.NewBuiltinWithSafety("device", scriptSafety, r.device),
+		"print": starlark.NewBuiltinWithSafety("print", scriptSafety, func(*starlark.Thread, *starlark.Builtin, starlark.Tuple, []starlark.Tuple) (starlark.Value, error) {
 			return nil, errors.New(`not available in scripts: use action("log", message=...)`)
 		}),
 	}
@@ -301,7 +322,7 @@ func (r *scriptRun) action(_ *starlark.Thread, b *starlark.Builtin, args starlar
 }
 
 // devices is devices(): every device, as dicts.
-func (r *scriptRun) devices(_ *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func (r *scriptRun) devices(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	if err := starlark.UnpackPositionalArgs(b.Name(), args, kwargs, 0); err != nil {
 		return nil, err
 	}
@@ -310,7 +331,11 @@ func (r *scriptRun) devices(_ *starlark.Thread, b *starlark.Builtin, args starla
 	if err != nil {
 		return nil, err
 	}
-	return starlark.NewList(out), nil
+	list := starlark.NewList(out)
+	if err := thread.AddAllocs(starlark.EstimateSize(list)); err != nil {
+		return nil, err
+	}
+	return list, nil
 }
 
 // device is device(name): the device with this id, name or hostname, or
