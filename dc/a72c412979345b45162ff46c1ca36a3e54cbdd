@@ -1,0 +1,19 @@
+cmd/hearth/config_test.go
+  s_87f1c7baee7d5a::t_ec975e0286befb 208
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dca72c412979345b45162ff46c1ca36a3e54cbdd",
+  "prompts": {},
+  "sessions": {
+    "s_87f1c7baee7d5a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "45cc2cdf-3130-4caa-8cb4-8cb365d2150d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
