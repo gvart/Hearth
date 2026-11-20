@@ -222,6 +222,15 @@ const (
 	DashboardTokenCreate Action = "dashboard.token.create"
 	// DashboardTokenRevoke revokes a dashboard's token.
 	DashboardTokenRevoke Action = "dashboard.token.revoke"
+	// PluginStart starts a configured exec plugin's process on the hub, or
+	// restarts it after it stopped (docs/plugins.md).
+	PluginStart Action = "plugin.start"
+	// PluginCommandRead, PluginCommandSafe and PluginCommandDangerous run a
+	// command an exec plugin declares in its manifest, of that class. The
+	// operator's manifest, not the plugin process, sets the class.
+	PluginCommandRead      Action = "plugin.command.read"
+	PluginCommandSafe      Action = "plugin.command.safe"
+	PluginCommandDangerous Action = "plugin.command.dangerous"
 )
 
 // Actor kinds.
@@ -450,6 +459,17 @@ var rules = map[Action]rule{
 	DashboardRead:        {class: Read, actors: []string{ActorDashboard}},
 	DashboardTokenCreate: {class: Safe, actors: []string{ActorWeb}},
 	DashboardTokenRevoke: {class: Safe, actors: []string{ActorWeb}},
+	// The operator turns a plugin on by naming its manifest in the hub's
+	// flags: that is the grant. A plugin runs as a child process of the hub
+	// with the hub's user, so it counts as the worst; no one is there to
+	// approve a restart after a crash.
+	PluginStart: {class: Dangerous, actors: []string{ActorHub}, fixed: true},
+	// A plugin command is as risky as the class its manifest declares. A
+	// command the manifest does not declare is decided as dangerous, and
+	// denied.
+	PluginCommandRead:      {class: Read, actors: []string{ActorWeb}},
+	PluginCommandSafe:      {class: Safe, actors: []string{ActorWeb}},
+	PluginCommandDangerous: {class: Dangerous, actors: []string{ActorWeb}},
 }
 
 // Actions returns every known action, sorted.

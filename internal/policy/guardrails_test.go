@@ -196,6 +196,10 @@ var expected = map[Action]struct {
 	DashboardRead:             {Read, []string{ActorDashboard}, false},
 	DashboardTokenCreate:      {Safe, []string{ActorWeb}, false},
 	DashboardTokenRevoke:      {Safe, []string{ActorWeb}, false},
+	PluginStart:               {Dangerous, []string{ActorHub}, true},
+	PluginCommandRead:         {Read, []string{ActorWeb}, false},
+	PluginCommandSafe:         {Safe, []string{ActorWeb}, false},
+	PluginCommandDangerous:    {Dangerous, []string{ActorWeb}, false},
 }
 
 func TestExpectedCoversEveryAction(t *testing.T) {
