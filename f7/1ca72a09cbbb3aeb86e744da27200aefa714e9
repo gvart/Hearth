@@ -1,0 +1,28 @@
+internal/automation/runbook_talos_upgrade_test.go
+  s_26e932fc13ca45::t_11e1ddbbeab3f2 1-18,21-30,32-50,58-136
+  s_26e932fc13ca45::t_c3dda810613918 31
+  s_26e932fc13ca45::t_fe2b5344b1dc5f 19-20
+  s_26e932fc13ca45::t_3fe172d60dea0f 51-57
+internal/automation/runbook_recipes_test.go
+  s_26e932fc13ca45::t_9345186d96aaf5 23,26-33,223
+docs/runbook-recipes.md
+  s_26e932fc13ca45::t_70e00a38d1370d 3,16,33-35,153-342,582-584
+docs/recipes/runbooks/upgrade-talos-node.yaml
+  s_26e932fc13ca45::t_846c3f040b6996 1-169
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f71ca72a09cbbb3aeb86e744da27200aefa714e9",
+  "prompts": {},
+  "sessions": {
+    "s_26e932fc13ca45": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea42b0cd-7455-494b-8071-e63f36b98d4d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
