@@ -73,6 +73,10 @@ type Clients struct {
 
 // LoadClients reads and checks the clients file at path.
 func LoadClients(path string) (*Clients, error) {
+	// Whoever can write the file can grant themselves any topic.
+	if info, err := os.Stat(path); err == nil && info.Mode().Perm()&0o022 != 0 {
+		return nil, fmt.Errorf("MQTT clients file %s is writable by group or others: chmod 600 it", path)
+	}
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read MQTT clients file: %w", err)

@@ -26,10 +26,21 @@ import (
 )
 
 // fakeCerts answers Check from a map of serial to result.
-type fakeCerts map[string]error
+type fakeCerts struct {
+	mu sync.Mutex
+	m  map[string]error
+}
 
-func (f fakeCerts) Check(_ context.Context, serial, _ string) error {
-	if err, ok := f[serial]; ok {
+func (f *fakeCerts) set(serial string, err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.m[serial] = err
+}
+
+func (f *fakeCerts) Check(_ context.Context, serial, _ string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err, ok := f.m[serial]; ok {
 		return err
 	}
 	return fmt.Errorf("check cert %s: %w", serial, store.ErrNotFound)
@@ -57,7 +68,7 @@ type testBroker struct {
 	addr   string
 	ca     *pki.CA
 	pool   *x509.CertPool
-	certs  fakeCerts
+	certs  *fakeCerts
 	logs   *syncBuffer
 	cancel context.CancelFunc
 	done   chan error
@@ -65,7 +76,8 @@ type testBroker struct {
 
 const testPassword = "correct horse battery staple"
 
-func startBroker(t *testing.T, clients string) *testBroker {
+// startBroker starts a broker; each of tweak runs on it before it serves.
+func startBroker(t *testing.T, clients string, tweak ...func(*Broker)) *testBroker {
 	t.Helper()
 	now := time.Now()
 	ca, err := pki.LoadOrCreateCA(t.TempDir(), now)
@@ -89,16 +101,19 @@ func startBroker(t *testing.T, clients string) *testBroker {
 		t.Fatal(err)
 	}
 	logs := &syncBuffer{}
-	certs := fakeCerts{}
+	certs := &fakeCerts{m: map[string]error{}}
 	b, err := New(Config{
 		Listener: ln, CA: ca, ServerCert: func() *tls.Certificate { return &serverCert },
-		Clients: c, Certs: certs, Log: slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
+		Clients: c, Certs: certs, Recheck: 50 * time.Millisecond, Log: slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	tb := &testBroker{addr: b.Addr().String(), ca: ca, pool: ca.Pool(), certs: certs, logs: logs, cancel: cancel, done: make(chan error, 1)}
+	for _, f := range tweak {
+		f(b)
+	}
 	go func() { tb.done <- b.Run(ctx) }()
 	t.Cleanup(func() {
 		cancel()
@@ -389,7 +404,7 @@ func TestDeviceCertificate(t *testing.T) {
 	tb := startBroker(t, clientsYAML)
 	now := time.Now()
 	good := deviceCert(t, tb.ca, "dev1", now)
-	tb.certs[pki.SerialString(good.Leaf)] = nil
+	tb.certs.set(pki.SerialString(good.Leaf), nil)
 	c, rc, err := tb.dial(t, connectOpts{cert: &good})
 	if err != nil || rc != accepted {
 		t.Fatalf("device connect: rc %d, %v", rc, err)
@@ -410,11 +425,11 @@ func TestDeviceCertificate(t *testing.T) {
 	}
 
 	revoked := deviceCert(t, tb.ca, "dev1", now)
-	tb.certs[pki.SerialString(revoked.Leaf)] = fmt.Errorf("check: %w", store.ErrCertRevoked)
+	tb.certs.set(pki.SerialString(revoked.Leaf), fmt.Errorf("check: %w", store.ErrCertRevoked))
 	unlisted := deviceCert(t, tb.ca, "dev9", now)
-	tb.certs[pki.SerialString(unlisted.Leaf)] = nil
+	tb.certs.set(pki.SerialString(unlisted.Leaf), nil)
 	broken := deviceCert(t, tb.ca, "dev1", now)
-	tb.certs[pki.SerialString(broken.Leaf)] = errors.New("database is locked")
+	tb.certs.set(pki.SerialString(broken.Leaf), errors.New("database is locked"))
 	unknown := deviceCert(t, tb.ca, "dev1", now)
 	refused := map[string]connectOpts{
 		"revoked":              {cert: &revoked},
@@ -438,7 +453,7 @@ func TestDeviceCertificate(t *testing.T) {
 	}
 	foreign := deviceCert(t, foreignCA, "dev1", now)
 	expired := deviceCert(t, tb.ca, "dev1", now.Add(-pki.ClientCertValidity-time.Hour))
-	tb.certs[pki.SerialString(expired.Leaf)] = nil
+	tb.certs.set(pki.SerialString(expired.Leaf), nil)
 	for name, cert := range map[string]*tls.Certificate{"foreign CA": &foreign, "expired": &expired} {
 		t.Run(name, func(t *testing.T) {
 			if _, rc, err := tb.dial(t, connectOpts{cert: cert}); err == nil {

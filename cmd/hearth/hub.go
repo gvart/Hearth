@@ -566,12 +566,6 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 			return fmt.Errorf("listen on %s: %w", opts.httpListen, err)
 		}
 	}
-	broker, err := newMQTTBroker(ctx, opts, ca, serverCert.Load, st, log)
-	if err != nil {
-		_ = agentLn.Close()
-		_ = webLn.Close()
-		return err
-	}
 	fp := ca.Fingerprint()
 	logAttrs := []any{
 		"addr", agentLn.Addr().String(), "http_addr", webLn.Addr().String(),
@@ -582,7 +576,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	}
 	logAttrs = append(logAttrs, "prometheus", prom != nil, "pihole", opts.piholeURL != "", "netalertx", opts.netalertxURL != "",
 		"beszel", opts.beszelURL != "", "talos", opts.talosconfig != "", "dhcp_lease_files", len(opts.dhcpLeases),
-		"plugins", len(manifests), "mqtt", broker != nil)
+		"plugins", len(manifests))
 	log.InfoContext(ctx, "hub listening", logAttrs...)
 
 	var builtin []*automation.Automation
@@ -621,6 +615,13 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		})
 	}
 
+	// Bound last, after every early return, so Run always closes it.
+	broker, err := newMQTTBroker(ctx, opts, ca, serverCert.Load, st, log)
+	if err != nil {
+		_ = agentLn.Close()
+		_ = webLn.Close()
+		return err
+	}
 	g, gctx := errgroup.WithContext(ctx)
 	if node == nil {
 		g.Go(func() error { return reg.Run(gctx) })

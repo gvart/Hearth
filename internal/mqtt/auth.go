@@ -25,6 +25,12 @@ import (
 // it has connected. User names may not contain ':', so none can pass as one.
 const devicePrefix = "device:"
 
+// Bounds of the queue for the password check (authHook.gate).
+const (
+	maxLoginWaiters = 32
+	loginWait       = 2 * time.Second
+)
+
 // dummyHash is checked against for an unknown user, so a refusal takes as
 // long whether or not the user exists. It is made on first use, not when
 // the binary starts: agents never need it.
@@ -46,14 +52,32 @@ type authHook struct {
 	// ctx is the broker's run context, set before it serves.
 	ctx context.Context
 	// gate runs one bcrypt comparison at a time, so a flood of logins
-	// cannot take every core from the hub.
-	gate chan struct{}
+	// cannot take every core from the hub. At most cap(waiters) logins wait
+	// for it, each for at most gateWait: the rest are refused as busy, so a
+	// flood cannot queue up ahead of a legitimate client for ever.
+	gate     chan struct{}
+	waiters  chan struct{}
+	gateWait time.Duration
+	// compare is bcrypt.CompareHashAndPassword; tests slow it down.
+	compare func(hash, password []byte) error
+
+	// claims maps a client ID to the identity whose connections hold it,
+	// so two identities racing for one ID cannot both get it.
+	mu     sync.Mutex
+	claims map[string]*claim
+}
+
+type claim struct {
+	identity string
+	conns    int
 }
 
 func newAuthHook(srv *mochi.Server, cfg Config) *authHook {
 	h := &authHook{
 		srv: srv, ca: cfg.CA, certs: cfg.Certs, log: cfg.Log, ctx: context.Background(),
-		users: map[string]*User{}, devices: map[string]*Device{}, gate: make(chan struct{}, 1),
+		users: map[string]*User{}, devices: map[string]*Device{},
+		gate: make(chan struct{}, 1), waiters: make(chan struct{}, maxLoginWaiters), gateWait: loginWait,
+		compare: bcrypt.CompareHashAndPassword, claims: map[string]*claim{},
 	}
 	if cfg.Clients != nil {
 		for i := range cfg.Clients.Users {
@@ -69,7 +93,7 @@ func newAuthHook(srv *mochi.Server, cfg Config) *authHook {
 func (h *authHook) ID() string { return "hearth-auth" }
 
 func (h *authHook) Provides(b byte) bool {
-	return b == mochi.OnConnectAuthenticate || b == mochi.OnACLCheck
+	return b == mochi.OnConnectAuthenticate || b == mochi.OnACLCheck || b == mochi.OnDisconnect
 }
 
 // OnConnectAuthenticate admits a client with a valid device certificate or
@@ -81,10 +105,8 @@ func (h *authHook) OnConnectAuthenticate(cl *mochi.Client, pk packets.Packet) bo
 	case reason != "":
 	case pk.Connect.WillFlag && !allowed(rules, pk.Connect.WillTopic, true):
 		reason = "will topic not allowed"
-	default:
-		if prev, ok := h.srv.Clients.Get(cl.ID); ok && string(prev.Properties.Username) != identity {
-			reason = "client ID belongs to another client's session"
-		}
+	case !h.claim(cl.ID, identity):
+		reason = "client ID belongs to another client's session"
 	}
 	if reason != "" {
 		// Never the password: only who tried, from where, and why not.
@@ -119,11 +141,23 @@ func (h *authHook) authenticate(cl *mochi.Client, pk packets.Packet) (string, []
 		hash = dummyHash()
 	}
 	select {
+	case h.waiters <- struct{}{}:
+	default:
+		return name, nil, "server busy: too many logins waiting"
+	}
+	wait := time.NewTimer(h.gateWait)
+	defer wait.Stop()
+	select {
 	case h.gate <- struct{}{}:
+		<-h.waiters
+	case <-wait.C:
+		<-h.waiters
+		return name, nil, "server busy: login timed out waiting"
 	case <-h.ctx.Done():
+		<-h.waiters
 		return name, nil, "broker stopping"
 	}
-	err := bcrypt.CompareHashAndPassword(hash, pk.Connect.Password)
+	err := h.compare(hash, pk.Connect.Password)
 	<-h.gate
 	if u == nil || err != nil {
 		return name, nil, "wrong username or password"
@@ -159,6 +193,82 @@ func (h *authHook) authenticateDevice(leaf *x509.Certificate, username []byte) (
 		return identity, nil, "device not in the MQTT clients file"
 	}
 	return identity, d.Allow, ""
+}
+
+// claim gives clientID to identity, unless another identity holds it: a
+// connection that is still connecting, connected, or a stored session.
+func (h *authHook) claim(clientID, identity string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if c := h.claims[clientID]; c != nil && c.identity != identity {
+		return false
+	}
+	if prev, ok := h.srv.Clients.Get(clientID); ok && string(prev.Properties.Username) != identity {
+		return false
+	}
+	c := h.claims[clientID]
+	if c == nil {
+		c = &claim{identity: identity}
+		h.claims[clientID] = c
+	}
+	c.conns++
+	return true
+}
+
+// OnDisconnect releases the client's claim on its ID. A stored session
+// keeps the ID for its identity (see claim). A connection that fails to send
+// its CONNACK never gets here and leaves its claim, which only keeps the ID
+// for the identity that already proved it holds it.
+func (h *authHook) OnDisconnect(cl *mochi.Client, _ error, _ bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if c := h.claims[cl.ID]; c != nil && c.identity == string(cl.Properties.Username) {
+		if c.conns--; c.conns <= 0 {
+			delete(h.claims, cl.ID)
+		}
+	}
+}
+
+// recheck disconnects every connected device whose certificate is no longer
+// good: revoked, or from a hub CA a rotation retired. It runs periodically,
+// as revocations are written by another process (`hearth device revoke`).
+func (h *authHook) recheck(ctx context.Context) {
+	for _, cl := range h.srv.Clients.GetAll() {
+		id, ok := strings.CutPrefix(string(cl.Properties.Username), devicePrefix)
+		if !ok || cl.Closed() {
+			continue
+		}
+		conn, ok := cl.Net.Conn.(*tls.Conn)
+		if !ok {
+			continue
+		}
+		chains := conn.ConnectionState().VerifiedChains
+		reason := ""
+		switch {
+		case len(chains) == 0:
+			reason = "no client certificate"
+		case h.ca.IssuerOf(chains[0][0]) == nil:
+			reason = "client certificate of a hub CA no longer trusted"
+		default:
+			cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			err := h.certs.Check(cctx, pki.SerialString(chains[0][0]), id)
+			cancel()
+			switch {
+			case errors.Is(err, store.ErrCertRevoked):
+				reason = "certificate revoked"
+			case errors.Is(err, store.ErrNotFound):
+				reason = "certificate unknown"
+			case err != nil:
+				// Keep the client: the store may be briefly unavailable.
+				h.log.Error("mqtt: recheck client certificate", "device_id", id, "err", err)
+			}
+		}
+		if reason != "" {
+			h.log.Warn("mqtt client disconnected", "reason", reason, "identity", devicePrefix+id,
+				"client_id", cl.ID, "remote", cl.Net.Remote)
+			_ = h.srv.DisconnectClient(cl, packets.ErrNotAuthorized)
+		}
+	}
 }
 
 // OnACLCheck allows a read (a subscription filter, or a message delivered to

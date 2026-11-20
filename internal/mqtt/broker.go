@@ -29,6 +29,16 @@ func init() { packets.TPacketData = nil }
 // handshake and send CONNECT. After that the client's keepalive applies.
 const connectTimeout = 10 * time.Second
 
+// MaxPacketSize is the largest MQTT packet the broker reads, CONNECT
+// included. mochi allocates a packet's declared size before it reads it, so
+// without a bound one unauthenticated client could make the hub allocate
+// 256 MB. Sensor readings and commands are far smaller.
+const MaxPacketSize = 256 << 10
+
+// DefaultRecheck is how often the broker re-checks the certificates of the
+// devices connected to it.
+const DefaultRecheck = 30 * time.Second
+
 // CertChecker tells whether the hub issued a client certificate to a device
 // and has not revoked it (store.Certs).
 type CertChecker interface {
@@ -48,21 +58,32 @@ type Config struct {
 	Clients *Clients
 	// Certs checks a device certificate is known and not revoked.
 	Certs CertChecker
-	Log   *slog.Logger
+	// Recheck is how often connected devices' certificates are checked
+	// again, so a revoked device or one of a retired hub CA is dropped
+	// (default DefaultRecheck).
+	Recheck time.Duration
+	Log     *slog.Logger
 }
 
 // Broker is the embedded MQTT broker.
 type Broker struct {
-	srv   *mochi.Server
-	auth  *authHook
-	ln    net.Listener
-	conns *connListener
+	srv     *mochi.Server
+	auth    *authHook
+	ln      net.Listener
+	conns   *connListener
+	recheck time.Duration
 }
 
 // New returns a broker serving on cfg.Listener once Run is called. The caller
 // must call Run, which closes the listener when it returns.
 func New(cfg Config) (*Broker, error) {
-	srv := mochi.New(&mochi.Options{Logger: cfg.Log})
+	caps := mochi.NewDefaultServerCapabilities()
+	caps.MaximumPacketSize = MaxPacketSize
+	// mochi checks a publish's topic against the ACL before it resolves a
+	// topic alias, so aliases are off: a publish carrying one is refused.
+	caps.TopicAliasMaximum = 0
+	cfg.Log = slog.New(redactPackets{cfg.Log.Handler()})
+	srv := mochi.New(&mochi.Options{Logger: cfg.Log, Capabilities: caps})
 	auth := newAuthHook(srv, cfg)
 	if err := srv.AddHook(auth, nil); err != nil {
 		return nil, fmt.Errorf("mqtt: add auth hook: %w", err)
@@ -72,7 +93,11 @@ func New(cfg Config) (*Broker, error) {
 	if err := srv.AddListener(listeners.NewNet("mqtts", ln)); err != nil {
 		return nil, fmt.Errorf("mqtt: add listener: %w", err)
 	}
-	return &Broker{srv: srv, auth: auth, ln: ln, conns: conns}, nil
+	recheck := cfg.Recheck
+	if recheck <= 0 {
+		recheck = DefaultRecheck
+	}
+	return &Broker{srv: srv, auth: auth, ln: ln, conns: conns, recheck: recheck}, nil
 }
 
 // Addr is the address the broker listens on.
@@ -86,7 +111,15 @@ func (b *Broker) Run(ctx context.Context) error {
 		_ = b.ln.Close()
 		return fmt.Errorf("mqtt: serve: %w", err)
 	}
-	<-ctx.Done()
+	t := time.NewTicker(b.recheck)
+	defer t.Stop()
+	for ctx.Err() == nil {
+		select {
+		case <-t.C:
+			b.auth.recheck(ctx)
+		case <-ctx.Done():
+		}
+	}
 	// Connected clients are disconnected by Close; this ends the rest.
 	b.conns.stop()
 	if err := b.srv.Close(); err != nil {
@@ -169,4 +202,35 @@ func (l *connListener) stop() {
 	for c := range l.conns {
 		_ = c.SetDeadline(time.Now())
 	}
+}
+
+// redactPackets drops mochi's "pk" and "packet" log attributes: a logged
+// packet can be a CONNECT with its password, or a message's payload.
+type redactPackets struct{ slog.Handler }
+
+func redacted(a slog.Attr) bool { return a.Key == "pk" || a.Key == "packet" }
+
+func (h redactPackets) Handle(ctx context.Context, r slog.Record) error {
+	out := slog.NewRecord(r.Time, r.Level, r.Message, r.PC)
+	r.Attrs(func(a slog.Attr) bool {
+		if !redacted(a) {
+			out.AddAttrs(a)
+		}
+		return true
+	})
+	return h.Handler.Handle(ctx, out)
+}
+
+func (h redactPackets) WithAttrs(as []slog.Attr) slog.Handler {
+	kept := make([]slog.Attr, 0, len(as))
+	for _, a := range as {
+		if !redacted(a) {
+			kept = append(kept, a)
+		}
+	}
+	return redactPackets{h.Handler.WithAttrs(kept)}
+}
+
+func (h redactPackets) WithGroup(name string) slog.Handler {
+	return redactPackets{h.Handler.WithGroup(name)}
 }
