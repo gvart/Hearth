@@ -1,0 +1,25 @@
+docs/plugins.md
+  s_26e932fc13ca45::t_4ba87d7af51ca6 63-65,153
+internal/plugins/helper_test.go
+  s_26e932fc13ca45::t_4ba87d7af51ca6 76-78
+examples/plugins/python-load/plugin.py
+  s_26e932fc13ca45::t_4ba87d7af51ca6 42,48-49,71
+internal/plugins/plugins_test.go
+  s_26e932fc13ca45::t_4ba87d7af51ca6 144-145
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1df2bf82d9717b57a9076abca8a5cd3a548208fe",
+  "prompts": {},
+  "sessions": {
+    "s_26e932fc13ca45": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea42b0cd-7455-494b-8071-e63f36b98d4d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
