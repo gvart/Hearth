@@ -1,0 +1,20 @@
+cmd/hearth/cluster.go
+  s_87f1c7baee7d5a::t_ed7c0f2d1dfd7c 359-360,406,419-428
+  s_87f1c7baee7d5a::t_e1a12ecdd07258 429-430
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "30037d4b3bb493d4a1c284b13c02099b134a8450",
+  "prompts": {},
+  "sessions": {
+    "s_87f1c7baee7d5a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "45cc2cdf-3130-4caa-8cb4-8cb365d2150d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
