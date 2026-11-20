@@ -29,6 +29,7 @@ export const keys = {
   devices: ['devices'] as const,
   networkHosts: ['network', 'hosts'] as const,
   beszelSystems: ['beszel', 'systems'] as const,
+  talosNodes: ['talos', 'nodes'] as const,
   tls: ['tls'] as const,
   configDrift: ['cluster', 'config-drift'] as const,
   metrics: (id: string, range: MetricsRange) => ['metrics', id, range] as const,
@@ -90,6 +91,7 @@ export function useLogout() {
       qc.removeQueries({ queryKey: keys.devices });
       qc.removeQueries({ queryKey: ['network'] });
       qc.removeQueries({ queryKey: ['beszel'] });
+      qc.removeQueries({ queryKey: ['talos'] });
       qc.removeQueries({ queryKey: ['kube'] });
       qc.removeQueries({ queryKey: ['proxmox'] });
       qc.removeQueries({ queryKey: ['audit'] });
@@ -117,6 +119,11 @@ export function useDevices() {
 /** Hosts network discovery found; refetched on network events and now and then, as scans run on their own schedule. */
 export function useNetworkHosts() {
   return useQuery({ queryKey: keys.networkHosts, queryFn: api.networkHosts, refetchInterval: networkHostsRefreshMs });
+}
+
+/** What the hub last read from the Talos API; the hub reads it on its own schedule. */
+export function useTalosNodes() {
+  return useQuery({ queryKey: keys.talosNodes, queryFn: api.talosNodes, refetchInterval: networkHostsRefreshMs });
 }
 
 /** What the hub last read from Beszel; the hub reads Beszel on its own schedule. */
