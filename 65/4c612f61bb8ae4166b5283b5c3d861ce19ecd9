@@ -1,0 +1,73 @@
+internal/store/dashboardtokens.go
+  s_87f1c7baee7d5a::t_212261c1beae8e 120
+test/e2e/ap_test.go
+  s_87f1c7baee7d5a::t_92d258a38c0ef2 34-35
+internal/store/remote.go
+  s_87f1c7baee7d5a::t_4dfa7eb96a9dda 321
+internal/store/wire.go
+  s_87f1c7baee7d5a::t_571858cc7e992a 163-166,179-182
+internal/store/runbookruns.go
+  s_87f1c7baee7d5a::t_4dfa7eb96a9dda 181
+internal/cluster/apbench_test.go
+  s_87f1c7baee7d5a::t_5ee4030c78dfd0 1-38,43-73
+  s_87f1c7baee7d5a::t_571858cc7e992a 39-42
+docs/cluster.md
+  s_87f1c7baee7d5a::t_3a42b8e059b44e 58-84
+internal/store/panels.go
+  s_87f1c7baee7d5a::t_4dfa7eb96a9dda 133,233
+internal/cluster/replicate_test.go
+  s_87f1c7baee7d5a::t_a854cabd18d375 627-645,647-656,661-671
+  s_87f1c7baee7d5a::t_c90120a3653ea5 34-37
+  s_87f1c7baee7d5a::t_571858cc7e992a 164-167,384-387,511-514,618-621,657-660,679-682,711-716
+  s_87f1c7baee7d5a::t_9774ef98d9fa0e 85,94
+  s_87f1c7baee7d5a::t_e76e080dec43a8 70,76-79
+  s_87f1c7baee7d5a::t_70a98ce1e4ea08 646
+  s_87f1c7baee7d5a::t_2403a23229d9b1 10,87
+internal/cluster/antientropy.go
+  s_87f1c7baee7d5a::t_4dfa7eb96a9dda 103
+internal/store/mcptokens.go
+  s_87f1c7baee7d5a::t_212261c1beae8e 88
+internal/store/digest.go
+  s_87f1c7baee7d5a::t_4dfa7eb96a9dda 227,349,398
+  s_87f1c7baee7d5a::t_fd4b52355d6528 86-90
+  s_87f1c7baee7d5a::t_04aba3e35265d7 391,506
+internal/cluster/apnode.go
+  s_87f1c7baee7d5a::t_4dfa7eb96a9dda 205
+internal/store/automationruns.go
+  s_87f1c7baee7d5a::t_4dfa7eb96a9dda 79
+docs/impl/ap-cluster.md
+  s_87f1c7baee7d5a::t_acb2d3a93c0522 37
+internal/cluster/replicate.go
+  s_87f1c7baee7d5a::t_317d40f85749de 83
+  s_87f1c7baee7d5a::t_4dfa7eb96a9dda 617
+  s_87f1c7baee7d5a::t_f3c47f98f44045 144-145
+  s_87f1c7baee7d5a::t_16d3adf3f0614c 916
+  s_87f1c7baee7d5a::t_ad4f008b1bdbab 84,1031
+  s_87f1c7baee7d5a::t_cd8e7862cff337 69-74
+  s_87f1c7baee7d5a::t_f10047631ef5a4 963-969
+  s_87f1c7baee7d5a::t_d9b004a14055d7 198
+  s_87f1c7baee7d5a::t_cd542b2be4a617 908-913,915,917-922,925,932,936
+  s_87f1c7baee7d5a::t_3cee2b04ec352d 940
+  s_87f1c7baee7d5a::t_503b56d77bcdc4 948-962,970-981
+  s_87f1c7baee7d5a::t_2ee0cd528ded02 118-124
+  s_87f1c7baee7d5a::t_46e7c229e98a5f 155
+  s_87f1c7baee7d5a::t_9915f2c025bf08 375-378,548-550
+internal/store/shard_test.go
+  s_87f1c7baee7d5a::t_571858cc7e992a 257-258,264-265,272-275,325-328,332-335
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "654c612f61bb8ae4166b5283b5c3d861ce19ecd9",
+  "prompts": {},
+  "sessions": {
+    "s_87f1c7baee7d5a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "45cc2cdf-3130-4caa-8cb4-8cb365d2150d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}

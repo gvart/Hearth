@@ -1,0 +1,36 @@
+internal/cluster/gossiptransport.go
+  s_87f1c7baee7d5a::t_84bab574a4df00 17,36-38,98-100,334-341
+internal/cluster/replicate_test.go
+  s_87f1c7baee7d5a::t_92c4db55bf63b2 1-170,172-239,241-341,343-351,353-587
+  s_87f1c7baee7d5a::t_fef8361d0790eb 171,240,342,352
+internal/cluster/antientropy.go
+  s_87f1c7baee7d5a::t_38555b83047386 288
+  s_87f1c7baee7d5a::t_4e815379af3ae0 1-287,289-314
+internal/cluster/membership.go
+  s_87f1c7baee7d5a::t_84bab574a4df00 91-95,305-306
+  s_87f1c7baee7d5a::t_666e9bb152364e 307
+internal/cluster/replicate.go
+  s_87f1c7baee7d5a::t_9370826ac908cd 1-1060
+internal/cluster/hints.go
+  s_87f1c7baee7d5a::t_6c074b962a768b 1-149
+internal/cluster/apdial.go
+  s_87f1c7baee7d5a::t_76a4b910f41463 1-51
+internal/cluster/ring.go
+  s_87f1c7baee7d5a::t_4ace4ca5341d1d 1-120
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c245494c554d2b64a84fdc836219457cdbe3e8ba",
+  "prompts": {},
+  "sessions": {
+    "s_87f1c7baee7d5a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "45cc2cdf-3130-4caa-8cb4-8cb365d2150d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
