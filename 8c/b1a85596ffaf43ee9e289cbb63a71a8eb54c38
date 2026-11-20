@@ -1,0 +1,64 @@
+test/e2e/ap_test.go
+  s_87f1c7baee7d5a::t_9cc9715a5d5177 1-257
+cmd/hearth/hub_cluster_ap.go
+  s_87f1c7baee7d5a::t_809d5634a68403 1-194
+internal/store/partition.go
+  s_87f1c7baee7d5a::t_d3fc96de630fa9 65,72
+  s_87f1c7baee7d5a::t_1e6769738bbe87 173-194
+internal/cluster/replicate_test.go
+  s_87f1c7baee7d5a::t_72ffd2e91bf3a8 581-583
+  s_87f1c7baee7d5a::t_9a9c9e9014c69b 30-32
+  s_87f1c7baee7d5a::t_f272f08f081732 573-580,584-596,608-609
+  s_87f1c7baee7d5a::t_6ddbcbcb72a8ed 65
+  s_87f1c7baee7d5a::t_6c9e1c91285e23 78
+  s_87f1c7baee7d5a::t_3f3bc296e87533 628-659
+  s_87f1c7baee7d5a::t_81ebc0fcee7d75 600
+  s_87f1c7baee7d5a::t_928667b3a366ed 597-599,601-607
+Taskfile.yml
+  s_87f1c7baee7d5a::t_124a7671955854 67-71
+internal/cluster/apnode.go
+  s_87f1c7baee7d5a::t_ebd6e8599a38e4 1-69,76-485
+  s_87f1c7baee7d5a::t_c4770dd2bf5ab9 70-75
+cmd/hearth/hub.go
+  s_87f1c7baee7d5a::t_6f7eb4a7d7fe0d 335,337-345,416
+  s_87f1c7baee7d5a::t_b481e0c97e4f5a 501-504,566-572,807-813,815
+  s_87f1c7baee7d5a::t_9ee116d47ceee3 814
+cmd/hearth/hub_cluster.go
+  s_87f1c7baee7d5a::t_62b27087994643 180-182
+  s_87f1c7baee7d5a::t_6ddd37ce3a9ce2 43-47,76
+test/e2e/ap.compose.yaml
+  s_87f1c7baee7d5a::t_5be91d83f90dc0 1-4,6-33,35-40,43-48,51-66
+  s_87f1c7baee7d5a::t_999a317880d52f 5,34,41-42,49-50
+CLAUDE.md
+  s_87f1c7baee7d5a::t_052fba366daba7 81
+cmd/hearth/cluster.go
+  s_87f1c7baee7d5a::t_62b27087994643 399-401,456-470
+  s_87f1c7baee7d5a::t_db3b10485287d2 341-350
+  s_87f1c7baee7d5a::t_347eb0df26bb52 471
+internal/cluster/replicate.go
+  s_87f1c7baee7d5a::t_4d8ed1bf867254 402-405,411-412
+  s_87f1c7baee7d5a::t_06f002f9551e0a 13
+  s_87f1c7baee7d5a::t_d8ccbe328935ed 410,442
+  s_87f1c7baee7d5a::t_8f69f319b3fb2b 429-441,443-449,451-454,467-476,480,485,492,518-523,529-530,534
+  s_87f1c7baee7d5a::t_0ad5eb5552e205 463
+  s_87f1c7baee7d5a::t_1672a34846dac4 425,460-461,464,477-479,481,493-497,499-504,511-514,516
+  s_87f1c7baee7d5a::t_2322b9cb0f001a 413-424,426-428,455-459,462,465-466
+internal/cluster/node.go
+  s_87f1c7baee7d5a::t_fb1db9267d6a77 623-630
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8cb1a85596ffaf43ee9e289cbb63a71a8eb54c38",
+  "prompts": {},
+  "sessions": {
+    "s_87f1c7baee7d5a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "45cc2cdf-3130-4caa-8cb4-8cb365d2150d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
