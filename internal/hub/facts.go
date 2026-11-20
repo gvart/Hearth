@@ -44,6 +44,9 @@ type Ceiling struct {
 	Scan []string `json:"scan"`
 	// NetEdges is whether the agent reports its network edges.
 	NetEdges bool `json:"net_edges"`
+	// Docker is whether the hub may list and act on the device's
+	// containers (--allow-docker).
+	Docker bool `json:"docker"`
 }
 
 // Disk is a mounted filesystem.
@@ -76,7 +79,7 @@ func factsFromHello(h *agentv1.Hello) (store.DeviceFacts, error) {
 		Capabilities:  nonNil(h.GetCapabilities()),
 	}
 	if c := h.GetCeiling(); c != nil {
-		f.Ceiling = &Ceiling{Exec: nonNil(c.GetExec()), Restart: nonNil(c.GetRestart()), Probe: c.GetProbe(), Logs: nonNil(c.GetLogs()), Shell: c.GetShell(), Scan: nonNil(c.GetScan()), NetEdges: c.GetNetEdges()}
+		f.Ceiling = &Ceiling{Exec: nonNil(c.GetExec()), Restart: nonNil(c.GetRestart()), Probe: c.GetProbe(), Logs: nonNil(c.GetLogs()), Shell: c.GetShell(), Scan: nonNil(c.GetScan()), NetEdges: c.GetNetEdges(), Docker: c.GetDocker()}
 	}
 	for _, d := range h.GetDisks() {
 		f.Disks = append(f.Disks, Disk{

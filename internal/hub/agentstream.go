@@ -188,6 +188,8 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 			sess.deliverProbe(p.ProbeResult)
 		case *agentv1.AgentMessage_ScanResult:
 			sess.deliverScan(p.ScanResult)
+		case *agentv1.AgentMessage_DockerResult:
+			sess.deliverDocker(p.DockerResult)
 		case *agentv1.AgentMessage_MetricsBatch:
 			s.recordMetrics(ctx, log, deviceID, p.MetricsBatch)
 		case *agentv1.AgentMessage_LogLines:

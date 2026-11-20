@@ -46,6 +46,8 @@ export interface Ceiling {
   scan?: string[];
   /** Whether the agent reports its neighbours and connections (--allow-net-edges). */
   net_edges?: boolean;
+  /** Whether the hub may list and start, stop and restart its containers (--allow-docker). */
+  docker?: boolean;
 }
 
 export interface Device {

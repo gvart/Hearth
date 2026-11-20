@@ -28,6 +28,7 @@ message AgentMessage {
     ShellEvent shell_event = 8;
     ScanResult scan_result = 9;
     NetEdges net_edges = 10;
+    DockerResult docker_result = 11;
   }
 }
 
@@ -42,6 +43,7 @@ message HubMessage {
     LogCancel log_cancel = 6;
     ShellRequest shell_request = 7;
     ScanRequest scan_request = 8;
+    DockerRequest docker_request = 9;
   }
 }
 
@@ -105,6 +107,11 @@ message Ceiling {
   // Connections say who talks to whom, so it is off unless the operator
   // turns it on. Reported by agents of protocol minor 8 and later.
   bool net_edges = 7;
+  // docker allows DockerRequests: the hub may list the containers and
+  // images of the device's Docker or Podman engine, read a bounded tail of
+  // a container's log, and start, stop and restart containers; nothing else
+  // of the engine's API. Reported by agents of protocol minor 9 and later.
+  bool docker = 8;
 }
 
 // Disk is a mounted filesystem.
@@ -471,4 +478,90 @@ message Connection {
   bool inbound = 3;
   // count is how many such connections are established.
   uint32 count = 4;
+}
+
+// DockerRequest asks the agent to talk to the device's Docker or Podman
+// engine, over its unix socket. The agent runs it only if its ceiling allows
+// docker, and answers with a DockerResult of the same id. Hubs send it only
+// to agents of protocol minor 9 and later.
+message DockerRequest {
+  // id correlates the DockerResult; unique per stream.
+  string id = 1;
+  // timeout bounds the request.
+  google.protobuf.Duration timeout = 2;
+  oneof op {
+    // list lists the engine's containers, running or not, and its images.
+    DockerList list = 3;
+    // action starts, stops or restarts a container.
+    DockerAction action = 4;
+    // logs reads the last lines of a container's log, once: never a follow.
+    DockerLogs logs = 5;
+  }
+}
+
+// DockerList lists containers and images.
+message DockerList {}
+
+// DockerAction starts, stops or restarts a container.
+message DockerAction {
+  // verb is "start", "stop" or "restart".
+  string verb = 1;
+  // container is the container's id or name: letters, digits, '_', '.' and
+  // '-', starting with a letter or digit, at most 128 characters.
+  string container = 2;
+}
+
+// DockerLogs reads the last lines of a container's log.
+message DockerLogs {
+  // container is as in DockerAction.
+  string container = 1;
+  // tail is how many of the last lines to read; the agent caps it at 200.
+  uint32 tail = 2;
+}
+
+// DockerResult is the outcome of a DockerRequest.
+message DockerResult {
+  // id is the id of the DockerRequest it answers.
+  string id = 1;
+  // denied is set when the agent refused the request: its ceiling does not
+  // allow docker, or it is not one the agent takes. Nothing was asked of the
+  // engine.
+  bool denied = 2;
+  // error says why the request failed or was denied; empty on success.
+  string error = 3;
+  // containers and images answer a list.
+  repeated DockerContainer containers = 4;
+  repeated DockerImage images = 5;
+  // lines answer logs, oldest first.
+  repeated LogLine lines = 6;
+  // truncated is set when the agent left containers, images or log lines
+  // out to keep the answer bounded.
+  bool truncated = 7;
+}
+
+// DockerContainer is a container of the engine.
+message DockerContainer {
+  string id = 1;
+  // name is without the leading '/'.
+  string name = 2;
+  string image = 3;
+  // state is the engine's word for it: running, exited, created, paused, ...
+  string state = 4;
+  // status is the engine's human summary, such as "Up 2 hours".
+  string status = 5;
+  // compose_project and compose_service are the container's Compose labels
+  // (com.docker.compose.project and com.docker.compose.service); empty
+  // outside a Compose project.
+  string compose_project = 6;
+  string compose_service = 7;
+  google.protobuf.Timestamp created = 8;
+}
+
+// DockerImage is an image of the engine, in summary.
+message DockerImage {
+  string id = 1;
+  // tags are its repo:tag names; none for a dangling image.
+  repeated string tags = 2;
+  int64 size_bytes = 3;
+  google.protobuf.Timestamp created = 4;
 }

@@ -29,8 +29,8 @@ import (
 // Protocol version this agent speaks.
 const (
 	ProtocolMajor = 1
-	// 1: answers ExecRequest; 2: reports its capability ceiling; 3: answers ProbeRequest; 4: sends MetricsBatch; 5: streams logs (LogRequest); 6: answers ShellRequest; 7: answers ScanRequest; 8: sends NetEdges
-	ProtocolMinor = 8
+	// 1: answers ExecRequest; 2: reports its capability ceiling; 3: answers ProbeRequest; 4: sends MetricsBatch; 5: streams logs (LogRequest); 6: answers ShellRequest; 7: answers ScanRequest; 8: sends NetEdges; 9: answers DockerRequest
+	ProtocolMinor = 9
 )
 
 const (
@@ -65,6 +65,9 @@ type Config struct {
 	// Ceiling is what the hub may run on this device; the zero value allows
 	// nothing.
 	Ceiling Ceiling
+	// DockerSocket is the Docker or Podman engine's unix socket, for
+	// Ceiling.Docker; empty tries DefaultDockerSocket, then Podman's.
+	DockerSocket string
 	// Connected, if set, is called each time a hub accepts this agent.
 	Connected func()
 	// Failed, if set, is called after each attempt that no hub accepted.
@@ -92,6 +95,8 @@ type runner struct {
 	cur  int
 	// scanning is set while a network scan runs: one at a time.
 	scanning atomic.Bool
+	// docker reaches the container engine, for DockerRequests.
+	docker dockerEngine
 }
 
 // ErrRevoked is returned by Run when a hub that can vouch for it says this
@@ -140,6 +145,8 @@ func Run(ctx context.Context, cfg Config) error {
 
 		netEdges:         readNetEdges,
 		netEdgesInterval: cmp.Or(cfg.NetEdgesInterval, defaultNetEdgesInterval),
+
+		docker: dockerEngine{sockets: dockerSockets(cfg.DockerSocket)},
 	}
 	if cfg.readNetEdges != nil {
 		r.netEdges = cfg.readNetEdges
@@ -440,6 +447,14 @@ func (r *runner) receive(ctx context.Context, stream *connect.BidiStreamForClien
 				r.log.InfoContext(ctx, "scan request", "id", req.GetId(), "subnets", req.GetSubnets(),
 					"denied", res.GetDenied(), "hosts", len(res.GetHosts()), "error", res.GetError())
 				reply(&agentv1.AgentMessage{Payload: &agentv1.AgentMessage_ScanResult{ScanResult: res}})
+			})
+		case *agentv1.HubMessage_DockerRequest:
+			req := p.DockerRequest
+			execs.Go(func() {
+				res := r.docker.docker(ctx, r.cfg.Ceiling, req)
+				r.log.InfoContext(ctx, "docker request", "id", req.GetId(), "op", dockerOp(req),
+					"denied", res.GetDenied(), "error", res.GetError())
+				reply(&agentv1.AgentMessage{Payload: &agentv1.AgentMessage_DockerResult{DockerResult: res}})
 			})
 		default:
 			// Ping needs no answer: any traffic keeps the stream alive.

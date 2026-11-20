@@ -107,3 +107,58 @@ func ScanWithinCeiling(c *agentv1.Ceiling, subnets []netip.Prefix) error {
 	}
 	return nil
 }
+
+// DockerVerbs are the container actions a DockerAction may name.
+var DockerVerbs = []string{"start", "stop", "restart"}
+
+// MaxDockerLogTail caps the lines a DockerLogs request reads.
+const MaxDockerLogTail = 200
+
+// ValidContainer reports whether ref may name a container in a request to a
+// Docker engine: an id or a name, letters, digits, '_', '.' and '-', starting
+// with a letter or digit, at most 128 characters. Nothing else reaches the
+// engine's URL, so no ref can add a path segment or a query.
+func ValidContainer(ref string) bool {
+	if ref == "" || len(ref) > 128 {
+		return false
+	}
+	for i, r := range ref {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case i > 0 && (r == '_' || r == '.' || r == '-'):
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// DockerWithinCeiling checks a DockerRequest against a device's capability
+// ceiling c, as the hub does before it sends one and the agent does again
+// before it asks the engine. It returns an error wrapping ErrBeyondCeiling
+// unless c allows docker, and one wrapping ErrDenied for a request no agent
+// takes: an unknown operation or verb, or an invalid container. A nil c
+// allows nothing.
+func DockerWithinCeiling(c *agentv1.Ceiling, req *agentv1.DockerRequest) error {
+	if !c.GetDocker() {
+		return fmt.Errorf("docker: %w", ErrBeyondCeiling)
+	}
+	var container string
+	switch op := req.GetOp().(type) {
+	case *agentv1.DockerRequest_List:
+		return nil
+	case *agentv1.DockerRequest_Action:
+		if !slices.Contains(DockerVerbs, op.Action.GetVerb()) {
+			return fmt.Errorf("docker %q: not a container action (start, stop, restart): %w", op.Action.GetVerb(), ErrDenied)
+		}
+		container = op.Action.GetContainer()
+	case *agentv1.DockerRequest_Logs:
+		container = op.Logs.GetContainer()
+	default:
+		return fmt.Errorf("docker: unknown operation: %w", ErrDenied)
+	}
+	if !ValidContainer(container) {
+		return fmt.Errorf("docker: invalid container %q: %w", container, ErrDenied)
+	}
+	return nil
+}

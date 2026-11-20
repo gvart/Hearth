@@ -24,8 +24,9 @@ func newAgentCmd() *cobra.Command {
 
 func newAgentRunCmd() *cobra.Command {
 	var (
-		dataDir string
-		ceiling agent.Ceiling
+		dataDir      string
+		ceiling      agent.Ceiling
+		dockerSocket string
 	)
 	cmd := &cobra.Command{
 		Use:   "run",
@@ -42,7 +43,9 @@ func newAgentRunCmd() *cobra.Command {
 			"--allow-scan lets the hub's network discovery sweep a subnet from here (--discover-subnet\n" +
 			"CIDR@device on the hub), for a subnet the hub is not on; none may be swept without it.\n" +
 			"--allow-net-edges reports this device's neighbours and established TCP connections to the hub\n" +
-			"every minute (Linux); connections say who talks to whom, so nothing is reported without it.",
+			"every minute (Linux); connections say who talks to whom, so nothing is reported without it.\n" +
+			"--allow-docker lets the hub list this device's Docker or Podman containers and images, read the last\n" +
+			"lines of a container's log, and start, stop and restart containers; nothing else of the engine.",
 		Example: "  hearth agent run --allow-restart systemd:pihole-FTL.service --allow-restart docker:jellyfin \\\n" +
 			"    --allow-exec /usr/bin/df --allow-logs 'systemd:pihole-FTL.service' --allow-logs 'docker:*'",
 		Args: cobra.NoArgs,
@@ -65,18 +68,22 @@ func newAgentRunCmd() *cobra.Command {
 			if ceiling.NetEdges && !agent.NetEdgesSupported {
 				return errors.New("--allow-net-edges: network edges are only reported on Linux")
 			}
+			if dockerSocket != "" && !ceiling.Docker {
+				return errors.New("--docker-socket: needs --allow-docker")
+			}
 			if ceiling.Shell && !agent.ShellSupported {
 				return errors.New("--allow-shell: interactive shells are not supported on this platform")
 			}
 			connected, failed, stop := agent.TuneRuntime()
 			defer stop()
 			return agent.Run(cmd.Context(), agent.Config{
-				DataDir:   dataDir,
-				Version:   cmd.Root().Version,
-				Log:       newLogger(cmd.ErrOrStderr()),
-				Ceiling:   ceiling,
-				Connected: connected,
-				Failed:    failed,
+				DataDir:      dataDir,
+				Version:      cmd.Root().Version,
+				Log:          newLogger(cmd.ErrOrStderr()),
+				Ceiling:      ceiling,
+				DockerSocket: dockerSocket,
+				Connected:    connected,
+				Failed:       failed,
 			})
 		},
 	}
@@ -97,6 +104,12 @@ func newAgentRunCmd() *cobra.Command {
 			"repeatable (default: none)")
 	cmd.Flags().BoolVar(&ceiling.NetEdges, "allow-net-edges", false,
 		"report this device's neighbour table and a summary of its established TCP connections to the hub (Linux)")
+	cmd.Flags().BoolVar(&ceiling.Docker, "allow-docker", false,
+		"let the hub list Docker or Podman containers and images here, read a container's last log lines, and\n"+
+			"start, stop and restart containers")
+	cmd.Flags().StringVar(&dockerSocket, "docker-socket", "",
+		"the container engine's unix socket for --allow-docker (default "+agent.DefaultDockerSocket+
+			", then Podman's\n$XDG_RUNTIME_DIR/podman/podman.sock and /run/podman/podman.sock)")
 	return cmd
 }
 

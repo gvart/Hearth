@@ -17,7 +17,8 @@ between Hearth processes is mutually authenticated TLS.
 3. **The device has the last word.** An agent runs only what its own `--allow-exec`,
    `--allow-restart`, `--allow-probe` and `--allow-shell` flags allow, streams only the logs its
    `--allow-logs` flag names, sweeps only the subnets its `--allow-scan` flag names and reports its
-   neighbours and connections only with `--allow-net-edges`, and nothing by default. Nothing on the hub can raise that ceiling.
+   neighbours and connections only with `--allow-net-edges`, lists and starts, stops and restarts its
+   containers only with `--allow-docker`, and nothing by default. Nothing on the hub can raise that ceiling.
 4. **Dangerous needs a name.** Actions of class `dangerous` (running a command, draining a node) are
    taken by an automation only when the hub is started with `--allow-dangerous-automation <id>` for
    that automation.
