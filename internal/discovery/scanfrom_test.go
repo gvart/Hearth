@@ -86,9 +86,14 @@ type fakeAgents struct {
 	result  *agentv1.ScanResult
 	err     error
 	sent    []*agentv1.ScanRequest
+	// offline is why there is no agent to send to (not found, not connected).
+	offline error
 }
 
 func (f *fakeAgents) CheckScan(_ context.Context, _ string, subnets []netip.Prefix) error {
+	if f.offline != nil {
+		return f.offline
+	}
 	return policy.ScanWithinCeiling(&agentv1.Ceiling{Scan: f.ceiling}, subnets)
 }
 
@@ -254,5 +259,22 @@ func TestRunScansFromEachDevice(t *testing.T) {
 	}
 	if len(agents.sent) != 1 || agents.sent[0].GetSubnets()[0] != "10.0.5.0/24" {
 		t.Errorf("sent %v; want only b's scan", agents.sent)
+	}
+}
+
+// A device with no agent to send to is skipped, not audited: an offline
+// device does not write an audit entry every interval.
+func TestScanFromSkipsAnOfflineDevice(t *testing.T) {
+	st := openStore(t)
+	agents := &fakeAgents{ceiling: []string{"10.0.5.0/24"}, offline: errors.New("device pi: agent not connected")}
+	err := scannerFrom(t, st, policy.New(st.Audit()), agents, nil).ScanFrom(t.Context(), "pi")
+	if !errors.Is(err, ErrScanSkipped) || !strings.Contains(err.Error(), "not connected") {
+		t.Fatalf("ScanFrom = %v, want skipped", err)
+	}
+	if len(agents.sent) != 0 {
+		t.Error("a skipped scan was sent")
+	}
+	if entries, _ := st.Audit().List(t.Context(), 10); len(entries) != 0 {
+		t.Errorf("audit = %+v; want nothing for a skipped scan", entries)
 	}
 }

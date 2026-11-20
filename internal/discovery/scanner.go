@@ -18,6 +18,7 @@ import (
 	"net/netip"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -46,6 +47,11 @@ const (
 	AgentScanTimeout = 2 * time.Minute
 	agentScanGrace   = 10 * time.Second
 )
+
+// ErrScanSkipped is returned by ScanFrom for a scan it did not attempt: the
+// device is unknown or its agent is not connected to this hub. Nothing is
+// sent and nothing is audited; the next scan tries again.
+var ErrScanSkipped = errors.New("network scan skipped")
 
 // Hosts stores scan results: store.NetworkHosts.
 type Hosts interface {
@@ -155,8 +161,9 @@ func Find(ctx context.Context, subnets []netip.Prefix, log *slog.Logger) ([]stor
 }
 
 // Run scans at once and then every Interval until ctx is done: the hub's
-// subnets, if any, then those of each device in From. A failed scan is
-// logged; the next one runs on schedule.
+// subnets, if any, and those of each device in From, all at once, so a slow
+// agent holds up no other scan. A failed scan is logged; the next one runs
+// on schedule.
 func (s *Scanner) Run(ctx context.Context) error {
 	t := time.NewTicker(s.cfg.Interval)
 	defer t.Stop()
@@ -166,16 +173,27 @@ func (s *Scanner) Run(ctx context.Context) error {
 	}
 	slices.Sort(devices)
 	for {
+		var wg sync.WaitGroup
 		if len(s.cfg.Subnets) > 0 || s.cfg.Auto {
-			if err := s.Scan(ctx); err != nil && ctx.Err() == nil {
-				s.log.WarnContext(ctx, "network scan failed", "err", err)
-			}
+			wg.Go(func() {
+				if err := s.Scan(ctx); err != nil && ctx.Err() == nil {
+					s.log.WarnContext(ctx, "network scan failed", "err", err)
+				}
+			})
 		}
 		for _, d := range devices {
-			if err := s.ScanFrom(ctx, d); err != nil && ctx.Err() == nil {
-				s.log.WarnContext(ctx, "network scan failed", "from", d, "err", err)
-			}
+			wg.Go(func() {
+				err := s.ScanFrom(ctx, d)
+				switch {
+				case err == nil || ctx.Err() != nil:
+				case errors.Is(err, ErrScanSkipped):
+					s.log.InfoContext(ctx, "network scan skipped", "from", d, "err", err)
+				default:
+					s.log.WarnContext(ctx, "network scan failed", "from", d, "err", err)
+				}
+			})
 		}
+		wg.Wait()
 		select {
 		case <-ctx.Done():
 			return nil
@@ -247,7 +265,9 @@ func (s *Scanner) Scan(ctx context.Context) error {
 
 // ScanFrom runs one scan of the subnets of device in From from its agent,
 // through policy as Scan does: one network.scan decision and audit entry,
-// with the device as "from" in its detail. A scan the device's ceiling does
+// with the device as "from" in its detail. A device that is unknown, or whose
+// agent is not connected, is skipped without an audit entry: ScanFrom fails
+// with ErrScanSkipped, having sent nothing. A scan the device's ceiling does
 // not allow is denied, and audited, before anything is sent; one its agent
 // refuses fails with an error wrapping policy.ErrBeyondCeiling. The hosts it
 // finds are recorded with the device as their scanner.
@@ -259,6 +279,11 @@ func (s *Scanner) ScanFrom(ctx context.Context, device string) error {
 	names := make([]string, len(subnets))
 	for i, p := range subnets {
 		names[i] = p.String()
+	}
+	// A ceiling denial is the policy's to decide and audit, below; any other
+	// reason not to send the scan means there is no agent to send it to.
+	if err := s.cfg.Agents.CheckScan(ctx, device, subnets); err != nil && !errors.Is(err, policy.ErrDenied) {
+		return fmt.Errorf("%w: from %s: %w", ErrScanSkipped, device, err)
 	}
 	detail := map[string]any{"subnets": names, "from": device}
 	var res store.ScanResult
