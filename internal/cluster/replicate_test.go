@@ -669,6 +669,58 @@ func TestHungMemberCostsOneTimeout(t *testing.T) {
 	}
 }
 
+// Rows written while a member was alone (it started before it found the
+// others) reach their owners once the ring has grown: the member hands off
+// what it holds but does not own.
+func TestHandOffAfterTheRingGrows(t *testing.T) {
+	ctx := t.Context()
+	an := newAPNet(t, 2, "a")
+	for i := range 30 {
+		if _, err := an.m("a").st.Audit().Append(ctx, store.AuditEntry{
+			TS: time.Now(), ActorKind: "user", ActorID: "a",
+			Action: fmt.Sprint("early", i), Decision: "allow", Result: "ok",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	an.add(t, 2, "b")
+	an.add(t, 2, "c")
+	an.m("a").rep.antiEntropy(ctx)
+	ring := NewRing([]string{"a", "b", "c"})
+	rows, err := an.m("a").st.ReadLocal(ctx, `SELECT _hlc, _origin, _seq FROM audit_log`, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	notA := 0
+	for _, r := range rows.Vals {
+		ref := store.RowRef{Table: "audit_log", Key: store.Values{r[0], r[1], r[2]}}
+		got, err := an.m("a").st.ReadRows(ctx, []store.RowRef{ref})
+		if err != nil || len(got) != 1 {
+			t.Fatal(err)
+		}
+		p, _ := got[0].Placement()
+		for _, o := range ring.Owners(store.BucketOf(store.Token(p.Key)), 2) {
+			if o == "a" {
+				continue
+			}
+			notA++
+			if g, _ := an.m(o).st.ReadRows(ctx, []store.RowRef{ref}); len(g) != 1 {
+				t.Errorf("an early entry did not reach its owner %s", o)
+			}
+		}
+	}
+	if notA == 0 {
+		t.Fatal("no early entry belongs to b or c: the test proves nothing")
+	}
+	// Nothing changed: the next round reads no rows.
+	an.m("a").rep.handedMu.Lock()
+	handed := len(an.m("a").rep.handed)
+	an.m("a").rep.handedMu.Unlock()
+	if handed == 0 {
+		t.Error("no bucket recorded as handed off")
+	}
+}
+
 func TestSingleMemberWorks(t *testing.T) {
 	ctx := t.Context()
 	an := newAPNet(t, 0, "solo")

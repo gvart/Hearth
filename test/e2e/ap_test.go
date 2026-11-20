@@ -87,9 +87,9 @@ func TestAPCluster(t *testing.T) {
 	survivors := apHubs[:2]
 	for _, h := range survivors {
 		got := apis[h].auditIDs(ctx)
-		for id := range acked {
-			if !got[id] {
-				t.Errorf("audit entry %d acknowledged before the kill is missing on %s", id, h)
+		for id, what := range acked {
+			if _, ok := got[id]; !ok {
+				t.Errorf("audit entry %d (%s) acknowledged before the kill is missing on %s", id, what, h)
 			}
 		}
 		if devs, err := apis[h].devices(ctx); err != nil || !hasHost(devs, agentName) {
@@ -203,9 +203,9 @@ func (s *stack) network(ctx context.Context, op, service string) {
 }
 
 // auditIDs returns the ids of every audit entry.
-func (c *apiClient) auditIDs(ctx context.Context) map[int64]bool {
+func (c *apiClient) auditIDs(ctx context.Context) map[int64]string {
 	c.t.Helper()
-	out := map[int64]bool{}
+	out := map[int64]string{}
 	path := "/api/v1/audit?limit=500"
 	for {
 		b, err := c.raw(ctx, path)
@@ -214,7 +214,10 @@ func (c *apiClient) auditIDs(ctx context.Context) map[int64]bool {
 		}
 		var page struct {
 			Entries []struct {
-				ID int64 `json:"id"`
+				ID     int64  `json:"id"`
+				Action string `json:"action"`
+				Result string `json:"result"`
+				TS     string `json:"ts"`
 			} `json:"entries"`
 			NextBefore int64 `json:"next_before"`
 		}
@@ -222,7 +225,7 @@ func (c *apiClient) auditIDs(ctx context.Context) map[int64]bool {
 			c.t.Fatalf("audit: %v", err)
 		}
 		for _, e := range page.Entries {
-			out[e.ID] = true
+			out[e.ID] = e.Action + " " + e.Result + " " + e.TS
 		}
 		if page.NextBefore == 0 || len(page.Entries) == 0 {
 			return out

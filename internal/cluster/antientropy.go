@@ -128,6 +128,96 @@ func (r *Replicator) antiEntropy(ctx context.Context) {
 		// Alone in the cluster: in contact with all of it.
 		r.touchContact()
 	}
+	if err := r.handOff(ctx, v); err != nil {
+		r.log.DebugContext(ctx, "hand-off", "err", err)
+	}
+}
+
+// handOff copies the rows this member holds in buckets it does not own to
+// their owners: rows written while the ring was smaller (a hub that started
+// before it found the others), by a stand-in, or before a member joined
+// and took the bucket. Anti-entropy compares only the buckets both sides
+// own, so without it those rows would stay here alone. A bucket handed off
+// is not read again until its digest changes.
+func (r *Replicator) handOff(ctx context.Context, v view) error {
+	st := r.store()
+	if st == nil {
+		return nil
+	}
+	var buckets []int
+	for _, seg := range v.ring.Segments() {
+		if slices.Contains(v.ring.Owners(seg.Start, v.n), v.self) {
+			continue
+		}
+		for b := seg.Start; b < seg.End; b++ {
+			buckets = append(buckets, b)
+		}
+	}
+	digests := st.BucketDigests(store.SpaceShard, buckets)
+	r.handedMu.Lock()
+	var todo []int
+	want := map[int]uint64{}
+	for i, b := range buckets {
+		if d := digests[i]; d != 0 && r.handed[b] != d {
+			todo = append(todo, b)
+			want[b] = d
+		}
+	}
+	r.handedMu.Unlock()
+	if len(todo) == 0 {
+		return nil
+	}
+	in := func(b int) bool { _, ok := slices.BinarySearch(todo, b); return ok }
+	ds, err := st.BucketRows(ctx, store.SpaceShard, in)
+	if err != nil {
+		return err
+	}
+	refs := make([]store.RowRef, len(ds))
+	for i, d := range ds {
+		refs[i] = d.RowRef
+	}
+	cutoff := hlc.New(r.cfg.Now().Add(-store.TombstoneTTL))
+	failed := map[int]bool{}
+	for chunk := range slices.Chunk(refs, refBatch) {
+		ms, err := st.ReadRows(ctx, chunk)
+		if err != nil {
+			return err
+		}
+		byOwner := map[string][]store.Mutation{}
+		bucketOf := map[string][]int{}
+		for _, m := range liveOrRecent(ms, cutoff) {
+			p, err := m.Placement()
+			if err != nil || p.Global {
+				continue
+			}
+			b := store.BucketOf(store.Token(p.Key))
+			for _, o := range v.ring.Owners(b, v.n) {
+				if !v.live[o] {
+					failed[b] = true
+					continue
+				}
+				byOwner[o] = append(byOwner[o], m)
+				bucketOf[o] = append(bucketOf[o], b)
+			}
+		}
+		for o, ms := range byOwner {
+			if err := r.mergeOn(ctx, o, ms); err != nil {
+				for _, b := range bucketOf[o] {
+					failed[b] = true
+				}
+				r.log.DebugContext(ctx, "hand-off", "member", o, "err", err)
+			}
+		}
+	}
+	r.handedMu.Lock()
+	for _, b := range todo {
+		if !failed[b] {
+			r.handed[b] = want[b]
+		}
+	}
+	r.handedMu.Unlock()
+	r.log.DebugContext(ctx, "handed off rows to their owners", "rows", len(refs), "buckets", len(todo))
+	return nil
 }
 
 // SyncWith runs one anti-entropy round with peer: the global rows, and the

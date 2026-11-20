@@ -254,6 +254,29 @@ func (n *APNode) seeds() []string {
 	return slices.Compact(out)
 }
 
+// WaitPeers waits, up to limit, until the gossip has found another member,
+// when this member has seeds to find them by: a hub that wrote before then
+// would see a ring of one and keep its writes alone.
+func (n *APNode) WaitPeers(ctx context.Context, limit time.Duration) error {
+	if len(n.seeds()) == 0 {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, limit)
+	defer cancel()
+	for {
+		for _, m := range n.membership.Members() {
+			if m.ID != n.cfg.NodeID && m.State == MemberAlive {
+				return nil
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("no other member found: %w", ctx.Err())
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+}
+
 // Replicator returns the node's replicator.
 func (n *APNode) Replicator() *Replicator { return n.rep }
 

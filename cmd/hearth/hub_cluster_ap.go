@@ -170,6 +170,9 @@ func joinGossipSeed(joinURL, gossipListen string) (string, error) {
 // a new member does not replace the cluster's password) and says whether
 // the cluster is highly available.
 func runAPMember(ctx context.Context, node *cluster.APNode, setup func(context.Context) error, ready chan<- struct{}, log *slog.Logger) error {
+	if err := node.WaitPeers(ctx, 30*time.Second); err != nil && ctx.Err() == nil {
+		log.WarnContext(ctx, "starting alone: no other member of the ap cluster reached", "err", err)
+	}
 	if err := node.Replicator().WaitSynced(ctx, 30*time.Second); err != nil && ctx.Err() == nil {
 		log.WarnContext(ctx, "first sync with the cluster incomplete; going on", "err", err)
 	}

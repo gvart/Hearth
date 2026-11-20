@@ -122,6 +122,11 @@ type Replicator struct {
 	// request until the gossip notices.
 	suspectMu sync.Mutex
 	suspect   map[string]time.Time
+
+	// handed is the digest of each bucket this member does not own when
+	// its rows were last handed off to the owners (see handOff).
+	handedMu sync.Mutex
+	handed   map[int]uint64
 }
 
 // NewReplicator returns a Replicator; bind it to the store with Bind (or
@@ -152,7 +157,7 @@ func NewReplicator(cfg ReplicatorConfig) (*Replicator, error) {
 	r := &Replicator{
 		cfg: cfg, log: cfg.Log.With("component", "replication"),
 		pool: map[string][]net.Conn{}, jobs: make(chan func(context.Context), asyncQueue),
-		suspect: map[string]time.Time{},
+		suspect: map[string]time.Time{}, handed: map[int]uint64{},
 	}
 	bg := context.Background()
 	r.ctx.Store(&bg)
