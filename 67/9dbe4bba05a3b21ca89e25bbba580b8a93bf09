@@ -1,0 +1,14 @@
+.github/workflows/ci.yml
+  h_bdd87144da84ba 16,20-21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "679dbe4bba05a3b21ca89e25bbba580b8a93bf09",
+  "prompts": {},
+  "humans": {
+    "h_bdd87144da84ba": {
+      "author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
