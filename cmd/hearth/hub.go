@@ -436,7 +436,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	// and agents see a clean end of stream and reconnect at once.
 	stopping, stop := context.WithCancel(context.WithoutCancel(ctx))
 	defer stop()
-	runbooks, err := newRunbooks(opts, st, sealers.runbook, pol, agents, notifier, kube, log)
+	runbooks, err := newRunbooks(opts, st, sealers.runbook, pol, agents, notifier, kube, pluginMgr, log)
 	if err != nil {
 		return err
 	}
@@ -493,7 +493,9 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		Policy:  pol,
 		Log:     log,
 	}))
-	maps.Copy(kinds.Actions, automation.Actions(automation.ActionDeps{Agents: agents, Notifier: notifier, Kube: kube}))
+	maps.Copy(kinds.Actions, automation.Actions(automation.ActionDeps{
+		Agents: agents, Notifier: notifier, Kube: kube, Plugins: pluginMgr,
+	}))
 	kinds.Actions["script"] = automation.Script(automation.ScriptDeps{Devices: st.Devices(), Live: reg.Live})
 	cfg.AutomationsDir, cfg.AutomationKinds = automationsDir, kinds
 	// The web editor and MCP write the same directory under one lock.
@@ -515,8 +517,12 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if node != nil {
 		node.SetConfigSource(cluster.FileConfigSource(policyDigest, notifyDigest, automationsDir, runbooksDirOf(opts)))
 	}
+	var mcpPlugins mcpserver.Plugins
+	if pluginMgr != nil {
+		mcpPlugins = pluginMgr
+	}
 	uiMux.Handle(mcpserver.Path, hub.EndOnStop(stopping, mcpserver.Handler(mcpserver.Config{
-		Devices: st.Devices(), Live: reg.Live, Tokens: st.MCPTokens(), Policy: pol, Agents: agents, Kube: kube,
+		Devices: st.Devices(), Live: reg.Live, Tokens: st.MCPTokens(), Policy: pol, Agents: agents, Kube: kube, Plugins: mcpPlugins,
 		Metrics: hub.AutomationMetrics(st, prom, ms), AutomationsDir: automationsDir, AutomationKinds: kinds, AutomationsLock: &automationsMu, Version: opts.version, Log: log,
 	})))
 	var tlsWeb http.Handler = uiMux
@@ -777,10 +783,12 @@ func newProxmoxManager(st *store.Store, sealer *kubernetes.Sealer, pol *policy.E
 // newRunbooks returns the runbook engine. A run keeps a copy of its runbook
 // file, sealed with sealer (hubSealers).
 func newRunbooks(opts hubOptions, st *store.Store, sealer *kubernetes.Sealer, pol *policy.Engine, agents *hub.Agents,
-	notifier *notify.Notifier, kube *kubernetes.Manager, log *slog.Logger,
+	notifier *notify.Notifier, kube *kubernetes.Manager, pluginMgr *plugins.Manager, log *slog.Logger,
 ) (*automation.Runbooks, error) {
 	kinds := automation.Builtin(log)
-	maps.Copy(kinds.Actions, automation.Actions(automation.ActionDeps{Agents: agents, Notifier: notifier, Kube: kube}))
+	maps.Copy(kinds.Actions, automation.Actions(automation.ActionDeps{
+		Agents: agents, Notifier: notifier, Kube: kube, Plugins: pluginMgr,
+	}))
 	return automation.NewRunbooks(automation.RunbooksConfig{
 		Dir: runbooksDirOf(opts), Kinds: kinds, Policy: pol, Runs: st.RunbookRuns(), Sealer: sealer, Probers: agents,
 		KubeNodes: kube, Log: log.With("component", "runbooks"), DryRun: opts.automationsDryRun,

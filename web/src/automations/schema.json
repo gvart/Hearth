@@ -91,6 +91,15 @@
         { "key": "message", "label": "Message", "kind": "multiline", "required": true }
       ]
     },
+    "plugin_command": {
+      "label": "Run a plugin command",
+      "fields": [
+        { "key": "plugin", "label": "Plugin", "kind": "text", "required": true },
+        { "key": "command", "label": "Command", "kind": "text", "required": true, "help": "A command the plugin's manifest declares. Its policy class is the manifest's." },
+        { "key": "device", "label": "Device", "kind": "text", "help": "The plugin's device id, if the command is for one." },
+        { "key": "args", "label": "Arguments", "kind": "map", "help": "One per line, as name: value." }
+      ]
+    },
     "restart": {
       "label": "Restart a service",
       "fields": [

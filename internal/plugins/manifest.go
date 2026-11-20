@@ -98,6 +98,21 @@ func (m Manifest) command(name string) (CommandSpec, bool) {
 	return m.Commands[i], true
 }
 
+// commandPolicy is the policy action of command: that of the class the
+// manifest declares, or plugin.command.dangerous, and not declared, if it
+// declares no such command.
+func (m Manifest) commandPolicy(name string) (action policy.Action, declared bool) {
+	spec, ok := m.command(name)
+	if !ok {
+		return policy.PluginCommandDangerous, false
+	}
+	action, ok = commandAction(spec.Class)
+	if !ok {
+		return policy.PluginCommandDangerous, false
+	}
+	return action, true
+}
+
 // Validate checks the manifest.
 func (m Manifest) Validate() error {
 	var errs []error

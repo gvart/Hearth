@@ -1,0 +1,42 @@
+/* Exec plugins' devices and commands (PluginDevices, PluginCommandDialog). */
+
+.plugin-commands {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.plugin-commands .btn {
+  font-family: var(--mono);
+}
+
+.plugin-commands .badge {
+  margin-left: 0.35rem;
+}
+
+.btn-danger-ghost {
+  color: var(--danger);
+}
+
+.warn-box {
+  padding: 0.9rem 1rem;
+  border-radius: 8px;
+  color: var(--warn);
+  background: var(--warn-soft);
+  border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent);
+}
+
+.field-error {
+  margin: -0.5rem 0 0;
+  color: var(--danger);
+}
+
+.plugin-output {
+  margin: 0;
+  max-height: 14rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+}

@@ -475,10 +475,11 @@ var rules = map[Action]rule{
 	PluginStart: {class: Dangerous, actors: []string{ActorHub}, fixed: true},
 	// A plugin command is as risky as the class its manifest declares. A
 	// command the manifest does not declare is decided as dangerous, and
-	// denied.
-	PluginCommandRead:      {class: Read, actors: []string{ActorWeb}},
-	PluginCommandSafe:      {class: Safe, actors: []string{ActorWeb}},
-	PluginCommandDangerous: {class: Dangerous, actors: []string{ActorWeb}},
+	// denied. Automations, runbooks and MCP clients run them as the web UI
+	// does, each under its own class modes and an MCP token's scope.
+	PluginCommandRead:      {class: Read, actors: []string{ActorWeb, ActorAutomation, ActorMCP}},
+	PluginCommandSafe:      {class: Safe, actors: []string{ActorWeb, ActorAutomation, ActorMCP}},
+	PluginCommandDangerous: {class: Dangerous, actors: []string{ActorWeb, ActorAutomation, ActorMCP}},
 }
 
 // Actions returns every known action, sorted.

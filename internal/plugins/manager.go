@@ -164,31 +164,11 @@ type CommandResult struct {
 // errors match policy.ErrDenied. The arguments are not audited: they may
 // hold secrets.
 func (m *Manager) Command(ctx context.Context, actorKind, actorID, name string, req CommandRequest) (CommandResult, error) {
-	i := slices.IndexFunc(m.plugins, func(p *plugin) bool { return p.m.Name == name })
-	if i < 0 {
-		return CommandResult{}, ErrNotFound
+	p, err := m.lookup(name, req)
+	if err != nil {
+		return CommandResult{}, err
 	}
-	p := m.plugins[i]
-	if !idRE.MatchString(req.Command) {
-		return CommandResult{}, fmt.Errorf("%w: invalid command name", ErrBadRequest)
-	}
-	if req.Device != "" && !idRE.MatchString(req.Device) {
-		return CommandResult{}, fmt.Errorf("%w: invalid device id", ErrBadRequest)
-	}
-	if len(req.Args) > maxArgs {
-		return CommandResult{}, fmt.Errorf("%w: args larger than %d bytes", ErrBadRequest, maxArgs)
-	}
-	if len(req.Args) > 0 {
-		var obj map[string]any
-		if err := json.Unmarshal(req.Args, &obj); err != nil || obj == nil {
-			return CommandResult{}, fmt.Errorf("%w: args must be a JSON object", ErrBadRequest)
-		}
-	}
-	spec, declared := p.m.command(req.Command)
-	action := policy.PluginCommandDangerous
-	if declared {
-		action, _ = commandAction(spec.Class)
-	}
+	action, declared := p.m.commandPolicy(req.Command)
 	preq := policy.Request{
 		ActorKind: actorKind, ActorID: actorID, Action: action,
 		Target: name + "/" + req.Command,
@@ -200,12 +180,82 @@ func (m *Manager) Command(ctx context.Context, actorKind, actorID, name string, 
 		}
 	}
 	var res CommandResult
-	err := p.pol.Do(ctx, preq, func(ctx context.Context) error {
+	err = p.pol.Do(ctx, preq, func(ctx context.Context) error {
 		var err error
 		res, err = p.command(ctx, req)
 		return err
 	})
 	return res, err
+}
+
+// CommandPolicy returns the policy action of plugin name's command:
+// plugin.command.<class>, of the class its manifest declares. A plugin that
+// is not configured, or a command its manifest does not declare, is
+// plugin.command.dangerous, and declared is false: such a command is
+// denied. The caller never chooses the class. A nil Manager has no plugins.
+func (m *Manager) CommandPolicy(name, command string) (action policy.Action, declared bool) {
+	p := m.find(name)
+	if p == nil {
+		return policy.PluginCommandDangerous, false
+	}
+	return p.m.commandPolicy(command)
+}
+
+// RunGranted runs a command of plugin name as Command does, but neither
+// decides nor audits it: it is for a caller that runs it inside a policy
+// decision of its own, such as an automation's. It refuses unless ctx carries
+// policy's grant of the action CommandPolicy returns for the command
+// (policy.Granted), and it refuses a command the manifest does not declare.
+func (m *Manager) RunGranted(ctx context.Context, name string, req CommandRequest) (CommandResult, error) {
+	p, err := m.lookup(name, req)
+	if err != nil {
+		return CommandResult{}, err
+	}
+	action, declared := p.m.commandPolicy(req.Command)
+	if !declared {
+		return CommandResult{}, fmt.Errorf("plugin %s declares no command %q: %w", name, req.Command, policy.ErrDenied)
+	}
+	if !policy.Granted(ctx, action) {
+		return CommandResult{}, fmt.Errorf("plugin %s command %s: %s was not granted by policy: %w",
+			name, req.Command, action, policy.ErrDenied)
+	}
+	return p.command(ctx, req)
+}
+
+// find returns the configured plugin named name, or nil.
+func (m *Manager) find(name string) *plugin {
+	if m == nil {
+		return nil
+	}
+	i := slices.IndexFunc(m.plugins, func(p *plugin) bool { return p.m.Name == name })
+	if i < 0 {
+		return nil
+	}
+	return m.plugins[i]
+}
+
+// lookup returns plugin name, once req is well formed.
+func (m *Manager) lookup(name string, req CommandRequest) (*plugin, error) {
+	p := m.find(name)
+	if p == nil {
+		return nil, ErrNotFound
+	}
+	if !idRE.MatchString(req.Command) {
+		return nil, fmt.Errorf("%w: invalid command name", ErrBadRequest)
+	}
+	if req.Device != "" && !idRE.MatchString(req.Device) {
+		return nil, fmt.Errorf("%w: invalid device id", ErrBadRequest)
+	}
+	if len(req.Args) > maxArgs {
+		return nil, fmt.Errorf("%w: args larger than %d bytes", ErrBadRequest, maxArgs)
+	}
+	if len(req.Args) > 0 {
+		var obj map[string]any
+		if err := json.Unmarshal(req.Args, &obj); err != nil || obj == nil {
+			return nil, fmt.Errorf("%w: args must be a JSON object", ErrBadRequest)
+		}
+	}
+	return p, nil
 }
 
 // command sends req to the running plugin and waits for its result.

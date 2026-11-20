@@ -198,9 +198,9 @@ var expected = map[Action]struct {
 	DashboardTokenCreate:      {Safe, []string{ActorWeb}, false},
 	DashboardTokenRevoke:      {Safe, []string{ActorWeb}, false},
 	PluginStart:               {Dangerous, []string{ActorHub}, true},
-	PluginCommandRead:         {Read, []string{ActorWeb}, false},
-	PluginCommandSafe:         {Safe, []string{ActorWeb}, false},
-	PluginCommandDangerous:    {Dangerous, []string{ActorWeb}, false},
+	PluginCommandRead:         {Read, []string{ActorWeb, ActorAutomation, ActorMCP}, false},
+	PluginCommandSafe:         {Safe, []string{ActorWeb, ActorAutomation, ActorMCP}, false},
+	PluginCommandDangerous:    {Dangerous, []string{ActorWeb, ActorAutomation, ActorMCP}, false},
 }
 
 func TestExpectedCoversEveryAction(t *testing.T) {

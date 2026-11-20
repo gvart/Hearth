@@ -7,6 +7,7 @@ import { BeszelSystems } from './BeszelSystems.tsx';
 import { TalosNodes } from './TalosNodes.tsx';
 import { DeviceDrawer } from './DeviceDrawer.tsx';
 import { DeviceSparklines } from './DeviceSparklines.tsx';
+import { PluginDevices } from './PluginDevices.tsx';
 import { StatusDot } from './StatusDot.tsx';
 import { UnmanagedHosts } from './UnmanagedHosts.tsx';
 
@@ -142,6 +143,7 @@ export function DevicesPage() {
         <UnmanagedHosts now={now} onAdd={openAdd} />
         <TalosNodes now={now} onSelect={setSelectedId} />
         <BeszelSystems now={now} onSelect={setSelectedId} />
+        <PluginDevices />
       </main>
 
       {adding ? (
