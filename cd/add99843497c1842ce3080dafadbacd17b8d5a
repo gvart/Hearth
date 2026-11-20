@@ -1,0 +1,30 @@
+cmd/hearth/telemetry_test.go
+  s_26e932fc13ca45::t_6f9cf7cd5ad231 6,51-68
+  s_26e932fc13ca45::t_659a6b835f8033 69-72
+internal/telemetry/telemetry.go
+  s_26e932fc13ca45::t_d48278a8892912 42,45
+internal/telemetry/telemetry_test.go
+  s_26e932fc13ca45::t_6f9cf7cd5ad231 241,265
+deploy/telemetry-worker/worker.js
+  s_26e932fc13ca45::t_d48278a8892912 11
+docs/telemetry.md
+  s_26e932fc13ca45::t_d48278a8892912 30
+cmd/hearth/telemetry.go
+  s_26e932fc13ca45::t_d48278a8892912 56-67,76,82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cdadd99843497c1842ce3080dafadbacd17b8d5a",
+  "prompts": {},
+  "sessions": {
+    "s_26e932fc13ca45": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea42b0cd-7455-494b-8071-e63f36b98d4d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
