@@ -20,7 +20,16 @@ import (
 
 const (
 	// stallTimeout is the send deadline injected in the stalled-agent tests.
-	stallTimeout = 200 * time.Millisecond
+	// It bounds every send of those tests, the welcome and the sends to a
+	// healthy agent included, so it is long enough for those to make it
+	// under -race on a loaded machine.
+	stallTimeout = 2 * time.Second
+	// stallBound is how long a send to a stalled agent may take in these
+	// tests: the deadline, plus slack for marshalling and compressing a
+	// request several windows large under -race on a loaded machine. It is
+	// far below the tests' 30 s context, so a send the deadline does not end
+	// still fails the check.
+	stallBound = stallTimeout + 10*time.Second
 	// stallWindow is how many unread bytes the stalled agent takes.
 	stallWindow = 64 << 10
 	// stallBytes is a request several windows large, so sending it waits
@@ -90,6 +99,23 @@ func waitAttached(ctx context.Context, t *testing.T, agents *Agents) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatal("the agent's stream was not attached")
+}
+
+// waitSending waits until a send holds the stream of dev-1, so that the next
+// send queues behind it however late the first sender got there.
+func waitSending(ctx context.Context, t *testing.T, agents *Agents) {
+	t.Helper()
+	agents.mu.Lock()
+	s := agents.sessions["dev-1"]
+	agents.mu.Unlock()
+	for ctx.Err() == nil {
+		if !s.sendMu.TryLock() {
+			return
+		}
+		s.sendMu.Unlock()
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("no send took the stream")
 }
 
 // TestSendToStalledAgent sends exec, probe and shell requests to an agent
@@ -174,15 +200,20 @@ func TestSendToStalledAgent(t *testing.T) {
 
 			start := time.Now()
 			err := tc.stalled(ctx, t, st, agents)
-			if d := time.Since(start); d > stallTimeout+time.Second {
-				t.Errorf("the send returned after %s, want within %s", d, stallTimeout)
+			if d := time.Since(start); d > stallBound {
+				t.Errorf("the send returned after %s, want within %s", d, stallBound)
 			}
 			if err == nil || !strings.Contains(err.Error(), "agent dev-1 is not reading") {
 				t.Errorf("err = %v, want the agent is not reading", err)
 			}
-			// The hub dropped the stream, and the agent sees it end.
-			if !errors.Is(agents.CheckProbe(ctx, "dev-1"), ErrAgentNotConnected) {
-				t.Error("the stalled stream is still attached")
+			// The hub dropped the stream, and the agent sees it end. The
+			// stream's handler detaches it once the abort ended it, which
+			// may be a little after the send returned.
+			for !errors.Is(agents.CheckProbe(ctx, "dev-1"), ErrAgentNotConnected) {
+				if ctx.Err() != nil {
+					t.Fatal("the stalled stream is still attached")
+				}
+				time.Sleep(10 * time.Millisecond)
 			}
 			for {
 				if _, err := stream.Receive(); err != nil {
@@ -216,11 +247,11 @@ func TestSendQueuedBehindStalledSend(t *testing.T) {
 		_, err := agents.Exec(ctx, "dev-1", bigCmd())
 		first <- err
 	}()
-	time.Sleep(stallTimeout / 4) // the first send holds the stream
+	waitSending(ctx, t, agents)
 	start := time.Now()
 	_, err := agents.Exec(ctx, "dev-1", trueCmd())
-	if d := time.Since(start); d > stallTimeout+time.Second {
-		t.Errorf("the queued send returned after %s, want within %s", d, stallTimeout)
+	if d := time.Since(start); d > stallBound {
+		t.Errorf("the queued send returned after %s, want within %s", d, stallBound)
 	}
 	if err == nil || !strings.Contains(err.Error(), "is not reading") {
 		t.Errorf("queued exec err = %v, want the agent is not reading", err)

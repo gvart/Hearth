@@ -298,8 +298,10 @@ func TestTerminalIdleCountsOnlyInput(t *testing.T) {
 	for {
 		m, out := next(t, ws)
 		if out != nil {
-			if string(out) != "echo:\x1b[1;1R" {
-				t.Fatalf("output = %q, want the reply delivered to the shell", out)
+			// The hub sends all the output there is at once: on a slow
+			// machine that can be several echoed replies in one frame.
+			if s := string(out); s == "" || strings.ReplaceAll(s, "echo:\x1b[1;1R", "") != "" {
+				t.Fatalf("output = %q, want the replies delivered to the shell", out)
 			}
 			continue
 		}
