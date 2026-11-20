@@ -24,6 +24,11 @@ const SweepGrace = 5 * time.Minute
 // sweepBatch is how many overdue approvals one read of a sweep returns.
 const sweepBatch = 100
 
+// SweepOnly makes SweepApprovals expire only the approvals owns says this hub
+// owns: in an AP cluster, each master sweeps those it owns on the ring of
+// masters. Call it before the sweep runs.
+func (e *Engine) SweepOnly(owns func(id string) bool) { e.sweepOwns = owns }
+
 // SweepApprovals expires the pending approvals whose expiry passed more than
 // SweepGrace ago, as
 // the requester of each would have, and returns how many it expired. It is
@@ -52,6 +57,9 @@ func (e *Engine) SweepApprovals(ctx context.Context) (int, error) {
 		}
 		expired := 0
 		for _, ap := range due {
+			if e.sweepOwns != nil && !e.sweepOwns(ap.ID) {
+				continue
+			}
 			ok, err := e.expireOrphan(ctx, ap, now)
 			if err != nil {
 				errs = append(errs, err)

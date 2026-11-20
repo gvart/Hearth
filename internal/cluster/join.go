@@ -293,6 +293,9 @@ type JoinParams struct {
 	// zero means store.SchemaVersion(). Tests set it to stand in for
 	// another binary.
 	MaxSchema int64
+	// AllowedRoles are this host's --allow-roles, sent to an AP cluster:
+	// only a host that allows master receives the CA key.
+	AllowedRoles RoleSet
 
 	// noClusterEpochs stands in for a binary older than cluster epochs, in tests.
 	noClusterEpochs bool
@@ -335,6 +338,7 @@ func Join(ctx context.Context, p JoinParams) error {
 		Csr:           csr,
 		SchemaVersion: p.MaxSchema,
 		ClusterEpochs: !p.noClusterEpochs,
+		AllowedRoles:  p.AllowedRoles.Strings(),
 	}
 	var resp *connect.Response[clusterv1.JoinResponse]
 	target := p.URL
@@ -347,6 +351,11 @@ func Join(ctx context.Context, p JoinParams) error {
 	})
 	if err != nil {
 		return fmt.Errorf("join cluster at %s: %w", target, err)
+	}
+	if len(resp.Msg.GetCaKey()) == 0 {
+		// Only a master holds the CA key; a hub runs as one.
+		return errors.New("join: the cluster sent no CA key: this host does not allow the master role " +
+			"(--allow-roles), and a hub without it cannot run yet")
 	}
 	cert, err := x509.ParseCertificate(resp.Msg.GetCertificate())
 	if err != nil {

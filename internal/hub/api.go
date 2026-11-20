@@ -89,6 +89,7 @@ func newAPI(cfg Config) *api {
 		drift:         cfg.ConfigDrift,
 		runbooks:      cfg.Runbooks,
 		leadership:    leadershipOf(cfg),
+		masters:       cfg.Masters,
 		automations:   automation.Files{Dir: cfg.AutomationsDir, Docs: cfg.AutomationDocs, Kinds: cfg.AutomationKinds},
 		automationsMu: automationsLock(cfg.AutomationsLock),
 		agents:        cfg.Agents,
@@ -240,6 +241,8 @@ type api struct {
 	runbooks *automation.Runbooks
 	// leadership names the cluster's leader, where secret answers must go.
 	leadership Leadership
+	// masters is Config.Masters; nil outside an AP cluster.
+	masters Masters
 	// automations are the files the automation editor reads and writes.
 	automations automation.Files
 	// automationsMu makes each save's check and write one step.
@@ -630,6 +633,19 @@ func remoteHost(r *http.Request) string {
 		return h
 	}
 	return r.RemoteAddr
+}
+
+// writeNotOwner answers a request on a master that does not own the token,
+// approval or link it uses (store.ErrNotOwner), naming the master that does.
+func (a *api) writeNotOwner(ctx context.Context, w http.ResponseWriter, err error) {
+	owner := store.OwnerOf(err)
+	msg := err.Error()
+	if a.masters != nil {
+		if u := a.masters.AgentURLOf(ctx, owner); u != "" {
+			msg += "; open it at " + u
+		}
+	}
+	writeError(w, http.StatusConflict, "not_owner", msg)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

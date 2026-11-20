@@ -259,6 +259,10 @@ func (c MarkSeenBatch) apply(ctx context.Context, w *writer) (Result, error) {
 type MarkDevicesOffline struct {
 	Stamp
 	IDs []string `json:"ids"`
+	// Cutoff, when set, spares a device last seen at or after it (Unix ms):
+	// a master sweeping devices whose stream is elsewhere must not mark one
+	// offline on a stale read.
+	Cutoff int64 `json:"cutoff,omitempty"`
 }
 
 // Op implements Command.
@@ -275,7 +279,7 @@ func (c MarkDevicesOffline) apply(ctx context.Context, w *writer) (Result, error
 		if err != nil {
 			return Result{}, err
 		}
-		if r != nil && r.str("status") == StatusOnline {
+		if r != nil && r.str("status") == StatusOnline && (c.Cutoff == 0 || r.int("last_seen") < c.Cutoff) {
 			online = append(online, r)
 		}
 	}
@@ -396,15 +400,19 @@ type CreateToken struct {
 	Hash      []byte `json:"hash"`
 	Labels    string `json:"labels"`
 	ExpiresAt int64  `json:"expires_at"`
+	// Owner is the master that owns the token in an AP cluster (OwnedBy).
+	Owner string `json:"owner,omitempty"`
 }
 
 // Op implements Command.
 func (CreateToken) Op() string { return "create_token" }
 
+func (c CreateToken) minSchema() int64 { return ownedSchema(c.Owner, 0) }
+
 func (c CreateToken) apply(ctx context.Context, w *writer) (Result, error) {
-	return Result{}, w.insert(ctx, "tokens", row{
+	return Result{}, w.insert(ctx, "tokens", withOwner(row{
 		"hash": c.Hash, "labels": c.Labels, "expires_at": c.ExpiresAt, "used_at": nil,
-	})
+	}, c.Owner))
 }
 
 // ConsumeToken marks a token used at Now if it is unused and unexpired. The
@@ -415,13 +423,17 @@ type ConsumeToken struct {
 	Stamp
 	Hash []byte `json:"hash"`
 	Now  int64  `json:"now"`
+	// Master is the master consuming it in an AP cluster (OwnedBy).
+	Master string `json:"master,omitempty"`
 }
 
 // Op implements Command.
 func (ConsumeToken) Op() string { return "consume_token" }
 
+func (c ConsumeToken) minSchema() int64 { return ownedSchema(c.Master, 0) }
+
 func (c ConsumeToken) apply(ctx context.Context, w *writer) (Result, error) {
-	r, err := consume(ctx, w, "tokens", c.Hash, c.Now)
+	r, err := consume(ctx, w, "tokens", "token", c.Hash, c.Now, c.Master)
 	if err != nil {
 		return Result{}, err
 	}
@@ -434,9 +446,13 @@ func (c ConsumeToken) apply(ctx context.Context, w *writer) (Result, error) {
 
 // consume marks the single-use secret with hash in table (tokens,
 // join_tokens or approval_links) used at now, and returns its row. It fails
-// with ErrNotFound, ErrTokenUsed or ErrTokenExpired, in that order.
-func consume(ctx context.Context, w *writer, table string, hash []byte, now int64) (row, error) {
+// with ErrNotFound, a *NotOwnerError when master does not own it (what names
+// it), ErrTokenUsed or ErrTokenExpired, in that order.
+func consume(ctx context.Context, w *writer, table, what string, hash []byte, now int64, master string) (row, error) {
 	r, err := w.get(ctx, table, hash)
+	if err == nil && r != nil {
+		err = checkOwner(r, what, master)
+	}
 	switch {
 	case err != nil:
 		return nil, err
@@ -456,13 +472,17 @@ type CreateJoinToken struct {
 	Stamp
 	Hash      []byte `json:"hash"`
 	ExpiresAt int64  `json:"expires_at"`
+	// Owner is the master that owns the token in an AP cluster (OwnedBy).
+	Owner string `json:"owner,omitempty"`
 }
 
 // Op implements Command.
 func (CreateJoinToken) Op() string { return "create_join_token" }
 
+func (c CreateJoinToken) minSchema() int64 { return ownedSchema(c.Owner, 0) }
+
 func (c CreateJoinToken) apply(ctx context.Context, w *writer) (Result, error) {
-	return Result{}, w.insert(ctx, "join_tokens", row{"hash": c.Hash, "expires_at": c.ExpiresAt, "used_at": nil})
+	return Result{}, w.insert(ctx, "join_tokens", withOwner(row{"hash": c.Hash, "expires_at": c.ExpiresAt, "used_at": nil}, c.Owner))
 }
 
 // ConsumeJoinToken marks a join token used at Now if it is unused and
@@ -472,13 +492,17 @@ type ConsumeJoinToken struct {
 	Stamp
 	Hash []byte `json:"hash"`
 	Now  int64  `json:"now"`
+	// Master is the master consuming it in an AP cluster (OwnedBy).
+	Master string `json:"master,omitempty"`
 }
 
 // Op implements Command.
 func (ConsumeJoinToken) Op() string { return "consume_join_token" }
 
+func (c ConsumeJoinToken) minSchema() int64 { return ownedSchema(c.Master, 0) }
+
 func (c ConsumeJoinToken) apply(ctx context.Context, w *writer) (Result, error) {
-	_, err := consume(ctx, w, "join_tokens", c.Hash, c.Now)
+	_, err := consume(ctx, w, "join_tokens", "join token", c.Hash, c.Now, c.Master)
 	return Result{}, err
 }
 

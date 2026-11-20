@@ -72,6 +72,11 @@ type Config struct {
 	// DryRun sends every action to policy as a dry run: each decision is
 	// audited, and no action runs.
 	DryRun bool
+	// Owns, when set, says whether this hub runs automation id: in an AP
+	// cluster, each master runs those it owns on the ring of masters.
+	// Owned, when set, signals that what Owns says may have changed.
+	Owns  func(id string) bool
+	Owned <-chan struct{}
 }
 
 // Runtime runs the automations in a directory.
@@ -107,6 +112,7 @@ func (r *Runtime) Run(ctx context.Context) error {
 	tick := time.NewTicker(r.cfg.ReloadEvery)
 	defer tick.Stop()
 	last := "\x00" // never a fingerprint: the first check always loads
+	var loaded []*Automation
 	for {
 		if fp, load, err := r.check(ctx); err != nil {
 			r.cfg.Log.ErrorContext(ctx, "automations not reloaded", "dir", r.cfg.Dir, "err", err)
@@ -117,15 +123,32 @@ func (r *Runtime) Run(ctx context.Context) error {
 				r.cfg.Log.ErrorContext(ctx, "automations not reloaded: invalid files", "dir", r.cfg.Dir, "err", err)
 			} else {
 				r.warn(ctx, set)
-				r.reconcile(ctx, withBuiltin(set, r.cfg.Builtin))
+				loaded = withBuiltin(set, r.cfg.Builtin)
+				r.reconcile(ctx, r.owned(loaded))
 			}
 		}
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-tick.C:
+		case <-r.cfg.Owned:
+			r.reconcile(ctx, r.owned(loaded))
 		}
 	}
+}
+
+// owned returns the automations of set this hub runs (Config.Owns).
+func (r *Runtime) owned(set []*Automation) []*Automation {
+	if r.cfg.Owns == nil {
+		return set
+	}
+	var out []*Automation
+	for _, a := range set {
+		if r.cfg.Owns(a.ID) {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 // check returns the fingerprint of the automations, which changes whenever

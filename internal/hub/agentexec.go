@@ -52,6 +52,11 @@ type Agents struct {
 
 	mu       sync.Mutex
 	sessions map[string]*agentSession
+
+	// masters and routes, in an AP cluster, forward the requests for a
+	// device streaming to another master (forward.go).
+	masters Masters
+	routes  store.DeviceRoutes
 }
 
 // NewAgents returns an Agents that resolves device references in devices.
@@ -211,6 +216,10 @@ func (a *Agents) session(ctx context.Context, device string) (*agentSession, err
 // has no open stream to this hub.
 func (a *Agents) Check(ctx context.Context, device string, req *agentv1.ExecRequest) error {
 	s, err := a.session(ctx, device)
+	if master, id, ok := a.forwardTo(ctx, device, err); ok {
+		_, err := a.call(ctx, master, "exec", agentCall{Device: id, CheckOnly: true}, req, nil)
+		return err
+	}
 	if err != nil {
 		return err
 	}
@@ -225,6 +234,13 @@ func (a *Agents) Check(ctx context.Context, device string, req *agentv1.ExecRequ
 // the request could not be delivered or answered.
 func (a *Agents) Exec(ctx context.Context, device string, req *agentv1.ExecRequest) (*agentv1.ExecResult, error) {
 	s, err := a.session(ctx, device)
+	if master, id, ok := a.forwardTo(ctx, device, err); ok {
+		res := &agentv1.ExecResult{}
+		if _, err := a.call(ctx, master, "exec", agentCall{Device: id}, req, res); err != nil {
+			return nil, err
+		}
+		return res, nil
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -243,6 +259,10 @@ func (a *Agents) Exec(ctx context.Context, device string, req *agentv1.ExecReque
 // ErrAgentNotConnected when the agent has no open stream to this hub.
 func (a *Agents) CheckProbe(ctx context.Context, device string) error {
 	s, err := a.session(ctx, device)
+	if master, id, ok := a.forwardTo(ctx, device, err); ok {
+		_, err := a.call(ctx, master, "probe", agentCall{Device: id, CheckOnly: true}, nil, nil)
+		return err
+	}
 	if err != nil {
 		return err
 	}
@@ -254,6 +274,13 @@ func (a *Agents) CheckProbe(ctx context.Context, device string) error {
 // Probe fails with an error wrapping policy.ErrBeyondCeiling.
 func (a *Agents) Probe(ctx context.Context, device string, req *agentv1.ProbeRequest) (*agentv1.ProbeResult, error) {
 	s, err := a.session(ctx, device)
+	if master, id, ok := a.forwardTo(ctx, device, err); ok {
+		res := &agentv1.ProbeResult{}
+		if _, err := a.call(ctx, master, "probe", agentCall{Device: id}, req, res); err != nil {
+			return nil, err
+		}
+		return res, nil
+	}
 	if err != nil {
 		return nil, err
 	}

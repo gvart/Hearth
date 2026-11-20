@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -31,7 +32,9 @@ type Enroller struct {
 	log    *slog.Logger
 	// leadership: only the cluster leader enrolls devices.
 	leadership Leadership
-	now        func() time.Time
+	// masters, in an AP cluster, names the master owning a token.
+	masters Masters
+	now     func() time.Time
 }
 
 var _ agentv1connect.EnrollServiceHandler = (*Enroller)(nil)
@@ -97,11 +100,16 @@ func (e *Enroller) Enroll(ctx context.Context, req *connect.Request[agentv1.Enro
 	}
 
 	e.log.InfoContext(ctx, "device enrolled", "device_id", deviceID, "hostname", msg.GetHostname())
-	return connect.NewResponse(&agentv1.EnrollResponse{
+	resp := &agentv1.EnrollResponse{
 		DeviceId:      deviceID,
 		Certificate:   cert.Raw,
 		CaCertificate: e.ca.Cert().Raw,
-	}), nil
+	}
+	if e.masters != nil {
+		// Every master, this one first: the agent fails over through them.
+		resp.Hubs = e.leadership.AgentURLs()
+	}
+	return connect.NewResponse(resp), nil
 }
 
 type errBadCSR struct{ err error }
@@ -120,12 +128,35 @@ func (e *Enroller) toConnectError(ctx context.Context, err error) error {
 		return connect.NewError(connect.CodeUnauthenticated, errors.New("enrollment token already used"))
 	case errors.Is(err, store.ErrTokenExpired):
 		return connect.NewError(connect.CodeUnauthenticated, errors.New("enrollment token expired"))
+	case errors.Is(err, store.ErrNotOwner):
+		return e.notOwner(ctx, store.OwnerOf(err))
+	case errors.Is(err, policy.ErrDenied) && strings.Contains(err.Error(), policy.ErrIsolated):
+		return connect.NewError(connect.CodeUnavailable, errors.New(policy.ErrIsolated))
 	case errors.Is(err, policy.ErrDenied):
 		return connect.NewError(connect.CodePermissionDenied, errors.New("enrollment denied by policy"))
 	default:
 		e.log.ErrorContext(ctx, "enrollment failed", "err", err)
 		return connect.NewError(connect.CodeInternal, errors.New("enrollment failed"))
 	}
+}
+
+// notOwner refuses a token another master of an AP cluster owns, naming it:
+// FailedPrecondition with a NotLeader detail whose leader is the owner, so an
+// agent enrolls there instead (agent.Join follows it once).
+func (e *Enroller) notOwner(ctx context.Context, owner string) error {
+	u := ""
+	if e.masters != nil {
+		u = e.masters.AgentURLOf(ctx, owner)
+	}
+	msg := "this enrollment token belongs to hub " + owner + ": enroll there"
+	if u != "" {
+		msg += " (" + u + ")"
+	}
+	err := connect.NewError(connect.CodeFailedPrecondition, errors.New(msg))
+	if d, derr := connect.NewErrorDetail(&agentv1.NotLeader{LeaderUrl: u, Hubs: e.leadership.AgentURLs()}); derr == nil {
+		err.AddDetail(d)
+	}
+	return err
 }
 
 // tokenActorID is a short, non-reversible handle for a token in the audit log,

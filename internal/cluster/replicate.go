@@ -63,7 +63,10 @@ type ReplicatorConfig struct {
 	// LastContact is the file that records when this member last reached
 	// the cluster (see CheckRejoin); empty records nothing.
 	LastContact string
-	Log         *slog.Logger
+	// Broadcast, if set, sends a message to every member on the gossip
+	// (Membership.Broadcast): revocations are announced with it.
+	Broadcast func([]byte)
+	Log       *slog.Logger
 
 	// Tuning; zero values use the defaults.
 	RequestTimeout time.Duration
@@ -127,6 +130,9 @@ type Replicator struct {
 	// its rows were last handed off to the owners (see handOff).
 	handedMu sync.Mutex
 	handed   map[int]uint64
+
+	// uses are the master-owned rows this member used (owned.go).
+	uses *ownedUses
 }
 
 // NewReplicator returns a Replicator; bind it to the store with Bind (or
@@ -154,10 +160,14 @@ func NewReplicator(cfg ReplicatorConfig) (*Replicator, error) {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
+	uses, err := newOwnedUses(context.Background(), cfg.Hints)
+	if err != nil {
+		return nil, err
+	}
 	r := &Replicator{
 		cfg: cfg, log: cfg.Log.With("component", "replication"),
 		pool: map[string][]net.Conn{}, jobs: make(chan func(context.Context), asyncQueue),
-		suspect: map[string]time.Time{}, handed: map[int]uint64{},
+		suspect: map[string]time.Time{}, handed: map[int]uint64{}, uses: uses,
 	}
 	bg := context.Background()
 	r.ctx.Store(&bg)
@@ -276,8 +286,19 @@ func writeQuorum(critical bool, n int) int {
 // to hints.
 var errUnreachable = errors.New("member unreachable")
 
-// Apply implements store.Applier.
+// Apply implements store.Applier. A command creating a master-owned row is
+// owned by this member, and one using such a row is refused unless this
+// member owns it (store.OwnedBy, owned.go).
 func (r *Replicator) Apply(ctx context.Context, cmd store.Command) (store.Result, error) {
+	cmd = store.OwnedBy(cmd, r.cfg.NodeID)
+	if key, ok := store.OwnedUse(cmd); ok {
+		return r.applyOwned(ctx, key, cmd)
+	}
+	return r.applyRouted(ctx, cmd)
+}
+
+// applyRouted applies cmd where its route says.
+func (r *Replicator) applyRouted(ctx context.Context, cmd store.Command) (store.Result, error) {
 	route, err := store.RouteOf(cmd)
 	if err != nil {
 		return store.Result{}, err
@@ -415,6 +436,9 @@ func (r *Replicator) applyHere(ctx context.Context, cmd store.Command, route sto
 	res, muts, err := st.ApplyLocalMutations(ctx, cmd)
 	if err != nil {
 		return store.Result{}, err
+	}
+	if store.Revokes(cmd) {
+		r.announceRevocation(muts)
 	}
 	if err := r.replicate(ctx, muts, route.Critical, v); err != nil {
 		return store.Result{}, fmt.Errorf("apply %s: %w", cmd.Op(), err)

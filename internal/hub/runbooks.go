@@ -187,6 +187,13 @@ func (a *api) writeRunbookError(w http.ResponseWriter, r *http.Request, what str
 		if u := a.leadership.LeaderAgentURL(); u != "" {
 			msg += " (" + u + ")"
 		}
+		if a.masters != nil {
+			owner := a.masters.OwnerOf(r.PathValue("id"))
+			msg = "a secret answer is kept in the memory of the hub running the run only: answer on hub " + owner
+			if u := a.masters.AgentURLOf(r.Context(), owner); u != "" {
+				msg += " (" + u + ")"
+			}
+		}
 		writeError(w, http.StatusConflict, "not_leader", msg)
 	case errors.Is(err, automation.ErrRunbookState), errors.Is(err, store.ErrRunbookRunConflict):
 		writeError(w, http.StatusConflict, "conflict", "the run has moved on: reload it and try again")

@@ -40,6 +40,9 @@ type JoinRequest struct {
 	// cluster_epochs is true when the joining binary keeps a cluster epoch in its
 	// certificates. A cluster restored from a backup refuses a hub without it.
 	ClusterEpochs bool `protobuf:"varint,6,opt,name=cluster_epochs,json=clusterEpochs,proto3" json:"cluster_epochs,omitempty"`
+	// allowed_roles are the roles the joining host allows (--allow-roles), in
+	// an AP cluster: only a host that allows "master" is sent the CA key.
+	AllowedRoles  []string `protobuf:"bytes,7,rep,name=allowed_roles,json=allowedRoles,proto3" json:"allowed_roles,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -116,6 +119,13 @@ func (x *JoinRequest) GetClusterEpochs() bool {
 	return false
 }
 
+func (x *JoinRequest) GetAllowedRoles() []string {
+	if x != nil {
+		return x.AllowedRoles
+	}
+	return nil
+}
+
 // JoinResponse is the new hub's identity and the cluster's CA.
 type JoinResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -124,6 +134,7 @@ type JoinResponse struct {
 	// ca_certificate is the DER-encoded hub CA certificate.
 	CaCertificate []byte `protobuf:"bytes,2,opt,name=ca_certificate,json=caCertificate,proto3" json:"ca_certificate,omitempty"`
 	// ca_key is the CA private key, PKCS#8 DER. Store it at 0600; never log it.
+	// An AP cluster sends it only to a hub that allows the master role.
 	CaKey []byte `protobuf:"bytes,3,opt,name=ca_key,json=caKey,proto3" json:"ca_key,omitempty"`
 	// leader_id is the Raft server ID of the hub that admitted this one.
 	LeaderId string `protobuf:"bytes,4,opt,name=leader_id,json=leaderId,proto3" json:"leader_id,omitempty"`
@@ -1088,14 +1099,15 @@ var File_hearth_cluster_v1_cluster_proto protoreflect.FileDescriptor
 
 const file_hearth_cluster_v1_cluster_proto_rawDesc = "" +
 	"\n" +
-	"\x1fhearth/cluster/v1/cluster.proto\x12\x11hearth.cluster.v1\"\xcc\x01\n" +
+	"\x1fhearth/cluster/v1/cluster.proto\x12\x11hearth.cluster.v1\"\xf1\x01\n" +
 	"\vJoinRequest\x12!\n" +
 	"\ftoken_secret\x18\x01 \x01(\tR\vtokenSecret\x12\x17\n" +
 	"\anode_id\x18\x02 \x01(\tR\x06nodeId\x12!\n" +
 	"\fraft_address\x18\x03 \x01(\tR\vraftAddress\x12\x10\n" +
 	"\x03csr\x18\x04 \x01(\fR\x03csr\x12%\n" +
 	"\x0eschema_version\x18\x05 \x01(\x03R\rschemaVersion\x12%\n" +
-	"\x0ecluster_epochs\x18\x06 \x01(\bR\rclusterEpochs\"\xaa\x01\n" +
+	"\x0ecluster_epochs\x18\x06 \x01(\bR\rclusterEpochs\x12#\n" +
+	"\rallowed_roles\x18\a \x03(\tR\fallowedRoles\"\xaa\x01\n" +
 	"\fJoinResponse\x12 \n" +
 	"\vcertificate\x18\x01 \x01(\fR\vcertificate\x12%\n" +
 	"\x0eca_certificate\x18\x02 \x01(\fR\rcaCertificate\x12\x15\n" +

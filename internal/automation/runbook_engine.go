@@ -98,6 +98,10 @@ type RunbooksConfig struct {
 	Now func() time.Time
 	// DryRun sends every action step to policy as a dry run: nothing runs.
 	DryRun bool
+	// Owns, when set, says whether this hub carries out run id: in an AP
+	// cluster, each master carries out the runs it owns on the ring of
+	// masters.
+	Owns func(runID string) bool
 }
 
 // Runbooks runs runbooks. The operations (Start, Answer, Retry, Rollback) work
@@ -412,7 +416,8 @@ func (r *Runbooks) Answer(ctx context.Context, actorKind, actorID, runID, step, 
 			}
 			now := r.cfg.Now()
 			if ps.Prompt.Secret {
-				if !r.isLeading() {
+				// The answer stays in the memory of the hub driving the run.
+				if !r.isLeading() || (r.cfg.Owns != nil && !r.cfg.Owns(runID)) {
 					return ErrRunbookNotLeading
 				}
 				secret = true
@@ -661,6 +666,9 @@ func (r *Runbooks) Run(ctx context.Context) error {
 			r.cfg.Log.WarnContext(ctx, "runbook runs not read", "err", err)
 		}
 		for _, run := range runs {
+			if r.cfg.Owns != nil && !r.cfg.Owns(run.ID) {
+				continue
+			}
 			switch run.Status {
 			case RunbookWaiting:
 				r.expirePrompt(ctx, run)

@@ -127,6 +127,28 @@ type Engine struct {
 	sweepEvery time.Duration
 	// spool keeps the outcomes that could not be written; see SpoolTo.
 	spool *Spool
+	// isolated, if set, reports whether this hub is cut off from its
+	// cluster; see FailClosedWhen.
+	isolated func() bool
+	// sweepOwns, when set, picks the approvals SweepApprovals expires.
+	sweepOwns func(id string) bool
+}
+
+// ErrIsolated is the reason a cut-off master of an AP cluster refuses a
+// dangerous action or an enrollment (docs/design/ap-cluster.md §5.4).
+const ErrIsolated = "this hub has reached no other member of its cluster for 60 s: " +
+	"dangerous actions and enrollments are refused until it does"
+
+// FailClosedWhen makes the engine deny, audited, every dangerous action and
+// every enrollment (DeviceEnroll, ClusterJoin) while isolated reports true:
+// a master cut off from the rest of an AP cluster may not have heard of a
+// revocation. Reads and safe actions go on. Call it before the engine is
+// used.
+func (e *Engine) FailClosedWhen(isolated func() bool) { e.isolated = isolated }
+
+// failsClosed reports whether an isolated hub refuses action a of class.
+func failsClosed(a Action, class Class) bool {
+	return class == Dangerous || a == DeviceEnroll || a == ClusterJoin
 }
 
 // SpoolTo makes the engine keep in s every entry that reports how an action
@@ -194,6 +216,9 @@ func (e *Engine) Do(ctx context.Context, req Request, fn func(context.Context) e
 		if scope, ok := ctx.Value(scopeKey{}).(Class); ok && !Within(class, scope) {
 			decision, reason = Deny, fmt.Sprintf("%s action beyond the credential's scope (%s)", class, scope)
 		}
+	}
+	if decision != Deny && e.isolated != nil && failsClosed(req.Action, class) && e.isolated() {
+		decision, reason = Deny, ErrIsolated
 	}
 	var precheckErr error
 	if decision != Deny && req.Precheck != nil {

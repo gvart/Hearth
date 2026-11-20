@@ -87,17 +87,19 @@ type CreateApprovalLink struct {
 	Hash       []byte `json:"hash"`
 	ApprovalID string `json:"approval_id"`
 	ExpiresAt  int64  `json:"expires_at"`
+	// Owner is the master that owns the link in an AP cluster (OwnedBy).
+	Owner string `json:"owner,omitempty"`
 }
 
 // Op implements Command.
 func (CreateApprovalLink) Op() string { return "create_approval_link" }
 
-func (CreateApprovalLink) minSchema() int64 { return approvalLinksSchema }
+func (c CreateApprovalLink) minSchema() int64 { return ownedSchema(c.Owner, approvalLinksSchema) }
 
 func (c CreateApprovalLink) apply(ctx context.Context, w *writer) (Result, error) {
-	return Result{}, w.insert(ctx, "approval_links", row{
+	return Result{}, w.insert(ctx, "approval_links", withOwner(row{
 		"hash": c.Hash, "approval_id": c.ApprovalID, "expires_at": c.ExpiresAt, "used_at": nil,
-	})
+	}, c.Owner))
 }
 
 // UseApprovalLink spends an approval link. Result: ApprovalID.
@@ -105,15 +107,17 @@ type UseApprovalLink struct {
 	Stamp
 	Hash []byte `json:"hash"`
 	Now  int64  `json:"now"`
+	// Master is the master using it in an AP cluster (OwnedBy).
+	Master string `json:"master,omitempty"`
 }
 
 // Op implements Command.
 func (UseApprovalLink) Op() string { return "use_approval_link" }
 
-func (UseApprovalLink) minSchema() int64 { return approvalLinksSchema }
+func (c UseApprovalLink) minSchema() int64 { return ownedSchema(c.Master, approvalLinksSchema) }
 
 func (c UseApprovalLink) apply(ctx context.Context, w *writer) (Result, error) {
-	r, err := consume(ctx, w, "approval_links", c.Hash, c.Now)
+	r, err := consume(ctx, w, "approval_links", "approval link", c.Hash, c.Now, c.Master)
 	if err != nil {
 		return Result{}, err
 	}

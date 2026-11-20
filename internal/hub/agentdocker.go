@@ -57,6 +57,10 @@ func (s *agentSession) deliverDocker(r *agentv1.DockerResult) {
 // stream to this hub.
 func (a *Agents) CheckDocker(ctx context.Context, device string, req *agentv1.DockerRequest) error {
 	s, err := a.session(ctx, device)
+	if master, id, ok := a.forwardTo(ctx, device, err); ok {
+		_, err := a.call(ctx, master, "docker", agentCall{Device: id, CheckOnly: true}, req, nil)
+		return err
+	}
 	if err != nil {
 		return err
 	}
@@ -68,6 +72,13 @@ func (a *Agents) CheckDocker(ctx context.Context, device string, req *agentv1.Do
 // does. A request the agent's reported ceiling does not allow is never sent.
 func (a *Agents) Docker(ctx context.Context, device string, req *agentv1.DockerRequest, timeout time.Duration) (*agentv1.DockerResult, error) {
 	s, err := a.session(ctx, device)
+	if master, id, ok := a.forwardTo(ctx, device, err); ok {
+		res := &agentv1.DockerResult{}
+		if _, err := a.call(ctx, master, "docker", agentCall{Device: id, TimeoutMS: timeout.Milliseconds()}, req, res); err != nil {
+			return nil, err
+		}
+		return res, nil
+	}
 	if err != nil {
 		return nil, err
 	}

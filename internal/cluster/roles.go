@@ -130,3 +130,12 @@ func (s *RoleSet) UnmarshalJSON(b []byte) error {
 	*s = set
 	return nil
 }
+
+// Strings lists the roles of s as strings, in display order.
+func (s RoleSet) Strings() []string {
+	var out []string
+	for _, r := range s.Roles() {
+		out = append(out, string(r))
+	}
+	return out
+}

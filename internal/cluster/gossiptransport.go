@@ -36,6 +36,9 @@ const (
 	// gossipReplica: replication requests of a sharded cluster (replicate.go),
 	// served by MembershipConfig.Replica.
 	gossipReplica byte = 'r'
+	// gossipMaster: HTTP between the masters of an AP cluster (masterlink.go),
+	// served by MembershipConfig.Master.
+	gossipMaster byte = 'm'
 )
 
 const (
@@ -98,6 +101,8 @@ type gossipTransport struct {
 
 	// replica serves gossipReplica connections; nil refuses them.
 	replica atomic.Pointer[func(net.Conn, string)]
+	// master serves gossipMaster connections; nil refuses them.
+	master atomic.Pointer[func(net.Conn, string)]
 }
 
 var _ memberlist.Transport = (*gossipTransport)(nil)
@@ -331,8 +336,11 @@ func (t *gossipTransport) serve(c net.Conn) {
 		}
 	case gossipPackets:
 		t.readPackets(c, peer)
-	case gossipReplica:
+	case gossipReplica, gossipMaster:
 		h := t.replica.Load()
+		if kind[0] == gossipMaster {
+			h = t.master.Load()
+		}
 		if h == nil {
 			_ = c.Close()
 			return
@@ -403,6 +411,20 @@ func (t *gossipTransport) lastSeen(id string) time.Time {
 	t.seenMu.Lock()
 	defer t.seenMu.Unlock()
 	return t.seen[id]
+}
+
+// latestSeen is when a packet or stream last arrived from any hub but self;
+// zero if none did.
+func (t *gossipTransport) latestSeen(self string) time.Time {
+	t.seenMu.Lock()
+	defer t.seenMu.Unlock()
+	var last time.Time
+	for id, at := range t.seen {
+		if id != self && at.After(last) {
+			last = at
+		}
+	}
+	return last
 }
 
 // recordOwner records the hub that answered a dial to addr.

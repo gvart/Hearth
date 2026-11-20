@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"os/exec"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -62,9 +63,13 @@ func TestAPCluster(t *testing.T) {
 		apis[h] = s.loginTo(ctx, h)
 	}
 
-	// 2. Enroll the agent: token from hub-b, join through hub-c. Every hub
-	// lists it online within the headline bound.
+	// 2. Enroll the agent: token from hub-b, join through hub-c. The token
+	// names hub-b, its owner, and the agent enrolls there. Every hub lists
+	// it online within the headline bound.
 	token := apis["hub-b"].createToken(ctx)
+	if !strings.HasPrefix(token, "hearth2.") {
+		t.Fatalf("token from an AP master is not a hearth2 token naming its owner")
+	}
 	joinAt := time.Now()
 	s.compose(ctx, "exec", "-T", agentName, "hearth", "agent", "join", "https://hub-c:7443", token, "--data-dir", agentDataDir)
 	s.startAgent(ctx, agentName)
@@ -73,7 +78,37 @@ func TestAPCluster(t *testing.T) {
 			return d.Status == "online"
 		})
 	}
-	t.Logf("TIMING enroll → online on every hub in %v", since(joinAt))
+	t.Logf("TIMING enroll (token naming its owner hub-b) → online on every hub in %v", since(joinAt))
+
+	// The token is spent: used again on another master, even in its
+	// hearth1 form that names no owner, it is refused.
+	parts := strings.Split(token, ".")
+	for _, tok := range []string{token, "hearth1." + parts[1] + "." + parts[2]} {
+		if out, err := s.run(ctx, "exec", "-T", agentName, "hearth", "agent", "join", "https://hub-a:7443", tok,
+			"--data-dir", "/tmp/reuse"); err == nil {
+			t.Errorf("a spent token enrolled again through hub-a:\n%s", out)
+		}
+	}
+
+	// 2b. Kill the master the agent streams to (the first of its hubs): the
+	// agent is on another master, and the device online there, within the
+	// headline bound.
+	streamHub := s.agentStreamHub(ctx)
+	killAt := time.Now()
+	s.compose(ctx, "kill", "--signal", "SIGKILL", streamHub)
+	killedAt := s.finishedAt(ctx, streamHub)
+	var movedTo string
+	waitFor(ctx, t, killAt.Add(DeviceVisibleWithin), "the agent on another master", func() (bool, string) {
+		movedTo = s.agentStreamHub(ctx)
+		return movedTo != streamHub && slices.Contains(apHubs, movedTo), "on " + movedTo
+	})
+	apis[movedTo].waitDevice(ctx, agentName, killAt.Add(DeviceVisibleWithin), "online on "+movedTo, func(d device) bool {
+		return d.Status == "online" && d.LastSeen.After(killedAt)
+	})
+	t.Logf("TIMING kill %s (the agent's stream) → agent on %s and online in %v", streamHub, movedTo, since(killAt))
+	s.compose(ctx, "start", streamHub)
+	s.waitAPMembers(ctx, apHubs, apHubs, time.Now().Add(APFormationWithin))
+	apis[streamHub] = s.loginTo(ctx, streamHub)
 
 	// 3. Critical writes on every hub, then kill hub-c. Every acknowledged
 	// audit entry is still on the survivors, the device is still listed,
@@ -82,7 +117,7 @@ func TestAPCluster(t *testing.T) {
 		apis[apHubs[i%3]].createToken(ctx)
 	}
 	acked := apis["hub-a"].auditIDs(ctx)
-	killAt := time.Now()
+	killAt = time.Now()
 	s.compose(ctx, "kill", "--signal", "SIGKILL", "hub-c")
 	survivors := apHubs[:2]
 	for _, h := range survivors {
@@ -190,6 +225,21 @@ func (s *stack) waitAPMembers(ctx context.Context, hubs, alive []string, deadlin
 		}
 		return true, ""
 	})
+}
+
+// agentStreamHub is the hub the agent streams to: the first of the hubs it
+// keeps, which it reorders on each Welcome.
+func (s *stack) agentStreamHub(ctx context.Context) string {
+	s.t.Helper()
+	out, err := s.run(ctx, "exec", "-T", agentName, "head", "-n", "1", agentDataDir+"/hubs")
+	if err != nil {
+		s.t.Fatalf("read the agent's hubs: %v", err)
+	}
+	u, err := url.Parse(strings.TrimSpace(out))
+	if err != nil {
+		s.t.Fatalf("the agent's first hub: %v", err)
+	}
+	return u.Hostname()
 }
 
 // network connects the service's container to the project network, or

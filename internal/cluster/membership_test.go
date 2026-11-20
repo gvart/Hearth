@@ -25,6 +25,8 @@ type memberOpts struct {
 	roles RoleSet
 	// claim, if set, is the gossip name, instead of the certificate's ID.
 	claim string
+	// message takes the broadcasts of other members.
+	message func([]byte)
 }
 
 func (o memberOpts) name(id string) string {
@@ -58,6 +60,7 @@ func newTestMember(t *testing.T, ca *pki.CA, id string, o memberOpts) *Membershi
 		ProbeInterval: 100 * time.Millisecond, ProbeTimeout: 80 * time.Millisecond,
 		GossipInterval: 20 * time.Millisecond, PushPullInterval: time.Second, SuspicionMult: 2,
 		TCPTimeout: time.Second, RefreshEvery: 200 * time.Millisecond,
+		Message: o.message,
 	})
 	if err != nil {
 		t.Fatal(err)

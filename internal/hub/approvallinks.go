@@ -185,6 +185,8 @@ func (a *api) decideApprovalLink(approve bool) http.HandlerFunc {
 			writeUnavailable(w)
 		case errors.Is(err, store.ErrApprovalClosed):
 			writeError(w, http.StatusConflict, "closed", "the approval is no longer pending")
+		case errors.Is(err, store.ErrNotOwner):
+			a.writeNotOwner(r.Context(), w, err)
 		case errors.Is(err, store.ErrNotFound), errors.Is(err, store.ErrTokenUsed), errors.Is(err, store.ErrTokenExpired),
 			errors.Is(err, store.ErrSchemaTooOld):
 			writeLinkInvalid(w)

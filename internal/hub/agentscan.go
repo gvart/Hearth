@@ -54,6 +54,10 @@ func (s *agentSession) deliverScan(r *agentv1.ScanResult) {
 // this hub.
 func (a *Agents) CheckScan(ctx context.Context, device string, subnets []netip.Prefix) error {
 	s, err := a.session(ctx, device)
+	if master, id, ok := a.forwardTo(ctx, device, err); ok {
+		_, err := a.call(ctx, master, "scan", agentCall{Device: id, Subnets: prefixStrings(subnets), CheckOnly: true}, nil, nil)
+		return err
+	}
 	if err != nil {
 		return err
 	}
@@ -74,7 +78,16 @@ func (a *Agents) Scan(ctx context.Context, device string, subnets []netip.Prefix
 	s := a.sessions[id]
 	a.mu.Unlock()
 	if s == nil {
-		return "", nil, fmt.Errorf("device %s: %w", device, ErrAgentNotConnected)
+		err := fmt.Errorf("device %s: %w", device, ErrAgentNotConnected)
+		if master, id, ok := a.forwardTo(ctx, device, err); ok {
+			res := &agentv1.ScanResult{}
+			call := agentCall{Device: id, Subnets: prefixStrings(subnets), TimeoutMS: timeout.Milliseconds()}
+			if _, err := a.call(ctx, master, "scan", call, nil, res); err != nil {
+				return "", nil, err
+			}
+			return id, res, nil
+		}
+		return "", nil, err
 	}
 	if err := s.checkScan(device, subnets); err != nil {
 		return "", nil, err

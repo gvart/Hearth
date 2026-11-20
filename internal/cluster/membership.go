@@ -93,6 +93,11 @@ type MembershipConfig struct {
 	// cluster that other members open on the gossip port, with the hub
 	// node ID their certificate names. It owns the connection.
 	Replica func(c net.Conn, peer string)
+	// Master, if set, serves the connections other masters open for HTTP
+	// between masters (masterlink.go), as Replica does.
+	Master func(c net.Conn, peer string)
+	// Message, if set, receives the messages other members Broadcast.
+	Message func(b []byte)
 }
 
 // Membership is this host's place in the cluster's gossip membership
@@ -116,6 +121,14 @@ type Membership struct {
 	mu   sync.Mutex
 	live map[string]liveMember
 	gone map[string]MemberInfo
+
+	// broadcasts queues the messages Broadcast sends on the gossip.
+	broadcasts *memberlist.TransmitLimitedQueue
+	// changed is signalled whenever a member joins, leaves or changes.
+	changeMu sync.Mutex
+	changed  []chan struct{}
+	// started is when Run started the gossip.
+	started atomic.Pointer[time.Time]
 }
 
 // NewMembership checks cfg and returns a Membership; Run starts it.
@@ -140,10 +153,73 @@ func NewMembership(cfg MembershipConfig) (*Membership, error) {
 	if cfg.RefreshEvery <= 0 {
 		cfg.RefreshEvery = defaultGossipRefresh
 	}
-	return &Membership{
+	m := &Membership{
 		cfg: cfg, log: cfg.Log.With("component", "gossip"),
 		live: map[string]liveMember{}, gone: map[string]MemberInfo{},
-	}, nil
+	}
+	m.broadcasts = &memberlist.TransmitLimitedQueue{
+		NumNodes: func() int {
+			m.mu.Lock()
+			defer m.mu.Unlock()
+			return max(len(m.live), 1)
+		},
+		RetransmitMult: 3,
+	}
+	return m, nil
+}
+
+// Changes returns a channel signalled (without blocking) whenever a member
+// joins, leaves or updates its metadata, and a function that stops it.
+func (m *Membership) Changes() (<-chan struct{}, func()) {
+	ch := make(chan struct{}, 1)
+	m.changeMu.Lock()
+	m.changed = append(m.changed, ch)
+	m.changeMu.Unlock()
+	return ch, func() {
+		m.changeMu.Lock()
+		defer m.changeMu.Unlock()
+		m.changed = slices.DeleteFunc(m.changed, func(c chan struct{}) bool { return c == ch })
+	}
+}
+
+func (m *Membership) notifyChange() {
+	m.changeMu.Lock()
+	defer m.changeMu.Unlock()
+	for _, ch := range m.changed {
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
+	}
+}
+
+// Broadcast sends b to every member on the gossip, within a few gossip
+// rounds, to be handed to their MembershipConfig.Message. b must fit in a
+// gossip packet (about 1 KB).
+func (m *Membership) Broadcast(b []byte) {
+	m.broadcasts.QueueBroadcast(rawBroadcast(slices.Clone(b)))
+}
+
+// rawBroadcast is a message queued for the gossip.
+type rawBroadcast []byte
+
+func (b rawBroadcast) Invalidates(memberlist.Broadcast) bool { return false }
+func (b rawBroadcast) Message() []byte                       { return b }
+func (b rawBroadcast) Finished()                             {}
+
+// LastContact is when this member last heard from any other member over
+// the gossip port, or when its gossip started if it has heard from none
+// since: zero before Run.
+func (m *Membership) LastContact() time.Time {
+	started := m.started.Load()
+	t := m.trans.Load()
+	if started == nil || t == nil {
+		return time.Time{}
+	}
+	if last := t.latestSeen(m.cfg.NodeID); last.After(*started) {
+		return last
+	}
+	return *started
 }
 
 // NewMembership returns the membership of this hub, authenticated like the
@@ -305,6 +381,9 @@ func (m *Membership) start(ctx context.Context) (*memberlist.Memberlist, error) 
 	if m.cfg.Replica != nil {
 		trans.replica.Store(&m.cfg.Replica)
 	}
+	if m.cfg.Master != nil {
+		trans.master.Store(&m.cfg.Master)
+	}
 	m.trans.Store(trans)
 	ml, err := memberlist.Create(m.memberlistConfig(trans))
 	if err != nil {
@@ -312,6 +391,8 @@ func (m *Membership) start(ctx context.Context) (*memberlist.Memberlist, error) 
 		return nil, fmt.Errorf("membership: %w", err)
 	}
 	m.ml.Store(ml)
+	now := time.Now()
+	m.started.Store(&now)
 	m.log.InfoContext(ctx, "gossip membership started", "advertise", net.JoinHostPort(trans.ip.String(), strconv.Itoa(trans.port)),
 		"roles", m.cfg.Roles.String())
 	m.joinSeeds(ctx)
@@ -472,11 +553,18 @@ func (m *Membership) NodeMeta(int) []byte {
 	return nil
 }
 
-// NotifyMsg implements memberlist.Delegate; members send no user messages.
-func (m *Membership) NotifyMsg([]byte) {}
+// NotifyMsg implements memberlist.Delegate: a message another member
+// Broadcast.
+func (m *Membership) NotifyMsg(b []byte) {
+	if m.cfg.Message != nil && len(b) > 0 {
+		m.cfg.Message(slices.Clone(b))
+	}
+}
 
 // GetBroadcasts implements memberlist.Delegate.
-func (m *Membership) GetBroadcasts(int, int) [][]byte { return nil }
+func (m *Membership) GetBroadcasts(overhead, limit int) [][]byte {
+	return m.broadcasts.GetBroadcasts(overhead, limit)
+}
 
 // LocalState implements memberlist.Delegate.
 func (m *Membership) LocalState(bool) []byte { return nil }
@@ -490,6 +578,7 @@ func (m *Membership) NotifyJoin(n *memberlist.Node) {
 	delete(m.gone, n.Name)
 	m.live[n.Name] = liveMember{info: memberInfo(n, MemberAlive), joined: time.Now()}
 	m.mu.Unlock()
+	m.notifyChange()
 	if n.Name != m.cfg.NodeID {
 		m.log.Info("gossip member joined", "member", n.Name, "address", n.Address())
 	}
@@ -506,6 +595,7 @@ func (m *Membership) NotifyLeave(n *memberlist.Node) {
 	m.gone[n.Name] = memberInfo(n, state)
 	delete(m.live, n.Name)
 	m.mu.Unlock()
+	m.notifyChange()
 	m.log.Info("gossip member "+state, "member", n.Name, "address", n.Address())
 }
 
@@ -513,11 +603,12 @@ func (m *Membership) NotifyLeave(n *memberlist.Node) {
 // address changed.
 func (m *Membership) NotifyUpdate(n *memberlist.Node) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	if l, ok := m.live[n.Name]; ok {
 		l.info = memberInfo(n, MemberAlive)
 		m.live[n.Name] = l
 	}
+	m.mu.Unlock()
+	m.notifyChange()
 }
 
 // NotifyAlive implements memberlist.AliveDelegate: it refuses a peer whose

@@ -79,8 +79,39 @@ status` says it is not highly available.
   `--gossip-seeds`. Replication runs over the gossip port with the same mutual TLS.
 - **Away too long.** Deleted rows are forgotten after 7 days. A member that has not reached the
   cluster for longer refuses to start with its old data: clear its data dir and join it again.
+- **Every master serves agents.** There is no leader: an agent streams to any master. It gets the
+  list of masters when it enrolls and again on every connect, and moves to another one, with the
+  usual backoff, when its master goes away. The master holding a device's stream records it (a
+  `device → master` route); an exec, probe, Docker call, scan, log stream or terminal for that
+  device on another master is forwarded to it over the members' mutual TLS. For an exec, probe,
+  Docker call or scan, the decision and the audit entry stay on the master that got the request; a
+  log stream or terminal is proxied whole and decided on the holder. If the holder cannot be
+  reached, the call fails with "agent not connected" until the agent has moved; one lost after it
+  was sent has an unknown outcome.
+- **Presence.** The master holding a device's stream marks it online and offline. A device with no
+  live stream is marked offline by the master that owns it on a hash ring over the live masters,
+  once that master has owned it for 30 seconds.
+- **Automations and loops.** Each automation, runbook run and pending approval runs on the master
+  that owns it on the same ring; when a master dies, its share moves to the others. Network
+  discovery, the DHCP/Pi-hole import, Beszel and Talos reads, scheduled backups and telemetry run on
+  one master each. During a partition both sides may run one: accepted.
+- **Tokens and approvals have an owner.** An enrollment token, a join token, an approval and an
+  approval link belong to the master that created it, and only that master consumes or decides it;
+  another one refuses with an error naming it. An enrollment token from an AP master is a `hearth2.`
+  token that carries the master's URL, and `hearth agent join` enrolls there; `hearth1.` tokens still
+  work. Expiry by the sweep is the only decision another master makes.
+- **CA key on masters only.** A joining hub gets the CA key only when its `--allow-roles` include
+  `master`.
+- **Revocations travel fast.** A revocation (device or hub certificates, MCP or dashboard tokens,
+  panel links) is also announced on the gossip at once; members that hold the row fetch it from the
+  writer, without waiting for anti-entropy.
+- **Cut off, fail closed.** A master that has reached no other member for 60 seconds refuses
+  `dangerous` actions and new enrollments and joins (each denial audited with the reason); reads and
+  `safe` actions keep working, and the block lifts as soon as a peer answers. A cluster of one is
+  never isolated.
 
-Not in AP mode yet: hub CA rotation, `cluster remove` and `transfer-leadership`.
+Not in AP mode yet: hub CA rotation (refused, as it needs the Raft leader), `cluster remove` and
+`transfer-leadership`.
 
 ## Forming the cluster
 

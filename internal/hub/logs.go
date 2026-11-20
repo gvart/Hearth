@@ -26,7 +26,7 @@ func (a *api) logRoutes(mux *http.ServeMux) {
 	if a.agents == nil {
 		return
 	}
-	mux.Handle("GET /api/v1/devices/{id}/logs", a.auth(a.deviceLogs))
+	mux.Handle("GET /api/v1/devices/{id}/logs", a.auth(a.proxyStream(a.deviceLogs)))
 }
 
 // LogLineJSON is one line of a log stream.
