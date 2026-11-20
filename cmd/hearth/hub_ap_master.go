@@ -6,6 +6,7 @@ import (
 	"context"
 	"log/slog"
 	"net"
+	"sync/atomic"
 
 	"golang.org/x/sync/errgroup"
 
@@ -24,7 +25,10 @@ type apMember struct {
 	ca    *pki.CA
 	node  *cluster.APNode
 	ready chan struct{}
-	ctx   context.Context
+	// caughtUp, read once ready is closed, is whether the member found the
+	// cluster it was told to join and copied its rows.
+	caughtUp *atomic.Bool
+	ctx      context.Context
 }
 
 // runAPHub runs a member of an AP cluster: its store, gossip, replication
@@ -47,6 +51,7 @@ func runAPHub(ctx context.Context, opts hubOptions, allowed cluster.RoleSet, log
 	}
 	defer st.Close()
 	ready := make(chan struct{})
+	caughtUp := new(atomic.Bool)
 	// HEARTH_ADMIN_PASSWORD is applied with an engine of its own: the
 	// action is fixed, so no configuration applies.
 	setupPol := policy.NewWithConfig(st.Audit(), st.Approvals(), policy.Config{})
@@ -56,9 +61,9 @@ func runAPHub(ctx context.Context, opts hubOptions, allowed cluster.RoleSet, log
 	g.Go(func() error {
 		return runAPMember(gctx, node, func(ctx context.Context) error {
 			return ensureAdminPassword(ctx, st, setupPol, opts, log)
-		}, ready, log)
+		}, ready, caughtUp, log)
 	})
-	opts.apm = &apMember{st: st, ca: ca, node: node, ready: ready, ctx: gctx}
+	opts.apm = &apMember{st: st, ca: ca, node: node, ready: ready, caughtUp: caughtUp, ctx: gctx}
 	g.Go(func() error { return runMasterLayer(gctx, opts, log) })
 	return g.Wait()
 }

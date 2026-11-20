@@ -141,6 +141,10 @@ type Replicator struct {
 	local atomic.Pointer[replicaLocal]
 	// catchUpMu runs one CatchUp at a time.
 	catchUpMu sync.Mutex
+	// seeking is set while this member, told of a cluster to join, has not
+	// found another member yet (SetSeeking): its ring is itself alone, so a
+	// critical write would be acknowledged with its one copy.
+	seeking atomic.Bool
 }
 
 // replicaLocal is whether this member is a storage member, and whether it
@@ -197,6 +201,12 @@ func (r *Replicator) SetLocal(storage, syncing bool) {
 	r.local.Store(&replicaLocal{storage: storage, syncing: storage && syncing})
 }
 
+// SetSeeking sets whether this member is still looking for the cluster it
+// was told to join. Until it finds another member (the view notices), or
+// SetSeeking(false) says it starts alone, critical writes fail fast with
+// store.ErrUnavailable and write nothing.
+func (r *Replicator) SetSeeking(seeking bool) { r.seeking.Store(seeking) }
+
 // Syncing reports whether this member is still catching up after its
 // promotion to storage.
 func (r *Replicator) Syncing() bool { return r.local.Load().syncing }
@@ -252,8 +262,13 @@ func (r *Replicator) view() view {
 			continue
 		}
 		everyone = append(everyone, m.ID)
-		if (m.State == MemberAlive || m.State == MemberSuspect) && !r.suspected(m.ID) {
-			live[m.ID] = true
+		if m.State == MemberAlive || m.State == MemberSuspect {
+			// The gossip found the cluster: the ring is not this member
+			// alone any more.
+			r.seeking.Store(false)
+			if !r.suspected(m.ID) {
+				live[m.ID] = true
+			}
 		}
 		if m.Roles.Has(RoleStorage) {
 			ids = append(ids, m.ID)
@@ -480,6 +495,10 @@ func (r *Replicator) applyHere(ctx context.Context, cmd store.Command, route sto
 		return store.Result{}, errors.New("replicator: no store bound")
 	}
 	if route.Critical {
+		if r.seeking.Load() {
+			return store.Result{}, fmt.Errorf("apply %s: this member has not found the cluster it joins yet: %w",
+				cmd.Op(), store.ErrUnavailable)
+		}
 		var live []string
 		n := v.n
 		if route.Kind == store.RouteKey {

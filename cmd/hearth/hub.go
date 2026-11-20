@@ -413,7 +413,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 			AutomationsDir: automationsDir, RunbooksDir: runbooksDirOf(opts),
 		},
 	})
-	configDocs, err := applyHubConfig(ctx, opts, st, node == nil, configWatcher, pol, notifier, log)
+	configDocs, err := applyHubConfig(ctx, opts, st, node == nil && apNode == nil, configWatcher, pol, notifier, log)
 	if err != nil {
 		return err
 	}
@@ -778,6 +778,27 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		if node != nil {
 			g.Go(func() error {
 				if node.WaitReady(gctx) != nil {
+					return nil
+				}
+				if err := configWatcher.ImportFirst(gctx); err != nil {
+					log.ErrorContext(gctx, "configuration files not imported", "err", err)
+				}
+				return nil
+			})
+		}
+		if apNode != nil {
+			// An AP member imports once it has found the cluster and copied
+			// its rows: before, it would see no documents of the cluster's,
+			// and import its files over them, alone on a ring of itself.
+			g.Go(func() error {
+				select {
+				case <-gctx.Done():
+					return nil
+				case <-ready:
+				}
+				if !opts.apm.caughtUp.Load() {
+					log.WarnContext(gctx, "configuration files not imported: this member has not caught up with the "+
+						"ap cluster; import them with `hearth config import` if the cluster holds none")
 					return nil
 				}
 				if err := configWatcher.ImportFirst(gctx); err != nil {

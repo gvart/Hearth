@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -181,17 +182,27 @@ func joinGossipSeed(joinURL, gossipListen string) (string, error) {
 // runAPMember waits for a first sync with the cluster, then records this
 // hub's node certificate, applies HEARTH_ADMIN_PASSWORD (after the sync, so
 // a new member does not replace the cluster's password) and says whether
-// the cluster is highly available.
-func runAPMember(ctx context.Context, node *cluster.APNode, setup func(context.Context) error, ready chan<- struct{}, log *slog.Logger) error {
+// the cluster is highly available. caughtUp says, once ready is closed,
+// whether it found the cluster and finished the sync.
+func runAPMember(ctx context.Context, node *cluster.APNode, setup func(context.Context) error, ready chan<- struct{},
+	caughtUp *atomic.Bool, log *slog.Logger,
+) error {
+	found := true
 	if err := node.WaitPeers(ctx, 30*time.Second); err != nil && ctx.Err() == nil {
-		log.WarnContext(ctx, "starting alone: no other member of the ap cluster reached", "err", err)
+		log.WarnContext(ctx, "starting alone: no other member of the ap cluster reached; critical writes are "+
+			"acknowledged with one copy until one is", "err", err)
+		found = false
+		node.StartAlone()
 	}
+	synced := true
 	if err := node.Replicator().WaitSynced(ctx, 30*time.Second); err != nil && ctx.Err() == nil {
 		log.WarnContext(ctx, "first sync with the cluster incomplete; going on", "err", err)
+		synced = false
 	}
 	if ctx.Err() != nil {
 		return nil
 	}
+	caughtUp.Store(found && synced)
 	if err := node.RecordNodeCert(ctx); err != nil {
 		log.WarnContext(ctx, "record this hub's node certificate", "err", err)
 	}

@@ -195,6 +195,9 @@ func NewAPNode(ctx context.Context, cfg APConfig) (*APNode, error) {
 		return nil, err
 	}
 	n.rep.SetLocal(local.Roles.Has(RoleStorage), local.Syncing)
+	// A member with seeds has a cluster to find: no critical write until it
+	// has (or starts alone, StartAlone).
+	n.rep.SetSeeking(len(n.seeds()) > 0)
 	n.setRoles(local.Roles)
 	return n, nil
 }
@@ -476,6 +479,11 @@ func (n *APNode) WaitPeers(ctx context.Context, limit time.Duration) error {
 		}
 	}
 }
+
+// StartAlone lets a member that found none of the cluster its seeds name
+// (WaitPeers gave up) take critical writes alone, on a ring of itself:
+// until another member turns up, each has one copy.
+func (n *APNode) StartAlone() { n.rep.SetSeeking(false) }
 
 // Replicator returns the node's replicator.
 func (n *APNode) Replicator() *Replicator { return n.rep }
