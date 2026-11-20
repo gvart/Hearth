@@ -1,5 +1,6 @@
 # Build output
 /bin/
+/hearth
 /dist/
 *.test
 *.out
