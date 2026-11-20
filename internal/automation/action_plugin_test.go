@@ -77,7 +77,7 @@ func TestPluginCommandAutomation(t *testing.T) {
 		t.Fatalf("audit = %+v, want one entry", es)
 	}
 	if e := es[0]; e.ActorKind != policy.ActorAutomation || e.ActorID != "lamp-auto" || e.Action != string(policy.PluginCommandSafe) ||
-		e.Target != "lamp/turn_on" || e.Decision != policy.Allow || e.Result != "ok" {
+		e.Target != "lamp/turn_on@desk" || e.Decision != policy.Allow || e.Result != "ok" {
 		t.Errorf("audit = %+v", e)
 	}
 	if strings.Contains(string(es[0].Detail), "level") {
@@ -139,7 +139,7 @@ func TestPluginCommandDeniedAndAudited(t *testing.T) {
 			}
 			es := audit.all()
 			if len(es) != 1 || es[0].Decision != policy.Deny || es[0].Action != string(tt.action) ||
-				es[0].Target != "lamp/"+tt.command || es[0].ActorKind != policy.ActorAutomation {
+				es[0].Target != "lamp/"+tt.command+"@desk" || es[0].ActorKind != policy.ActorAutomation {
 				t.Errorf("audit = %+v", es)
 			}
 		})
@@ -242,7 +242,7 @@ steps:
 				t.Errorf("runs = %q, want %d", pl.calls(), want)
 			}
 			got := h.audited(tt.action)
-			if len(got) != 1 || got[0].Decision != tt.decision || got[0].ActorID != RunbookActor("rb") || got[0].Target != "lamp/"+tt.command {
+			if len(got) != 1 || got[0].Decision != tt.decision || got[0].ActorID != RunbookActor("rb") || got[0].Target != "lamp/"+tt.command+"@desk" {
 				t.Errorf("audit = %+v", got)
 			}
 		})

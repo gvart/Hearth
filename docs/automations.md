@@ -413,7 +413,13 @@ actions:
   after the class the plugin's manifest declares for the command. The automation cannot set it. A
   dangerous command needs the automation's grant, as `exec` does, or an approval when the policy
   file says `confirm`.
-- The audit target is `<plugin>/<command>`, as for the web UI. The arguments are never audited.
+- The audit target, and an approval's, is `<plugin>/<command>@<device>`, with the device rendered
+  (`<plugin>/<command>` when the action names none). The arguments are never audited.
+- Saving one, from the web editor or MCP, is judged as if the command were dangerous, whatever this
+  hub's manifest says: another hub of a cluster may declare it dangerous. So an automation granted
+  dangerous actions, or a mode that lets them run unasked, needs a person to approve the save.
+- A `device` template that renders empty fails the action; the command is not sent. In a runbook,
+  prompt answers cannot fill `device`: they are data, never a target.
 - A command the hub's plugins do not declare, or a plugin the hub does not run, still loads (a
   hub of a cluster may run other plugins), as a dangerous command: when it runs it is denied, and
   audited as a denied `plugin.command.dangerous`. The plugin never sees it.

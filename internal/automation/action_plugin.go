@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/gvart/hearth/internal/plugins"
 	"github.com/gvart/hearth/internal/policy"
@@ -31,9 +32,11 @@ type pluginAction struct {
 	plugins         Plugins
 	plugin, command string
 	device          Text
-	args            json.RawMessage
-	policy          policy.Action
-	declared        bool
+	// target is plugin/command, then @device when the action names one.
+	target   Text
+	args     json.RawMessage
+	policy   policy.Action
+	declared bool
 }
 
 func buildPluginCommand(p Params, pl Plugins) (Action, error) {
@@ -56,8 +59,19 @@ func buildPluginCommand(p Params, pl Plugins) (Action, error) {
 	if pl != nil {
 		a.policy, a.declared = pl.CommandPolicy(cfg.Plugin, cfg.Command)
 	}
+	// The class is decided when the file loads: neither may be a template.
+	if strings.Contains(cfg.Plugin, "{{") || strings.Contains(cfg.Command, "{{") {
+		return nil, errors.New("plugin and command may not be templates")
+	}
 	var err error
 	if a.device, err = p.Text(cfg.Device, "device"); err != nil {
+		return nil, err
+	}
+	target := cfg.Plugin + "/" + cfg.Command
+	if cfg.Device != "" {
+		target += "@" + cfg.Device
+	}
+	if a.target, err = p.Text(target, "device"); err != nil {
 		return nil, err
 	}
 	if len(cfg.Args) > 0 {
@@ -84,8 +98,10 @@ func (a *pluginAction) Describe() string {
 
 func (a *pluginAction) Policy() policy.Action { return a.policy }
 
-// Target is the one the web UI's commands audit: plugin/command.
-func (a *pluginAction) Target() Text  { return Literal(a.plugin + "/" + a.command) }
+// Target is plugin/command, as the web UI's commands are audited, then
+// @device, rendered, when the action names a device: the audit entry and an
+// approval show what the command is for.
+func (a *pluginAction) Target() Text  { return a.target }
 func (a *pluginAction) texts() []Text { return []Text{a.device} }
 
 // Precheck refuses, before policy decides, a command the hub's plugins do
@@ -109,6 +125,10 @@ func (a *pluginAction) Run(ctx context.Context, ev Event) error {
 	device, err := a.device.Render(ctx, ev)
 	if err != nil {
 		return err
+	}
+	if a.device.raw != "" && device == "" {
+		// Sent without a device, it could act on more than the action names.
+		return definiteFailure{fmt.Errorf("device %s rendered empty: the command was not sent", a.device)}
 	}
 	_, err = a.plugins.RunGranted(ctx, a.plugin, plugins.CommandRequest{Command: a.command, Device: device, Args: a.args})
 	switch {

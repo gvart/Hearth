@@ -285,12 +285,19 @@ func WriteFile(dir, path string, b []byte) error {
 // grant to its id or by a mode, saving the file is the last moment a person
 // can see what it does: the save is approved by a person, whatever the modes
 // say about saves by kind.
+//
+// A plugin_command counts as dangerous here, whatever the saving hub's
+// manifest says: another hub of a cluster may declare it dangerous and run it.
 func SaveEngine(e *policy.Engine, kind string, p *Automation) *policy.Engine {
 	for _, s := range p.Actions {
-		if class, _ := policy.ClassOf(s.Impl.Policy()); class != policy.Dangerous {
+		action := s.Impl.Policy()
+		if _, ok := s.Impl.(*pluginAction); ok {
+			action = policy.PluginCommandDangerous
+		}
+		if class, _ := policy.ClassOf(action); class != policy.Dangerous {
 			continue
 		}
-		run := policy.Request{ActorKind: policy.ActorAutomation, ActorID: p.ID, Action: s.Impl.Policy()}
+		run := policy.Request{ActorKind: policy.ActorAutomation, ActorID: p.ID, Action: action}
 		if decision, _ := e.Check(run); decision == policy.Allow {
 			return e.Holding(kind, policy.Dangerous)
 		}
