@@ -444,7 +444,13 @@ func TestDemoteMaster(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if urls := b.node.AgentURLs(); len(urls) != 1 || urls[0] != c["a"].node.cfg.AgentURL {
+	// a's URL reaches b's copy of the global rows in the background.
+	var urls []string
+	waitUntil(t, 5*time.Second, "b to send agents to a", func() bool {
+		urls = b.node.AgentURLs()
+		return len(urls) > 0
+	})
+	if len(urls) != 1 || urls[0] != c["a"].node.cfg.AgentURL {
 		t.Fatalf("b sends agents to %v, want a first", urls)
 	}
 	// The demotion survives a restart, and b does not fetch the key back.

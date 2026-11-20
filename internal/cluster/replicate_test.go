@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"os"
 	"path/filepath"
@@ -111,6 +112,12 @@ func newAPNetWith(t testing.TB, n int, tune func(*ReplicatorConfig), ids ...stri
 	for _, id := range ids {
 		an.add(t, n, id)
 	}
+	// Each member runs an anti-entropy round as it starts: let those end
+	// before the test writes, which they would otherwise copy at random.
+	for _, id := range ids {
+		r := an.m(id).rep
+		apEventuallyTB(t, id+"'s first anti-entropy round", func() bool { return r.aeRounds.Load() > 0 })
+	}
 	return an
 }
 
@@ -148,18 +155,35 @@ func (an *apNet) add(t testing.TB, n int, id string) *apMember {
 
 func (an *apNet) setDown(id string, down bool) {
 	an.mu.Lock()
-	defer an.mu.Unlock()
 	an.down[id] = down
+	an.mu.Unlock()
+	if down {
+		an.dropConns()
+	}
 }
 
 // split cuts every link between the groups a and b, or heals them.
 func (an *apNet) split(a, b []string, cut bool) {
 	an.mu.Lock()
-	defer an.mu.Unlock()
 	for _, x := range a {
 		for _, y := range b {
 			an.cut[[2]string{x, y}], an.cut[[2]string{y, x}] = cut, cut
 		}
+	}
+	an.mu.Unlock()
+	if cut {
+		an.dropConns()
+	}
+}
+
+// dropConns closes every member's pooled connections, as a member going
+// down or a cut link does to those it had: only new dials see the change.
+func (an *apNet) dropConns() {
+	an.mu.Lock()
+	ms := slices.Collect(maps.Values(an.members))
+	an.mu.Unlock()
+	for _, m := range ms {
+		m.rep.closePool()
 	}
 }
 
@@ -212,6 +236,11 @@ func localDevice(t *testing.T, m *apMember, id string) (string, bool) {
 }
 
 func apEventually(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	apEventuallyTB(t, what, cond)
+}
+
+func apEventuallyTB(t testing.TB, what string, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for !cond() {
@@ -653,6 +682,7 @@ func TestCriticalWriteFallsBackToStandIn(t *testing.T) {
 	an.mu.Lock()
 	an.crashed["b"] = true
 	an.mu.Unlock()
+	an.dropConns() // the crash closed b's connections
 	if err := an.m("a").st.Certs().Create(ctx, "serial-x", id); err != nil {
 		t.Fatalf("critical write with a just-crashed replica: %v", err)
 	}
@@ -759,10 +789,12 @@ func TestCriticalWriteToAnUnroutableMemberFailsOverFast(t *testing.T) {
 	an := newAPNetWith(t, 2, func(c *ReplicatorConfig) { c.RequestTimeout = defaultRequestTimeout }, ids...)
 	cut := func(from string, to ...string) {
 		an.mu.Lock()
-		defer an.mu.Unlock()
 		for _, t := range to {
 			an.unroutable[[2]string{from, t}] = true
 		}
+		an.mu.Unlock()
+		// The cut kills the connections already open, too.
+		an.m(from).rep.closePool()
 	}
 	bound := 3 * defaultQuickTimeout
 
@@ -773,7 +805,9 @@ func TestCriticalWriteToAnUnroutableMemberFailsOverFast(t *testing.T) {
 	if err := appendKeyed(ctx, an.m("c"), auditKeyPreferring(t, ids, "k", "a", "b")); err != nil {
 		t.Fatalf("critical write with a unreachable: %v", err)
 	}
-	if took := time.Since(start); took > bound {
+	if took := time.Since(start); took < defaultQuickTimeout {
+		t.Errorf("critical write with a unreachable took %v: a was never tried", took)
+	} else if took > bound {
 		t.Errorf("critical write with a unreachable took %v, want under %v", took, bound)
 	}
 
@@ -783,7 +817,9 @@ func TestCriticalWriteToAnUnroutableMemberFailsOverFast(t *testing.T) {
 	if err := appendKeyed(ctx, an.m("a"), auditKeyPreferring(t, ids, "k", "b", "c")); !errors.Is(err, store.ErrUnavailable) {
 		t.Fatalf("critical write on the cut-off member: %v, want ErrUnavailable", err)
 	}
-	if took := time.Since(start); took > bound {
+	if took := time.Since(start); took < defaultQuickTimeout {
+		t.Errorf("critical write on the cut-off member failed after %v: b and c were never tried", took)
+	} else if took > bound {
 		t.Errorf("critical write on the cut-off member failed after %v, want under %v", took, bound)
 	}
 }

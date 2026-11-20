@@ -145,6 +145,8 @@ type Replicator struct {
 	// found another member yet (SetSeeking): its ring is itself alone, so a
 	// critical write would be acknowledged with its one copy.
 	seeking atomic.Bool
+	// aeRounds counts the anti-entropy rounds run (tests wait on it).
+	aeRounds atomic.Int64
 }
 
 // replicaLocal is whether this member is a storage member, and whether it

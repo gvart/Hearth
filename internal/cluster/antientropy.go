@@ -134,6 +134,7 @@ func (r *Replicator) antiEntropy(ctx context.Context) {
 	if err := r.handOff(ctx, v); err != nil {
 		r.log.DebugContext(ctx, "hand-off", "err", err)
 	}
+	r.aeRounds.Add(1)
 }
 
 // handOff copies the rows this member holds in buckets it does not own to

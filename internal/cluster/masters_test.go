@@ -219,6 +219,7 @@ func TestRevocationBroadcastSkipsAntiEntropy(t *testing.T) {
 	an.mu.Lock()
 	an.cut[[2]string{"a", "b"}] = true
 	an.mu.Unlock()
+	an.dropConns()
 	if _, err := an.m("a").st.Certs().RevokeDevice(ctx, dev, time.Now()); err != nil {
 		t.Fatal(err)
 	}
