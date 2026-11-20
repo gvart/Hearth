@@ -95,6 +95,9 @@ func LoadBridge(path, password string) (*BridgeConfig, error) {
 			return nil, fmt.Errorf("MQTT bridge password_file: %w", err)
 		}
 		c.Password = strings.TrimRight(strings.SplitN(string(p), "\n", 2)[0], "\r")
+		if c.Password == "" {
+			return nil, fmt.Errorf("MQTT bridge password_file %s: the first line is empty", c.PasswordFile)
+		}
 	}
 	if c.Password != "" && c.Username == "" {
 		return nil, errors.New("MQTT bridge: a password needs a username")

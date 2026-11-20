@@ -13,7 +13,10 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"strconv"
 	"time"
+
+	"github.com/mochi-mqtt/server/v2/packets"
 
 	"github.com/gvart/hearth/internal/pki"
 )
@@ -324,6 +327,67 @@ func (p *proxy) cut() {
 	p.conns = nil
 }
 
+// TestBridgeDropsWildcardTopics drops a remote PUBLISH whose topic is a
+// filter: mochi does not check an inline client's topic, and a retained
+// message on sensors/# could never be cleared.
+func TestBridgeDropsWildcardTopics(t *testing.T) {
+	rb := startBroker(t, remoteYAML)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dead := ln.Addr().String()
+	_ = ln.Close() // the bridge keeps retrying; receive is called directly
+	var b *Broker
+	lb := startBrokerWith(t, localYAML, bridgeTo(t, rb, dead, 5, testPassword), fastRetry, func(x *Broker) { b = x })
+	lsub := connected(t, lb, "local", "lsub")
+	lsub.subscribe("sensors/#")
+
+	for _, topic := range []string{"home/sensors/ok/a/#", "home/sensors/ok/+/x"} {
+		for _, retain := range []bool{false, true} {
+			b.bridge.receive(packets.Packet{
+				FixedHeader: packets.FixedHeader{Type: packets.Publish, Retain: retain},
+				TopicName:   topic, Payload: []byte("bad"),
+			})
+		}
+	}
+	for topic := range b.srv.Topics.Retained.GetAll() {
+		if !strings.HasPrefix(topic, "$SYS/") {
+			t.Fatalf("retained message on %s", topic)
+		}
+	}
+	b.bridge.receive(packets.Packet{FixedHeader: packets.FixedHeader{Type: packets.Publish}, TopicName: "home/sensors/ok/a", Payload: []byte("good")})
+	if topic, payload := lsub.next(); topic != "sensors/ok/a" || payload != "good" {
+		t.Fatalf("local got %s %s, want only the valid topic", topic, payload)
+	}
+	waitLog(t, lb, "invalid topic from the remote dropped", 4)
+}
+
+func TestEchoesSweepAtMostOnceASecond(t *testing.T) {
+	e := newEchoes()
+	t0 := time.Now()
+	for i := range maxEchoes {
+		e.sent("t", []byte(strconv.Itoa(i)), t0)
+	}
+	if len(e.m) != maxEchoes {
+		t.Fatalf("%d entries, want a full table", len(e.m))
+	}
+	// Every entry has expired, but the table was swept half a second ago:
+	// no scan, and the new message is not remembered.
+	t1 := t0.Add(echoTTL + time.Second)
+	e.swept = t1.Add(-500 * time.Millisecond)
+	e.sent("x", nil, t1)
+	if len(e.m) != maxEchoes || e.back("x", nil, t1) {
+		t.Fatal("a full table was swept twice within a second")
+	}
+	// A second after the last sweep, it is swept.
+	t2 := t1.Add(600 * time.Millisecond)
+	e.sent("y", nil, t2)
+	if len(e.m) != 1 || !e.back("y", nil, t2) {
+		t.Fatalf("after a sweep: %d entries, want only the new one", len(e.m))
+	}
+}
+
 func TestEchoes(t *testing.T) {
 	e := newEchoes()
 	now := time.Now()
@@ -427,5 +491,9 @@ func TestLoadBridgePassword(t *testing.T) {
 	write(pass, "p", 0o600)
 	if _, err := LoadBridge(path, ""); err == nil || !strings.Contains(err.Error(), "needs a username") {
 		t.Fatalf("password without username: %v", err)
+	}
+	write(pass, "\nsecond line\n", 0o600)
+	if _, err := LoadBridge(path, ""); err == nil || !strings.Contains(err.Error(), "first line is empty") {
+		t.Fatalf("empty password file: %v", err)
 	}
 }

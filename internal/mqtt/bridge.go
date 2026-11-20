@@ -272,6 +272,12 @@ func (br *bridge) receive(pk packets.Packet) {
 	if !ok {
 		return
 	}
+	// mochi does not check an inline client's topic: a remote topic with a
+	// wildcard would be retained on a filter no client can clear.
+	if strings.HasPrefix(topic, "$") || !mochi.IsValidFilter(topic, true) {
+		br.log.Debug("mqtt bridge: invalid topic from the remote dropped", "topic", topic)
+		return
+	}
 	if !allowed(br.rules, topic, true) {
 		br.log.Debug("mqtt bridge topic denied", "topic", topic, "direction", In)
 		return
@@ -346,6 +352,9 @@ type echoes struct {
 	// hash/maphash is not).
 	salt uint64
 	m    map[uint64]echo
+	// swept is when a full table was last swept of expired entries: at
+	// most once a second, not on every message.
+	swept time.Time
 }
 
 func newEchoes() *echoes { return &echoes{salt: rand.Uint64(), m: map[uint64]echo{}} } //nolint:gosec // a salt, see echoes
@@ -369,6 +378,10 @@ func (e *echoes) sent(topic string, payload []byte, now time.Time) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if len(e.m) >= maxEchoes {
+		if now.Sub(e.swept) < time.Second {
+			return
+		}
+		e.swept = now
 		for k, x := range e.m {
 			if now.After(x.until) {
 				delete(e.m, k)
