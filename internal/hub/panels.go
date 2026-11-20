@@ -403,7 +403,9 @@ func (a *api) createPanelLink(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	now := a.now().UTC().Truncate(time.Millisecond)
-	link := store.PanelLink{ID: strings.ToLower(rand.Text()), PanelID: id, CreatedAt: now}
+	// The link's id is derived from its secret, the link's unique key.
+	secret := rand.Text()
+	link := store.PanelLink{ID: store.PanelLinkID(secret), PanelID: id, CreatedAt: now}
 	if body.ExpiresIn != "" {
 		ttl, err := time.ParseDuration(body.ExpiresIn)
 		if err != nil || ttl <= 0 || ttl > maxPanelLinkTTL {
@@ -416,7 +418,6 @@ func (a *api) createPanelLink(w http.ResponseWriter, r *http.Request) {
 	if !link.ExpiresAt.IsZero() {
 		detail["expires_at"] = link.ExpiresAt
 	}
-	secret := rand.Text()
 	err := a.policy.Do(r.Context(), policy.Request{
 		ActorKind: policy.ActorWeb, ActorID: remoteHost(r), Action: policy.PanelLinkCreate, Target: id, Detail: detail,
 	}, func(ctx context.Context) error { return a.store.Panels().CreateLink(ctx, link, secret) })

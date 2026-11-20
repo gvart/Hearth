@@ -5,8 +5,6 @@ package proxmox
 import (
 	"cmp"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -618,10 +616,9 @@ func (m *Manager) Add(ctx context.Context, actorID string, req AddRequest) (Serv
 	if err != nil {
 		return ServerInfo{}, err
 	}
-	id, err := newID()
-	if err != nil {
-		return ServerInfo{}, err
-	}
+	// The id is derived from the name, so two hubs adding the same name
+	// make one server.
+	id := store.ProxmoxServerID(name)
 	now := m.now().UTC().Truncate(time.Millisecond)
 	err = m.policy.Do(ctx, policy.Request{
 		ActorKind: policy.ActorWeb, ActorID: actorID, Action: policy.ProxmoxServerAdd, Target: name,
@@ -694,12 +691,4 @@ func validName(s string) bool {
 		}
 	}
 	return true
-}
-
-func newID() (string, error) {
-	b := make([]byte, 8)
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("new server ID: %w", err)
-	}
-	return hex.EncodeToString(b), nil
 }
