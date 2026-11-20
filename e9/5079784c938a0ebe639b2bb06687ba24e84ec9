@@ -1,0 +1,25 @@
+internal/automation/runbook_talos.go
+  s_26e932fc13ca45::t_4475cf3dedae39 67-75,84-95,97,99-103
+docs/runbooks.md
+  s_26e932fc13ca45::t_e7b6f629425037 172-175
+internal/automation/runbook_talos_test.go
+  s_26e932fc13ca45::t_4475cf3dedae39 61-63,66-67,114-118,120-121
+  s_26e932fc13ca45::t_8f35d9c8a77e84 68-70,119
+  s_26e932fc13ca45::t_76dd369960101d 64-65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e95079784c938a0ebe639b2bb06687ba24e84ec9",
+  "prompts": {},
+  "sessions": {
+    "s_26e932fc13ca45": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea42b0cd-7455-494b-8071-e63f36b98d4d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": null
+    }
+  }
+}
