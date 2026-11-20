@@ -87,7 +87,7 @@ every action can be dry-run: see [Guardrails](guardrails.md).
 
 Policy is decided on the hub, but a device has the last word on what runs on it. An agent runs only
 the commands and services its own `--allow-exec` and `--allow-restart` flags name (and network
-checks for the hub only with `--allow-probe`, logs only with `--allow-logs`, a [web terminal](terminal.md) only with `--allow-shell`, a [network scan](discovery.md#scan-from-a-device) only of the subnets `--allow-scan` names), and nothing by default. The hub can never raise that ceiling: the agent reports it, the hub refuses anything beyond
+checks for the hub only with `--allow-probe`, logs only with `--allow-logs`, a [web terminal](terminal.md) only with `--allow-shell`, a [network scan](discovery.md#scan-from-a-device) only of the subnets `--allow-scan` names, its [neighbours and connections](net-edges.md) only with `--allow-net-edges`), and nothing by default. The hub can never raise that ceiling: the agent reports it, the hub refuses anything beyond
 it before sending, and the agent checks again before running.
 
 ## Audit log

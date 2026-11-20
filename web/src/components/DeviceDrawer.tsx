@@ -4,6 +4,7 @@ import { markTerminalLaunch, terminalHttpsDocs, terminalTransportAllowed } from 
 import { displayName, formatBytes, formatDateTime, osArch, primaryIP, statusLabel } from '../format.ts';
 import { DeviceCharts } from './DeviceCharts.tsx';
 import { DeviceLogSources } from './DeviceLogSources.tsx';
+import { DeviceNetEdges } from './DeviceNetEdges.tsx';
 import { Modal } from './Modal.tsx';
 import { StatusDot } from './StatusDot.tsx';
 
@@ -71,6 +72,10 @@ export function DeviceDrawer({ device, onClose }: { device: Device; onClose: () 
 
       <Section title="Logs">
         <DeviceLogSources device={device} />
+      </Section>
+
+      <Section title="Neighbors and connections">
+        <DeviceNetEdges device={device} />
       </Section>
 
       <Section title="Hardware">

@@ -39,6 +39,7 @@ type AgentMessage struct {
 	//	*AgentMessage_LogLines
 	//	*AgentMessage_ShellEvent
 	//	*AgentMessage_ScanResult
+	//	*AgentMessage_NetEdges
 	Payload       isAgentMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -162,6 +163,15 @@ func (x *AgentMessage) GetScanResult() *ScanResult {
 	return nil
 }
 
+func (x *AgentMessage) GetNetEdges() *NetEdges {
+	if x != nil {
+		if x, ok := x.Payload.(*AgentMessage_NetEdges); ok {
+			return x.NetEdges
+		}
+	}
+	return nil
+}
+
 type isAgentMessage_Payload interface {
 	isAgentMessage_Payload()
 }
@@ -203,6 +213,10 @@ type AgentMessage_ScanResult struct {
 	ScanResult *ScanResult `protobuf:"bytes,9,opt,name=scan_result,json=scanResult,proto3,oneof"`
 }
 
+type AgentMessage_NetEdges struct {
+	NetEdges *NetEdges `protobuf:"bytes,10,opt,name=net_edges,json=netEdges,proto3,oneof"`
+}
+
 func (*AgentMessage_Hello) isAgentMessage_Payload() {}
 
 func (*AgentMessage_Heartbeat) isAgentMessage_Payload() {}
@@ -220,6 +234,8 @@ func (*AgentMessage_LogLines) isAgentMessage_Payload() {}
 func (*AgentMessage_ShellEvent) isAgentMessage_Payload() {}
 
 func (*AgentMessage_ScanResult) isAgentMessage_Payload() {}
+
+func (*AgentMessage_NetEdges) isAgentMessage_Payload() {}
 
 // HubMessage is anything the hub sends to an agent.
 type HubMessage struct {
@@ -633,7 +649,12 @@ type Ceiling struct {
 	// network discovery: a ScanRequest's subnets must each lie within one of
 	// them. Empty allows no scan. Reported by agents of protocol minor 7 and
 	// later.
-	Scan          []string `protobuf:"bytes,6,rep,name=scan,proto3" json:"scan,omitempty"`
+	Scan []string `protobuf:"bytes,6,rep,name=scan,proto3" json:"scan,omitempty"`
+	// net_edges lets the agent report its network edges (NetEdges): its
+	// neighbour table and a summary of its established TCP connections.
+	// Connections say who talks to whom, so it is off unless the operator
+	// turns it on. Reported by agents of protocol minor 8 and later.
+	NetEdges      bool `protobuf:"varint,7,opt,name=net_edges,json=netEdges,proto3" json:"net_edges,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -708,6 +729,13 @@ func (x *Ceiling) GetScan() []string {
 		return x.Scan
 	}
 	return nil
+}
+
+func (x *Ceiling) GetNetEdges() bool {
+	if x != nil {
+		return x.NetEdges
+	}
+	return false
 }
 
 // Disk is a mounted filesystem.
@@ -2884,11 +2912,211 @@ func (x *ScannedHost) GetHostname() string {
 	return ""
 }
 
+// NetEdges is what a device sees of its network, sent by agents of protocol
+// minor 8 and later whose ceiling allows net_edges: shortly after the
+// stream opens, then every minute. Each message replaces the last. The hub
+// resolves the peers to devices and network hosts.
+type NetEdges struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// neighbors are the complete entries of the device's IPv4 neighbour (ARP)
+	// table.
+	Neighbors []*Neighbor `protobuf:"bytes,1,rep,name=neighbors,proto3" json:"neighbors,omitempty"`
+	// connections summarise the device's established TCP connections, one per
+	// peer address, port and direction, loopback excluded.
+	Connections []*Connection `protobuf:"bytes,2,rep,name=connections,proto3" json:"connections,omitempty"`
+	// connections_dropped counts the established connections left out
+	// because the device holds more groups than the agent keeps.
+	ConnectionsDropped uint32 `protobuf:"varint,3,opt,name=connections_dropped,json=connectionsDropped,proto3" json:"connections_dropped,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *NetEdges) Reset() {
+	*x = NetEdges{}
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NetEdges) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NetEdges) ProtoMessage() {}
+
+func (x *NetEdges) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NetEdges.ProtoReflect.Descriptor instead.
+func (*NetEdges) Descriptor() ([]byte, []int) {
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *NetEdges) GetNeighbors() []*Neighbor {
+	if x != nil {
+		return x.Neighbors
+	}
+	return nil
+}
+
+func (x *NetEdges) GetConnections() []*Connection {
+	if x != nil {
+		return x.Connections
+	}
+	return nil
+}
+
+func (x *NetEdges) GetConnectionsDropped() uint32 {
+	if x != nil {
+		return x.ConnectionsDropped
+	}
+	return 0
+}
+
+// Neighbor is an entry of a neighbour table.
+type Neighbor struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Ip    string                 `protobuf:"bytes,1,opt,name=ip,proto3" json:"ip,omitempty"`
+	// mac is lower-case and colon-separated.
+	Mac           string `protobuf:"bytes,2,opt,name=mac,proto3" json:"mac,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Neighbor) Reset() {
+	*x = Neighbor{}
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Neighbor) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Neighbor) ProtoMessage() {}
+
+func (x *Neighbor) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Neighbor.ProtoReflect.Descriptor instead.
+func (*Neighbor) Descriptor() ([]byte, []int) {
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{39}
+}
+
+func (x *Neighbor) GetIp() string {
+	if x != nil {
+		return x.Ip
+	}
+	return ""
+}
+
+func (x *Neighbor) GetMac() string {
+	if x != nil {
+		return x.Mac
+	}
+	return ""
+}
+
+// Connection is a group of established TCP connections with one peer.
+type Connection struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// peer_ip is the remote address; an IPv4-mapped IPv6 address is sent as
+	// IPv4.
+	PeerIp string `protobuf:"bytes,1,opt,name=peer_ip,json=peerIp,proto3" json:"peer_ip,omitempty"`
+	// port is the service port: the peer's port of an outbound connection,
+	// the device's own listening port of an inbound one.
+	Port uint32 `protobuf:"varint,2,opt,name=port,proto3" json:"port,omitempty"`
+	// inbound is set when the peer connected to a port the device listens
+	// on.
+	Inbound bool `protobuf:"varint,3,opt,name=inbound,proto3" json:"inbound,omitempty"`
+	// count is how many such connections are established.
+	Count         uint32 `protobuf:"varint,4,opt,name=count,proto3" json:"count,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Connection) Reset() {
+	*x = Connection{}
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[40]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Connection) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Connection) ProtoMessage() {}
+
+func (x *Connection) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[40]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Connection.ProtoReflect.Descriptor instead.
+func (*Connection) Descriptor() ([]byte, []int) {
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{40}
+}
+
+func (x *Connection) GetPeerIp() string {
+	if x != nil {
+		return x.PeerIp
+	}
+	return ""
+}
+
+func (x *Connection) GetPort() uint32 {
+	if x != nil {
+		return x.Port
+	}
+	return 0
+}
+
+func (x *Connection) GetInbound() bool {
+	if x != nil {
+		return x.Inbound
+	}
+	return false
+}
+
+func (x *Connection) GetCount() uint32 {
+	if x != nil {
+		return x.Count
+	}
+	return 0
+}
+
 var File_hearth_agent_v1_agent_proto protoreflect.FileDescriptor
 
 const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"\n" +
-	"\x1bhearth/agent/v1/agent.proto\x12\x0fhearth.agent.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb8\x04\n" +
+	"\x1bhearth/agent/v1/agent.proto\x12\x0fhearth.agent.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xf2\x04\n" +
 	"\fAgentMessage\x12.\n" +
 	"\x05hello\x18\x01 \x01(\v2\x16.hearth.agent.v1.HelloH\x00R\x05hello\x12:\n" +
 	"\theartbeat\x18\x02 \x01(\v2\x1a.hearth.agent.v1.HeartbeatH\x00R\theartbeat\x12D\n" +
@@ -2901,7 +3129,9 @@ const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"\vshell_event\x18\b \x01(\v2\x1b.hearth.agent.v1.ShellEventH\x00R\n" +
 	"shellEvent\x12>\n" +
 	"\vscan_result\x18\t \x01(\v2\x1b.hearth.agent.v1.ScanResultH\x00R\n" +
-	"scanResultB\t\n" +
+	"scanResult\x128\n" +
+	"\tnet_edges\x18\n" +
+	" \x01(\v2\x19.hearth.agent.v1.NetEdgesH\x00R\bnetEdgesB\t\n" +
 	"\apayload\"\x89\x04\n" +
 	"\n" +
 	"HubMessage\x124\n" +
@@ -2936,14 +3166,15 @@ const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"interfaces\x12#\n" +
 	"\ragent_version\x18\f \x01(\tR\fagentVersion\x12\"\n" +
 	"\fcapabilities\x18\r \x03(\tR\fcapabilities\x122\n" +
-	"\aceiling\x18\x0e \x01(\v2\x18.hearth.agent.v1.CeilingR\aceiling\"\x8b\x01\n" +
+	"\aceiling\x18\x0e \x01(\v2\x18.hearth.agent.v1.CeilingR\aceiling\"\xa8\x01\n" +
 	"\aCeiling\x12\x12\n" +
 	"\x04exec\x18\x01 \x03(\tR\x04exec\x12\x18\n" +
 	"\arestart\x18\x02 \x03(\tR\arestart\x12\x14\n" +
 	"\x05probe\x18\x03 \x01(\bR\x05probe\x12\x12\n" +
 	"\x04logs\x18\x04 \x03(\tR\x04logs\x12\x14\n" +
 	"\x05shell\x18\x05 \x01(\bR\x05shell\x12\x12\n" +
-	"\x04scan\x18\x06 \x03(\tR\x04scan\"w\n" +
+	"\x04scan\x18\x06 \x03(\tR\x04scan\x12\x1b\n" +
+	"\tnet_edges\x18\a \x01(\bR\bnetEdges\"w\n" +
 	"\x04Disk\x12\x16\n" +
 	"\x06device\x18\x01 \x01(\tR\x06device\x12\x1e\n" +
 	"\n" +
@@ -3079,7 +3310,20 @@ const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"\vScannedHost\x12\x10\n" +
 	"\x03mac\x18\x01 \x01(\tR\x03mac\x12\x0e\n" +
 	"\x02ip\x18\x02 \x01(\tR\x02ip\x12\x1a\n" +
-	"\bhostname\x18\x03 \x01(\tR\bhostname2Y\n" +
+	"\bhostname\x18\x03 \x01(\tR\bhostname\"\xb3\x01\n" +
+	"\bNetEdges\x127\n" +
+	"\tneighbors\x18\x01 \x03(\v2\x19.hearth.agent.v1.NeighborR\tneighbors\x12=\n" +
+	"\vconnections\x18\x02 \x03(\v2\x1b.hearth.agent.v1.ConnectionR\vconnections\x12/\n" +
+	"\x13connections_dropped\x18\x03 \x01(\rR\x12connectionsDropped\",\n" +
+	"\bNeighbor\x12\x0e\n" +
+	"\x02ip\x18\x01 \x01(\tR\x02ip\x12\x10\n" +
+	"\x03mac\x18\x02 \x01(\tR\x03mac\"i\n" +
+	"\n" +
+	"Connection\x12\x17\n" +
+	"\apeer_ip\x18\x01 \x01(\tR\x06peerIp\x12\x12\n" +
+	"\x04port\x18\x02 \x01(\rR\x04port\x12\x18\n" +
+	"\ainbound\x18\x03 \x01(\bR\ainbound\x12\x14\n" +
+	"\x05count\x18\x04 \x01(\rR\x05count2Y\n" +
 	"\fAgentService\x12I\n" +
 	"\aConnect\x12\x1d.hearth.agent.v1.AgentMessage\x1a\x1b.hearth.agent.v1.HubMessage(\x010\x01B\xbf\x01\n" +
 	"\x13com.hearth.agent.v1B\n" +
@@ -3097,7 +3341,7 @@ func file_hearth_agent_v1_agent_proto_rawDescGZIP() []byte {
 	return file_hearth_agent_v1_agent_proto_rawDescData
 }
 
-var file_hearth_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 39)
+var file_hearth_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 42)
 var file_hearth_agent_v1_agent_proto_goTypes = []any{
 	(*AgentMessage)(nil),          // 0: hearth.agent.v1.AgentMessage
 	(*HubMessage)(nil),            // 1: hearth.agent.v1.HubMessage
@@ -3137,9 +3381,12 @@ var file_hearth_agent_v1_agent_proto_goTypes = []any{
 	(*ScanRequest)(nil),           // 35: hearth.agent.v1.ScanRequest
 	(*ScanResult)(nil),            // 36: hearth.agent.v1.ScanResult
 	(*ScannedHost)(nil),           // 37: hearth.agent.v1.ScannedHost
-	nil,                           // 38: hearth.agent.v1.MetricSample.LabelsEntry
-	(*timestamppb.Timestamp)(nil), // 39: google.protobuf.Timestamp
-	(*durationpb.Duration)(nil),   // 40: google.protobuf.Duration
+	(*NetEdges)(nil),              // 38: hearth.agent.v1.NetEdges
+	(*Neighbor)(nil),              // 39: hearth.agent.v1.Neighbor
+	(*Connection)(nil),            // 40: hearth.agent.v1.Connection
+	nil,                           // 41: hearth.agent.v1.MetricSample.LabelsEntry
+	(*timestamppb.Timestamp)(nil), // 42: google.protobuf.Timestamp
+	(*durationpb.Duration)(nil),   // 43: google.protobuf.Duration
 }
 var file_hearth_agent_v1_agent_proto_depIdxs = []int32{
 	3,  // 0: hearth.agent.v1.AgentMessage.hello:type_name -> hearth.agent.v1.Hello
@@ -3151,50 +3398,53 @@ var file_hearth_agent_v1_agent_proto_depIdxs = []int32{
 	25, // 6: hearth.agent.v1.AgentMessage.log_lines:type_name -> hearth.agent.v1.LogLines
 	32, // 7: hearth.agent.v1.AgentMessage.shell_event:type_name -> hearth.agent.v1.ShellEvent
 	36, // 8: hearth.agent.v1.AgentMessage.scan_result:type_name -> hearth.agent.v1.ScanResult
-	11, // 9: hearth.agent.v1.HubMessage.welcome:type_name -> hearth.agent.v1.Welcome
-	14, // 10: hearth.agent.v1.HubMessage.exec_request:type_name -> hearth.agent.v1.ExecRequest
-	27, // 11: hearth.agent.v1.HubMessage.ping:type_name -> hearth.agent.v1.Ping
-	17, // 12: hearth.agent.v1.HubMessage.probe_request:type_name -> hearth.agent.v1.ProbeRequest
-	22, // 13: hearth.agent.v1.HubMessage.log_request:type_name -> hearth.agent.v1.LogRequest
-	24, // 14: hearth.agent.v1.HubMessage.log_cancel:type_name -> hearth.agent.v1.LogCancel
-	28, // 15: hearth.agent.v1.HubMessage.shell_request:type_name -> hearth.agent.v1.ShellRequest
-	35, // 16: hearth.agent.v1.HubMessage.scan_request:type_name -> hearth.agent.v1.ScanRequest
-	2,  // 17: hearth.agent.v1.Hello.protocol_version:type_name -> hearth.agent.v1.ProtocolVersion
-	5,  // 18: hearth.agent.v1.Hello.disks:type_name -> hearth.agent.v1.Disk
-	6,  // 19: hearth.agent.v1.Hello.interfaces:type_name -> hearth.agent.v1.NetworkInterface
-	4,  // 20: hearth.agent.v1.Hello.ceiling:type_name -> hearth.agent.v1.Ceiling
-	39, // 21: hearth.agent.v1.Heartbeat.ts:type_name -> google.protobuf.Timestamp
-	40, // 22: hearth.agent.v1.Heartbeat.uptime:type_name -> google.protobuf.Duration
-	9,  // 23: hearth.agent.v1.MetricsBatch.samples:type_name -> hearth.agent.v1.MetricSample
-	38, // 24: hearth.agent.v1.MetricSample.labels:type_name -> hearth.agent.v1.MetricSample.LabelsEntry
-	39, // 25: hearth.agent.v1.MetricSample.ts:type_name -> google.protobuf.Timestamp
-	39, // 26: hearth.agent.v1.Welcome.server_time:type_name -> google.protobuf.Timestamp
-	40, // 27: hearth.agent.v1.Welcome.heartbeat_interval:type_name -> google.protobuf.Duration
-	40, // 28: hearth.agent.v1.ExecRequest.timeout:type_name -> google.protobuf.Duration
-	15, // 29: hearth.agent.v1.ExecRequest.command:type_name -> hearth.agent.v1.Command
-	16, // 30: hearth.agent.v1.ExecRequest.restart:type_name -> hearth.agent.v1.RestartService
-	40, // 31: hearth.agent.v1.ProbeRequest.timeout:type_name -> google.protobuf.Duration
-	18, // 32: hearth.agent.v1.ProbeRequest.http:type_name -> hearth.agent.v1.HTTPProbe
-	19, // 33: hearth.agent.v1.ProbeRequest.tcp:type_name -> hearth.agent.v1.TCPProbe
-	20, // 34: hearth.agent.v1.ProbeRequest.dns:type_name -> hearth.agent.v1.DNSProbe
-	23, // 35: hearth.agent.v1.LogRequest.source:type_name -> hearth.agent.v1.LogSource
-	26, // 36: hearth.agent.v1.LogLines.lines:type_name -> hearth.agent.v1.LogLine
-	39, // 37: hearth.agent.v1.LogLine.ts:type_name -> google.protobuf.Timestamp
-	29, // 38: hearth.agent.v1.ShellRequest.open:type_name -> hearth.agent.v1.ShellOpen
-	30, // 39: hearth.agent.v1.ShellRequest.resize:type_name -> hearth.agent.v1.TerminalSize
-	31, // 40: hearth.agent.v1.ShellRequest.close:type_name -> hearth.agent.v1.ShellClose
-	30, // 41: hearth.agent.v1.ShellOpen.size:type_name -> hearth.agent.v1.TerminalSize
-	33, // 42: hearth.agent.v1.ShellEvent.started:type_name -> hearth.agent.v1.ShellStarted
-	34, // 43: hearth.agent.v1.ShellEvent.exited:type_name -> hearth.agent.v1.ShellExited
-	40, // 44: hearth.agent.v1.ScanRequest.timeout:type_name -> google.protobuf.Duration
-	37, // 45: hearth.agent.v1.ScanResult.hosts:type_name -> hearth.agent.v1.ScannedHost
-	0,  // 46: hearth.agent.v1.AgentService.Connect:input_type -> hearth.agent.v1.AgentMessage
-	1,  // 47: hearth.agent.v1.AgentService.Connect:output_type -> hearth.agent.v1.HubMessage
-	47, // [47:48] is the sub-list for method output_type
-	46, // [46:47] is the sub-list for method input_type
-	46, // [46:46] is the sub-list for extension type_name
-	46, // [46:46] is the sub-list for extension extendee
-	0,  // [0:46] is the sub-list for field type_name
+	38, // 9: hearth.agent.v1.AgentMessage.net_edges:type_name -> hearth.agent.v1.NetEdges
+	11, // 10: hearth.agent.v1.HubMessage.welcome:type_name -> hearth.agent.v1.Welcome
+	14, // 11: hearth.agent.v1.HubMessage.exec_request:type_name -> hearth.agent.v1.ExecRequest
+	27, // 12: hearth.agent.v1.HubMessage.ping:type_name -> hearth.agent.v1.Ping
+	17, // 13: hearth.agent.v1.HubMessage.probe_request:type_name -> hearth.agent.v1.ProbeRequest
+	22, // 14: hearth.agent.v1.HubMessage.log_request:type_name -> hearth.agent.v1.LogRequest
+	24, // 15: hearth.agent.v1.HubMessage.log_cancel:type_name -> hearth.agent.v1.LogCancel
+	28, // 16: hearth.agent.v1.HubMessage.shell_request:type_name -> hearth.agent.v1.ShellRequest
+	35, // 17: hearth.agent.v1.HubMessage.scan_request:type_name -> hearth.agent.v1.ScanRequest
+	2,  // 18: hearth.agent.v1.Hello.protocol_version:type_name -> hearth.agent.v1.ProtocolVersion
+	5,  // 19: hearth.agent.v1.Hello.disks:type_name -> hearth.agent.v1.Disk
+	6,  // 20: hearth.agent.v1.Hello.interfaces:type_name -> hearth.agent.v1.NetworkInterface
+	4,  // 21: hearth.agent.v1.Hello.ceiling:type_name -> hearth.agent.v1.Ceiling
+	42, // 22: hearth.agent.v1.Heartbeat.ts:type_name -> google.protobuf.Timestamp
+	43, // 23: hearth.agent.v1.Heartbeat.uptime:type_name -> google.protobuf.Duration
+	9,  // 24: hearth.agent.v1.MetricsBatch.samples:type_name -> hearth.agent.v1.MetricSample
+	41, // 25: hearth.agent.v1.MetricSample.labels:type_name -> hearth.agent.v1.MetricSample.LabelsEntry
+	42, // 26: hearth.agent.v1.MetricSample.ts:type_name -> google.protobuf.Timestamp
+	42, // 27: hearth.agent.v1.Welcome.server_time:type_name -> google.protobuf.Timestamp
+	43, // 28: hearth.agent.v1.Welcome.heartbeat_interval:type_name -> google.protobuf.Duration
+	43, // 29: hearth.agent.v1.ExecRequest.timeout:type_name -> google.protobuf.Duration
+	15, // 30: hearth.agent.v1.ExecRequest.command:type_name -> hearth.agent.v1.Command
+	16, // 31: hearth.agent.v1.ExecRequest.restart:type_name -> hearth.agent.v1.RestartService
+	43, // 32: hearth.agent.v1.ProbeRequest.timeout:type_name -> google.protobuf.Duration
+	18, // 33: hearth.agent.v1.ProbeRequest.http:type_name -> hearth.agent.v1.HTTPProbe
+	19, // 34: hearth.agent.v1.ProbeRequest.tcp:type_name -> hearth.agent.v1.TCPProbe
+	20, // 35: hearth.agent.v1.ProbeRequest.dns:type_name -> hearth.agent.v1.DNSProbe
+	23, // 36: hearth.agent.v1.LogRequest.source:type_name -> hearth.agent.v1.LogSource
+	26, // 37: hearth.agent.v1.LogLines.lines:type_name -> hearth.agent.v1.LogLine
+	42, // 38: hearth.agent.v1.LogLine.ts:type_name -> google.protobuf.Timestamp
+	29, // 39: hearth.agent.v1.ShellRequest.open:type_name -> hearth.agent.v1.ShellOpen
+	30, // 40: hearth.agent.v1.ShellRequest.resize:type_name -> hearth.agent.v1.TerminalSize
+	31, // 41: hearth.agent.v1.ShellRequest.close:type_name -> hearth.agent.v1.ShellClose
+	30, // 42: hearth.agent.v1.ShellOpen.size:type_name -> hearth.agent.v1.TerminalSize
+	33, // 43: hearth.agent.v1.ShellEvent.started:type_name -> hearth.agent.v1.ShellStarted
+	34, // 44: hearth.agent.v1.ShellEvent.exited:type_name -> hearth.agent.v1.ShellExited
+	43, // 45: hearth.agent.v1.ScanRequest.timeout:type_name -> google.protobuf.Duration
+	37, // 46: hearth.agent.v1.ScanResult.hosts:type_name -> hearth.agent.v1.ScannedHost
+	39, // 47: hearth.agent.v1.NetEdges.neighbors:type_name -> hearth.agent.v1.Neighbor
+	40, // 48: hearth.agent.v1.NetEdges.connections:type_name -> hearth.agent.v1.Connection
+	0,  // 49: hearth.agent.v1.AgentService.Connect:input_type -> hearth.agent.v1.AgentMessage
+	1,  // 50: hearth.agent.v1.AgentService.Connect:output_type -> hearth.agent.v1.HubMessage
+	50, // [50:51] is the sub-list for method output_type
+	49, // [49:50] is the sub-list for method input_type
+	49, // [49:49] is the sub-list for extension type_name
+	49, // [49:49] is the sub-list for extension extendee
+	0,  // [0:49] is the sub-list for field type_name
 }
 
 func init() { file_hearth_agent_v1_agent_proto_init() }
@@ -3212,6 +3462,7 @@ func file_hearth_agent_v1_agent_proto_init() {
 		(*AgentMessage_LogLines)(nil),
 		(*AgentMessage_ShellEvent)(nil),
 		(*AgentMessage_ScanResult)(nil),
+		(*AgentMessage_NetEdges)(nil),
 	}
 	file_hearth_agent_v1_agent_proto_msgTypes[1].OneofWrappers = []any{
 		(*HubMessage_Welcome)(nil),
@@ -3250,7 +3501,7 @@ func file_hearth_agent_v1_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_hearth_agent_v1_agent_proto_rawDesc), len(file_hearth_agent_v1_agent_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   39,
+			NumMessages:   42,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

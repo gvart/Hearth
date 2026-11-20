@@ -75,14 +75,15 @@ func newAPI(cfg Config) *api {
 	a := &api{
 		store: cfg.Store, policy: cfg.Policy, registry: reg, log: cfg.Log, now: time.Now, keepalive: sseKeepalive,
 		ca: cfg.CA, agentHosts: cfg.AgentHosts, agentPort: agentPort, httpPort: httpPort, ready: cfg.Ready, readyWait: readyWait,
-		prom:    cfg.Prometheus,
-		beszel:  cfg.Beszel,
-		talos:   cfg.Talos,
-		kube:    cfg.Kube,
-		proxmox: cfg.Proxmox,
-		plugins: cfg.Plugins,
-		notify:  cfg.Notify,
-		verify:  newVerifyGate(), verifyWait: verifyWait, verifyPassword: verifier,
+		prom:     cfg.Prometheus,
+		netEdges: cfg.NetEdges,
+		beszel:   cfg.Beszel,
+		talos:    cfg.Talos,
+		kube:     cfg.Kube,
+		proxmox:  cfg.Proxmox,
+		plugins:  cfg.Plugins,
+		notify:   cfg.Notify,
+		verify:   newVerifyGate(), verifyWait: verifyWait, verifyPassword: verifier,
 		logins:        newLoginLimiter(time.Now, loginBurst, loginEvery),
 		metrics:       cfg.Metrics,
 		drift:         cfg.ConfigDrift,
@@ -154,6 +155,7 @@ func (a *api) routes() http.Handler {
 	a.approvalLinkRoutes(mux)
 	a.runbookRoutes(mux)
 	a.telemetryRoutes(mux)
+	a.netEdgeRoutes(mux)
 	a.panelRoutes(mux)
 	a.guestRoutes(mux, ui)
 	a.dashboardRoutes(mux)
@@ -221,6 +223,8 @@ type api struct {
 	talos TalosSnapshotter
 	// metrics is Config.Metrics; nil when the hub keeps no metrics.
 	metrics *metrics.Store
+	// netEdges serves the network edges agents report; nil serves none.
+	netEdges *NetEdges
 	// kube is Config.Kube; nil when Kubernetes clusters are not served.
 	kube *kubernetes.Manager
 	// proxmox is Config.Proxmox; nil when Proxmox servers are not served.

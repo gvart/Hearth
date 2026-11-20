@@ -40,7 +40,9 @@ func newAgentRunCmd() *cobra.Command {
 			"--allow-shell lets an admin open a shell here from the web UI's terminal, as this agent's user\n" +
 			"(Linux and macOS).\n" +
 			"--allow-scan lets the hub's network discovery sweep a subnet from here (--discover-subnet\n" +
-			"CIDR@device on the hub), for a subnet the hub is not on; none may be swept without it.",
+			"CIDR@device on the hub), for a subnet the hub is not on; none may be swept without it.\n" +
+			"--allow-net-edges reports this device's neighbours and established TCP connections to the hub\n" +
+			"every minute (Linux); connections say who talks to whom, so nothing is reported without it.",
 		Example: "  hearth agent run --allow-restart systemd:pihole-FTL.service --allow-restart docker:jellyfin \\\n" +
 			"    --allow-exec /usr/bin/df --allow-logs 'systemd:pihole-FTL.service' --allow-logs 'docker:*'",
 		Args: cobra.NoArgs,
@@ -59,6 +61,9 @@ func newAgentRunCmd() *cobra.Command {
 				if err := agent.ParseRestart(e); err != nil {
 					return fmt.Errorf("--allow-restart: %w", err)
 				}
+			}
+			if ceiling.NetEdges && !agent.NetEdgesSupported {
+				return errors.New("--allow-net-edges: network edges are only reported on Linux")
 			}
 			if ceiling.Shell && !agent.ShellSupported {
 				return errors.New("--allow-shell: interactive shells are not supported on this platform")
@@ -90,6 +95,8 @@ func newAgentRunCmd() *cobra.Command {
 	cmd.Flags().StringArrayVar(&ceiling.Scan, "allow-scan", nil,
 		"IPv4 subnet the hub's network discovery may sweep from this device, e.g. 10.0.5.0/24 (or a part of it);\n"+
 			"repeatable (default: none)")
+	cmd.Flags().BoolVar(&ceiling.NetEdges, "allow-net-edges", false,
+		"report this device's neighbour table and a summary of its established TCP connections to the hub (Linux)")
 	return cmd
 }
 

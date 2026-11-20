@@ -1,0 +1,35 @@
+/* The drawer's "Neighbors and connections" panel. */
+.net-edges {
+  width: 100%;
+}
+
+.net-edges td.mono {
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
+.net-edges .peer {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.net-edges .addr {
+  display: block;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.net-edges-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0.75rem 0 0.25rem;
+}
+
+.net-edges-head h4 {
+  margin: 0;
+}

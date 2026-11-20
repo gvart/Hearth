@@ -58,6 +58,8 @@ type AgentStream struct {
 	agents *Agents
 	// metrics, when set, records the agents' MetricsBatches.
 	metrics *metrics.Store
+	// netEdges, when set, records the agents' NetEdges.
+	netEdges *NetEdges
 }
 
 var _ agentv1connect.AgentServiceHandler = (*AgentStream)(nil)
@@ -134,6 +136,7 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 	}
 	// From here on only Agents.Exec, Agents.Probe and Shells send on the stream.
 	sess := s.agents.attach(deviceID, hello, stream.Send, streamAbort(ctx))
+	s.forgetNetEdges(deviceID, hello.GetCeiling())
 	defer s.agents.detach(deviceID, sess)
 
 	for {
@@ -175,6 +178,7 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 		case *agentv1.AgentMessage_Facts:
 			log.DebugContext(ctx, "facts")
 			sess.setCeiling(p.Facts.GetCeiling())
+			s.forgetNetEdges(deviceID, p.Facts.GetCeiling())
 			if err := s.registry.ReportFacts(ctx, deviceID, p.Facts); err != nil {
 				log.WarnContext(ctx, "record facts", "err", err)
 			}
@@ -190,6 +194,8 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 			sess.deliverLogs(p.LogLines)
 		case *agentv1.AgentMessage_ShellEvent:
 			sess.deliverShell(p.ShellEvent)
+		case *agentv1.AgentMessage_NetEdges:
+			s.recordNetEdges(ctx, log, deviceID, sess, p.NetEdges)
 		case *agentv1.AgentMessage_Hello:
 			return connect.NewError(connect.CodeInvalidArgument, errors.New("duplicate Hello"))
 		}

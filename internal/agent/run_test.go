@@ -48,6 +48,8 @@ type restartableHub struct {
 	agents *hub.Agents
 	// metrics records the agents' host metrics.
 	metrics *metrics.Store
+	// netEdges keeps the agents' network edges.
+	netEdges *hub.NetEdges
 }
 
 func startRestartableHub(t *testing.T, heartbeat time.Duration) *restartableHub {
@@ -97,13 +99,15 @@ func startClusterHub(t *testing.T, heartbeat time.Duration, peer *restartableHub
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = ms.Close() })
+	netEdges := hub.NewNetEdges()
 	h := &restartableHub{
-		t:       t,
-		agents:  agents,
-		metrics: ms,
+		t:        t,
+		agents:   agents,
+		metrics:  ms,
+		netEdges: netEdges,
 		handler: hub.NewHandler(hub.Config{
 			Store: st, CA: ca, Policy: policy.New(st.Audit()), Log: log, HeartbeatInterval: heartbeat,
-			Leadership: lead, Agents: agents, Metrics: ms,
+			Leadership: lead, Agents: agents, Metrics: ms, NetEdges: netEdges,
 		}),
 		tls:  hub.TLSConfigFunc(ca, cert.Load),
 		st:   st,

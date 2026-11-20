@@ -27,6 +27,7 @@ message AgentMessage {
     LogLines log_lines = 7;
     ShellEvent shell_event = 8;
     ScanResult scan_result = 9;
+    NetEdges net_edges = 10;
   }
 }
 
@@ -99,6 +100,11 @@ message Ceiling {
   // them. Empty allows no scan. Reported by agents of protocol minor 7 and
   // later.
   repeated string scan = 6;
+  // net_edges lets the agent report its network edges (NetEdges): its
+  // neighbour table and a summary of its established TCP connections.
+  // Connections say who talks to whom, so it is off unless the operator
+  // turns it on. Reported by agents of protocol minor 8 and later.
+  bool net_edges = 7;
 }
 
 // Disk is a mounted filesystem.
@@ -427,4 +433,42 @@ message ScannedHost {
   string ip = 2;
   // hostname is from mDNS or LAN reverse DNS; empty if neither named it.
   string hostname = 3;
+}
+
+// NetEdges is what a device sees of its network, sent by agents of protocol
+// minor 8 and later whose ceiling allows net_edges: shortly after the
+// stream opens, then every minute. Each message replaces the last. The hub
+// resolves the peers to devices and network hosts.
+message NetEdges {
+  // neighbors are the complete entries of the device's IPv4 neighbour (ARP)
+  // table.
+  repeated Neighbor neighbors = 1;
+  // connections summarise the device's established TCP connections, one per
+  // peer address, port and direction, loopback excluded.
+  repeated Connection connections = 2;
+  // connections_dropped counts the established connections left out
+  // because the device holds more groups than the agent keeps.
+  uint32 connections_dropped = 3;
+}
+
+// Neighbor is an entry of a neighbour table.
+message Neighbor {
+  string ip = 1;
+  // mac is lower-case and colon-separated.
+  string mac = 2;
+}
+
+// Connection is a group of established TCP connections with one peer.
+message Connection {
+  // peer_ip is the remote address; an IPv4-mapped IPv6 address is sent as
+  // IPv4.
+  string peer_ip = 1;
+  // port is the service port: the peer's port of an outbound connection,
+  // the device's own listening port of an inbound one.
+  uint32 port = 2;
+  // inbound is set when the peer connected to a port the device listens
+  // on.
+  bool inbound = 3;
+  // count is how many such connections are established.
+  uint32 count = 4;
 }
