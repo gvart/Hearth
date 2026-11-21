@@ -66,6 +66,13 @@ To add a hub, create a join token on a master's host while its hub runs:
 hearth cluster token create --hub-url https://hub-a.lan:7443
 ```
 
+Or click **Add hub** on the **Cluster** page of a master's UI (`POST /api/v1/cluster/tokens` with
+`{"ttl": "15m", "allow_roles": ["storage", "master"]}`): it confirms that the token lets a new hub
+receive the CA key, asks for the admin password again, then shows the token once, inside the command
+to copy. The roles only set `--allow-roles` in that command; the token does not limit them. Both
+ways are the policy action `cluster.token.create` (dangerous, by `admin` or `web`), audited with the
+TTL and never the token, which is stored only as a hash and cannot be shown again.
+
 It prints the token and the command for the new hub. The token is single use and short lived, and
 belongs to the master that created it: join through that master. On the new hub, with an **empty**
 data dir:
@@ -342,6 +349,16 @@ removed a master whose data dir you could not wipe, or as routine hygiene.
 Run the commands on a master's host. The running hub decides them with its policy engine, so a master
 that is cut off refuses them.
 
+The **Cluster** page of a master's UI does the same in its **Hub CA** section: the stage, the owner,
+each member's progress (and who a finish still waits for), the agents not renewed yet, and **Start
+rotation**, **Finish rotation** and **Abort rotation** (`GET /api/v1/cluster/ca`,
+`POST /api/v1/cluster/ca/rotate|finish|abort`). Each step says what it does, asks for the admin
+password again, and runs on the master that received it under the same rules as the CLI: the owner
+drives it, another master refuses naming the owner while the owner is alive, and an isolated master
+refuses. A step refused there is audited as a denial with its reason. `--accept-unpinned` and
+`--force` stay CLI-only. Use the plain HTTP UI (port 7080) for the finish, or fetch the new CA from
+`/ca.crt` after it: a browser that trusted only the old CA stops trusting the hub's HTTPS.
+
 1. **Start:**
 
    ```sh
@@ -430,8 +447,8 @@ match the certificate pinned when the rotation started). A leaked database also 
 and Proxmox credentials sealed in it: rotate those at their source, as re-sealing them with a new key
 does not make the leaked copies useless.
 
-The commands are policy actions run by the local admin, `cluster.ca.rotate`, `cluster.ca.finish` and
-`cluster.ca.abort` (dangerous), and audited. A member fetching the new key or a node certificate of
+The commands are policy actions run by the local admin or the web UI, `cluster.ca.rotate`,
+`cluster.ca.finish` and `cluster.ca.abort` (dangerous), and audited. A member fetching the new key or a node certificate of
 the new CA is the action `cluster.ca.fetch_key`, decided and audited by the master that serves it,
 refusals included (at most one entry a minute per caller for refusals before the decision, counting
 those left out).
