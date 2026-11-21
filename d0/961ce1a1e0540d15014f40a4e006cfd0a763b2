@@ -1,0 +1,75 @@
+internal/store/readnewest_test.go
+  s_87f1c7baee7d5a::t_b3122001288465 1-272
+internal/store/remote.go
+  s_87f1c7baee7d5a::t_e7773e12e21e50 261,263-289
+  s_87f1c7baee7d5a::t_f580e6bd3f5f44 22-24,262
+internal/store/approvallinks.go
+  s_87f1c7baee7d5a::t_b9254c28d7c37e 57
+internal/store/approvals.go
+  s_87f1c7baee7d5a::t_b6689a0fb05b57 108,112,115-122,131,146,159-161,170,177-178,186-205
+internal/store/certs.go
+  s_87f1c7baee7d5a::t_da7e8aec635028 49-50
+internal/store/devices.go
+  s_87f1c7baee7d5a::t_4207cf1663ab4b 65
+internal/store/masters.go
+  s_87f1c7baee7d5a::t_0ee0aa9e4bb9bf 174-175
+internal/store/panels.go
+  s_87f1c7baee7d5a::t_eefd6eb677b69e 106,110,113-120,125,135,143,150-151,159-173
+internal/store/pins.go
+  s_87f1c7baee7d5a::t_a9e2627ad8ee92 74-75
+internal/store/shard_test.go
+  s_87f1c7baee7d5a::t_af728ce38a42c8 224-227,237-247
+  s_87f1c7baee7d5a::t_6e1784eadb7c07 99,109
+docs/cluster.md
+  s_87f1c7baee7d5a::t_80031aa328028b 116-119
+internal/store/command_test.go
+  s_87f1c7baee7d5a::t_7a06e1b105c2f7 277,280,298
+internal/store/hubs.go
+  s_87f1c7baee7d5a::t_744a07dfbf36c9 13-15
+internal/store/applier.go
+  s_87f1c7baee7d5a::t_d29c4ed4079c6f 21-24,84-87,108-112,115,125-128
+internal/store/hubcerts_test.go
+  s_87f1c7baee7d5a::t_8f81aaf3ee1d5a 127
+internal/store/carotation.go
+  s_87f1c7baee7d5a::t_4a4b0cc0e9bf5e 56,112-113
+internal/store/auditop_test.go
+  s_87f1c7baee7d5a::t_7315ac00d95460 216,280
+internal/store/runbookruns.go
+  s_87f1c7baee7d5a::t_cc5f1454a9ffe8 255,266
+internal/store/snapshot_test.go
+  s_87f1c7baee7d5a::t_da8e01e364cfbc 26-28,30,33-34,37-46,48-50,52,55,63-66,69,72-73,84,97-98,101-102
+internal/pki/token.go
+  s_87f1c7baee7d5a::t_290a735138a096 66
+internal/store/partition.go
+  s_87f1c7baee7d5a::t_a30140cfe57847 287,403
+internal/store/version_test.go
+  s_87f1c7baee7d5a::t_4cecee0dd1982f 803
+internal/store/schema_test.go
+  s_87f1c7baee7d5a::t_4508e89fe96041 27-28,75-76,94,117-119,125-127,129,131,134-135,138,140-141,145-148,150,152-154,174,202
+internal/store/kube_test.go
+  s_87f1c7baee7d5a::t_6fa1f10d72d178 86
+internal/store/command.go
+  s_87f1c7baee7d5a::t_b69986e28ab126 16-18,49,213-216,277,518-520
+internal/store/version.go
+  s_87f1c7baee7d5a::t_4434cb6485885d 31-36,65
+internal/store/schema.go
+  s_87f1c7baee7d5a::t_86b37be73bc857 12,14-19,21-23,32
+internal/store/snapshot.go
+  s_87f1c7baee7d5a::t_408426378735d8 79,81
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d0961ce1a1e0540d15014f40a4e006cfd0a763b2",
+  "prompts": {},
+  "sessions": {
+    "s_87f1c7baee7d5a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "45cc2cdf-3130-4caa-8cb4-8cb365d2150d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
