@@ -422,9 +422,10 @@ func (r *Replicator) applyRouted(ctx context.Context, cmd store.Command) (store.
 		return r.applyHere(ctx, cmd, route, v)
 	}
 	// RouteKey: on this member if it takes the write, else forwarded to
-	// the first live one that does.
+	// the first live one that does. A First command runs on the first live
+	// replica, and on the next ones only if that one cannot be reached.
 	live, _ := v.targets(store.BucketOf(store.Token(route.Key)))
-	if slices.Contains(live, v.self) {
+	if (route.First && len(live) > 0 && live[0] == v.self) || (!route.First && slices.Contains(live, v.self)) {
 		return r.applyHere(ctx, cmd, route, v)
 	}
 	if len(live) < writeQuorum(route.Critical, v.n) {

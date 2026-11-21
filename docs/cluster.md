@@ -116,10 +116,10 @@ dir and join it again.
   runbook, an action's audit entries with each other. Small global tables (the admin password, hub
   certificates, configuration documents, Kubernetes and Proxmox connections, network hosts, telemetry
   settings) are on every storage member.
-- **Writes.** Audit entries, certificates, revocations, tokens, sessions, approvals and configuration
-  documents are **critical**: they need W = min(2, N) replicas and fail at once with 503
-  `cluster_unavailable` when fewer are reachable. Other writes (presence, facts, scans, run history)
-  need one replica and reach the others in the background. A replica that is down is replaced by the
+- **Writes.** Audit entries, certificates, revocations, tokens, sessions, approvals, configuration
+  documents and runbook runs are **critical**: they need W = min(2, N) replicas and fail at once with 503
+  `cluster_unavailable` when fewer are reachable. Other writes (presence, facts, scans, automation run
+  history) need one replica and reach the others in the background. A replica that is down is replaced by the
   next live member, and gets the write later from a hint (kept in `hints.db`, bounded).
 - **Reads.** A read by key goes to the nearest live replica (R = 1). When that replica has no copy of
   the row at all (it missed the write while it was down), a sign-in session, certificate, approval or
@@ -128,9 +128,12 @@ dir and join it again.
   A write that depends on rows it reads first copies their newest version from the other live members. These
   writes are pinning or revoking a device's certificates, revoking hub certificates, consuming a token or
   approval link, deciding an approval, signing out, revoking an MCP or dashboard token or a panel link,
-  starting or advancing a CA rotation, and the first import or a delete of configuration documents. A member
+  starting or advancing a CA rotation, the first import or a delete of configuration documents, and saving a
+  runbook run. A member
   that missed a pin, a certificate, a decision or a session while it was down still decides on the newest copy.
   A password reset runs on every storage member, so it ends every session, wherever the session is stored.
+  A runbook run is saved only from the version it was read at, on the run's first live replica, so of two
+  saves from one version (two masters, or a master and an operator) exactly one is taken.
   Members compare digests of the rows
   they share and copy what differs (anti-entropy), so replicas converge after an outage or a split.
 - **Conflicts.** Every row carries a hybrid logical clock (HLC) stamp and the member that wrote it.
@@ -528,6 +531,10 @@ the time it was made and lands only once. If a spooled entry cannot be read back
 - `hearth` commands run on a member's host (`hearth token create`, `hearth cluster token create`) are
   not refused when that master is cut off: the 60-second fail-closed rule covers the hub's API, agents,
   MCP and automations.
+- **Runbook runs across a split.** Each side of a split owns the run on its own ring, and a save decides on
+  the newest copy its side reaches. A side that reaches two replicas but none holding the newest copy
+  can run a step the other side already ran; when the split heals, the later save wins, even if it is
+  behind. A side that reaches fewer than two storage members records no step, so runs nothing.
 - An approval link opens on the master that owns the approval. With `approval_notify.url` set to one
   fixed address, a link for an approval owned by another master answers 409 `not_owner`, naming the
   master to open it on.

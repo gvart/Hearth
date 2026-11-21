@@ -79,6 +79,7 @@ var criticalTables = map[string]bool{
 	"approvals":        true,
 	"approval_links":   true,
 	"panel_links":      true,
+	"runbook_runs":     true,
 	"sessions":         true,
 	"admin":            true,
 	"ca_rotations":     true,
@@ -257,6 +258,10 @@ type Route struct {
 	Key string
 	// Critical commands wait for W = min(2, N) replicas.
 	Critical bool
+	// First commands of a RouteKey run on the first live replica of their
+	// key, even on a member that is another replica: of two such commands
+	// that read and write one row, one replica runs both, in turn.
+	First bool
 }
 
 // ErrNoRoute refuses a command that has no place in a sharded cluster.
@@ -359,9 +364,13 @@ func RouteOf(cmd Command) (Route, error) {
 	case RecordAutomationRun:
 		return key(c.AutomationID, false)
 	case CreateRunbookRun:
-		return key(c.RunbookID, false)
+		return key(c.RunbookID, true)
 	case SaveRunbookRun:
-		return key(c.RunbookID, false)
+		// Its version check runs on one replica: two saves from one
+		// version, from two masters, are decided there and one is refused.
+		r, err := key(c.RunbookID, true)
+		r.First = true
+		return r, err
 	case AddKubeCluster, RemoveKubeCluster, AddProxmoxServer, RemoveProxmoxServer,
 		SetTelemetry, MarkTelemetrySent, RecordNetworkScan, SetNetworkHostState, RecordNetworkImport:
 		return global(false)

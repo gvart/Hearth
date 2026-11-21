@@ -31,7 +31,6 @@ var readsExempt = map[string]string{ //nolint:gosec // op names and reasons, no 
 	"remove_proxmox_server":  "a missed row is refused with not found, retried; the delete is a tombstone",
 	"mark_telemetry_sent":    "telemetry state is soft",
 	"create_runbook_run":     "the unresolved-runs cap is a soft limit",
-	"save_runbook_run":       "run state is written with one replica; its version check holds on the replica that runs both saves (see SaveRunbookRun)",
 	"revoke_ca_certs":        "runs on every storage member, each on the rows it holds",
 }
 
