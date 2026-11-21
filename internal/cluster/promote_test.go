@@ -379,6 +379,32 @@ func TestDemoteStorageDrains(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	holds := func(m, id string) bool {
+		rows, err := c[m].st.ReadLocal(ctx, `SELECT 1 FROM devices WHERE id = ?`, store.Values{id})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(rows.Vals) > 0
+	}
+	// A device write waits for its coordinator alone and reaches its
+	// second replica (or a stand-in for one the gossip suspects) in the
+	// background. c hands off the rows it holds, not writes still on their
+	// way to it, so let every write have its two copies before the
+	// demotion: a row c holds then goes to a and b, any other is on both.
+	waitUntil(t, 10*time.Second, "every device on two members", func() bool {
+		for i := range 30 {
+			id, copies := fmt.Sprintf("dev-%02d", i), 0
+			for _, m := range []string{"a", "b", "c"} {
+				if holds(m, id) {
+					copies++
+				}
+			}
+			if copies < 2 {
+				return false
+			}
+		}
+		return true
+	})
 	got, err := c["a"].node.Demote(ctx, "c", RoleStorage)
 	if err != nil {
 		t.Fatal(err)
@@ -392,11 +418,7 @@ func TestDemoteStorageDrains(t *testing.T) {
 	for i := range 30 {
 		id := fmt.Sprintf("dev-%02d", i)
 		for _, m := range []string{"a", "b"} {
-			rows, err := c[m].st.ReadLocal(ctx, `SELECT 1 FROM devices WHERE id = ?`, store.Values{id})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if len(rows.Vals) == 0 {
+			if !holds(m, id) {
 				t.Fatalf("%s lacks %s after c's demotion", m, id)
 			}
 		}
