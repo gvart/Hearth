@@ -3,15 +3,18 @@ import { useClusterCA, useClusterChange, useClusterMembers, type Removal, type R
 import { ApiError } from '../api/client.ts';
 import {
   actionEffect,
+  masterCount,
   memberActions,
   memberState,
   refusalMessage,
+  roleSlots,
   type ClusterAction,
   type ClusterMember,
 } from '../cluster.ts';
 import { AddHubDialog } from './AddHubDialog.tsx';
 import { ClusterCASection } from './ClusterCA.tsx';
 import { Modal } from './Modal.tsx';
+import { Meter } from './Meter.tsx';
 import './ClusterPage.css';
 
 /** The members of the AP cluster, with their roles, and the role changes; the hub CA and new hubs. */
@@ -58,33 +61,50 @@ export function ClusterPage() {
       ) : status.isPending ? (
         <p className="muted">Loading the cluster…</p>
       ) : (
-        <div className="table-wrap">
-          <table className="devices kube cluster-table">
-            <thead>
-              <tr>
-                <th>Member</th>
-                <th>Roles</th>
-                <th className="cluster-wide">Allowed roles</th>
-                <th>State</th>
-                <th>
-                  <span className="sr-only">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {members.map((m) => (
-                <MemberRow
-                  key={m.id}
-                  member={m}
-                  self={data?.node_id ?? ''}
-                  onAction={(action) => {
-                    setPending({ member: m, action });
-                  }}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <>
+          <dl className="cluster-facts">
+            <div className="cluster-fact">
+              <dt>Masters</dt>
+              <dd className="cluster-fact-n">{masterCount(members)}</dd>
+              <dd className="muted small">Serve the UI, the API and agents. No leader: open any of them.</dd>
+            </div>
+            <div className="cluster-fact">
+              <dt>Storage members</dt>
+              <dd className="cluster-fact-n">{data?.storage_members ?? 0}</dd>
+              <dd className="muted small">Each keeps a share of the store.</dd>
+            </div>
+            <div className="cluster-fact">
+              <dt>Copies of each row</dt>
+              <dd className="cluster-fact-n">{data?.replicas ?? 0}</dd>
+              <dd className="muted small">How many storage members hold every row (N).</dd>
+            </div>
+            <div className="cluster-fact">
+              <dt>Survives losing a hub</dt>
+              <dd>
+                <span className={`pill ${data?.highly_available ? 'pill-ok' : 'pill-warn'}`}>
+                  {data?.highly_available ? 'yes' : 'not yet'}
+                </span>
+              </dd>
+              <dd className="muted small">
+                {data?.highly_available
+                  ? 'Any one hub can fail and nothing is lost.'
+                  : 'It needs 2 storage members and 2 copies of each row.'}
+              </dd>
+            </div>
+          </dl>
+          <div className="member-grid">
+            {members.map((m) => (
+              <MemberCard
+                key={m.id}
+                member={m}
+                self={data?.node_id ?? ''}
+                onAction={(action) => {
+                  setPending({ member: m, action });
+                }}
+              />
+            ))}
+          </div>
+        </>
       )}
 
       <ClusterCASection />
@@ -110,7 +130,8 @@ export function ClusterPage() {
   );
 }
 
-function MemberRow({
+/** A member as a card: who it is, its state, and a slot for each of the two roles. */
+function MemberCard({
   member: m,
   self,
   onAction,
@@ -120,49 +141,58 @@ function MemberRow({
   onAction: (a: ClusterAction) => void;
 }) {
   const state = memberState(m);
-  const roles = m.roles.filter((r) => r !== 'node');
+  const remove = memberActions(m, self).find((a) => a.op === 'remove');
   return (
-    <tr>
-      <td>
-        <span className="name">
-          {m.id}
-          {m.id === self ? <span className="muted small"> (this hub)</span> : null}
+    <section className="panel-card member-card" aria-label={m.id}>
+      <div className="panel-card-head">
+        <div className="member-id">
+          <h2 className="mono">{m.id}</h2>
+          <span className="cluster-meta mono">{m.address}</span>
+        </div>
+        <span className="member-state">
+          {m.id === self ? <span className="badge badge-quiet">this hub</span> : null}
+          <span className={`pill pill-${state.tone}`}>{state.label}</span>
         </span>
-        <span className="cluster-meta mono">{m.address}</span>
-      </td>
-      <td>
-        <span className="chips">
-          {roles.length === 0 ? <span className="muted">none</span> : null}
-          {roles.map((r) => (
-            <span key={r} className="chip">
-              {r}
-            </span>
-          ))}
-        </span>
-      </td>
-      <td className="cluster-wide muted">{m.allowed_roles.filter((r) => r !== 'node').join(', ') || 'none'}</td>
-      <td>
-        <span className={`pill pill-${state.tone}`}>{state.label}</span>
-        {m.draining ? (
-          <progress className="cluster-progress" max={100} value={m.progress ?? 0} aria-label={`${m.id} drained`} />
-        ) : null}
-      </td>
-      <td className="row-actions">
-        {memberActions(m, self).map((a) => (
+      </div>
+      {m.draining ? <Meter label="Drain" percent={m.progress ?? 0} plain /> : null}
+      <div className="role-slots">
+        {roleSlots(m).map((slot) => {
+          const action = slot.action;
+          return (
+            <div key={slot.role} className={`role-slot role-${slot.state}`}>
+              <span className="role-name">{slot.role}</span>
+              <span className="role-text small">{slot.text}</span>
+              {action ? (
+                <button
+                  type="button"
+                  className="btn btn-small"
+                  aria-label={`${action.label}: ${m.id}`}
+                  onClick={() => {
+                    onAction(action);
+                  }}
+                >
+                  {action.op === 'promote' ? 'Promote' : 'Demote'}
+                </button>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+      {remove ? (
+        <div className="member-foot">
           <button
-            key={a.label}
             type="button"
-            className={`btn btn-small${a.op === 'remove' ? ' btn-danger' : ''}`}
-            aria-label={`${a.label}: ${m.id}`}
+            className="btn btn-small btn-ghost"
+            aria-label={`Remove: ${m.id}`}
             onClick={() => {
-              onAction(a);
+              onAction(remove);
             }}
           >
-            {a.label}
+            Remove from the cluster
           </button>
-        ))}
-      </td>
-    </tr>
+        </div>
+      ) : null}
+    </section>
   );
 }
 
