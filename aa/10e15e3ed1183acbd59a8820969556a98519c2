@@ -1,0 +1,44 @@
+internal/store/merge.go
+  s_87f1c7baee7d5a::t_c94195d2ef7777 54,67-70,81-83,87-105
+  s_87f1c7baee7d5a::t_b352149b79fe78 106
+internal/hub/applied.go
+  s_87f1c7baee7d5a::t_7135f928e5e3c5 37,46,48,51,63,74
+cmd/hearth/hub.go
+  s_87f1c7baee7d5a::t_5ae62c78256461 455-460
+internal/hub/registry.go
+  s_87f1c7baee7d5a::t_7135f928e5e3c5 553-557
+  s_87f1c7baee7d5a::t_5ed305b4f78e21 79-81,133-161,559
+internal/hub/network.go
+  s_87f1c7baee7d5a::t_7135f928e5e3c5 59
+internal/store/mergeobserve_test.go
+  s_87f1c7baee7d5a::t_5920c32ae1a4d9 1-53
+internal/hub/merged_test.go
+  s_87f1c7baee7d5a::t_49e9261d557384 116-118
+  s_87f1c7baee7d5a::t_f6e3ab87b30d6a 95-97
+  s_87f1c7baee7d5a::t_aee779a9582ec8 1-94,98-115,119
+internal/store/store.go
+  s_87f1c7baee7d5a::t_26c566971afa46 14
+  s_87f1c7baee7d5a::t_c94195d2ef7777 57-59
+internal/hub/api.go
+  s_87f1c7baee7d5a::t_5ed305b4f78e21 559
+internal/hub/guest.go
+  s_87f1c7baee7d5a::t_5ed305b4f78e21 465
+internal/cluster/apmerged_test.go
+  s_87f1c7baee7d5a::t_1a06dca3f457b4 1-59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "aa10e15e3ed1183acbd59a8820969556a98519c2",
+  "prompts": {},
+  "sessions": {
+    "s_87f1c7baee7d5a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "45cc2cdf-3130-4caa-8cb4-8cb365d2150d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
