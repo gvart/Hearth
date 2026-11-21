@@ -1,0 +1,93 @@
+internal/cluster/apcarotation.go
+  s_87f1c7baee7d5a::t_004c3ab6caa0a0 48
+  s_87f1c7baee7d5a::t_4b47151c151300 127,311,375,515,549,575
+internal/cluster/join.go
+  s_87f1c7baee7d5a::t_4b47151c151300 75
+  s_87f1c7baee7d5a::t_004c3ab6caa0a0 30
+  s_87f1c7baee7d5a::t_7ec56965c63882 43-44,50-53,65-66,93,98-105,107
+internal/cluster/control.go
+  s_87f1c7baee7d5a::t_004c3ab6caa0a0 24-27,212-214
+  s_87f1c7baee7d5a::t_9a3aea0fa4f8c2 149-150
+  s_87f1c7baee7d5a::t_fdcc4701955b84 181
+internal/cluster/epoch.go
+  s_87f1c7baee7d5a::t_004c3ab6caa0a0 27-29
+internal/cluster/apschema_test.go
+  s_87f1c7baee7d5a::t_4b47151c151300 55
+internal/cluster/localroles.go
+  s_87f1c7baee7d5a::t_004c3ab6caa0a0 15
+  s_87f1c7baee7d5a::t_4b47151c151300 39,46,70
+internal/cluster/apcarotation_test.go
+  s_87f1c7baee7d5a::t_4b47151c151300 149
+internal/cluster/carotation.go
+  s_87f1c7baee7d5a::t_004c3ab6caa0a0 22,204,226
+internal/cluster/gossiptransport.go
+  s_87f1c7baee7d5a::t_004c3ab6caa0a0 62-63,113
+  s_87f1c7baee7d5a::t_99634e5ec411da 250,283,452
+proto/hearth/cluster/v1/cluster.proto
+  s_87f1c7baee7d5a::t_b04a6fed864588 40-41,53-54
+  s_87f1c7baee7d5a::t_a3d9b01b59c16f 7-8,10-11,15-19,27,29-31,35,37-38,50-51,57,59-60,62-63,65-68,72,74,76
+internal/cluster/apnodecert_test.go
+  s_87f1c7baee7d5a::t_4b47151c151300 31
+internal/cluster/nodecert.go
+  s_87f1c7baee7d5a::t_4b47151c151300 42
+  s_87f1c7baee7d5a::t_004c3ab6caa0a0 65,140
+internal/cluster/apepoch_test.go
+  s_87f1c7baee7d5a::t_4b47151c151300 29
+internal/cluster/membership.go
+  s_87f1c7baee7d5a::t_004c3ab6caa0a0 77
+  s_87f1c7baee7d5a::t_9a3aea0fa4f8c2 902,911-916
+  s_87f1c7baee7d5a::t_666a44a006ec7f 917
+internal/cluster/apschema.go
+  s_87f1c7baee7d5a::t_004c3ab6caa0a0 33
+internal/cluster/apnode.go
+  s_87f1c7baee7d5a::t_99634e5ec411da 733
+  s_87f1c7baee7d5a::t_4b47151c151300 153,257,492,504
+  s_87f1c7baee7d5a::t_7377aa9de8b26d 786
+  s_87f1c7baee7d5a::t_004c3ab6caa0a0 33-34,684-687
+  s_87f1c7baee7d5a::t_9a3aea0fa4f8c2 38,594
+internal/cluster/doc.go
+  s_87f1c7baee7d5a::t_66f4dddf971469 3-4,6-13,15-17
+internal/cluster/configdigest.go
+  s_87f1c7baee7d5a::t_9da3e9ef56974d 11-17
+internal/cluster/configdigest_test.go
+  s_87f1c7baee7d5a::t_9da3e9ef56974d 5
+internal/cluster/cluster.go
+  s_87f1c7baee7d5a::t_4b86099b48e1fe 6-7,11,13-18,21-46
+  s_87f1c7baee7d5a::t_e4190b29711db1 12,19
+internal/cluster/promote_test.go
+  s_87f1c7baee7d5a::t_4b47151c151300 102
+internal/cluster/apnodecert.go
+  s_87f1c7baee7d5a::t_4b47151c151300 113
+internal/cluster/apdial.go
+  s_87f1c7baee7d5a::t_99634e5ec411da 45
+internal/cluster/masters.go
+  s_87f1c7baee7d5a::t_004c3ab6caa0a0 16-18
+internal/cluster/apcakey.go
+  s_87f1c7baee7d5a::t_9a3aea0fa4f8c2 213-264
+  s_87f1c7baee7d5a::t_7ec56965c63882 14
+internal/proto/hearth/cluster/v1/clusterv1connect/cluster.connect.go
+  s_87f1c7baee7d5a::t_b5fded34ed39bc 47-48,52-56,88-89,104-105,109-113
+internal/cluster/transport.go
+  s_87f1c7baee7d5a::t_004c3ab6caa0a0 52,75,96
+  s_87f1c7baee7d5a::t_ad10bc87214fe5 19-21,102,106,110
+internal/cluster/replicate_test.go
+  s_87f1c7baee7d5a::t_4b47151c151300 921,924
+internal/proto/hearth/cluster/v1/cluster.pb.go
+  s_87f1c7baee7d5a::t_6dd260773c7e71 31,33-35,39,41-42,92,94,113,115,117,120-121,123-129,134-136,141,145,147-148,159-161,164,166,168,171,173,175,178,180,185,188-189,191-192,194-197,205,217,230,254,257,259,267,279,292,313,316-317,319-320,324-325,332,334,336,351,353-356,359-367,381
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ec642b8748c57c5c5854fb54a5ffe6d1aaab5243",
+  "prompts": {},
+  "sessions": {
+    "s_87f1c7baee7d5a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "45cc2cdf-3130-4caa-8cb4-8cb365d2150d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
