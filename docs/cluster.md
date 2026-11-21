@@ -124,7 +124,14 @@ dir and join it again.
 - **Reads.** A read by key goes to the nearest live replica (R = 1). When that replica has no copy of
   the row at all (it missed the write while it was down), a sign-in session, certificate, approval or
   approval link, device, device route or panel is asked of every live replica, and the newest copy
-  wins, a deletion included. A list asks every storage member and merges the answers. A stale copy a read sees is repaired. Members compare digests of the rows
+  wins, a deletion included. A list asks every storage member and merges the answers. A stale copy a read sees is repaired.
+  A write that depends on rows it reads first copies their newest version from the other live members. These
+  writes are pinning or revoking a device's certificates, revoking hub certificates, consuming a token or
+  approval link, deciding an approval, signing out, revoking an MCP or dashboard token or a panel link,
+  starting or advancing a CA rotation, and the first import or a delete of configuration documents. A member
+  that missed a pin, a certificate, a decision or a session while it was down still decides on the newest copy.
+  A password reset runs on every storage member, so it ends every session, wherever the session is stored.
+  Members compare digests of the rows
   they share and copy what differs (anti-entropy), so replicas converge after an outage or a split.
 - **Conflicts.** Every row carries a hybrid logical clock (HLC) stamp and the member that wrote it.
   Two writes to the same row merge by **last writer wins** on that stamp. Some rows do not merge this

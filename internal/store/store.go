@@ -57,6 +57,9 @@ type Store struct {
 	// merged is told the rows each Merge took (ObserveMerges), nil when
 	// no one asked.
 	merged atomic.Pointer[func([]MergedRow)]
+	// readHook, set by tests only, is told the table of every row a
+	// command reads with the writer's get or query (see ReadsOf).
+	readHook func(table string)
 }
 
 // Open opens (creating if needed) the SQLite database at path with WAL,

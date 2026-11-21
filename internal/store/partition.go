@@ -288,8 +288,12 @@ func RouteOf(cmd Command) (Route, error) {
 		return Route{Kind: RouteSplit}, nil
 	case SetHubURL:
 		return global(false)
-	case RecordHubCert, RevokeHubCerts, SetPasswordHash, PutConfigDocs, DeleteConfigDoc:
+	case RecordHubCert, RevokeHubCerts, PutConfigDocs, DeleteConfigDoc:
 		return global(true)
+	case SetPasswordHash:
+		// It ends every session, and each storage member holds only its
+		// share of them: each ends the ones it holds.
+		return Route{Kind: RouteEvery, Critical: true}, nil
 	case StartCARotation, AdvanceCARotation:
 		return global(true)
 	case RevokeCACerts:
