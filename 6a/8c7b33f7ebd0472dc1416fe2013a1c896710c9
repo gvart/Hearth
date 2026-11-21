@@ -1,0 +1,38 @@
+docs/discovery.md
+  s_18b57982fdff93::t_d88df364664168 73-77
+  s_18b57982fdff93::t_279008f8c5faf3 105-116
+internal/discovery/discovery_test.go
+  s_18b57982fdff93::t_e53843178b5f0e 351-352
+internal/discovery/mdns.go
+  s_18b57982fdff93::t_946ed402e69594 65-66
+internal/discovery/scanner.go
+  s_18b57982fdff93::t_4145161e4eb17d 457-467
+  s_18b57982fdff93::t_7d8e9deff5502a 512
+internal/discovery/classify.go
+  s_18b57982fdff93::t_b59c415a54aeb6 205-211
+  s_18b57982fdff93::t_c412dba65f1ca2 156,171,174-175
+  s_18b57982fdff93::t_54e06b4af23005 164,166-167,179,183
+  s_18b57982fdff93::t_80fb563f11474b 189-192,199
+  s_18b57982fdff93::t_14c1fbea08b74b 77
+internal/discovery/classify_test.go
+  s_18b57982fdff93::t_ca75a7016b3133 84-85
+  s_18b57982fdff93::t_f49a77667ac570 83
+  s_18b57982fdff93::t_4e06f396dbf374 25
+  s_18b57982fdff93::t_8f84da68e3694d 70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6a8c7b33f7ebd0472dc1416fe2013a1c896710c9",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
