@@ -127,10 +127,14 @@ func (a *api) metricsSparklines(w http.ResponseWriter, r *http.Request) {
 const latestMaxAge = time.Minute
 
 // builtinMetrics reads the metric trigger's device values from the hub's own
-// metrics, when no Prometheus is configured.
+// metrics, when no Prometheus is configured. In an AP cluster each master
+// keeps the metrics of the agents streaming to it, so the values of a device
+// whose agent streams to another live master are read from that master
+// (agents forwards the read).
 type builtinMetrics struct {
 	devices store.Devices
 	metrics *metrics.Store
+	agents  *Agents
 }
 
 // DeviceMetric implements automation.Metrics.
@@ -138,6 +142,11 @@ func (m builtinMetrics) DeviceMetric(ctx context.Context, device, metric string)
 	d, err := findDevice(ctx, m.devices, device)
 	if err != nil {
 		return 0, err
+	}
+	if m.agents != nil {
+		if v, ok, err := m.agents.remoteMetric(ctx, d.ID, metric); ok {
+			return v, err
+		}
 	}
 	return m.metrics.Latest(ctx, d.ID, metric, latestMaxAge)
 }

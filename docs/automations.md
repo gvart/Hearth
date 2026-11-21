@@ -106,7 +106,9 @@ triggers:
 With `hearth hub --prometheus-url` (see [Prometheus](prometheus.md)), metrics come from Prometheus,
 and devices map to node-exporter targets as for charts. Without it, a `device` metric is the newest
 of the [built-in metrics](prometheus.md#built-in-metrics) the device's agent sent, if it is under a
-minute old; a `query` needs Prometheus, and its trigger stops with an error in the hub log. A value that cannot be
+minute old. In a cluster each master keeps the metrics of the agents streaming to it, so the master
+that owns the automation reads the value from the master holding the device's stream; while that
+master is down, there is no value. A `query` needs Prometheus, and its trigger stops with an error in the hub log. A value that cannot be
 read does not count as past the threshold, and starts the `for` duration over. A metric trigger
 fires once per spell past the threshold: again only after the value has come back.
 

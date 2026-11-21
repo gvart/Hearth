@@ -20,8 +20,10 @@ import (
 
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	"github.com/gvart/hearth/internal/automation"
+	"github.com/gvart/hearth/internal/metrics"
 	"github.com/gvart/hearth/internal/policy"
 	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
 	"github.com/gvart/hearth/internal/store"
@@ -119,6 +121,8 @@ type agentCall struct {
 	Req       json.RawMessage `json:"req,omitempty"`
 	TimeoutMS int64           `json:"timeout_ms,omitempty"`
 	Subnets   []string        `json:"subnets,omitempty"`
+	// Metric is the built-in metric a metric read asks for.
+	Metric string `json:"metric,omitempty"`
 	// CheckOnly asks only whether the request would be sent.
 	CheckOnly bool `json:"check_only,omitempty"`
 }
@@ -142,6 +146,7 @@ var forwardKinds = []struct {
 	{"not_connected", ErrAgentNotConnected},
 	{"outcome_unknown", automation.ErrOutcomeUnknown},
 	{"not_found", store.ErrNotFound},
+	{"no_data", metrics.ErrNoData},
 }
 
 func forwardKind(err error) string {
@@ -192,13 +197,14 @@ func (a *Agents) call(ctx context.Context, master, op string, in agentCall, req,
 		defer cancel()
 	}
 	// Once the request is written, the holder may have run it: a call lost
-	// after that has an unknown outcome, as one lost on a local stream.
+	// after that has an unknown outcome, as one lost on a local stream. A
+	// metric read changes nothing.
 	var wrote atomic.Bool
 	ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
 		WroteRequest: func(httptrace.WroteRequestInfo) { wrote.Store(true) },
 	})
 	lost := func(err error) error {
-		if wrote.Load() && !in.CheckOnly {
+		if wrote.Load() && !in.CheckOnly && op != opMetric {
 			return fmt.Errorf("device %s: forwarded to hub %s: %w: %w", in.Device, master, automation.ErrOutcomeUnknown, err)
 		}
 		return fmt.Errorf("device %s: hub %s: %w (%w): %w", in.Device, master, ErrStreamElsewhere, ErrAgentNotConnected, err)
@@ -231,11 +237,39 @@ func (a *Agents) call(ctx context.Context, master, op string, in agentCall, req,
 	return reply.DeviceID, nil
 }
 
+// opMetric reads a device's newest built-in metric on the master holding its
+// stream: the agent sends its metrics there, and each master keeps its own.
+const opMetric = "metric"
+
+// remoteMetric reads the newest value of metric for device id from the live
+// master, other than this one, that its agent streams to. ok is false when
+// there is none: the agent streams here, or to no live master.
+func (a *Agents) remoteMetric(ctx context.Context, id, metric string) (v float64, ok bool, err error) {
+	if a.Local(id) {
+		return 0, false, nil
+	}
+	master := a.holder(ctx, id)
+	if master == "" {
+		return 0, false, nil
+	}
+	var out wrapperspb.DoubleValue
+	if _, err := a.call(ctx, master, opMetric, agentCall{Device: id, Metric: metric}, nil, &out); err != nil {
+		if errors.Is(err, ErrStreamElsewhere) {
+			// The same error on each failed read, whatever the link said
+			// (refused, timed out), so a metric trigger warns once.
+			return 0, true, fmt.Errorf("%s of %s: hub %s: %w", metric, id, master, ErrStreamElsewhere)
+		}
+		return 0, true, err
+	}
+	return out.GetValue(), true, nil
+}
+
 // AgentsHandler serves the requests other masters forward to the agent
-// streams of this one, under /agents/. The caller authenticated them as a
-// live master (cluster.MasterLink); the decision was made on the master
-// that received the request.
-func AgentsHandler(a *Agents, log *slog.Logger) http.Handler {
+// streams of this one, under /agents/, and reads of the metrics those agents
+// sent to ms. The caller authenticated them as a live master
+// (cluster.MasterLink); the decision was made on the master that received
+// the request.
+func AgentsHandler(a *Agents, ms *metrics.Store, log *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
 	handle := func(op string, fn func(ctx context.Context, in agentCall) (proto.Message, string, error)) {
 		mux.HandleFunc("POST /agents/"+op, func(w http.ResponseWriter, r *http.Request) {
@@ -306,6 +340,16 @@ func AgentsHandler(a *Agents, log *slog.Logger) http.Handler {
 		}
 		id, res, err := a.Scan(ctx, in.Device, subnets, time.Duration(in.TimeoutMS)*time.Millisecond)
 		return res, id, err
+	})
+	handle(opMetric, func(ctx context.Context, in agentCall) (proto.Message, string, error) {
+		if !metrics.IsKnown(in.Metric) {
+			return nil, "", fmt.Errorf("unknown metric %q", in.Metric)
+		}
+		v, err := ms.Latest(ctx, in.Device, in.Metric, latestMaxAge)
+		if err != nil {
+			return nil, "", err
+		}
+		return wrapperspb.Double(v), "", nil
 	})
 	return mux
 }
