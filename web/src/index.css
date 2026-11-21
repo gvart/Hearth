@@ -346,7 +346,8 @@ pre,
   align-items: center;
   justify-content: space-between;
   height: var(--bar);
-  padding: 0 max(var(--space-4), calc((100% - var(--content-max)) / 2));
+  gap: var(--space-4);
+  padding: 0 var(--space-4);
   background: var(--bg);
   border-bottom: var(--line-1) solid var(--border);
 }
@@ -1059,37 +1060,6 @@ dialog::backdrop {
 }
 
 /* Navigation */
-.topbar-left {
-  display: flex;
-  align-items: center;
-  gap: var(--space-6);
-  min-width: 0;
-}
-
-.nav {
-  display: flex;
-  gap: var(--space-1);
-  min-width: 0;
-  /* On a phone the links scroll sideways rather than run under "Sign out". */
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-/* Wider than a phone, the links wrap onto a second row rather than scroll:
-   every one stays in sight, Devices first. */
-@media (min-width: 641px) {
-  .topbar {
-    height: auto;
-    min-height: var(--bar);
-    padding-block: var(--space-2);
-  }
-
-  .nav {
-    flex-wrap: wrap;
-    overflow-x: visible;
-  }
-}
-
 .nav-link {
   flex: none;
   white-space: nowrap;

@@ -1,9 +1,11 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { Fragment, lazy, Suspense, useEffect, useState } from 'react';
 import { isNotAPCluster, useClusterMembers } from '../api/cluster.ts';
 import { useApprovals, useDeviceEvents, useLogout } from '../api/hooks.ts';
 import { ApprovalsPage } from './ApprovalsPage.tsx';
 import { AuditPage } from './AuditPage.tsx';
+import { pageOf, pagesOf, sheetHash, sheetOf, sheets, type Page } from '../nav.ts';
 import { ClusterPage } from './ClusterPage.tsx';
+import { CommandBar } from './CommandBar.tsx';
 import { ConfigDriftBanner } from './ConfigDriftBanner.tsx';
 import { DevicesPage } from './DevicesPage.tsx';
 import { KubernetesPage } from './KubernetesPage.tsx';
@@ -16,72 +18,10 @@ import { ReauthHost } from './ReauthDialog.tsx';
 import { RunbooksPage } from './RunbooksPage.tsx';
 import { SettingsPage } from './SettingsPage.tsx';
 import { TelemetryPrompt, TelemetryStatus } from './TelemetryPrompt.tsx';
+import './Shell.css';
 
 // Loaded when opened: the editor brings a YAML parser no other page needs.
 const AutomationsPage = lazy(() => import('./AutomationsPage.tsx'));
-
-type Page =
-  | 'devices'
-  | 'network'
-  | 'kubernetes'
-  | 'proxmox'
-  | 'runbooks'
-  | 'automations'
-  | 'notifications'
-  | 'panels'
-  | 'audit'
-  | 'approvals'
-  | 'cluster'
-  | 'settings';
-
-const pages: { id: Page; label: string; hash: string }[] = [
-  { id: 'devices', label: 'Devices', hash: '#/' },
-  { id: 'network', label: 'Network', hash: '#/network' },
-  { id: 'kubernetes', label: 'Kubernetes', hash: '#/kubernetes' },
-  { id: 'proxmox', label: 'Proxmox', hash: '#/proxmox' },
-  { id: 'runbooks', label: 'Runbooks', hash: '#/runbooks' },
-  { id: 'automations', label: 'Automations', hash: '#/automations' },
-  { id: 'panels', label: 'Panels', hash: '#/panels' },
-  { id: 'notifications', label: 'Notifications', hash: '#/notifications' },
-  { id: 'audit', label: 'Audit', hash: '#/audit' },
-  { id: 'approvals', label: 'Approvals', hash: '#/approvals' },
-  { id: 'cluster', label: 'Cluster', hash: '#/cluster' },
-  { id: 'settings', label: 'Settings', hash: '#/settings' },
-];
-
-function pageOf(hash: string): Page {
-  if (hash.startsWith('#/approvals')) {
-    return 'approvals';
-  }
-  if (hash.startsWith('#/cluster')) {
-    return 'cluster';
-  }
-  if (hash.startsWith('#/settings')) {
-    return 'settings';
-  }
-  if (hash.startsWith('#/network')) {
-    return 'network';
-  }
-  if (hash.startsWith('#/runbooks')) {
-    return 'runbooks';
-  }
-  if (hash.startsWith('#/panels')) {
-    return 'panels';
-  }
-  if (hash.startsWith('#/notifications')) {
-    return 'notifications';
-  }
-  if (hash.startsWith('#/audit')) {
-    return 'audit';
-  }
-  if (hash.startsWith('#/proxmox')) {
-    return 'proxmox';
-  }
-  if (hash.startsWith('#/automations')) {
-    return 'automations';
-  }
-  return hash.startsWith('#/kubernetes') ? 'kubernetes' : 'devices';
-}
 
 /** The page chosen by the URL hash, so reloads and links keep it. */
 function usePage(): Page {
@@ -98,102 +38,133 @@ function usePage(): Page {
   return page;
 }
 
-/** The signed-in app: top bar, navigation and the live event stream. */
+/** How many approvals wait, beside the name of what leads to them. */
+function Waiting({ count }: { count: number }) {
+  return count > 0 ? (
+    <span className="badge nav-badge" aria-label={`${String(count)} waiting`}>
+      {count}
+    </span>
+  ) : null;
+}
+
+/**
+ * The signed-in app: the top bar with the command bar, the sheet index, the
+ * page, and the live event stream. On a phone the index is a tab bar at the
+ * bottom, the open sheet's pages are links above the page, and the command bar
+ * sits at the thumb.
+ */
 export function Shell() {
   useDeviceEvents();
   const logout = useLogout();
   const page = usePage();
+  const sheet = sheetOf(page);
   const waiting = useApprovals('pending').data?.length ?? 0;
   // The Cluster page is offered on a member of an AP cluster only.
   const cluster = useClusterMembers();
   const apCluster = cluster.isSuccess || (cluster.isError && !isNotAPCluster(cluster.error));
-  const nav = useRef<HTMLElement>(null);
-  const activeLink = useRef<HTMLAnchorElement>(null);
-
-  // On a phone the links scroll sideways: keep the current page's link in view,
-  // also when the waiting badge widens it or the nav narrows, as it does when a
-  // page's data arrives and brings a classic scrollbar with it.
-  useEffect(() => {
-    const observer = new ResizeObserver(() => {
-      activeLink.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-    });
-    if (nav.current) {
-      observer.observe(nav.current);
-    }
-    return () => {
-      observer.disconnect();
-    };
-  }, [page, waiting]);
+  const shown = pagesOf(sheet, { cluster: apCluster, current: page });
 
   return (
     <div className="app">
       <header className="topbar">
-        <div className="topbar-left">
-          <div className="brand">
-            <Logo size={28} />
-            <span>Hearth</span>
-          </div>
-          <nav ref={nav} className="nav" aria-label="Sections">
-            {pages
-              .filter((p) => p.id !== 'cluster' || apCluster || page === 'cluster')
-              .map((p) => (
-                <a
-                  key={p.id}
-                  ref={page === p.id ? activeLink : undefined}
-                  href={p.hash}
-                  className="nav-link"
-                  aria-current={page === p.id ? 'page' : undefined}
-                >
+        <a className="brand" href="#/">
+          <Logo size={28} />
+          <span>Hearth</span>
+        </a>
+        <CommandBar cluster={apCluster} className="cmd-top" />
+        <div className="topbar-right">
+          {waiting > 0 ? (
+            <a className="nav-link" href="#/approvals" aria-current={page === 'approvals' ? 'page' : undefined}>
+              Approvals
+              <Waiting count={waiting} />
+            </a>
+          ) : null}
+          <button
+            className="btn btn-ghost"
+            type="button"
+            onClick={() => {
+              logout.mutate();
+            }}
+          >
+            Sign out
+          </button>
+        </div>
+      </header>
+      <div className="shell-body">
+        <nav className="sheet-nav shell-rail" aria-label="Sections">
+          {sheets.map((s) => (
+            <Fragment key={s.id}>
+              <a className="sheet-tab" href={sheetHash(s)} aria-current={s.id === sheet.id ? 'true' : undefined}>
+                <span className="sheet-no">{s.no}</span>
+                {s.label}
+                {s.id === 'activity' && s.id !== sheet.id ? <Waiting count={waiting} /> : null}
+              </a>
+              {s.id === sheet.id
+                ? shown.map((p) => (
+                    <a key={p.id} className="sheet-sub" href={p.hash} aria-current={page === p.id ? 'page' : undefined}>
+                      {p.label}
+                      {p.id === 'approvals' ? <Waiting count={waiting} /> : null}
+                    </a>
+                  ))
+                : null}
+            </Fragment>
+          ))}
+        </nav>
+        <div className="shell-main">
+          {shown.length > 1 ? (
+            <nav className="shell-subnav" aria-label={`${sheet.label} pages`}>
+              {shown.map((p) => (
+                <a key={p.id} href={p.hash} aria-current={page === p.id ? 'page' : undefined}>
                   {p.label}
-                  {p.id === 'approvals' && waiting > 0 ? (
-                    <span className="badge nav-badge" aria-label={`${String(waiting)} waiting`}>
-                      {waiting}
-                    </span>
-                  ) : null}
+                  {p.id === 'approvals' ? <Waiting count={waiting} /> : null}
                 </a>
               ))}
-          </nav>
+            </nav>
+          ) : null}
+          <ConfigDriftBanner />
+          <TelemetryPrompt />
+          {page === 'approvals' ? (
+            <ApprovalsPage />
+          ) : page === 'network' ? (
+            <NetworkPage />
+          ) : page === 'kubernetes' ? (
+            <KubernetesPage />
+          ) : page === 'proxmox' ? (
+            <ProxmoxPage />
+          ) : page === 'runbooks' ? (
+            <RunbooksPage />
+          ) : page === 'automations' ? (
+            <Suspense fallback={<main className="content muted">Loading automations…</main>}>
+              <AutomationsPage />
+            </Suspense>
+          ) : page === 'panels' ? (
+            <PanelsPage />
+          ) : page === 'notifications' ? (
+            <NotificationsPage />
+          ) : page === 'audit' ? (
+            <AuditPage />
+          ) : page === 'cluster' ? (
+            <ClusterPage />
+          ) : page === 'settings' ? (
+            <SettingsPage />
+          ) : (
+            <DevicesPage />
+          )}
+          <TelemetryStatus />
         </div>
-        <button
-          className="btn btn-ghost"
-          type="button"
-          onClick={() => {
-            logout.mutate();
-          }}
-        >
-          Sign out
-        </button>
-      </header>
-      <ConfigDriftBanner />
-      <TelemetryPrompt />
-      {page === 'approvals' ? (
-        <ApprovalsPage />
-      ) : page === 'network' ? (
-        <NetworkPage />
-      ) : page === 'kubernetes' ? (
-        <KubernetesPage />
-      ) : page === 'proxmox' ? (
-        <ProxmoxPage />
-      ) : page === 'runbooks' ? (
-        <RunbooksPage />
-      ) : page === 'automations' ? (
-        <Suspense fallback={<main className="content muted">Loading automations…</main>}>
-          <AutomationsPage />
-        </Suspense>
-      ) : page === 'panels' ? (
-        <PanelsPage />
-      ) : page === 'notifications' ? (
-        <NotificationsPage />
-      ) : page === 'audit' ? (
-        <AuditPage />
-      ) : page === 'cluster' ? (
-        <ClusterPage />
-      ) : page === 'settings' ? (
-        <SettingsPage />
-      ) : (
-        <DevicesPage />
-      )}
-      <TelemetryStatus />
+      </div>
+      <div className="shell-bottom">
+        <CommandBar cluster={apCluster} />
+        <nav className="tabbar" aria-label="Sections">
+          {sheets.map((s) => (
+            <a key={s.id} className="sheet-tab" href={sheetHash(s)} aria-current={s.id === sheet.id ? 'true' : undefined}>
+              <span className="sheet-no">{s.no}</span>
+              {s.label}
+              {s.id === 'activity' ? <Waiting count={waiting} /> : null}
+            </a>
+          ))}
+        </nav>
+      </div>
       <ReauthHost />
     </div>
   );
