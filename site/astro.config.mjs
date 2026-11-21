@@ -2,6 +2,7 @@
 import path from 'node:path';
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
+import mermaid from 'astro-mermaid';
 import { unified } from '@astrojs/markdown-remark';
 import { pages, repoURL, sections } from './src/pages.mjs';
 
@@ -45,11 +46,16 @@ export default defineConfig({
 	base,
 	markdown: { processor: unified({ remarkPlugins: [docsLinks] }) },
 	integrations: [
+		// Renders ```mermaid fences in the browser, in the site's light or dark
+		// theme. It must come before Starlight, so Expressive Code leaves them alone.
+		mermaid({ autoTheme: true }),
 		starlight({
 			title: 'Hearth',
 			description: 'Open-source control plane for homelabs: every device an entity you can see, control and automate.',
 			favicon: '/favicon.svg',
 			customCss: ['./src/styles/theme.css'],
+			// Long commands wrap instead of scrolling sideways; wrapped lines keep their indentation.
+			expressiveCode: { defaultProps: { wrap: true, preserveIndent: true } },
 			social: [{ icon: 'github', label: 'GitHub', href: repoURL }],
 			sidebar: sections.map((s) => ({ label: s.label, items: s.pages })),
 		}),

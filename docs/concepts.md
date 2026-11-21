@@ -6,11 +6,14 @@ description: The hub, agents, devices, policy and the audit log, and how they fi
 Hearth applies the Home Assistant model to compute: every machine in your lab becomes an entity you
 can see, control and automate from one place. Five ideas carry the whole system.
 
-```
-browser, CLI ──► hub ── policy ── automations ── integrations (Prometheus, Kubernetes)
-                  ▲        │
-                  │        └── audit log (in the hub database)
-   agents dial out (mutual TLS, one long-lived stream each)
+```mermaid
+flowchart TD
+    clients["Browser, CLI"] --> hub["Hub"]
+    agents["Agents"] -- "dial out: mutual TLS,<br/>one long-lived stream each" --> hub
+    hub --> policy["Policy"]
+    policy --> audit["Audit log<br/>(in the hub database)"]
+    policy --> automations["Automations"]
+    automations --> integrations["Integrations<br/>(Prometheus, Kubernetes)"]
 ```
 
 ## Hub
