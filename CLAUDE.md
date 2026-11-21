@@ -108,8 +108,10 @@ Keep this list in sync with `Taskfile.yml`. If you add a task, document it here.
   authenticated admin through policy and audited, or by a scheduled hub backup when the operator opts in with
   `--backup-include-ca` (also through policy and audited); it is replicated only over the pinned mTLS join
   channel (in an AP cluster, only to a joining hub that allows the `master` role; a storage-only member never
-  receives it) and, during a Raft hub CA rotation, over the pinned mTLS `FetchCAKey` channel (policy-checked
-  and audited, refusals too). A CA key never goes into the store, the Raft log, a snapshot or the gossip.
+  receives it) and over the pinned mTLS `FetchCAKey` channel: during a Raft hub CA rotation, and in an AP
+  cluster to a member being promoted to master, only while the promoting master's audited `cluster.promote`
+  runs (policy-checked and audited, refusals too). A demoted master deletes its copy. A CA key never goes
+  into the store, the Raft log, a snapshot or the gossip.
 - Agent-side config is the capability ceiling; the hub can never grant more than the device allows.
 - Any new action type must declare its class (`read` / `safe` / `dangerous`) in `internal/policy`.
 - Shell-outs: no string concatenation into shells; use `exec.Command` with args.

@@ -51,7 +51,7 @@ Parallel: 2 ∥ 3, then 4 ∥ 5. Everything else is sequential.
   verify: kill any master and the agent is back in < 10 s; a token cannot be used twice across
   masters during a split; an isolated master denies dangerous actions after 60 s.
   depends on: 4, 5.
-- [ ] **7. Promote / demote.** `cluster.promote|demote|remove` policy actions (dangerous, audited)
+- [x] **7. Promote / demote.** `cluster.promote|demote|remove` policy actions (dangerous, audited)
   in CLI, API and UI; shard hand-off before storage demotion; master demotion revokes tokens and
   closes approvals.
   verify: negative tests (no opt-in, policy denied, last master, below `N=1`); a UI check with

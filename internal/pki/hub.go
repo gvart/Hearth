@@ -113,7 +113,11 @@ func HubEpoch(cert *x509.Certificate) string {
 // and to derive sealing keys: never log or persist the result anywhere but a
 // voter's data dir.
 func (c *CA) KeyDER() ([]byte, error) {
-	der, err := x509.MarshalPKCS8PrivateKey(c.state().serving().key)
+	key := c.state().serving().key
+	if key == nil {
+		return nil, ErrNoCAKey
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(key)
 	if err != nil {
 		return nil, fmt.Errorf("encode CA key: %w", err)
 	}

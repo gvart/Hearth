@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gvart/hearth/internal/store"
@@ -29,6 +30,8 @@ type MasterRing struct {
 	self    string
 	members func() []MemberInfo
 	now     func() time.Time
+	// selfMaster reports whether this member is a master; nil: always.
+	selfMaster atomic.Pointer[func() bool]
 
 	mu    sync.Mutex
 	key   string
@@ -38,7 +41,7 @@ type MasterRing struct {
 }
 
 // NewMasterRing returns the ring of the live masters members returns,
-// with self always on it.
+// with self on it unless SelfMaster says it is no master.
 func NewMasterRing(self string, members func() []MemberInfo, now func() time.Time) *MasterRing {
 	if now == nil {
 		now = time.Now
@@ -51,9 +54,12 @@ func NewMasterRing(self string, members func() []MemberInfo, now func() time.Tim
 // refresh re-reads the live masters and tells the subscribers if they
 // changed.
 func (r *MasterRing) refresh() {
-	ids := []string{r.self}
+	var ids []string
+	if f := r.selfMaster.Load(); f == nil || (*f)() {
+		ids = append(ids, r.self)
+	}
 	for _, m := range r.members() {
-		if m.Roles.Has(RoleMaster) && (m.State == MemberAlive || m.State == MemberSuspect) {
+		if m.ID != r.self && m.Roles.Has(RoleMaster) && (m.State == MemberAlive || m.State == MemberSuspect) {
 			ids = append(ids, m.ID)
 		}
 	}
@@ -75,6 +81,16 @@ func (r *MasterRing) refresh() {
 		}
 	}
 }
+
+// SelfMaster sets how the ring tells whether this member is a master
+// (demoted, it owns nothing), and re-reads the masters.
+func (r *MasterRing) SelfMaster(f func() bool) {
+	r.selfMaster.Store(&f)
+	r.refresh()
+}
+
+// Refresh re-reads the live masters now.
+func (r *MasterRing) Refresh() { r.refresh() }
 
 // Run keeps the ring current until ctx ends: on every change in changes,
 // and every second.
@@ -106,12 +122,15 @@ func (r *MasterRing) Subscribe() (<-chan struct{}, func()) {
 	}
 }
 
-// Owner is the master that owns key.
+// Owner is the master that owns key; "" when no master is live.
 func (r *MasterRing) Owner(key string) string {
 	r.mu.Lock()
 	ring := r.ring
 	r.mu.Unlock()
-	return ring.Preference(store.BucketOf(store.Token(key)))[0]
+	if p := ring.Preference(store.BucketOf(store.Token(key))); len(p) > 0 {
+		return p[0]
+	}
+	return ""
 }
 
 // Owns reports whether this master owns key.

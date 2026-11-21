@@ -118,6 +118,10 @@ type hubOptions struct {
 	version string
 	// shellIdle and shellMax limit web terminal sessions.
 	shellIdle, shellMax time.Duration
+
+	// apm, on a member of an AP cluster, is the member runHub serves the
+	// master layer of (runAPHub): set while it is a master.
+	apm *apMember
 }
 
 func newHubCmd() *cobra.Command {
@@ -275,8 +279,18 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	if err := cluster.CheckCeiling(cluster.HubRoles, allowedRoles); err != nil {
-		return fmt.Errorf("a hub is master and storage: %w", err)
+	if err := opts.cluster.checkMode(); err != nil {
+		return err
+	}
+	if opts.cluster.ap() && opts.apm == nil {
+		// An AP member runs its store and gossip all along, and the
+		// master layer below only while it is a master.
+		return runAPHub(ctx, opts, allowedRoles, log)
+	}
+	if !opts.cluster.ap() {
+		if err := cluster.CheckCeiling(cluster.HubRoles, allowedRoles); err != nil {
+			return fmt.Errorf("a hub is master and storage: %w", err)
+		}
 	}
 	telemetryOff, err := opts.telemetry.off()
 	if err != nil {
@@ -328,18 +342,9 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		membership *cluster.Membership
 		apNode     *cluster.APNode
 	)
-	if err := opts.cluster.checkMode(); err != nil {
-		return err
-	}
-	if opts.cluster.ap() {
-		var agentURL string
-		if agentPort != "" {
-			agentURL = "https://" + net.JoinHostPort(hosts[0], agentPort)
-		}
-		if st, ca, apNode, err = startAPNode(ctx, opts, allowedRoles, agentURL, log); err != nil {
-			return err
-		}
-		defer st.Close()
+	if opts.apm != nil {
+		// Opened and closed by runAPHub.
+		st, ca, apNode = opts.apm.st, opts.apm.ca, opts.apm.node
 	} else if opts.cluster.clustered(opts.dataDir) {
 		// Agents and other hubs reach this hub by its first --host name.
 		var agentURL string
@@ -408,7 +413,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 			AutomationsDir: automationsDir, RunbooksDir: runbooksDirOf(opts),
 		},
 	})
-	configDocs, err := applyHubConfig(ctx, opts, st, node == nil, configWatcher, pol, notifier, log)
+	configDocs, err := applyHubConfig(ctx, opts, st, node == nil && apNode == nil, configWatcher, pol, notifier, log)
 	if err != nil {
 		return err
 	}
@@ -520,6 +525,9 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	}
 	// ready is closed once a clustered hub has caught up with the cluster.
 	ready := make(chan struct{})
+	if opts.apm != nil {
+		ready = opts.apm.ready
+	}
 	if node != nil {
 		cfg.Leadership = node
 		cfg.Ready = ready
@@ -532,6 +540,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		cfg.Ready = ready
 		cfg.Leadership = apNode
 		cfg.Masters = apNode
+		cfg.ClusterAdmin = apClusterAdmin{apNode}
 	}
 	if _, port, err := net.SplitHostPort(opts.httpListen); err == nil && port != "0" {
 		cfg.HTTPPort = port
@@ -562,6 +571,11 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	cfg.AutomationsLock = &automationsMu
 	errLog := slog.NewLogLogger(log.Handler(), slog.LevelWarn)
 	baseCtx := func(net.Listener) context.Context { return ctx }
+	if opts.apm != nil {
+		// A request that demotes this master ends the master layer: it
+		// still answers, and audits its outcome.
+		baseCtx = func(net.Listener) context.Context { return opts.apm.ctx }
+	}
 	// The UI and API, served on both listeners. Over TLS they share the agent
 	// port, so browsers get HTTPS with the hub CA (see docs/https.md).
 	dashboardAudit := hub.NewDashboardAudit(pol, log)
@@ -579,6 +593,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		mm.Handle("/agents/", hub.AgentsHandler(agents, log))
 		mm.Handle("/api/", hub.ProxiedHandler(uiMux))
 		apNode.SetMasterHandler(mm)
+		defer apNode.SetMasterHandler(nil)
 	}
 	uiMux.Handle("GET /api/v1/guest/{token}/events", hub.EndOnStop(stopping, webH))
 	if node != nil {
@@ -771,6 +786,27 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 				return nil
 			})
 		}
+		if apNode != nil {
+			// An AP member imports once it has found the cluster and copied
+			// its rows: before, it would see no documents of the cluster's,
+			// and import its files over them, alone on a ring of itself.
+			g.Go(func() error {
+				select {
+				case <-gctx.Done():
+					return nil
+				case <-ready:
+				}
+				if !opts.apm.caughtUp.Load() {
+					log.WarnContext(gctx, "configuration files not imported: this member has not caught up with the "+
+						"ap cluster; import them with `hearth config import` if the cluster holds none")
+					return nil
+				}
+				if err := configWatcher.ImportFirst(gctx); err != nil {
+					log.ErrorContext(gctx, "configuration files not imported", "err", err)
+				}
+				return nil
+			})
+		}
 	}
 	// Every hub prunes its own metrics.
 	g.Go(func() error { return ms.Run(gctx) })
@@ -890,13 +926,9 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		})
 	}
 	if apNode != nil {
-		g.Go(func() error { return apNode.Run(gctx) })
-		g.Go(func() error { return cluster.ServeAPControl(gctx, opts.dataDir, apNode, log) })
-		g.Go(func() error {
-			return runAPMember(gctx, apNode, func(ctx context.Context) error {
-				return ensureAdminPassword(ctx, st, pol, opts, log)
-			}, ready, log)
-		})
+		// The CLI's promote, demote and remove, decided here.
+		apNode.SetRoleChanges(apRoleChanges(pol, apClusterAdmin{apNode}))
+		defer apNode.SetRoleChanges(nil)
 	}
 	err = g.Wait()
 	log.InfoContext(ctx, "hub stopped")

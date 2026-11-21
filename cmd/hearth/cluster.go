@@ -15,15 +15,16 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/gvart/hearth/internal/cluster"
+	"github.com/gvart/hearth/internal/hub"
 	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/policy"
 	"github.com/gvart/hearth/internal/store"
 )
 
 func newClusterCmd() *cobra.Command {
-	cmd := &cobra.Command{Use: "cluster", Short: "Manage the hub's Raft cluster"}
+	cmd := &cobra.Command{Use: "cluster", Short: "Manage the hub's cluster"}
 	cmd.AddCommand(newClusterTokenCmd(), newClusterStatusCmd(), newClusterRemoveCmd(), newClusterTransferCmd(),
-		newClusterMigrateCmd(), newClusterCACmd())
+		newClusterMigrateCmd(), newClusterCACmd(), newClusterPromoteCmd(), newClusterDemoteCmd())
 	return cmd
 }
 
@@ -38,7 +39,10 @@ func newClusterRemoveCmd() *cobra.Command {
 		Long: "Remove a hub from the Raft configuration, so it no longer counts towards the majority, and revoke\n" +
 			"its hub node certificates, so it can no longer talk to the cluster. Run it on any member's host while\n" +
 			"its hub runs (a follower forwards it to the leader). The leader cannot be removed: run\n" +
-			"`hearth cluster transfer-leadership` first. The node ID can join again later with a new join token.",
+			"`hearth cluster transfer-leadership` first. The node ID can join again later with a new join token.\n\n" +
+			"In an AP cluster (--cluster-mode ap), run it on a master's host: the member is revoked, every member\n" +
+			"forgets it and the others re-replicate its rows. A hub does not remove itself, nor the last master\n" +
+			"or storage member.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runClusterRemove(cmd.Context(), dataDir, args[0], dryRun, cmd.OutOrStdout())
@@ -52,6 +56,9 @@ func newClusterRemoveCmd() *cobra.Command {
 func runClusterRemove(ctx context.Context, dataDir, nodeID string, dryRun bool, out io.Writer) error {
 	if err := cluster.ValidNodeID(nodeID); err != nil {
 		return err
+	}
+	if cluster.IsAP(dataDir) {
+		return runClusterRoleChange(ctx, dataDir, hub.ClusterChange{Op: hub.ClusterOpRemove, Member: nodeID}, dryRun, out)
 	}
 	st, cc, err := openClusterControl(ctx, dataDir)
 	if err != nil {
@@ -437,7 +444,14 @@ func writeMembers(tw io.Writer, members []cluster.MemberInfo) {
 	}
 	_, _ = fmt.Fprintln(tw, "\nMEMBER\tADDRESS\tROLES\tALLOWED ROLES\tSTATE\tSCHEMA\t")
 	for _, m := range members {
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%d\t\n", m.ID, m.Address, m.Roles, m.AllowedRoles, m.State, m.Schema)
+		state := m.State
+		switch {
+		case m.Syncing:
+			state += ", syncing"
+		case m.Draining:
+			state += fmt.Sprintf(", draining %d%%", m.Progress)
+		}
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%d\t\n", m.ID, m.Address, m.Roles, m.AllowedRoles, state, m.Schema)
 	}
 }
 

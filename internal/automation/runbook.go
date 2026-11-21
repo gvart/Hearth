@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"go.yaml.in/yaml/v3"
@@ -243,7 +244,7 @@ func ParseRunbook(name string, b []byte, kinds Kinds) (*Runbook, error) {
 	if steps != nil {
 		rb.Steps = parseRunbookSteps(steps, kinds, &errs)
 	}
-	if !idPattern.MatchString(rb.ID) {
+	if !idPattern().MatchString(rb.ID) {
 		errs = append(errs, lineError(idLine,
 			"id %q must be 1 to 64 lowercase letters, digits, - or _, starting with a letter or digit", rb.ID))
 	}
@@ -255,7 +256,7 @@ func ParseRunbook(name string, b []byte, kinds Kinds) (*Runbook, error) {
 	}
 	seen := map[string]int{}
 	for _, s := range rb.Steps {
-		if !idPattern.MatchString(s.ID) {
+		if !idPattern().MatchString(s.ID) {
 			errs = append(errs, lineError(s.Line, "step id %q must be 1 to 64 lowercase letters, digits, - or _", s.ID))
 		} else if prev, ok := seen[s.ID]; ok {
 			errs = append(errs, lineError(s.Line, "step id %q is already used on line %d", s.ID, prev))
@@ -552,10 +553,10 @@ func runbookEvent(runbookID string, at time.Time, input map[string]string) Event
 }
 
 // varRef is a reference to a var in a runbook's steps.
-var varRef = regexp.MustCompile(`\$\{\{\s*vars\.([A-Za-z0-9_-]*)\s*\}\}`)
+var varRef = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`\$\{\{\s*vars\.([A-Za-z0-9_-]*)\s*\}\}`) })
 
 // varName is the name of a var.
-var varName = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
+var varName = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`) })
 
 // substituteVars reads the vars block n and fills in every ${{ vars.<name> }}
 // in the scalar values of steps, in place. A var's value is a literal: it
@@ -573,7 +574,7 @@ func substituteVars(n, steps *yaml.Node, errs *[]error) map[string]string {
 		for i := 0; i+1 < len(n.Content); i += 2 {
 			k, v := n.Content[i], n.Content[i+1]
 			switch {
-			case !varName.MatchString(k.Value):
+			case !varName().MatchString(k.Value):
 				*errs = append(*errs, lineError(k.Line,
 					"var name %q must be 1 to 64 lowercase letters, digits, - or _, starting with a letter or digit", k.Value))
 			case v.Kind != yaml.ScalarNode:
@@ -603,12 +604,12 @@ func substituteVars(n, steps *yaml.Node, errs *[]error) map[string]string {
 			if !strings.Contains(n.Value, "${{") {
 				return
 			}
-			if strings.Count(n.Value, "${{") != len(varRef.FindAllString(n.Value, -1)) {
+			if strings.Count(n.Value, "${{") != len(varRef().FindAllString(n.Value, -1)) {
 				*errs = append(*errs, lineError(n.Line, "only ${{ vars.<name> }} can be filled in"))
 				return
 			}
-			n.Value = varRef.ReplaceAllStringFunc(n.Value, func(ref string) string {
-				name := varRef.FindStringSubmatch(ref)[1]
+			n.Value = varRef().ReplaceAllStringFunc(n.Value, func(ref string) string {
+				name := varRef().FindStringSubmatch(ref)[1]
 				v, ok := vars[name]
 				if !ok {
 					*errs = append(*errs, lineError(n.Line, "var %q is not declared in vars", name))

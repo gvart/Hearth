@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"sync"
 
 	"go.yaml.in/yaml/v3"
 
@@ -37,7 +38,7 @@ var (
 
 // ValidID reports whether id is a well-formed automation id. A valid id holds
 // no path separator or dot, so it can name a file in the directory.
-func ValidID(id string) bool { return idPattern.MatchString(id) }
+func ValidID(id string) bool { return idPattern().MatchString(id) }
 
 // Revision identifies the content of an automation file.
 func Revision(b []byte) string {
@@ -53,7 +54,7 @@ type Problem struct {
 }
 
 // yamlLine finds the line in an error of the YAML parser.
-var yamlLine = regexp.MustCompile(`line (\d+)`)
+var yamlLine = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`line (\d+)`) })
 
 // Problems lists what err, from Parse, says is wrong.
 func Problems(err error) []Problem {
@@ -69,7 +70,7 @@ func Problems(err error) []Problem {
 			continue
 		}
 		p := Problem{Message: e.Error()}
-		if m := yamlLine.FindStringSubmatch(p.Message); m != nil {
+		if m := yamlLine().FindStringSubmatch(p.Message); m != nil {
 			p.Line, _ = strconv.Atoi(m[1])
 		}
 		out = append(out, p)

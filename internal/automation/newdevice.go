@@ -38,7 +38,7 @@ actions:
 // an absence, unless it is marked known or ignored. It is rejected, like a
 // file, if channel is not one of the hub's notification channels.
 func NewDeviceAlerts(channel string, kinds Kinds) (*Automation, error) {
-	if !idPattern.MatchString(channel) {
+	if !idPattern().MatchString(channel) {
 		return nil, fmt.Errorf("new-device alerts: %q is not a channel name", channel)
 	}
 	return Parse("built-in "+NewDeviceAlertsID, []byte(strings.Replace(newDeviceAlertsYAML, "CHANNEL", channel, 1)), kinds)

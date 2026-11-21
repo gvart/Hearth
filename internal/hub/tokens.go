@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gvart/hearth/internal/pki"
@@ -149,13 +150,15 @@ func (a *api) createToken(w http.ResponseWriter, r *http.Request) {
 // optional dot-separated pre-release (v0.0.1-rc.5). It refuses a hyphen inside
 // the pre-release, which leaves out Go pseudo-versions
 // (v0.0.0-20250101000000-abcdef123456), and anything a shell would interpret.
-var releaseTag = regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$`)
+var releaseTag = sync.OnceValue(func() *regexp.Regexp {
+	return regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$`)
+})
 
 // releaseVersion returns version if it names a release the installer can
 // download, and "" for dev, snapshot (vX.Y.Z-snapshot, see .goreleaser.yaml)
 // and pseudo-version builds.
 func releaseVersion(version string) string {
-	if !releaseTag.MatchString(version) || strings.HasSuffix(version, "-snapshot") {
+	if !releaseTag().MatchString(version) || strings.HasSuffix(version, "-snapshot") {
 		return ""
 	}
 	return version

@@ -98,6 +98,23 @@ type MembershipConfig struct {
 	Master func(c net.Conn, peer string)
 	// Message, if set, receives the messages other members Broadcast.
 	Message func(b []byte)
+	// Removed, if set, reports whether a member was removed from the
+	// cluster for good (`hearth cluster remove`: every hub certificate of it
+	// revoked). Removed members are left out of Members; Run checks the
+	// members it knows every refresh.
+	Removed func(id string) bool
+}
+
+// LocalState is what a member says of its roles on the gossip: its roles,
+// and a role change under way.
+type LocalState struct {
+	Roles RoleSet
+	// Syncing: promoted to storage, still copying its rows.
+	Syncing bool
+	// Draining: being demoted from storage, handing its rows off; Progress
+	// is the share of its buckets handed off, in percent.
+	Draining bool
+	Progress int
 }
 
 // Membership is this host's place in the cluster's gossip membership
@@ -121,6 +138,11 @@ type Membership struct {
 	mu   sync.Mutex
 	live map[string]liveMember
 	gone map[string]MemberInfo
+	// removed are the members removed from the cluster for good: never
+	// listed, until one joins again with a valid certificate.
+	removed map[string]bool
+	// local is this member's roles and role change under way.
+	local atomic.Pointer[LocalState]
 
 	// broadcasts queues the messages Broadcast sends on the gossip.
 	broadcasts *memberlist.TransmitLimitedQueue
@@ -155,8 +177,9 @@ func NewMembership(cfg MembershipConfig) (*Membership, error) {
 	}
 	m := &Membership{
 		cfg: cfg, log: cfg.Log.With("component", "gossip"),
-		live: map[string]liveMember{}, gone: map[string]MemberInfo{},
+		live: map[string]liveMember{}, gone: map[string]MemberInfo{}, removed: map[string]bool{},
 	}
+	m.local.Store(&LocalState{Roles: cfg.Roles})
 	m.broadcasts = &memberlist.TransmitLimitedQueue{
 		NumNodes: func() int {
 			m.mu.Lock()
@@ -304,6 +327,11 @@ type memberMeta struct {
 	// Leaving is set just before the member leaves, so the others show it
 	// as left rather than dead.
 	Leaving bool `json:"l,omitempty"`
+	// Syncing: promoted to storage and still copying its rows.
+	Syncing bool `json:"y,omitempty"`
+	// Drain is 1 + the percentage handed off while a demotion from storage
+	// drains the member; 0 when none is under way.
+	Drain int `json:"dr,omitempty"`
 }
 
 func decodeMeta(b []byte) (memberMeta, error) {
@@ -314,10 +342,22 @@ func decodeMeta(b []byte) (memberMeta, error) {
 	return m, nil
 }
 
+// localState is this member's state: its configured roles until SetLocal.
+func (m *Membership) localState() LocalState {
+	if ls := m.local.Load(); ls != nil {
+		return *ls
+	}
+	return LocalState{Roles: m.cfg.Roles}
+}
+
 func (m *Membership) setMeta(ctx context.Context, leaving bool) error {
+	ls := m.localState()
 	meta := memberMeta{
-		Roles: m.cfg.Roles, Allowed: m.cfg.Allowed, Leaving: leaving,
-		Clock: uint64(time.Now().UnixMilli()),
+		Roles: ls.Roles, Allowed: m.cfg.Allowed, Leaving: leaving,
+		Clock: uint64(time.Now().UnixMilli()), Syncing: ls.Syncing,
+	}
+	if ls.Draining {
+		meta.Drain = 1 + min(max(ls.Progress, 0), 100)
 	}
 	if m.cfg.Schema != nil {
 		if v, err := m.cfg.Schema(ctx); err == nil {
@@ -360,6 +400,7 @@ func (m *Membership) Run(ctx context.Context) error {
 				m.log.DebugContext(ctx, "announce member metadata", "err", err)
 			}
 			m.joinSeeds(ctx)
+			m.pruneRemoved()
 		}
 	}
 }
@@ -394,7 +435,7 @@ func (m *Membership) start(ctx context.Context) (*memberlist.Memberlist, error) 
 	now := time.Now()
 	m.started.Store(&now)
 	m.log.InfoContext(ctx, "gossip membership started", "advertise", net.JoinHostPort(trans.ip.String(), strconv.Itoa(trans.port)),
-		"roles", m.cfg.Roles.String())
+		"roles", m.Local().Roles.String())
 	m.joinSeeds(ctx)
 	return ml, nil
 }
@@ -490,6 +531,13 @@ type MemberInfo struct {
 	Schema       int64  `json:"schema"`
 	ClockMS      uint64 `json:"clock_ms,omitempty"`
 	ConfigDigest string `json:"config_digest,omitempty"`
+	// Syncing: promoted to storage, still copying its rows; it serves no
+	// reads yet.
+	Syncing bool `json:"syncing,omitempty"`
+	// Draining: being demoted from storage, handing its rows off; Progress
+	// is how far, in percent.
+	Draining bool `json:"draining,omitempty"`
+	Progress int  `json:"progress,omitempty"`
 }
 
 func memberInfo(n *memberlist.Node, state string) MemberInfo {
@@ -497,6 +545,10 @@ func memberInfo(n *memberlist.Node, state string) MemberInfo {
 	if meta, err := decodeMeta(n.Meta); err == nil {
 		mi.Roles, mi.AllowedRoles, mi.Schema, mi.ClockMS, mi.ConfigDigest =
 			meta.Roles, meta.Allowed, meta.Schema, meta.Clock, meta.Digest
+		mi.Syncing = meta.Syncing
+		if meta.Drain > 0 {
+			mi.Draining, mi.Progress = true, meta.Drain-1
+		}
 	}
 	return mi
 }
@@ -526,8 +578,19 @@ func (m *Membership) Members() []MemberInfo {
 	quiet := time.Duration(3*max(len(m.live), 2)) * probe
 	out := make([]MemberInfo, 0, len(m.live)+len(m.gone))
 	for id, l := range m.live {
+		if m.removed[id] {
+			continue
+		}
 		mi := l.info
-		if id != m.cfg.NodeID {
+		if id == m.cfg.NodeID {
+			// This member's own state is the newest it set, whether or not
+			// memberlist has passed it on yet.
+			ls := m.localState()
+			mi.Roles, mi.Syncing, mi.Draining, mi.Progress = ls.Roles, ls.Syncing, ls.Draining, 0
+			if ls.Draining {
+				mi.Progress = ls.Progress
+			}
+		} else {
 			last := t.lastSeen(id)
 			if l.joined.After(last) {
 				last = l.joined
@@ -538,11 +601,98 @@ func (m *Membership) Members() []MemberInfo {
 		}
 		out = append(out, mi)
 	}
-	for _, g := range m.gone {
-		out = append(out, g)
+	for id, g := range m.gone {
+		if !m.removed[id] {
+			out = append(out, g)
+		}
 	}
 	slices.SortFunc(out, func(a, b MemberInfo) int { return strings.Compare(a.ID, b.ID) })
 	return out
+}
+
+// Local returns what this member says of its roles.
+func (m *Membership) Local() LocalState { return m.localState() }
+
+// SetLocal changes what this member says of its roles, at once in Members
+// and on the gossip within a round. The roles must lie within the host's
+// allowed roles and include storage or master.
+func (m *Membership) SetLocal(ls LocalState) error {
+	if err := CheckCeiling(ls.Roles, m.cfg.Allowed); err != nil {
+		return err
+	}
+	if !ls.Roles.Gossips() {
+		return fmt.Errorf("membership: roles %s: only storage and master members gossip", ls.Roles)
+	}
+	m.local.Store(&ls)
+	if err := m.setMeta(context.Background(), false); err != nil {
+		return err
+	}
+	if ml := m.ml.Load(); ml != nil {
+		if err := ml.UpdateNode(m.cfg.RefreshEvery); err != nil {
+			m.log.Debug("announce member metadata", "err", err)
+		}
+	}
+	m.notifyChange()
+	return nil
+}
+
+// Forget drops member id from Members for good: it was removed from the
+// cluster. It is listed again only once it joins again with a certificate
+// that is not revoked.
+func (m *Membership) Forget(id string) {
+	if id == "" || id == m.cfg.NodeID {
+		return
+	}
+	m.mu.Lock()
+	m.removed[id] = true
+	delete(m.gone, id)
+	m.mu.Unlock()
+	m.notifyChange()
+}
+
+// pruneRemoved forgets the members Removed reports removed, and lists again
+// those that joined back.
+func (m *Membership) pruneRemoved() {
+	if m.cfg.Removed == nil {
+		return
+	}
+	m.mu.Lock()
+	ids, live := map[string]bool{}, map[string]bool{}
+	for id := range m.live {
+		ids[id], live[id] = m.removed[id], true
+	}
+	for id := range m.gone {
+		ids[id] = m.removed[id]
+	}
+	for id := range m.removed {
+		ids[id] = true
+	}
+	m.mu.Unlock()
+	changed := false
+	for id, wasRemoved := range ids {
+		if id == m.cfg.NodeID {
+			continue
+		}
+		removed := m.cfg.Removed(id)
+		// A member forgotten is listed again only once it gossips again
+		// with a certificate that is not revoked: not while the revocation
+		// is still on its way here.
+		if removed == wasRemoved || (!removed && !live[id]) {
+			continue
+		}
+		m.mu.Lock()
+		if removed {
+			m.removed[id] = true
+			delete(m.gone, id)
+		} else {
+			delete(m.removed, id)
+		}
+		m.mu.Unlock()
+		changed = true
+	}
+	if changed {
+		m.notifyChange()
+	}
 }
 
 // NodeMeta implements memberlist.Delegate.

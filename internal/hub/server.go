@@ -135,6 +135,9 @@ type Config struct {
 	// routed and requests for them forwarded (forward.go). Set Leadership
 	// to the AP node too. Nil on a single hub and in a Raft cluster.
 	Masters Masters
+	// ClusterAdmin, in an AP cluster, promotes, demotes and removes members
+	// (the cluster page of the UI); nil elsewhere.
+	ClusterAdmin ClusterAdmin
 }
 
 // NewHandler serves EnrollService to anyone (the token is the credential) and

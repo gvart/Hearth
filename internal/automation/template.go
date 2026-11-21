@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 	"text/template"
 	"text/template/parse"
 	"time"
@@ -191,7 +192,9 @@ func boundBranch(b *parse.BranchNode) (named bool) {
 // printfSize finds a width or precision too large for a message, one computed
 // when the template runs, or an argument index, which uses one argument over
 // and over: one call could build gigabytes.
-var printfSize = regexp.MustCompile(`%[-+# 0-9.*]*\[|%[-+# 0]*(\*|\d{4,}|\d*\.(\*|\d{4,}))`)
+var printfSize = sync.OnceValue(func() *regexp.Regexp {
+	return regexp.MustCompile(`%[-+# 0-9.*]*\[|%[-+# 0]*(\*|\d{4,}|\d*\.(\*|\d{4,}))`)
+})
 
 // renderBudget limits the text one render builds, which a value doubled at
 // every step could otherwise grow without writing anything.
@@ -239,7 +242,7 @@ func (b *renderBudget) funcs() template.FuncMap {
 		"printf": func(format string, args ...any) (string, error) {
 			// Every percent sign is checked, %% included: fmt reads %5% as one
 			// verb, so dropping %% first would hide the verb after it.
-			if printfSize.MatchString(format) {
+			if printfSize().MatchString(format) {
 				return "", errRenderLimit
 			}
 			return b.build(args, func() string { return fmt.Sprintf(format, args...) })

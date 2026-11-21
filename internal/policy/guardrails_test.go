@@ -130,8 +130,9 @@ var expected = map[Action]struct {
 	AdminLogin:                {Safe, []string{ActorWeb}, true},
 	ClusterTokenCreate:        {Dangerous, []string{ActorAdmin}, false},
 	ClusterJoin:               {Dangerous, []string{ActorJoinToken}, true},
-	ClusterPromote:            {Dangerous, []string{ActorHub}, true},
-	ClusterRemove:             {Dangerous, []string{ActorAdmin}, false},
+	ClusterPromote:            {Dangerous, []string{ActorHub, ActorAdmin, ActorWeb}, false},
+	ClusterDemote:             {Dangerous, []string{ActorAdmin, ActorWeb}, false},
+	ClusterRemove:             {Dangerous, []string{ActorAdmin, ActorWeb}, false},
 	ClusterTransferLeadership: {Safe, []string{ActorAdmin}, false},
 	ClusterMigrate:            {Dangerous, []string{ActorAdmin}, false},
 	ClusterCARotate:           {Dangerous, []string{ActorAdmin}, false},
@@ -213,6 +214,14 @@ var expected = map[Action]struct {
 	PluginCommandDangerous:    {Dangerous, []string{ActorWeb, ActorAutomation, ActorMCP}, false},
 }
 
+// fixedFor are the actor kinds for which an action that is not fixed for
+// every one ignores the configuration.
+var fixedFor = map[Action][]string{
+	// A Raft voter promoting itself, in the join protocol; an admin's
+	// promotion in an AP cluster is held or denied as configured.
+	ClusterPromote: {ActorHub},
+}
+
 func TestExpectedCoversEveryAction(t *testing.T) {
 	var want []Action
 	for a := range expected {
@@ -262,7 +271,7 @@ func checkDecision(t *testing.T, action Action, kind, cfgName string, cfg Config
 	switch {
 	case !slices.Contains(exp.actors, kind):
 		want = Deny
-	case exp.fixed:
+	case exp.fixed, slices.Contains(fixedFor[action], kind):
 	case cfgName == "confirm":
 		want = Confirm
 	case cfgName == "deny":

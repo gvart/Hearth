@@ -240,10 +240,10 @@ func (m *Manager) lookup(name string, req CommandRequest) (*plugin, error) {
 	if p == nil {
 		return nil, ErrNotFound
 	}
-	if !idRE.MatchString(req.Command) {
+	if !idRE().MatchString(req.Command) {
 		return nil, fmt.Errorf("%w: invalid command name", ErrBadRequest)
 	}
-	if req.Device != "" && !idRE.MatchString(req.Device) {
+	if req.Device != "" && !idRE().MatchString(req.Device) {
 		return nil, fmt.Errorf("%w: invalid device id", ErrBadRequest)
 	}
 	if len(req.Args) > maxArgs {

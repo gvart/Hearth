@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gvart/hearth/internal/pki"
@@ -22,12 +23,12 @@ import (
 // renewBefore is how long before expiry a node renews its own certificate.
 const renewBefore = 30 * 24 * time.Hour
 
-var nodeIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,62}$`)
+var nodeIDPattern = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,62}$`) })
 
 // ValidNodeID checks a node ID: 1 to 63 of [a-z0-9._-], starting with a
 // letter or digit.
 func ValidNodeID(id string) error {
-	if !nodeIDPattern.MatchString(id) {
+	if !nodeIDPattern().MatchString(id) {
 		return fmt.Errorf("invalid node ID %q: want 1-63 of [a-z0-9._-], starting with a letter or digit", id)
 	}
 	return nil

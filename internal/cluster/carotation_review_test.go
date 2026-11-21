@@ -400,7 +400,11 @@ func TestCARotationMissedHubStops(t *testing.T) {
 			continue
 		}
 		if _, err := missed.st.ApplyLocal(ctx, store.AdvanceCARotation{NewCAFP: plan.NewCAFP, From: step[0], To: step[1]}); err != nil {
-			t.Fatal(err)
+			// The log may also reach it between the read and this write:
+			// then the stage moved on by itself.
+			if rot, _ := missed.st.CARotations().Latest(ctx); !errors.Is(err, store.ErrCARotationConflict) || rot.Stage == step[0] {
+				t.Fatal(err)
+			}
 		}
 	}
 	missed.reconcileCA(ctx)

@@ -1132,6 +1132,21 @@ dialog::backdrop {
   scrollbar-width: none;
 }
 
+/* Wider than a phone, the links wrap onto a second row rather than scroll:
+   every one stays in sight, Devices first. */
+@media (min-width: 641px) {
+  .topbar {
+    height: auto;
+    min-height: 3.5rem;
+    padding-block: 0.5rem;
+  }
+
+  .nav {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+}
+
 .nav-link {
   flex: none;
   white-space: nowrap;

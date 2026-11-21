@@ -21,6 +21,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 
 	"go.yaml.in/yaml/v3"
 
@@ -46,7 +47,7 @@ var knownCaps = []string{CapDiscover, CapState, CapCommand}
 const maxManifest = 64 << 10
 
 // idRE is what plugin, device, entity and command names look like.
-var idRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
+var idRE = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`) })
 
 // Manifest describes an exec plugin: what to run and what it may do. The
 // operator writes or reviews it; nothing the plugin's process prints can
@@ -119,7 +120,7 @@ func (m Manifest) Validate() error {
 	if m.Protocol != ProtocolVersion {
 		errs = append(errs, fmt.Errorf("protocol must be %d, not %d", ProtocolVersion, m.Protocol))
 	}
-	if !idRE.MatchString(m.Name) {
+	if !idRE().MatchString(m.Name) {
 		errs = append(errs, fmt.Errorf("name %q: want 1-64 letters, digits, '.', '_' or '-'", m.Name))
 	}
 	if m.Command == "" {
@@ -140,7 +141,7 @@ func (m Manifest) Validate() error {
 	}
 	seen := map[string]bool{}
 	for _, c := range m.Commands {
-		if !idRE.MatchString(c.Name) {
+		if !idRE().MatchString(c.Name) {
 			errs = append(errs, fmt.Errorf("commands: invalid name %q", c.Name))
 		}
 		if seen[c.Name] {

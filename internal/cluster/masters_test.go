@@ -219,6 +219,7 @@ func TestRevocationBroadcastSkipsAntiEntropy(t *testing.T) {
 	an.mu.Lock()
 	an.cut[[2]string{"a", "b"}] = true
 	an.mu.Unlock()
+	an.dropConns()
 	if _, err := an.m("a").st.Certs().RevokeDevice(ctx, dev, time.Now()); err != nil {
 		t.Fatal(err)
 	}
@@ -256,6 +257,7 @@ func TestAgentURLsReachEveryMaster(t *testing.T) {
 		cfg: APConfig{NodeID: "b", AgentURL: "https://b:7443"}, st: an.m("b").st, log: testLogger(t),
 		masters: NewMasterRing("b", fm.Members, nil),
 	}
+	node.setRoles(HubRoles)
 	apEventually(t, "b to list every master's agent URL", func() bool {
 		got := node.AgentURLs()
 		return len(got) == 3 && got[0] == "https://b:7443"

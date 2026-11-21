@@ -44,7 +44,7 @@ var apHubs = []string{"hub-a", "hub-b", "hub-c"}
 // query results on every hub.
 func TestAPCluster(t *testing.T) {
 	ctx := t.Context()
-	s := newStack(t, "hearth-e2e-ap", "ap.compose.yaml", append(apHubs[:3:3], agentName))
+	s := newStack(t, "hearth-e2e-ap", "ap.compose.yaml", append(apHubs[:3:3], "hub-d", agentName))
 	s.compose(ctx, "build")
 
 	// 1. hub-a forms the cluster alone; hub-b and hub-c join it.
@@ -187,6 +187,101 @@ func TestAPCluster(t *testing.T) {
 		return true, ""
 	})
 	t.Logf("TIMING heal → byte-identical devices and audit on every hub in %v", since(healAt))
+
+	// 5. A fourth member: hub-d joins (master and storage), is demoted from
+	// storage by the CLI on hub-a (its rows handed off), then promoted back
+	// by the API of hub-b: syncing until it holds its rows again.
+	all := append(apHubs[:3:3], "hub-d")
+	tok := s.clusterJoinToken(ctx, "hub-a", time.Now().Add(APFormationWithin))
+	s.composeEnv(ctx, []string{"HEARTH_JOIN_TOKEN=" + tok}, "up", "--detach", "--no-deps", "--wait", "--wait-timeout", "60", "hub-d")
+	s.waitAPMembers(ctx, all, all, time.Now().Add(APFormationWithin))
+	demoteAt := time.Now()
+	s.compose(ctx, "exec", "-T", "hub-a", "hearth", "cluster", "demote", "hub-d", "storage", "--data-dir", hubDataDir)
+	waitFor(ctx, t, demoteAt.Add(APConvergeWithin), "hub-d drained and out of storage", func() (bool, string) {
+		m := s.apMember(ctx, "hub-a", "hub-d")
+		return !slices.Contains(m.Roles, "storage") && !m.Draining, fmt.Sprintf("%+v", m)
+	})
+	t.Logf("TIMING demote hub-d from storage → drained in %v", since(demoteAt))
+	promoteAt := time.Now()
+	if status, code, err := apis["hub-b"].postStatus(ctx, "/api/v1/cluster/members/hub-d/promote",
+		map[string]string{"role": "storage"}); err != nil || status != http.StatusOK {
+		t.Fatalf("promote hub-d to storage: %d %s %v", status, code, err)
+	}
+	waitFor(ctx, t, promoteAt.Add(APConvergeWithin), "hub-d in sync", func() (bool, string) {
+		m := s.apMember(ctx, "hub-a", "hub-d")
+		return slices.Contains(m.Roles, "storage") && !m.Syncing, fmt.Sprintf("%+v", m)
+	})
+	t.Logf("TIMING promote hub-d to storage → synced in %v", since(promoteAt))
+	apis["hub-d"] = s.loginTo(ctx, "hub-d")
+	for _, path := range []string{"/api/v1/devices", "/api/v1/audit?limit=500"} {
+		want, err := apis["hub-a"].raw(ctx, path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, err := apis["hub-d"].raw(ctx, path); err != nil || !bytes.Equal(got, want) {
+			t.Errorf("%s on hub-d after its catch-up differs from hub-a's (%v)", path, err)
+		}
+	}
+
+	// 6. Demote the master the agent streams to, through another master's
+	// API: the agent is on another master and the device online there
+	// within the headline bound.
+	s.startAgent(ctx, agentName)
+	apis["hub-a"].waitDevice(ctx, agentName, time.Now().Add(DeviceVisibleWithin), "online again", func(d device) bool {
+		return d.Status == "online"
+	})
+	streamHub = s.agentStreamHub(ctx)
+	other := "hub-a"
+	if streamHub == other {
+		other = "hub-b"
+	}
+	demoteAt = time.Now()
+	if status, code, err := apis[other].postStatus(ctx, "/api/v1/cluster/members/"+streamHub+"/demote",
+		map[string]string{"role": "master"}); err != nil || status != http.StatusOK {
+		t.Fatalf("demote %s from master: %d %s %v", streamHub, status, code, err)
+	}
+	waitFor(ctx, t, demoteAt.Add(DeviceVisibleWithin), "the agent on another master", func() (bool, string) {
+		movedTo = s.agentStreamHub(ctx)
+		return movedTo != streamHub && slices.Contains(all, movedTo), "on " + movedTo
+	})
+	apis[movedTo].waitDevice(ctx, agentName, demoteAt.Add(DeviceVisibleWithin), "online on "+movedTo, func(d device) bool {
+		return d.Status == "online" && d.LastSeen.After(demoteAt)
+	})
+	t.Logf("TIMING demote %s (the agent's stream) from master → agent on %s and online in %v", streamHub, movedTo, since(demoteAt))
+	if out, err := s.run(ctx, "exec", "-T", streamHub, "test", "-e", hubDataDir+"/ca.key"); err == nil {
+		t.Errorf("the demoted %s still holds the CA key:\n%s", streamHub, out)
+	}
+}
+
+// apMemberInfo is a member as `hearth cluster status --json` shows it.
+type apMemberInfo struct {
+	ID       string   `json:"id"`
+	State    string   `json:"state"`
+	Roles    []string `json:"roles"`
+	Syncing  bool     `json:"syncing"`
+	Draining bool     `json:"draining"`
+	Progress int      `json:"progress"`
+}
+
+// apMember is member id as hub sees it.
+func (s *stack) apMember(ctx context.Context, hub, id string) apMemberInfo {
+	s.t.Helper()
+	out, err := s.run(ctx, "exec", "-T", hub, "hearth", "cluster", "status", "--json", "--data-dir", hubDataDir)
+	if err != nil {
+		return apMemberInfo{}
+	}
+	var st struct {
+		Members []apMemberInfo `json:"members"`
+	}
+	if err := json.Unmarshal([]byte(out), &st); err != nil {
+		return apMemberInfo{}
+	}
+	for _, m := range st.Members {
+		if m.ID == id {
+			return m
+		}
+	}
+	return apMemberInfo{}
 }
 
 // waitAPMembers waits until every one of hubs sees each of alive as a live

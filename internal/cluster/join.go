@@ -352,10 +352,9 @@ func Join(ctx context.Context, p JoinParams) error {
 	if err != nil {
 		return fmt.Errorf("join cluster at %s: %w", target, err)
 	}
-	if len(resp.Msg.GetCaKey()) == 0 {
-		// Only a master holds the CA key; a hub runs as one.
-		return errors.New("join: the cluster sent no CA key: this host does not allow the master role " +
-			"(--allow-roles), and a hub without it cannot run yet")
+	if len(resp.Msg.GetCaKey()) == 0 && p.AllowedRoles.Has(RoleMaster) {
+		// Only a master holds the CA key; one allowing the master role gets it.
+		return errors.New("join: the cluster sent no CA key, though this host allows the master role")
 	}
 	cert, err := x509.ParseCertificate(resp.Msg.GetCertificate())
 	if err != nil {
@@ -375,6 +374,13 @@ func Join(ctx context.Context, p JoinParams) error {
 	}
 	if err := os.WriteFile(filepath.Join(dir, joinURLFile), []byte(target+"\n"), 0o600); err != nil {
 		return fmt.Errorf("join: %w", err)
+	}
+	if len(resp.Msg.GetCaKey()) == 0 {
+		// A member that is no master holds the CA certificate only.
+		if err := pki.InstallCACert(p.DataDir, resp.Msg.GetCaCertificate(), tok.CAFingerprint); err != nil {
+			return fmt.Errorf("join: %w", err)
+		}
+		return nil
 	}
 	if err := pki.InstallCA(p.DataDir, resp.Msg.GetCaCertificate(), resp.Msg.GetCaKey(), tok.CAFingerprint); err != nil {
 		return fmt.Errorf("join: %w", err)
