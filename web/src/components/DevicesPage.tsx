@@ -13,6 +13,7 @@ import { PluginDevices } from './PluginDevices.tsx';
 import { StatusDot } from './StatusDot.tsx';
 import { UnmanagedHosts } from './UnmanagedHosts.tsx';
 import './DevicesPage.css';
+import { Tip } from './Tip.tsx';
 
 const statusOrder = { online: 0, unknown: 1, offline: 2 } as const;
 
@@ -97,7 +98,9 @@ export function DevicesPage() {
       <main className="content">
         <div className="page-head">
           <div>
-            <h1>Devices</h1>
+            <h1>
+              Devices <Tip id="devices" />
+            </h1>
             {devices.data ? (
               <p className="muted">
                 {list.length === 0

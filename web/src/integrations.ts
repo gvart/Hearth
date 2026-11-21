@@ -177,8 +177,3 @@ export function integrationSummary(list: Integration[]): string {
   const bad = list.filter((i) => i.state === 'trouble').length;
   return `${String(on)} on${bad > 0 ? ` · ${String(bad)} failing` : ''}`;
 }
-
-/** Where the docs live. */
-export function docsURL(page: string): string {
-  return `https://github.com/gvart/hearth/blob/main/docs/${page}`;
-}
