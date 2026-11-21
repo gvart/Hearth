@@ -583,7 +583,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		cfg.ConfigSealer, cfg.ConfigKinds = sealers.notify, cliKinds
 	}
 	// A backup from the web UI is the one `hearth backup` writes.
-	cfg.Backup, cfg.BackupDir = webBackup(opts, st, node != nil), opts.dataDir
+	cfg.Backup, cfg.BackupDir = webBackup(opts, st, node != nil || apNode != nil, snapshot), opts.dataDir
 	// The web editor and MCP write the same directory under one lock.
 	var automationsMu sync.Mutex
 	cfg.AutomationsLock = &automationsMu

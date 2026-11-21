@@ -80,13 +80,16 @@ func addBackupFlags(cmd *cobra.Command, o *scheduledBackupOptions) {
 }
 
 // webBackup writes the backup `hearth backup` writes, CA key included, for
-// the web UI's download.
-func webBackup(opts hubOptions, st *store.Store, clustered bool) func(ctx context.Context, output, passphrase string) error {
+// the web UI's download; on an AP member, snapshot copies the whole cluster
+// store rather than its own shards.
+func webBackup(opts hubOptions, st *store.Store, clustered bool,
+	snapshot func(context.Context, string) error,
+) func(ctx context.Context, output, passphrase string) error {
 	return func(ctx context.Context, output, passphrase string) error {
 		_, err := backup.Create(ctx, backup.CreateOptions{
 			DataDir: opts.dataDir, Store: st, Output: output, Passphrase: passphrase,
 			NotifyConfig: opts.notifyConfig, AutomationsDir: opts.automationsDir, RunbooksDir: opts.runbooksDir,
-			HearthVersion: opts.version, Clustered: clustered,
+			HearthVersion: opts.version, Clustered: clustered, Snapshot: snapshot,
 		})
 		return err
 	}
