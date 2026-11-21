@@ -1,0 +1,74 @@
+internal/hub/clusterca.go
+  s_87f1c7baee7d5a::t_bfc0547055dc1b 160-164,171-172,174,186,188,205,208,224,233-237,252
+internal/cluster/apepoch_test.go
+  s_87f1c7baee7d5a::t_998671e8ca272f 108
+  s_87f1c7baee7d5a::t_7a9847ec9d476e 122
+internal/store/jointokens.go
+  s_87f1c7baee7d5a::t_bf6610361589e5 19-25,29-31,33,39-42,44-46,48
+web/src/api/cluster.ts
+  s_87f1c7baee7d5a::t_a0eb6337b0fb35 35,105-106
+cmd/hearth/cluster.go
+  s_87f1c7baee7d5a::t_28447fa469e86d 76
+  s_87f1c7baee7d5a::t_3b3deb6ff8c9c1 108-111
+  s_87f1c7baee7d5a::t_5ba8b61eaca80e 132,134,139-144,146
+  s_87f1c7baee7d5a::t_4cf26c9f7332b2 86-88
+  s_87f1c7baee7d5a::t_65b4600d4ef83e 98-99
+internal/store/command.go
+  s_87f1c7baee7d5a::t_0d9c7f197730d8 57-59,436-437,445,448-449,453-454,466,469-473
+internal/hub/clusterca_test.go
+  s_87f1c7baee7d5a::t_998671e8ca272f 260-262,264
+  s_87f1c7baee7d5a::t_602d77091d5a73 223,228-229,231,233-236,272-278
+cmd/hearth/jointoken_test.go
+  s_87f1c7baee7d5a::t_452db1563f1251 1-76
+docs/cluster.md
+  s_87f1c7baee7d5a::t_a0eb6337b0fb35 66,70-80,91-95
+cmd/hearth/cluster_test.go
+  s_87f1c7baee7d5a::t_fb67424ab97e3a 21
+internal/store/command_test.go
+  s_87f1c7baee7d5a::t_998671e8ca272f 287-301,649,651
+internal/cluster/apcarotation_test.go
+  s_87f1c7baee7d5a::t_998671e8ca272f 500
+internal/cluster/join_test.go
+  s_87f1c7baee7d5a::t_8dfc551ea63d5b 7,62
+  s_87f1c7baee7d5a::t_139e5292c6e136 1-6,8-61,63-87
+web/src/components/AddHubDialog.tsx
+  s_87f1c7baee7d5a::t_a0eb6337b0fb35 67,90,112-122,124-125
+internal/cluster/apnode.go
+  s_87f1c7baee7d5a::t_ac557004d47987 6
+  s_87f1c7baee7d5a::t_bee08cfb207905 725-728,731,734-739,744,769-770,773-779,795-797,799,804-805,807,811-819
+  s_87f1c7baee7d5a::t_2bab9a4342614a 820-821
+internal/cluster/promote_test.go
+  s_87f1c7baee7d5a::t_998671e8ca272f 421,452
+internal/cluster/masters_test.go
+  s_87f1c7baee7d5a::t_bbe77e980ab096 6,8-9,349
+  s_87f1c7baee7d5a::t_602d77091d5a73 278-281,293,308,310-348,350-361,363-366,368-372
+internal/store/schema_test.go
+  s_87f1c7baee7d5a::t_998671e8ca272f 196,199
+proto/hearth/cluster/v1/cluster.proto
+  s_87f1c7baee7d5a::t_b619c7980f8a0e 37-38,50-51,53-55
+internal/store/migrations/00030_join_token_roles.sql
+  s_87f1c7baee7d5a::t_0d9c7f197730d8 1-11
+internal/cluster/join.go
+  s_87f1c7baee7d5a::t_bee08cfb207905 33
+  s_87f1c7baee7d5a::t_85a43e8abb758a 16,59-61,66-68,111-118,136-140
+docs/security.md
+  s_87f1c7baee7d5a::t_0ee7da7dcb6977 40-41
+internal/proto/hearth/cluster/v1/cluster.pb.go
+  s_87f1c7baee7d5a::t_9107bb58279df8 41-42,127-132,188-194,330,334-335
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "efbbf0a7a5216cfe544cae249e7ac69889aff6c8",
+  "prompts": {},
+  "sessions": {
+    "s_87f1c7baee7d5a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "45cc2cdf-3130-4caa-8cb4-8cb365d2150d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
