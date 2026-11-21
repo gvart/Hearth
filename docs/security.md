@@ -131,7 +131,7 @@ rotation. Each asks for the admin password again, then goes through policy like 
 - A wrong one is refused (`403 reauth_failed`), audited as `admin.reauth` with the result `error: wrong password`, and limited like a
   login from the same address.
 
-The admin password can be changed in **Settings** while signed in, given the current one; this is
+The admin password can be changed in **Settings → Access** while signed in, given the current one; this is
 `admin.set_password` by `web` (dangerous) and signs out every session. A forgotten password is reset
 on the hub host with `hearth admin set-password`, which stays CLI-only.
 

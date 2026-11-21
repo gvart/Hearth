@@ -15,12 +15,12 @@
 #     and the new node's address is among the nodes it reads: add it to
 #     --talos-nodes (or to the talosconfig context's nodes) and restart the hub
 #     before the run. Otherwise the check that waits for the new node never passes.
-#   - The cluster is adopted on the hub's Kubernetes page, so the hub can check
+#   - The cluster is adopted on the hub's Platforms page, so the hub can check
 #     that the node is Ready.
 #   - Edit the vars below: the device with talosctl, the new node's address,
 #     the name it registers with (its hostname, as the machine config sets it),
 #     its role, the machine config's path, a control-plane address to run the
-#     health checks from, and the cluster's name on the Kubernetes page.
+#     health checks from, and the cluster's name on the Platforms page.
 #
 # apply-config --insecure trusts on first use: talosctl cannot verify the node
 # it talks to, so the machine config, with the cluster's secrets in it, goes to
