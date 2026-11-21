@@ -1,0 +1,36 @@
+internal/hub/webadmin_test.go
+  s_87f1c7baee7d5a::t_e0a58f3585c1af 7,206-207,236
+  s_87f1c7baee7d5a::t_f65bdbe90f70e4 1-6,8-205,208-235,237-370
+internal/hub/reauth.go
+  s_87f1c7baee7d5a::t_ace29c57279768 1-117,119-183
+  s_87f1c7baee7d5a::t_f014638a543488 118
+internal/policy/approvallink_test.go
+  s_87f1c7baee7d5a::t_fc994c2ebe5a8c 39
+internal/hub/webadmin.go
+  s_87f1c7baee7d5a::t_fba83bb8056355 1-265
+internal/policy/policy_test.go
+  s_87f1c7baee7d5a::t_fc994c2ebe5a8c 66-67
+internal/policy/guardrails_test.go
+  s_87f1c7baee7d5a::t_015c9fe08a51d7 128-129,131,179-180,197,200,224-226
+internal/policy/policy.go
+  s_87f1c7baee7d5a::t_91636c0b7691fb 34-36,350-357,360-362,473-474,515-516,526-529
+internal/hub/api.go
+  s_87f1c7baee7d5a::t_0fff5a303c11b6 100,135,264-267,340-344,422-423,435,466,485-490
+  s_87f1c7baee7d5a::t_5130cd47d2a180 101,169,268-269
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "17ce12e3bef74dd09ac54716d49ad6ce6818873a",
+  "prompts": {},
+  "sessions": {
+    "s_87f1c7baee7d5a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "45cc2cdf-3130-4caa-8cb4-8cb365d2150d",
+        "model": "unknown"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
