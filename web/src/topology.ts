@@ -177,6 +177,110 @@ export function layout(nodes: TopologyNode[], links: GraphLink[], width: number,
   return out;
 }
 
+/** The rows of the tiered layout, top to bottom, and what each is called beside the map. */
+export const tierOrder: TopologyNode['kind'][] = ['hub', 'device', 'host', 'unknown'];
+
+export const tierLabel: Record<TopologyNode['kind'], string> = {
+  hub: 'Hub',
+  device: 'Devices',
+  host: 'Hosts',
+  unknown: 'Unknown',
+};
+
+/** A row of the tiered layout: its kind and the height it is drawn at. */
+export interface TierRow {
+  kind: TopologyNode['kind'];
+  y: number;
+}
+
+/**
+ * Places the nodes in rows by kind: the hub at the top, then devices, the
+ * hosts they see, and addresses the hub knows nothing of. A kind with more
+ * nodes than fit side by side (slot wide each) takes several rows. Within a
+ * row a node sits under the middle of what it links to in the rows above, as
+ * far as a few sweeps manage, so the lines cross less.
+ */
+export function tiers(
+  nodes: TopologyNode[],
+  links: GraphLink[],
+  width: number,
+  height: number,
+  pad = 60,
+  slot = 124,
+): { nodes: GraphNode[]; rows: TierRow[] } {
+  if (nodes.length === 0) {
+    return { nodes: [], rows: [] };
+  }
+  const perRow = Math.max(1, Math.floor((width - 2 * pad) / slot));
+  const peers = new Map<string, string[]>();
+  for (const l of links) {
+    peers.set(l.a, [...(peers.get(l.a) ?? []), l.b]);
+    peers.set(l.b, [...(peers.get(l.b) ?? []), l.a]);
+  }
+  // Rows of ids, in kind order; a kind wraps into rows of the same length, give or take one.
+  const rows: { kind: TopologyNode['kind']; ids: string[] }[] = [];
+  for (const kind of tierOrder) {
+    const ids = nodes
+      .filter((n) => n.kind === kind)
+      .map((n) => n.id)
+      .sort((a, b) => a.localeCompare(b));
+    const count = Math.ceil(ids.length / perRow);
+    const size = Math.ceil(ids.length / Math.max(count, 1));
+    for (let i = 0; i < count; i++) {
+      rows.push({ kind, ids: ids.slice(i * size, (i + 1) * size) });
+    }
+  }
+  // Where each node sits along its row, from 0 to 1, re-read after every sweep.
+  const pos = new Map<string, number>();
+  const place = (ids: string[]) => {
+    ids.forEach((id, i) => pos.set(id, (i + 0.5) / ids.length));
+  };
+  rows.forEach((r) => {
+    place(r.ids);
+  });
+  const rowOf = new Map(rows.flatMap((r, i) => r.ids.map((id) => [id, i] as const)));
+  const sweep = (order: number[], towards: (other: number, own: number) => boolean) => {
+    for (const i of order) {
+      const row = rows[i];
+      if (!row) {
+        continue;
+      }
+      const middle = (id: string) => {
+        const ps = (peers.get(id) ?? [])
+          .filter((p) => towards(rowOf.get(p) ?? -1, i))
+          .map((p) => pos.get(p) ?? 0.5);
+        return ps.length > 0 ? ps.reduce((a, b) => a + b, 0) / ps.length : (pos.get(id) ?? 0.5);
+      };
+      const keyed = row.ids.map((id) => ({ id, at: middle(id) }));
+      keyed.sort((a, b) => a.at - b.at || a.id.localeCompare(b.id));
+      row.ids = keyed.map((k) => k.id);
+      place(row.ids);
+    }
+  };
+  const down = rows.map((_, i) => i);
+  const up = down.slice().reverse();
+  for (let pass = 0; pass < 3; pass++) {
+    sweep(down, (other, own) => other >= 0 && other < own);
+    sweep(up, (other, own) => other > own);
+  }
+  const at = new Map(nodes.map((n) => [n.id, n]));
+  const h = height - 2 * pad;
+  const w = width - 2 * pad;
+  const out: GraphNode[] = [];
+  const placed: TierRow[] = [];
+  rows.forEach((row, i) => {
+    const y = rows.length === 1 ? height / 2 : pad + (h * i) / (rows.length - 1);
+    placed.push({ kind: row.kind, y });
+    row.ids.forEach((id, j) => {
+      const node = at.get(id);
+      if (node) {
+        out.push({ ...node, x: pad + (w * (j + 0.5)) / row.ids.length, y });
+      }
+    });
+  });
+  return { nodes: out, rows: placed };
+}
+
 /**
  * Nudges nodes apart whose labels would overlap: each node keeps a label-sized
  * ellipse (labelW × labelH) to itself, as far as a few passes manage.

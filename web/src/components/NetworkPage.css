@@ -60,6 +60,7 @@
 }
 
 .topo-link {
+  fill: none;
   stroke-linecap: round;
 }
 
@@ -91,6 +92,35 @@
 
 .topo-node {
   stroke-width: 2;
+}
+
+/* The marks' inner lines: the hub's cut-out and a device's two rules */
+.topo-cut {
+  fill: var(--surface);
+}
+
+.topo-rule {
+  stroke: var(--muted);
+  stroke-width: 1.5;
+}
+
+/* A tier's rule across the map and its name at the left edge */
+.topo-tier line {
+  stroke: var(--border);
+  stroke-width: 1;
+  stroke-dasharray: 2 6;
+}
+
+.topo-tier text {
+  font-family: var(--font-mono);
+  font-size: var(--type-11);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  fill: var(--muted);
+}
+
+.topo-bar .range-picker {
+  margin: 0;
 }
 
 .topo-node.hub {
