@@ -1,0 +1,166 @@
+/* The device list as blocks: each device a small drawing with its facts on leaders and its levels on meters */
+.devices-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.devices-tools .range-picker {
+  margin: 0;
+}
+
+.block-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(calc(var(--rail) * 1.2), 100%), 1fr));
+  gap: var(--space-6);
+}
+
+.block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: var(--line-1) solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.block:hover {
+  background: var(--surface-2);
+}
+
+.block:focus-visible {
+  outline: var(--line-2) solid var(--accent);
+}
+
+/* A device that is not online is drawn dashed, like a part not yet built */
+.block-off {
+  border-style: dashed;
+}
+
+.block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  color: var(--muted);
+  font-size: var(--type-11);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.block-state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text);
+}
+
+.block-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-sans);
+  font-size: var(--type-20);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-tight);
+  overflow-wrap: anywhere;
+}
+
+.pins {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-05);
+}
+
+.pin {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.pin-label,
+.meter-label {
+  color: var(--muted);
+  font-size: var(--type-11);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.pin-lead {
+  flex: 1;
+  border-bottom: var(--line-1) dotted var(--border);
+}
+
+.pin-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Meter: a level on a ruled line. Cyan while fine, yellow when it might go wrong, red when it has. */
+.meter {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.meter-label {
+  flex: none;
+  width: var(--space-8);
+}
+
+.meter-track {
+  position: relative;
+  flex: 1;
+  min-width: var(--space-10);
+  height: var(--dot);
+  border-inline: var(--line-1) solid var(--line);
+  background: linear-gradient(var(--line), var(--line)) left center / 100% var(--line-1) no-repeat;
+}
+
+.meter-fill {
+  position: absolute;
+  top: var(--line-1);
+  bottom: var(--line-1);
+  left: 0;
+  background: var(--online);
+}
+
+.meter-warn .meter-fill {
+  background: var(--warn);
+}
+
+.meter-bad .meter-fill {
+  background: var(--danger);
+}
+
+.meter-value {
+  flex: none;
+  width: var(--space-10);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* In the drawer's disk table the meter has no label of its own: the row names the disk */
+.mini .disk-use {
+  min-width: calc(var(--space-16) * 2);
+  padding-left: var(--space-4);
+}
+
+.disk-use .meter-label {
+  display: none;
+}
+
+.disk-sub {
+  display: block;
+  color: var(--muted);
+  font-size: var(--type-11);
+}

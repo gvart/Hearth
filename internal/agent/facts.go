@@ -72,7 +72,7 @@ func disks(ctx context.Context, skip func(string, error)) []*agentv1.Disk {
 		if err != nil || u.Total == 0 {
 			continue // unreadable or pseudo filesystem
 		}
-		out = append(out, &agentv1.Disk{Device: p.Device, Mountpoint: p.Mountpoint, Fstype: p.Fstype, TotalBytes: u.Total})
+		out = append(out, &agentv1.Disk{Device: p.Device, Mountpoint: p.Mountpoint, Fstype: p.Fstype, TotalBytes: u.Total, UsedBytes: u.Used})
 	}
 	return out
 }

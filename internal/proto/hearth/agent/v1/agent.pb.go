@@ -784,11 +784,14 @@ func (x *Ceiling) GetDocker() bool {
 
 // Disk is a mounted filesystem.
 type Disk struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Device        string                 `protobuf:"bytes,1,opt,name=device,proto3" json:"device,omitempty"`
-	Mountpoint    string                 `protobuf:"bytes,2,opt,name=mountpoint,proto3" json:"mountpoint,omitempty"`
-	Fstype        string                 `protobuf:"bytes,3,opt,name=fstype,proto3" json:"fstype,omitempty"`
-	TotalBytes    uint64                 `protobuf:"varint,4,opt,name=total_bytes,json=totalBytes,proto3" json:"total_bytes,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Device     string                 `protobuf:"bytes,1,opt,name=device,proto3" json:"device,omitempty"`
+	Mountpoint string                 `protobuf:"bytes,2,opt,name=mountpoint,proto3" json:"mountpoint,omitempty"`
+	Fstype     string                 `protobuf:"bytes,3,opt,name=fstype,proto3" json:"fstype,omitempty"`
+	TotalBytes uint64                 `protobuf:"varint,4,opt,name=total_bytes,json=totalBytes,proto3" json:"total_bytes,omitempty"`
+	// used_bytes is the space in use when the facts were collected. An agent
+	// that does not report it leaves it zero.
+	UsedBytes     uint64 `protobuf:"varint,5,opt,name=used_bytes,json=usedBytes,proto3" json:"used_bytes,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -847,6 +850,13 @@ func (x *Disk) GetFstype() string {
 func (x *Disk) GetTotalBytes() uint64 {
 	if x != nil {
 		return x.TotalBytes
+	}
+	return 0
+}
+
+func (x *Disk) GetUsedBytes() uint64 {
+	if x != nil {
+		return x.UsedBytes
 	}
 	return 0
 }
@@ -3771,7 +3781,7 @@ const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"\x05shell\x18\x05 \x01(\bR\x05shell\x12\x12\n" +
 	"\x04scan\x18\x06 \x03(\tR\x04scan\x12\x1b\n" +
 	"\tnet_edges\x18\a \x01(\bR\bnetEdges\x12\x16\n" +
-	"\x06docker\x18\b \x01(\bR\x06docker\"w\n" +
+	"\x06docker\x18\b \x01(\bR\x06docker\"\x96\x01\n" +
 	"\x04Disk\x12\x16\n" +
 	"\x06device\x18\x01 \x01(\tR\x06device\x12\x1e\n" +
 	"\n" +
@@ -3779,7 +3789,9 @@ const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"mountpoint\x12\x16\n" +
 	"\x06fstype\x18\x03 \x01(\tR\x06fstype\x12\x1f\n" +
 	"\vtotal_bytes\x18\x04 \x01(\x04R\n" +
-	"totalBytes\"J\n" +
+	"totalBytes\x12\x1d\n" +
+	"\n" +
+	"used_bytes\x18\x05 \x01(\x04R\tusedBytes\"J\n" +
 	"\x10NetworkInterface\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x10\n" +
 	"\x03mac\x18\x02 \x01(\tR\x03mac\x12\x10\n" +

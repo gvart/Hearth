@@ -55,6 +55,9 @@ type Disk struct {
 	Mountpoint string `json:"mountpoint"`
 	FSType     string `json:"fstype"`
 	TotalBytes uint64 `json:"total_bytes"`
+	// UsedBytes is the space in use when the agent last sent its facts
+	// (every ten minutes). Absent from an agent that does not report it.
+	UsedBytes uint64 `json:"used_bytes,omitempty"`
 }
 
 // Interface is a network interface and its addresses.
@@ -83,7 +86,7 @@ func factsFromHello(h *agentv1.Hello) (store.DeviceFacts, error) {
 	}
 	for _, d := range h.GetDisks() {
 		f.Disks = append(f.Disks, Disk{
-			Device: d.GetDevice(), Mountpoint: d.GetMountpoint(), FSType: d.GetFstype(), TotalBytes: d.GetTotalBytes(),
+			Device: d.GetDevice(), Mountpoint: d.GetMountpoint(), FSType: d.GetFstype(), TotalBytes: d.GetTotalBytes(), UsedBytes: d.GetUsedBytes(),
 		})
 	}
 	for _, i := range h.GetInterfaces() {

@@ -33,6 +33,9 @@ func TestCollectFacts(t *testing.T) {
 		if d.GetMountpoint() == "" || d.GetTotalBytes() == 0 {
 			t.Errorf("incomplete disk %v", d)
 		}
+		if d.GetUsedBytes() > d.GetTotalBytes() {
+			t.Errorf("disk %s uses %d of %d bytes", d.GetMountpoint(), d.GetUsedBytes(), d.GetTotalBytes())
+		}
 	}
 	if len(h.GetInterfaces()) == 0 {
 		t.Error("no network interfaces")

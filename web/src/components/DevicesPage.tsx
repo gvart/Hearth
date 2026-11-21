@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { latest, rememberView, storedView, type DevicesView } from '../devices.ts';
 import { deviceOfHash } from '../nav.ts';
 import type { Device } from '../api/client.ts';
 import { useDevices, useMetricsSparklines } from '../api/hooks.ts';
@@ -8,14 +9,27 @@ import { BeszelSystems } from './BeszelSystems.tsx';
 import { TalosNodes } from './TalosNodes.tsx';
 import { DeviceDrawer } from './DeviceDrawer.tsx';
 import { DeviceSparklines } from './DeviceSparklines.tsx';
+import { Meter } from './Meter.tsx';
 import { PluginDevices } from './PluginDevices.tsx';
 import { StatusDot } from './StatusDot.tsx';
 import { UnmanagedHosts } from './UnmanagedHosts.tsx';
+import './DevicesPage.css';
 
 const statusOrder = { online: 0, unknown: 1, offline: 2 } as const;
 
 function byStatusThenName(a: Device, b: Device) {
   return statusOrder[a.status] - statusOrder[b.status] || displayName(a).localeCompare(displayName(b));
+}
+
+/** One fact of a device block: a label, a dotted leader and the value. */
+function Pin({ label, value }: { label: string; value: string }) {
+  return (
+    <span className="pin">
+      <span className="pin-label">{label}</span>
+      <span className="pin-lead" aria-hidden="true" />
+      <span className="pin-value">{value}</span>
+    </span>
+  );
 }
 
 /** The current time, re-read every interval so relative times stay fresh. */
@@ -51,6 +65,7 @@ export function DevicesPage() {
     };
   }, []);
   const [adding, setAdding] = useState(false);
+  const [view, setView] = useState<DevicesView>(storedView);
   // Device IDs present when "Add device" was last opened; rows not in it are new.
   const [baseline, setBaseline] = useState<Set<string>>();
 
@@ -79,9 +94,27 @@ export function DevicesPage() {
               </p>
             ) : null}
           </div>
-          <button className="btn btn-primary" type="button" onClick={openAdd}>
-            <span aria-hidden="true">＋</span> Add device
-          </button>
+          <div className="devices-tools">
+            <div className="range-picker" role="group" aria-label="View">
+              {(['blocks', 'table'] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  className="range-option"
+                  aria-pressed={view === v}
+                  onClick={() => {
+                    rememberView(v);
+                    setView(v);
+                  }}
+                >
+                  {v === 'blocks' ? 'Blocks' : 'Table'}
+                </button>
+              ))}
+            </div>
+            <button className="btn btn-primary" type="button" onClick={openAdd}>
+              <span aria-hidden="true">＋</span> Add device
+            </button>
+          </div>
         </div>
 
         {devices.isError ? (
@@ -97,6 +130,48 @@ export function DevicesPage() {
             <button className="btn btn-primary" type="button" onClick={openAdd}>
               Add device
             </button>
+          </div>
+        ) : view === 'blocks' ? (
+          <div className="block-grid">
+            {list.map((d, i) => {
+              const charts = sparklines.data?.devices[d.id];
+              const on = d.status === 'online';
+              return (
+                <button
+                  key={d.id}
+                  type="button"
+                  className={on ? 'block' : 'block block-off'}
+                  aria-label={`${displayName(d)}, ${statusLabel(d.status)}`}
+                  onClick={() => {
+                    setSelectedId(d.id);
+                  }}
+                >
+                  <span className="block-head">
+                    <span>D{i + 1}</span>
+                    <span className="block-state">
+                      <StatusDot status={d.status} />
+                      {statusLabel(d.status)}
+                    </span>
+                  </span>
+                  <span className="block-name">
+                    {displayName(d)}
+                    {isNew(d) ? <span className="badge">New</span> : null}
+                  </span>
+                  <span className="pins">
+                    <Pin label="Addr" value={primaryIP(d) ?? '—'} />
+                    <Pin label="OS" value={osArch(d)} />
+                    {on ? (
+                      <Pin label="Up" value={formatUptime(d, now)} />
+                    ) : (
+                      <Pin label="Seen" value={d.status === 'unknown' ? '—' : relativeTime(d.last_seen, now)} />
+                    )}
+                  </span>
+                  <Meter label="CPU" percent={on ? latest(charts, 'cpu') : undefined} plain />
+                  <Meter label="Mem" percent={on ? latest(charts, 'memory') : undefined} />
+                  <Meter label="Disk" percent={on ? latest(charts, 'disk') : undefined} />
+                </button>
+              );
+            })}
           </div>
         ) : (
           <div className="table-wrap">
