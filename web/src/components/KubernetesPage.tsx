@@ -3,7 +3,7 @@ import type { KubeActionRequest, KubeCluster, KubePod, KubeSnapshot, KubeState }
 import { useDevices, useKubeCluster, useKubeClusters, useRemoveKubeCluster } from '../api/hooks.ts';
 import { displayName, relativeTime } from '../format.ts';
 import { deviceHash } from '../nav.ts';
-import { AddClusterDialog } from './AddClusterDialog.tsx';
+import { platformsHash } from '../platforms.ts';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
 import { KubeActionDialog } from './KubeActionDialog.tsx';
 import { PodLogsDialog } from './PodLogsDialog.tsx';
@@ -54,99 +54,37 @@ function useNow(intervalMs: number) {
   return now;
 }
 
-export function KubernetesPage() {
+/** One Kubernetes cluster, opened from the Platforms page (#/platforms/kubernetes/<id>). */
+export function KubernetesPage({ id }: { id: string }) {
   const clusters = useKubeClusters();
-  const [selectedId, setSelectedId] = useState<string>();
-  const [adding, setAdding] = useState(false);
-
-  const list = clusters.data ?? [];
-  const selected = list.find((c) => c.id === selectedId) ?? list[0];
+  const cluster = clusters.data?.find((c) => c.id === id);
 
   return (
     <main className="content">
-      <div className="page-head">
-        <div>
-          <h1>Kubernetes</h1>
-          {clusters.data ? (
-            <p className="muted">
-              {list.length === 0
-                ? 'No clusters yet'
-                : `${String(list.length)} cluster${list.length === 1 ? '' : 's'}`}
-            </p>
-          ) : null}
-        </div>
-        <button
-          className="btn btn-primary"
-          type="button"
-          onClick={() => {
-            setAdding(true);
-          }}
-        >
-          <span aria-hidden="true">＋</span> Add cluster
-        </button>
-      </div>
-
-      {clusters.isError ? (
+      <a className="back-link" href={platformsHash}>
+        ‹ Platforms
+      </a>
+      {cluster ? (
+        <ClusterView key={cluster.id} cluster={cluster} />
+      ) : clusters.isError ? (
         <div className="error-box" role="alert">
           Could not load clusters: {clusters.error.message}
         </div>
       ) : clusters.isPending ? (
-        <p className="muted">Loading clusters…</p>
-      ) : list.length === 0 ? (
-        <div className="empty">
-          <h2>Adopt a cluster</h2>
-          <p className="muted">
-            Paste a kubeconfig from Talos, k3s or kind. Hearth reads nodes, workloads, pods, events and logs, and only
-            changes something when you ask it to. Nothing is installed in the cluster.
-          </p>
-          <button
-            className="btn btn-primary"
-            type="button"
-            onClick={() => {
-              setAdding(true);
-            }}
-          >
-            Add cluster
-          </button>
-        </div>
+        <p className="muted">Loading the cluster…</p>
       ) : (
-        <>
-          {list.length > 1 ? (
-            <div className="segmented" role="tablist" aria-label="Clusters">
-              {list.map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={c.id === selected?.id}
-                  className="segment"
-                  onClick={() => {
-                    setSelectedId(c.id);
-                  }}
-                >
-                  <StateDot state={c.state} />
-                  {c.name}
-                </button>
-              ))}
-            </div>
-          ) : null}
-          {selected ? <ClusterView key={selected.id} cluster={selected} /> : null}
-        </>
+        <div className="empty">
+          <h2>No such cluster</h2>
+          <p className="muted">Hearth does not watch a cluster with this ID. It may have been removed.</p>
+        </div>
       )}
-
-      {adding ? (
-        <AddClusterDialog
-          onClose={() => {
-            setAdding(false);
-          }}
-          onAdded={(c) => {
-            setAdding(false);
-            setSelectedId(c.id);
-          }}
-        />
-      ) : null}
     </main>
   );
+}
+
+/** Back to the list, once what this page shows is gone. */
+function backToPlatforms() {
+  window.location.hash = platformsHash;
 }
 
 function ClusterView({ cluster }: { cluster: KubeCluster }) {
@@ -161,12 +99,12 @@ function ClusterView({ cluster }: { cluster: KubeCluster }) {
 
   return (
     <section className="cluster" aria-labelledby="cluster-title">
-      <div className="cluster-head">
+      <div className="page-head">
         <div>
-          <h2 id="cluster-title" className="status-line">
+          <h1 id="cluster-title" className="status-line">
             <StateDot state={cluster.state} />
             {cluster.name}
-          </h2>
+          </h1>
           <p className="muted small mono">{cluster.server}</p>
           {data ? (
             <p className="muted small">
@@ -195,7 +133,7 @@ function ClusterView({ cluster }: { cluster: KubeCluster }) {
           pending={remove.isPending}
           error={remove.isError ? remove.error.message : undefined}
           onConfirm={() => {
-            remove.mutate(cluster.id);
+            remove.mutate(cluster.id, { onSuccess: backToPlatforms });
           }}
           onClose={() => {
             setRemoving(false);

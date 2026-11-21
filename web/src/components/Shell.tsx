@@ -4,6 +4,7 @@ import { useApprovals, useDeviceEvents, useLogout } from '../api/hooks.ts';
 import { ApprovalsPage } from './ApprovalsPage.tsx';
 import { AuditPage } from './AuditPage.tsx';
 import { deviceOfHash, pageOf, pagesOf, sheetHash, sheetOf, sheets } from '../nav.ts';
+import { platformOfHash } from '../platforms.ts';
 import { ClusterPage } from './ClusterPage.tsx';
 import { CommandBar } from './CommandBar.tsx';
 import { ConfigDriftBanner } from './ConfigDriftBanner.tsx';
@@ -14,6 +15,7 @@ import { Logo } from './Logo.tsx';
 import { NetworkPage } from './NetworkPage.tsx';
 import { NotificationsPage } from './NotificationsPage.tsx';
 import { PanelsPage } from './PanelsPage.tsx';
+import { PlatformsPage } from './PlatformsPage.tsx';
 import { ProxmoxPage } from './ProxmoxPage.tsx';
 import { ReauthHost } from './ReauthDialog.tsx';
 import { RunbooksPage } from './RunbooksPage.tsx';
@@ -61,6 +63,8 @@ export function Shell() {
   const page = pageOf(hash);
   // A device link (#/devices/<id>) opens that device's page inside Devices.
   const deviceId = page === 'devices' ? deviceOfHash(hash) : undefined;
+  // A platform link (#/platforms/<kind>/<id>) opens that cluster or server inside Platforms.
+  const platform = page === 'platforms' ? platformOfHash(hash) : undefined;
   const sheet = sheetOf(page);
   const waiting = useApprovals('pending').data?.length ?? 0;
   // The Cluster page is offered on a member of an AP cluster only.
@@ -131,10 +135,14 @@ export function Shell() {
             <ApprovalsPage />
           ) : page === 'network' ? (
             <NetworkPage />
-          ) : page === 'kubernetes' ? (
-            <KubernetesPage />
-          ) : page === 'proxmox' ? (
-            <ProxmoxPage />
+          ) : page === 'platforms' ? (
+            platform?.kind === 'kubernetes' ? (
+              <KubernetesPage id={platform.id} />
+            ) : platform?.kind === 'proxmox' ? (
+              <ProxmoxPage id={platform.id} />
+            ) : (
+              <PlatformsPage />
+            )
           ) : page === 'runbooks' ? (
             <RunbooksPage />
           ) : page === 'automations' ? (

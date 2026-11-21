@@ -10,7 +10,7 @@ import {
   type ProxmoxState,
 } from '../api/proxmox.ts';
 import { formatBytes } from '../format.ts';
-import { AddProxmoxDialog } from './AddProxmoxDialog.tsx';
+import { platformsHash } from '../platforms.ts';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
 import { ProxmoxActionDialog } from './ProxmoxActionDialog.tsx';
 import './ProxmoxPage.css';
@@ -84,97 +84,37 @@ function usage(used: number, total: number): string {
   return total > 0 ? `${formatBytes(used)} / ${formatBytes(total)}` : '—';
 }
 
-export function ProxmoxPage() {
+/** One Proxmox server, opened from the Platforms page (#/platforms/proxmox/<id>). */
+export function ProxmoxPage({ id }: { id: string }) {
   const servers = useProxmoxServers();
-  const [selectedId, setSelectedId] = useState<string>();
-  const [adding, setAdding] = useState(false);
-
-  const list = servers.data ?? [];
-  const selected = list.find((s) => s.id === selectedId) ?? list[0];
+  const server = servers.data?.find((s) => s.id === id);
 
   return (
     <main className="content">
-      <div className="page-head">
-        <div>
-          <h1>Proxmox</h1>
-          {servers.data ? (
-            <p className="muted">
-              {list.length === 0 ? 'No servers yet' : `${String(list.length)} server${list.length === 1 ? '' : 's'}`}
-            </p>
-          ) : null}
-        </div>
-        <button
-          className="btn btn-primary"
-          type="button"
-          onClick={() => {
-            setAdding(true);
-          }}
-        >
-          <span aria-hidden="true">＋</span> Add server
-        </button>
-      </div>
-
-      {servers.isError ? (
+      <a className="back-link" href={platformsHash}>
+        ‹ Platforms
+      </a>
+      {server ? (
+        <ServerView key={server.id} server={server} />
+      ) : servers.isError ? (
         <div className="error-box" role="alert">
           Could not load servers: {servers.error.message}
         </div>
       ) : servers.isPending ? (
-        <p className="muted">Loading servers…</p>
-      ) : list.length === 0 ? (
-        <div className="empty">
-          <h2>Adopt a Proxmox server</h2>
-          <p className="muted">
-            Add a Proxmox VE API token. Hearth reads hosts, VMs, LXCs and storage, and only changes something when you start,
-            stop or reboot a guest. Nothing is installed on the server.
-          </p>
-          <button
-            className="btn btn-primary"
-            type="button"
-            onClick={() => {
-              setAdding(true);
-            }}
-          >
-            Add server
-          </button>
-        </div>
+        <p className="muted">Loading the server…</p>
       ) : (
-        <>
-          {list.length > 1 ? (
-            <div className="segmented" role="tablist" aria-label="Servers">
-              {list.map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={s.id === selected?.id}
-                  className="segment"
-                  onClick={() => {
-                    setSelectedId(s.id);
-                  }}
-                >
-                  <StateDot state={s.state} />
-                  {s.name}
-                </button>
-              ))}
-            </div>
-          ) : null}
-          {selected ? <ServerView key={selected.id} server={selected} /> : null}
-        </>
+        <div className="empty">
+          <h2>No such server</h2>
+          <p className="muted">Hearth does not read a Proxmox server with this ID. It may have been removed.</p>
+        </div>
       )}
-
-      {adding ? (
-        <AddProxmoxDialog
-          onClose={() => {
-            setAdding(false);
-          }}
-          onAdded={(s) => {
-            setAdding(false);
-            setSelectedId(s.id);
-          }}
-        />
-      ) : null}
     </main>
   );
+}
+
+/** Back to the list, once what this page shows is gone. */
+function backToPlatforms() {
+  window.location.hash = platformsHash;
 }
 
 function ServerView({ server }: { server: ProxmoxServer }) {
@@ -187,12 +127,12 @@ function ServerView({ server }: { server: ProxmoxServer }) {
 
   return (
     <section className="cluster" aria-labelledby="pve-server-title">
-      <div className="cluster-head">
+      <div className="page-head">
         <div>
-          <h2 id="pve-server-title" className="status-line">
+          <h1 id="pve-server-title" className="status-line">
             <StateDot state={server.state} />
             {server.name}
-          </h2>
+          </h1>
           <p className="muted small mono">{server.url}</p>
           <p className="muted small">
             {stateLabel[server.state]} · {server.nodes} host{server.nodes === 1 ? '' : 's'} · {server.guests} guest
@@ -219,7 +159,7 @@ function ServerView({ server }: { server: ProxmoxServer }) {
           pending={remove.isPending}
           error={remove.isError ? remove.error.message : undefined}
           onConfirm={() => {
-            remove.mutate(server.id);
+            remove.mutate(server.id, { onSuccess: backToPlatforms });
           }}
           onClose={() => {
             setRemoving(false);
