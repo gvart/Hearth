@@ -63,7 +63,8 @@ func TestAgentIdleRSS(t *testing.T) {
 		t.Fatal(err)
 	}
 	rss, peak := procKB(t, status, "VmRSS"), procKB(t, status, "VmHWM")
-	t.Logf("agent after %v idle: VmRSS %d kB, VmHWM %d kB", rssIdle, rss, peak)
+	t.Logf("agent after %v idle: VmRSS %d kB, VmHWM %d kB (RssAnon %d kB, RssFile %d kB)",
+		rssIdle, rss, peak, procKB(t, status, "RssAnon"), procKB(t, status, "RssFile"))
 	if rss*1024 >= rssLimit {
 		t.Errorf("idle RSS %d kB, want < %d kB", rss, rssLimit/1024)
 	}

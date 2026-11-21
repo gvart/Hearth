@@ -36,7 +36,7 @@ func TestTuneRuntimeGOMAXPROCS(t *testing.T) {
 			restoreGOMAXPROCS(t)
 			t.Setenv("GOMAXPROCS", tt.env)
 			runtime.GOMAXPROCS(tt.start)
-			_, _, stop := tuneRuntime(time.Hour, time.Hour, time.Now, func() {})
+			_, _, stop := tuneRuntime(time.Hour, time.Hour, time.Now, func() {}, func() {})
 			defer stop()
 			if got := runtime.GOMAXPROCS(0); got != tt.want {
 				t.Errorf("GOMAXPROCS = %d, want %d", got, tt.want)
@@ -52,7 +52,7 @@ func TestTuneRuntimeCollectsOnce(t *testing.T) {
 	connected, _, stop := tuneRuntime(time.Millisecond, time.Hour, time.Now, func() {
 		runs.Add(1)
 		done <- struct{}{}
-	})
+	}, func() { t.Error("failed collection ran") })
 	defer stop()
 	wait := func(what string) {
 		t.Helper()
@@ -78,7 +78,7 @@ func TestTuneRuntimeCollectsOnce(t *testing.T) {
 func TestTuneRuntimeStopCancelsCollection(t *testing.T) {
 	restoreGOMAXPROCS(t)
 	var runs atomic.Int32
-	_, _, stop := tuneRuntime(20*time.Millisecond, time.Hour, time.Now, func() { runs.Add(1) })
+	_, _, stop := tuneRuntime(20*time.Millisecond, time.Hour, time.Now, func() { runs.Add(1) }, func() {})
 	stop()
 	time.Sleep(60 * time.Millisecond)
 	if got := runs.Load(); got != 0 {
@@ -109,7 +109,7 @@ func TestTuneRuntimeCollectsAfterFailures(t *testing.T) {
 	}
 	var now time.Time
 	runs := 0
-	_, failed, stop := tuneRuntime(time.Hour, gap, func() time.Time { return now }, func() { runs++ })
+	_, failed, stop := tuneRuntime(time.Hour, gap, func() time.Time { return now }, func() { t.Error("delayed collection ran") }, func() { runs++ })
 	defer stop()
 	for _, s := range steps {
 		now = start.Add(s.at)

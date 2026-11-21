@@ -39,8 +39,16 @@ const failureGap = time.Second
 // (facts, a dial, perhaps a TLS handshake) and no connection comes to collect
 // it, so the agent also collects after failed attempts, at most once per
 // failureGap.
+//
+// The delayed collection also releases the binary's code pages that init
+// faulted in (releaseImagePages); failed collections do not, so an outage
+// costs no more than the collection.
 func TuneRuntime() (connected, failed, stop func()) {
-	return tuneRuntime(collectionDelay, failureGap, time.Now, debug.FreeOSMemory)
+	settle := func() {
+		debug.FreeOSMemory()
+		releaseImagePages()
+	}
+	return tuneRuntime(collectionDelay, failureGap, time.Now, settle, debug.FreeOSMemory)
 }
 
 // LimitProcs limits the process to one P unless GOMAXPROCS is set. main calls
@@ -65,11 +73,12 @@ func StopMemProfile() {
 }
 
 // tuneRuntime is TuneRuntime with its delays, clock and collection injected.
-// failed collects at once when the last collection it ran is at least gap
-// old; Run calls it from one goroutine only.
-func tuneRuntime(delay, gap time.Duration, now func() time.Time, collect func()) (connected, failed, stop func()) {
+// The delayed collection runs settle, failed runs collect: at once when the
+// last collection it ran is at least gap old; Run calls it from one goroutine
+// only.
+func tuneRuntime(delay, gap time.Duration, now func() time.Time, settle, collect func()) (connected, failed, stop func()) {
 	LimitProcs()
-	t := time.AfterFunc(delay, collect)
+	t := time.AfterFunc(delay, settle)
 	var last time.Time
 	failed = func() {
 		if n := now(); last.IsZero() || n.Sub(last) >= gap {
