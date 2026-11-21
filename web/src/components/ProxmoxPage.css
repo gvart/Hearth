@@ -1,7 +1,7 @@
 /* The Proxmox page: its tables on a phone keep the name and the actions. */
 .pve-meta {
   display: block;
-  font-size: 0.8rem;
+  font-size: var(--type-12);
   color: var(--muted);
 }
 
@@ -19,14 +19,14 @@
 }
 
 .field select {
-  height: 2.5rem;
-  padding: 0 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  height: var(--control-md);
+  padding: 0 var(--space-3);
+  border: var(--line-1) solid var(--border);
+  border-radius: var(--radius);
   background: var(--bg);
   color: var(--text);
   font: inherit;
-  font-weight: 400;
+  font-weight: var(--weight-regular);
 }
 
 @media (max-width: 640px) {
@@ -40,7 +40,7 @@
 
   .pve-table th,
   .pve-table td {
-    padding: 0.7rem 0.6rem;
+    padding: var(--space-3) var(--space-2);
   }
 
   .pve-table .name {

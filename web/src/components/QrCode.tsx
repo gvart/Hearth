@@ -18,6 +18,7 @@ export function QrCode({ value, label }: { value: string; label: string }) {
 
   return (
     <svg className="qr" viewBox={`0 0 ${String(size)} ${String(size)}`} role="img" aria-label={label} shapeRendering="crispEdges">
+      {/* Black on white whatever the theme: a scanner needs the contrast. */}
       <rect width={size} height={size} fill="#fff" />
       <path d={path} fill="#000" />
     </svg>

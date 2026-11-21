@@ -4,17 +4,17 @@
   display: flex;
   flex-direction: column;
   height: 100dvh;
-  background: #151413;
-  color: #edebe8;
+  background: var(--bg);
+  color: var(--text);
 }
 
 .terminal-bar {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.5rem 1rem;
-  border-bottom: 1px solid #33302d;
-  background: #1d1c1a;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: var(--line-1) solid var(--border);
+  background: var(--surface);
 }
 
 .terminal-brand {
@@ -28,8 +28,8 @@
 
 .terminal-title h1 {
   margin: 0;
-  font-size: 0.95rem;
-  font-weight: 650;
+  font-size: var(--type-13);
+  font-weight: var(--weight-bold);
 }
 
 .terminal-title p {
@@ -40,21 +40,21 @@
 }
 
 .terminal-title .muted {
-  color: #9c978f;
+  color: var(--muted);
 }
 
 .terminal-title .warn-text {
-  color: #ffa94d;
+  color: var(--warn);
 }
 
 .terminal-title .danger-text {
-  color: #ff6b6b;
+  color: var(--danger);
 }
 
 .terminal-host {
   flex: 1;
   min-height: 0;
-  padding: 0.5rem 0 0 0.75rem;
+  padding: var(--space-2) 0 0 var(--space-3);
 }
 
 .terminal-host .xterm {

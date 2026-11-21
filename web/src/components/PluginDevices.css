@@ -3,15 +3,15 @@
 .plugin-commands {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem;
+  gap: var(--space-1);
 }
 
 .plugin-commands .btn {
-  font-family: var(--mono);
+  font-family: var(--font-mono);
 }
 
 .plugin-commands .badge {
-  margin-left: 0.35rem;
+  margin-left: var(--space-1);
 }
 
 .btn-danger-ghost {
@@ -19,15 +19,15 @@
 }
 
 .warn-box {
-  padding: 0.9rem 1rem;
-  border-radius: 8px;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius);
   color: var(--warn);
   background: var(--warn-soft);
-  border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent);
+  border: var(--line-1) solid var(--warn);
 }
 
 .field-error {
-  margin: -0.5rem 0 0;
+  margin: calc(var(--space-2) * -1) 0 0;
   color: var(--danger);
 }
 
@@ -37,6 +37,6 @@
   overflow: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font-family: var(--mono);
-  font-size: 0.85rem;
+  font-family: var(--font-mono);
+  font-size: var(--type-12);
 }

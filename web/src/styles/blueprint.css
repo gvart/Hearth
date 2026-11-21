@@ -1,0 +1,167 @@
+/* The Blueprint look: an engineering drawing. Lines, not shades. Square corners. One action colour.
+
+   The rules before this file (index.css and the page stylesheets) lay the app out; this file, loaded
+   last, draws it. Each screen's rules move next to its markup as that screen is redesigned.
+
+   Colour has a job: ember marks what acts or needs you, yellow what might go wrong, red what did,
+   cyan what is live. Status is a shape and a word as well as a colour. What is selected takes the
+   inverse fill. Tokens only: see tokens.css and README.md. */
+
+/* The sheet */
+body {
+  font-family: var(--font-mono);
+  font-size: var(--type-13);
+  line-height: var(--leading-normal);
+  color: var(--text);
+  background-color: var(--bg);
+  background-image:
+    linear-gradient(var(--grid) var(--line-1), transparent var(--line-1)),
+    linear-gradient(90deg, var(--grid) var(--line-1), transparent var(--line-1));
+  background-size: var(--grid-pitch) var(--grid-pitch);
+  -webkit-font-smoothing: antialiased;
+}
+::selection { background: var(--accent); color: var(--on-accent); }
+a { color: var(--accent); text-underline-offset: var(--space-05); }
+
+/* Type */
+h1, h2, .name, .brand, .block-name { font-family: var(--font-sans); font-weight: var(--weight-bold); }
+h1 { font-size: var(--type-36); letter-spacing: var(--tracking-display); text-transform: uppercase; }
+h2 { font-size: var(--type-20); }
+h3 { font-weight: var(--weight-regular); }
+h1.mono, .terminal-title h1 { font-family: var(--font-mono); letter-spacing: 0; text-transform: none; }
+.brand { letter-spacing: var(--tracking-display); text-transform: uppercase; }
+@media (max-width: 640px) {
+  h1 { font-size: var(--type-28); }
+}
+
+/* Marks */
+.logo rect { fill: var(--accent); rx: var(--radius); }
+.logo path { fill: var(--on-accent); }
+.dot-offline { background: transparent; border: var(--line-2) solid var(--offline); }
+.dot-unknown { border: var(--line-1) dashed var(--offline); }
+.dot-unmanaged { border: var(--line-1) dotted var(--offline); }
+.dot-error { border-radius: var(--radius); }
+
+/* Controls */
+.btn {
+  border-color: var(--line);
+  font-size: var(--type-12);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.btn-primary { border-color: var(--accent); }
+.btn-ghost { border-color: transparent; }
+.btn-danger { border-color: var(--danger); color: var(--on-danger); }
+.btn-danger:hover:not(:disabled) { background: var(--danger-hover); border-color: var(--danger-hover); }
+.btn-small { font-size: var(--type-11); }
+.link { text-decoration: underline; text-underline-offset: var(--space-05); }
+.guest-btn { height: auto; padding-block: var(--space-2); white-space: normal; }
+input[type='checkbox'], input[type='radio'] { accent-color: var(--accent); }
+.field, .filter {
+  color: var(--muted);
+  font-size: var(--type-11);
+  font-weight: var(--weight-regular);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.field :is(input, select, textarea, p, .muted, .check-row, .auto-hint, .error),
+.filter :is(input, select) {
+  font-size: var(--type-13);
+  letter-spacing: 0;
+  text-transform: none;
+}
+.field :is(.muted, .auto-hint) { font-size: var(--type-12); }
+.field :is(input, select, textarea),
+.filter :is(input, select),
+.ns-filter select,
+.logs-filter,
+.log-source-form input,
+.label-row input,
+.auto-editor .field :is(input, select, textarea),
+.settings .field select,
+.channel-form .field select,
+.enroll-options .field select {
+  border-color: var(--line);
+  background: var(--bg);
+  color: var(--text);
+}
+.field :is(input, select, textarea):focus,
+.filter :is(input, select):focus,
+.auto-editor .field :is(select, textarea):focus {
+  outline: var(--line-2) solid var(--accent);
+  outline-offset: 0;
+  border-color: var(--accent);
+  box-shadow: none;
+}
+.field [aria-invalid='true'], .auto-editor .field [aria-invalid='true'] { border-color: var(--danger); }
+@media (pointer: coarse) {
+  .btn, .btn-small, .nav-link, .tab, .segment, .range-option,
+  .field :is(input, select), .filter :is(input, select), .ns-filter select, .logs-filter, .label-row input { min-height: var(--control-lg); }
+}
+
+/* Selection is always the inverse fill */
+.nav-link { font-size: var(--type-12); letter-spacing: var(--tracking-label); text-transform: uppercase; }
+.nav-link[aria-current='page'],
+.segment[aria-selected='true'],
+.range-option[aria-pressed='true'],
+.auto-view .btn[aria-pressed='true'] {
+  background: var(--line);
+  border-color: var(--line);
+  color: var(--bg);
+  box-shadow: none;
+}
+.segment[aria-selected='true'] .dot { background: var(--bg); border-color: var(--bg); box-shadow: none; }
+.tab { font-size: var(--type-12); letter-spacing: var(--tracking-label); text-transform: uppercase; }
+.tabs-row { border-bottom-color: var(--line); }
+.range-picker { border-color: var(--line); }
+.auto-view { border: var(--line-1) solid var(--line); background: var(--bg); }
+
+/* Blocks: drawn with the line, never with shade */
+.topbar { background: var(--bg); border-bottom: var(--line-2) solid var(--line); }
+.table-wrap, .cluster-head, .events, .filters, .auto-list, .auto-card, .panel-card, .guest-tile, .auto-run,
+.runbook-card, .runbook-step, .runbook-log, .topo-wrap, .segment { border-color: var(--line); }
+.devices th { font-weight: var(--weight-regular); border-bottom-color: var(--line); }
+.mini th { font-size: var(--type-11); font-weight: var(--weight-regular); letter-spacing: var(--tracking-label); text-transform: uppercase; }
+.empty { border: var(--line-1) dashed var(--line); }
+.guest-offline { border-style: dashed; border-color: var(--offline); }
+.pill, .badge, .segment { border-radius: var(--radius); }
+.pill { border: var(--line-1) solid currentColor; font-family: var(--font-mono); font-size: var(--type-11); padding: 0 var(--space-2); }
+.badge { font-size: var(--type-11); text-transform: uppercase; padding: 0 var(--space-2); }
+.badge-quiet { background: transparent; border: var(--line-1) solid var(--muted); color: var(--muted); }
+.auto-decision { border: var(--line-1) solid currentColor; }
+
+/* Ember marks what needs you; yellow what might go wrong; red what did */
+.telemetry-card { border: var(--line-1) solid var(--line); }
+.approval-card, .runbook-prompt { border: var(--line-1) solid var(--accent); }
+.runbook-stopped { border: var(--line-1) solid var(--danger); }
+/* Boxes and banners say their tone with a coloured line on the plain surface, not with a tint. */
+.notice, .error-box, .ok-box, .warn-box, .auto-raw, .runbook-step-error, .waiting, .waiting-done { background: var(--surface); }
+.runbook-step-error { border: var(--line-1) solid var(--danger); }
+.secure-banner, .drift-banner { background: var(--surface); border-bottom-width: var(--line-2); }
+.drift-banner-quiet { background: var(--bg); border-bottom-width: var(--line-1); }
+.waiting { border-color: var(--line); }
+.waiting-done { border-color: var(--online); }
+@keyframes flash {
+  0% { background: var(--accent); color: var(--on-accent); }
+}
+
+/* Overlays */
+dialog { border: var(--line-2) solid var(--line); }
+.drawer { border-width: 0 0 0 var(--line-2); }
+.login-card { border: var(--line-2) solid var(--line); }
+
+/* Scroll bars: a square thumb on a ruled track. It warms to ember while you drag it. */
+@supports not selector(::-webkit-scrollbar) {
+  * { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+}
+::-webkit-scrollbar { width: var(--space-3); height: var(--space-3); }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-track:vertical { border-left: var(--line-1) solid var(--grid); }
+::-webkit-scrollbar-track:horizontal { border-top: var(--line-1) solid var(--grid); }
+::-webkit-scrollbar-thumb { border: var(--space-05) solid transparent; border-radius: var(--radius); background-color: var(--border); background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background-color: var(--muted); }
+::-webkit-scrollbar-thumb:active { background-color: var(--accent); }
+::-webkit-scrollbar-corner { background: transparent; }
+
+/* The theme picker in Settings */
+.theme-picker { margin: 0; }

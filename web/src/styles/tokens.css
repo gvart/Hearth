@@ -1,0 +1,169 @@
+/* Design tokens: the only place a colour, a size or a duration is written down.
+   Every other stylesheet reads these with var(--name) and holds no literal of its own;
+   web/test/tokens.test.mjs fails the build if one does. See README.md beside this file.
+
+   Two themes. Blueprint is the default: white lines on blue. Paper is the light one, for
+   bright rooms and print. The theme is the data-theme attribute on <html> (src/theme.ts). */
+
+@font-face {
+  font-family: 'Space Grotesk';
+  src: url('../fonts/space-grotesk-latin-wght-normal.woff2') format('woff2');
+  font-weight: 300 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Space Mono';
+  src: url('../fonts/space-mono-latin-400-normal.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Space Mono';
+  src: url('../fonts/space-mono-latin-700-normal.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Colour: blueprint */
+:root,
+[data-theme='blueprint'] {
+  color-scheme: dark;
+  --bg: #0f2f5c;
+  --surface: #123768;
+  --surface-2: #173e75;
+  --grid: #1b3d6e;
+  --line: #eaf1fb;
+  --border: #3d6096;
+  --text: #eaf1fb;
+  --muted: #a9c0e0;
+  --accent: #ff8a3d;
+  --accent-hover: #ffa466;
+  --accent-soft: rgb(255 138 61 / 16%);
+  --on-accent: #0f2f5c;
+  --online: #8fe6ff;
+  --ok: #8ff0b4;
+  --violet: #cfbdff;
+  --ok-soft: rgb(143 230 255 / 12%);
+  --offline: #86a3cc;
+  --warn: #ffd166;
+  --warn-soft: rgb(255 209 102 / 14%);
+  --danger: #ff9a9a;
+  --danger-hover: #ffb9b9;
+  --danger-soft: rgb(255 154 154 / 14%);
+  --on-danger: #0f2f5c;
+  --backdrop: rgb(5 16 34 / 72%);
+  --shadow: 8px 8px 0 rgb(5 16 34 / 70%);
+}
+
+/* Colour: paper */
+[data-theme='paper'] {
+  color-scheme: light;
+  --bg: #f4f7fb;
+  --surface: #ffffff;
+  --surface-2: #ebf1f9;
+  --grid: #e2e9f3;
+  --line: #12305a;
+  --border: #b7c6dc;
+  --text: #12305a;
+  --muted: #47618a;
+  --accent: #b84a08;
+  --accent-hover: #9a3d05;
+  --accent-soft: rgb(184 74 8 / 10%);
+  --on-accent: #ffffff;
+  --online: #0b6480;
+  --ok: #176b3a;
+  --violet: #5a3ec8;
+  --ok-soft: rgb(11 100 128 / 9%);
+  --offline: #6a80a3;
+  --warn: #7d5200;
+  --warn-soft: rgb(125 82 0 / 10%);
+  --danger: #b3261e;
+  --danger-hover: #8f1d17;
+  --danger-soft: rgb(179 38 30 / 8%);
+  --on-danger: #ffffff;
+  --backdrop: rgb(18 48 90 / 45%);
+  --shadow: 8px 8px 0 rgb(18 48 90 / 22%);
+}
+
+:root {
+  /* Type families: Space Grotesk for titles and names, Space Mono for everything else */
+  --font-sans: 'Space Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'Space Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  /* Spacing */
+  --space-05: 2px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* Corners: everything is square */
+  --radius: 0px;
+  --radius-full: 999px;
+
+  /* Type sizes */
+  --type-11: 11px;
+  --type-12: 12px;
+  --type-13: 13px;
+  --type-16: 16px;
+  --type-20: 20px;
+  --type-28: 28px;
+  --type-36: 36px;
+
+  /* Line heights, weights and tracking */
+  --leading-flat: 1;
+  --leading-tight: 1.2;
+  --leading-normal: 1.5;
+  --leading-loose: 1.6;
+  --weight-regular: 400;
+  --weight-bold: 700;
+  --tracking-label: 0.08em;
+  --tracking-display: 0.04em;
+
+  /* Controls, marks and icons */
+  --control-sm: 28px;
+  --control-md: 36px;
+  --control-lg: 44px;
+  --control-xl: 64px;
+  --bar: 56px;
+  --dot: 8px;
+  --dot-lg: 16px;
+  --icon-sm: 16px;
+  --icon-md: 20px;
+  --icon-lg: 28px;
+  --grid-pitch: 24px;
+
+  /* Lines */
+  --line-1: 1px;
+  --icon-stroke: 1.5;
+  --line-2: 2px;
+
+  /* Layout widths */
+  --content-max: 1152px;
+  --content-narrow: 896px;
+  --measure: 448px;
+  --dialog: 640px;
+  --dialog-wide: 960px;
+  --drawer: 480px;
+  --rail: 216px;
+
+  /* Layers, timing and opacity */
+  --z-bar: 10;
+  --duration-fast: 120ms;
+  --duration-base: 180ms;
+  --duration-pulse: 1400ms;
+  --duration-flash: 1600ms;
+  --opacity-disabled: 0.5;
+  --opacity-dim: 0.2;
+}
