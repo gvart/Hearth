@@ -1,0 +1,40 @@
+internal/hub/metricforward_test.go
+  s_87f1c7baee7d5a::t_401976d354bc99 1-284
+  s_87f1c7baee7d5a::t_42db1160cdce6d 285-289
+cmd/hearth/hub.go
+  s_87f1c7baee7d5a::t_21a67880a27988 491,532,543
+docs/automations.md
+  s_87f1c7baee7d5a::t_09d8e23dfac6c9 109-111
+docs/cluster.md
+  s_87f1c7baee7d5a::t_16c52cb28b5dbe 146-150
+docs/prometheus.md
+  s_87f1c7baee7d5a::t_3b3f42a19f2bb1 30-31
+internal/hub/automation.go
+  s_87f1c7baee7d5a::t_d61dea8dc6c6eb 108-111,116
+internal/hub/automation_test.go
+  s_87f1c7baee7d5a::t_56e0c8188de0f1 110,135-137
+internal/hub/forward.go
+  s_87f1c7baee7d5a::t_29246f833bbbe5 23,26,124-125,149,200-201,207,240-261,263-267,339-348
+internal/hub/forward_test.go
+  s_87f1c7baee7d5a::t_e36bb83e9a86c2 78
+internal/hub/hostmetrics.go
+  s_87f1c7baee7d5a::t_2bd12468520b27 130-133,137,146-150
+internal/hub/hostmetrics_test.go
+  s_87f1c7baee7d5a::t_ef6a5b97525eb2 189
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4b31d6d1f31769aa3e4bafc1b1abc497bc74135a",
+  "prompts": {},
+  "sessions": {
+    "s_87f1c7baee7d5a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "45cc2cdf-3130-4caa-8cb4-8cb365d2150d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
