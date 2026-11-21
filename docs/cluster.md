@@ -113,8 +113,10 @@ dir and join it again.
   `cluster_unavailable` when fewer are reachable. Other writes (presence, facts, scans, run history)
   need one replica and reach the others in the background. A replica that is down is replaced by the
   next live member, and gets the write later from a hint (kept in `hints.db`, bounded).
-- **Reads.** A read by key goes to the nearest live replica (R = 1); a list asks every storage member
-  and merges the answers. A stale copy a read sees is repaired. Members compare digests of the rows
+- **Reads.** A read by key goes to the nearest live replica (R = 1). When that replica has no copy of
+  the row at all (it missed the write while it was down), a sign-in session, certificate, approval or
+  approval link, device, device route or panel is asked of every live replica, and the newest copy
+  wins, a deletion included. A list asks every storage member and merges the answers. A stale copy a read sees is repaired. Members compare digests of the rows
   they share and copy what differs (anti-entropy), so replicas converge after an outage or a split.
 - **Conflicts.** Every row carries a hybrid logical clock (HLC) stamp and the member that wrote it.
   Two writes to the same row merge by **last writer wins** on that stamp. Some rows do not merge this

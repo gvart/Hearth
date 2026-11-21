@@ -19,7 +19,9 @@ import (
 //   - a read of global tables, or of one partition this member holds, runs
 //     on the local database, as on a standalone hub;
 //   - a read of one partition this member does not hold runs on a live
-//     replica of it (queryKey: R = 1);
+//     replica of it (queryKey: R = 1); a point read a false not-found must
+//     not come from asks every replica when the first has no row of it
+//     (queryRowLive);
 //   - a list not keyed by one partition fans out to live storage members
 //     that together hold every partition, and the rows they return merge
 //     here (queryAll): each row once, at its newest version, then sorted
@@ -217,18 +219,6 @@ func (s *Store) queryKey(ctx context.Context, key, query string, args ...any) (r
 	return &memRows{rows: valuesRows(rs.Vals)}, nil
 }
 
-// queryRowKey is queryKey for one row, like QueryRowContext.
-func (s *Store) queryRowKey(ctx context.Context, key, query string, args ...any) rowScanner {
-	if s.holds(key) {
-		return s.db.QueryRowContext(ctx, query, args...)
-	}
-	rows, err := s.queryKey(ctx, key, query, args...)
-	if err != nil {
-		return memRow{err: err}
-	}
-	return memRow{rows: rows.(*memRows).rows} //nolint:forcetypeassert // queryKey of a key held elsewhere
-}
-
 // queryRowNewest reads the row of table that query (selecting
 // s.hidden(table) after its own columns, tombstones included) finds in
 // partition key, at its newest version. The replica asked first (this
@@ -269,7 +259,7 @@ func (s *Store) queryRowNewest(ctx context.Context, table, key, query string, ar
 }
 
 // queryRowLive reads one row of table, sel + rest (sel the SELECT list,
-// rest from FROM on, ending in its WHERE clause), in partition key, like queryRowKey, for a
+// rest from FROM on, ending in its WHERE clause), in partition key, like QueryRowContext, for a
 // read a false not-found must not come from: in a sharded cluster through
 // queryRowNewest, so a replica that missed the row's write does not answer
 // "no row" for it, and the newest version among the replicas, a tombstone
