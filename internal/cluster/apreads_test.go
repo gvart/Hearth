@@ -160,10 +160,76 @@ func TestExpiryOnAReplicaThatMissedTheDecision(t *testing.T) {
 	}
 }
 
+// Single use of a master-owned token holds on a replica whose copy does not
+// show the use, without any refresh: the owner refuses its second use from
+// its own record, and another master is refused any use as no owner.
+func TestOwnedTokenSingleUseOnAStaleReplica(t *testing.T) {
+	ctx := t.Context()
+	ids := []string{"a", "b", "c", "d"}
+	an := newAPNet(t, 2, ids...)
+	// c and b hold it, d stands in for c: a's use goes to b, which has it.
+	used := secretKeyPreferring(t, ids, "used", "c", "b", "d")
+	if err := an.m("a").st.Tokens().Create(ctx, used, nil, time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	an.setDown("c", true)
+	if _, err := an.m("a").st.Tokens().Consume(ctx, used, time.Now()); err != nil {
+		t.Fatalf("consume with c down = %v", err)
+	}
+	an.setDown("c", false)
+	h := sha256.Sum256([]byte(used))
+	if n := localRows(t, an.m("c"), `SELECT count(*) FROM tokens WHERE hash = ? AND used_at IS NULL`, h[:]); n != 1 {
+		t.Fatal("c's copy shows the use; the test needs it stale")
+	}
+	if _, err := an.m("a").st.Tokens().Consume(ctx, used, time.Now()); !errors.Is(err, store.ErrTokenUsed) {
+		t.Errorf("second use by the owner = %v, want ErrTokenUsed", err)
+	}
+	for _, m := range []string{"b", "c", "d"} {
+		if _, err := an.m(m).st.Tokens().Consume(ctx, used, time.Now()); !errors.Is(err, store.ErrNotOwner) {
+			t.Errorf("use on %s = %v, want ErrNotOwner", m, err)
+		}
+	}
+}
+
+// A use forwarded to a replica with another member hung costs that member
+// one quick timeout in the refresh, well within the forward's deadline.
+func TestRefreshWithAHungMember(t *testing.T) {
+	ctx := t.Context()
+	ids := []string{"a", "b", "c", "d"}
+	an := newAPNet(t, 2, ids...)
+	tok := secretKeyPreferring(t, ids, "tok", "c", "b")
+	if err := an.m("a").st.Tokens().Create(ctx, tok, nil, time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	other := "d" // no replica of the token: the use goes to c, which asks b, a and d
+	an.mu.Lock()
+	an.hung[other] = true
+	an.mu.Unlock()
+	an.dropConns()
+	start := time.Now()
+	if _, err := an.m("a").st.Tokens().Consume(ctx, tok, time.Now()); err != nil {
+		t.Fatalf("consume with %s hung = %v", other, err)
+	}
+	if took := time.Since(start); took > 2*defaultQuickTimeout+time.Second {
+		t.Errorf("consume with %s hung took %v", other, took)
+	}
+}
+
+// A password reset with no storage member reachable fails: it ended no
+// session.
+func TestPasswordResetNeedsAStorageMember(t *testing.T) {
+	ctx := t.Context()
+	an := newAPNet(t, 2, "a", "b", "c")
+	an.m("a").rep.SetLocal(false, false) // a master that holds no partition
+	an.setDown("b", true)
+	an.setDown("c", true)
+	if err := an.m("a").st.Admin().SetPasswordHash(ctx, "$argon2id$new"); !errors.Is(err, store.ErrUnavailable) {
+		t.Fatalf("reset with no storage member = %v, want ErrUnavailable", err)
+	}
+}
+
 // An enrollment token created while the replica its uses go to first was
-// down is consumed there, once. Single use holds on a replica whose copy
-// does not show the use: the owner refuses the second use, and another
-// master any use.
+// down is consumed there, once; one that expired is refused as expired.
 func TestTokenOnAReplicaThatMissedIt(t *testing.T) {
 	ctx := t.Context()
 	ids := []string{"a", "b", "c"}
@@ -183,29 +249,6 @@ func TestTokenOnAReplicaThatMissedIt(t *testing.T) {
 	}
 	if _, err := an.m("a").st.Tokens().Consume(ctx, tok, time.Now()); !errors.Is(err, store.ErrTokenUsed) {
 		t.Fatalf("second consume = %v, want ErrTokenUsed", err)
-	}
-
-	// Used while c was down: c's copy shows no use.
-	used := secretKeyPreferring(t, ids, "used", "c", "b")
-	if err := an.m("a").st.Tokens().Create(ctx, used, nil, exp); err != nil {
-		t.Fatal(err)
-	}
-	an.setDown("c", true)
-	if _, err := an.m("a").st.Tokens().Consume(ctx, used, time.Now()); err != nil {
-		t.Fatalf("consume with c down = %v", err)
-	}
-	an.setDown("c", false)
-	h := sha256.Sum256([]byte(used))
-	if n := localRows(t, an.m("c"), `SELECT count(*) FROM tokens WHERE hash = ? AND used_at IS NULL`, h[:]); n != 1 {
-		t.Fatal("c's copy shows the use; the test needs it stale")
-	}
-	if _, err := an.m("a").st.Tokens().Consume(ctx, used, time.Now()); !errors.Is(err, store.ErrTokenUsed) {
-		t.Errorf("second use by the owner = %v, want ErrTokenUsed", err)
-	}
-	for _, m := range []string{"b", "c"} {
-		if _, err := an.m(m).st.Tokens().Consume(ctx, used, time.Now()); !errors.Is(err, store.ErrNotOwner) {
-			t.Errorf("use on %s = %v, want ErrNotOwner", m, err)
-		}
 	}
 
 	// Expired while c was down: refused there as expired.

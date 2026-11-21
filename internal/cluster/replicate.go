@@ -394,6 +394,10 @@ func (r *Replicator) applyRouted(ctx context.Context, cmd store.Command) (store.
 		if err := firstDomainError(errs); err != nil {
 			return store.Result{}, err
 		}
+		// A critical one is not done until some member applied it.
+		if route.Critical && !slices.Contains(errs, nil) {
+			return store.Result{}, fmt.Errorf("apply %s: no storage member reachable: %w", cmd.Op(), store.ErrUnavailable)
+		}
 		return store.MergeResults(cmd, results), nil
 	case store.RouteSplit:
 		parts, err := store.SplitCommand(cmd, func(key string) string {
