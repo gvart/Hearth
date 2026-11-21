@@ -1,13 +1,13 @@
 ---
-title: Docs
-description: The Home Assistant model, applied to your homelab.
+title: Control plane for your homelab
+description: The Home Assistant model, applied to your homelab. Every device becomes an entity you can see, control and automate. Local-first, self-hosted, one Go binary.
 template: splash
 hero:
   title: Hearth
   tagline: The Home Assistant model, applied to your homelab. Every device becomes an entity you can see, control and automate from one place. Local-first, self-hosted, one Go binary.
   actions:
     - text: Getting started
-      link: /getting-started/
+      link: getting-started/
       icon: right-arrow
     - text: View on GitHub
       link: https://github.com/gvart/hearth
@@ -17,23 +17,55 @@ hero:
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
 
+## One command, and the device is in
+
+Start a hub, click **Add device** in its web UI and paste the command it gives you on a Raspberry Pi,
+a NAS or a laptop:
+
+```sh
+curl -fsSL http://192.168.1.10:7080/install.sh | HEARTH_TOKEN=hearth2.… sh -s -- --hub https://192.168.1.10:7443
+```
+
+The agent installs as a service, enrolls over mTLS with a single-use token and dials out to the hub:
+no inbound ports on the device. It shows up online with its facts within seconds, and CI fails any
+change that makes it take longer than ten. [Get started](/getting-started/).
+
+## What it does
+
 <CardGrid>
-	<Card title="Any device in seconds" icon="rocket">
-		One command on a Raspberry Pi, a NAS or a laptop, and it shows up in the hub with its facts and
-		live status. [Get started](/getting-started/).
+	<Card title="See every device" icon="laptop">
+		Facts, metrics, logs and a web terminal for every agent, plus the hosts on your network that run
+		no agent, found by ARP, mDNS and DHCP leases. [Discovery](/discovery/).
 	</Card>
 	<Card title="Automations that act" icon="setting">
-		YAML files in git: a device goes offline, a check fails or a metric runs hot, and Hearth restarts
-		the service or calls a webhook. [Automation reference](/automations/).
+		YAML, kept in git if you like: a device goes offline, a check fails or a metric runs hot, and
+		Hearth restarts the service, calls a webhook or notifies you. [Automations](/automations/).
+	</Card>
+	<Card title="Runbooks" icon="list-format">
+		Multi-step procedures with checks, prompts, retry and rollback, started from the UI or the CLI.
+		[Runbooks](/runbooks/).
 	</Card>
 	<Card title="Adopt, don't replace" icon="puzzle">
-		Plugs into the Prometheus and Kubernetes clusters you already run. Nothing to migrate.
-		[Integrations](/prometheus/).
+		Plugs into the Kubernetes, Talos, Prometheus, Pi-hole and Docker you already run. Nothing to
+		migrate. [Kubernetes](/kubernetes/), [Prometheus](/prometheus/).
 	</Card>
 	<Card title="Deny by default" icon="approve-check">
-		Every action from the UI, the CLI or an automation passes one policy engine and lands in an audit
-		log, and each device sets its own ceiling. [Security model](/security/).
+		Every action from the UI, the CLI, an automation or an AI assistant passes one policy engine and
+		lands in an audit log, and each device sets its own ceiling. [Security model](/security/).
+	</Card>
+	<Card title="Agent-native" icon="comment">
+		A built-in MCP server lets Claude Code and other assistants see and operate the lab, under the
+		same policy as everyone else. [MCP](/mcp/).
+	</Card>
+	<Card title="A cluster with no leader" icon="random">
+		Add hubs and they form a leaderless cluster: agents move to another hub within seconds when one
+		dies, and both sides of a network split keep working. [Cluster mode](/cluster/).
+	</Card>
+	<Card title="Small on the edge" icon="rocket">
+		Hub and agent are one Go binary. The agent is built to idle under 25 MB of memory and near-zero
+		CPU; the hub keeps its state in SQLite. [Concepts](/concepts/).
 	</Card>
 </CardGrid>
 
-Hearth is pre-alpha and built in public: releases are `v0.0.1-rc.N` pre-releases for now.
+Hearth is pre-alpha and built in public: releases are `v0.0.1-rc.N` pre-releases for now. How it fits
+next to Beszel, Komodo, NetAlertX and Homepage: [Hearth and other tools](/comparison/).

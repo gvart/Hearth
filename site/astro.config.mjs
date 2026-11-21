@@ -5,9 +5,14 @@ import starlight from '@astrojs/starlight';
 import { unified } from '@astrojs/markdown-remark';
 import { pages, repoURL, sections } from './src/pages.mjs';
 
+// The site is served from a GitHub Pages project site: https://gvart.dev/Hearth/.
+const site = 'https://gvart.dev';
+const base = '/Hearth';
+
 // The pages in docs/ link to each other and to the repository with relative
 // links that work on GitHub. On the site, a link to a published page becomes
 // that page's URL, and any other relative link points at the file on GitHub.
+// Root-relative links in the landing page get the site's base path.
 function docsLinks() {
 	const docsDir = path.resolve('../docs');
 	/** @param {any} node @param {(n: any) => void} fn */
@@ -18,19 +23,26 @@ function docsLinks() {
 	/** @param {any} tree @param {any} file */
 	return (tree, file) => {
 		const dir = path.dirname(file.path ?? '');
-		if (path.relative(docsDir, dir).startsWith('..')) return;
+		const inDocs = !path.relative(docsDir, dir).startsWith('..');
 		walk(tree, (node) => {
-			if (node.type !== 'link' || /^([a-z]+:|\/|#)/i.test(node.url)) return;
+			if (node.type !== 'link') return;
+			if (!inDocs && /^\/(?!\/)/.test(node.url)) {
+				if (!node.url.startsWith(`${base}/`)) node.url = `${base}${node.url}`;
+				return;
+			}
+			if (!inDocs || /^([a-z]+:|\/|#)/i.test(node.url)) return;
 			const [target, hash = ''] = node.url.split('#');
 			const repoPath = path.relative(path.resolve('..'), path.resolve(dir, target));
 			const page = repoPath.match(/^docs\/([a-z0-9-]+)\.md$/)?.[1];
 			const anchor = hash ? `#${hash}` : '';
-			node.url = page && pages.includes(page) ? `/${page}/${anchor}` : `${repoURL}/blob/main/${repoPath}${anchor}`;
+			node.url = page && pages.includes(page) ? `${base}/${page}/${anchor}` : `${repoURL}/blob/main/${repoPath}${anchor}`;
 		});
 	};
 }
 
 export default defineConfig({
+	site,
+	base,
 	markdown: { processor: unified({ remarkPlugins: [docsLinks] }) },
 	integrations: [
 		starlight({
