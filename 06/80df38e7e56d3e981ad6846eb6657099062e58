@@ -1,0 +1,39 @@
+internal/cluster/replicate.go
+  s_87f1c7baee7d5a::t_9609c90d184b65 531-598
+  s_87f1c7baee7d5a::t_e732217e69b799 517
+internal/cluster/apreads_test.go
+  s_87f1c7baee7d5a::t_d951aabe3c1a0e 1-38,41-71,73-80,82-112,114-146,148-177,179-198,200-234,236-291,293-299
+  s_87f1c7baee7d5a::t_0ee73e98dd6ff5 39-40,72,81,113,147,178,199,235,292
+internal/store/store.go
+  s_87f1c7baee7d5a::t_604d7cb338d792 60-62
+internal/store/partition.go
+  s_87f1c7baee7d5a::t_451b1daff3d04b 291,293-296
+internal/store/reads.go
+  s_87f1c7baee7d5a::t_6ce53f5753ae3e 94
+  s_87f1c7baee7d5a::t_1e4e3fd9274610 1-93,95-108
+docs/cluster.md
+  s_87f1c7baee7d5a::t_b424fdd304c8bf 119-126
+internal/store/reads_test.go
+  s_87f1c7baee7d5a::t_aec8ad69847aba 1-12,14,17-86
+  s_87f1c7baee7d5a::t_47f29dd6fa8c7d 15-16
+  s_87f1c7baee7d5a::t_3039078e5dc46a 13
+internal/store/version.go
+  s_87f1c7baee7d5a::t_e56f00513e6c50 371-373
+  s_87f1c7baee7d5a::t_10b3b19d57a010 335-337
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0680df38e7e56d3e981ad6846eb6657099062e58",
+  "prompts": {},
+  "sessions": {
+    "s_87f1c7baee7d5a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "45cc2cdf-3130-4caa-8cb4-8cb365d2150d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
