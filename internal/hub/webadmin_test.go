@@ -244,8 +244,10 @@ func TestWebAdminFollowsPolicy(t *testing.T) {
 // The web actor is admitted only to the rules that name it: without
 // ActorWeb in device.revoke's rule, policy would deny the web UI's revoke.
 func TestWebActorAdmitted(t *testing.T) {
-	for _, a := range []policy.Action{policy.DeviceRevoke, policy.MCPTokenCreate, policy.MCPTokenRevoke,
-		policy.AdminSetPassword, policy.AdminReauth, policy.HubBackup, policy.ConfigImport} {
+	for _, a := range []policy.Action{
+		policy.DeviceRevoke, policy.MCPTokenCreate, policy.MCPTokenRevoke,
+		policy.AdminSetPassword, policy.AdminReauth, policy.HubBackup, policy.ConfigImport,
+	} {
 		if !policy.Admits(a, policy.ActorWeb) {
 			t.Errorf("%s does not admit the web actor", a)
 		}

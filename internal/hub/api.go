@@ -20,6 +20,7 @@ import (
 
 	"github.com/gvart/hearth/internal/automation"
 	"github.com/gvart/hearth/internal/hub/webui"
+	"github.com/gvart/hearth/internal/hubconfig"
 	"github.com/gvart/hearth/internal/integrations/kubernetes"
 	"github.com/gvart/hearth/internal/integrations/prometheus"
 	"github.com/gvart/hearth/internal/integrations/proxmox"
@@ -99,6 +100,10 @@ func newAPI(cfg Config) *api {
 		installVersion: releaseVersion(cfg.Version),
 		version:        cfg.Version,
 		argon:          defaultArgon,
+		configSealer:   cfg.ConfigSealer,
+		configKinds:    cfg.ConfigKinds,
+		backup:         cfg.Backup,
+		backupDir:      cfg.BackupDir,
 		telemetryOff:   cfg.TelemetryOff,
 		shellIdle:      orDefault(cfg.ShellIdleTimeout, DefaultShellIdleTimeout),
 		shellMax:       orDefault(cfg.ShellMaxDuration, DefaultShellMaxDuration),
@@ -167,6 +172,8 @@ func (a *api) routes() http.Handler {
 	a.guestRoutes(mux, ui)
 	a.dashboardRoutes(mux)
 	a.webAdminRoutes(mux)
+	a.configEditRoutes(mux)
+	a.backupRoutes(mux)
 	mux.Handle("/api/v1/", a.auth(func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "no such endpoint")
 	}))
@@ -267,6 +274,16 @@ type api struct {
 	reauths reauths
 	// argon is the cost of a password the web UI sets.
 	argon argonParams
+	// configSealer and configKinds are Config's: nil without the editors of
+	// configuration documents.
+	configSealer hubconfig.Sealer
+	configKinds  func(*notify.Notifier) automation.Kinds
+	// configMu makes each write of configuration documents from this hub's
+	// web UI one step: its check and its write.
+	configMu sync.Mutex
+	// backup and backupDir are Config's; nil without backup downloads.
+	backup    func(ctx context.Context, output, passphrase string) error
+	backupDir string
 	// telemetryOff is Config.TelemetryOff.
 	telemetryOff bool
 	// shellIdle and shellMax limit terminal sessions.

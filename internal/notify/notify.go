@@ -119,20 +119,9 @@ func Exposed(path string) bool {
 //
 // Errors never quote a value: values are credentials.
 func Parse(b []byte) (*Notifier, error) {
-	var file struct {
-		Channels map[string]struct {
-			Type     string `yaml:"type"`
-			URL      string `yaml:"url"`
-			Topic    string `yaml:"topic"`
-			Token    string `yaml:"token"`
-			BotToken string `yaml:"bot_token"`
-			ChatID   string `yaml:"chat_id"`
-		} `yaml:"channels"`
-	}
-	dec := yaml.NewDecoder(bytes.NewReader(b))
-	dec.KnownFields(true)
-	if err := dec.Decode(&file); err != nil && !errors.Is(err, io.EOF) {
-		return nil, fmt.Errorf("parse: %w", err)
+	file, err := ParseFile(b)
+	if err != nil {
+		return nil, err
 	}
 	n := &Notifier{client: &http.Client{}, channels: map[string]channel{}}
 	for name, c := range file.Channels {
@@ -163,6 +152,34 @@ func Parse(b []byte) (*Notifier, error) {
 		n.channels[name] = ch
 	}
 	return n, nil
+}
+
+// File is a channels file as written. Every field of a channel but its type
+// is an address or a credential: it never leaves the hub (see docs).
+type File struct {
+	Channels map[string]FileChannel `yaml:"channels"`
+}
+
+// FileChannel is one channel of a File.
+type FileChannel struct {
+	Type     string `yaml:"type"`
+	URL      string `yaml:"url,omitempty"`
+	Topic    string `yaml:"topic,omitempty"`
+	Token    string `yaml:"token,omitempty"`
+	BotToken string `yaml:"bot_token,omitempty"`
+	ChatID   string `yaml:"chat_id,omitempty"`
+}
+
+// ParseFile reads a channels file's fields without checking the channels:
+// Parse checks them. Errors never quote a value.
+func ParseFile(b []byte) (File, error) {
+	var file File
+	dec := yaml.NewDecoder(bytes.NewReader(b))
+	dec.KnownFields(true)
+	if err := dec.Decode(&file); err != nil && !errors.Is(err, io.EOF) {
+		return File{}, fmt.Errorf("parse: %w", err)
+	}
+	return file, nil
 }
 
 // Channels lists the channels by name.
