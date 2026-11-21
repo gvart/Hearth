@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { fit, panBy, transformOf, zoomAt, type View } from '../panzoom.ts';
-import { useDevices } from '../api/hooks.ts';
 import { useTopology, type Topology } from '../api/netedges.ts';
 import { formatDateTime } from '../format.ts';
+import { deviceHash } from '../nav.ts';
 import { buildGraph, layout, portsLabel, type GraphLink, type GraphNode, type GraphOptions } from '../topology.ts';
-import { DeviceDrawer } from './DeviceDrawer.tsx';
 import './NetworkPage.css';
 
 const width = 1000;
@@ -13,13 +12,10 @@ const height = 640;
 /** Who talks to whom on the network: every device's neighbours and connections, as a graph. */
 export function NetworkPage() {
   const topology = useTopology();
-  const devices = useDevices();
-  const [deviceId, setDeviceId] = useState<string>();
   const [opts, setOpts] = useState<GraphOptions>({
     neighbors: true,
     unknown: true,
   });
-  const device = devices.data?.find((d) => d.id === deviceId);
   const t = topology.data;
 
   return (
@@ -88,18 +84,12 @@ export function NetworkPage() {
               </label>
               <Legend />
             </div>
-            <TopologyGraph topology={t} opts={opts} onDevice={setDeviceId} />
+            <TopologyGraph topology={t} opts={opts} onDevice={(id) => {
+                window.location.hash = deviceHash(id);
+              }} />
           </>
         )}
       </main>
-      {device ? (
-        <DeviceDrawer
-          device={device}
-          onClose={() => {
-            setDeviceId(undefined);
-          }}
-        />
-      ) : null}
     </>
   );
 }

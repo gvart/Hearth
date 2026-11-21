@@ -1,13 +1,12 @@
 import { useEffect, useState } from 'react';
 import { latest, rememberView, storedView, type DevicesView } from '../devices.ts';
-import { deviceOfHash } from '../nav.ts';
+import { deviceHash } from '../nav.ts';
 import type { Device } from '../api/client.ts';
 import { useDevices, useMetricsSparklines } from '../api/hooks.ts';
 import { displayName, formatUptime, osArch, primaryIP, relativeTime, statusLabel } from '../format.ts';
 import { AddDeviceDialog } from './AddDeviceDialog.tsx';
 import { BeszelSystems } from './BeszelSystems.tsx';
 import { TalosNodes } from './TalosNodes.tsx';
-import { DeviceDrawer } from './DeviceDrawer.tsx';
 import { DeviceSparklines } from './DeviceSparklines.tsx';
 import { Meter } from './Meter.tsx';
 import { PluginDevices } from './PluginDevices.tsx';
@@ -32,6 +31,11 @@ function Pin({ label, value }: { label: string; value: string }) {
   );
 }
 
+/** Opens a device's page. */
+function open(id: string) {
+  window.location.hash = deviceHash(id);
+}
+
 /** The current time, re-read every interval so relative times stay fresh. */
 function useNow(intervalMs: number) {
   const [now, setNow] = useState(() => Date.now());
@@ -50,20 +54,6 @@ export function DevicesPage() {
   const devices = useDevices();
   const sparklines = useMetricsSparklines();
   const now = useNow(1_000); // uptime ticks in seconds
-  // A device link (#/devices/<id>, as the command bar makes) opens that device's drawer.
-  const [selectedId, setSelectedId] = useState(() => deviceOfHash(window.location.hash));
-  useEffect(() => {
-    const onHash = () => {
-      const id = deviceOfHash(window.location.hash);
-      if (id) {
-        setSelectedId(id);
-      }
-    };
-    window.addEventListener('hashchange', onHash);
-    return () => {
-      window.removeEventListener('hashchange', onHash);
-    };
-  }, []);
   const [adding, setAdding] = useState(false);
   const [view, setView] = useState<DevicesView>(storedView);
   // Device IDs present when "Add device" was last opened; rows not in it are new.
@@ -72,7 +62,6 @@ export function DevicesPage() {
   const list = (devices.data ?? []).slice().sort(byStatusThenName);
   const isNew = (d: Device) => baseline !== undefined && !baseline.has(d.id);
   const joined = adding ? list.find(isNew) : undefined;
-  const selected = list.find((d) => d.id === selectedId);
   const online = list.filter((d) => d.status === 'online').length;
 
   const openAdd = () => {
@@ -137,14 +126,11 @@ export function DevicesPage() {
               const charts = sparklines.data?.devices[d.id];
               const on = d.status === 'online';
               return (
-                <button
+                <a
                   key={d.id}
-                  type="button"
+                  href={deviceHash(d.id)}
                   className={on ? 'dev-block' : 'dev-block dev-block-off'}
                   aria-label={`${displayName(d)}, ${statusLabel(d.status)}`}
-                  onClick={() => {
-                    setSelectedId(d.id);
-                  }}
                 >
                   <span className="dev-block-head">
                     <span>D{i + 1}</span>
@@ -169,7 +155,7 @@ export function DevicesPage() {
                   <Meter label="CPU" percent={on ? latest(charts, 'cpu') : undefined} plain />
                   <Meter label="Mem" percent={on ? latest(charts, 'memory') : undefined} />
                   <Meter label="Disk" percent={on ? latest(charts, 'disk') : undefined} />
-                </button>
+                </a>
               );
             })}
           </div>
@@ -194,12 +180,12 @@ export function DevicesPage() {
                     tabIndex={0}
                     aria-label={`${displayName(d)}, ${statusLabel(d.status)}`}
                     onClick={() => {
-                      setSelectedId(d.id);
+                      open(d.id);
                     }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault();
-                        setSelectedId(d.id);
+                        open(d.id);
                       }
                     }}
                   >
@@ -230,8 +216,8 @@ export function DevicesPage() {
           </div>
         )}
         <UnmanagedHosts now={now} onAdd={openAdd} />
-        <TalosNodes now={now} onSelect={setSelectedId} />
-        <BeszelSystems now={now} onSelect={setSelectedId} />
+        <TalosNodes now={now} onSelect={open} />
+        <BeszelSystems now={now} onSelect={open} />
         <PluginDevices />
       </main>
 
@@ -243,18 +229,7 @@ export function DevicesPage() {
           }}
           onShow={(d) => {
             setAdding(false);
-            setSelectedId(d.id);
-          }}
-        />
-      ) : null}
-      {selected ? (
-        <DeviceDrawer
-          device={selected}
-          onClose={() => {
-            setSelectedId(undefined);
-            if (deviceOfHash(window.location.hash)) {
-              window.location.hash = '#/';
-            }
+            open(d.id);
           }}
         />
       ) : null}

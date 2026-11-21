@@ -3,10 +3,11 @@ import { isNotAPCluster, useClusterMembers } from '../api/cluster.ts';
 import { useApprovals, useDeviceEvents, useLogout } from '../api/hooks.ts';
 import { ApprovalsPage } from './ApprovalsPage.tsx';
 import { AuditPage } from './AuditPage.tsx';
-import { pageOf, pagesOf, sheetHash, sheetOf, sheets, type Page } from '../nav.ts';
+import { deviceOfHash, pageOf, pagesOf, sheetHash, sheetOf, sheets } from '../nav.ts';
 import { ClusterPage } from './ClusterPage.tsx';
 import { CommandBar } from './CommandBar.tsx';
 import { ConfigDriftBanner } from './ConfigDriftBanner.tsx';
+import { DevicePage } from './DevicePage.tsx';
 import { DevicesPage } from './DevicesPage.tsx';
 import { KubernetesPage } from './KubernetesPage.tsx';
 import { Logo } from './Logo.tsx';
@@ -23,19 +24,19 @@ import './Shell.css';
 // Loaded when opened: the editor brings a YAML parser no other page needs.
 const AutomationsPage = lazy(() => import('./AutomationsPage.tsx'));
 
-/** The page chosen by the URL hash, so reloads and links keep it. */
-function usePage(): Page {
-  const [page, setPage] = useState(() => pageOf(window.location.hash));
+/** The URL hash, which chooses the page, so reloads and links keep it. */
+function useHash(): string {
+  const [hash, setHash] = useState(() => window.location.hash);
   useEffect(() => {
     const onHash = () => {
-      setPage(pageOf(window.location.hash));
+      setHash(window.location.hash);
     };
     window.addEventListener('hashchange', onHash);
     return () => {
       window.removeEventListener('hashchange', onHash);
     };
   }, []);
-  return page;
+  return hash;
 }
 
 /** How many approvals wait, beside the name of what leads to them. */
@@ -56,7 +57,10 @@ function Waiting({ count }: { count: number }) {
 export function Shell() {
   useDeviceEvents();
   const logout = useLogout();
-  const page = usePage();
+  const hash = useHash();
+  const page = pageOf(hash);
+  // A device link (#/devices/<id>) opens that device's page inside Devices.
+  const deviceId = page === 'devices' ? deviceOfHash(hash) : undefined;
   const sheet = sheetOf(page);
   const waiting = useApprovals('pending').data?.length ?? 0;
   // The Cluster page is offered on a member of an AP cluster only.
@@ -147,6 +151,8 @@ export function Shell() {
             <ClusterPage />
           ) : page === 'settings' ? (
             <SettingsPage />
+          ) : deviceId !== undefined ? (
+            <DevicePage key={deviceId} id={deviceId} />
           ) : (
             <DevicesPage />
           )}

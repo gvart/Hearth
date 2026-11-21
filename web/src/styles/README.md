@@ -23,7 +23,7 @@ shades; square corners; one action colour.
   `danger`: it went wrong. `online`: it is live. `ok`: it went well. `violet`: automation. Never
   colour for decoration, and never colour alone: a status is a shape and a word too.
 - **Selected is the inverse fill** (`line` behind, `bg` in front), not a tint.
-- **Elevation is one hard shadow** (`shadow`), for dialogs and the drawer. Everything else is flat
+- **Elevation is one hard shadow** (`shadow`), for dialogs. Everything else is flat
   and separated by lines.
 - **In TSX**, no colour literals: style with a class, or read a token with `token()` from
   `src/theme.ts` when a library wants a value (the terminal does). The QR code is the exception:

@@ -1,7 +1,7 @@
 // What the Devices page shows of a device's metrics and disks. Kept apart from
 // the components so node --test can check it (web/test/devices.test.mjs).
 
-import type { Disk, MetricChart } from './api/client.ts';
+import type { Ceiling, Disk, MetricChart } from './api/client.ts';
 
 export type MeterTone = 'ok' | 'warn' | 'bad';
 
@@ -22,6 +22,39 @@ export function meterTone(percent: number): MeterTone {
 export function latest(charts: MetricChart[] | undefined, key: string): number | undefined {
   const points = charts?.find((c) => c.key === key)?.points;
   return points?.[points.length - 1]?.[1];
+}
+
+/** What a device's agent does not allow, and the agent flag that turns each on. */
+export interface NotAllowed {
+  logs: boolean;
+  docker: boolean;
+  netEdges: boolean;
+  flags: { what: string; flag: string }[];
+}
+
+/**
+ * The parts of the device page its agent keeps off. An agent too old to report
+ * its ceiling allows none of them.
+ */
+export function notAllowed(device: { facts: { ceiling?: Ceiling } }): NotAllowed {
+  const c = device.facts.ceiling;
+  const logs = (c?.logs ?? []).length === 0;
+  const docker = !c?.docker;
+  const netEdges = !c?.net_edges;
+  const flags: NotAllowed['flags'] = [];
+  if (logs) {
+    flags.push({ what: 'Logs', flag: '--allow-logs systemd:UNIT' });
+  }
+  if (docker) {
+    flags.push({ what: 'Containers', flag: '--allow-docker' });
+  }
+  if (netEdges) {
+    flags.push({ what: 'Neighbors', flag: '--allow-net-edges' });
+  }
+  if (!c?.shell) {
+    flags.push({ what: 'Terminal', flag: '--allow-shell' });
+  }
+  return { logs, docker, netEdges, flags };
 }
 
 export type DevicesView = 'blocks' | 'table';

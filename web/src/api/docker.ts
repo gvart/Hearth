@@ -73,8 +73,8 @@ const keys = {
 
 /**
  * The device's containers, asked of its agent. Every read is audited on the
- * hub, so this never polls or refetches on focus: it reads once per drawer
- * opening, after an action, and on refetch().
+ * hub, so this never polls or refetches on focus: it reads once per opening
+ * of the device page, after an action, and on refetch().
  */
 export function useDocker(device: string) {
   return useQuery({

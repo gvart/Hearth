@@ -2,7 +2,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { diskUse, latest, meterTone } from '../src/devices.ts';
+import { diskUse, latest, meterTone, notAllowed } from '../src/devices.ts';
 
 test('diskUse is the share in use, and unknown when the agent does not report it', () => {
   const cases = [
@@ -42,4 +42,19 @@ test('latest reads the newest point of one chart', () => {
   assert.equal(latest(charts, 'memory'), undefined);
   assert.equal(latest(charts, 'disk'), undefined);
   assert.equal(latest(undefined, 'cpu'), undefined);
+});
+
+test('notAllowed names what the agent keeps off and the flag for each', () => {
+  const open = notAllowed({ facts: { ceiling: { exec: [], restart: [], probe: true, logs: ['systemd:*'], docker: true, net_edges: true, shell: true } } });
+  assert.deepEqual(open, { logs: false, docker: false, netEdges: false, flags: [] });
+
+  const shut = notAllowed({ facts: { ceiling: { exec: [], restart: [], probe: false } } });
+  assert.equal(shut.logs && shut.docker && shut.netEdges, true);
+  assert.deepEqual(
+    shut.flags.map((f) => f.flag),
+    ['--allow-logs systemd:UNIT', '--allow-docker', '--allow-net-edges', '--allow-shell'],
+  );
+
+  // An agent too old to report a ceiling allows none of them.
+  assert.equal(notAllowed({ facts: {} }).flags.length, 4);
 });

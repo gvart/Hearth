@@ -147,7 +147,6 @@ input[type='checkbox'], input[type='radio'] { accent-color: var(--accent); }
 
 /* Overlays */
 dialog { border: var(--line-2) solid var(--line); }
-.drawer { border-width: 0 0 0 var(--line-2); }
 .login-card { border: var(--line-2) solid var(--line); }
 
 /* Colour has a job, so a screen reads at a glance. Cyan is live: a device that is online, a level, a
