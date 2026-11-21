@@ -79,9 +79,9 @@ func TestTokenCreate(t *testing.T) {
 	}
 
 	st := openStore(t, dir)
-	labels, err := st.Tokens().Consume(t.Context(), tok.Secret, time.Now())
-	if err != nil || labels["room"] != "attic" {
-		t.Errorf("Consume = %v, %v; want the created token with labels", labels, err)
+	got, err := st.Tokens().Consume(t.Context(), tok.Secret, time.Now())
+	if err != nil || got.Labels["room"] != "attic" {
+		t.Errorf("Consume = %+v, %v; want the created token with labels", got, err)
 	}
 	if _, err := st.Tokens().Consume(t.Context(), tok.Secret, time.Now().Add(6*time.Minute)); !errors.Is(err, store.ErrTokenUsed) {
 		t.Errorf("second Consume err = %v, want ErrTokenUsed", err)
@@ -98,6 +98,30 @@ func TestTokenCreate(t *testing.T) {
 	}
 }
 
+// --name is stored with the token: the device that enrolls takes it.
+func TestTokenCreateNamed(t *testing.T) {
+	dir, _ := initHub(t)
+	out, err := execute(t, "token", "create", "--data-dir", dir, "--name", "garage-pi")
+	if err != nil {
+		t.Fatalf("token create: %v\n%s", err, out)
+	}
+	var raw string
+	for _, f := range strings.Fields(out) {
+		if strings.HasPrefix(f, "hearth2.") {
+			raw = f
+			break
+		}
+	}
+	tok, err := pki.ParseToken(raw)
+	if err != nil {
+		t.Fatalf("output has no valid token: %v\n%s", err, out)
+	}
+	got, err := openStore(t, dir).Tokens().Consume(t.Context(), tok.Secret, time.Now())
+	if err != nil || got.Name != "garage-pi" {
+		t.Errorf("Consume = %+v, %v; want the name garage-pi", got, err)
+	}
+}
+
 func TestTokenCreateRejects(t *testing.T) {
 	dir, _ := initHub(t)
 	tests := []struct {
@@ -106,6 +130,8 @@ func TestTokenCreateRejects(t *testing.T) {
 	}{
 		{"zero ttl", []string{"token", "create", "--data-dir", dir, "--ttl", "0s"}},
 		{"no hub in data dir", []string{"token", "create", "--data-dir", t.TempDir()}},
+		{"name too long", []string{"token", "create", "--data-dir", dir, "--name", strings.Repeat("a", 64)}},
+		{"name with a space", []string{"token", "create", "--data-dir", dir, "--name", "garage pi"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

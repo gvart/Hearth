@@ -73,7 +73,9 @@ Sign in with the admin password, then click **Add device**. The dialog shows a c
 curl -fsSL http://192.168.1.10:7080/install.sh | HEARTH_TOKEN=hearth2.… sh -s -- --hub https://192.168.1.10:7443
 ```
 
-It holds a single-use enrollment token that expires after 15 minutes. The hub also ends
+It holds a single-use enrollment token that expires after 15 minutes. The device joins under its
+hostname unless you give it a name under **Name, expiry and labels**: 1 to 63 letters, digits,
+`.`, `-` or `_`, starting with a letter or digit. The hub also ends
 the command with `--version` and its own version, so the device gets the same release as
 the hub. Keep the dialog open: it tells you when the device joins.
 
@@ -122,6 +124,8 @@ You can also create the token on the hub machine instead of in the UI:
 ```sh
 ./hearth token create --hub-url https://192.168.1.10:7443
 ```
+
+Add `--name garage-pi` to have the device join under that name instead of its hostname.
 
 ## 5. See it
 

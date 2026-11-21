@@ -287,8 +287,8 @@ func TestTokensConsume(t *testing.T) {
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("Consume err = %v, want %v", err, tt.wantErr)
 			}
-			if tt.wantErr == nil && !reflect.DeepEqual(got, tt.want) {
-				t.Fatalf("Consume labels = %v, want %v", got, tt.want)
+			if tt.wantErr == nil && !reflect.DeepEqual(got.Labels, tt.want) {
+				t.Fatalf("Consume labels = %v, want %v", got.Labels, tt.want)
 			}
 		})
 	}

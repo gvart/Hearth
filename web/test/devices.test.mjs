@@ -2,7 +2,22 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { diskUse, latest, meterTone, notAllowed } from '../src/devices.ts';
+import { diskUse, latest, meterTone, notAllowed, suggestedName } from '../src/devices.ts';
+
+test('suggestedName is the hostname without .local, in the characters a device name allows', () => {
+  const cases = [
+    ['garage-pi.local', 'garage-pi'],
+    ['NAS.local.', 'NAS'],
+    ['pi.lan', 'pi.lan'],
+    ['Galaxy S21', 'Galaxy-S21'],
+    ['_printer', 'printer'],
+    ['', ''],
+    ['a'.repeat(80), 'a'.repeat(63)],
+  ];
+  for (const [hostname, want] of cases) {
+    assert.equal(suggestedName({ hostname }), want, hostname);
+  }
+});
 
 test('diskUse is the share in use, and unknown when the agent does not report it', () => {
   const cases = [

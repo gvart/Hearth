@@ -35,7 +35,7 @@ function byIP(a: NetworkHost, b: NetworkHost) {
  * Hosts network discovery found that have no agent, each with a shortcut to
  * the "Add device" flow. Renders nothing while discovery has found none.
  */
-export function UnmanagedHosts({ now, onAdd }: { now: number; onAdd: () => void }) {
+export function UnmanagedHosts({ now, onAdd }: { now: number; onAdd: (h: NetworkHost) => void }) {
   const hosts = useNetworkHosts();
   const devices = useDevices();
   const mark = useMarkNetworkHost();
@@ -153,7 +153,13 @@ export function UnmanagedHosts({ now, onAdd }: { now: number; onAdd: () => void 
                         Unmark
                       </button>
                     )}
-                    <button className="btn btn-ghost btn-small" type="button" onClick={onAdd}>
+                    <button
+                      className="btn btn-ghost btn-small"
+                      type="button"
+                      onClick={() => {
+                        onAdd(h);
+                      }}
+                    >
                       Add device
                     </button>
                   </span>

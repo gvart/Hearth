@@ -29,6 +29,7 @@ const (
 	maxTokenBody     = 4 << 10
 	maxTokenLabels   = 32
 	maxLabelLen      = 128
+	maxDeviceNameLen = 63
 )
 
 // DefaultHTTPPort is the hub's default plain-HTTP port for the UI and the
@@ -62,13 +63,16 @@ func (a *api) createToken(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		TTL    string            `json:"ttl"`
 		Labels map[string]string `json:"labels"`
+		// Name names the device that enrolls with the token; empty leaves
+		// it its hostname.
+		Name string `json:"name"`
 		// DryRun decides and audits the request without creating a token.
 		DryRun bool `json:"dry_run"`
 	}
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxTokenBody))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", `body must be {"ttl"?: "15m", "labels"?: {"k": "v"}, "dry_run"?: false}`)
+		writeError(w, http.StatusBadRequest, "bad_request", `body must be {"ttl"?: "15m", "labels"?: {"k": "v"}, "name"?: "garage-pi", "dry_run"?: false}`)
 		return
 	}
 	ttl := defaultTokenTTL
@@ -82,6 +86,11 @@ func (a *api) createToken(w http.ResponseWriter, r *http.Request) {
 	}
 	if msg := checkLabels(body.Labels); msg != "" {
 		writeError(w, http.StatusBadRequest, "bad_request", msg)
+		return
+	}
+	name, err := DeviceName(body.Name)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
 	httpHost, agentHost, ok := a.commandHosts(r.Host, r.TLS != nil)
@@ -101,11 +110,11 @@ func (a *api) createToken(w http.ResponseWriter, r *http.Request) {
 		ActorKind: policy.ActorWeb,
 		ActorID:   remoteHost(r),
 		Action:    policy.TokenCreate,
-		Detail:    map[string]any{"ttl": ttl.String(), "labels": body.Labels},
+		Detail:    TokenDetail(ttl, body.Labels, name),
 		DryRun:    body.DryRun,
 	}
 	err = a.policy.Do(ctx, req, func(ctx context.Context) error {
-		return a.store.Tokens().Create(ctx, tok.Secret, body.Labels, expires)
+		return a.store.Tokens().CreateNamed(ctx, tok.Secret, name, body.Labels, expires)
 	})
 	switch {
 	case errors.Is(err, policy.ErrDenied):
@@ -113,6 +122,9 @@ func (a *api) createToken(w http.ResponseWriter, r *http.Request) {
 		return
 	case errors.Is(err, store.ErrUnavailable):
 		writeUnavailable(w)
+		return
+	case errors.Is(err, store.ErrSchemaTooOld):
+		writeError(w, http.StatusConflict, "schema_too_old", "the hub cluster's database predates named tokens: upgrade every hub of the cluster first")
 		return
 	case err != nil:
 		a.log.ErrorContext(ctx, "create token", "err", err)
@@ -229,6 +241,32 @@ func validHost(h string) bool {
 		}
 	}
 	return true
+}
+
+// DeviceName checks the device name an enrollment token gives and returns it
+// trimmed; "" names none. A name is 1 to 63 letters, digits, '.', '-' or '_',
+// starting with a letter or digit: hostname-like, as the agent hostname it
+// replaces usually is.
+func DeviceName(name string) (string, error) {
+	if name == "" {
+		return "", nil
+	}
+	name = strings.TrimSpace(name)
+	if len(name) > maxDeviceNameLen || !deviceNameRE().MatchString(name) {
+		return "", errors.New("name must be 1 to 63 letters, digits, ., - or _, starting with a letter or digit")
+	}
+	return name, nil
+}
+
+var deviceNameRE = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`) })
+
+// TokenDetail is the audited detail of an enrollment token creation.
+func TokenDetail(ttl time.Duration, labels map[string]string, name string) map[string]any {
+	d := map[string]any{"ttl": ttl.String(), "labels": labels}
+	if name != "" {
+		d["name"] = name
+	}
+	return d
 }
 
 func checkLabels(labels map[string]string) string {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/gvart/hearth/internal/hub"
 	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/policy"
 )
@@ -19,6 +20,7 @@ type tokenCreateOptions struct {
 	dataDir string
 	ttl     time.Duration
 	labels  map[string]string
+	name    string
 	hubURL  string
 	dryRun  bool
 }
@@ -44,6 +46,7 @@ func newTokenCreateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&opts.dataDir, "data-dir", defaultDataDir("hub"), "hub data directory (env HEARTH_DATA_DIR)")
 	cmd.Flags().DurationVar(&opts.ttl, "ttl", 15*time.Minute, "how long the token stays valid")
 	cmd.Flags().StringToStringVar(&opts.labels, "labels", nil, "labels for the enrolled device, k=v[,k=v]")
+	cmd.Flags().StringVar(&opts.name, "name", "", "name for the enrolled device (default: its hostname)")
 	cmd.Flags().StringVar(&opts.hubURL, "hub-url", "https://"+hostnameOr("localhost")+":"+defaultPort,
 		"hub URL to put in the join command")
 	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false, "decide and audit the action without creating a token")
@@ -53,6 +56,10 @@ func newTokenCreateCmd() *cobra.Command {
 func runTokenCreate(ctx context.Context, opts tokenCreateOptions, out io.Writer) error {
 	if opts.ttl <= 0 {
 		return errors.New("--ttl must be positive")
+	}
+	name, err := hub.DeviceName(opts.name)
+	if err != nil {
+		return fmt.Errorf("--name: %w", err)
 	}
 	// Read the CA before opening the store, so a wrong data dir fails without
 	// creating an empty database there.
@@ -73,9 +80,9 @@ func runTokenCreate(ctx context.Context, opts tokenCreateOptions, out io.Writer)
 	expires := time.Now().Add(opts.ttl)
 	done, err := adminDo(ctx, opts.dataDir, st, out, opts.dryRun, policy.Request{
 		Action: policy.TokenCreate,
-		Detail: map[string]any{"ttl": opts.ttl.String(), "labels": opts.labels},
+		Detail: hub.TokenDetail(opts.ttl, opts.labels, name),
 	}, func(ctx context.Context) error {
-		return st.Tokens().Create(ctx, tok.Secret, opts.labels, expires)
+		return st.Tokens().CreateNamed(ctx, tok.Secret, name, opts.labels, expires)
 	})
 	if err != nil || !done {
 		return err

@@ -41,6 +41,8 @@ type Result struct {
 	Devices []Device
 	// Labels are the labels of the token consumed by ConsumeToken.
 	Labels map[string]string
+	// Name is the device name of the token consumed by ConsumeToken, or "".
+	Name string
 	// ApprovalID is the approval of the link spent by UseApprovalLink.
 	ApprovalID string
 	// ID is the audit_log ID assigned by AppendAudit.
@@ -361,6 +363,9 @@ type CreateToken struct {
 	Hash      []byte `json:"hash"`
 	Labels    string `json:"labels"`
 	ExpiresAt int64  `json:"expires_at"`
+	// Name is the device name the token gives, or "" for the agent's
+	// hostname. A named token needs tokenNameSchema.
+	Name string `json:"name,omitempty"`
 	// Owner is the master that owns the token in an AP cluster (OwnedBy).
 	Owner string `json:"owner,omitempty"`
 }
@@ -368,17 +373,24 @@ type CreateToken struct {
 // Op implements Command.
 func (CreateToken) Op() string { return "create_token" }
 
-func (c CreateToken) minSchema() int64 { return ownedSchema(c.Owner, 0) }
+func (c CreateToken) minSchema() int64 {
+	if c.Name != "" {
+		return ownedSchema(c.Owner, tokenNameSchema)
+	}
+	return ownedSchema(c.Owner, 0)
+}
 
 func (c CreateToken) apply(ctx context.Context, w *writer) (Result, error) {
-	return Result{}, w.insert(ctx, "tokens", withOwner(row{
-		"hash": c.Hash, "labels": c.Labels, "expires_at": c.ExpiresAt, "used_at": nil,
-	}, c.Owner))
+	r := row{"hash": c.Hash, "labels": c.Labels, "expires_at": c.ExpiresAt, "used_at": nil}
+	if w.schema >= tokenNameSchema {
+		r["name"] = c.Name
+	}
+	return Result{}, w.insert(ctx, "tokens", withOwner(r, c.Owner))
 }
 
 // ConsumeToken marks a token used at Now if it is unused and unexpired. The
 // outcome is decided inside apply, so exactly one ConsumeToken per token wins
-// however often the log is replayed. Result: Labels. It fails with
+// however often the log is replayed. Result: Labels, Name. It fails with
 // ErrNotFound, ErrTokenUsed or ErrTokenExpired.
 type ConsumeToken struct {
 	Stamp
@@ -402,7 +414,7 @@ func (c ConsumeToken) apply(ctx context.Context, w *writer) (Result, error) {
 	if err := json.Unmarshal([]byte(r.str("labels")), &out); err != nil {
 		return Result{}, fmt.Errorf("decode labels: %w", err)
 	}
-	return Result{Labels: out}, nil
+	return Result{Labels: out, Name: r.str("name")}, nil
 }
 
 // consume marks the single-use secret with hash in table (tokens,

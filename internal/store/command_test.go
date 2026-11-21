@@ -270,10 +270,10 @@ func runScenario(t *testing.T, s *Store) {
 	// Tokens: one used, one left to expire.
 	must(s.Tokens().Create(ctx, "tok-1", map[string]string{"room": "attic"}, at(10*time.Minute)))
 	must(s.Tokens().Create(ctx, "tok-2", nil, at(time.Minute)))
-	labels, err := s.Tokens().Consume(ctx, "tok-1", at(time.Minute))
+	got, err := s.Tokens().Consume(ctx, "tok-1", at(time.Minute))
 	must(err)
-	if labels["room"] != "attic" {
-		t.Fatalf("labels = %v", labels)
+	if got.Labels["room"] != "attic" || got.Name != "" {
+		t.Fatalf("consume tok-1 = %+v, want room=attic and no name", got)
 	}
 	_, err = s.Tokens().Consume(ctx, "tok-1", at(2*time.Minute))
 	wantErr(err, ErrTokenUsed)
@@ -281,6 +281,19 @@ func runScenario(t *testing.T, s *Store) {
 	wantErr(err, ErrTokenExpired)
 	_, err = s.Tokens().Consume(ctx, "tok-unknown", at(5*time.Minute))
 	wantErr(err, ErrNotFound)
+	// A named token gives its name once, and is single use and expires like
+	// any other.
+	must(s.Tokens().CreateNamed(ctx, "tok-named", "garage-pi", nil, at(10*time.Minute)))
+	must(s.Tokens().CreateNamed(ctx, "tok-named-old", "attic-pi", nil, at(time.Minute)))
+	got, err = s.Tokens().Consume(ctx, "tok-named", at(time.Minute))
+	must(err)
+	if got.Name != "garage-pi" {
+		t.Fatalf("consume tok-named name = %q, want garage-pi", got.Name)
+	}
+	_, err = s.Tokens().Consume(ctx, "tok-named", at(2*time.Minute))
+	wantErr(err, ErrTokenUsed)
+	_, err = s.Tokens().Consume(ctx, "tok-named-old", at(5*time.Minute))
+	wantErr(err, ErrTokenExpired)
 
 	// Cluster join tokens: one used, one left to expire. An enrollment token
 	// is not a join token.
