@@ -720,9 +720,18 @@ func TestHungMemberCostsOneTimeout(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// Every device has a copy on a or b, not only on c: a write c took may
+	// reach its other replica a moment after it is acknowledged.
 	apEventually(t, "replicas", func() bool {
-		l, err := an.m("a").st.Devices().List(ctx)
-		return err == nil && len(l) == 12
+		for i := range 12 {
+			id := fmt.Sprintf("d%02d", i)
+			_, onA := localDevice(t, an.m("a"), id)
+			_, onB := localDevice(t, an.m("b"), id)
+			if !onA && !onB {
+				return false
+			}
+		}
+		return true
 	})
 	an.mu.Lock()
 	an.hung["c"] = true
