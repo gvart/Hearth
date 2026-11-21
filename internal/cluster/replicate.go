@@ -744,6 +744,35 @@ func (r *Replicator) ReadKey(ctx context.Context, key, query string, args store.
 	return store.Rows{}, fmt.Errorf("read: no replica reachable: %w: %w", lastErr, store.ErrUnavailable)
 }
 
+// ReadReplicas implements store.Shards.
+func (r *Replicator) ReadReplicas(ctx context.Context, key, query string, args store.Values) ([]store.Rows, error) {
+	v := r.view()
+	order := v.readOrder(store.BucketOf(store.Token(key)))
+	out := make([]store.Rows, len(order))
+	errs := make([]error, len(order))
+	var wg sync.WaitGroup
+	for i, m := range order {
+		wg.Go(func() { out[i], errs[i] = r.readOn(ctx, m, query, args) })
+	}
+	wg.Wait()
+	var rows []store.Rows
+	lastErr := store.ErrUnavailable
+	for i, err := range errs {
+		if err != nil {
+			if !errors.Is(err, errUnreachable) {
+				return nil, err
+			}
+			lastErr = err
+			continue
+		}
+		rows = append(rows, out[i])
+	}
+	if len(rows) == 0 {
+		return nil, fmt.Errorf("read: no replica reachable: %w: %w", lastErr, store.ErrUnavailable)
+	}
+	return rows, nil
+}
+
 func (r *Replicator) readOn(ctx context.Context, m, query string, args store.Values) (store.Rows, error) {
 	if m == r.cfg.NodeID {
 		return r.store().ReadLocal(ctx, query, args)

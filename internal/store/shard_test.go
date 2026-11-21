@@ -242,6 +242,14 @@ func (f *fakeShards) ReadKey(ctx context.Context, key, q string, args Values) (R
 	return f.members[f.key(key)].ReadLocal(ctx, q, args)
 }
 
+func (f *fakeShards) ReadReplicas(ctx context.Context, key, q string, args Values) ([]Rows, error) {
+	r, err := f.members[f.key(key)].ReadLocal(ctx, q, args)
+	if err != nil {
+		return nil, err
+	}
+	return []Rows{r}, nil
+}
+
 func (f *fakeShards) ReadAll(ctx context.Context, q string, args Values) ([]Rows, error) {
 	var out []Rows
 	ids := mapsKeys(f.members)

@@ -36,6 +36,11 @@ type Shards interface {
 	// ReadKey runs the read-only query on a live replica of partition key
 	// and returns its rows.
 	ReadKey(ctx context.Context, key, query string, args Values) (Rows, error)
+	// ReadReplicas runs the read-only query on every live replica of
+	// partition key (stand-ins and members catching up included) and
+	// returns the rows of each that answered. It fails with ErrUnavailable
+	// when none did.
+	ReadReplicas(ctx context.Context, key, query string, args Values) ([]Rows, error)
 	// ReadAll runs the read-only query on live storage members that
 	// together hold every partition, this one included, and returns the
 	// rows of each. It fails with ErrUnavailable when no live member holds
@@ -222,6 +227,45 @@ func (s *Store) queryRowKey(ctx context.Context, key, query string, args ...any)
 		return memRow{err: err}
 	}
 	return memRow{rows: rows.(*memRows).rows} //nolint:forcetypeassert // queryKey of a key held elsewhere
+}
+
+// queryRowNewest reads the row of table that query (selecting
+// s.hidden(table) after its own columns, tombstones included) finds in
+// partition key, at its newest version. The replica asked first (this
+// member, if it holds key) answers, unless it has no row of it at all, live
+// or deleted: a replica that missed the row's write (hinted to it while it
+// was, or seemed, down) has none, so every live replica is asked then, and
+// the newest version among them wins: a deleted row's tombstone counts, so
+// a replica that missed the delete does not bring the row back. ok is false
+// if no replica has a row. Only for a store with shards.
+func (s *Store) queryRowNewest(ctx context.Context, table, key, query string, args ...any) (vals []any, ok bool, err error) {
+	wargs, err := wireArgs(args)
+	if err != nil {
+		return nil, false, err
+	}
+	var first Rows
+	if s.holds(key) {
+		first, err = s.ReadLocal(ctx, query, wargs)
+	} else {
+		first, err = s.shards.ReadKey(ctx, key, query, wargs)
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	parts := []Rows{first}
+	if len(first.Vals) == 0 {
+		if parts, err = s.shards.ReadReplicas(ctx, key, query, wargs); err != nil {
+			return nil, false, err
+		}
+	}
+	rows, repair := mergeRows(gather{table: table}, parts)
+	if len(repair) > 0 {
+		s.shards.Repair(repair)
+	}
+	if len(rows) == 0 {
+		return nil, false, nil
+	}
+	return rows[0], true, nil
 }
 
 func valuesRows(vs []Values) [][]any {
