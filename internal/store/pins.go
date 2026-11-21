@@ -71,8 +71,8 @@ func (r Certs) Fingerprint(ctx context.Context, serial, deviceID string) (string
 		return "", fmt.Errorf("cert fingerprint %s: %w", serial, ErrSchemaTooOld)
 	}
 	var fp sql.NullString
-	err := r.s.queryRowKey(ctx, deviceID,
-		`SELECT fingerprint FROM certs WHERE serial = ? AND device_id = ?`, serial, deviceID).Scan(&fp)
+	err := r.s.queryRowLive(ctx, "certs", deviceID,
+		`SELECT fingerprint`, ` FROM certs WHERE serial = ? AND device_id = ?`, serial, deviceID).Scan(&fp)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		return "", fmt.Errorf("cert fingerprint %s: %w", serial, ErrNotFound)

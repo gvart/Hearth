@@ -171,8 +171,8 @@ func (r DeviceRoutes) Get(ctx context.Context, device string) (DeviceRoute, erro
 		master string
 		at     int64
 	)
-	err := r.s.queryRowKey(ctx, device,
-		`SELECT master, at FROM device_routes WHERE device_id = ? AND _deleted = 0`, device).Scan(&master, &at)
+	err := r.s.queryRowLive(ctx, "device_routes", device,
+		`SELECT master, at`, ` FROM device_routes WHERE device_id = ?`, device).Scan(&master, &at)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return DeviceRoute{}, fmt.Errorf("route of device %s: %w", device, ErrNotFound)

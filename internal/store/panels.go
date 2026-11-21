@@ -103,19 +103,26 @@ func (r Panels) Delete(ctx context.Context, id string) error {
 
 // Get returns panel id, or ErrNotFound.
 func (r Panels) Get(ctx context.Context, id string) (Panel, error) {
-	out, err := r.query(ctx, id, gather{}, `id = ?`, ``, id)
+	v, err := schemaVersion(ctx, r.s.db)
 	if err != nil {
 		return Panel{}, fmt.Errorf("get panel %s: %w", id, err)
 	}
-	if len(out) == 0 {
+	if v < panelsSchema {
 		return Panel{}, fmt.Errorf("get panel %s: %w", id, ErrNotFound)
 	}
-	return out[0], nil
+	p, err := scanPanel(r.s.queryRowLive(ctx, "panels", id, panelColumns, ` FROM panels WHERE id = ?`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return Panel{}, fmt.Errorf("get panel %s: %w", id, ErrNotFound)
+	}
+	if err != nil {
+		return Panel{}, fmt.Errorf("get panel %s: %w", id, err)
+	}
+	return p, nil
 }
 
 // List returns every panel, by name. Before schema 22 there are none.
 func (r Panels) List(ctx context.Context) ([]Panel, error) {
-	out, err := r.query(ctx, "", gather{order: then(byText(1), byText(0))}, `TRUE`, `ORDER BY name, id`)
+	out, err := r.query(ctx, gather{order: then(byText(1), byText(0))}, `TRUE`, `ORDER BY name, id`)
 	if err != nil {
 		return nil, fmt.Errorf("list panels: %w", err)
 	}
@@ -125,7 +132,7 @@ func (r Panels) List(ctx context.Context) ([]Panel, error) {
 // query returns the live panels matching where, then tail (an ORDER BY
 // clause). The clauses are constants of this file's callers; values are
 // bound.
-func (r Panels) query(ctx context.Context, key string, g gather, where, tail string, args ...any) ([]Panel, error) {
+func (r Panels) query(ctx context.Context, g gather, where, tail string, args ...any) ([]Panel, error) {
 	v, err := schemaVersion(ctx, r.s.db)
 	if err != nil || v < panelsSchema {
 		return nil, err
@@ -133,24 +140,35 @@ func (r Panels) query(ctx context.Context, key string, g gather, where, tail str
 	rest := ` FROM panels WHERE (` + where + `)` +
 		liveOnly(v >= VersionedSchema) + ` ` + tail
 	g.table = "panels"
-	rows, err := r.s.list(ctx, key, g, `SELECT id, name, widgets, created_at, updated_at`, rest, args...)
+	rows, err := r.s.list(ctx, "", g, panelColumns, rest, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var out []Panel
 	for rows.Next() {
-		var (
-			p                Panel
-			created, updated int64
-		)
-		if err := rows.Scan(&p.ID, &p.Name, &p.Widgets, &created, &updated); err != nil {
+		p, err := scanPanel(rows)
+		if err != nil {
 			return nil, err
 		}
-		p.CreatedAt, p.UpdatedAt = fromMillis(created), fromMillis(updated)
 		out = append(out, p)
 	}
 	return out, rows.Err()
+}
+
+const panelColumns = `SELECT id, name, widgets, created_at, updated_at`
+
+// scanPanel scans panelColumns.
+func scanPanel(row rowScanner) (Panel, error) {
+	var (
+		p                Panel
+		created, updated int64
+	)
+	if err := row.Scan(&p.ID, &p.Name, &p.Widgets, &created, &updated); err != nil {
+		return Panel{}, err
+	}
+	p.CreatedAt, p.UpdatedAt = fromMillis(created), fromMillis(updated)
+	return p, nil
 }
 
 // CreateLink stores share link l of panel l.PanelID by the hash of secret. It

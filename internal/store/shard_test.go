@@ -233,7 +233,10 @@ type fakeShards struct {
 	self    string
 	members map[string]*Store
 	key     func(string) string // member holding a key
-	repairs []RowRef
+	// replicas, if set, are the members ReadReplicas reads; else the one
+	// holding the key.
+	replicas []string
+	repairs  []RowRef
 }
 
 func (f *fakeShards) Holds(key string) bool { return f.key(key) == f.self }
@@ -243,6 +246,17 @@ func (f *fakeShards) ReadKey(ctx context.Context, key, q string, args Values) (R
 }
 
 func (f *fakeShards) ReadReplicas(ctx context.Context, key, q string, args Values) ([]Rows, error) {
+	if f.replicas != nil {
+		var out []Rows
+		for _, m := range f.replicas {
+			r, err := f.members[m].ReadLocal(ctx, q, args)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, r)
+		}
+		return out, nil
+	}
 	r, err := f.members[f.key(key)].ReadLocal(ctx, q, args)
 	if err != nil {
 		return nil, err

@@ -105,14 +105,21 @@ func (r Approvals) Decide(ctx context.Context, id, status, decider string, at ti
 
 // Get returns one approval, or ErrNotFound.
 func (r Approvals) Get(ctx context.Context, id string) (Approval, error) {
-	out, err := r.query(ctx, id, gather{}, ` WHERE id = ?`, id)
+	v, err := schemaVersion(ctx, r.s.db)
 	if err != nil {
 		return Approval{}, fmt.Errorf("get approval %s: %w", id, err)
 	}
-	if len(out) == 0 {
+	if v < approvalsSchema {
 		return Approval{}, fmt.Errorf("get approval %s: %w", id, ErrNotFound)
 	}
-	return out[0], nil
+	a, err := scanApproval(r.s.queryRowLive(ctx, "approvals", id, approvalColumns, ` FROM approvals WHERE id = ?`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return Approval{}, fmt.Errorf("get approval %s: %w", id, ErrNotFound)
+	}
+	if err != nil {
+		return Approval{}, fmt.Errorf("get approval %s: %w", id, err)
+	}
+	return a, nil
 }
 
 // List returns up to limit approvals, newest first: those with status, or
@@ -121,7 +128,7 @@ func (r Approvals) List(ctx context.Context, status string, limit int) ([]Approv
 	if limit <= 0 {
 		return nil, errors.New("list approvals: limit must be positive")
 	}
-	out, err := r.query(ctx, "", gather{order: then(desc(byInt(1)), desc(byText(0))), limit: limit},
+	out, err := r.query(ctx, gather{order: then(desc(byInt(1)), desc(byText(0))), limit: limit},
 		` WHERE ? = '' OR status = ? ORDER BY created_at DESC, rowid DESC LIMIT ?`,
 		status, status, limit)
 	if err != nil {
@@ -136,7 +143,7 @@ func (r Approvals) Overdue(ctx context.Context, at time.Time, limit int) ([]Appr
 	if limit <= 0 {
 		return nil, errors.New("overdue approvals: limit must be positive")
 	}
-	out, err := r.query(ctx, "", gather{order: then(byInt(2), byText(0)), limit: limit},
+	out, err := r.query(ctx, gather{order: then(byInt(2), byText(0)), limit: limit},
 		` WHERE status = ? AND expires_at <= ? ORDER BY expires_at, id LIMIT ?`,
 		ApprovalPending, toMillis(at), limit)
 	if err != nil {
@@ -149,9 +156,9 @@ const approvalColumns = `SELECT id, created_at, expires_at, actor_kind, actor_id
 	detail, status, decided_by, decided_at`
 
 // query selects approvalColumns of the approvals matching rest (FROM
-// approvals WHERE ...), of partition key if set, else of every member
-// merged by g; before schema 9 it finds none.
-func (r Approvals) query(ctx context.Context, key string, g gather, rest string, args ...any) ([]Approval, error) {
+// approvals WHERE ...), on every member merged by g; before schema 9 it
+// finds none.
+func (r Approvals) query(ctx context.Context, g gather, rest string, args ...any) ([]Approval, error) {
 	v, err := schemaVersion(ctx, r.s.db)
 	if err != nil {
 		return nil, err
@@ -160,31 +167,40 @@ func (r Approvals) query(ctx context.Context, key string, g gather, rest string,
 		return nil, nil
 	}
 	g.table = "approvals"
-	rows, err := r.s.list(ctx, key, g, approvalColumns, ` FROM approvals`+rest, args...)
+	rows, err := r.s.list(ctx, "", g, approvalColumns, ` FROM approvals`+rest, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var out []Approval
 	for rows.Next() {
-		var (
-			a                Approval
-			created, expires int64
-			detail           string
-			decided          sql.NullInt64
-		)
-		if err := rows.Scan(&a.ID, &created, &expires, &a.ActorKind, &a.ActorID, &a.Action, &a.Class,
-			&a.Target, &detail, &a.Status, &a.DecidedBy, &decided); err != nil {
+		a, err := scanApproval(rows)
+		if err != nil {
 			return nil, err
-		}
-		a.CreatedAt, a.ExpiresAt = fromMillis(created), fromMillis(expires)
-		a.Detail = json.RawMessage(detail)
-		if decided.Valid {
-			a.DecidedAt = fromMillis(decided.Int64)
 		}
 		out = append(out, a)
 	}
 	return out, rows.Err()
+}
+
+// scanApproval scans approvalColumns.
+func scanApproval(row rowScanner) (Approval, error) {
+	var (
+		a                Approval
+		created, expires int64
+		detail           string
+		decided          sql.NullInt64
+	)
+	if err := row.Scan(&a.ID, &created, &expires, &a.ActorKind, &a.ActorID, &a.Action, &a.Class,
+		&a.Target, &detail, &a.Status, &a.DecidedBy, &decided); err != nil {
+		return Approval{}, err
+	}
+	a.CreatedAt, a.ExpiresAt = fromMillis(created), fromMillis(expires)
+	a.Detail = json.RawMessage(detail)
+	if decided.Valid {
+		a.DecidedAt = fromMillis(decided.Int64)
+	}
+	return a, nil
 }
 
 // CreateApproval inserts a pending approval.
