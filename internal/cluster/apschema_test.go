@@ -35,6 +35,7 @@ func TestSchemaGateAcrossVersions(t *testing.T) {
 	b.storeOpts = []store.Option{store.WithExtraMigration(next, `ALTER TABLE devices ADD COLUMN rolling TEXT NOT NULL DEFAULT ''`)}
 	b.start(t, 2, a.addr)
 	waitUntil(t, 10*time.Second, "b to see a alive", func() bool { return a.memberOn(b).State == MemberAlive })
+	waitUntil(t, 10*time.Second, "a to see b alive", func() bool { return b.memberOn(a).State == MemberAlive })
 
 	// Both live: b writes at a's schema.
 	waitUntil(t, 5*time.Second, "b's write schema to follow a", func() bool { return b.node.WriteSchema() == old })
