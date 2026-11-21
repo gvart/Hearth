@@ -1,0 +1,21 @@
+.github/workflows/ci.yml
+  s_87f1c7baee7d5a::t_b7d01574a0757f 224,235
+internal/agent/zz_long_test.go
+  s_87f1c7baee7d5a::t_317be246fb75df 1-83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ea5644eaf0e86e75fcac642418780a3ae8f27c29",
+  "prompts": {},
+  "sessions": {
+    "s_87f1c7baee7d5a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "45cc2cdf-3130-4caa-8cb4-8cb365d2150d",
+        "model": "unknown"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
