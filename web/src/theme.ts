@@ -1,6 +1,8 @@
 // The UI theme: Blueprint (the default) or Paper. It is the data-theme attribute on <html>, which
 // styles/tokens.css keys every colour on, and is remembered in this browser.
 
+import { useSyncExternalStore } from 'react';
+
 export type Theme = 'blueprint' | 'paper';
 
 export const themes: { id: Theme; label: string; hint: string }[] = [
@@ -31,6 +33,21 @@ export function applyTheme(theme: Theme): void {
   if (bg) {
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', bg);
   }
+  window.dispatchEvent(new Event(changed));
+}
+
+const changed = 'hearth-theme';
+
+function subscribe(onChange: () => void): () => void {
+  window.addEventListener(changed, onChange);
+  return () => {
+    window.removeEventListener(changed, onChange);
+  };
+}
+
+/** The theme the page is drawn in, re-read whenever anything switches it. */
+export function useTheme(): Theme {
+  return useSyncExternalStore(subscribe, () => (document.documentElement.dataset.theme === 'paper' ? 'paper' : 'blueprint'));
 }
 
 /** Applies a theme and remembers it. */

@@ -102,8 +102,8 @@ const keys = {
 /** The hub reads each server every 15 s; this keeps the page close behind it. */
 const refreshMs = 5000;
 
-export function useProxmoxServers() {
-  return useQuery({ queryKey: keys.servers, queryFn: proxmoxApi.servers, refetchInterval: refreshMs });
+export function useProxmoxServers(enabled = true) {
+  return useQuery({ queryKey: keys.servers, queryFn: proxmoxApi.servers, refetchInterval: refreshMs, enabled });
 }
 
 export function useProxmoxServer(id: string) {
