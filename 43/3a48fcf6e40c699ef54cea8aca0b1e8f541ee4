@@ -1,0 +1,94 @@
+web/src/components/McpTokens.tsx
+  s_87f1c7baee7d5a::t_71271339e89c78 1-225
+docs/backup.md
+  s_87f1c7baee7d5a::t_074876ad0ef201 63-73
+web/src/components/DeviceDrawer.tsx
+  s_87f1c7baee7d5a::t_58ee50b8bb5e52 227-229
+  s_87f1c7baee7d5a::t_2d0a547edd1fea 1-2,10,165-168,173-179,181-182,195-206,208-226
+  s_87f1c7baee7d5a::t_2b23e9aa8647d0 183-194
+  s_87f1c7baee7d5a::t_b7800f9c8ea99c 180,207
+web/src/components/ChannelDialog.tsx
+  s_87f1c7baee7d5a::t_c527b7ea0620fc 1-124,127-128,130,132-143,145-154,156-216
+  s_87f1c7baee7d5a::t_87db06efd37db6 144
+  s_87f1c7baee7d5a::t_cd55762c89284c 125-126,129,131,155
+web/src/components/AutomationEditor.tsx
+  s_87f1c7baee7d5a::t_2c8503d87515da 26,208,274
+web/src/api/reauth.ts
+  s_87f1c7baee7d5a::t_860772012154c9 30-36,39
+  s_87f1c7baee7d5a::t_9712f303dadd97 1-29,37-38,40-111
+web/src/components/AutomationRuns.tsx
+  s_87f1c7baee7d5a::t_aad594eafcb724 1-115
+web/src/components/ConfirmDialog.tsx
+  s_87f1c7baee7d5a::t_a9666e7a498d78 1-99
+docs/security.md
+  s_87f1c7baee7d5a::t_5fcee1b8dcc3b7 98-100,115-124,126-131,173-175,178-179
+  s_87f1c7baee7d5a::t_c985691dc9b507 125
+  s_87f1c7baee7d5a::t_074876ad0ef201 44-45
+web/src/components/ReauthDialog.tsx
+  s_87f1c7baee7d5a::t_696a163043acf9 1-91
+docs/mcp.md
+  s_87f1c7baee7d5a::t_b8acdd20884a57 25-29
+web/src/components/NotificationsPage.tsx
+  s_87f1c7baee7d5a::t_a8a5a6d2c21e99 1-2,5,9,12-17,31-41,54-56,66,70-92,97-112,117-125,156-165
+docs/runbooks.md
+  s_87f1c7baee7d5a::t_e49c0e8ee2d28b 19-24
+docs/automations.md
+  s_87f1c7baee7d5a::t_b77ea1db20b0d5 266
+  s_87f1c7baee7d5a::t_e49c0e8ee2d28b 239-240,265
+web/src/components/RunbooksPage.tsx
+  s_87f1c7baee7d5a::t_b139dababcedf5 120
+  s_87f1c7baee7d5a::t_da58938ef6e800 11,13,17-33,92-99,108-110,119,121-123,148,181,218-222
+web/src/components/AddDeviceDialog.tsx
+  s_87f1c7baee7d5a::t_adea6cf5a9f251 7-30,52-53,56-58,78,104-175
+  s_87f1c7baee7d5a::t_89d6dae35fd796 54-55,97-103
+web/src/api/admin.ts
+  s_87f1c7baee7d5a::t_0c753f1505bc92 184-186,189
+  s_87f1c7baee7d5a::t_a9965ea870916e 86-89,91,106,109-110,115
+  s_87f1c7baee7d5a::t_664289972c7f69 1-85,90,92-105,107-108,111-114,116-183,187-188,190-280,284-294,298-320
+  s_87f1c7baee7d5a::t_33be451df1c29f 281-283,295-297
+web/src/components/Shell.tsx
+  s_87f1c7baee7d5a::t_16c30871dcf921 15,17,34-35,49,59-61,191-192,197
+web/src/api/client.ts
+  s_87f1c7baee7d5a::t_a9965ea870916e 643-644,646,651,671
+  s_87f1c7baee7d5a::t_860772012154c9 71-74
+docs/notifications.md
+  s_87f1c7baee7d5a::t_14f3aa1525f232 55
+  s_87f1c7baee7d5a::t_e49c0e8ee2d28b 15-16,45-54
+docs/guardrails.md
+  s_87f1c7baee7d5a::t_01ef7d56dc1889 159-165,168,174-177,182-183
+web/src/components/TelemetryPrompt.tsx
+  s_87f1c7baee7d5a::t_952e2211b5075e 1
+  s_87f1c7baee7d5a::t_16c30871dcf921 65-66,68,72
+web/src/components/RunbookEditor.tsx
+  s_87f1c7baee7d5a::t_91e9b05ca0b18d 87,89
+  s_87f1c7baee7d5a::t_e7a21e9cdac429 1-86,88,90-93,95-288
+  s_87f1c7baee7d5a::t_0e37f02691157f 94
+web/src/components/SettingsPage.tsx
+  s_87f1c7baee7d5a::t_d17f27a1415f9c 1-458
+web/src/components/SettingsPage.css
+  s_87f1c7baee7d5a::t_91e9b05ca0b18d 155-175
+  s_87f1c7baee7d5a::t_c3f5065716e97a 1-22,24-27,30-73,78-149
+  s_87f1c7baee7d5a::t_e68d540babd07a 176,197-201
+  s_87f1c7baee7d5a::t_9c02edc1573db0 28-29,74-77,151-152
+  s_87f1c7baee7d5a::t_078877ac593170 177-181
+  s_87f1c7baee7d5a::t_81e3ed3021b61e 186-196
+  s_87f1c7baee7d5a::t_b2e332659ab85f 23
+  s_87f1c7baee7d5a::t_18c6639058e8de 150,153-154
+  s_87f1c7baee7d5a::t_96db14acf43182 182-185
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "433a48fcf6e40c699ef54cea8aca0b1e8f541ee4",
+  "prompts": {},
+  "sessions": {
+    "s_87f1c7baee7d5a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "45cc2cdf-3130-4caa-8cb4-8cb365d2150d",
+        "model": "unknown"
+      },
+      "human_author": null
+    }
+  }
+}
