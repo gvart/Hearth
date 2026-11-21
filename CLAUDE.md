@@ -109,8 +109,9 @@ Keep this list in sync with `Taskfile.yml`. If you add a task, document it here.
 - mTLS everywhere between hub and agents, and between hubs; the hub CA key never leaves a master's data
   dir (0600), except inside an encrypted backup archive created by an authenticated admin through policy and
   audited, or by a scheduled hub backup when the operator opts in with `--backup-include-ca` (also through
-  policy and audited); it is replicated only over the pinned mTLS join channel (only to a joining hub that
-  allows the `master` role; a storage-only member never receives it) and over the pinned mTLS `FetchCAKey`
+  policy and audited); it is replicated only over the pinned mTLS join channel (only to a joining hub granted the
+  `master` role, i.e. both its join token's roles and its `--allow-roles` include master; a storage-only
+  member never receives it) and over the pinned mTLS `FetchCAKey`
   channel: to a member being promoted to master, only while the promoting master's audited `cluster.promote`
   runs, and during a hub CA rotation only to a master that proves it holds the current CA key (policy-checked
   and audited, refusals too). A demoted master deletes its copy. A CA key never goes into the store, the
