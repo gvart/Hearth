@@ -63,15 +63,21 @@ its own CA, and nothing else to set up. The headline demo is unchanged.
 To add a hub, create a join token on a master's host while its hub runs:
 
 ```sh
-hearth cluster token create --hub-url https://hub-a.lan:7443
+hearth cluster token create --hub-url https://hub-a.lan:7443 [--roles storage,master]
 ```
 
 Or click **Add hub** on the **Cluster** page of a master's UI (`POST /api/v1/cluster/tokens` with
-`{"ttl": "15m", "allow_roles": ["storage", "master"]}`): it confirms that the token lets a new hub
-receive the CA key, asks for the admin password again, then shows the token once, inside the command
-to copy. The roles only set `--allow-roles` in that command; the token does not limit them. Both
-ways are the policy action `cluster.token.create` (dangerous, by `admin` or `web`), audited with the
-TTL and never the token, which is stored only as a hash and cannot be shown again.
+`{"ttl": "15m", "roles": ["storage", "master"]}`): it confirms what the token lets a new hub do, asks
+for the admin password again, then shows the token once, inside the command to copy. Both ways are
+the policy action `cluster.token.create` (dangerous, by `admin` or `web`), audited with the TTL and
+the roles and never the token, which is stored only as a hash, with its roles, and cannot be shown
+again.
+
+The token grants `--roles` (default `storage,master`): a hub that joins with it takes the roles both
+the token and its own `--allow-roles` allow, and is refused when that leaves neither storage nor
+master (the token is spent all the same). The join command sets `--allow-roles` to the token's roles
+when they are not both. The join is the policy action `cluster.join`, audited with the token's roles
+and the roles granted.
 
 It prints the token and the command for the new hub. The token is single use and short lived, and
 belongs to the master that created it: join through that master. On the new hub, with an **empty**
@@ -82,9 +88,11 @@ HEARTH_JOIN_TOKEN=hearthj1.… hearth hub --join https://hub-a.lan:7443 \
   --host hub-b.lan --cluster-advertise hub-b.lan:7444
 ```
 
-The new hub pins the CA by the fingerprint in the token and gets a hub node certificate. It gets the
-CA's private key only when its `--allow-roles` include `master`; a host without it holds the CA
-certificate only and serves no API, UI or agent port. Treat a join token for a master like the CA key.
+The new hub pins the CA by the fingerprint in the token and gets a hub node certificate and its
+roles. It gets the CA's private key only when granted `master`, that is when both the token and its
+`--allow-roles` allow it; any other hub holds the CA certificate only and serves no API, UI or agent
+port. A storage-only token never yields the CA key, whatever the joining hub asks for. Treat a join
+token that grants master like the CA key.
 
 Then the hub finds the cluster by gossip. `--cluster-seeds` (env `HEARTH_CLUSTER_SEEDS`) adds
 `host:port` cluster addresses of other members to find it by; the `--join` hub's is added on its own.

@@ -73,6 +73,7 @@ type clusterTokenOptions struct {
 	dataDir string
 	ttl     time.Duration
 	hubURL  string
+	roles   string
 	dryRun  bool
 }
 
@@ -82,8 +83,9 @@ func newClusterTokenCreateCmd() *cobra.Command {
 		Use:   "create",
 		Short: "Create a single-use token that lets another hub join this cluster",
 		Long: "Create a single-use cluster join token and print the command that joins a new hub.\n" +
-			"Run it on any member's host while its hub runs (a follower forwards it to the leader). A joined\n" +
-			"hub receives the hub CA, private key included: treat the token like the CA key itself.",
+			"Run it on a master's host while its hub runs. The token grants --roles: the new hub takes at most\n" +
+			"these, within its own --allow-roles. A token granting master hands the joined hub the hub CA,\n" +
+			"private key included: treat it like the CA key itself. A storage-only token never does.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runClusterTokenCreate(cmd.Context(), opts, cmd.OutOrStdout())
@@ -93,6 +95,8 @@ func newClusterTokenCreateCmd() *cobra.Command {
 	cmd.Flags().DurationVar(&opts.ttl, "ttl", 15*time.Minute, "how long the token stays valid")
 	cmd.Flags().StringVar(&opts.hubURL, "hub-url", "https://"+hostnameOr("localhost")+":"+defaultPort,
 		"this hub's URL to put in the join command")
+	cmd.Flags().StringVar(&opts.roles, "roles", cluster.HubRoles.String(),
+		"cluster roles the token grants the new hub, comma-separated from storage and master")
 	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false, "decide and audit the action without creating a token")
 	return cmd
 }
@@ -100,6 +104,10 @@ func newClusterTokenCreateCmd() *cobra.Command {
 func runClusterTokenCreate(ctx context.Context, opts clusterTokenOptions, out io.Writer) error {
 	if opts.ttl <= 0 {
 		return errors.New("--ttl must be positive")
+	}
+	roles, err := cluster.ParseRoles(opts.roles)
+	if err != nil || roles&^cluster.HubRoles != 0 || !roles.Gossips() {
+		return errors.New("--roles: storage, master or both")
 	}
 	if !cluster.IsMember(opts.dataDir) {
 		return fmt.Errorf("%s holds no hub: start `hearth hub` with it first", opts.dataDir)
@@ -121,17 +129,21 @@ func runClusterTokenCreate(ctx context.Context, opts clusterTokenOptions, out io
 	expires := time.Now().Add(opts.ttl)
 	done, err := adminDo(ctx, opts.dataDir, st, out, opts.dryRun, policy.Request{
 		Action: policy.ClusterTokenCreate,
-		Detail: map[string]any{"ttl": opts.ttl.String()},
+		Detail: map[string]any{"ttl": opts.ttl.String(), "roles": roles.String()},
 	}, func(ctx context.Context) error {
-		return st.JoinTokens().Create(ctx, tok.Secret, expires)
+		return st.JoinTokens().Create(ctx, tok.Secret, expires, roles.String())
 	})
 	if err != nil || !done {
 		return err
 	}
-	_, err = fmt.Fprintf(out, "Cluster join token (single use, expires %s):\n  %s\n\n"+
-		"On the new hub, with an empty data dir:\n  HEARTH_JOIN_TOKEN=%s hearth hub --join %s "+
+	allow := ""
+	if roles != cluster.HubRoles {
+		allow = " --allow-roles " + roles.String()
+	}
+	_, err = fmt.Fprintf(out, "Cluster join token (single use, grants %s, expires %s):\n  %s\n\n"+
+		"On the new hub, with an empty data dir:\n  HEARTH_JOIN_TOKEN=%s hearth hub --join %s%s "+
 		"--cluster-advertise <new-hub-host>:%s\n",
-		expires.Format(time.RFC3339), tok.EncodeJoin(), tok.EncodeJoin(), opts.hubURL, cluster.DefaultPort)
+		roles, expires.Format(time.RFC3339), tok.EncodeJoin(), tok.EncodeJoin(), opts.hubURL, allow, cluster.DefaultPort)
 	if err != nil {
 		return fmt.Errorf("write token: %w", err)
 	}

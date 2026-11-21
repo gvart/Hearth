@@ -3,7 +3,6 @@
 package hub
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"net"
@@ -158,20 +157,21 @@ type ClusterTokenJSON struct {
 }
 
 // createClusterToken creates a single-use cluster join token, as `hearth
-// cluster token create` does: dangerous, since whoever redeems it with the
-// master role allowed receives the CA key, and only with the admin password
-// entered again. AllowRoles only shape the join command's --allow-roles:
-// the joining host decides its roles, and the token does not limit them.
+// cluster token create` does: dangerous, since a token granting the master
+// role hands whoever redeems it the CA key, and only with the admin password
+// entered again. Roles are the roles the token grants (default storage and
+// master), stored with it: the joining hub takes at most these, within its
+// own --allow-roles, which the join command sets to them too.
 func (a *api) createClusterToken(w http.ResponseWriter, r *http.Request) {
 	if a.clusterCA == nil {
 		writeError(w, http.StatusNotFound, "not_ap_cluster", "this hub is not a member of an AP cluster")
 		return
 	}
 	var body struct {
-		TTL        string   `json:"ttl"`
-		AllowRoles []string `json:"allow_roles"`
+		TTL   string   `json:"ttl"`
+		Roles []string `json:"roles"`
 	}
-	if !decodeJSON(w, r, maxTokenBody, &body, `{"ttl"?: "15m", "allow_roles"?: ["storage", "master"]}`) {
+	if !decodeJSON(w, r, maxTokenBody, &body, `{"ttl"?: "15m", "roles"?: ["storage", "master"]}`) {
 		return
 	}
 	ttl := defaultTokenTTL
@@ -183,9 +183,9 @@ func (a *api) createClusterToken(w http.ResponseWriter, r *http.Request) {
 		}
 		ttl = d
 	}
-	roles, ok := joinRoles(body.AllowRoles)
+	roles, ok := joinRoles(body.Roles)
 	if !ok {
-		writeError(w, http.StatusBadRequest, "bad_request", "allow_roles are storage and master")
+		writeError(w, http.StatusBadRequest, "bad_request", "roles are storage and master")
 		return
 	}
 	_, agentHost, ok := a.commandHosts(r.Host, r.TLS != nil)
@@ -202,10 +202,10 @@ func (a *api) createClusterToken(w http.ResponseWriter, r *http.Request) {
 	expires := a.now().Add(ttl).UTC().Truncate(time.Millisecond)
 	err = a.policy.Do(r.Context(), policy.Request{
 		ActorKind: policy.ActorWeb, ActorID: remoteHost(r), Action: policy.ClusterTokenCreate,
-		Detail:   map[string]any{"ttl": ttl.String(), "allow_roles": cmp.Or(roles, "storage,master")},
+		Detail:   map[string]any{"ttl": ttl.String(), "roles": roles},
 		Precheck: a.recentAuth(r),
 	}, func(ctx context.Context) error {
-		return a.store.JoinTokens().Create(ctx, tok.Secret, expires)
+		return a.store.JoinTokens().Create(ctx, tok.Secret, expires, roles)
 	})
 	switch {
 	case err == nil:
@@ -221,7 +221,7 @@ func (a *api) createClusterToken(w http.ResponseWriter, r *http.Request) {
 	hubURL := "https://" + net.JoinHostPort(agentHost, a.agentPort)
 	enc := tok.EncodeJoin()
 	cmd := "HEARTH_JOIN_TOKEN=" + enc + " hearth hub --join " + hubURL
-	if roles != "" {
+	if roles != allJoinRoles {
 		cmd += " --allow-roles " + roles
 	}
 	// The host is checked (commandHosts) and the token is base64url and
@@ -230,9 +230,11 @@ func (a *api) createClusterToken(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, ClusterTokenJSON{Token: enc, ExpiresAt: expires, HubURL: hubURL, JoinCommand: cmd})
 }
 
-// joinRoles is the --allow-roles of a join command for roles: "" for the
-// default (storage and master, or none given), and ok false for an unknown
-// role.
+// allJoinRoles are the roles a join token grants by default.
+const allJoinRoles = "storage,master"
+
+// joinRoles is the roles a join token grants, comma-separated, for roles:
+// allJoinRoles when none are given, and ok false for an unknown role.
 func joinRoles(roles []string) (string, bool) {
 	storage, master := false, false
 	for _, r := range roles {
@@ -247,7 +249,7 @@ func joinRoles(roles []string) (string, bool) {
 	}
 	switch {
 	case storage == master:
-		return "", true
+		return allJoinRoles, true
 	case storage:
 		return "storage", true
 	default:

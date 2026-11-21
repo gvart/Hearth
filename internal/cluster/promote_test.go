@@ -418,7 +418,7 @@ func TestDemoteMaster(t *testing.T) {
 	if err := b.st.Tokens().Create(ctx, "enroll-secret", nil, time.Now().Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	if err := b.st.JoinTokens().Create(ctx, "join-secret", time.Now().Add(time.Hour)); err != nil {
+	if err := b.st.JoinTokens().Create(ctx, "join-secret", time.Now().Add(time.Hour), "storage"); err != nil {
 		t.Fatal(err)
 	}
 	if err := b.st.Approvals().Create(ctx, store.Approval{
@@ -449,7 +449,7 @@ func TestDemoteMaster(t *testing.T) {
 	if _, err := b.st.Tokens().Consume(ctx, "enroll-secret", time.Now()); !errors.Is(err, store.ErrTokenUsed) {
 		t.Fatalf("b's enrollment token: %v, want spent", err)
 	}
-	if err := c["a"].st.JoinTokens().Consume(ctx, "join-secret", time.Now()); err == nil {
+	if _, err := c["a"].st.JoinTokens().Consume(ctx, "join-secret", time.Now()); err == nil {
 		t.Fatal("b's join token is still usable")
 	}
 	ap, err := c["a"].st.Approvals().Get(ctx, "ap1")

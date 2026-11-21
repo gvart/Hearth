@@ -497,7 +497,7 @@ func TestAPCARotationRefusals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := a.st.JoinTokens().Create(ctx, tok.Secret, time.Now().Add(time.Hour)); err != nil {
+	if err := a.st.JoinTokens().Create(ctx, tok.Secret, time.Now().Add(time.Hour), "storage,master"); err != nil {
 		t.Fatal(err)
 	}
 	key, err := pki.NewKey()

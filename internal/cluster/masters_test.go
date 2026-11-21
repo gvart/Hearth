@@ -3,7 +3,10 @@
 package cluster
 
 import (
+	"cmp"
 	"errors"
+	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -272,8 +275,10 @@ func TestAgentURLsReachEveryMaster(t *testing.T) {
 	}
 }
 
-// TestCAKeyOnlyToMasters: the AP join service hands the CA key to a hub
-// that allows the master role, and never to a storage-only one.
+// TestCAKeyOnlyToMasters: the AP join service grants a hub the roles both
+// its join token and its host allow, and hands the CA key only to one
+// granted master: never through a token without master, whatever the hub
+// asks for.
 func TestCAKeyOnlyToMasters(t *testing.T) {
 	ctx := t.Context()
 	an := newAPNet(t, 1, "a")
@@ -285,11 +290,8 @@ func TestCAKeyOnlyToMasters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	join := func(id, secret string, roles ...string) *clusterv1.JoinResponse {
+	join := func(id, secret string, roles ...string) (*clusterv1.JoinResponse, error) {
 		t.Helper()
-		if err := m.st.JoinTokens().Create(ctx, secret, time.Now().Add(time.Hour)); err != nil {
-			t.Fatal(err)
-		}
 		key, err := pki.NewKey()
 		if err != nil {
 			t.Fatal(err)
@@ -303,17 +305,70 @@ func TestCAKeyOnlyToMasters(t *testing.T) {
 			AllowedRoles: roles,
 		}))
 		if err != nil {
-			t.Fatalf("join %s: %v", id, err)
+			return nil, err
 		}
-		return resp.Msg
+		return resp.Msg, nil
 	}
-	if r := join("store-1", "j1", "storage"); len(r.GetCaKey()) != 0 {
-		t.Error("a storage-only member got the CA key")
+	for i, tc := range []struct {
+		name, token string
+		allowed     []string
+		want        string // granted roles; "" for a refusal
+	}{
+		{"storage token, joiner asks for master", "storage", []string{"storage", "master"}, "storage"},
+		{"storage token, joiner asks for master only", "storage", []string{"master"}, ""},
+		{"master token, storage-only host", "storage,master", []string{"storage"}, "storage"},
+		{"master token, joiner names no roles", "storage,master", nil, ""},
+		{"master token, master and storage host", "storage,master", []string{"storage", "master"}, "storage,master"},
+		{"master-only token", "master", []string{"storage", "master"}, "master"},
+		{"token with unparsable roles", "root", []string{"storage", "master"}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			id, secret := fmt.Sprintf("hub-%d", i), fmt.Sprintf("j%d", i)
+			if err := m.st.JoinTokens().Create(ctx, secret, time.Now().Add(time.Hour), tc.token); err != nil {
+				t.Fatal(err)
+			}
+			r, err := join(id, secret, tc.allowed...)
+			if tc.want == "" {
+				if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "no role") {
+					t.Fatalf("join = %v, want refused: no role", err)
+				}
+			} else if err != nil {
+				t.Fatalf("join: %v", err)
+			}
+			if got := strings.Join(r.GetRoles(), ","); got != tc.want {
+				t.Fatalf("granted %q, want %q", got, tc.want)
+			}
+			master := strings.Contains(tc.want, "master")
+			if gotKey := len(r.GetCaKey()) != 0; gotKey != master {
+				t.Fatalf("CA key sent = %v, want %v", gotKey, master)
+			}
+			// Spent either way: the refusal used the token up.
+			if _, err := m.st.JoinTokens().Consume(ctx, secret, time.Now()); !errors.Is(err, store.ErrTokenUsed) {
+				t.Fatalf("token after join: %v, want spent", err)
+			}
+			entries, err := m.st.Audit().Query(ctx, store.AuditFilter{Actions: []string{string(policy.ClusterJoin)}, Targets: []string{id}}, 10)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantGranted := cmp.Or(tc.want, "none")
+			if len(entries) == 0 || !strings.Contains(string(entries[0].Detail), `"granted_roles":"`+wantGranted+`"`) ||
+				!strings.Contains(string(entries[0].Detail), `"token_roles":"`+tc.token+`"`) {
+				t.Fatalf("audit = %+v, want token roles %s and granted %s", entries, tc.token, wantGranted)
+			}
+			if failed := strings.HasPrefix(entries[0].Result, "error"); failed != (tc.want == "") {
+				t.Fatalf("audit result %q, refused %v", entries[0].Result, tc.want == "")
+			}
+		})
 	}
-	if r := join("old-1", "j2"); len(r.GetCaKey()) != 0 {
-		t.Error("a member naming no roles got the CA key")
+
+	// Spent, expired or unknown tokens are refused before any role is granted.
+	if err := m.st.JoinTokens().Create(ctx, "expired", time.Now().Add(-time.Minute), "storage,master"); err != nil {
+		t.Fatal(err)
 	}
-	if r := join("master-1", "j3", "storage", "master"); len(r.GetCaKey()) == 0 {
-		t.Error("a master got no CA key")
+	for secret, want := range map[string]string{"j0": "already used", "expired": "expired", "unknown": "unknown join token"} {
+		r, err := join("late-"+secret, secret, "storage", "master")
+		if connect.CodeOf(err) != connect.CodeUnauthenticated || !strings.Contains(err.Error(), want) || r != nil {
+			t.Errorf("join with %s token = %v, want unauthenticated: %s", secret, err, want)
+		}
 	}
 }

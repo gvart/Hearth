@@ -32,8 +32,7 @@ const clusterApi = {
   members: () => request<ClusterStatus>('GET', '/cluster/members'),
   ca: () => request<ClusterCA>('GET', '/cluster/ca'),
   caStep: (step: CAStep) => request<ClusterCA>('POST', `/cluster/ca/${step}`),
-  createJoinToken: (ttl: string, allowRoles: ClusterRole[]) =>
-    request<JoinToken>('POST', '/cluster/tokens', { ttl, allow_roles: allowRoles }),
+  createJoinToken: (ttl: string, roles: ClusterRole[]) => request<JoinToken>('POST', '/cluster/tokens', { ttl, roles }),
   change: (member: string, a: ClusterAction): Promise<RoleChange | Removal> => {
     const path = `/cluster/members/${encodeURIComponent(member)}`;
     return a.op === 'remove'
@@ -103,8 +102,8 @@ export function useClusterCAStep() {
 export function useCreateJoinToken() {
   const withReauth = useWithReauth();
   return useMutation({
-    mutationFn: ({ ttl, allowRoles }: { ttl: string; allowRoles: ClusterRole[] }) =>
-      withReauth(() => clusterApi.createJoinToken(ttl, allowRoles)),
+    mutationFn: ({ ttl, roles }: { ttl: string; roles: ClusterRole[] }) =>
+      withReauth(() => clusterApi.createJoinToken(ttl, roles)),
     gcTime: 0,
   });
 }

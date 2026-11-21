@@ -18,7 +18,7 @@ func TestClusterCommandsNeedAHub(t *testing.T) {
 	const want = "holds no hub"
 	for name, err := range map[string]error{
 		"status":       runClusterStatus(t.Context(), dir, false, io.Discard),
-		"token create": runClusterTokenCreate(t.Context(), clusterTokenOptions{dataDir: dir, ttl: time.Minute}, io.Discard),
+		"token create": runClusterTokenCreate(t.Context(), clusterTokenOptions{dataDir: dir, ttl: time.Minute, roles: "storage,master"}, io.Discard),
 		"remove":       runClusterRemove(t.Context(), dir, "hub-b", false, io.Discard),
 		"ca rotate":    runClusterCARotate(t.Context(), dir, false, false, io.Discard),
 		"ca finish":    runClusterCAFinish(t.Context(), dir, false, false, io.Discard),

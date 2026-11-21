@@ -54,6 +54,9 @@ type Result struct {
 	ReturnedHosts []NetworkHost
 	// PinMismatch is true when PinCert recorded a mismatch.
 	PinMismatch bool
+	// Roles are the cluster roles of the join token consumed by
+	// ConsumeJoinToken, comma-separated.
+	Roles string
 }
 
 // UpsertDevice inserts a device or replaces every field but first_seen.
@@ -430,6 +433,8 @@ type CreateJoinToken struct {
 	Stamp
 	Hash      []byte `json:"hash"`
 	ExpiresAt int64  `json:"expires_at"`
+	// Roles are the cluster roles the token grants, comma-separated.
+	Roles string `json:"roles"`
 	// Owner is the master that owns the token in an AP cluster (OwnedBy).
 	Owner string `json:"owner,omitempty"`
 }
@@ -437,15 +442,16 @@ type CreateJoinToken struct {
 // Op implements Command.
 func (CreateJoinToken) Op() string { return "create_join_token" }
 
-func (c CreateJoinToken) minSchema() int64 { return ownedSchema(c.Owner, 0) }
+func (c CreateJoinToken) minSchema() int64 { return ownedSchema(c.Owner, joinTokenRolesSchema) }
 
 func (c CreateJoinToken) apply(ctx context.Context, w *writer) (Result, error) {
-	return Result{}, w.insert(ctx, "join_tokens", withOwner(row{"hash": c.Hash, "expires_at": c.ExpiresAt, "used_at": nil}, c.Owner))
+	return Result{}, w.insert(ctx, "join_tokens",
+		withOwner(row{"hash": c.Hash, "expires_at": c.ExpiresAt, "used_at": nil, "roles": c.Roles}, c.Owner))
 }
 
 // ConsumeJoinToken marks a join token used at Now if it is unused and
-// unexpired, deciding inside apply like ConsumeToken. It fails with
-// ErrNotFound, ErrTokenUsed or ErrTokenExpired.
+// unexpired, deciding inside apply like ConsumeToken, and returns its Roles.
+// It fails with ErrNotFound, ErrTokenUsed or ErrTokenExpired.
 type ConsumeJoinToken struct {
 	Stamp
 	Hash []byte `json:"hash"`
@@ -457,11 +463,14 @@ type ConsumeJoinToken struct {
 // Op implements Command.
 func (ConsumeJoinToken) Op() string { return "consume_join_token" }
 
-func (c ConsumeJoinToken) minSchema() int64 { return ownedSchema(c.Master, 0) }
+func (c ConsumeJoinToken) minSchema() int64 { return ownedSchema(c.Master, joinTokenRolesSchema) }
 
 func (c ConsumeJoinToken) apply(ctx context.Context, w *writer) (Result, error) {
-	_, err := consume(ctx, w, "join_tokens", "join token", c.Hash, c.Now, c.Master)
-	return Result{}, err
+	r, err := consume(ctx, w, "join_tokens", "join token", c.Hash, c.Now, c.Master)
+	if err != nil {
+		return Result{}, err
+	}
+	return Result{Roles: r.str("roles")}, nil
 }
 
 // CreateCert records a certificate issued to a device. From CertPinsSchema it also
