@@ -23,6 +23,29 @@ and "Measure it" stay as they are. `internal/agent/rss_test.go` enforces the new
 The owner allows 2–5 MB more. 25 MB covers today's agent plus those features and leaves room for a
 few more.
 
+## Releasing init-only binary pages (#263)
+
+Most of the idle agent's RSS was file pages of the binary: package init of every linked package faults
+in much of it, and some kernels (the CI runner's 7.0 azure kernel) keep nearly the whole binary mapped.
+Thirty seconds after start and after each connection, the agent now drops the page table entries of
+the binary's read-only, unmodified mappings (`MADV_DONTNEED`, `internal/agent/image_linux.go`). The
+pages stay in the page cache; the code the agent still runs faults back in.
+
+| `TestAgentIdleRSS`, VmRSS after 1 min | before | after |
+|---|---|---|
+| local, linux/arm64 (kernel 6.8) | 19,976–20,324 kB | 7,952–8,972 kB |
+| CI, test alone (ubuntu-latest, amd64) | 24,172–24,800 kB | 9,976–11,404 kB |
+| CI, inside `go test -race ./...` | 24.4–25.2 MB (#262) | 9,976 kB |
+
+Two consequences:
+
+- Over a longer idle more code faults back in, then it levels off: after 10 minutes 13.2 MB locally
+  and 15.0 MB on CI (14.2 MB from 3 minutes on).
+- The peak (VmHWM) is unchanged, about 20.5 MB locally and 24.5–25 MB on CI, as init still touches
+  the pages before they are released. A binary that grows still shows up there, and in the idle
+  working set, but no longer one for one in the idle RSS. New dependencies still need to justify what
+  they add.
+
 ## What stays the same
 
 The agent is still measured, not estimated: the RSS test runs the release build for a minute on
