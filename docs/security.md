@@ -55,7 +55,8 @@ remove from a cluster.
 
 A cluster can replace its CA (`hearth cluster ca rotate`, then `hearth cluster ca finish`, or
 `hearth cluster ca abort` before the finish; see [Rotating the hub CA](cluster.md#rotating-the-hub-ca)).
-All three are dangerous policy actions for the local admin, audited. What it does and does not protect against:
+All three are dangerous policy actions for the local admin, or for the web UI's **Cluster** page with
+the admin password entered again, audited. What it does and does not protect against:
 
 - Until the finish, both CAs are trusted, and whoever holds the old key can still pose as a hub to
   browsers and agents and mint agent certificates. Old-CA hub certificates are accepted only if they
