@@ -28,12 +28,12 @@ import (
 //
 // The version of a command's mutations comes from the Stamp it carries: the
 // HLC reading and member id of the hub that accepted the write, set by
-// Store.apply before the command reaches the Applier, so a replicated log
-// carries it and every member applies the same bytes. apply never reads a
-// clock. A write supersedes the row it read: its version is the stamp, or
-// the stored version plus one if that is not newer. Log order, not clock
-// order, thus decides between two commands, as it did before versions, and a
-// command whose apply succeeded is never undone by an older stamp. Only
+// Store.apply before the command reaches the Applier, so the command carries
+// it to the replica that runs it. apply never reads a clock. A write
+// supersedes the row it read: its version is the stamp, or the stored
+// version plus one if that is not newer. The order the replica applies two
+// commands in, not clock order, thus decides between them, and a command
+// whose apply succeeded is never undone by an older stamp. Only
 // Store.Merge, the entry point for mutations made elsewhere, decides by
 // version alone.
 //
@@ -62,8 +62,7 @@ type Stamp struct {
 
 func (s Stamp) stamp() Stamp { return s }
 
-// stamper is implemented by every command but MigrateSchema, through its
-// embedded Stamp.
+// stamper is implemented by every command, through its embedded Stamp.
 type stamper interface{ stamp() Stamp }
 
 // stampOf returns cmd's stamp, the zero one for a command without.

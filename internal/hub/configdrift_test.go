@@ -26,7 +26,7 @@ func TestConfigDriftAPI(t *testing.T) {
 		},
 		{
 			"comparison fails",
-			func(context.Context) (any, error) { return nil, errors.New("no raft") },
+			func(context.Context) (any, error) { return nil, errors.New("no store") },
 			http.StatusServiceUnavailable, "",
 		},
 	}

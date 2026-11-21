@@ -28,7 +28,6 @@ func allCommands() []Command {
 		MarkSeen{Stamp: Stamp{HLC: 1 << 40, Origin: "hub-a"}, ID: "pi", Now: 4},
 		SetBootTime{ID: "pi", BootTime: &boot},
 		MarkOffline{Cutoff: 5},
-		MarkSeenBatch{Seen: []Seen{{ID: "nas", LastSeen: 14}, {ID: "pi", LastSeen: 15}}},
 		MarkDevicesOffline{IDs: []string{"nas", "pi"}},
 		SetHubURL{NodeID: "hub-a", AgentURL: "https://hub-a:7443"},
 		RecordHubCert{Serial: "0b", NodeID: "hub-a", Fingerprint: "f0", CAFP: "c0"},
@@ -59,7 +58,6 @@ func allCommands() []Command {
 		SetPasswordHash{Hash: "$argon2id$..."},
 		CreateSession{Hash: []byte{4, 5}, Now: 10, ExpiresAt: 11},
 		DeleteSession{Hash: []byte{4, 5}},
-		MigrateSchema{To: 7},
 		RecordAutomationRun{
 			ID: "r1", AutomationID: "a", TriggerID: "manual", StartedAt: 17, FinishedAt: 18,
 			Status: "succeeded", Error: "", Steps: `[{"id":"x"}]`, Keep: 100,
@@ -276,18 +274,10 @@ func runScenario(t *testing.T, s *Store) {
 		t.Fatalf("MarkOffline = %v, want nas", off)
 	}
 
-	// A clustered leader batches last_seen (never backwards, unknown devices
-	// skipped) and names the devices it marks offline.
-	n, err := s.Devices().MarkSeenBatch(ctx, map[string]time.Time{
-		"pi": at(6 * time.Minute), "nas": at(time.Second), "ghost": at(5 * time.Minute),
-	})
-	must(err)
-	if n != 1 {
-		t.Fatalf("MarkSeenBatch updated %d devices, want 1 (pi)", n)
-	}
+	// A master names the devices it marks offline.
 	off, err = s.Devices().MarkDevicesOffline(ctx, []string{"pi", "nas", "ghost"})
 	must(err)
-	if len(off) != 1 || off[0].ID != "pi" || !off[0].LastSeen.Equal(at(6*time.Minute)) {
+	if len(off) != 1 || off[0].ID != "pi" {
 		t.Fatalf("MarkDevicesOffline = %v, want pi (nas already offline)", off)
 	}
 
@@ -305,7 +295,7 @@ func runScenario(t *testing.T, s *Store) {
 	if got, err := s.Certs().Pin(ctx, "serial-pi", "pi", "f-pi", "ca", at(6*time.Minute)); err != nil || got != Pinned {
 		t.Fatalf("Pin = %v, %v; want Pinned", got, err)
 	}
-	n, err = s.Hubs().RevokeCerts(ctx, "hub-b", at(6*time.Minute))
+	n, err := s.Hubs().RevokeCerts(ctx, "hub-b", at(6*time.Minute))
 	must(err)
 	if n != 1 {
 		t.Fatalf("revoked %d hub certs, want 1", n)
@@ -503,10 +493,6 @@ func TestReplayIsDeterministic(t *testing.T) {
 		}
 	}
 	for _, cmd := range allCommands() {
-		// No repository writes it; see TestReplayWithMigrateIsDeterministic.
-		if _, ok := cmd.(MigrateSchema); ok {
-			continue
-		}
 		if !slices.Contains(ops, cmd.Op()) {
 			t.Errorf("scenario never applied %s", cmd.Op())
 		}

@@ -5,7 +5,6 @@ package store
 import (
 	"bytes"
 	"database/sql"
-	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -24,31 +23,36 @@ func gooseVersion(t *testing.T, db *sql.DB) int64 {
 	return v
 }
 
-func TestSnapshotRestoreRoundTrip(t *testing.T) {
+// writeSnapshot writes a Snapshot of s to a new file and returns its path.
+func writeSnapshot(t *testing.T, s *Store) string {
+	t.Helper()
+	var snap bytes.Buffer
+	if err := s.Snapshot(t.Context(), &snap); err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "snapshot.db")
+	if err := os.WriteFile(path, snap.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestSnapshotRoundTrip(t *testing.T) {
 	ctx := t.Context()
 	src := openTest(t)
 	runScenario(t, src)
-
-	var snap bytes.Buffer
-	if err := src.Snapshot(ctx, &snap); err != nil {
-		t.Fatalf("Snapshot: %v", err)
+	path := writeSnapshot(t, src)
+	if err := CheckSnapshotFile(ctx, path); err != nil {
+		t.Fatalf("CheckSnapshotFile: %v", err)
 	}
-
-	// The target has rows of its own that the restore must replace.
-	dst := openTest(t)
-	now := time.Now()
-	if err := dst.Devices().Upsert(ctx, Device{ID: "stale", FirstSeen: now, LastSeen: now}); err != nil {
-		t.Fatal(err)
+	dst, err := Open(ctx, path)
+	if err != nil {
+		t.Fatalf("open the snapshot: %v", err)
 	}
-	if _, err := dst.Audit().Append(ctx, AuditEntry{ActorKind: "a", ActorID: "b", Action: "c", Decision: "d"}); err != nil {
-		t.Fatal(err)
-	}
-	if err := dst.Restore(ctx, &snap); err != nil {
-		t.Fatalf("Restore: %v", err)
-	}
+	t.Cleanup(func() { _ = dst.Close() })
 
 	if got, want := dumpTables(t, dst.db), dumpTables(t, src.db); !reflect.DeepEqual(got, want) {
-		t.Fatalf("restored tables differ\n got: %v\nwant: %v", got, want)
+		t.Fatalf("snapshot tables differ\n got: %v\nwant: %v", got, want)
 	}
 	if got, want := gooseVersion(t, dst.db), gooseVersion(t, src.db); got != want || got == 0 {
 		t.Fatalf("goose version = %d, want %d", got, want)
@@ -56,25 +60,17 @@ func TestSnapshotRestoreRoundTrip(t *testing.T) {
 	if got, want := tableNames(ctx, t, dst.db), tableNames(ctx, t, src.db); !reflect.DeepEqual(got, want) {
 		t.Fatalf("tables = %v, want %v", got, want)
 	}
-
-	// The restored store keeps working: WAL mode, writes, and the audit
-	// log's append-only triggers.
-	var mode string
-	if err := dst.db.QueryRowContext(ctx, `PRAGMA journal_mode`).Scan(&mode); err != nil || mode != "wal" {
-		t.Fatalf("journal_mode = %q, %v; want wal", mode, err)
-	}
-	if _, _, err := dst.Devices().MarkSeen(ctx, "pi", now); err != nil {
-		t.Fatalf("MarkSeen after restore: %v", err)
-	}
-	if _, err := dst.Devices().Get(ctx, "stale"); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("stale device after restore: err = %v, want ErrNotFound", err)
+	// The copy keeps working: writes, and the audit log's append-only
+	// triggers.
+	if _, _, err := dst.Devices().MarkSeen(ctx, "pi", time.Now()); err != nil {
+		t.Fatalf("MarkSeen on the copy: %v", err)
 	}
 	if _, err := dst.db.ExecContext(ctx, `DELETE FROM audit_log`); err == nil {
-		t.Fatal("audit_log delete succeeded after restore; triggers lost")
+		t.Fatal("audit_log delete succeeded on the copy; triggers lost")
 	}
 
-	// No staging files are left in the data dir.
-	entries, err := os.ReadDir(filepath.Dir(dst.path))
+	// No staging files are left in the source's data dir.
+	entries, err := os.ReadDir(filepath.Dir(src.path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +81,7 @@ func TestSnapshotRestoreRoundTrip(t *testing.T) {
 	}
 }
 
-func TestRestoreRejectsBadSnapshot(t *testing.T) {
+func TestCheckSnapshotFileRejectsBadSnapshot(t *testing.T) {
 	ctx := t.Context()
 	var valid bytes.Buffer
 	if err := openTest(t).Snapshot(ctx, &valid); err != nil {
@@ -98,16 +94,12 @@ func TestRestoreRejectsBadSnapshot(t *testing.T) {
 	}
 	for name, snap := range tests {
 		t.Run(name, func(t *testing.T) {
-			s := openTest(t)
-			now := time.Now()
-			if err := s.Devices().Upsert(ctx, Device{ID: "pi", FirstSeen: now, LastSeen: now}); err != nil {
+			path := filepath.Join(t.TempDir(), "snapshot.db")
+			if err := os.WriteFile(path, snap, 0o600); err != nil {
 				t.Fatal(err)
 			}
-			if err := s.Restore(ctx, bytes.NewReader(snap)); err == nil {
-				t.Fatal("Restore accepted a bad snapshot")
-			}
-			if _, err := s.Devices().Get(ctx, "pi"); err != nil {
-				t.Fatalf("data lost after a rejected restore: %v", err)
+			if err := CheckSnapshotFile(ctx, path); err == nil {
+				t.Fatal("CheckSnapshotFile accepted a bad snapshot")
 			}
 		})
 	}

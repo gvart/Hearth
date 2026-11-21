@@ -284,7 +284,7 @@ func RouteOf(cmd Command) (Route, error) {
 		return key(c.DeviceID, false)
 	case MarkOffline:
 		return Route{Kind: RouteEvery}, nil
-	case MarkSeenBatch, MarkDevicesOffline:
+	case MarkDevicesOffline:
 		return Route{Kind: RouteSplit}, nil
 	case SetHubURL:
 		return global(false)
@@ -378,17 +378,6 @@ func (c AppendAudit) row(key string) map[string]any {
 // commands keep cmd's stamp.
 func SplitCommand(cmd Command, group func(key string) string) (map[string]Command, error) {
 	switch c := cmd.(type) {
-	case MarkSeenBatch:
-		parts := map[string][]Seen{}
-		for _, s := range c.Seen {
-			g := group(s.ID)
-			parts[g] = append(parts[g], s)
-		}
-		out := make(map[string]Command, len(parts))
-		for g, seen := range parts {
-			out[g] = MarkSeenBatch{Stamp: c.Stamp, Seen: seen}
-		}
-		return out, nil
 	case MarkDevicesOffline:
 		parts := map[string][]string{}
 		for _, id := range c.IDs {
@@ -411,10 +400,7 @@ func SplitCommand(cmd Command, group func(key string) string) (map[string]Comman
 func MergeResults(cmd Command, rs []Result) Result {
 	var out Result
 	seen := map[string]bool{}
-	_, split := cmd.(MarkSeenBatch)
-	if _, ok := cmd.(MarkDevicesOffline); ok {
-		split = true
-	}
+	_, split := cmd.(MarkDevicesOffline)
 	for _, r := range rs {
 		for _, d := range r.Devices {
 			if !seen[d.ID] {

@@ -53,7 +53,7 @@ type CARotation struct {
 	// NewCACert is the new CA's certificate, PEM. Its key is never stored.
 	NewCACert string
 	// Pins maps each hub's node ID to the fingerprint of the node
-	// certificate it presented to the leader when the rotation started.
+	// certificate it presented to the master that started the rotation.
 	Pins      map[string]string
 	Stage     string
 	StartedAt time.Time
@@ -109,8 +109,8 @@ func (r CARotations) Latest(ctx context.Context) (CARotation, error) {
 	} else if !ok {
 		return CARotation{}, fmt.Errorf("read hub CA rotation: %w", ErrSchemaTooOld)
 	}
-	// In log order; in a sharded cluster, whose replicas insert the rows in
-	// the order they reach them, by start.
+	// In insert order; in a sharded cluster, whose replicas insert the rows
+	// in the order they reach them, by start.
 	order := ` ORDER BY rowid DESC LIMIT 1`
 	if r.s.shards != nil {
 		order = ` ORDER BY started_at DESC, new_ca_fp DESC LIMIT 1`

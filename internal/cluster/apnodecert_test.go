@@ -28,13 +28,13 @@ func TestAPNodeCertRenewal(t *testing.T) {
 	a := startAPTestNode(t, ca, apSpec{"a", storageMaster, storageMaster}, 2, "")
 	// c's certificate expires in 5 days.
 	c := prepareAPTestNode(t, ca, apSpec{"c", storageOnly, storageMaster})
-	raft := filepath.Join(c.dir, StateDir)
+	state := filepath.Join(c.dir, StateDir)
 	for _, f := range []string{nodeCertFile, nodeKeyFile} {
-		if err := os.Remove(filepath.Join(raft, f)); err != nil {
+		if err := os.Remove(filepath.Join(state, f)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := loadOrIssueNodeCert(raft, ca, "c", "", time.Now().Add(-pki.HubCertValidity+5*24*time.Hour)); err != nil {
+	if _, err := loadOrIssueNodeCert(state, ca, "c", "", time.Now().Add(-pki.HubCertValidity+5*24*time.Hour)); err != nil {
 		t.Fatal(err)
 	}
 	c.start(t, 2, a.addr)

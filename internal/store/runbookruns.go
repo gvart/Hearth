@@ -252,7 +252,7 @@ func (c CreateRunbookRun) apply(ctx context.Context, w *writer) (Result, error) 
 
 // SaveRunbookRun replaces a run's status and state if it is still at Version.
 // The check is made inside apply, so of two hubs saving from one version
-// exactly one wins, in log order, on every node. It fails with
+// exactly one wins on the replica that runs both. It fails with
 // ErrRunbookRunConflict or ErrNotFound.
 type SaveRunbookRun struct {
 	Stamp
@@ -263,9 +263,7 @@ type SaveRunbookRun struct {
 	FinishedAt int64  `json:"finished_at"`
 	State      string `json:"state"`
 	// RunbookID routes the command to the run's replicas in a sharded
-	// cluster, which shards runs by runbook; apply does not read it. It is
-	// set only there, so a Raft member whose binary predates it still
-	// decodes the command.
+	// cluster, which shards runs by runbook; apply does not read it.
 	RunbookID string `json:"runbook_id,omitempty"`
 }
 

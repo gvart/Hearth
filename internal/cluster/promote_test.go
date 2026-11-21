@@ -99,8 +99,8 @@ func startAPTestNode(t *testing.T, ca *pki.CA, s apSpec, n int, seed string) *ap
 func prepareAPTestNode(t *testing.T, ca *pki.CA, s apSpec) *apTestNode {
 	t.Helper()
 	dir := t.TempDir()
-	raft := filepath.Join(dir, StateDir)
-	if err := os.MkdirAll(raft, 0o700); err != nil {
+	state := filepath.Join(dir, StateDir)
+	if err := os.MkdirAll(state, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if s.roles.Has(RoleMaster) {
@@ -114,7 +114,7 @@ func prepareAPTestNode(t *testing.T, ca *pki.CA, s apSpec) *apTestNode {
 	} else if err := pki.InstallCACert(dir, ca.Cert().Raw, ca.Fingerprint()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := loadOrIssueNodeCert(raft, ca, s.id, "", time.Now()); err != nil {
+	if _, err := loadOrIssueNodeCert(state, ca, s.id, "", time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	if err := saveLocalRoles(dir, LocalRoles{Roles: s.roles}); err != nil {

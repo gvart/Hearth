@@ -119,7 +119,7 @@ func TestSpooledOutcomeLandsOnce(t *testing.T) {
 		t.Error("Drain without the log reported nothing left")
 	}
 
-	// The first write committed after all, as a Raft apply that timed out
+	// The first write committed after all, as a replicated write that timed out
 	// may: the spooled copy must not add a second outcome.
 	root, err := os.OpenRoot(f.dir)
 	if err != nil {
