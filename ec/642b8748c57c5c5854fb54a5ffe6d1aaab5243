@@ -37,6 +37,7 @@ internal/cluster/membership.go
   s_87f1c7baee7d5a::t_004c3ab6caa0a0 77
   s_87f1c7baee7d5a::t_9a3aea0fa4f8c2 902,911-916
   s_87f1c7baee7d5a::t_666a44a006ec7f 917
+  s_87f1c7baee7d5a::t_99cc2c256d106c 910
 internal/cluster/apschema.go
   s_87f1c7baee7d5a::t_004c3ab6caa0a0 33
 internal/cluster/apnode.go
@@ -54,6 +55,7 @@ internal/cluster/configdigest_test.go
 internal/cluster/cluster.go
   s_87f1c7baee7d5a::t_4b86099b48e1fe 6-7,11,13-18,21-46
   s_87f1c7baee7d5a::t_e4190b29711db1 12,19
+  s_87f1c7baee7d5a::t_7f972c8e53466b 1-5,8-10,20,47
 internal/cluster/promote_test.go
   s_87f1c7baee7d5a::t_4b47151c151300 102
 internal/cluster/apnodecert.go
