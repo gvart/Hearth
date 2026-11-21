@@ -1,0 +1,53 @@
+internal/pki/token.go
+  s_87f1c7baee7d5a::t_290a735138a096 66
+internal/store/applier.go
+  s_87f1c7baee7d5a::t_d29c4ed4079c6f 21-24,84-87,108-112,115,125-128
+internal/store/auditop_test.go
+  s_87f1c7baee7d5a::t_7315ac00d95460 216,280
+internal/store/carotation.go
+  s_87f1c7baee7d5a::t_4a4b0cc0e9bf5e 56,112-113
+internal/store/command.go
+  s_87f1c7baee7d5a::t_b69986e28ab126 16-18,49,213-216,277,518-520
+internal/store/command_test.go
+  s_87f1c7baee7d5a::t_7a06e1b105c2f7 277,280,298
+internal/store/hubcerts_test.go
+  s_87f1c7baee7d5a::t_8f81aaf3ee1d5a 127
+internal/store/hubs.go
+  s_87f1c7baee7d5a::t_744a07dfbf36c9 13-15
+internal/store/kube_test.go
+  s_87f1c7baee7d5a::t_6fa1f10d72d178 86
+internal/store/partition.go
+  s_87f1c7baee7d5a::t_a30140cfe57847 287,403
+internal/store/runbookruns.go
+  s_87f1c7baee7d5a::t_cc5f1454a9ffe8 255,266
+internal/store/schema.go
+  s_87f1c7baee7d5a::t_86b37be73bc857 12,14-19,21-23,32
+internal/store/schema_test.go
+  s_87f1c7baee7d5a::t_4508e89fe96041 27-28,75-76,94,117-119,125-127,129,131,134-135,138,140-141,145-148,150,152-154,174,202
+internal/store/shard_test.go
+  s_87f1c7baee7d5a::t_6e1784eadb7c07 99,109
+internal/store/snapshot.go
+  s_87f1c7baee7d5a::t_408426378735d8 79,81
+internal/store/snapshot_test.go
+  s_87f1c7baee7d5a::t_da8e01e364cfbc 26-28,30,33-34,37-46,48-50,52,55,63-66,69,72-73,84,97-98,101-102
+internal/store/version.go
+  s_87f1c7baee7d5a::t_4434cb6485885d 31-36,65
+internal/store/version_test.go
+  s_87f1c7baee7d5a::t_4cecee0dd1982f 803
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8b8c17156f6792f5f4d9fb998b3692f510215f4c",
+  "prompts": {},
+  "sessions": {
+    "s_87f1c7baee7d5a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "45cc2cdf-3130-4caa-8cb4-8cb365d2150d",
+        "model": "unknown"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
