@@ -12,7 +12,11 @@ export type Page =
   | 'audit'
   | 'approvals'
   | 'cluster'
-  | 'settings';
+  | 'settings'
+  | 'access'
+  | 'policy'
+  | 'backup'
+  | 'integrations';
 
 export type SheetId = 'lab' | 'automate' | 'activity' | 'settings';
 
@@ -67,14 +71,18 @@ export const sheets: Sheet[] = [
     no: '04',
     label: 'Settings',
     pages: [
-      { id: 'settings', label: 'Settings', hash: '#/settings' },
+      { id: 'settings', label: 'General', hash: '#/settings' },
+      { id: 'access', label: 'Access', hash: '#/settings/access' },
+      { id: 'policy', label: 'Policy', hash: '#/settings/policy' },
       { id: 'notifications', label: 'Notifications', hash: '#/notifications' },
+      { id: 'backup', label: 'Backup', hash: '#/settings/backup' },
+      { id: 'integrations', label: 'Integrations', hash: '#/settings/integrations' },
       { id: 'cluster', label: 'Cluster', hash: '#/cluster' },
     ],
   },
 ];
 
-const allPages = sheets.flatMap((s) => s.pages);
+const byLength = sheets.flatMap((s) => s.pages).sort((a, b) => b.hash.length - a.hash.length);
 
 /** Where Kubernetes and Proxmox lived before Platforms held them: old links still land there. */
 const moved = ['#/kubernetes', '#/proxmox'];
@@ -84,7 +92,8 @@ export function pageOf(hash: string): Page {
   if (moved.some((m) => hash.startsWith(m))) {
     return 'platforms';
   }
-  return allPages.find((p) => p.hash !== '#/' && hash.startsWith(p.hash))?.id ?? 'devices';
+  // The longest link wins: #/settings/access is Access, not General at #/settings.
+  return byLength.find((p) => p.hash !== '#/' && hash.startsWith(p.hash))?.id ?? 'devices';
 }
 
 /** The sheet a page belongs to. */
@@ -202,7 +211,9 @@ export function findCommands(query: string, src: CommandSources): Command[] {
   for (const sheet of sheets) {
     for (const p of sheet.pages) {
       if ((p.id !== 'cluster' || src.cluster) && matches(`${p.label} ${sheet.label}`)) {
-        out.push({ kind: 'Go to', label: p.label, hint: `${sheet.no} ${sheet.label}`, hash: p.hash });
+        // "General" alone says nothing in a list of results: it is the Settings sheet's own page.
+        const label = p.id === 'settings' ? 'Settings' : p.label;
+        out.push({ kind: 'Go to', label, hint: `${sheet.no} ${sheet.label}`, hash: p.hash });
       }
     }
   }
