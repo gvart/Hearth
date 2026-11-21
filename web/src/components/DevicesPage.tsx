@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { deviceOfHash } from '../nav.ts';
 import type { Device } from '../api/client.ts';
 import { useDevices, useMetricsSparklines } from '../api/hooks.ts';
 import { displayName, formatUptime, osArch, primaryIP, relativeTime, statusLabel } from '../format.ts';
@@ -35,7 +36,20 @@ export function DevicesPage() {
   const devices = useDevices();
   const sparklines = useMetricsSparklines();
   const now = useNow(1_000); // uptime ticks in seconds
-  const [selectedId, setSelectedId] = useState<string>();
+  // A device link (#/devices/<id>, as the command bar makes) opens that device's drawer.
+  const [selectedId, setSelectedId] = useState(() => deviceOfHash(window.location.hash));
+  useEffect(() => {
+    const onHash = () => {
+      const id = deviceOfHash(window.location.hash);
+      if (id) {
+        setSelectedId(id);
+      }
+    };
+    window.addEventListener('hashchange', onHash);
+    return () => {
+      window.removeEventListener('hashchange', onHash);
+    };
+  }, []);
   const [adding, setAdding] = useState(false);
   // Device IDs present when "Add device" was last opened; rows not in it are new.
   const [baseline, setBaseline] = useState<Set<string>>();
@@ -163,6 +177,9 @@ export function DevicesPage() {
           device={selected}
           onClose={() => {
             setSelectedId(undefined);
+            if (deviceOfHash(window.location.hash)) {
+              window.location.hash = '#/';
+            }
           }}
         />
       ) : null}
