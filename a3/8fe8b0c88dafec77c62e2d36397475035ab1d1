@@ -1,0 +1,43 @@
+web/src/networkscan.ts
+  s_18b57982fdff93::t_fa612169267020 1-19
+internal/hub/networkscan_test.go
+  s_18b57982fdff93::t_ccd887b1346103 97-104,111-114
+web/src/api/client.ts
+  s_18b57982fdff93::t_1f52e01926c7a8 157-166,735-736,822-823,862-868
+web/src/api/hooks.ts
+  s_18b57982fdff93::t_1f52e01926c7a8 25,32,145-179,273-274
+  s_18b57982fdff93::t_126b7dcbb3abb6 275-276
+docs/discovery.md
+  s_18b57982fdff93::t_8358823365022b 11-12,14-32,44,127-130,188-189,191-192,240-246
+cmd/hearth/network_test.go
+  s_18b57982fdff93::t_ccd887b1346103 63-64,66-79
+web/test/networkscan.test.mjs
+  s_18b57982fdff93::t_47686dfd01974a 1-18
+web/src/components/NetworkScan.tsx
+  s_18b57982fdff93::t_f8ac5d57e7f0ff 2,5,8-9,16,25-26,36
+  s_18b57982fdff93::t_99a48cdfa27cfe 4,6-7,10-15,17-24,27-35,37-40
+  s_18b57982fdff93::t_66a93c933b640d 1,3
+web/src/components/DevicesPage.tsx
+  s_18b57982fdff93::t_c4a0c0d0a06d4f 113
+  s_18b57982fdff93::t_b886aad5571775 58
+  s_18b57982fdff93::t_d3eea427e28a0d 132
+  s_18b57982fdff93::t_208bc82ee0e218 12
+  s_18b57982fdff93::t_30fdaaf14acfe6 5
+  s_18b57982fdff93::t_2fa6e6a3bd8ba7 149-156
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a38fe8b0c88dafec77c62e2d36397475035ab1d1",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "unknown"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
