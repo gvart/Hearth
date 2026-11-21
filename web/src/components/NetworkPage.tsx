@@ -15,6 +15,7 @@ import {
   type TierRow,
 } from '../topology.ts';
 import './NetworkPage.css';
+import { Tip } from './Tip.tsx';
 
 const width = 1000;
 const height = 640;
@@ -35,7 +36,9 @@ export function NetworkPage() {
       <main className="content">
         <div className="page-head">
           <div>
-            <h1>Network</h1>
+            <h1>
+              Network <Tip id="network" />
+            </h1>
             <p className="muted">
               {t && t.reporting > 0
                 ? `Neighbours and connections, as ${String(t.reporting)} ${t.reporting === 1 ? 'agent reports' : 'agents report'} them${t.updated_at ? `; last changed ${formatDateTime(t.updated_at)}` : ''}`

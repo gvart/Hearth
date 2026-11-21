@@ -1,7 +1,8 @@
 import { useBeszelSystems, useKubeClusters, useNetworkHosts, useTalosNodes } from '../api/hooks.ts';
 import { usePlugins } from '../api/plugins.ts';
 import { useProxmoxServers } from '../api/proxmox.ts';
-import { docsURL, integrationSummary, integrations, stateWord, type Integration, type IntegrationState } from '../integrations.ts';
+import { docsURL } from '../docs.ts';
+import { integrationSummary, integrations, stateWord, type Integration, type IntegrationState } from '../integrations.ts';
 import './PanelsPage.css';
 import './IntegrationsPage.css';
 

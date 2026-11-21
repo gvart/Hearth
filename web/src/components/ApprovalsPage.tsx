@@ -3,6 +3,7 @@ import { ApiError, type Approval, type ApprovalStatus } from '../api/client.ts';
 import { useApprovals, useDecideApproval } from '../api/hooks.ts';
 import { approvalDetail } from '../automations/session.ts';
 import { formatDateTime, relativeTime, timeLeft } from '../format.ts';
+import { Tip } from './Tip.tsx';
 
 /** The current time, ticking every second while mounted. */
 function useNow(): number {
@@ -88,7 +89,9 @@ export function ApprovalsPage() {
     <main className="content">
       <div className="page-head">
         <div>
-          <h1>Approvals</h1>
+          <h1>
+            Approvals <Tip id="approvals" />
+          </h1>
           {pending.data ? (
             <p className="muted">
               {list.length === 0 ? 'Nothing waiting' : `${String(list.length)} waiting for a decision`}

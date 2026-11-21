@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useAutomations } from '../api/automations.ts';
 import { AutomationEditor } from './AutomationEditor.tsx';
 import './AutomationsPage.css';
+import { Tip } from './Tip.tsx';
 
 const editRoute = '#/automations/edit/';
 const newRoute = '#/automations/new';
@@ -37,7 +38,9 @@ function AutomationList() {
     <main className="content">
       <div className="page-head">
         <div>
-          <h1>Automations</h1>
+          <h1>
+            Automations <Tip id="automations" />
+          </h1>
           {automations.data ? (
             <p className="muted">
               {list.length === 0 ? 'No automations yet' : `${String(list.length)} file${list.length === 1 ? '' : 's'}`}

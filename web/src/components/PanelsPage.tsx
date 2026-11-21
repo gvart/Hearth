@@ -16,6 +16,7 @@ import { DashboardTokens } from './DashboardTokens.tsx';
 import { Modal } from './Modal.tsx';
 import { StatusDot } from './StatusDot.tsx';
 import './PanelsPage.css';
+import { Tip } from './Tip.tsx';
 
 /**
  * Guest and kiosk panels: a few devices and the restarts a guest may take on
@@ -33,7 +34,9 @@ export function PanelsPage() {
     <main className="content">
       <div className="page-head">
         <div>
-          <h1>Panels</h1>
+          <h1>
+            Panels <Tip id="panels" />
+          </h1>
           <p className="muted">
             A wall screen or a guest page: chosen devices and the restarts allowed on them, opened by a link with no
             login.
