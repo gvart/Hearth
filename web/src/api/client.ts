@@ -8,6 +8,8 @@ export interface Disk {
   mountpoint: string;
   fstype: string;
   total_bytes: number;
+  /** Space in use when the agent last sent its facts; absent from an agent that does not report it. */
+  used_bytes?: number;
 }
 
 export interface NetInterface {

@@ -120,6 +120,9 @@ message Disk {
   string mountpoint = 2;
   string fstype = 3;
   uint64 total_bytes = 4;
+  // used_bytes is the space in use when the facts were collected. An agent
+  // that does not report it leaves it zero.
+  uint64 used_bytes = 5;
 }
 
 // NetworkInterface is a network interface and its addresses.

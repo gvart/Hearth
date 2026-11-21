@@ -1,4 +1,7 @@
 import { useState, type ReactNode } from 'react';
+import { diskUse } from '../devices.ts';
+import { Meter } from './Meter.tsx';
+import './DevicesPage.css';
 import { useRevokeDevice } from '../api/admin.ts';
 import type { Device } from '../api/client.ts';
 import { markTerminalLaunch, terminalHttpsDocs, terminalTransportAllowed } from '../api/terminal.ts';
@@ -97,18 +100,23 @@ export function DeviceDrawer({ device, onClose }: { device: Device; onClose: () 
             <thead>
               <tr>
                 <th>Mount</th>
-                <th>Device</th>
                 <th>FS</th>
                 <th className="num">Size</th>
+                <th className="disk-use">Used</th>
               </tr>
             </thead>
             <tbody>
               {disks.map((d) => (
                 <tr key={d.mountpoint + d.device}>
-                  <td className="mono">{d.mountpoint}</td>
-                  <td className="mono">{d.device}</td>
+                  <td className="mono">
+                    {d.mountpoint}
+                    <span className="disk-sub">{d.device}</span>
+                  </td>
                   <td>{d.fstype}</td>
                   <td className="num">{formatBytes(d.total_bytes)}</td>
+                  <td className="disk-use">
+                    <Meter label={`${d.mountpoint} used`} percent={diskUse(d)} />
+                  </td>
                 </tr>
               ))}
             </tbody>
