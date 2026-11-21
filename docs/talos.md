@@ -93,9 +93,8 @@ node as target: one entry per attempt at the step.
 
 ### In a cluster
 
-Only the leader reads, because only the leader can write the audit entry each read needs. Open the
-leader's UI to see the nodes; the other hubs answer `standby`. Give every hub the same flags and
-talosconfig, so that a new leader starts reading after a failover.
+Every master reads on its own, with an audit entry per read, and its UI shows the nodes it read.
+Give every master the same flags and talosconfig.
 
 ## Run the agent as a DaemonSet
 

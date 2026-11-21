@@ -124,5 +124,3 @@ The guest's endpoints, where the token is the only credential:
 The token works nowhere else: not as a session cookie, not as a bearer token for MCP, not for
 another panel.
 
-Panels need the store schema 22. A cluster upgraded from an older release refuses to save one
-(`409 schema_too_old`) until you run `hearth cluster migrate`.

@@ -28,8 +28,8 @@ The web UI is built into the binary. It has one account, the admin, whose passwo
 `HEARTH_ADMIN_PASSWORD` on the first start or with `hearth admin set-password`. CLI commands such as
 `hearth token create` run on the hub host and work on its data dir directly.
 
-Any machine can be the hub: a Pi, a NAS, a VM, a laptop. Three hubs can form a cluster that survives
-the loss of one; see [Cluster mode](cluster.md).
+Any machine can be the hub: a Pi, a NAS, a VM, a laptop. A hub alone is a cluster of one; add hubs
+and the cluster keeps working when one of them dies; see [Cluster mode](cluster.md).
 
 ## Agents
 
@@ -39,7 +39,7 @@ the hub, so devices open no ports. It keeps one stream to the hub over mutual TL
 - reports host facts when it connects: hostname, OS, architecture, kernel, CPU, memory, disks and
   network interfaces;
 - sends a heartbeat every 10 seconds;
-- reconnects with backoff when the hub goes away, and in a cluster tries the other hubs;
+- reconnects with backoff when the hub goes away, and in a cluster tries the other masters;
 - runs the restarts and commands the hub asks for, but only those its own flags allow (see
   [the device's ceiling](#the-devices-ceiling)).
 
@@ -94,7 +94,7 @@ it before sending, and the agent checks again before running.
 
 Every policy decision, allowed or denied, is written to the audit log in the hub database: who
 (actor), what (action and target), when, and the decision, with details that never include secrets.
-In a cluster the audit entry is replicated like any other write, in order with the action it records.
+In a cluster the audit entry is a critical write: it is on two replicas before the action runs.
 The web UI's **Audit** page lists it with filters (time, actor, action, class, decision, device); see
 [Guardrails](guardrails.md#audit-log).
 

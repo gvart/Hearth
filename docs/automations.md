@@ -133,7 +133,7 @@ stopped Pi-hole is noticed within about 15 s.
 An HTTP check's URL is shown (in plans, logs, run history and templates) with its password and
 query values replaced by `REDACTED`, as health-check URLs often carry a token.
 
-Checks run from the hub (the leader, in a cluster), unless they set `from`: a device (id, name or
+Checks run from the hub (the master that owns the automation, in a cluster), unless they set `from`: a device (id, name or
 hostname) whose agent runs the check instead, to test a service from inside a VLAN, or one bound
 to the device's localhost, that the hub cannot reach:
 
@@ -153,7 +153,7 @@ A check from a device:
   refuses to send a check to an agent without it, and the agent refuses it again. Agents older
   than this release cannot run checks.
 - goes through policy as `automation.probe` (class `read`), once when the trigger starts (at hub
-  start, on gaining leadership, when its file changes), with one audit entry; the checks then run
+  start, when its master takes the automation over, when its file changes), with one audit entry; the checks then run
   under that decision. A denial (by policy, or because the device's reported ceiling does not
   allow probes) stops the trigger, logged as `automation trigger stopped`.
 - takes a `timeout` of at most 1m.
@@ -240,7 +240,7 @@ An automation's id cannot be changed in the editor: create a new one and delete 
 **Delete** in its editor (`config.import` by `web`, like `hearth config delete automation`). Files
 that are symbolic links are not opened or saved here, and nothing of what they point to is shown. The
 built-in [new-device alerts](discovery.md#new-device-alerts) automation has no file, so it is not
-listed. In a cluster, a save is in the store, so every hub has it within seconds; the leader runs it.
+listed. In a cluster, a save is in the store, so every hub has it within seconds; the master that owns it runs it.
 The MCP `apply_automation` tool writes the same store.
 
 ## How the hub runs them
@@ -250,8 +250,10 @@ The MCP `apply_automation` tool writes the same store.
   is stopped (its run in progress cancelled) and started again; a removed one is stopped. If any
   file is invalid, the reload is refused as a whole and logged, and the automations already running
   carry on.
-- In a cluster, automations run on the leader only, and move with leadership. Every hub holds the
-  same files, so a new leader runs the same automations.
+- In a cluster, each automation's schedule, check and metric triggers run on the master that owns it
+  on a hash ring over the live masters, and move to another master when it goes away. Device and
+  network-discovery triggers fire on the master where the event happens, so an event fires an
+  automation once (see [cluster mode](cluster.md#masters)).
 - Every action goes through policy with actor `automation/<id>`, and is in the audit log.
   `hearth hub --automations-dry-run` sends every action to policy as a dry run: the decisions are
   audited (result `dry-run`) and nothing runs. Kubernetes actions are also planned (see
@@ -263,9 +265,6 @@ The MCP `apply_automation` tool writes the same store.
   ```
 
   The web UI shows the recent runs of an automation, with each step's outcome, below its editor.
-
-  After a rolling upgrade, runs are recorded once `hearth cluster migrate` brings the cluster to
-  schema 7.
 
 ## Actions on devices and webhooks
 
@@ -402,9 +401,9 @@ to 256 bytes of its stderr.
 ## Plugin commands
 
 A `plugin_command` action runs a command an [exec plugin](plugins.md) declares. Automations and
-runbooks run on the cluster's leader, so the leader's own plugins (its `--plugin` flags) run it: in a
-cluster, give every hub the same `--plugin` flags, or the action is denied after a failover to a hub
-without the plugin.
+runbooks run on the master that owns them, so that master's own plugins (its `--plugin` flags) run it:
+in a cluster, give every master the same `--plugin` flags, or the action is denied on a master without
+the plugin.
 
 ```yaml
 actions:

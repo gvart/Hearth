@@ -103,25 +103,25 @@ actor kind says the channel (`admin` for the CLI, `web` for the UI, `approval_li
 the id says who (the local user, or the remote address). The approval records it as `decided_by`.
 
 An approval whose requester is gone, because the hub stopped or crashed while it waited, would stay
-pending for good. The hub (in a cluster, its leader, as soon as it leads) expires every pending
+pending for good. The hub (in a cluster, the master that owns the approval's sweep on the master
+ring) expires every pending
 approval more than 5 minutes past its expiry at startup and then every minute, through the same
 replicated write as any expiry: its plan is cleared and the denial is in the audit log (written just
 before the expiry, so a crash between the two never leaves an unaudited expiry; an approval its own
 requester closes at the same moment can leave one extra entry). A sweep that fails, for example
-without a quorum, is logged and tried again a minute later; it never delays startup.
+with too few replicas reachable, is logged and tried again a minute later; it never delays startup.
 
-The 5 minutes of grace keep a sweep from expiring a live hold when the leader's clock is ahead of
-the hub that holds it. Keep the hubs' clocks within it: a leader whose clock runs more than 5
-minutes ahead can still expire a hold before its timeout.
+The 5 minutes of grace keep a sweep from expiring a live hold when the sweeping master's clock is
+ahead of the hub that holds it. Keep the hubs' clocks within it: a master whose clock runs more than
+5 minutes ahead can still expire a hold before its timeout.
 
 ### Where a plan survives
 
 The plan of a held request, which can quote command arguments, is removed from the approval row when
 it is decided or expires. Copies outside the row stay for a while:
 
-- The Raft log entry that created the approval and the retained Raft snapshots hold the plan until
-  Raft compacts the log and replaces the snapshots. Hearth cannot scrub them sooner, and every hub
-  of a cluster keeps its own copies.
+- In a cluster, every replica of the approval row holds the plan until the decision reaches it, and
+  a hint kept for a replica that was down (`hints.db`) holds it until it is delivered.
 - SQLite has `secure_delete` on, so the pages the plan is removed from are overwritten with zeros
   rather than left in the file's free pages. The write-ahead log (`-wal`) can hold an older copy of
   a page: Hearth sets `journal_size_limit` to 0, so once a checkpoint has copied the frames and the
@@ -131,9 +131,6 @@ it is decided or expires. Copies outside the row stay for a while:
 - Backups and snapshots of the data directory taken while the approval was pending keep the plan.
 
 Treat the data directory as holding secrets: keep it readable by the hub's user only.
-
-After a rolling upgrade, nothing can be held until `hearth cluster migrate` brings the cluster to
-schema 9: until then `confirm` actions are denied.
 
 ## Configuration documents
 
@@ -224,9 +221,8 @@ Anyone who can read the channel can deny, and see what is held, so keep it priva
 or an access-token protected topic, or a private Telegram chat. An ntfy server keeps the message
 (with its link) in its cache, but the link is dead after its first use or its approval's expiry.
 
-The notification is sent by the hub that holds the action (the leader, for automations). Actions
-held by a CLI command are not notified: their operator is at the terminal. A cluster before schema
-10 (`hearth cluster migrate`) sends the notification without a link. A failed send is logged; the
+The notification is sent by the hub that holds the action (for an automation, the master running
+it). Actions held by a CLI command are not notified: their operator is at the terminal. A failed send is logged; the
 approval waits as it would anyway.
 
 ## Device capability ceiling
@@ -263,7 +259,7 @@ nothing happens. Its result then replaces the entry, so each action is one row:
 | Result | Meaning |
 | --- | --- |
 | `ok` or `error: ...` | The action ran and this is how it ended. |
-| `started` (**No outcome recorded** in the web UI) | The action is still running, the hub stopped before it could report the result, or a cluster lost its leader while writing the entry and the action was refused. It may also have run, with the write of its result failing. Check the target. |
+| `started` (**No outcome recorded** in the web UI) | The action is still running, the hub stopped before it could report the result, or a cluster lost the replicas for the entry while writing it and the action was refused. It may also have run, with the write of its result failing. Check the target. |
 | `read allowed` | A read was allowed to run. Reads record a result only when they fail, so that frequent reads do not write twice. This row does not prove the read succeeded: a read interrupted by a hub crash, or one that failed while its result could not be written, looks the same. |
 
 `GET /api/v1/audit` serves the same data. It takes the query parameters `actor_kind`, `actor`

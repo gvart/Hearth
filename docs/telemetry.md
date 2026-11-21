@@ -51,7 +51,7 @@ The agents send nothing at all.
 - Shortly after you say yes (within a minute), then once a week.
 - As one HTTPS `POST`, with a 10 second timeout. A send that fails is not retried until the next week,
   and is logged only at debug level.
-- In a cluster, only the leader sends.
+- In a cluster, one master sends.
 
 ## Where it goes
 

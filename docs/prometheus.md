@@ -25,9 +25,9 @@ metrics, covering the last hour:
 GET /api/v1/metrics/sparklines
 ```
 
-`metrics.db` is local to each hub and not replicated: in a [cluster](cluster.md) the leader
-records the metrics, so after a failover charts restart on the new leader, and each hub's API shows
-what it recorded. Deleting the file loses only history.
+`metrics.db` is local to each hub and not replicated: in a [cluster](cluster.md) each master records
+the metrics of the agents streaming to it, so when an agent moves its charts continue on its new
+master, and each hub's API shows what it recorded. Deleting the file loses only history.
 
 ## Prometheus
 

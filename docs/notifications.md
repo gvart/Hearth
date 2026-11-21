@@ -39,8 +39,7 @@ random topic, or run your own ntfy server.
 For Telegram, create a bot with [@BotFather](https://t.me/BotFather), send it a message (or add it
 to a group), and read the chat id from `https://api.telegram.org/bot<TOKEN>/getUpdates`.
 
-In a cluster, every hub holds the same channels, so the leader, whichever hub it is, sends the same
-way.
+In a cluster, every hub holds the same channels, so whichever master sends, it sends the same way.
 
 ### Editing channels in the web UI
 

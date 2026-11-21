@@ -157,7 +157,7 @@ On `main`, Hearth has:
 - device charts and metric triggers from an existing Prometheus, read-only ([Prometheus](prometheus.md));
 - Kubernetes adopted through a kubeconfig, with nothing installed in the cluster: nodes, workloads,
   pods, events, pod logs, and day-two actions ([Kubernetes](kubernetes.md));
-- a three-hub cluster that survives the loss of one ([Cluster mode](cluster.md));
+- a leaderless cluster of hubs that keeps working when one dies or the network splits ([Cluster mode](cluster.md));
 - an MCP server, so Claude Code and other AI assistants can see and operate the lab with scoped
   tokens, through the same policy, approvals and audit log ([MCP](mcp.md)).
 

@@ -11,8 +11,8 @@ already have: nothing has to be enrolled again.
 
 | Item                  | Notes                                                                       |
 | --------------------- | --------------------------------------------------------------------------- |
-| The CA                | `ca.crt` and `ca.key` (a scheduled backup leaves `ca.key` out by default). Agents trust this CA, and it seals stored kubeconfigs. During a [hub CA rotation](cluster.md#rotating-the-hub-ca) the new CA too (`ca.next.crt`, and `ca.next.key` when `ca.key` is in): both are restored, and a hub restored standalone drops the new one when it starts |
-| The database          | Devices, certificates, tokens, audit log, admin password hash, sessions     |
+| The CA                | `ca.crt` and `ca.key` (a scheduled backup leaves `ca.key` out by default). Agents trust this CA, and it seals stored kubeconfigs. During a [hub CA rotation](cluster.md#rotating-the-hub-ca) the new CA too (`ca.next.crt`, and `ca.next.key` when `ca.key` is in): both are restored, and the rotation is still under way on the restored hub |
+| The database          | Devices, certificates, tokens, audit log, admin password hash, sessions. In a cluster, the whole cluster store: every shard, pulled from the live members |
 | `policy.yaml`         | If there is one                                                             |
 | `notify.yaml`         | Including the credentials in it                                             |
 | The automations       | The `.yaml` and `.yml` files the hub loads                                  |
@@ -20,8 +20,8 @@ already have: nothing has to be enrolled again.
 
 It does **not** hold:
 
-- **Raft state** (`raft/`: the log, snapshots, node ID and node certificate). A restored hub starts with
-  no cluster and no peers.
+- **Cluster state** (`cluster/`: the node ID, the node certificate, roles and the written schema), nor
+  `hints.db`. A restored hub starts as a cluster of one, with no peers.
 - **The hub's own host metrics** (`metrics.db`). Charts of the hub start empty after a restore.
 - **Files outside the hub's configuration**, such as `--pihole-password-file`, DHCP lease files and
   `--assets-dir`. Keep your hub's start command and these files somewhere else.
@@ -148,8 +148,8 @@ the scheduled backups too. A backup from the bucket then restores the hub on its
   `--backup-include-ca` is set, named
   `<prefix>hearth-<UTC time>.hbk`, such as `hearth/hearth-20261119T120000Z.hbk`. It is written to a
   working directory in the data dir, uploaded, and deleted locally.
-- The first backup is due one interval after the newest backup already in the bucket. A restart, or a new
-  leader in a cluster, therefore does not take an extra backup. With an empty bucket the first backup runs
+- The first backup is due one interval after the newest backup already in the bucket. A restart, or another
+  master taking the backups over in a cluster, therefore does not take an extra backup. With an empty bucket the first backup runs
   at start.
 - After an upload, the hub deletes all but the newest `--backup-keep` backups under the prefix. It only
   deletes keys that match its own naming exactly, so other objects under the prefix and anything outside
@@ -178,9 +178,11 @@ keys. The hub tries again after the interval or an hour, whichever is shorter.
 
 ### In a cluster
 
-Only the leader takes scheduled backups, so there is one backup per interval for the whole cluster. Any
-hub can become the leader, so start **every** hub with the same backup flags, and give each one the
-passphrase and secret key files.
+One master takes scheduled backups, so there is one backup per interval for the whole cluster, and
+each one holds the whole cluster store, every shard included. When that master goes away another one
+takes the backups over, so start **every** master with the same backup flags, and give each one the
+passphrase and secret key files. A backup is refused, and retried, while some shard has no live
+replica.
 
 ### Providers
 
@@ -278,12 +280,13 @@ The hub returns to the moment of the backup. Whatever happened after it is gone:
 
 ## Restoring a cluster
 
-A cluster comes back as **one hub that forms a new cluster**, and the other hubs join it again. Hubs
-are not restored one by one: their data would be the same, and the Raft history of the old cluster must
-not come back.
+A cluster comes back as **one hub that forms a new cluster of one**, holding the whole cluster store,
+and the other hubs join it again. Hubs are not restored one by one: a backup already holds every shard,
+and the old cluster's members must not come back with their own copies.
 
-Back up any member, on the member's host while its hub runs. Writing the audit entry needs the cluster,
-so a member without a working majority refuses the backup. Take backups before you need them.
+Back up on a member's host while its hub runs: the backup copies the whole cluster store from the live
+members, and is refused while some shard has no live replica. Writing its audit entry needs two
+replicas, so a member that is cut off refuses the backup. Take backups before you need them.
 
 1. **Stop every hub of the old cluster.**
 2. **Restore one hub** into an empty data dir:
@@ -292,24 +295,25 @@ so a member without a working majority refuses the backup. Take backups before y
    hearth restore --data-dir /var/lib/hearth/hub /mnt/nas/hearth-2026-11-19.hbk
    ```
 
-3. **Start it as a new cluster.** Remove `--join` from its start command first, if it has one:
+3. **Start it as a new cluster.** Remove `--join` and `--cluster-seeds` from its start command first, if
+   it has them:
 
    ```sh
-   hearth hub --cluster --host hub-a.lan --advertise hub-a.lan:7444
+   hearth hub --host hub-a.lan --cluster-advertise hub-a.lan:7444
    ```
 
-   It forms a one-voter cluster from the restored database. `hearth cluster status` shows it alone.
+   It forms a cluster of one from the restored database. `hearth cluster status` shows it alone.
    If the backup was taken during a [hub CA rotation](cluster.md#rotating-the-hub-ca), finish it now
    (`hearth cluster ca finish`): no hub can join while it is under way.
-4. **Wipe the other hubs' data dirs.** Each one holds the old cluster's Raft state and a copy of the CA
-   key.
-5. **Join them again**, one at a time, as in [Forming the cluster](cluster.md#forming-the-cluster):
+4. **Wipe the other hubs' data dirs.** Each one holds the old cluster's rows, and a master's also a copy
+   of the CA key.
+5. **Join them again**, one at a time, as in [Forming and joining](cluster.md#forming-and-joining):
 
    ```sh
    hearth cluster token create --hub-url https://hub-a.lan:7443
    # on each other hub, with an empty data dir
    HEARTH_JOIN_TOKEN=hearthj1.… hearth hub --join https://hub-a.lan:7443 \
-     --host hub-b.lan --advertise hub-b.lan:7444
+     --host hub-b.lan --cluster-advertise hub-b.lan:7444
    ```
 
    Every hub must run a Hearth version that supports restored clusters, so use the same version as the
@@ -317,23 +321,23 @@ so a member without a working majority refuses the backup. Take backups before y
 
 6. **Check the host flags** of the hubs that joined: the configuration documents (policy, notify,
    automations, runbooks) are in the restored store and replicate to them, but each hub's
-   `--allow-dangerous-automation` flags are its own. `hearth cluster status` shows `in_sync` when they match
-   (see [Host flag drift](cluster.md#host-flag-drift)).
+   `--allow-dangerous-automation` flags are its own. `hearth cluster status` names the hubs whose flags
+   differ (see [Host flag drift](cluster.md#host-flag-drift)).
 
-Agents need nothing: they try the hubs they know, and learn the new list once they reach one.
+Agents need nothing: they try the masters they know, and learn the new list once they reach one.
 
 ### Why the old hubs cannot interfere
 
-A restored hub has no Raft state, so it knows no peers. The old hubs still hold certificates from the
+A restored hub has no cluster state, so it knows no peers. The old hubs still hold certificates from the
 same CA, though, and one that is still running keeps calling the old members' addresses, including the
 address the restored hub now uses.
 
 Every restore therefore starts a new **cluster epoch**: a random value in the `cluster-epoch` file, carried
 in the certificates of the restored hub and of every hub that joins it. Hubs of different epochs refuse
-each other on the Raft port and on hub-to-hub calls, in both directions. This covers hubs that joined
+each other on the cluster port and on hub-to-hub calls, in both directions. This covers hubs that joined
 after the backup, which the backup cannot know about. A restore also revokes every hub certificate
 recorded in the backup.
 
-This keeps out hubs that are merely out of date. It is not a defence against a hostile hub: every voter
+This keeps out hubs that are merely out of date. It is not a defence against a hostile hub: every master
 of the old cluster holds the CA key, which is why step 4 matters. If those hubs might be compromised,
 start over with a new CA instead of restoring this one.
