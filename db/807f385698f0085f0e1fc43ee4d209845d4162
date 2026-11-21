@@ -1,0 +1,39 @@
+web/src/cluster.ts
+  s_87f1c7baee7d5a::t_9495c7b4d2dc2f 93-208
+web/src/components/ClusterPage.tsx
+  s_87f1c7baee7d5a::t_984a42a5a294c2 90-99
+  s_87f1c7baee7d5a::t_a8285b81d5b538 2
+  s_87f1c7baee7d5a::t_251ba685dcfeeb 12-13,17,20,22,25-26
+  s_87f1c7baee7d5a::t_4d3e2882d05157 41-51
+web/src/api/cluster.ts
+  s_87f1c7baee7d5a::t_0169f2dc38b6f1 22-30,33-36
+  s_87f1c7baee7d5a::t_d239cff0e281d7 45
+  s_87f1c7baee7d5a::t_be0c96882d8e4d 5,7
+  s_87f1c7baee7d5a::t_cf32b177ed9c83 72-110
+web/test/cluster.test.mjs
+  s_87f1c7baee7d5a::t_5fd755d8139d64 5-15
+  s_87f1c7baee7d5a::t_99866441fcb620 71-137
+web/src/components/ClusterPage.css
+  s_87f1c7baee7d5a::t_a1664836238870 24-73
+web/src/components/ClusterCA.tsx
+  s_87f1c7baee7d5a::t_fa573165816683 1-105,107-254
+  s_87f1c7baee7d5a::t_18b158383539a4 106
+web/src/components/AddHubDialog.tsx
+  s_87f1c7baee7d5a::t_b3c51b8e36064e 1-145
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "db807f385698f0085f0e1fc43ee4d209845d4162",
+  "prompts": {},
+  "sessions": {
+    "s_87f1c7baee7d5a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "45cc2cdf-3130-4caa-8cb4-8cb365d2150d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
