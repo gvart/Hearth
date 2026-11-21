@@ -61,6 +61,10 @@ var (
 	ErrRemoveSelf    = errors.New("a hub cannot remove itself: run the removal on another master")
 	ErrNotMasterHere = errors.New("this hub is not a master: ask a master")
 	ErrBadRole       = errors.New("the role is storage or master")
+	// ErrRotationRoles refuses to change who is a master during a hub CA
+	// rotation: every master's part in it is fixed at its start.
+	ErrRotationRoles = errors.New("a hub CA rotation is under way: masters cannot change until it is finished " +
+		"or aborted (`hearth cluster ca finish|abort`)")
 )
 
 var roleKinds = map[string]error{
@@ -75,6 +79,7 @@ var roleKinds = map[string]error{
 	"remove_self":    ErrRemoveSelf,
 	"not_master":     ErrNotMasterHere,
 	"bad_role":       ErrBadRole,
+	"ca_rotation":    ErrRotationRoles,
 }
 
 // RoleErrorKind is the kind of a role change error ("last_master", ...), or
@@ -213,6 +218,8 @@ func (n *APNode) changeRole(ctx context.Context, id string, role Role, promote b
 		return RoleChange{}, ErrLastMaster
 	case !promote && role == RoleStorage && !m.Draining && n.count(RoleStorage, id) == 0:
 		return RoleChange{}, ErrLastStorage
+	case role == RoleMaster && n.rotationActive():
+		return RoleChange{}, ErrRotationRoles
 	}
 	req := roleRequest{Promote: promote, Role: role, FromURL: n.cfg.AgentURL}
 	if promote && role == RoleMaster && id != n.cfg.NodeID {

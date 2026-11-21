@@ -4,6 +4,7 @@ package store
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -12,6 +13,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"time"
 )
 
@@ -55,6 +58,10 @@ type CARotation struct {
 	Stage     string
 	StartedAt time.Time
 	UpdatedAt time.Time
+	// Owner, in a sharded (AP) cluster, is the master that last moved the
+	// rotation on (the row's origin): the one that started it, or one that
+	// took it over. Empty elsewhere.
+	Owner string
 }
 
 // Active reports whether the rotation has neither finished nor been aborted.
@@ -68,13 +75,22 @@ func (s *Store) CARotations() CARotations { return CARotations{s: s} }
 
 const caRotationColumns = `new_ca_fp, old_ca_fp, new_ca_cert, pins, stage, started_at, updated_at`
 
+// caRotationSelect selects caRotationColumns, and in a sharded cluster the
+// row's origin, the rotation's owner.
+func (r CARotations) caRotationSelect() string {
+	if r.s.shards != nil {
+		return `SELECT ` + caRotationColumns + `, _origin`
+	}
+	return `SELECT ` + caRotationColumns + `, ''`
+}
+
 func scanCARotation(row interface{ Scan(...any) error }) (CARotation, error) {
 	var (
 		c                  CARotation
 		pins               string
 		started, updatedAt int64
 	)
-	if err := row.Scan(&c.NewCAFP, &c.OldCAFP, &c.NewCACert, &pins, &c.Stage, &started, &updatedAt); err != nil {
+	if err := row.Scan(&c.NewCAFP, &c.OldCAFP, &c.NewCACert, &pins, &c.Stage, &started, &updatedAt, &c.Owner); err != nil {
 		return CARotation{}, err
 	}
 	if err := json.Unmarshal([]byte(pins), &c.Pins); err != nil {
@@ -93,8 +109,13 @@ func (r CARotations) Latest(ctx context.Context) (CARotation, error) {
 	} else if !ok {
 		return CARotation{}, fmt.Errorf("read hub CA rotation: %w", ErrSchemaTooOld)
 	}
-	c, err := scanCARotation(r.s.db.QueryRowContext(ctx,
-		`SELECT `+caRotationColumns+` FROM ca_rotations ORDER BY rowid DESC LIMIT 1`))
+	// In log order; in a sharded cluster, whose replicas insert the rows in
+	// the order they reach them, by start.
+	order := ` ORDER BY rowid DESC LIMIT 1`
+	if r.s.shards != nil {
+		order = ` ORDER BY started_at DESC, new_ca_fp DESC LIMIT 1`
+	}
+	c, err := scanCARotation(r.s.db.QueryRowContext(ctx, r.caRotationSelect()+` FROM ca_rotations`+order))
 	if errors.Is(err, sql.ErrNoRows) {
 		return CARotation{}, ErrNotFound
 	}
@@ -124,7 +145,7 @@ func (r CARotations) Get(ctx context.Context, newCAFP string) (CARotation, error
 		return CARotation{}, fmt.Errorf("read hub CA rotation: %w", ErrSchemaTooOld)
 	}
 	c, err := scanCARotation(r.s.db.QueryRowContext(ctx,
-		`SELECT `+caRotationColumns+` FROM ca_rotations WHERE new_ca_fp = ?`, newCAFP))
+		r.caRotationSelect()+` FROM ca_rotations WHERE new_ca_fp = ?`, newCAFP))
 	if errors.Is(err, sql.ErrNoRows) {
 		return CARotation{}, ErrNotFound
 	}
@@ -186,7 +207,7 @@ type UnpinnedCert struct {
 // Unpinned returns the unrevoked device and hub certificates without a
 // recorded fingerprint or with a recorded mismatch, by kind, ID and serial.
 func (r CARotations) Unpinned(ctx context.Context) ([]UnpinnedCert, error) {
-	rows, err := r.s.db.QueryContext(ctx, `
+	rows, err := r.s.readEvery(ctx, `
 		SELECT 'device', device_id, serial, pin_mismatch_at IS NOT NULL FROM certs
 		WHERE revoked_at IS NULL AND (fingerprint IS NULL OR pin_mismatch_at IS NOT NULL)
 		UNION ALL
@@ -195,16 +216,22 @@ func (r CARotations) Unpinned(ctx context.Context) ([]UnpinnedCert, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list unpinned certificates: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
 	var out []UnpinnedCert
-	for rows.Next() {
+	seen := map[UnpinnedCert]bool{}
+	for _, vals := range rows {
 		var c UnpinnedCert
-		if err := rows.Scan(&c.Kind, &c.ID, &c.Serial, &c.Mismatch); err != nil {
+		if err := scanVals(vals, []any{&c.Kind, &c.ID, &c.Serial, &c.Mismatch}); err != nil {
 			return nil, fmt.Errorf("list unpinned certificates: %w", err)
 		}
-		out = append(out, c)
+		if !seen[c] {
+			seen[c] = true
+			out = append(out, c)
+		}
 	}
-	return out, rows.Err()
+	slices.SortFunc(out, func(a, b UnpinnedCert) int {
+		return cmp.Or(cmp.Compare(a.Kind, b.Kind), cmp.Compare(a.ID, b.ID), cmp.Compare(a.Serial, b.Serial))
+	})
+	return out, nil
 }
 
 // OldCADevices returns the IDs of the devices with an unrevoked certificate
@@ -212,44 +239,89 @@ func (r CARotations) Unpinned(ctx context.Context) ([]UnpinnedCert, error) {
 // devices a rotation to caFP would cut off. A certificate the hub issued
 // counts once the device presented it, which pins its fingerprint.
 func (r CARotations) OldCADevices(ctx context.Context, caFP string) ([]string, error) {
-	rows, err := r.s.db.QueryContext(ctx, `
+	// A device's certificates live on the same replicas, so the subquery
+	// sees them all on any member holding the device.
+	ids, err := r.s.readEveryString(ctx, `
 		SELECT DISTINCT device_id FROM certs c WHERE revoked_at IS NULL AND NOT EXISTS (
 			SELECT 1 FROM certs n WHERE n.device_id = c.device_id AND n.revoked_at IS NULL
-				AND n.ca_fp = ? AND n.fingerprint IS NOT NULL)
-		ORDER BY device_id`, caFP)
+				AND n.ca_fp = ? AND n.fingerprint IS NOT NULL)`, caFP)
 	if err != nil {
 		return nil, fmt.Errorf("list devices on the old CA: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
-	var out []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, fmt.Errorf("list devices on the old CA: %w", err)
-		}
-		out = append(out, id)
-	}
-	return out, rows.Err()
+	return ids, nil
 }
 
 // RenewedDevices lists the devices that were handed a certificate of the CA
 // caFP: aborting its rotation cuts them off.
 func (r CARotations) RenewedDevices(ctx context.Context, caFP string) ([]string, error) {
-	rows, err := r.s.db.QueryContext(ctx, `
-		SELECT DISTINCT device_id FROM certs WHERE revoked_at IS NULL AND ca_fp = ? ORDER BY device_id`, caFP)
+	ids, err := r.s.readEveryString(ctx, `SELECT DISTINCT device_id FROM certs WHERE revoked_at IS NULL AND ca_fp = ?`, caFP)
 	if err != nil {
 		return nil, fmt.Errorf("list devices renewed by the new CA: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
-	var out []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, fmt.Errorf("list devices renewed by the new CA: %w", err)
+	return ids, nil
+}
+
+// readEvery runs query on the local database or, in a sharded cluster, on
+// members that together hold every partition, and returns the rows of all:
+// a row a replica holds comes once per replica. Each row the query reads
+// must be of one partition, or of global tables.
+func (s *Store) readEvery(ctx context.Context, query string, args ...any) ([][]any, error) {
+	if s.shards == nil {
+		rows, err := s.db.QueryContext(ctx, query, args...)
+		if err != nil {
+			return nil, err
 		}
-		out = append(out, id)
+		defer func() { _ = rows.Close() }()
+		cols, err := rows.Columns()
+		if err != nil {
+			return nil, err
+		}
+		var out [][]any
+		for rows.Next() {
+			vals := make([]any, len(cols))
+			ptrs := make([]any, len(cols))
+			for i := range vals {
+				ptrs[i] = &vals[i]
+			}
+			if err := rows.Scan(ptrs...); err != nil {
+				return nil, err
+			}
+			out = append(out, vals)
+		}
+		return out, rows.Err()
 	}
-	return out, rows.Err()
+	wargs, err := wireArgs(args)
+	if err != nil {
+		return nil, err
+	}
+	parts, err := s.shards.ReadAll(ctx, query, wargs)
+	if err != nil {
+		return nil, err
+	}
+	var out [][]any
+	for _, p := range parts {
+		out = append(out, valuesRows(p.Vals)...)
+	}
+	return out, nil
+}
+
+// readEveryString is readEvery of a query selecting one text column: the
+// distinct values, sorted.
+func (s *Store) readEveryString(ctx context.Context, query string, args ...any) ([]string, error) {
+	rows, err := s.readEvery(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, vals := range rows {
+		var v string
+		if err := scanVals(vals, []any{&v}); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	slices.Sort(out)
+	return slices.Compact(out), nil
 }
 
 // Tables of sealed secrets: each is re-sealed with the new CA's key before a
@@ -281,16 +353,62 @@ var (
 // SealedSecret is one sealed secret: the row id of table, and its sealed
 // value. In ResealSecrets, Sealed is the value read and Resealed the new one.
 type SealedSecret struct {
-	Table    string `json:"table"`
-	ID       string `json:"id"`
+	Table string `json:"table"`
+	ID    string `json:"id"`
+	// Key, in a sharded cluster, is the partition key of a sharded table's
+	// row: where its re-seal is written.
+	Key      string `json:"key,omitempty"`
 	Sealed   []byte `json:"sealed"`
 	Resealed []byte `json:"resealed,omitempty"`
 }
 
-// Sealed returns every sealed secret, ordered by table and ID.
+// Sealed returns every sealed secret, ordered by table and ID. In a sharded
+// cluster the global tables are read here and the runbook runs on members
+// that together hold every partition, each run at its newest version.
 func (r CARotations) Sealed(ctx context.Context) ([]SealedSecret, error) {
-	return readSealed(ctx, r.s.db)
+	if r.s.shards == nil {
+		return readSealed(ctx, r.s.db)
+	}
+	out, err := readSealedTables(ctx, r.s.db, SealedKubeClusters, SealedProxmoxServers, SealedConfigDocs)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.s.readEvery(ctx, `SELECT id, source, runbook_id, _hlc, _origin FROM runbook_runs
+		WHERE _deleted = 0`)
+	if err != nil {
+		return nil, fmt.Errorf("read sealed %s: %w", SealedRunbookRuns, err)
+	}
+	type version struct {
+		hlc    int64
+		origin string
+	}
+	newest := map[string]version{}
+	runs := map[string]SealedSecret{}
+	for _, vals := range rows {
+		var (
+			s SealedSecret
+			v version
+		)
+		if err := scanVals(vals, []any{&s.ID, &s.Sealed, &s.Key, &v.hlc, &v.origin}); err != nil {
+			return nil, fmt.Errorf("read sealed %s: %w", SealedRunbookRuns, err)
+		}
+		if old, ok := newest[s.ID]; ok && (v.hlc < old.hlc || (v.hlc == old.hlc && v.origin <= old.origin)) {
+			continue
+		}
+		s.Table = SealedRunbookRuns
+		newest[s.ID], runs[s.ID] = v, s
+	}
+	for _, id := range slices.Sorted(maps.Keys(runs)) {
+		out = append(out, runs[id])
+	}
+	slices.SortStableFunc(out, func(a, b SealedSecret) int {
+		return cmp.Or(cmp.Compare(sealedOrder[a.Table], sealedOrder[b.Table]), cmp.Compare(a.ID, b.ID))
+	})
+	return out, nil
 }
+
+// sealedOrder is the order Sealed lists the tables of sealed secrets in.
+var sealedOrder = map[string]int{SealedKubeClusters: 0, SealedProxmoxServers: 1, SealedRunbookRuns: 2, SealedConfigDocs: 3}
 
 // SealedDigest is a digest of secrets, as Sealed returns them: finishing a
 // rotation names the digest of the secrets checked to be sealed with the new
@@ -309,18 +427,25 @@ func SealedDigest(secrets []SealedSecret) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-func readSealed(ctx context.Context, q interface {
+// sealedQuerier reads sealed secrets: a database or a transaction.
+type sealedQuerier interface {
 	querier
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
-},
-) ([]SealedSecret, error) {
+}
+
+func readSealed(ctx context.Context, q sealedQuerier) ([]SealedSecret, error) {
+	return readSealedTables(ctx, q, SealedKubeClusters, SealedProxmoxServers, SealedRunbookRuns, SealedConfigDocs)
+}
+
+// readSealedTables reads the sealed secrets of tables, in that order.
+func readSealedTables(ctx context.Context, q sealedQuerier, tables ...string) ([]SealedSecret, error) {
 	v, err := schemaVersion(ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("read sealed: %w", err)
 	}
 	versioned := v >= VersionedSchema
 	var out []SealedSecret
-	for _, table := range []string{SealedKubeClusters, SealedProxmoxServers, SealedRunbookRuns, SealedConfigDocs} {
+	for _, table := range tables {
 		if v < sealedSince[table] {
 			continue
 		}
@@ -424,13 +549,21 @@ func (c AdvanceCARotation) apply(ctx context.Context, w *writer) (Result, error)
 	if c.To == CAStageAborted {
 		// Certificates the aborted CA issued, to agents and hubs, are revoked:
 		// nothing trusts that CA any more, and its key may live on in a copy.
-		for _, table := range []string{"certs", "hub_certs"} {
+		// A sharded cluster revokes the agents' on every shard
+		// (RevokeCACerts).
+		tables := []string{"certs", "hub_certs"}
+		if w.s.Sharded() {
+			tables = tables[1:]
+		}
+		for _, table := range tables {
 			if _, err := revokeWhere(ctx, w, table, `ca_fp = ?`, c.Now, c.NewCAFP); err != nil {
 				return Result{}, err
 			}
 		}
 	}
-	if c.To == CAStageFinished {
+	// A sharded cluster's secrets live on many members: the master
+	// finishing the rotation checks them all (cluster.APNode.FinishCA).
+	if c.To == CAStageFinished && !w.s.Sharded() {
 		secrets, err := readSealed(ctx, w.tx)
 		if err != nil {
 			return Result{}, err
@@ -466,12 +599,16 @@ func (ResealSecrets) Op() string { return "reseal_secrets" }
 func (ResealSecrets) minSchema() int64 { return CARotationSchema }
 
 func (c ResealSecrets) apply(ctx context.Context, w *writer) (Result, error) {
-	rot, err := w.get(ctx, "ca_rotations", c.NewCAFP)
-	if err != nil {
-		return Result{}, err
-	}
-	if rot == nil || rot.str("stage") != CAStageCutover {
-		return Result{}, fmt.Errorf("%w: the rotation is not at its cutover", ErrCARotationConflict)
+	// In a sharded cluster a replica of a runbook's runs may not have the
+	// rotation's last step yet: the master re-sealing checked it.
+	if !w.s.Sharded() {
+		rot, err := w.get(ctx, "ca_rotations", c.NewCAFP)
+		if err != nil {
+			return Result{}, err
+		}
+		if rot == nil || rot.str("stage") != CAStageCutover {
+			return Result{}, fmt.Errorf("%w: the rotation is not at its cutover", ErrCARotationConflict)
+		}
 	}
 	for _, s := range c.Secrets {
 		col, ok := sealedColumns[s.Table]
@@ -494,4 +631,33 @@ func (c ResealSecrets) apply(ctx context.Context, w *writer) (Result, error) {
 		}
 	}
 	return Result{}, nil
+}
+
+// RevokeCACerts revokes, in a sharded cluster, the device certificates the
+// CA CAFP issued: it runs on every storage member, on the shards it holds,
+// when the rotation to CAFP is aborted.
+type RevokeCACerts struct {
+	Stamp
+	CAFP string `json:"ca_fp"`
+	Now  int64  `json:"now"`
+}
+
+// RevokeCerts revokes the device certificates the CA caFP issued, on every
+// shard (RevokeCACerts), and returns how many.
+func (r CARotations) RevokeCerts(ctx context.Context, caFP string, now time.Time) (int, error) {
+	res, err := r.s.apply(ctx, RevokeCACerts{CAFP: caFP, Now: now.UnixMilli()})
+	if err != nil {
+		return 0, fmt.Errorf("revoke the certificates of CA %s: %w", caFP, err)
+	}
+	return res.Count, nil
+}
+
+// Op implements Command.
+func (RevokeCACerts) Op() string { return "revoke_ca_certs" }
+
+func (RevokeCACerts) minSchema() int64 { return CARotationSchema }
+
+func (c RevokeCACerts) apply(ctx context.Context, w *writer) (Result, error) {
+	n, err := revokeWhere(ctx, w, "certs", `ca_fp = ?`, c.Now, c.CAFP)
+	return Result{Count: n}, err
 }

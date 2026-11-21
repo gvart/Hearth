@@ -759,6 +759,8 @@ func DecodeCommand(b []byte) (Command, error) {
 		cmd, err = decodeAs[AdvanceCARotation](env.Cmd)
 	case ResealSecrets{}.Op():
 		cmd, err = decodeAs[ResealSecrets](env.Cmd)
+	case RevokeCACerts{}.Op():
+		cmd, err = decodeAs[RevokeCACerts](env.Cmd)
 	case CreateToken{}.Op():
 		cmd, err = decodeAs[CreateToken](env.Cmd)
 	case ConsumeToken{}.Op():

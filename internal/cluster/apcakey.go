@@ -5,6 +5,7 @@ package cluster
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -68,8 +69,15 @@ func (n *APNode) fetchCAKey(ctx context.Context, fromURL string) ([]byte, error)
 	}
 	caCert := n.cfg.CA.Cert()
 	tlsCfg := pki.PinnedTLSConfig(pki.Fingerprint(caCert), u.Hostname())
-	cert := n.cert
-	tlsCfg.Certificates = []tls.Certificate{cert}
+	// The master serves a certificate of this member's cluster epoch.
+	pinned, inEpoch := tlsCfg.VerifyConnection, requireEpoch(n.epoch)
+	tlsCfg.VerifyConnection = func(cs tls.ConnectionState) error {
+		if err := pinned(cs); err != nil {
+			return err
+		}
+		return inEpoch(cs)
+	}
+	tlsCfg.Certificates = []tls.Certificate{*n.cert.Load()}
 	transport := &http.Transport{TLSClientConfig: tlsCfg}
 	defer transport.CloseIdleConnections()
 	client := clusterv1connect.NewClusterServiceClient(&http.Client{Transport: transport, Timeout: 30 * time.Second}, u.String())
@@ -88,9 +96,15 @@ func (n *APNode) fetchCAKey(ctx context.Context, fromURL string) ([]byte, error)
 // not revoked, of a live member, and ask for this CA's key. Every request is
 // decided by policy and audited, refusals before the decision included.
 func (s *APJoinServer) FetchCAKey(ctx context.Context, req *connect.Request[clusterv1.FetchCAKeyRequest]) (*connect.Response[clusterv1.FetchCAKeyResponse], error) {
+	if rot := s.node.rot.Load(); rot != nil && rot.Active() && req.Msg.GetNewCaFingerprint() == rot.NewCAFP {
+		return s.fetchNextCA(ctx, req, *rot)
+	}
+	if len(req.Msg.GetCsr()) > 0 {
+		return s.renewNodeCert(ctx, req)
+	}
 	id, err := s.memberPeer(ctx)
 	if err != nil {
-		s.auditFetchRefused(ctx, err)
+		s.auditFetchRefused(ctx, err, true)
 		return nil, err
 	}
 	var keyDER []byte
@@ -132,34 +146,44 @@ func (s *APJoinServer) FetchCAKey(ctx context.Context, req *connect.Request[clus
 // memberPeer returns the node ID in the caller's verified hub node
 // certificate, when it is a live member's and not revoked.
 func (s *APJoinServer) memberPeer(ctx context.Context) (string, error) {
+	id, _, err := s.memberPeerCert(ctx)
+	return id, err
+}
+
+// memberPeerCert is memberPeer, also returning the certificate.
+func (s *APJoinServer) memberPeerCert(ctx context.Context) (string, *x509.Certificate, error) {
 	cs, _ := ctx.Value(tlsStateKey{}).(*tls.ConnectionState)
 	if cs == nil || len(cs.VerifiedChains) == 0 {
-		return "", connect.NewError(connect.CodeUnauthenticated, errors.New("hub node certificate required"))
+		return "", nil, connect.NewError(connect.CodeUnauthenticated, errors.New("hub node certificate required"))
 	}
 	cert := cs.VerifiedChains[0][0]
 	id, err := pki.HubNodeID(cert)
 	if err != nil {
-		return "", connect.NewError(connect.CodePermissionDenied, errors.New("not a hub node certificate"))
+		return "", nil, connect.NewError(connect.CodePermissionDenied, errors.New("not a hub node certificate"))
+	}
+	if pki.HubEpoch(cert) != s.node.epoch {
+		return "", nil, connect.NewError(connect.CodePermissionDenied, errors.New("hub node certificate of another cluster epoch"))
 	}
 	if s.ca.IssuerOf(cert) == nil {
-		return "", connect.NewError(connect.CodeUnauthenticated, errors.New("hub node certificate of a CA no longer trusted"))
+		return "", nil, connect.NewError(connect.CodeUnauthenticated, errors.New("hub node certificate of a CA no longer trusted"))
 	}
 	if err := s.store.Hubs().CheckCert(ctx, pki.SerialString(cert)); errors.Is(err, store.ErrCertRevoked) {
-		return "", connect.NewError(connect.CodePermissionDenied, errors.New("hub node certificate revoked"))
+		return "", nil, connect.NewError(connect.CodePermissionDenied, errors.New("hub node certificate revoked"))
 	} else if err != nil {
-		return "", connect.NewError(connect.CodeUnavailable, errors.New("cannot check the hub node certificate"))
+		return "", nil, connect.NewError(connect.CodeUnavailable, errors.New("cannot check the hub node certificate"))
 	}
 	if m, err := s.node.member(ctx, id); err != nil || !alive(m) {
-		return "", connect.NewError(connect.CodePermissionDenied, errors.New("not a live member of this cluster"))
+		return "", nil, connect.NewError(connect.CodePermissionDenied, errors.New("not a live member of this cluster"))
 	}
-	return id, nil
+	return id, cert, nil
 }
 
 // auditFetchRefused records a FetchCAKey refused before its policy
-// decision, at most one entry per caller a minute (see fetchRefusals).
-func (s *APJoinServer) auditFetchRefused(ctx context.Context, refusal error) {
+// decision, at most one entry per caller a minute (see fetchRefusals):
+// one for a promotion or one during a hub CA rotation.
+func (s *APJoinServer) auditFetchRefused(ctx context.Context, refusal error, promotion bool) {
 	actor := "unknown"
-	detail := map[string]any{"reason": refusal.Error(), "promotion": true}
+	detail := map[string]any{"reason": refusal.Error(), "promotion": promotion}
 	if cs, _ := ctx.Value(tlsStateKey{}).(*tls.ConnectionState); cs != nil && len(cs.PeerCertificates) > 0 {
 		c := cs.PeerCertificates[0]
 		if id, err := pki.HubNodeID(c); err == nil {

@@ -37,7 +37,6 @@ func openTestWith(t *testing.T, opts ...Option) *Store {
 // purpose.
 func TestRouteOfEveryCommand(t *testing.T) {
 	refused := map[string]bool{
-		StartCARotation{}.Op(): true, AdvanceCARotation{}.Op(): true, ResealSecrets{}.Op(): true,
 		MigrateSchema{}.Op(): true, // the schema moves on each member (docs/design/ap-cluster.md §8)
 	}
 	configCmds := []Command{PutConfigDocs{By: "x"}, DeleteConfigDoc{Kind: ConfigRunbook, Name: "r.yaml"}}
@@ -66,6 +65,16 @@ func TestRouteOfEveryCommand(t *testing.T) {
 				t.Errorf("%s: %v", cmd.Op(), err)
 			}
 		}
+	}
+	// A sharded cluster re-seals one secret per command, a runbook run's on
+	// its runbook's replicas.
+	two := ResealSecrets{Secrets: []SealedSecret{{Table: SealedKubeClusters, ID: "a"}, {Table: SealedKubeClusters, ID: "b"}}}
+	if _, err := RouteOf(two); !errors.Is(err, ErrNoRoute) {
+		t.Errorf("reseal_secrets of two: err = %v, want ErrNoRoute", err)
+	}
+	run := ResealSecrets{Secrets: []SealedSecret{{Table: SealedRunbookRuns, ID: "r1", Key: "rb"}}}
+	if r, err := RouteOf(run); err != nil || r.Kind != RouteKey || r.Key != "rb" || !r.Critical {
+		t.Errorf("reseal_secrets of a run: %+v, %v; want critical on its runbook", r, err)
 	}
 	if _, err := RouteOf(MigrateSchema{To: 99}); !errors.Is(err, ErrNoRoute) {
 		t.Errorf("migrate_schema: err = %v, want ErrNoRoute", err)

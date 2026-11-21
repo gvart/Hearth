@@ -123,6 +123,7 @@ func (o *scheduledBackupOptions) fromEnv(cmd *cobra.Command) error {
 // --backup-interval is not set. It reads the passphrase and the secret key,
 // and never logs them.
 func backupScheduler(opts hubOptions, st *store.Store, pol *policy.Engine, n *notify.Notifier, clustered bool,
+	snapshot func(context.Context, string) error,
 	log *slog.Logger,
 ) (*backup.Scheduler, error) {
 	o := opts.backup
@@ -176,7 +177,7 @@ func backupScheduler(opts hubOptions, st *store.Store, pol *policy.Engine, n *no
 		Backup: backup.CreateOptions{
 			DataDir: opts.dataDir, Store: st, NotifyConfig: opts.notifyConfig,
 			AutomationsDir: opts.automationsDir, RunbooksDir: opts.runbooksDir,
-			HearthVersion: opts.version, Clustered: clustered, WithoutCAKey: !o.includeCA,
+			HearthVersion: opts.version, Clustered: clustered, WithoutCAKey: !o.includeCA, Snapshot: snapshot,
 		},
 		Policy: pol, Notifier: n, Channel: o.notify, Log: log,
 	}), nil

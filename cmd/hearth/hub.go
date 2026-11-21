@@ -380,6 +380,8 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	var epoch string
 	if node != nil {
 		epoch = node.Epoch()
+	} else if apNode != nil {
+		epoch = apNode.Epoch()
 	}
 	serverCert, err := newServerCert(ctx, ca, hosts, epoch, log)
 	if err != nil {
@@ -391,6 +393,9 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	}
 	if node != nil {
 		node.SetResealer(sealers.reseal)
+	}
+	if apNode != nil {
+		apNode.SetResealer(sealers.reseal)
 	}
 
 	// The configuration is set below, before anything decides: from the
@@ -404,6 +409,8 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	hubID := hostnameOr("hub")
 	if node != nil {
 		hubID = node.ID()
+	} else if apNode != nil {
+		hubID = apNode.ID()
 	}
 	configWatcher := hubconfig.NewWatcher(hubconfig.WatcherConfig{
 		Store: st.ConfigDocs(), Sealer: sealers.notify, Policy: pol, Notifier: notifier,
@@ -465,7 +472,14 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if opts.newDeviceAlerts != "" && !notifier.Has(opts.newDeviceAlerts) {
 		return fmt.Errorf("--new-device-alerts: no notification channel %q (see --notify-config)", opts.newDeviceAlerts)
 	}
-	backups, err := backupScheduler(opts, st, pol, notifier, node != nil, log.With("component", "backup"))
+	// An AP member's database holds only its shards: its backups copy the
+	// whole cluster store.
+	var snapshot func(context.Context, string) error
+	if apNode != nil {
+		snapshot = apNode.Snapshot
+	}
+	backups, err := backupScheduler(opts, st, pol, notifier, node != nil || apNode != nil, snapshot,
+		log.With("component", "backup"))
 	if err != nil {
 		return err
 	}
@@ -933,6 +947,9 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		// The CLI's promote, demote and remove, decided here.
 		apNode.SetRoleChanges(apRoleChanges(pol, apClusterAdmin{apNode}))
 		defer apNode.SetRoleChanges(nil)
+		// And its hub CA rotation steps.
+		apNode.SetCAPolicy(pol)
+		defer apNode.SetCAPolicy(nil)
 	}
 	err = g.Wait()
 	log.InfoContext(ctx, "hub stopped")

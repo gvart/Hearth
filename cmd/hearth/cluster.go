@@ -478,6 +478,13 @@ func writeAPStatus(out io.Writer, st cluster.Status) error {
 	_, _ = fmt.Fprintf(tw, "Node:\t%s\nMode:\tap (leaderless, sharded)\nStorage members:\t%d\nReplicas (N):\t%d\nHighly available:\t%s\n",
 		st.NodeID, st.StorageMembers, st.Replicas, ha)
 	writeMembers(tw, st.Members)
+	if groups := cluster.HostFlagGroups(st.Members); len(groups) > 1 {
+		parts := make([]string, len(groups))
+		for i, g := range groups {
+			parts[i] = strings.Join(g, ", ")
+		}
+		_, _ = fmt.Fprintf(tw, "\nHost flags differ (--allow-dangerous-automation):\t%s\n", strings.Join(parts, " | "))
+	}
 	if err := tw.Flush(); err != nil {
 		return fmt.Errorf("write status: %w", err)
 	}

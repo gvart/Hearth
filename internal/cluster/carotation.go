@@ -1061,18 +1061,24 @@ func (n *Node) issueNextNodeCert(ctx context.Context, csr []byte, id string) (*x
 
 // checkNextNodeCert checks a node certificate of the new CA received for key.
 func (n *Node) checkNextNodeCert(der []byte, key crypto.Signer) (*x509.Certificate, error) {
+	return checkNextNodeCert(n.cfg.CA, der, key, n.cfg.NodeID, n.epoch)
+}
+
+// checkNextNodeCert checks der, a node certificate of ca's next CA received
+// for key: hub id's, in cluster epoch epoch.
+func checkNextNodeCert(ca *pki.CA, der []byte, key crypto.Signer, id, epoch string) (*x509.Certificate, error) {
 	cert, err := x509.ParseCertificate(der)
 	if err != nil {
 		return nil, err
 	}
-	next := n.cfg.CA.Next()
+	next := ca.Next()
 	if next == nil || cert.CheckSignatureFrom(next) != nil {
 		return nil, errors.New("not signed by the new CA")
 	}
-	if id, err := pki.HubNodeID(cert); err != nil || id != n.cfg.NodeID {
+	if got, err := pki.HubNodeID(cert); err != nil || got != id {
 		return nil, errors.New("issued to another hub")
 	}
-	if pki.HubEpoch(cert) != n.epoch {
+	if pki.HubEpoch(cert) != epoch {
 		return nil, errOtherEpoch
 	}
 	pub, ok := key.Public().(interface{ Equal(crypto.PublicKey) bool })
@@ -1085,38 +1091,63 @@ func (n *Node) checkNextNodeCert(der []byte, key crypto.Signer) (*x509.Certifica
 // saveNextCert writes this hub's node certificate of the new CA and its key
 // into the raft dir and keeps it for the cutover.
 func (n *Node) saveNextCert(cert *x509.Certificate, key any) error {
-	der, err := x509.MarshalPKCS8PrivateKey(key)
-	if err != nil {
-		return fmt.Errorf("encode node key: %w", err)
-	}
-	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})
-	certPEM := pki.EncodeCertPEM(cert)
-	if err := writeFileSync(filepath.Join(n.dir, nextNodeKeyFile), keyPEM, 0o600); err != nil {
-		return err
-	}
-	if err := writeFileSync(filepath.Join(n.dir, nextNodeCertFile), certPEM, 0o644); err != nil {
-		return err
-	}
-	tc, err := tls.X509KeyPair(certPEM, keyPEM)
+	tc, err := writeNextNodeCert(n.dir, cert, key)
 	if err != nil {
 		return err
 	}
-	n.nextCert.Store(&tc)
+	n.nextCert.Store(tc)
 	n.log.Info("holding a node certificate of the new hub CA", "serial", pki.SerialString(cert))
 	return nil
 }
 
+// writeNextNodeCert writes a hub's node certificate of the new CA and its
+// key into dir, its raft dir.
+func writeNextNodeCert(dir string, cert *x509.Certificate, key any) (*tls.Certificate, error) {
+	der, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		return nil, fmt.Errorf("encode node key: %w", err)
+	}
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})
+	certPEM := pki.EncodeCertPEM(cert)
+	if err := writeFileSync(filepath.Join(dir, nextNodeKeyFile), keyPEM, 0o600); err != nil {
+		return nil, err
+	}
+	if err := writeFileSync(filepath.Join(dir, nextNodeCertFile), certPEM, 0o644); err != nil {
+		return nil, err
+	}
+	tc, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		return nil, err
+	}
+	return &tc, nil
+}
+
 // loadNextCert loads this hub's node certificate of the new CA, if any.
 func (n *Node) loadNextCert() error {
-	tc, err := tls.LoadX509KeyPair(filepath.Join(n.dir, nextNodeCertFile), filepath.Join(n.dir, nextNodeKeyFile))
+	tc, err := readNextNodeCert(n.dir)
+	if err != nil || tc == nil {
+		return err
+	}
+	n.nextCert.Store(tc)
+	return nil
+}
+
+// readNextNodeCert reads a hub's node certificate of the new CA from dir,
+// its raft dir; nil if there is none.
+func readNextNodeCert(dir string) (*tls.Certificate, error) {
+	tc, err := tls.LoadX509KeyPair(filepath.Join(dir, nextNodeCertFile), filepath.Join(dir, nextNodeKeyFile))
 	switch {
 	case errors.Is(err, os.ErrNotExist):
-		return nil
+		return nil, nil
 	case err != nil:
-		return fmt.Errorf("load the node certificate of the new hub CA: %w", err)
+		return nil, fmt.Errorf("load the node certificate of the new hub CA: %w", err)
 	}
-	n.nextCert.Store(&tc)
-	return nil
+	if tc.Leaf == nil {
+		if tc.Leaf, err = x509.ParseCertificate(tc.Certificate[0]); err != nil {
+			return nil, fmt.Errorf("load the node certificate of the new hub CA: %w", err)
+		}
+	}
+	return &tc, nil
 }
 
 // finishLocal ends the rotation on this hub: the CA drops the old CA and its

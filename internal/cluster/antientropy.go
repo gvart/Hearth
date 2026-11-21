@@ -307,7 +307,17 @@ func (r *Replicator) CatchUp(ctx context.Context) bool {
 // syncSpace compares the ranges of sp with peer and copies the rows that
 // differ both ways; with pullOnly, only from peer to this member.
 func (r *Replicator) syncSpace(ctx context.Context, peer string, sp store.Space, ranges []bucketRange, pullOnly bool) error {
-	st := r.store()
+	return r.syncSpaceOf(ctx, r.store(), peer, sp, ranges, pullOnly)
+}
+
+// syncSpaceOf is syncSpace for st: this member's store, or a copy of it (a
+// backup's, see PullAll), which only pulls: the rows of peer that differ
+// merge into the copy, and nothing goes back to peer.
+func (r *Replicator) syncSpaceOf(ctx context.Context, st *store.Store, peer string, sp store.Space, ranges []bucketRange,
+	pullOnly bool,
+) error {
+	own := st == r.store()
+	pullOnly = pullOnly || !own
 	cs := chunks(ranges)
 	resp, err := r.call(ctx, peer, apRequest{Op: opTree, Space: sp, Ranges: ranges})
 	if err != nil {
@@ -363,7 +373,15 @@ func (r *Replicator) syncSpace(ctx context.Context, peer string, sp store.Space,
 		if err != nil {
 			return err
 		}
-		if err := r.mergeOn(ctx, r.cfg.NodeID, liveOrRecent(ms, cutoff)); err != nil {
+		ms = liveOrRecent(ms, cutoff)
+		if own {
+			err = r.mergeOn(ctx, r.cfg.NodeID, ms)
+		} else if len(ms) > 0 {
+			ms = slices.Clone(ms)
+			store.SortMutations(ms)
+			err = st.Merge(ctx, ms)
+		}
+		if err != nil {
 			return fmt.Errorf("anti-entropy: merge from %s: %w", peer, err)
 		}
 	}

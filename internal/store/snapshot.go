@@ -59,6 +59,8 @@ func (s *Store) Restore(ctx context.Context, r io.Reader) error {
 		return fmt.Errorf("restore: %w", err)
 	}
 	defer remove()
+	// The restored database may be at another schema.
+	defer s.columns.Clear()
 	path := filepath.Join(dir, "restore.db")
 	if err := writeFile(path, r); err != nil {
 		return fmt.Errorf("restore: %w", err)

@@ -67,6 +67,12 @@ type MembershipConfig struct {
 	Schema func(context.Context) (int64, error)
 	// ConfigDigest returns a digest of this member's configuration.
 	ConfigDigest func() string
+	// Written, if set, returns the cluster's written schema as this member
+	// knows it, gossiped with its metadata (apschema.go).
+	Written func() int64
+	// CheckSchema, if set, refuses a peer by the schema it supports: one
+	// too old for the cluster's written schema.
+	CheckSchema func(id string, supported int64) error
 	// Log receives the membership's logs, memberlist's included.
 	Log *slog.Logger
 
@@ -143,6 +149,8 @@ type Membership struct {
 	removed map[string]bool
 	// local is this member's roles and role change under way.
 	local atomic.Pointer[LocalState]
+	// ca is this member's side of a hub CA rotation (SetCA).
+	ca atomic.Pointer[CAMeta]
 
 	// broadcasts queues the messages Broadcast sends on the gossip.
 	broadcasts *memberlist.TransmitLimitedQueue
@@ -151,6 +159,9 @@ type Membership struct {
 	changed  []chan struct{}
 	// started is when Run started the gossip.
 	started atomic.Pointer[time.Time]
+	// schemaRefused are the peers already logged as refused for their
+	// schema.
+	schemaRefused sync.Map
 }
 
 // NewMembership checks cfg and returns a Membership; Run starts it.
@@ -320,6 +331,8 @@ type memberMeta struct {
 	Roles   RoleSet `json:"r"`
 	Allowed RoleSet `json:"a"`
 	Schema  int64   `json:"s"`
+	// Written is the cluster's written schema as the member knows it.
+	Written int64 `json:"w,omitempty"`
 	// Clock is the member's wall clock in Unix ms when it last refreshed
 	// its metadata; a placeholder until the HLC lands (impl item 3).
 	Clock  uint64 `json:"c"`
@@ -332,6 +345,20 @@ type memberMeta struct {
 	// Drain is 1 + the percentage handed off while a demotion from storage
 	// drains the member; 0 when none is under way.
 	Drain int `json:"dr,omitempty"`
+	// CA is the member's side of a hub CA rotation.
+	CA *CAMeta `json:"ca,omitempty"`
+}
+
+// CAMeta is a member's side of a hub CA rotation, as it says on the gossip
+// (apcarotation.go): the CAs by the first 16 hex digits of their
+// fingerprints (shortFP), whether it holds the next CA's key and a node
+// certificate of it, and whether it cut over to it.
+type CAMeta struct {
+	Serving  string `json:"s"`
+	Next     string `json:"n,omitempty"`
+	NextKey  bool   `json:"k,omitempty"`
+	NextCert bool   `json:"c,omitempty"`
+	CutOver  bool   `json:"o,omitempty"`
 }
 
 func decodeMeta(b []byte) (memberMeta, error) {
@@ -366,6 +393,10 @@ func (m *Membership) setMeta(ctx context.Context, leaving bool) error {
 	}
 	if m.cfg.ConfigDigest != nil {
 		meta.Digest = m.cfg.ConfigDigest()
+	}
+	meta.CA = m.ca.Load()
+	if m.cfg.Written != nil {
+		meta.Written = m.cfg.Written()
 	}
 	b, err := json.Marshal(meta)
 	if err != nil {
@@ -527,8 +558,10 @@ type MemberInfo struct {
 	// State is alive, suspect, dead or left. A member is suspect while the
 	// gossip holds it alive but nothing came from it directly for longer
 	// than about two probe rounds.
-	State        string `json:"state"`
-	Schema       int64  `json:"schema"`
+	State  string `json:"state"`
+	Schema int64  `json:"schema"`
+	// Written is the cluster's written schema as the member knows it.
+	Written      int64  `json:"written_schema,omitempty"`
 	ClockMS      uint64 `json:"clock_ms,omitempty"`
 	ConfigDigest string `json:"config_digest,omitempty"`
 	// Syncing: promoted to storage, still copying its rows; it serves no
@@ -538,6 +571,8 @@ type MemberInfo struct {
 	// is how far, in percent.
 	Draining bool `json:"draining,omitempty"`
 	Progress int  `json:"progress,omitempty"`
+	// CA is the member's side of a hub CA rotation; nil if it says none.
+	CA *CAMeta `json:"ca,omitempty"`
 }
 
 func memberInfo(n *memberlist.Node, state string) MemberInfo {
@@ -545,7 +580,7 @@ func memberInfo(n *memberlist.Node, state string) MemberInfo {
 	if meta, err := decodeMeta(n.Meta); err == nil {
 		mi.Roles, mi.AllowedRoles, mi.Schema, mi.ClockMS, mi.ConfigDigest =
 			meta.Roles, meta.Allowed, meta.Schema, meta.Clock, meta.Digest
-		mi.Syncing = meta.Syncing
+		mi.Syncing, mi.CA, mi.Written = meta.Syncing, meta.CA, meta.Written
 		if meta.Drain > 0 {
 			mi.Draining, mi.Progress = true, meta.Drain-1
 		}
@@ -590,6 +625,7 @@ func (m *Membership) Members() []MemberInfo {
 			if ls.Draining {
 				mi.Progress = ls.Progress
 			}
+			mi.CA = m.ca.Load()
 		} else {
 			last := t.lastSeen(id)
 			if l.joined.After(last) {
@@ -634,6 +670,46 @@ func (m *Membership) SetLocal(ls LocalState) error {
 	}
 	m.notifyChange()
 	return nil
+}
+
+// SetCA changes what this member says of its side of a hub CA rotation, at
+// once in Members and on the gossip.
+func (m *Membership) SetCA(c CAMeta) {
+	if cur := m.ca.Load(); cur != nil && *cur == c {
+		return
+	}
+	m.ca.Store(&c)
+	if err := m.setMeta(context.Background(), false); err != nil {
+		m.log.Warn("member metadata", "err", err)
+		return
+	}
+	if ml := m.ml.Load(); ml != nil {
+		if err := ml.UpdateNode(m.cfg.RefreshEvery); err != nil {
+			m.log.Debug("announce member metadata", "err", err)
+		}
+	}
+	m.notifyChange()
+}
+
+// PeerCerts returns the certificates member id presented on the open
+// gossip connections this member dialed to it, as its certificate names it.
+func (m *Membership) PeerCerts(id string) []*x509.Certificate {
+	t := m.trans.Load()
+	if t == nil {
+		return nil
+	}
+	var out []*x509.Certificate
+	for _, mi := range m.Members() {
+		if mi.ID != id || mi.Address == "" {
+			continue
+		}
+		for _, c := range t.stream.dialedPeers(mi.Address) {
+			if peer, err := pki.HubNodeID(c); err == nil && peer == id {
+				out = append(out, c)
+			}
+		}
+	}
+	return out
 }
 
 // Forget drops member id from Members for good: it was removed from the
@@ -785,6 +861,14 @@ func (m *Membership) NotifyAlive(peer *memberlist.Node) error {
 	}
 	if !meta.Roles.Gossips() {
 		return fmt.Errorf("member %s: roles %s do not gossip", peer.Name, meta.Roles)
+	}
+	if m.cfg.CheckSchema != nil {
+		if err := m.cfg.CheckSchema(peer.Name, meta.Schema); err != nil {
+			if _, logged := m.schemaRefused.LoadOrStore(peer.Name, true); !logged {
+				m.log.Error("refusing a member too old for the cluster", "err", err)
+			}
+			return err
+		}
 	}
 	return m.checkOwner(peer, false)
 }

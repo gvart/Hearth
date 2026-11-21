@@ -63,6 +63,7 @@ func (s *Store) migrateTo(ctx context.Context, to int64) error {
 		return fmt.Errorf("migrate schema to %d: %w: it supports up to %d; upgrade this hub's hearth",
 			to, ErrSchemaMismatch, s.maxSchema)
 	}
+	defer s.columns.Clear()
 	if _, err := p.UpTo(ctx, to); err != nil {
 		return fmt.Errorf("migrate schema to %d: %w", to, err)
 	}

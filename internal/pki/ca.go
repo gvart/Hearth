@@ -91,7 +91,10 @@ func newState(cur keyPair, next *keyPair, active, cutover bool) *caState {
 	if active {
 		pool.AddCert(next.cert)
 	}
-	return &caState{cur: cur, next: next, active: active, cutover: cutover && active && next.key != nil, pool: pool}
+	// A hub without the CA key (a storage-only member) cuts over without
+	// the next key; one holding the current key needs the next one.
+	cutover = cutover && active && (next.key != nil || cur.key == nil)
+	return &caState{cur: cur, next: next, active: active, cutover: cutover, pool: pool}
 }
 
 // serving is the key pair that signs the hub's TLS server certificates and
