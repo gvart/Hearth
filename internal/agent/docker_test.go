@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -322,14 +323,20 @@ func TestDockerSocketErrors(t *testing.T) {
 	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	// A socket nobody listens on any more.
+	// A socket nobody listens on: bound, never listening, so the dial is
+	// refused. A listener closed again would not do: a child a parallel
+	// test forks holds its descriptor until it execs, and a dial in that
+	// window is accepted into the backlog and then dropped (EOF).
 	stale := filepath.Join(dir, "stale.sock")
-	ln, err := net.Listen("unix", stale)
+	fd, err := syscall.Socket(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ln.(*net.UnixListener).SetUnlinkOnClose(false)
-	_ = ln.Close()
+	err = syscall.Bind(fd, &syscall.SockaddrUnix{Name: stale})
+	_ = syscall.Close(fd)
+	if err != nil {
+		t.Fatal(err)
+	}
 	// A socket that serves something other than Docker.
 	other := filepath.Join(dir, "other.sock")
 	oln, err := net.Listen("unix", other)
