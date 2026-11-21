@@ -19,6 +19,7 @@ import { AddProxmoxDialog } from './AddProxmoxDialog.tsx';
 import { Modal } from './Modal.tsx';
 import './PanelsPage.css';
 import './PlatformsPage.css';
+import { Tip } from './Tip.tsx';
 
 const stateDot: Record<PlatformState, string> = {
   connecting: 'dot-unknown',
@@ -69,7 +70,9 @@ export function PlatformsPage() {
     <main className="content">
       <div className="page-head">
         <div>
-          <h1>Platforms</h1>
+          <h1>
+            Platforms <Tip id="platforms" />
+          </h1>
           {loading ? null : <p className="muted">{platformSummary(cards)}</p>}
         </div>
         <a className="btn btn-primary" href={connectPlatformHash}>

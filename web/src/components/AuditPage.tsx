@@ -2,6 +2,7 @@ import { Fragment, useDeferredValue, useEffect, useState } from 'react';
 import type { ActionClass, AuditEntry, AuditFilter, Decision } from '../api/client.ts';
 import { useAudit, useDevices } from '../api/hooks.ts';
 import { displayName, relativeTime } from '../format.ts';
+import { Tip } from './Tip.tsx';
 
 const actorKinds: { id: string; label: string }[] = [
   { id: 'admin', label: 'CLI (admin)' },
@@ -117,7 +118,9 @@ export function AuditPage() {
     <main className="content">
       <div className="page-head">
         <div>
-          <h1>Audit log</h1>
+          <h1>
+            Audit log <Tip id="audit" />
+          </h1>
           <p className="muted">Every action from the CLI, the web UI and automations, and what policy decided.</p>
         </div>
       </div>

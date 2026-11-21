@@ -13,6 +13,7 @@ import { formatDateTime, relativeTime, timeLeft } from '../format.ts';
 import { planOfHash } from '../nav.ts';
 import { RunbookEditor } from './RunbookEditor.tsx';
 import './RunbooksPage.css';
+import { Tip } from './Tip.tsx';
 
 const runHash = '#/runbooks/run/';
 const editHash = '#/runbooks/edit/';
@@ -116,7 +117,9 @@ function ListPage() {
     <main className="content">
       <div className="page-head">
         <div>
-          <h1>Runbooks</h1>
+          <h1>
+            Runbooks <Tip id="runbooks" />
+          </h1>
           <p className="muted">Step-by-step procedures with checks, prompts and rollback.</p>
         </div>
         {files.isSuccess ? (
