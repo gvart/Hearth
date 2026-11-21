@@ -141,6 +141,46 @@ func (a apClusterAdmin) Remove(ctx context.Context, member string) (any, error) 
 
 func (apClusterAdmin) ErrorKind(err error) string { return cluster.RoleErrorKind(err) }
 
+// apClusterCA is an AP member as the hub API's hub.ClusterCA.
+type apClusterCA struct{ node *cluster.APNode }
+
+func (a apClusterCA) CAStatus(ctx context.Context) (hub.ClusterCAJSON, error) {
+	st, err := a.node.CAStatus(ctx)
+	if err != nil {
+		return hub.ClusterCAJSON{}, err
+	}
+	status := a.node.Status()
+	out := hub.ClusterCAJSON{NodeID: status.NodeID, Hubs: []hub.MemberCAJSON{}, OldDevices: st.OldDevices}
+	if rot := st.Rotation; rot != nil {
+		out.Rotation = &hub.CARotationJSON{
+			NewCAFP: rot.NewCAFP, OldCAFP: rot.OldCAFP, Stage: rot.Stage, Active: rot.Active(),
+			StartedAt: rot.StartedAt, UpdatedAt: rot.UpdatedAt, Owner: rot.Owner,
+		}
+		if rot.Owner != "" {
+			out.Rotation.OwnerAlive = a.node.Masters().Live(rot.Owner)
+			out.Rotation.OwnerURL = a.node.AgentURLOf(ctx, rot.Owner)
+		}
+	}
+	master := map[string]bool{}
+	for _, m := range status.Members {
+		master[m.ID] = m.Roles.Has(cluster.RoleMaster)
+	}
+	for _, h := range st.Hubs {
+		out.Hubs = append(out.Hubs, hub.MemberCAJSON{
+			ID: h.ID, Master: master[h.ID], Serving: h.Info.ServingFP, Next: h.Info.NextFP,
+			HasNextKey: h.Info.HasNextKey, HasNextCert: h.Info.HasNextCert, CutOver: h.Info.CutOver, Error: h.Error,
+		})
+	}
+	return out, nil
+}
+
+func (a apClusterCA) ChangeCA(ctx context.Context, op, actorKind, actorID string, precheck func(context.Context) error) error {
+	_, err := a.node.ChangeCAAs(ctx, cluster.CARequest{Op: op}, cluster.CAActor{Kind: actorKind, ID: actorID, Precheck: precheck})
+	return err
+}
+
+func (apClusterCA) CAErrorKind(err error) string { return cluster.CAErrorKind(err) }
+
 // apDryRun is the result of a dry-run role change from the CLI.
 type apDryRun struct {
 	Decision string `json:"decision"`

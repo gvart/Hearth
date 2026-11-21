@@ -480,6 +480,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	cfg.ConfigDrift = func(context.Context) (any, error) { return node.Status().HostFlagDrift(), nil }
 	cfg.Masters = node
 	cfg.ClusterAdmin = apClusterAdmin{node}
+	cfg.ClusterCA = apClusterCA{node}
 	if _, port, err := net.SplitHostPort(opts.httpListen); err == nil && port != "0" {
 		cfg.HTTPPort = port
 	}

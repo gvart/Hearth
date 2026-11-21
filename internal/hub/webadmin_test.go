@@ -247,13 +247,14 @@ func TestWebActorAdmitted(t *testing.T) {
 	for _, a := range []policy.Action{
 		policy.DeviceRevoke, policy.MCPTokenCreate, policy.MCPTokenRevoke,
 		policy.AdminSetPassword, policy.AdminReauth, policy.HubBackup, policy.ConfigImport,
+		policy.ClusterTokenCreate, policy.ClusterCARotate, policy.ClusterCAFinish, policy.ClusterCAAbort,
 	} {
 		if !policy.Admits(a, policy.ActorWeb) {
 			t.Errorf("%s does not admit the web actor", a)
 		}
 	}
 	// Restore and the CLI's recovery stay on the hub host.
-	for _, a := range []policy.Action{policy.HubRestore, policy.ConfigExport, policy.ClusterCARotate, policy.ClusterTokenCreate} {
+	for _, a := range []policy.Action{policy.HubRestore, policy.ConfigExport, policy.ClusterCAFetchKey} {
 		if policy.Admits(a, policy.ActorWeb) {
 			t.Errorf("%s admits the web actor", a)
 		}

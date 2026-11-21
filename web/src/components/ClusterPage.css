@@ -21,6 +21,74 @@
   margin: 0.15rem 0 0.15rem 0.35rem;
 }
 
+/* Hub CA rotation: its facts, then the members' progress and the steps. */
+.ca-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.35rem 1.25rem;
+  margin: 0 0 1rem;
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.ca-facts dt {
+  color: var(--muted);
+}
+
+.ca-facts dd {
+  margin: 0;
+}
+
+.ca-waiting {
+  color: var(--warn);
+}
+
+.ca-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-top: 1rem;
+}
+
+.ca-actions .muted {
+  flex: 1 1 18rem;
+}
+
+.ca-status {
+  margin: 0.6rem 0 0;
+}
+
+.join-roles {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.join-roles legend {
+  margin-bottom: 0.35rem;
+  padding: 0;
+}
+
+.join-roles-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.25rem;
+}
+
+.join-roles label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 400;
+}
+
+.join-roles input[type='checkbox'] {
+  height: auto;
+  margin: 0;
+}
+
 @media (max-width: 640px) {
   .cluster-wide {
     display: none;

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useClusterChange, useClusterMembers, type Removal, type RoleChange } from '../api/cluster.ts';
+import { useClusterCA, useClusterChange, useClusterMembers, type Removal, type RoleChange } from '../api/cluster.ts';
 import { ApiError } from '../api/client.ts';
 import {
   actionEffect,
@@ -9,15 +9,21 @@ import {
   type ClusterAction,
   type ClusterMember,
 } from '../cluster.ts';
+import { AddHubDialog } from './AddHubDialog.tsx';
+import { ClusterCASection } from './ClusterCA.tsx';
 import { Modal } from './Modal.tsx';
 import './ClusterPage.css';
 
-/** The members of the AP cluster, with their roles, and the role changes. */
+/** The members of the AP cluster, with their roles, and the role changes; the hub CA and new hubs. */
 export function ClusterPage() {
   const status = useClusterMembers();
+  const ca = useClusterCA();
   const [pending, setPending] = useState<{ member: ClusterMember; action: ClusterAction }>();
+  const [adding, setAdding] = useState(false);
   const data = status.data;
   const members = [...(data?.members ?? [])].sort((a, b) => a.id.localeCompare(b.id));
+  // No hub joins during a rotation: every member takes part from its start.
+  const rotating = ca.data?.rotation?.active === true;
 
   return (
     <main className="content">
@@ -32,6 +38,17 @@ export function ClusterPage() {
             </p>
           ) : null}
         </div>
+        <button
+          className="btn btn-primary"
+          type="button"
+          disabled={rotating}
+          title={rotating ? 'No hub can join during a hub CA rotation: finish or abort it first.' : undefined}
+          onClick={() => {
+            setAdding(true);
+          }}
+        >
+          Add hub
+        </button>
       </div>
 
       {status.isError ? (
@@ -69,6 +86,16 @@ export function ClusterPage() {
           </table>
         </div>
       )}
+
+      <ClusterCASection />
+
+      {adding ? (
+        <AddHubDialog
+          onClose={() => {
+            setAdding(false);
+          }}
+        />
+      ) : null}
 
       {pending ? (
         <ClusterActionDialog

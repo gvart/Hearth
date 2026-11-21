@@ -55,7 +55,8 @@ remove from a cluster.
 
 A cluster can replace its CA (`hearth cluster ca rotate`, then `hearth cluster ca finish`, or
 `hearth cluster ca abort` before the finish; see [Rotating the hub CA](cluster.md#rotating-the-hub-ca)).
-All three are dangerous policy actions for the local admin, audited. What it does and does not protect against:
+All three are dangerous policy actions for the local admin, or for the web UI's **Cluster** page with
+the admin password entered again, audited. What it does and does not protect against:
 
 - Until the finish, both CAs are trusted, and whoever holds the old key can still pose as a hub to
   browsers and agents and mint agent certificates. Old-CA hub certificates are accepted only if they
@@ -118,8 +119,9 @@ proxy every login comes from the proxy's address and shares one limit.
 ### Sensitive actions ask for the password again
 
 A signed-in session is not enough for the most sensitive actions of the web UI: revoking a device,
-creating or revoking an MCP token, saving the policy, changing a notification channel and downloading
-a backup. Each asks for the admin password again, then goes through policy like any other action.
+creating or revoking an MCP token, saving the policy, changing a notification channel, downloading
+a backup, creating a cluster join token (**Add hub**) and starting, finishing or aborting a hub CA
+rotation. Each asks for the admin password again, then goes through policy like any other action.
 
 - An answer is good for **5 minutes**, for that session only, and is held in the hub's memory: a hub
   restart, a sign-out or a password change forgets it. Signing in counts as entering it.

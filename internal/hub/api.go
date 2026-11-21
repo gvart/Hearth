@@ -92,6 +92,7 @@ func newAPI(cfg Config) *api {
 		leadership:    leadershipOf(cfg),
 		masters:       cfg.Masters,
 		clusterAdmin:  cfg.ClusterAdmin,
+		clusterCA:     cfg.ClusterCA,
 		automations:   automation.Files{Dir: cfg.AutomationsDir, Docs: cfg.AutomationDocs, Kinds: cfg.AutomationKinds},
 		automationsMu: automationsLock(cfg.AutomationsLock),
 		agents:        cfg.Agents,
@@ -157,6 +158,7 @@ func (a *api) routes() http.Handler {
 	a.automationRoutes(mux)
 	mux.Handle("GET /api/v1/cluster/config-drift", a.auth(a.configDrift))
 	a.clusterRoutes(mux)
+	a.clusterCARoutes(mux)
 	a.logRoutes(mux)
 	a.shellRoutes(mux)
 	mux.Handle("GET /api/v1/audit", a.auth(a.listAudit))
@@ -256,6 +258,8 @@ type api struct {
 	leadership Leadership
 	// clusterAdmin is Config.ClusterAdmin; nil outside an AP cluster.
 	clusterAdmin ClusterAdmin
+	// clusterCA is Config.ClusterCA; nil outside an AP cluster.
+	clusterCA ClusterCA
 	// masters is Config.Masters; nil outside an AP cluster.
 	masters Masters
 	// automations are the files the automation editor reads and writes.
