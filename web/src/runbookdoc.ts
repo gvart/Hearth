@@ -654,6 +654,11 @@ const keyDocs: Record<string, string> = {
   from: 'A device to run the check from, instead of the hub.',
 };
 
+/** What a key of a runbook file means, in one line; undefined for a key the reference does not name. */
+export function docOf(key: string): string | undefined {
+  return keyDocs[key];
+}
+
 /** One line of help for the line the caret is on: the key it sets, and what that means. */
 export function keyHelp(
   lines: HighlightLine[],

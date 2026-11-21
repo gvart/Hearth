@@ -1,7 +1,8 @@
-import { useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useDevices } from '../api/hooks.ts';
 import {
   analyze,
+  docOf,
   guide,
   highlight,
   insertStep,
@@ -10,8 +11,10 @@ import {
   stepAt,
   type DeviceCeiling,
   type Snippet,
+  type StepInfo,
   type StepTone,
 } from '../runbookdoc.ts';
+import { fieldsOf, moveStep, removeStep, setField, type StepField } from '../runbookfields.ts';
 import './RunbookWorkbench.css';
 
 const toneWord: Record<StepTone, string> = {
@@ -25,7 +28,10 @@ const groups = ['Do something', 'Check the result', 'Ask a person', 'Pause'] as 
 /**
  * The runbook file as a workbench: its steps down the left, the file itself
  * with colours, line numbers and problems marked as you type, a line of help
- * for the key under the caret, steps to add, and a guide on demand.
+ * for the key under the caret, steps to add, the step the caret is in as a
+ * form, and a guide on demand. The form and the file are one text: a field
+ * changes its value in the file and nothing else, and typing in the file
+ * shows in the form.
  */
 export default function RunbookWorkbench({
   value,
@@ -52,6 +58,23 @@ export default function RunbookWorkbench({
   const [line, setLine] = useState(0);
   const [adding, setAdding] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
+  const [formOpen, setFormOpen] = useState(true);
+  // Full screen hides the app around the editor (RunbookWorkbench.css does it from this class).
+  const [full, setFull] = useState(false);
+  useEffect(() => {
+    if (!full) {
+      return;
+    }
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Escape' && !e.defaultPrevented) {
+        setFull(false);
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [full]);
   const area = useRef<HTMLTextAreaElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
   // Where the caret goes once an edit made here (a new step, Tab, Enter) has rendered.
@@ -120,6 +143,18 @@ export default function RunbookWorkbench({
     onChange(r.text);
   };
 
+  /** Takes a change the form made: the file, and the step to stay on (its first line does not move under it). */
+  const fromForm = (text: string | undefined, stay: number): boolean => {
+    if (text === undefined) {
+      return false;
+    }
+    if (text !== value) {
+      setLine(analyze(text, ceilings).steps[stay]?.line ?? 0);
+      onChange(text);
+    }
+    return true;
+  };
+
   const readCaret = () => {
     const el = area.current;
     if (el) {
@@ -147,7 +182,7 @@ export default function RunbookWorkbench({
   };
 
   return (
-    <div className="wb">
+    <div className={full ? 'wb wb-full' : 'wb'}>
       <div className="wb-bar">
         <span className={`pill ${errors ? 'pill-bad' : warnings ? 'pill-warn' : 'pill-ok'}`}>
           {errors
@@ -159,19 +194,41 @@ export default function RunbookWorkbench({
         <span className="muted small">
           Checked as you type. “Check and plan” asks the hub, which has the last word.
         </span>
-        <button
-          className="btn btn-small btn-ghost wb-guide-toggle"
-          type="button"
-          aria-expanded={guideOpen}
-          aria-controls={guideId}
-          onClick={() => {
-            setGuideOpen(!guideOpen);
-          }}
-        >
-          Guide
-        </button>
+        <span className="wb-tools">
+          <button
+            className="btn btn-small btn-ghost"
+            type="button"
+            aria-pressed={formOpen}
+            onClick={() => {
+              setFormOpen(!formOpen);
+            }}
+          >
+            Form
+          </button>
+          <button
+            className="btn btn-small btn-ghost"
+            type="button"
+            aria-expanded={guideOpen}
+            aria-controls={guideId}
+            onClick={() => {
+              setGuideOpen(!guideOpen);
+            }}
+          >
+            Guide
+          </button>
+          <button
+            className="btn btn-small btn-ghost"
+            type="button"
+            aria-pressed={full}
+            onClick={() => {
+              setFull(!full);
+            }}
+          >
+            {full ? 'Exit full screen' : 'Full screen'}
+          </button>
+        </span>
       </div>
-      <div className="wb-grid">
+      <div className={formOpen ? 'wb-grid wb-with-form' : 'wb-grid'}>
         <section className="wb-outline" aria-label="Steps">
           <div className="wb-head">
             <h3>Steps</h3>
@@ -351,6 +408,39 @@ export default function RunbookWorkbench({
           ) : null}
         </section>
 
+        {formOpen ? (
+          <section className="wb-form" aria-label="The step as a form">
+            {step ? (
+              <StepForm
+                // One form per step: a field keeps the focus while its own step is edited.
+                key={selected}
+                step={step}
+                no={selected + 1}
+                fields={fieldsOf(value, selected)}
+                devices={ceilings.flatMap((c) => c.names.slice(0, 1))}
+                onField={(path, text) => fromForm(setField(value, selected, path, text), selected)}
+                move={(by) => {
+                  fromForm(moveStep(value, a.steps, selected, by), selected + by);
+                }}
+                canMove={(by) => moveStep(value, a.steps, selected, by) !== undefined}
+                remove={() => {
+                  fromForm(removeStep(value, a.steps, selected), Math.min(selected, a.steps.length - 2));
+                }}
+                canRemove={removeStep(value, a.steps, selected) !== undefined}
+              />
+            ) : (
+              <>
+                <h3>Step</h3>
+                <p className="muted small">
+                  {a.parsed
+                    ? 'Pick a step on the left, or put the caret in one, to edit it as a form. The file changes with every field, and nothing else in it moves.'
+                    : 'The file does not parse yet. Fix it in the file first.'}
+                </p>
+              </>
+            )}
+          </section>
+        ) : null}
+
         {guideOpen ? (
           <aside id={guideId} className="wb-guide" aria-label="Guide">
             <div className="wb-head">
@@ -426,5 +516,133 @@ export default function RunbookWorkbench({
         ) : null}
       </div>
     </div>
+  );
+}
+
+/**
+ * One step as a form: every value of it a field, in the file's order, under
+ * the key that holds it. A field writes its value into the file as it is
+ * typed; what cannot be written there without disturbing the rest says so.
+ */
+function StepForm({
+  step,
+  no,
+  fields,
+  devices,
+  onField,
+  move,
+  canMove,
+  remove,
+  canRemove,
+}: {
+  step: StepInfo;
+  no: number;
+  fields: StepField[];
+  devices: string[];
+  onField: (path: string, text: string) => boolean;
+  move: (by: -1 | 1) => void;
+  canMove: (by: -1 | 1) => boolean;
+  remove: () => void;
+  canRemove: boolean;
+}) {
+  // What is being typed, as typed: the file holds the value without the space at its ends, the field keeps it.
+  const [draft, setDraft] = useState<{ path: string; text: string; refused: boolean }>();
+  const listId = useId();
+
+  return (
+    <>
+      <div className="wb-head">
+        <h3>
+          Step {no} <span className={`wb-kind wb-${step.tone}`}>{toneWord[step.tone]}</span>
+        </h3>
+        <span className="wb-step-tools">
+          <button
+            className="btn btn-small btn-ghost"
+            type="button"
+            aria-label="Move the step up"
+            disabled={!canMove(-1)}
+            onClick={() => {
+              move(-1);
+            }}
+          >
+            ↑
+          </button>
+          <button
+            className="btn btn-small btn-ghost"
+            type="button"
+            aria-label="Move the step down"
+            disabled={!canMove(1)}
+            onClick={() => {
+              move(1);
+            }}
+          >
+            ↓
+          </button>
+          <button className="btn btn-small btn-ghost" type="button" disabled={!canRemove} onClick={remove}>
+            Remove
+          </button>
+        </span>
+      </div>
+      {fields.length === 0 ? <p className="muted small">This step has no values yet. Write them in the file.</p> : null}
+      {fields.map((f, i) => {
+        // A heading where the keys above the value change: "action", "action · command".
+        const heading = f.group !== (fields[i - 1]?.group ?? '') ? f.group : '';
+        const mine = draft?.path === f.path ? draft : undefined;
+        const change = (text: string) => {
+          setDraft({ path: f.path, text, refused: !onField(f.path, text) });
+        };
+        const blur = () => {
+          setDraft(undefined);
+        };
+        const help = docOf(f.key);
+        return (
+          <div key={f.path} className="wb-field-wrap">
+            {heading ? <span className="wb-label">{heading}</span> : null}
+            <label className="field wb-field">
+              <span className="y-key">{f.label}</span>
+              {f.kind === 'block' ? (
+                <textarea
+                  className="wb-field-block"
+                  rows={Math.min(12, Math.max(3, (mine?.text ?? f.value).split('\n').length + 1))}
+                  wrap="off"
+                  spellCheck={false}
+                  value={mine?.text ?? f.value}
+                  onChange={(e) => {
+                    change(e.target.value);
+                  }}
+                  onBlur={blur}
+                />
+              ) : (
+                <input
+                  type="text"
+                  spellCheck={false}
+                  autoCapitalize="off"
+                  autoComplete="off"
+                  list={f.key === 'device' || f.key === 'from' ? listId : undefined}
+                  value={mine?.text ?? f.value}
+                  onChange={(e) => {
+                    change(e.target.value);
+                  }}
+                  onBlur={blur}
+                />
+              )}
+              {mine?.refused ? (
+                <span className="error small" role="alert">
+                  This cannot be written here without changing the lines around it. Edit it in the file.
+                </span>
+              ) : help ? (
+                <span className="muted small">{help}</span>
+              ) : null}
+            </label>
+          </div>
+        );
+      })}
+      <datalist id={listId}>
+        {devices.map((d) => (
+          <option key={d} value={d} />
+        ))}
+      </datalist>
+      <p className="muted small">A key that is not here yet is added in the file, with its own line.</p>
+    </>
   );
 }
