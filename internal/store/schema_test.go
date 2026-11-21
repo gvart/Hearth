@@ -193,10 +193,10 @@ func TestIsDomainError(t *testing.T) {
 	} else if !IsDomainError(err) {
 		t.Errorf("foreign key violation %v: not a domain error", err)
 	}
-	if err := s.JoinTokens().Create(ctx, "j", now.Add(time.Hour)); err != nil {
+	if err := s.JoinTokens().Create(ctx, "j", now.Add(time.Hour), "storage"); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.JoinTokens().Create(ctx, "j", now.Add(time.Hour)); !IsDomainError(err) {
+	if err := s.JoinTokens().Create(ctx, "j", now.Add(time.Hour), "storage"); !IsDomainError(err) {
 		t.Errorf("duplicate token %v: not a domain error", err)
 	}
 	for _, err := range []error{ErrNotFound, ErrTokenUsed, fmt.Errorf("x: %w", ErrTokenExpired), ErrSchemaTooOld} {

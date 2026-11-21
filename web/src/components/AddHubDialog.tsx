@@ -64,7 +64,7 @@ export function AddHubDialog({ onClose }: { onClose: () => void }) {
           className="form"
           onSubmit={(e) => {
             e.preventDefault();
-            create.mutate({ ttl, allowRoles: roles });
+            create.mutate({ ttl, roles });
           }}
         >
           <p className="muted">
@@ -87,7 +87,7 @@ export function AddHubDialog({ onClose }: { onClose: () => void }) {
             </select>
           </label>
           <fieldset className="field join-roles">
-            <legend>Roles the new hub may take (its --allow-roles)</legend>
+            <legend>Roles the token grants the new hub</legend>
             <div className="join-roles-options">
               {allRoles.map(({ role, label }) => (
                 <label key={role}>
@@ -109,13 +109,20 @@ export function AddHubDialog({ onClose }: { onClose: () => void }) {
               <span className="muted small">What this does</span>
               <span className="pill pill-bad">dangerous</span>
             </div>
+            {roles.includes('master') ? (
+              <p>
+                A hub that joins with this token as a master receives the hub CA&apos;s private key: it can then issue
+                certificates every hub and agent trusts. Treat the token like the CA key itself.
+              </p>
+            ) : (
+              <p>
+                The new hub joins as a storage member only: it never receives the hub CA&apos;s private key, whatever it
+                asks for. It can still hold a copy of the cluster&apos;s data.
+              </p>
+            )}
             <p>
-              A hub that joins with this token and allows the master role receives the hub CA&apos;s private key: it can
-              then issue certificates every hub and agent trusts. Treat the token like the CA key itself.
-            </p>
-            <p>
-              The roles only set <code>--allow-roles</code> in the command. The token does not limit them: whoever holds
-              it decides.
+              The token is bound to these roles: the new hub takes at most them, and only those its own{' '}
+              <code>--allow-roles</code> allow too.
             </p>
           </section>
 

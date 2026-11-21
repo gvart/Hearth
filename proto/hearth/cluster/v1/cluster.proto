@@ -34,8 +34,8 @@ message JoinRequest {
   // schema_version is the newest store schema version the joining binary
   // supports. It must be at least the schema the cluster has written.
   int64 schema_version = 5;
-  // allowed_roles are the roles the joining host allows (--allow-roles):
-  // only a host that allows "master" is sent the CA key.
+  // allowed_roles are the roles the joining host allows (--allow-roles).
+  // The hub is granted at most these and the join token's roles.
   repeated string allowed_roles = 7;
   reserved 6;
   reserved "cluster_epochs";
@@ -47,9 +47,12 @@ message JoinResponse {
   bytes certificate = 1;
   // ca_certificate is the DER-encoded hub CA certificate.
   bytes ca_certificate = 2;
-  // ca_key is the CA private key, PKCS#8 DER, sent only to a hub that
-  // allows the master role. Store it at 0600; never log it.
+  // ca_key is the CA private key, PKCS#8 DER, sent only to a hub granted
+  // the master role. Store it at 0600; never log it.
   bytes ca_key = 3;
+  // roles are the roles the hub is granted: those both its allowed_roles
+  // and the join token allow. The hub starts with them.
+  repeated string roles = 6;
   reserved 4, 5;
   reserved "leader_id", "last_index";
 }

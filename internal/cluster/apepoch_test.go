@@ -105,7 +105,7 @@ func TestAPClusterEpoch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := a.st.JoinTokens().Create(ctx, tok.Secret, time.Now().Add(time.Hour)); err != nil {
+	if err := a.st.JoinTokens().Create(ctx, tok.Secret, time.Now().Add(time.Hour), "storage,master"); err != nil {
 		t.Fatal(err)
 	}
 	key, err := pki.NewKey()
@@ -119,6 +119,7 @@ func TestAPClusterEpoch(t *testing.T) {
 	js := NewAPJoinServer(a.node, a.st, a.ca, policy.NewWithConfig(a.st.Audit(), a.st.Approvals(), policy.Config{}), testLogger(t))
 	resp, err := js.Join(ctx, connect.NewRequest(&clusterv1.JoinRequest{
 		TokenSecret: tok.Secret, NodeId: "d", Csr: csr, SchemaVersion: store.SchemaVersion(),
+		AllowedRoles: HubRoles.Strings(),
 	}))
 	if err != nil {
 		t.Fatal(err)

@@ -220,18 +220,20 @@ func TestClusterCARefusals(t *testing.T) {
 func TestClusterJoinToken(t *testing.T) {
 	f, _ := clusterCAFixture(t, policy.Config{})
 	c := sessionCookie(t, f.login(t, testPassword))
-	for _, body := range []string{`{"ttl":"0s"}`, `{"ttl":"25h"}`, `{"ttl":"soon"}`, `{"allow_roles":["node"]}`, `{"extra":1}`} {
+	for _, body := range []string{`{"ttl":"0s"}`, `{"ttl":"25h"}`, `{"ttl":"soon"}`, `{"roles":["node"]}`, `{"allow_roles":["storage"]}`, `{"extra":1}`} {
 		if resp := f.do(t, http.MethodPost, "/api/v1/cluster/tokens", body, c); resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("create %s = %d, want 400", body, resp.StatusCode)
 		}
 	}
+	// The token grants the roles picked, stored with it; the command sets
+	// the new host's --allow-roles to them too.
 	for _, tc := range []struct {
-		body, flag string
+		body, flag, roles string
 	}{
-		{`{"ttl":"1h"}`, ""},
-		{`{"allow_roles":["storage","master"]}`, ""},
-		{`{"allow_roles":["storage"]}`, " --allow-roles storage"},
-		{`{"allow_roles":["master"]}`, " --allow-roles master"},
+		{`{"ttl":"1h"}`, "", "storage,master"},
+		{`{"roles":["storage","master"]}`, "", "storage,master"},
+		{`{"roles":["storage"]}`, " --allow-roles storage", "storage"},
+		{`{"roles":["master"]}`, " --allow-roles master", "master"},
 	} {
 		resp := f.do(t, http.MethodPost, "/api/v1/cluster/tokens", tc.body, c)
 		if resp.StatusCode != http.StatusCreated {
@@ -255,16 +257,24 @@ func TestClusterJoinToken(t *testing.T) {
 			}
 		}
 		// Single use, stored by its hash.
-		if err := f.st.JoinTokens().Consume(t.Context(), tok.Secret, time.Now()); err != nil {
-			t.Fatalf("consume: %v", err)
+		roles, err := f.st.JoinTokens().Consume(t.Context(), tok.Secret, time.Now())
+		if err != nil || roles != tc.roles {
+			t.Fatalf("consume = %q, %v; want roles %q", roles, err, tc.roles)
 		}
-		if err := f.st.JoinTokens().Consume(t.Context(), tok.Secret, time.Now()); !errors.Is(err, store.ErrTokenUsed) {
+		if _, err := f.st.JoinTokens().Consume(t.Context(), tok.Secret, time.Now()); !errors.Is(err, store.ErrTokenUsed) {
 			t.Fatalf("second consume: %v, want ErrTokenUsed", err)
 		}
 	}
 	entries := auditOf(t, f, policy.ClusterTokenCreate)
 	if len(entries) == 0 || entries[0].ActorKind != policy.ActorWeb || !strings.Contains(string(entries[0].Detail), `"ttl"`) {
 		t.Fatalf("audit = %+v, want the creations by web with their TTL", entries)
+	}
+	var storageOnly bool
+	for _, e := range entries {
+		storageOnly = storageOnly || strings.Contains(string(e.Detail), `"roles":"storage"`)
+	}
+	if !storageOnly {
+		t.Fatalf("audit = %+v, want the storage-only token's roles", entries)
 	}
 
 	// Denied by policy: no token.

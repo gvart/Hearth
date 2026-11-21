@@ -38,8 +38,8 @@ type JoinRequest struct {
 	// schema_version is the newest store schema version the joining binary
 	// supports. It must be at least the schema the cluster has written.
 	SchemaVersion int64 `protobuf:"varint,5,opt,name=schema_version,json=schemaVersion,proto3" json:"schema_version,omitempty"`
-	// allowed_roles are the roles the joining host allows (--allow-roles):
-	// only a host that allows "master" is sent the CA key.
+	// allowed_roles are the roles the joining host allows (--allow-roles).
+	// The hub is granted at most these and the join token's roles.
 	AllowedRoles  []string `protobuf:"bytes,7,rep,name=allowed_roles,json=allowedRoles,proto3" json:"allowed_roles,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -124,9 +124,12 @@ type JoinResponse struct {
 	Certificate []byte `protobuf:"bytes,1,opt,name=certificate,proto3" json:"certificate,omitempty"`
 	// ca_certificate is the DER-encoded hub CA certificate.
 	CaCertificate []byte `protobuf:"bytes,2,opt,name=ca_certificate,json=caCertificate,proto3" json:"ca_certificate,omitempty"`
-	// ca_key is the CA private key, PKCS#8 DER, sent only to a hub that
-	// allows the master role. Store it at 0600; never log it.
-	CaKey         []byte `protobuf:"bytes,3,opt,name=ca_key,json=caKey,proto3" json:"ca_key,omitempty"`
+	// ca_key is the CA private key, PKCS#8 DER, sent only to a hub granted
+	// the master role. Store it at 0600; never log it.
+	CaKey []byte `protobuf:"bytes,3,opt,name=ca_key,json=caKey,proto3" json:"ca_key,omitempty"`
+	// roles are the roles the hub is granted: those both its allowed_roles
+	// and the join token allow. The hub starts with them.
+	Roles         []string `protobuf:"bytes,6,rep,name=roles,proto3" json:"roles,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -178,6 +181,13 @@ func (x *JoinResponse) GetCaCertificate() []byte {
 func (x *JoinResponse) GetCaKey() []byte {
 	if x != nil {
 		return x.CaKey
+	}
+	return nil
+}
+
+func (x *JoinResponse) GetRoles() []string {
+	if x != nil {
+		return x.Roles
 	}
 	return nil
 }
@@ -317,11 +327,12 @@ const file_hearth_cluster_v1_cluster_proto_rawDesc = "" +
 	"\aaddress\x18\x03 \x01(\tR\aaddress\x12\x10\n" +
 	"\x03csr\x18\x04 \x01(\fR\x03csr\x12%\n" +
 	"\x0eschema_version\x18\x05 \x01(\x03R\rschemaVersion\x12#\n" +
-	"\rallowed_roles\x18\a \x03(\tR\fallowedRolesJ\x04\b\x06\x10\aR\x0ecluster_epochs\"\x91\x01\n" +
+	"\rallowed_roles\x18\a \x03(\tR\fallowedRolesJ\x04\b\x06\x10\aR\x0ecluster_epochs\"\xa7\x01\n" +
 	"\fJoinResponse\x12 \n" +
 	"\vcertificate\x18\x01 \x01(\fR\vcertificate\x12%\n" +
 	"\x0eca_certificate\x18\x02 \x01(\fR\rcaCertificate\x12\x15\n" +
-	"\x06ca_key\x18\x03 \x01(\fR\x05caKeyJ\x04\b\x04\x10\x05J\x04\b\x05\x10\x06R\tleader_idR\n" +
+	"\x06ca_key\x18\x03 \x01(\fR\x05caKey\x12\x14\n" +
+	"\x05roles\x18\x06 \x03(\tR\x05rolesJ\x04\b\x04\x10\x05J\x04\b\x05\x10\x06R\tleader_idR\n" +
 	"last_index\"|\n" +
 	"\x11FetchCAKeyRequest\x12,\n" +
 	"\x12new_ca_fingerprint\x18\x01 \x01(\tR\x10newCaFingerprint\x12\x10\n" +

@@ -3,6 +3,7 @@
 package cluster
 
 import (
+	"cmp"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -721,16 +722,26 @@ func (s *APJoinServer) Join(ctx context.Context, req *connect.Request[clusterv1.
 	if err := ValidNodeID(msg.GetNodeId()); err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
+	allowed, err := ParseRoles(strings.Join(msg.GetAllowedRoles(), ","))
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("allowed_roles: %w", err))
+	}
 	var (
 		cert    *x509.Certificate
+		granted RoleSet
 		refused string
 	)
-	err := s.policy.Do(ctx, policy.Request{
+	// The outcome entry shows the token's roles and the roles granted: fn
+	// adds them.
+	detail := map[string]any{
+		"address": msg.GetAddress(), "schema_version": msg.GetSchemaVersion(), "allowed_roles": allowed.String(),
+	}
+	err = s.policy.Do(ctx, policy.Request{
 		ActorKind: policy.ActorJoinToken,
 		ActorID:   tokenActorID(msg.GetTokenSecret()),
 		Action:    policy.ClusterJoin,
 		Target:    msg.GetNodeId(),
-		Detail:    map[string]any{"address": msg.GetAddress(), "schema_version": msg.GetSchemaVersion()},
+		Detail:    detail,
 	}, func(ctx context.Context) error {
 		// A joiner needs the schema the cluster has written, not this
 		// master's: during a rolling upgrade an older binary still joins.
@@ -755,8 +766,16 @@ func (s *APJoinServer) Join(ctx context.Context, req *connect.Request[clusterv1.
 		if err != nil {
 			return fmt.Errorf("%w: %w", errBadCSR, err)
 		}
-		if err := s.store.JoinTokens().Consume(ctx, msg.GetTokenSecret(), now); err != nil {
+		tokenRoles, err := s.store.JoinTokens().Consume(ctx, msg.GetTokenSecret(), now)
+		if err != nil {
 			return err
+		}
+		granted = joinGrant(tokenRoles, allowed)
+		detail["token_roles"], detail["granted_roles"] = cmp.Or(tokenRoles, "none"), granted.String()
+		if !granted.Gossips() {
+			refused = fmt.Sprintf("the join token grants %s and this host allows %s (--allow-roles): "+
+				"no role left to join with", cmp.Or(tokenRoles, "none"), allowed)
+			return fmt.Errorf("%w: token grants %s, host allows %s", errNoRole, cmp.Or(tokenRoles, "none"), allowed)
 		}
 		if err := s.store.Hubs().Record(ctx, store.HubCert{
 			Serial: pki.SerialString(c), NodeID: msg.GetNodeId(),
@@ -773,18 +792,31 @@ func (s *APJoinServer) Join(ctx context.Context, req *connect.Request[clusterv1.
 		}
 		return nil, s.toConnectError(ctx, err)
 	}
-	// The CA key goes to masters only (docs/design/ap-cluster.md §9): a
-	// host that does not allow the master role, or does not say, gets none.
+	// The CA key goes to masters only (docs/design/ap-cluster.md §9): a hub
+	// is granted the master role only when both the join token and its host
+	// allow it.
 	var keyDER []byte
-	if slices.Contains(msg.GetAllowedRoles(), string(RoleMaster)) {
+	if granted.Has(RoleMaster) {
 		if keyDER, err = s.ca.KeyDER(); err != nil {
 			return nil, connect.NewError(connect.CodeInternal, errors.New("join failed"))
 		}
 	}
-	s.log.InfoContext(ctx, "hub joined the AP cluster", "joined_id", msg.GetNodeId(), "ca_key_sent", keyDER != nil)
+	s.log.InfoContext(ctx, "hub joined the AP cluster", "joined_id", msg.GetNodeId(), "roles", granted.String(),
+		"ca_key_sent", keyDER != nil)
 	return connect.NewResponse(&clusterv1.JoinResponse{
-		Certificate: cert.Raw, CaCertificate: s.ca.Cert().Raw, CaKey: keyDER,
+		Certificate: cert.Raw, CaCertificate: s.ca.Cert().Raw, CaKey: keyDER, Roles: granted.Strings(),
 	}), nil
+}
+
+// joinGrant is the roles a joining hub is granted: those of tokenRoles, the
+// join token's (comma-separated), that its host allows, storage and master
+// only. A token whose roles do not parse grants none.
+func joinGrant(tokenRoles string, allowed RoleSet) RoleSet {
+	tok, err := ParseRoles(tokenRoles)
+	if err != nil {
+		return 0
+	}
+	return tok & allowed & HubRoles
 }
 
 func (s *APJoinServer) toConnectError(ctx context.Context, err error) error {

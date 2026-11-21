@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"connectrpc.com/connect"
 
@@ -29,6 +30,7 @@ var (
 	errSchema    = errors.New("schema mismatch")
 	errNodeTaken = errors.New("node ID already in the cluster")
 	errBadCSR    = errors.New("invalid CSR")
+	errNoRole    = errors.New("no role to join with")
 )
 
 // tokenActorID is a short, non-reversible handle for a token in the audit log.
@@ -54,15 +56,16 @@ type JoinParams struct {
 	// zero means store.SchemaVersion(). Tests set it to stand in for
 	// another binary.
 	MaxSchema int64
-	// AllowedRoles are this host's --allow-roles, sent to an AP cluster:
-	// only a host that allows master receives the CA key.
+	// AllowedRoles are this host's --allow-roles. The hub is granted those
+	// the join token allows too, and receives the CA key only when granted
+	// master.
 	AllowedRoles RoleSet
 }
 
 // Join admits this hub into a cluster: it pins the cluster's CA by the
-// token's fingerprint, sends a CSR and receives a node certificate and the
-// CA, key included for a host that allows the master role, which it writes
-// into DataDir (ca.key at 0600).
+// token's fingerprint, sends a CSR and receives a node certificate, its
+// roles and the CA, key included for a hub granted the master role, which
+// it writes into DataDir (ca.key at 0600).
 func Join(ctx context.Context, p JoinParams) error {
 	tok, err := pki.ParseJoinToken(p.Token)
 	if err != nil {
@@ -105,9 +108,14 @@ func Join(ctx context.Context, p JoinParams) error {
 	if err != nil {
 		return fmt.Errorf("join cluster at %s: %w", p.URL, err)
 	}
-	if len(resp.Msg.GetCaKey()) == 0 && p.AllowedRoles.Has(RoleMaster) {
-		// Only a master holds the CA key; one allowing the master role gets it.
-		return errors.New("join: the cluster sent no CA key, though this host allows the master role")
+	granted, err := ParseRoles(strings.Join(resp.Msg.GetRoles(), ","))
+	if err != nil || !granted.Gossips() {
+		return errors.New("join: the cluster granted this hub no storage or master role")
+	}
+	master := granted.Has(RoleMaster)
+	if len(resp.Msg.GetCaKey()) == 0 && master {
+		// Only a master holds the CA key; one granted the master role gets it.
+		return errors.New("join: the cluster sent no CA key, though it granted this hub the master role")
 	}
 	cert, err := x509.ParseCertificate(resp.Msg.GetCertificate())
 	if err != nil {
@@ -125,7 +133,11 @@ func Join(ctx context.Context, p JoinParams) error {
 			return fmt.Errorf("join: %w", err)
 		}
 	}
-	if len(resp.Msg.GetCaKey()) == 0 {
+	// The hub starts with the roles it was granted, within its --allow-roles.
+	if err := saveLocalRoles(p.DataDir, LocalRoles{Roles: granted & p.AllowedRoles}); err != nil {
+		return fmt.Errorf("join: %w", err)
+	}
+	if !master {
 		// A member that is no master holds the CA certificate only.
 		if err := pki.InstallCACert(p.DataDir, resp.Msg.GetCaCertificate(), tok.CAFingerprint); err != nil {
 			return fmt.Errorf("join: %w", err)

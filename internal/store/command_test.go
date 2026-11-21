@@ -284,12 +284,21 @@ func runScenario(t *testing.T, s *Store) {
 
 	// Cluster join tokens: one used, one left to expire. An enrollment token
 	// is not a join token.
-	must(s.JoinTokens().Create(ctx, "join-1", at(10*time.Minute)))
-	must(s.JoinTokens().Create(ctx, "join-2", at(time.Minute)))
-	must(s.JoinTokens().Consume(ctx, "join-1", at(time.Minute)))
-	wantErr(s.JoinTokens().Consume(ctx, "join-1", at(2*time.Minute)), ErrTokenUsed)
-	wantErr(s.JoinTokens().Consume(ctx, "join-2", at(5*time.Minute)), ErrTokenExpired)
-	wantErr(s.JoinTokens().Consume(ctx, "tok-1", at(time.Minute)), ErrNotFound)
+	// The roles a token grants come back when it is spent.
+	must(s.JoinTokens().Create(ctx, "join-1", at(10*time.Minute), "storage"))
+	must(s.JoinTokens().Create(ctx, "join-2", at(time.Minute), "storage,master"))
+	if roles, err := s.JoinTokens().Consume(ctx, "join-1", at(time.Minute)); err != nil || roles != "storage" {
+		t.Fatalf("consume join-1 = %q, %v; want storage", roles, err)
+	}
+	_, err = s.JoinTokens().Consume(ctx, "join-1", at(2*time.Minute))
+	wantErr(err, ErrTokenUsed)
+	_, err = s.JoinTokens().Consume(ctx, "join-2", at(5*time.Minute))
+	wantErr(err, ErrTokenExpired)
+	_, err = s.JoinTokens().Consume(ctx, "tok-1", at(time.Minute))
+	wantErr(err, ErrNotFound)
+	if err := s.JoinTokens().Create(ctx, "join-3", at(10*time.Minute), ""); err == nil {
+		t.Fatal("a join token without roles was created")
+	}
 
 	// Enrollment of two devices.
 	for _, id := range []string{"pi", "nas"} {
@@ -637,9 +646,9 @@ func TestApplierSeesEveryWrite(t *testing.T) {
 		"Pw":     s.Admin().SetPasswordHash(ctx, "h"),
 		"Sess":   s.Admin().CreateSession(ctx, "s", now, now),
 		"Del":    s.Admin().DeleteSession(ctx, "s"),
-		"Join":   s.JoinTokens().Create(ctx, "j", now),
-		"UseJn":  s.JoinTokens().Consume(ctx, "j", now),
+		"Join":   s.JoinTokens().Create(ctx, "j", now, "storage"),
 	}
+	_, writes["UseJn"] = s.JoinTokens().Consume(ctx, "j", now)
 	_, writes["Consume"] = s.Tokens().Consume(ctx, "tok", now)
 	_, writes["Revoke"] = s.Certs().RevokeDevice(ctx, "pi", now)
 	_, writes["Audit"] = s.Audit().Append(ctx, AuditEntry{ActorKind: "a", ActorID: "b", Action: "c", Decision: "d"})

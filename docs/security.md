@@ -37,7 +37,8 @@ between Hearth processes is mutually authenticated TLS.
 
 The hub CA is created on the first start in the hub's data dir (`ca.crt`, `ca.key`, mode 0600). Only
 masters of a cluster hold it. Its private key never leaves a master's data dir, except to a new hub
-joining a cluster as a master, over the pinned, mutually authenticated join channel; to a member being
+joining a cluster as a master (with a join token that grants the master role, on a host that allows
+it), over the pinned, mutually authenticated join channel; to a member being
 promoted to master, and to the masters during a hub CA rotation, over the pinned, mutually
 authenticated `FetchCAKey` channel, policy-checked and audited, and during a rotation only to a master
 presenting exactly the node certificate pinned when the rotation started and proving it holds the
