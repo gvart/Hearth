@@ -74,7 +74,7 @@ func classify(services []string, vendor string, host hostname, gateway bool) Kin
 		}
 	}
 	for _, v := range vendorKinds {
-		if slices.ContainsFunc(v.prefixes, func(p string) bool { return strings.HasPrefix(vendor, p) }) {
+		if slices.ContainsFunc(v.prefixes, func(p string) bool { return vendorIs(vendor, p) }) {
 			return v.kind
 		}
 	}
@@ -153,7 +153,7 @@ var hostnameHints = []hostnameHint{
 }
 
 // vendorKinds are vendors that make one sort of thing, as lower-case
-// prefixes of the vendor names in the OUI table (which are cut at 24
+// prefixes, in whole words, of the vendor names in the OUI table (cut at 24
 // characters). Apple, Samsung, Google, Amazon's Ring, HP, TP-Link and the
 // module makers (Hon Hai, AzureWave, Murata) make several, and name none.
 var vendorKinds = []struct {
@@ -161,46 +161,52 @@ var vendorKinds = []struct {
 	prefixes []string
 }{
 	{KindPrinter, []string{"brother", "seiko epson", "canon", "lexmark", "xerox", "ricoh", "konica"}},
-	{KindNAS, []string{"synology", "qnap", "asustor", "terramaster"}},
+	{KindNAS, []string{"synology", "qnap"}},
 	{KindRouter, []string{
-		"arcadyan", "sagemcom", "avm", "fritz!", "ubiquiti", "routerboard", "mikrotik", "zyxel", "draytek", "eero",
-		"cisco", "linksys", "juniper", "fortinet", "aruba", "technicolor", "netgear", "asus network",
+		"arcadyan", "sagemcom", "avm", "fritz!", "ubiquiti", "routerboard", "zyxel", "draytek", "eero",
+		"cisco", "linksys", "juniper", "fortinet", "technicolor", "netgear", "asus network",
 	}},
 	{KindPhone, []string{
 		"oneplus", "fairphone", "guangdong oppo", "vivo mobile", "honor device", "htc", "beijing xiaomi mobile",
-		"motorola mobility", "huawei device", "lenovo mobile", "hisense mobile",
+		"motorola mobility", "huawei device", "lenovo mobile", "hisense mobile", "qingdao hisense mobile",
 	}},
 	{KindMedia, []string{
-		"sonos", "roku", "amazon", "sony interactive", "sony computer", "nintendo", "bose", "vizio", "hisense",
+		"sonos", "roku", "amazon", "sony interactive", "sony computer", "nintendo", "bose", "vizio",
+		"hisense electric", "hisense visual",
 		"qingdao hisense", "qingdao intelligent",
 	}},
 	{KindIoT, []string{
-		"espressif", "tuya", "shelly", "allterco", "signify", "philips lighting", "ikea", "itead", "ecobee",
+		"espressif", "tuya", "shelly", "signify", "philips lighting", "ikea", "ecobee",
 		"nest labs", "wyze", "tado", "lumi united",
 	}},
 	{KindComputer, []string{
-		"raspberry pi", "intel", "dell", "lenovo", "lcfc", "micro-star", "gigabyte", "asrock", "asustek computer",
+		"raspberry pi", "intel", "dell", "lenovo", "lcfc", "micro-star", "asrock", "asustek computer",
 		"framework computer", "elitegroup", "super micro", "vmware", "xensource", "proxmox", "parallels",
 		"pegatron", "quanta computer", "wistron",
 	}},
 }
 
-// hostname is a hostname in lower case, without a .local, .lan, .home or
-// .internal suffix, and its words: "Vladlens-iPhone.local" is
-// vladlens-iphone, with the words vladlens and iphone.
+// hostname is the host part of a hostname (its first label), in lower case,
+// and its words: "Vladlens-iPhone.local" is vladlens-iphone, with the words
+// vladlens and iphone. The domain says nothing of the host: every host on a
+// FRITZ!Box LAN is named something.fritz.box.
 type hostname struct {
 	name  string
 	words []string
 }
 
 func parseHostname(s string) hostname {
-	h := strings.ToLower(strings.TrimSuffix(s, "."))
-	for _, suffix := range []string{".local", ".lan", ".home", ".internal"} {
-		h = strings.TrimSuffix(h, suffix)
-	}
+	h, _, _ := strings.Cut(strings.ToLower(s), ".")
 	return hostname{name: h, words: strings.FieldsFunc(h, func(r rune) bool {
 		return (r < 'a' || r > 'z') && (r < '0' || r > '9')
 	})}
+}
+
+// vendorIs reports whether vendor (lower case) is prefix as whole words:
+// "intel corporate" is intel, "intelbras" and "intelligent" are not.
+func vendorIs(vendor, prefix string) bool {
+	rest, ok := strings.CutPrefix(vendor, prefix)
+	return ok && (rest == "" || rest[0] < 'a' || rest[0] > 'z')
 }
 
 func hasAny(services, of []string) bool {

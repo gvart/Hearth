@@ -66,13 +66,15 @@ on, have a device that is on it [scan it](#scan-from-a-device).
    TVs) answer with their `.local` name, and with the services they offer (`_ipp._tcp`,
    `_airplay._tcp`, `_ssh._tcp`, ...), which tell what [kind](#kinds) of host each is. The hub needs
    neither port 5353 nor any privilege, and does not answer mDNS itself.
-6. **Gateway.** The hub reads its own IPv4 default gateways from the routing table
-   (`/proc/net/route` on Linux, the routing sysctl on macOS; none on other platforms) and flags the
-   host at that address.
 5. **Names, from reverse DNS.** Hosts mDNS did not name are looked up with reverse DNS, only against
    a nameserver in `/etc/resolv.conf` with a private or link-local address (usually your router or
    Pi-hole). If the hub uses only public or loopback resolvers, this step is skipped, so no lookup
    leaves the LAN.
+6. **Gateway.** The hub reads its own IPv4 default gateways from the routing table
+   (`/proc/net/route` on Linux, the routing sysctl on macOS; none on other platforms) and flags the
+   host with that address's MAC. A later scan that flags another host in the same subnet unflags
+   the old one; a scan that flags none (a device's, or one that could not read the table) changes
+   no flag.
 
 Hosts are stored by MAC address. A host that moves to another IP stays one entry with the new IP;
 a name, vendor or set of services a later scan cannot find is kept from earlier scans. A host whose
@@ -100,16 +102,18 @@ The first rule that matches decides:
 1. **The gateway** is a `router`.
 2. **A print service** (`_ipp._tcp`, `_ipps._tcp`, `_printer._tcp`, `_pdl-datastream._tcp`,
    `_uscan._tcp`) makes a `printer`.
-3. **A telling hostname**, tried in this order: `printer` (`printer`, `laserjet`), `nas`
-   (`synology`, `truenas`, `nas`), `media` (`appletv`, `chromecast`, `playstation`, `nintendo`,
-   `ps4`, `tv`), `router` (`router`, `openwrt`, `fritz`, `unifi`), `phone` (`iphone`, `ipad`,
-   `android`, `pixel`, `galaxy`), `computer` (`macbook`, `imac`, `thinkpad`, `desktop`,
-   `raspberrypi`, `pc`, `server`), `iot` (`esphome`, `shelly`, `tasmota`, `cam`, `plug`). Short
-   words count only as a whole word of the name, so `pixelbook` is not a phone.
-4. **A vendor that makes one sort of thing**: Brother, Epson or Canon a `printer`; Synology or QNAP
-   a `nas`; Ubiquiti, MikroTik, AVM, Arcadyan or Netgear a `router`; OnePlus or Fairphone a `phone`;
-   Sonos, Roku, Amazon or Nintendo `media`; Espressif, Tuya, Shelly or Signify (Hue) `iot`;
-   Raspberry Pi, Intel, Dell, Lenovo, VMware or Proxmox a `computer`.
+3. **A telling hostname**, its host part only (`anna-7` of `anna-7.fritz.box`), tried in this
+   order: `printer` (`printer`, `laserjet`), `nas` (`synology`, `truenas`, `nas`), `media`
+   (`appletv`, `chromecast`, `playstation`, `nintendo`, `ps4`, `tv`), `router` (`router`,
+   `openwrt`, `fritz`, `unifi`), `phone` (`iphone`, `ipad`, `android`, `pixel`, `galaxy`),
+   `computer` (`macbook`, `imac`, `thinkpad`, `desktop`, `raspberrypi`, `pc`, `server`), `iot`
+   (`esphome`, `shelly`, `tasmota`, `cam`, `plug`). Short words count only as a whole word of the
+   name, so `pixelbook` is not a phone.
+4. **A vendor that makes one sort of thing**, in whole words (Intel, not Intelbras): Brother, Epson
+   or Canon a `printer`; Synology or QNAP a `nas`; Ubiquiti, MikroTik (Routerboard), AVM, Arcadyan
+   or Netgear a `router`; OnePlus or Fairphone a `phone`; Sonos, Roku, Amazon or Nintendo `media`;
+   Espressif, Tuya, Shelly or Signify (Hue) `iot`; Raspberry Pi, Intel, Dell, Lenovo, VMware or
+   Proxmox a `computer`.
 5. **The services**: file shares (`_smb._tcp`, `_afpovertcp._tcp`, `_adisk._tcp`, `_nfs._tcp`)
    without a desktop's `_workstation._tcp` make a `nas`; a shell (`_ssh._tcp`, `_sftp-ssh._tcp`) or
    `_workstation._tcp` a `computer`; Cast, AirPlay, Spotify Connect or a sleep proxy `media`;

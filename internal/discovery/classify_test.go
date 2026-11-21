@@ -22,6 +22,7 @@ func TestClassify(t *testing.T) {
 		{"the gateway wins over anything", in{[]string{"_ipp._tcp", "_ssh._tcp"}, "Raspberry Pi", "printer", true}, KindRouter, true},
 		{"router vendor", in{nil, "Ubiquiti", "", false}, KindRouter, false},
 		{"router vendor, any case", in{nil, "FRITZ!", "", false}, KindRouter, false},
+		{"router by its own name", in{nil, "", "fritz.box", false}, KindRouter, false},
 		{"switch by name", in{nil, "TP-LINK", "TL-SG108E.lan", false}, KindRouter, false},
 		{"openwrt", in{[]string{"_ssh._tcp"}, "", "OpenWrt.lan", false}, KindRouter, true},
 
@@ -66,6 +67,7 @@ func TestClassify(t *testing.T) {
 		{"raspberry pi", in{nil, "Raspberry Pi", "pi.hole", false}, KindComputer, true},
 		{"laptop oem", in{nil, "LCFC", "parleyroom.k8s.lan", false}, KindComputer, true},
 		{"virtual machine", in{nil, "Proxmox Server", "", false}, KindComputer, true},
+		{"intel, more words", in{nil, "Intel Corporate", "", false}, KindComputer, true},
 		{"pc by word", in{nil, "", "gaming-pc", false}, KindComputer, true},
 		{"a word inside another word does not count", in{nil, "", "pixelbook", false}, KindUnknown, false},
 
@@ -78,6 +80,9 @@ func TestClassify(t *testing.T) {
 
 		// unknown
 		{"nothing", in{nil, "", "", false}, KindUnknown, false},
+		{"the domain says nothing of the host", in{nil, "", "anna-7.fritz.box", false}, KindUnknown, false},
+		{"a vendor matches in whole words", in{nil, "Intelbras", "", false}, KindUnknown, false},
+		{"sonosite is no sonos", in{nil, "SonoSite", "", false}, KindUnknown, false},
 		{"apple says nothing alone", in{nil, "Apple", "", false}, KindUnknown, false},
 		{"a randomized mac with a quiet service", in{[]string{"_asquic._udp"}, "", "Anechka.local", false}, KindUnknown, false},
 		{"http alone says nothing", in{[]string{"_http._tcp"}, "TP-LINK", "", false}, KindUnknown, false},

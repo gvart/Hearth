@@ -62,9 +62,8 @@ type mdnsHost struct {
 
 // mdnsNames asks, on each of ifaces, for the names and services of ips, and
 // returns what it heard of each of them by address. Each interface gets a
-// socket of its own, all at once: on one socket switched between interfaces,
-// macOS sends every query from the last interface's address, so the answers
-// to the others go astray.
+// socket of its own, all at once: on one socket switched between interfaces
+// (a Mac's en0, then a VM bridge), every answer was lost.
 func mdnsNames(ctx context.Context, ifaces []net.Interface, ips []netip.Addr) (map[netip.Addr]mdnsHost, error) {
 	msgs, err := mdnsQueries(ips)
 	if err != nil {

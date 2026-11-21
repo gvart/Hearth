@@ -348,7 +348,8 @@ func fakeScanner(t *testing.T, st *store.Store, pol Policy, ev Events, neigh *[]
 		}
 		return out, nil
 	}
-	s.gateways = func() ([]netip.Addr, error) { return []netip.Addr{netip.MustParseAddr("192.168.2.1")}, nil }
+	// The gateway is the router at its alias: flagged by MAC, at its lowest address.
+	s.gateways = func() ([]netip.Addr, error) { return []netip.Addr{netip.MustParseAddr("192.168.2.2")}, nil }
 	s.rdns = func(_ context.Context, ips []netip.Addr) map[netip.Addr]string {
 		out := map[netip.Addr]string{}
 		for _, ip := range ips {

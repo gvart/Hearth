@@ -454,6 +454,17 @@ func (s *Scanner) find(ctx context.Context, subnets []netip.Prefix, nets []local
 	// aliases) keeps the lowest.
 	slices.SortFunc(neigh, func(a, b Neighbor) int { return a.IP.Compare(b.IP) })
 	byMAC := map[string]bool{}
+	gateways, err := s.gateways()
+	if err != nil {
+		s.log.DebugContext(ctx, "default gateway", "err", err)
+	}
+	// The gateway, by MAC: the address it is kept at may be another alias.
+	gatewayMACs := map[string]bool{}
+	for _, n := range neigh {
+		if slices.Contains(gateways, n.IP) {
+			gatewayMACs[n.MAC.String()] = true
+		}
+	}
 	var found []Neighbor
 	for _, n := range neigh {
 		mac := n.MAC.String()
@@ -493,16 +504,12 @@ func (s *Scanner) find(ctx context.Context, subnets []netip.Prefix, nets []local
 	for ip, name := range s.rdns(ctx, unnamed) {
 		names[ip] = name
 	}
-	gateways, err := s.gateways()
-	if err != nil {
-		s.log.DebugContext(ctx, "default gateway", "err", err)
-	}
 
 	hosts := make([]store.NetworkHost, 0, len(found))
 	for _, n := range found {
 		h := store.NetworkHost{
 			MAC: n.MAC.String(), IP: n.IP.String(), Hostname: names[n.IP],
-			Services: heard[n.IP].Services, Gateway: slices.Contains(gateways, n.IP),
+			Services: heard[n.IP].Services, Gateway: gatewayMACs[n.MAC.String()],
 		}
 		if s.vendor != nil {
 			h.Vendor = s.vendor(n.MAC)
