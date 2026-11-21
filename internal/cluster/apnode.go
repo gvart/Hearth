@@ -310,8 +310,11 @@ func (n *APNode) Bind(ctx context.Context, st *store.Store) error {
 	mc := MembershipConfig{
 		NodeID: n.cfg.NodeID, Roles: n.local.Roles, Allowed: n.cfg.Allowed,
 		Listen: n.cfg.Listen, Listener: n.cfg.Listener, Advertise: n.cfg.Advertise,
-		Seeds:  n.seeds,
-		Schema: func(ctx context.Context) (int64, error) { return st.SchemaVersion(ctx) },
+		Seeds: n.seeds,
+		// The store's schema is fixed once it is open: gossip the one read
+		// above rather than asking the database at every refresh, where a
+		// failed read would leave the member saying none.
+		Schema: func(context.Context) (int64, error) { return supported, nil },
 		Log:    n.cfg.Log, CA: n.cfg.CA,
 		Cert:        n.cert.Load,
 		Check:       n.checkPeer,

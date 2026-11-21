@@ -88,6 +88,9 @@ func TestSchemaGateAcrossVersions(t *testing.T) {
 	if err := b.node.schema.checkSchema("a", old); err == nil {
 		t.Fatal("checkSchema accepted an older member")
 	}
+	if err := b.node.schema.checkSchema("a", 0); err == nil {
+		t.Fatal("checkSchema accepted a member that says no schema")
+	}
 }
 
 // TestHostFlagDrift: members gossip their host flags' digest, and differing

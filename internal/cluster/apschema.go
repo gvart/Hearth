@@ -137,9 +137,9 @@ func (g *schemaGate) refresh() int64 {
 var errSchemaTooOld = errors.New("its hearth is too old for the cluster")
 
 // checkSchema refuses member id, which supports schema supported, when the
-// cluster has written a newer one.
+// cluster has written a newer one; a member that says none is refused too.
 func (g *schemaGate) checkSchema(id string, supported int64) error {
-	if h := g.Written(); supported > 0 && supported < h {
+	if h := g.Written(); supported < h {
 		return fmt.Errorf("member %s supports schema %d but the cluster has written %d: upgrade its hearth: %w",
 			id, supported, h, errSchemaTooOld)
 	}
