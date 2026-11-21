@@ -15,6 +15,7 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/gvart/hearth/internal/automation"
+	"github.com/gvart/hearth/internal/hubconfig"
 	"github.com/gvart/hearth/internal/integrations/kubernetes"
 	"github.com/gvart/hearth/internal/integrations/prometheus"
 	"github.com/gvart/hearth/internal/integrations/proxmox"
@@ -138,6 +139,20 @@ type Config struct {
 	// ClusterAdmin, in an AP cluster, promotes, demotes and removes members
 	// (the cluster page of the UI); nil elsewhere.
 	ClusterAdmin ClusterAdmin
+	// ConfigSealer seals the notify document, as `hearth config import`
+	// does; with ConfigKinds it enables the web UI's editors of the store's
+	// configuration documents (policy, notification channels, runbooks,
+	// deleting an automation). Nil, on a hub whose store predates the
+	// documents, disables them.
+	ConfigSealer hubconfig.Sealer
+	// ConfigKinds are the step types automations and runbooks are validated
+	// with before a document is written, for a configuration's channels.
+	ConfigKinds func(*notify.Notifier) automation.Kinds
+	// Backup, when set, writes to output, a new file, the encrypted backup
+	// `hearth backup` writes, with passphrase: the web UI's backup download.
+	// BackupDir, the hub's data dir, holds the file until it is sent.
+	Backup    func(ctx context.Context, output, passphrase string) error
+	BackupDir string
 }
 
 // NewHandler serves EnrollService to anyone (the token is the credential) and

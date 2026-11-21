@@ -23,6 +23,7 @@ import {
   stepSpecs,
 } from '../automations/model.ts';
 import { mayEdit, savedNotice } from '../automations/session.ts';
+import { AutomationRuns, DeleteAutomationButton } from './AutomationRuns.tsx';
 
 const listRoute = '#/automations';
 
@@ -204,6 +205,7 @@ function Editor({ id, file, initial, revision: initialRevision, problems = [] }:
               </button>
             ))}
           </div>
+          {id !== undefined ? <DeleteAutomationButton id={id} disabled={busy} /> : null}
           <button type="button" className="btn" disabled={busy} onClick={runDryRun}>
             {dryRun.isPending ? 'Checking…' : 'Dry run'}
           </button>
@@ -269,6 +271,7 @@ function Editor({ id, file, initial, revision: initialRevision, problems = [] }:
           </>
         )}
       </fieldset>
+      {id !== undefined ? <AutomationRuns id={id} /> : null}
     </main>
   );
 }

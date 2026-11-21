@@ -125,9 +125,10 @@ var expected = map[Action]struct {
 }{
 	TokenCreate:               {Safe, []string{ActorAdmin, ActorWeb}, false},
 	DeviceEnroll:              {Safe, []string{ActorToken}, true},
-	DeviceRevoke:              {Dangerous, []string{ActorAdmin}, false},
-	AdminSetPassword:          {Dangerous, []string{ActorAdmin}, true},
+	DeviceRevoke:              {Dangerous, []string{ActorAdmin, ActorWeb}, false},
+	AdminSetPassword:          {Dangerous, []string{ActorAdmin, ActorWeb}, false},
 	AdminLogin:                {Safe, []string{ActorWeb}, true},
+	AdminReauth:               {Safe, []string{ActorWeb}, true},
 	ClusterTokenCreate:        {Dangerous, []string{ActorAdmin}, false},
 	ClusterJoin:               {Dangerous, []string{ActorJoinToken}, true},
 	ClusterPromote:            {Dangerous, []string{ActorHub, ActorAdmin, ActorWeb}, false},
@@ -175,8 +176,8 @@ var expected = map[Action]struct {
 	DeviceExec:                {Dangerous, []string{ActorMCP}, false},
 	AutomationPlan:            {Read, []string{ActorMCP}, false},
 	AutomationApply:           {Dangerous, []string{ActorMCP, ActorWeb}, false},
-	MCPTokenCreate:            {Dangerous, []string{ActorAdmin}, false},
-	MCPTokenRevoke:            {Safe, []string{ActorAdmin}, false},
+	MCPTokenCreate:            {Dangerous, []string{ActorAdmin, ActorWeb}, false},
+	MCPTokenRevoke:            {Safe, []string{ActorAdmin, ActorWeb}, false},
 	NetworkScan:               {Read, []string{ActorHub}, false},
 	NetworkHostMark:           {Safe, []string{ActorWeb}, false},
 	NetworkImport:             {Read, []string{ActorHub}, false},
@@ -193,10 +194,10 @@ var expected = map[Action]struct {
 	RunbookRollback:           {Safe, []string{ActorWeb}, false},
 	RunbookPassOver:           {Safe, []string{ActorWeb}, false},
 	RunbookCheck:              {Read, []string{ActorAutomation}, false},
-	HubBackup:                 {Dangerous, []string{ActorAdmin}, false},
+	HubBackup:                 {Dangerous, []string{ActorAdmin, ActorWeb}, false},
 	HubRestore:                {Dangerous, []string{ActorAdmin}, true},
 	HubScheduledBackup:        {Dangerous, []string{ActorHub}, true},
-	ConfigImport:              {Dangerous, []string{ActorAdmin}, false},
+	ConfigImport:              {Dangerous, []string{ActorAdmin, ActorWeb}, false},
 	ConfigImportFirst:         {Dangerous, []string{ActorHub}, true},
 	ConfigExport:              {Read, []string{ActorAdmin}, false},
 	TelemetrySet:              {Safe, []string{ActorWeb}, false},
@@ -220,6 +221,9 @@ var fixedFor = map[Action][]string{
 	// A Raft voter promoting itself, in the join protocol; an admin's
 	// promotion in an AP cluster is held or denied as configured.
 	ClusterPromote: {ActorHub},
+	// The hub host's set-password is the way back in, never held; the web
+	// UI's change follows the modes.
+	AdminSetPassword: {ActorAdmin},
 }
 
 func TestExpectedCoversEveryAction(t *testing.T) {

@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -76,6 +77,19 @@ func addBackupFlags(cmd *cobra.Command, o *scheduledBackupOptions) {
 			"alone; without it, a restore needs the key from a `hearth backup` file (env HEARTH_BACKUP_INCLUDE_CA)")
 	f.StringVar(&o.notify, "backup-notify", os.Getenv("HEARTH_BACKUP_NOTIFY"),
 		"notification channel to tell about a failed scheduled backup (env HEARTH_BACKUP_NOTIFY)")
+}
+
+// webBackup writes the backup `hearth backup` writes, CA key included, for
+// the web UI's download.
+func webBackup(opts hubOptions, st *store.Store, clustered bool) func(ctx context.Context, output, passphrase string) error {
+	return func(ctx context.Context, output, passphrase string) error {
+		_, err := backup.Create(ctx, backup.CreateOptions{
+			DataDir: opts.dataDir, Store: st, Output: output, Passphrase: passphrase,
+			NotifyConfig: opts.notifyConfig, AutomationsDir: opts.automationsDir, RunbooksDir: opts.runbooksDir,
+			HearthVersion: opts.version, Clustered: clustered,
+		})
+		return err
+	}
 }
 
 // fromEnv reads the environment for the flags that are not strings.

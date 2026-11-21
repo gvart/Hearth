@@ -42,6 +42,72 @@ func (a *api) automationRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /api/v1/automations/dry-run", a.auth(a.dryRunAutomation))
 	mux.Handle("GET /api/v1/automations/{id}", a.auth(a.getAutomation))
 	mux.Handle("PUT /api/v1/automations/{id}", a.auth(a.updateAutomation))
+	mux.Handle("GET /api/v1/automations/{id}/runs", a.auth(a.listAutomationRuns))
+}
+
+// AutomationRunJSON is one finished run of an automation, as `hearth
+// automation runs` lists it, with each step's status. A step's data, such as
+// a command's output, is left out.
+type AutomationRunJSON struct {
+	ID         string                  `json:"id"`
+	TriggerID  string                  `json:"trigger_id"`
+	StartedAt  time.Time               `json:"started_at"`
+	FinishedAt time.Time               `json:"finished_at"`
+	Status     string                  `json:"status"`
+	Error      string                  `json:"error,omitempty"`
+	Steps      []automation.StepResult `json:"steps"`
+}
+
+const (
+	// automationRunsListed and maxAutomationRunsListed bound a page of runs.
+	automationRunsListed    = 20
+	maxAutomationRunsListed = 100
+)
+
+// listAutomationRuns serves an automation's newest runs, newest first.
+func (a *api) listAutomationRuns(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !automation.ValidID(id) {
+		writeError(w, http.StatusBadRequest, "bad_id", "not an automation id")
+		return
+	}
+	limit := automationRunsListed
+	if q := r.URL.Query().Get("limit"); q != "" {
+		n, err := strconv.Atoi(q)
+		if err != nil || n <= 0 || n > maxAutomationRunsListed {
+			writeError(w, http.StatusBadRequest, "bad_request", "limit must be between 1 and 100")
+			return
+		}
+		limit = n
+	}
+	runs, err := a.store.AutomationRuns().List(r.Context(), id, limit)
+	if errors.Is(err, store.ErrSchemaTooOld) {
+		writeError(w, http.StatusConflict, "schema_too_old", "the hub cluster's database predates run history: run `hearth cluster migrate` first")
+		return
+	}
+	if err != nil {
+		a.writeActionError(w, r, "list the automation's runs", err)
+		return
+	}
+	out := make([]AutomationRunJSON, 0, len(runs))
+	for _, run := range runs {
+		steps := []automation.StepResult{}
+		if len(run.Steps) > 0 {
+			if err := json.Unmarshal(run.Steps, &steps); err != nil {
+				a.log.WarnContext(r.Context(), "automation run with unreadable steps", "run", run.ID, "err", err)
+			}
+		}
+		for i := range steps {
+			steps[i].Data = nil
+		}
+		out = append(out, AutomationRunJSON{
+			ID: run.ID, TriggerID: run.TriggerID, StartedAt: run.StartedAt.UTC(), FinishedAt: run.FinishedAt.UTC(),
+			Status: run.Status, Error: run.Error, Steps: steps,
+		})
+	}
+	writeJSON(w, http.StatusOK, struct {
+		Runs []AutomationRunJSON `json:"runs"`
+	}{Runs: out})
 }
 
 // AutomationJSON is one automation file in the list.

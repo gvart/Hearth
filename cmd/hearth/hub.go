@@ -565,7 +565,11 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		automationDocs = hubconfig.StoreDocs(st.ConfigDocs(), store.ConfigAutomation, automationsDir,
 			string(policy.AutomationApply), time.Now)
 		cfg.AutomationDocs = automationDocs
+		// The web UI's editors validate and seal as `hearth config import`.
+		cfg.ConfigSealer, cfg.ConfigKinds = sealers.notify, cliKinds
 	}
+	// A backup from the web UI is the one `hearth backup` writes.
+	cfg.Backup, cfg.BackupDir = webBackup(opts, st, node != nil), opts.dataDir
 	// The web editor and MCP write the same directory under one lock.
 	var automationsMu sync.Mutex
 	cfg.AutomationsLock = &automationsMu

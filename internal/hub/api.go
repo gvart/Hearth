@@ -20,6 +20,7 @@ import (
 
 	"github.com/gvart/hearth/internal/automation"
 	"github.com/gvart/hearth/internal/hub/webui"
+	"github.com/gvart/hearth/internal/hubconfig"
 	"github.com/gvart/hearth/internal/integrations/kubernetes"
 	"github.com/gvart/hearth/internal/integrations/prometheus"
 	"github.com/gvart/hearth/internal/integrations/proxmox"
@@ -97,6 +98,12 @@ func newAPI(cfg Config) *api {
 		dryRuns:       newLoginLimiter(time.Now, dryRunBurst, dryRunEvery),
 		// Only a release tag is pinned: dev builds have no release to install.
 		installVersion: releaseVersion(cfg.Version),
+		version:        cfg.Version,
+		argon:          defaultArgon,
+		configSealer:   cfg.ConfigSealer,
+		configKinds:    cfg.ConfigKinds,
+		backup:         cfg.Backup,
+		backupDir:      cfg.BackupDir,
 		telemetryOff:   cfg.TelemetryOff,
 		shellIdle:      orDefault(cfg.ShellIdleTimeout, DefaultShellIdleTimeout),
 		shellMax:       orDefault(cfg.ShellMaxDuration, DefaultShellMaxDuration),
@@ -130,6 +137,7 @@ func (a *api) routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/tls", a.tlsInfo)
 	mux.Handle("POST /api/v1/logout", a.auth(a.logout))
 	mux.Handle("GET /api/v1/session", a.auth(a.session))
+	mux.Handle("POST /api/v1/session/reauth", a.auth(a.reauth))
 	mux.Handle("GET /api/v1/devices", a.auth(a.listDevices))
 	mux.Handle("GET /api/v1/devices/{id}", a.auth(a.getDevice))
 	mux.Handle("GET /api/v1/devices/{id}/metrics", a.auth(a.deviceMetrics))
@@ -163,6 +171,9 @@ func (a *api) routes() http.Handler {
 	a.panelRoutes(mux)
 	a.guestRoutes(mux, ui)
 	a.dashboardRoutes(mux)
+	a.webAdminRoutes(mux)
+	a.configEditRoutes(mux)
+	a.backupRoutes(mux)
 	mux.Handle("/api/v1/", a.auth(func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "no such endpoint")
 	}))
@@ -257,6 +268,22 @@ type api struct {
 	agents *Agents
 	// installVersion is the --version install commands pin, or "" for none.
 	installVersion string
+	// version is the hub's build version, shown by the web UI.
+	version string
+	// reauths are the sessions that entered the password again lately.
+	reauths reauths
+	// argon is the cost of a password the web UI sets.
+	argon argonParams
+	// configSealer and configKinds are Config's: nil without the editors of
+	// configuration documents.
+	configSealer hubconfig.Sealer
+	configKinds  func(*notify.Notifier) automation.Kinds
+	// configMu makes each write of configuration documents from this hub's
+	// web UI one step: its check and its write.
+	configMu sync.Mutex
+	// backup and backupDir are Config's; nil without backup downloads.
+	backup    func(ctx context.Context, output, passphrase string) error
+	backupDir string
 	// telemetryOff is Config.TelemetryOff.
 	telemetryOff bool
 	// shellIdle and shellMax limit terminal sessions.
@@ -327,6 +354,11 @@ func deviceJSON(d store.Device) DeviceJSON {
 type SessionJSON struct {
 	User      string    `json:"user"`
 	ExpiresAt time.Time `json:"expires_at"`
+	// ReauthUntil is when the session's last entry of the password stops
+	// covering sensitive actions; absent when none is in force.
+	ReauthUntil *time.Time `json:"reauth_until,omitempty"`
+	// Version is the hub's build version.
+	Version string `json:"version"`
 }
 
 // ErrorJSON is the body of every API error.
@@ -404,6 +436,8 @@ func (a *api) login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a.log.InfoContext(ctx, "admin logged in", "remote", remoteHost(r))
+	// The password was just entered: it covers sensitive actions for a while.
+	until := a.reauths.mark(secret, now).UTC()
 	// Secure whenever the request came over TLS; over plain HTTP on the LAN
 	// it cannot be (see D1).
 	http.SetCookie(w, &http.Cookie{ //nolint:gosec // HttpOnly and SameSite=Strict are set; Secure is set over TLS
@@ -415,7 +449,7 @@ func (a *api) login(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
 	})
-	writeJSON(w, http.StatusOK, SessionJSON{User: adminUser, ExpiresAt: expires})
+	writeJSON(w, http.StatusOK, SessionJSON{User: adminUser, ExpiresAt: expires, ReauthUntil: &until, Version: a.version})
 }
 
 // checkAdminPassword checks password against the admin password, as login
@@ -446,6 +480,7 @@ func (a *api) checkAdminPassword(ctx context.Context, password string) error {
 
 func (a *api) logout(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(sessionCookieName(r)); err == nil {
+		a.reauths.forget(c.Value)
 		if err := a.store.Admin().DeleteSession(r.Context(), c.Value); errors.Is(err, store.ErrUnavailable) {
 			writeUnavailable(w)
 			return
@@ -464,7 +499,12 @@ func (a *api) logout(w http.ResponseWriter, r *http.Request) {
 
 func (a *api) session(w http.ResponseWriter, r *http.Request) {
 	exp, _ := r.Context().Value(sessionExpiryKey{}).(time.Time)
-	writeJSON(w, http.StatusOK, SessionJSON{User: adminUser, ExpiresAt: exp})
+	out := SessionJSON{User: adminUser, ExpiresAt: exp, Version: a.version}
+	if until := a.reauthUntil(r); !until.IsZero() {
+		until = until.UTC()
+		out.ReauthUntil = &until
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (a *api) listDevices(w http.ResponseWriter, r *http.Request) {

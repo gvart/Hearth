@@ -156,20 +156,31 @@ imported channels). Anything invalid refuses the whole import and writes nothing
 never half applied. Every hub then applies the documents within seconds; a stored configuration whose
 policy or notify document does not parse is not applied, and the hub keeps the one in effect.
 
+The web UI edits the same documents, with the same checks: **Settings** shows the policy to anyone
+signed in and edits it, **Notifications** adds, edits and deletes channels, and **Runbooks** creates,
+edits and deletes runbook files, each with a check (and a plan, for a runbook) before saving. An
+automation can be deleted from its editor. Each save is `config.import` by `web`; saving the policy or
+a channel also asks for the admin password again (see
+[security](security.md#sensitive-actions-ask-for-the-password-again)).
+
 | Action               | Class       | Actor                                                   |
 | -------------------- | ----------- | ------------------------------------------------------- |
-| `config.import`      | `dangerous` | `admin` (an import or a delete)                         |
+| `config.import`      | `dangerous` | `admin` (an import or a delete), `web` (an editor)      |
 | `config.export`      | `read`      | `admin`                                                 |
 | `config.import.first`| `dangerous` | `hub`, fixed: a hub's one-time import of its own files  |
 
 `config.import` follows the modes, so `classes: {dangerous: confirm}` holds every import for approval.
 An import of a policy that would deny `config.import` to `admin` is refused: nothing could change the
-policy back. A policy import is the most powerful change there is, since it decides every other action.
+policy back. A policy saved from the web editor is also refused if it would deny `config.import` to
+`web`, as the editor could then never change it back; hold dangerous web actions for approval
+(`confirm`) instead, or import that policy with `hearth config import` on a hub host. A policy import
+is the most powerful change there is, since it decides every other action.
 
 `notify.yaml` holds credentials: it is sealed (AES-256-GCM, with a key derived from the hub CA key)
 before it enters the store, so the database, the replication log and snapshots hold ciphertext only. It
 is never logged, and no API returns it; the audit entry of an import names documents, never content.
-`hearth config export` writes it in clear, mode 0600, on the hub host only.
+`hearth config export` writes it in clear, mode 0600, on the hub host only. The web editor of channels
+is write-only: it says whether each field is set, and an empty field keeps the stored value.
 
 On its first start at schema 28, a hub imports its files once: `<data-dir>/policy.yaml`,
 `notify.yaml` (or `--notify-config`), `automations/` (or `--automations-dir`) and `runbooks/` (or

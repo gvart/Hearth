@@ -196,7 +196,23 @@ func (r *Runbooks) Plan(ctx context.Context, id string) (*RunbookPlan, error) {
 	if err != nil {
 		return nil, err
 	}
-	plan := &RunbookPlan{ID: rb.ID, Description: rb.Description, Steps: make([]RunbookPlanStep, len(rb.Steps))}
+	return r.plan(ctx, rb), nil
+}
+
+// PlanDraft is Plan for a runbook file being edited, named name, that is not
+// stored yet: it is parsed with the hub's step types first.
+func (r *Runbooks) PlanDraft(ctx context.Context, name string, content []byte) (*RunbookPlan, error) {
+	rb, err := ParseRunbook(name, content, r.cfg.Kinds)
+	if err != nil {
+		return nil, err
+	}
+	return r.plan(ctx, rb), nil
+}
+
+func (r *Runbooks) plan(ctx context.Context, rb *Runbook) *RunbookPlan {
+	plan := &RunbookPlan{
+		ID: rb.ID, Description: rb.Description, Steps: make([]RunbookPlanStep, len(rb.Steps)),
+	}
 	for i := range rb.Steps {
 		s := &rb.Steps[i]
 		p := RunbookPlanStep{ID: s.ID, Type: s.Type, What: s.What(), Description: s.Description}
@@ -213,7 +229,7 @@ func (r *Runbooks) Plan(ctx context.Context, id string) (*RunbookPlan, error) {
 		}
 		plan.Steps[i] = p
 	}
-	return plan, nil
+	return plan
 }
 
 // planCheck fills in what policy would decide on the check c.

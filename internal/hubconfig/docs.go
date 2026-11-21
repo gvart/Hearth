@@ -231,6 +231,28 @@ func CheckLockout(incoming []Doc) error {
 	return nil
 }
 
+// CheckWebLockout is CheckLockout for a policy written from the web UI's
+// policy editor: it also refuses one that would deny config.import to the
+// web UI's admin, who could then never change the policy back from there.
+func CheckWebLockout(incoming []Doc) error {
+	if err := CheckLockout(incoming); err != nil {
+		return err
+	}
+	for _, d := range incomingPolicy(incoming) {
+		cfg, err := policy.ParseConfig(d.Content)
+		if err != nil {
+			return fmt.Errorf("%s: %w", d.Name, err)
+		}
+		req := policy.Request{ActorKind: policy.ActorWeb, ActorID: "web", Action: policy.ConfigImport}
+		if decision, _ := policy.NewWithConfig(nil, nil, cfg).Check(req); decision == policy.Deny {
+			return fmt.Errorf("%s: it denies config.import to the web UI, so the policy editor could never change it back: "+
+				"hold dangerous actions for approval (confirm) instead, or change it with `hearth config import` on a hub host",
+				d.Name)
+		}
+	}
+	return nil
+}
+
 func incomingPolicy(docs []Doc) []Doc {
 	var out []Doc
 	for _, d := range docs {

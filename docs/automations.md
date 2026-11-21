@@ -236,7 +236,8 @@ approvals: saving is the last moment a person sees what the file does. A mode of
 still denies it. The person who made the save may approve it, with the admin password: approving
 always asks for it again, so a session alone cannot approve its own save.
 
-An automation's id cannot be changed in the editor: create a new one and remove the old file. Files
+An automation's id cannot be changed in the editor: create a new one and delete the old one with
+**Delete** in its editor (`config.import` by `web`, like `hearth config delete automation`). Files
 that are symbolic links are not opened or saved here, and nothing of what they point to is shown. The
 built-in [new-device alerts](discovery.md#new-device-alerts) automation has no file, so it is not
 listed. In a cluster, a save is in the store, so every hub has it within seconds; the leader runs it.
@@ -260,6 +261,8 @@ The MCP `apply_automation` tool writes the same store.
   ```sh
   hearth automation runs [automation-id]
   ```
+
+  The web UI shows the recent runs of an automation, with each step's outcome, below its editor.
 
   After a rolling upgrade, runs are recorded once `hearth cluster migrate` brings the cluster to
   schema 7.

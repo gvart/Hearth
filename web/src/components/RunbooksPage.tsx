@@ -8,10 +8,29 @@ import {
   useRunbooks,
   useStartRunbook,
 } from '../api/hooks.ts';
+import { useRunbookFiles } from '../api/admin.ts';
 import { formatDateTime, relativeTime, timeLeft } from '../format.ts';
+import { RunbookEditor } from './RunbookEditor.tsx';
 import './RunbooksPage.css';
 
 const runHash = '#/runbooks/run/';
+const editHash = '#/runbooks/edit/';
+const newHash = '#/runbooks/new';
+
+/** The URL hash, kept current. */
+function useHash(): string {
+  const [hash, setHash] = useState(() => window.location.hash);
+  useEffect(() => {
+    const onHash = () => {
+      setHash(window.location.hash);
+    };
+    window.addEventListener('hashchange', onHash);
+    return () => {
+      window.removeEventListener('hashchange', onHash);
+    };
+  }, []);
+  return hash;
+}
 
 /** The current time, ticking every second while mounted. */
 function useNow(): number {
@@ -70,6 +89,14 @@ function Status({ status }: { status: string }) {
 /** The runbooks on the hub and their recent runs, or the run the URL opens. */
 export function RunbooksPage() {
   const open = useOpenRun();
+  const hash = useHash();
+  if (hash === newHash) {
+    return <RunbookEditor key="new" />;
+  }
+  if (hash.startsWith(editHash)) {
+    const file = decodeURIComponent(hash.slice(editHash.length));
+    return <RunbookEditor key={file} file={file} />;
+  }
   return open ? <RunPage key={open} id={open} /> : <ListPage />;
 }
 
@@ -78,6 +105,9 @@ function ListPage() {
   const runs = useRunbookRuns();
   const list = runbooks.data?.runbooks ?? [];
   const now = useNow();
+  // Absent on a hub that keeps its configuration in files.
+  const files = useRunbookFiles();
+  const fileOf = (id: string) => files.data?.find((f) => f.id === id)?.file;
 
   return (
     <main className="content">
@@ -86,6 +116,11 @@ function ListPage() {
           <h1>Runbooks</h1>
           <p className="muted">Step-by-step procedures with checks, prompts and rollback.</p>
         </div>
+        {files.isSuccess ? (
+          <a className="btn btn-primary runbooks-new" href={newHash}>
+            New runbook
+          </a>
+        ) : null}
       </div>
 
       {runbooks.data?.errors.map((e) => (
@@ -110,7 +145,7 @@ function ListPage() {
       ) : (
         <ul className="runbook-list">
           {list.map((r) => (
-            <RunbookCard key={r.id} runbook={r} />
+            <RunbookCard key={r.id} runbook={r} file={fileOf(r.id)} />
           ))}
         </ul>
       )}
@@ -143,7 +178,7 @@ function ListPage() {
   );
 }
 
-function RunbookCard({ runbook }: { runbook: Runbook }) {
+function RunbookCard({ runbook, file }: { runbook: Runbook; file?: string }) {
   const [planning, setPlanning] = useState(false);
   const start = useStartRunbook();
   return (
@@ -180,6 +215,11 @@ function RunbookCard({ runbook }: { runbook: Runbook }) {
         >
           Start run
         </button>
+        {file ? (
+          <a className="btn btn-ghost" href={editHash + encodeURIComponent(file)}>
+            Edit
+          </a>
+        ) : null}
       </div>
       {start.isError ? (
         <p className="error" role="alert">
