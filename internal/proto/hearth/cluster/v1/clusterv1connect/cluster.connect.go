@@ -37,77 +37,24 @@ const (
 const (
 	// ClusterServiceJoinProcedure is the fully-qualified name of the ClusterService's Join RPC.
 	ClusterServiceJoinProcedure = "/hearth.cluster.v1.ClusterService/Join"
-	// ClusterServicePromoteProcedure is the fully-qualified name of the ClusterService's Promote RPC.
-	ClusterServicePromoteProcedure = "/hearth.cluster.v1.ClusterService/Promote"
-	// ClusterServiceForwardProcedure is the fully-qualified name of the ClusterService's Forward RPC.
-	ClusterServiceForwardProcedure = "/hearth.cluster.v1.ClusterService/Forward"
-	// ClusterServiceRemoveMemberProcedure is the fully-qualified name of the ClusterService's
-	// RemoveMember RPC.
-	ClusterServiceRemoveMemberProcedure = "/hearth.cluster.v1.ClusterService/RemoveMember"
-	// ClusterServiceTransferLeadershipProcedure is the fully-qualified name of the ClusterService's
-	// TransferLeadership RPC.
-	ClusterServiceTransferLeadershipProcedure = "/hearth.cluster.v1.ClusterService/TransferLeadership"
-	// ClusterServiceSchemaInfoProcedure is the fully-qualified name of the ClusterService's SchemaInfo
-	// RPC.
-	ClusterServiceSchemaInfoProcedure = "/hearth.cluster.v1.ClusterService/SchemaInfo"
-	// ClusterServiceMigrateSchemaProcedure is the fully-qualified name of the ClusterService's
-	// MigrateSchema RPC.
-	ClusterServiceMigrateSchemaProcedure = "/hearth.cluster.v1.ClusterService/MigrateSchema"
-	// ClusterServiceConfigDigestsProcedure is the fully-qualified name of the ClusterService's
-	// ConfigDigests RPC.
-	ClusterServiceConfigDigestsProcedure = "/hearth.cluster.v1.ClusterService/ConfigDigests"
 	// ClusterServiceFetchCAKeyProcedure is the fully-qualified name of the ClusterService's FetchCAKey
 	// RPC.
 	ClusterServiceFetchCAKeyProcedure = "/hearth.cluster.v1.ClusterService/FetchCAKey"
-	// ClusterServiceCAInfoProcedure is the fully-qualified name of the ClusterService's CAInfo RPC.
-	ClusterServiceCAInfoProcedure = "/hearth.cluster.v1.ClusterService/CAInfo"
 )
 
 // ClusterServiceClient is a client for the hearth.cluster.v1.ClusterService service.
 type ClusterServiceClient interface {
-	// Join consumes a join token, signs the new hub's CSR and hands it the CA,
-	// key included, then adds it to the cluster as a non-voter. The joining hub
+	// Join consumes a join token, signs the new hub's CSR and hands it the CA
+	// (the key only to a host that allows the master role). The joining hub
 	// pins the CA with the fingerprint embedded in the token before it sends
 	// the secret.
 	Join(context.Context, *connect.Request[v1.JoinRequest]) (*connect.Response[v1.JoinResponse], error)
-	// Promote makes a joined hub a voter. The caller authenticates with the hub
-	// node certificate it received from Join.
-	Promote(context.Context, *connect.Request[v1.PromoteRequest]) (*connect.Response[v1.PromoteResponse], error)
-	// Forward proposes a store write on behalf of a follower hub, which cannot
-	// propose to the Raft log itself. The caller authenticates with its hub
-	// node certificate. The write's policy decision and audit entry were made
-	// on the hub that received the user's request; this is only replication.
-	Forward(context.Context, *connect.Request[v1.ForwardRequest]) (*connect.Response[v1.ForwardResponse], error)
-	// RemoveMember removes a hub from the Raft configuration and revokes its
-	// hub node certificates, on behalf of a member hub whose operator asked for
-	// it. Like Forward, the caller authenticates with its hub node certificate
-	// and the policy decision and audit entry were made on that hub.
-	RemoveMember(context.Context, *connect.Request[v1.RemoveMemberRequest]) (*connect.Response[v1.RemoveMemberResponse], error)
-	// TransferLeadership hands leadership to another voter, on behalf of a
-	// member hub, authenticated and decided like RemoveMember.
-	TransferLeadership(context.Context, *connect.Request[v1.TransferLeadershipRequest]) (*connect.Response[v1.TransferLeadershipResponse], error)
-	// SchemaInfo reports this hub's store schema: the version its database is
-	// at and the newest its binary supports. Every member serves it, to
-	// members presenting their hub node certificate. The leader asks every hub
-	// before it migrates the cluster's schema.
-	SchemaInfo(context.Context, *connect.Request[v1.SchemaInfoRequest]) (*connect.Response[v1.SchemaInfoResponse], error)
-	// MigrateSchema migrates the cluster's store schema on behalf of a member
-	// hub, authenticated and decided like RemoveMember. The leader proposes it
-	// to the Raft log only if every hub's binary supports the target version.
-	MigrateSchema(context.Context, *connect.Request[v1.MigrateSchemaRequest]) (*connect.Response[v1.MigrateSchemaResponse], error)
-	// ConfigDigests reports a digest of each per-hub configuration item, so
-	// hubs can notice that they disagree. Every member serves it, to members
-	// presenting their hub node certificate. Digests never leave this channel.
-	ConfigDigests(context.Context, *connect.Request[v1.ConfigDigestsRequest]) (*connect.Response[v1.ConfigDigestsResponse], error)
-	// FetchCAKey hands a member the new CA's key during a hub CA rotation and,
-	// from the leader, a node certificate of the new CA for the CSR. The
-	// caller authenticates with its hub node certificate, which must be the
-	// one the rotation pinned for it or one of the new CA. Decided by policy
-	// and audited on the serving hub, refusals included.
+	// FetchCAKey hands a member the CA key (a promotion to master), the new
+	// CA's key during a hub CA rotation, or a renewed node certificate. The
+	// caller authenticates with its hub node certificate; during a rotation it
+	// must be the one the rotation pinned for it or one of the new CA. Decided
+	// by policy and audited on the serving master, refusals included.
 	FetchCAKey(context.Context, *connect.Request[v1.FetchCAKeyRequest]) (*connect.Response[v1.FetchCAKeyResponse], error)
-	// CAInfo reports this hub's side of a hub CA rotation. Every member serves
-	// it, to members presenting their hub node certificate.
-	CAInfo(context.Context, *connect.Request[v1.CAInfoRequest]) (*connect.Response[v1.CAInfoResponse], error)
 }
 
 // NewClusterServiceClient constructs a client for the hearth.cluster.v1.ClusterService service. By
@@ -127,58 +74,10 @@ func NewClusterServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(clusterServiceMethods.ByName("Join")),
 			connect.WithClientOptions(opts...),
 		),
-		promote: connect.NewClient[v1.PromoteRequest, v1.PromoteResponse](
-			httpClient,
-			baseURL+ClusterServicePromoteProcedure,
-			connect.WithSchema(clusterServiceMethods.ByName("Promote")),
-			connect.WithClientOptions(opts...),
-		),
-		forward: connect.NewClient[v1.ForwardRequest, v1.ForwardResponse](
-			httpClient,
-			baseURL+ClusterServiceForwardProcedure,
-			connect.WithSchema(clusterServiceMethods.ByName("Forward")),
-			connect.WithClientOptions(opts...),
-		),
-		removeMember: connect.NewClient[v1.RemoveMemberRequest, v1.RemoveMemberResponse](
-			httpClient,
-			baseURL+ClusterServiceRemoveMemberProcedure,
-			connect.WithSchema(clusterServiceMethods.ByName("RemoveMember")),
-			connect.WithClientOptions(opts...),
-		),
-		transferLeadership: connect.NewClient[v1.TransferLeadershipRequest, v1.TransferLeadershipResponse](
-			httpClient,
-			baseURL+ClusterServiceTransferLeadershipProcedure,
-			connect.WithSchema(clusterServiceMethods.ByName("TransferLeadership")),
-			connect.WithClientOptions(opts...),
-		),
-		schemaInfo: connect.NewClient[v1.SchemaInfoRequest, v1.SchemaInfoResponse](
-			httpClient,
-			baseURL+ClusterServiceSchemaInfoProcedure,
-			connect.WithSchema(clusterServiceMethods.ByName("SchemaInfo")),
-			connect.WithClientOptions(opts...),
-		),
-		migrateSchema: connect.NewClient[v1.MigrateSchemaRequest, v1.MigrateSchemaResponse](
-			httpClient,
-			baseURL+ClusterServiceMigrateSchemaProcedure,
-			connect.WithSchema(clusterServiceMethods.ByName("MigrateSchema")),
-			connect.WithClientOptions(opts...),
-		),
-		configDigests: connect.NewClient[v1.ConfigDigestsRequest, v1.ConfigDigestsResponse](
-			httpClient,
-			baseURL+ClusterServiceConfigDigestsProcedure,
-			connect.WithSchema(clusterServiceMethods.ByName("ConfigDigests")),
-			connect.WithClientOptions(opts...),
-		),
 		fetchCAKey: connect.NewClient[v1.FetchCAKeyRequest, v1.FetchCAKeyResponse](
 			httpClient,
 			baseURL+ClusterServiceFetchCAKeyProcedure,
 			connect.WithSchema(clusterServiceMethods.ByName("FetchCAKey")),
-			connect.WithClientOptions(opts...),
-		),
-		cAInfo: connect.NewClient[v1.CAInfoRequest, v1.CAInfoResponse](
-			httpClient,
-			baseURL+ClusterServiceCAInfoProcedure,
-			connect.WithSchema(clusterServiceMethods.ByName("CAInfo")),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -186,16 +85,8 @@ func NewClusterServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 
 // clusterServiceClient implements ClusterServiceClient.
 type clusterServiceClient struct {
-	join               *connect.Client[v1.JoinRequest, v1.JoinResponse]
-	promote            *connect.Client[v1.PromoteRequest, v1.PromoteResponse]
-	forward            *connect.Client[v1.ForwardRequest, v1.ForwardResponse]
-	removeMember       *connect.Client[v1.RemoveMemberRequest, v1.RemoveMemberResponse]
-	transferLeadership *connect.Client[v1.TransferLeadershipRequest, v1.TransferLeadershipResponse]
-	schemaInfo         *connect.Client[v1.SchemaInfoRequest, v1.SchemaInfoResponse]
-	migrateSchema      *connect.Client[v1.MigrateSchemaRequest, v1.MigrateSchemaResponse]
-	configDigests      *connect.Client[v1.ConfigDigestsRequest, v1.ConfigDigestsResponse]
-	fetchCAKey         *connect.Client[v1.FetchCAKeyRequest, v1.FetchCAKeyResponse]
-	cAInfo             *connect.Client[v1.CAInfoRequest, v1.CAInfoResponse]
+	join       *connect.Client[v1.JoinRequest, v1.JoinResponse]
+	fetchCAKey *connect.Client[v1.FetchCAKeyRequest, v1.FetchCAKeyResponse]
 }
 
 // Join calls hearth.cluster.v1.ClusterService.Join.
@@ -203,96 +94,24 @@ func (c *clusterServiceClient) Join(ctx context.Context, req *connect.Request[v1
 	return c.join.CallUnary(ctx, req)
 }
 
-// Promote calls hearth.cluster.v1.ClusterService.Promote.
-func (c *clusterServiceClient) Promote(ctx context.Context, req *connect.Request[v1.PromoteRequest]) (*connect.Response[v1.PromoteResponse], error) {
-	return c.promote.CallUnary(ctx, req)
-}
-
-// Forward calls hearth.cluster.v1.ClusterService.Forward.
-func (c *clusterServiceClient) Forward(ctx context.Context, req *connect.Request[v1.ForwardRequest]) (*connect.Response[v1.ForwardResponse], error) {
-	return c.forward.CallUnary(ctx, req)
-}
-
-// RemoveMember calls hearth.cluster.v1.ClusterService.RemoveMember.
-func (c *clusterServiceClient) RemoveMember(ctx context.Context, req *connect.Request[v1.RemoveMemberRequest]) (*connect.Response[v1.RemoveMemberResponse], error) {
-	return c.removeMember.CallUnary(ctx, req)
-}
-
-// TransferLeadership calls hearth.cluster.v1.ClusterService.TransferLeadership.
-func (c *clusterServiceClient) TransferLeadership(ctx context.Context, req *connect.Request[v1.TransferLeadershipRequest]) (*connect.Response[v1.TransferLeadershipResponse], error) {
-	return c.transferLeadership.CallUnary(ctx, req)
-}
-
-// SchemaInfo calls hearth.cluster.v1.ClusterService.SchemaInfo.
-func (c *clusterServiceClient) SchemaInfo(ctx context.Context, req *connect.Request[v1.SchemaInfoRequest]) (*connect.Response[v1.SchemaInfoResponse], error) {
-	return c.schemaInfo.CallUnary(ctx, req)
-}
-
-// MigrateSchema calls hearth.cluster.v1.ClusterService.MigrateSchema.
-func (c *clusterServiceClient) MigrateSchema(ctx context.Context, req *connect.Request[v1.MigrateSchemaRequest]) (*connect.Response[v1.MigrateSchemaResponse], error) {
-	return c.migrateSchema.CallUnary(ctx, req)
-}
-
-// ConfigDigests calls hearth.cluster.v1.ClusterService.ConfigDigests.
-func (c *clusterServiceClient) ConfigDigests(ctx context.Context, req *connect.Request[v1.ConfigDigestsRequest]) (*connect.Response[v1.ConfigDigestsResponse], error) {
-	return c.configDigests.CallUnary(ctx, req)
-}
-
 // FetchCAKey calls hearth.cluster.v1.ClusterService.FetchCAKey.
 func (c *clusterServiceClient) FetchCAKey(ctx context.Context, req *connect.Request[v1.FetchCAKeyRequest]) (*connect.Response[v1.FetchCAKeyResponse], error) {
 	return c.fetchCAKey.CallUnary(ctx, req)
 }
 
-// CAInfo calls hearth.cluster.v1.ClusterService.CAInfo.
-func (c *clusterServiceClient) CAInfo(ctx context.Context, req *connect.Request[v1.CAInfoRequest]) (*connect.Response[v1.CAInfoResponse], error) {
-	return c.cAInfo.CallUnary(ctx, req)
-}
-
 // ClusterServiceHandler is an implementation of the hearth.cluster.v1.ClusterService service.
 type ClusterServiceHandler interface {
-	// Join consumes a join token, signs the new hub's CSR and hands it the CA,
-	// key included, then adds it to the cluster as a non-voter. The joining hub
+	// Join consumes a join token, signs the new hub's CSR and hands it the CA
+	// (the key only to a host that allows the master role). The joining hub
 	// pins the CA with the fingerprint embedded in the token before it sends
 	// the secret.
 	Join(context.Context, *connect.Request[v1.JoinRequest]) (*connect.Response[v1.JoinResponse], error)
-	// Promote makes a joined hub a voter. The caller authenticates with the hub
-	// node certificate it received from Join.
-	Promote(context.Context, *connect.Request[v1.PromoteRequest]) (*connect.Response[v1.PromoteResponse], error)
-	// Forward proposes a store write on behalf of a follower hub, which cannot
-	// propose to the Raft log itself. The caller authenticates with its hub
-	// node certificate. The write's policy decision and audit entry were made
-	// on the hub that received the user's request; this is only replication.
-	Forward(context.Context, *connect.Request[v1.ForwardRequest]) (*connect.Response[v1.ForwardResponse], error)
-	// RemoveMember removes a hub from the Raft configuration and revokes its
-	// hub node certificates, on behalf of a member hub whose operator asked for
-	// it. Like Forward, the caller authenticates with its hub node certificate
-	// and the policy decision and audit entry were made on that hub.
-	RemoveMember(context.Context, *connect.Request[v1.RemoveMemberRequest]) (*connect.Response[v1.RemoveMemberResponse], error)
-	// TransferLeadership hands leadership to another voter, on behalf of a
-	// member hub, authenticated and decided like RemoveMember.
-	TransferLeadership(context.Context, *connect.Request[v1.TransferLeadershipRequest]) (*connect.Response[v1.TransferLeadershipResponse], error)
-	// SchemaInfo reports this hub's store schema: the version its database is
-	// at and the newest its binary supports. Every member serves it, to
-	// members presenting their hub node certificate. The leader asks every hub
-	// before it migrates the cluster's schema.
-	SchemaInfo(context.Context, *connect.Request[v1.SchemaInfoRequest]) (*connect.Response[v1.SchemaInfoResponse], error)
-	// MigrateSchema migrates the cluster's store schema on behalf of a member
-	// hub, authenticated and decided like RemoveMember. The leader proposes it
-	// to the Raft log only if every hub's binary supports the target version.
-	MigrateSchema(context.Context, *connect.Request[v1.MigrateSchemaRequest]) (*connect.Response[v1.MigrateSchemaResponse], error)
-	// ConfigDigests reports a digest of each per-hub configuration item, so
-	// hubs can notice that they disagree. Every member serves it, to members
-	// presenting their hub node certificate. Digests never leave this channel.
-	ConfigDigests(context.Context, *connect.Request[v1.ConfigDigestsRequest]) (*connect.Response[v1.ConfigDigestsResponse], error)
-	// FetchCAKey hands a member the new CA's key during a hub CA rotation and,
-	// from the leader, a node certificate of the new CA for the CSR. The
-	// caller authenticates with its hub node certificate, which must be the
-	// one the rotation pinned for it or one of the new CA. Decided by policy
-	// and audited on the serving hub, refusals included.
+	// FetchCAKey hands a member the CA key (a promotion to master), the new
+	// CA's key during a hub CA rotation, or a renewed node certificate. The
+	// caller authenticates with its hub node certificate; during a rotation it
+	// must be the one the rotation pinned for it or one of the new CA. Decided
+	// by policy and audited on the serving master, refusals included.
 	FetchCAKey(context.Context, *connect.Request[v1.FetchCAKeyRequest]) (*connect.Response[v1.FetchCAKeyResponse], error)
-	// CAInfo reports this hub's side of a hub CA rotation. Every member serves
-	// it, to members presenting their hub node certificate.
-	CAInfo(context.Context, *connect.Request[v1.CAInfoRequest]) (*connect.Response[v1.CAInfoResponse], error)
 }
 
 // NewClusterServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -308,82 +127,18 @@ func NewClusterServiceHandler(svc ClusterServiceHandler, opts ...connect.Handler
 		connect.WithSchema(clusterServiceMethods.ByName("Join")),
 		connect.WithHandlerOptions(opts...),
 	)
-	clusterServicePromoteHandler := connect.NewUnaryHandler(
-		ClusterServicePromoteProcedure,
-		svc.Promote,
-		connect.WithSchema(clusterServiceMethods.ByName("Promote")),
-		connect.WithHandlerOptions(opts...),
-	)
-	clusterServiceForwardHandler := connect.NewUnaryHandler(
-		ClusterServiceForwardProcedure,
-		svc.Forward,
-		connect.WithSchema(clusterServiceMethods.ByName("Forward")),
-		connect.WithHandlerOptions(opts...),
-	)
-	clusterServiceRemoveMemberHandler := connect.NewUnaryHandler(
-		ClusterServiceRemoveMemberProcedure,
-		svc.RemoveMember,
-		connect.WithSchema(clusterServiceMethods.ByName("RemoveMember")),
-		connect.WithHandlerOptions(opts...),
-	)
-	clusterServiceTransferLeadershipHandler := connect.NewUnaryHandler(
-		ClusterServiceTransferLeadershipProcedure,
-		svc.TransferLeadership,
-		connect.WithSchema(clusterServiceMethods.ByName("TransferLeadership")),
-		connect.WithHandlerOptions(opts...),
-	)
-	clusterServiceSchemaInfoHandler := connect.NewUnaryHandler(
-		ClusterServiceSchemaInfoProcedure,
-		svc.SchemaInfo,
-		connect.WithSchema(clusterServiceMethods.ByName("SchemaInfo")),
-		connect.WithHandlerOptions(opts...),
-	)
-	clusterServiceMigrateSchemaHandler := connect.NewUnaryHandler(
-		ClusterServiceMigrateSchemaProcedure,
-		svc.MigrateSchema,
-		connect.WithSchema(clusterServiceMethods.ByName("MigrateSchema")),
-		connect.WithHandlerOptions(opts...),
-	)
-	clusterServiceConfigDigestsHandler := connect.NewUnaryHandler(
-		ClusterServiceConfigDigestsProcedure,
-		svc.ConfigDigests,
-		connect.WithSchema(clusterServiceMethods.ByName("ConfigDigests")),
-		connect.WithHandlerOptions(opts...),
-	)
 	clusterServiceFetchCAKeyHandler := connect.NewUnaryHandler(
 		ClusterServiceFetchCAKeyProcedure,
 		svc.FetchCAKey,
 		connect.WithSchema(clusterServiceMethods.ByName("FetchCAKey")),
 		connect.WithHandlerOptions(opts...),
 	)
-	clusterServiceCAInfoHandler := connect.NewUnaryHandler(
-		ClusterServiceCAInfoProcedure,
-		svc.CAInfo,
-		connect.WithSchema(clusterServiceMethods.ByName("CAInfo")),
-		connect.WithHandlerOptions(opts...),
-	)
 	return "/hearth.cluster.v1.ClusterService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ClusterServiceJoinProcedure:
 			clusterServiceJoinHandler.ServeHTTP(w, r)
-		case ClusterServicePromoteProcedure:
-			clusterServicePromoteHandler.ServeHTTP(w, r)
-		case ClusterServiceForwardProcedure:
-			clusterServiceForwardHandler.ServeHTTP(w, r)
-		case ClusterServiceRemoveMemberProcedure:
-			clusterServiceRemoveMemberHandler.ServeHTTP(w, r)
-		case ClusterServiceTransferLeadershipProcedure:
-			clusterServiceTransferLeadershipHandler.ServeHTTP(w, r)
-		case ClusterServiceSchemaInfoProcedure:
-			clusterServiceSchemaInfoHandler.ServeHTTP(w, r)
-		case ClusterServiceMigrateSchemaProcedure:
-			clusterServiceMigrateSchemaHandler.ServeHTTP(w, r)
-		case ClusterServiceConfigDigestsProcedure:
-			clusterServiceConfigDigestsHandler.ServeHTTP(w, r)
 		case ClusterServiceFetchCAKeyProcedure:
 			clusterServiceFetchCAKeyHandler.ServeHTTP(w, r)
-		case ClusterServiceCAInfoProcedure:
-			clusterServiceCAInfoHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -397,38 +152,6 @@ func (UnimplementedClusterServiceHandler) Join(context.Context, *connect.Request
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hearth.cluster.v1.ClusterService.Join is not implemented"))
 }
 
-func (UnimplementedClusterServiceHandler) Promote(context.Context, *connect.Request[v1.PromoteRequest]) (*connect.Response[v1.PromoteResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hearth.cluster.v1.ClusterService.Promote is not implemented"))
-}
-
-func (UnimplementedClusterServiceHandler) Forward(context.Context, *connect.Request[v1.ForwardRequest]) (*connect.Response[v1.ForwardResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hearth.cluster.v1.ClusterService.Forward is not implemented"))
-}
-
-func (UnimplementedClusterServiceHandler) RemoveMember(context.Context, *connect.Request[v1.RemoveMemberRequest]) (*connect.Response[v1.RemoveMemberResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hearth.cluster.v1.ClusterService.RemoveMember is not implemented"))
-}
-
-func (UnimplementedClusterServiceHandler) TransferLeadership(context.Context, *connect.Request[v1.TransferLeadershipRequest]) (*connect.Response[v1.TransferLeadershipResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hearth.cluster.v1.ClusterService.TransferLeadership is not implemented"))
-}
-
-func (UnimplementedClusterServiceHandler) SchemaInfo(context.Context, *connect.Request[v1.SchemaInfoRequest]) (*connect.Response[v1.SchemaInfoResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hearth.cluster.v1.ClusterService.SchemaInfo is not implemented"))
-}
-
-func (UnimplementedClusterServiceHandler) MigrateSchema(context.Context, *connect.Request[v1.MigrateSchemaRequest]) (*connect.Response[v1.MigrateSchemaResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hearth.cluster.v1.ClusterService.MigrateSchema is not implemented"))
-}
-
-func (UnimplementedClusterServiceHandler) ConfigDigests(context.Context, *connect.Request[v1.ConfigDigestsRequest]) (*connect.Response[v1.ConfigDigestsResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hearth.cluster.v1.ClusterService.ConfigDigests is not implemented"))
-}
-
 func (UnimplementedClusterServiceHandler) FetchCAKey(context.Context, *connect.Request[v1.FetchCAKeyRequest]) (*connect.Response[v1.FetchCAKeyResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hearth.cluster.v1.ClusterService.FetchCAKey is not implemented"))
-}
-
-func (UnimplementedClusterServiceHandler) CAInfo(context.Context, *connect.Request[v1.CAInfoRequest]) (*connect.Response[v1.CAInfoResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hearth.cluster.v1.ClusterService.CAInfo is not implemented"))
 }

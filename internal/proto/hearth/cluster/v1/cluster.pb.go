@@ -28,20 +28,18 @@ type JoinRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// token_secret is the secret part of the join token, not the full string.
 	TokenSecret string `protobuf:"bytes,1,opt,name=token_secret,json=tokenSecret,proto3" json:"token_secret,omitempty"`
-	// node_id is the new hub's Raft server ID; it is bound into its certificate.
+	// node_id is the new hub's node ID; it is bound into its certificate.
 	NodeId string `protobuf:"bytes,2,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
-	// raft_address is the host:port other hubs dial for Raft traffic.
-	RaftAddress string `protobuf:"bytes,3,opt,name=raft_address,json=raftAddress,proto3" json:"raft_address,omitempty"`
+	// address is the host:port other members dial for the hub's
+	// --cluster-listen.
+	Address string `protobuf:"bytes,3,opt,name=address,proto3" json:"address,omitempty"`
 	// csr is a DER-encoded PKCS#10 certificate request. Its subject is ignored.
 	Csr []byte `protobuf:"bytes,4,opt,name=csr,proto3" json:"csr,omitempty"`
 	// schema_version is the newest store schema version the joining binary
-	// supports. It must be at least the cluster's current schema version.
+	// supports. It must be at least the schema the cluster has written.
 	SchemaVersion int64 `protobuf:"varint,5,opt,name=schema_version,json=schemaVersion,proto3" json:"schema_version,omitempty"`
-	// cluster_epochs is true when the joining binary keeps a cluster epoch in its
-	// certificates. A cluster restored from a backup refuses a hub without it.
-	ClusterEpochs bool `protobuf:"varint,6,opt,name=cluster_epochs,json=clusterEpochs,proto3" json:"cluster_epochs,omitempty"`
-	// allowed_roles are the roles the joining host allows (--allow-roles), in
-	// an AP cluster: only a host that allows "master" is sent the CA key.
+	// allowed_roles are the roles the joining host allows (--allow-roles):
+	// only a host that allows "master" is sent the CA key.
 	AllowedRoles  []string `protobuf:"bytes,7,rep,name=allowed_roles,json=allowedRoles,proto3" json:"allowed_roles,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -91,9 +89,9 @@ func (x *JoinRequest) GetNodeId() string {
 	return ""
 }
 
-func (x *JoinRequest) GetRaftAddress() string {
+func (x *JoinRequest) GetAddress() string {
 	if x != nil {
-		return x.RaftAddress
+		return x.Address
 	}
 	return ""
 }
@@ -112,13 +110,6 @@ func (x *JoinRequest) GetSchemaVersion() int64 {
 	return 0
 }
 
-func (x *JoinRequest) GetClusterEpochs() bool {
-	if x != nil {
-		return x.ClusterEpochs
-	}
-	return false
-}
-
 func (x *JoinRequest) GetAllowedRoles() []string {
 	if x != nil {
 		return x.AllowedRoles
@@ -133,14 +124,9 @@ type JoinResponse struct {
 	Certificate []byte `protobuf:"bytes,1,opt,name=certificate,proto3" json:"certificate,omitempty"`
 	// ca_certificate is the DER-encoded hub CA certificate.
 	CaCertificate []byte `protobuf:"bytes,2,opt,name=ca_certificate,json=caCertificate,proto3" json:"ca_certificate,omitempty"`
-	// ca_key is the CA private key, PKCS#8 DER. Store it at 0600; never log it.
-	// An AP cluster sends it only to a hub that allows the master role.
-	CaKey []byte `protobuf:"bytes,3,opt,name=ca_key,json=caKey,proto3" json:"ca_key,omitempty"`
-	// leader_id is the Raft server ID of the hub that admitted this one.
-	LeaderId string `protobuf:"bytes,4,opt,name=leader_id,json=leaderId,proto3" json:"leader_id,omitempty"`
-	// last_index is the leader's last Raft log index when it admitted the hub.
-	// The new hub is caught up once it has applied this index.
-	LastIndex     uint64 `protobuf:"varint,5,opt,name=last_index,json=lastIndex,proto3" json:"last_index,omitempty"`
+	// ca_key is the CA private key, PKCS#8 DER, sent only to a hub that
+	// allows the master role. Store it at 0600; never log it.
+	CaKey         []byte `protobuf:"bytes,3,opt,name=ca_key,json=caKey,proto3" json:"ca_key,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -196,685 +182,19 @@ func (x *JoinResponse) GetCaKey() []byte {
 	return nil
 }
 
-func (x *JoinResponse) GetLeaderId() string {
-	if x != nil {
-		return x.LeaderId
-	}
-	return ""
-}
-
-func (x *JoinResponse) GetLastIndex() uint64 {
-	if x != nil {
-		return x.LastIndex
-	}
-	return 0
-}
-
-// PromoteRequest asks the leader to make the calling hub a voter.
-type PromoteRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// node_id must match the node ID in the caller's certificate.
-	NodeId        string `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *PromoteRequest) Reset() {
-	*x = PromoteRequest{}
-	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[2]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *PromoteRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*PromoteRequest) ProtoMessage() {}
-
-func (x *PromoteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[2]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use PromoteRequest.ProtoReflect.Descriptor instead.
-func (*PromoteRequest) Descriptor() ([]byte, []int) {
-	return file_hearth_cluster_v1_cluster_proto_rawDescGZIP(), []int{2}
-}
-
-func (x *PromoteRequest) GetNodeId() string {
-	if x != nil {
-		return x.NodeId
-	}
-	return ""
-}
-
-// PromoteResponse is empty: success means the hub is a voter.
-type PromoteResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *PromoteResponse) Reset() {
-	*x = PromoteResponse{}
-	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[3]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *PromoteResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*PromoteResponse) ProtoMessage() {}
-
-func (x *PromoteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[3]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use PromoteResponse.ProtoReflect.Descriptor instead.
-func (*PromoteResponse) Descriptor() ([]byte, []int) {
-	return file_hearth_cluster_v1_cluster_proto_rawDescGZIP(), []int{3}
-}
-
-// ForwardRequest carries one store command.
-type ForwardRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// command is the command as encoded by the store (a versioned JSON
-	// envelope), exactly the bytes that go into the Raft log.
-	Command       []byte `protobuf:"bytes,1,opt,name=command,proto3" json:"command,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ForwardRequest) Reset() {
-	*x = ForwardRequest{}
-	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[4]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ForwardRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ForwardRequest) ProtoMessage() {}
-
-func (x *ForwardRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[4]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ForwardRequest.ProtoReflect.Descriptor instead.
-func (*ForwardRequest) Descriptor() ([]byte, []int) {
-	return file_hearth_cluster_v1_cluster_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *ForwardRequest) GetCommand() []byte {
-	if x != nil {
-		return x.Command
-	}
-	return nil
-}
-
-// ForwardResponse is the outcome of applying the command on the leader.
-type ForwardResponse struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// result is the store result as JSON; empty when error_message is set.
-	Result []byte `protobuf:"bytes,1,opt,name=result,proto3" json:"result,omitempty"`
-	// error_kind names a known store error (not_found, token_used,
-	// token_expired); empty for any other error.
-	ErrorKind string `protobuf:"bytes,2,opt,name=error_kind,json=errorKind,proto3" json:"error_kind,omitempty"`
-	// error_message is set when applying the command failed.
-	ErrorMessage string `protobuf:"bytes,3,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
-	// index is the Raft log index of the applied entry, also when the command
-	// failed with a known error. The follower waits until it has applied this
-	// index itself before it answers its caller (read-your-writes). Zero from
-	// a leader that predates the field.
-	Index         uint64 `protobuf:"varint,4,opt,name=index,proto3" json:"index,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ForwardResponse) Reset() {
-	*x = ForwardResponse{}
-	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[5]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ForwardResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ForwardResponse) ProtoMessage() {}
-
-func (x *ForwardResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[5]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ForwardResponse.ProtoReflect.Descriptor instead.
-func (*ForwardResponse) Descriptor() ([]byte, []int) {
-	return file_hearth_cluster_v1_cluster_proto_rawDescGZIP(), []int{5}
-}
-
-func (x *ForwardResponse) GetResult() []byte {
-	if x != nil {
-		return x.Result
-	}
-	return nil
-}
-
-func (x *ForwardResponse) GetErrorKind() string {
-	if x != nil {
-		return x.ErrorKind
-	}
-	return ""
-}
-
-func (x *ForwardResponse) GetErrorMessage() string {
-	if x != nil {
-		return x.ErrorMessage
-	}
-	return ""
-}
-
-func (x *ForwardResponse) GetIndex() uint64 {
-	if x != nil {
-		return x.Index
-	}
-	return 0
-}
-
-// RemoveMemberRequest names the hub to remove.
-type RemoveMemberRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// node_id is the Raft server ID of the hub to remove.
-	NodeId        string `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *RemoveMemberRequest) Reset() {
-	*x = RemoveMemberRequest{}
-	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[6]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *RemoveMemberRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*RemoveMemberRequest) ProtoMessage() {}
-
-func (x *RemoveMemberRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[6]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use RemoveMemberRequest.ProtoReflect.Descriptor instead.
-func (*RemoveMemberRequest) Descriptor() ([]byte, []int) {
-	return file_hearth_cluster_v1_cluster_proto_rawDescGZIP(), []int{6}
-}
-
-func (x *RemoveMemberRequest) GetNodeId() string {
-	if x != nil {
-		return x.NodeId
-	}
-	return ""
-}
-
-// RemoveMemberResponse is the outcome of a removal.
-type RemoveMemberResponse struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// revoked is the number of hub node certificates revoked.
-	Revoked       int32 `protobuf:"varint,1,opt,name=revoked,proto3" json:"revoked,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *RemoveMemberResponse) Reset() {
-	*x = RemoveMemberResponse{}
-	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[7]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *RemoveMemberResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*RemoveMemberResponse) ProtoMessage() {}
-
-func (x *RemoveMemberResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[7]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use RemoveMemberResponse.ProtoReflect.Descriptor instead.
-func (*RemoveMemberResponse) Descriptor() ([]byte, []int) {
-	return file_hearth_cluster_v1_cluster_proto_rawDescGZIP(), []int{7}
-}
-
-func (x *RemoveMemberResponse) GetRevoked() int32 {
-	if x != nil {
-		return x.Revoked
-	}
-	return 0
-}
-
-// TransferLeadershipRequest names the voter to hand leadership to.
-type TransferLeadershipRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// node_id is the voter to hand leadership to; empty lets the leader pick
-	// the most up-to-date one.
-	NodeId        string `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *TransferLeadershipRequest) Reset() {
-	*x = TransferLeadershipRequest{}
-	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[8]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *TransferLeadershipRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*TransferLeadershipRequest) ProtoMessage() {}
-
-func (x *TransferLeadershipRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[8]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use TransferLeadershipRequest.ProtoReflect.Descriptor instead.
-func (*TransferLeadershipRequest) Descriptor() ([]byte, []int) {
-	return file_hearth_cluster_v1_cluster_proto_rawDescGZIP(), []int{8}
-}
-
-func (x *TransferLeadershipRequest) GetNodeId() string {
-	if x != nil {
-		return x.NodeId
-	}
-	return ""
-}
-
-// TransferLeadershipResponse is empty: success means the leader handed
-// leadership over.
-type TransferLeadershipResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *TransferLeadershipResponse) Reset() {
-	*x = TransferLeadershipResponse{}
-	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[9]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *TransferLeadershipResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*TransferLeadershipResponse) ProtoMessage() {}
-
-func (x *TransferLeadershipResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[9]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use TransferLeadershipResponse.ProtoReflect.Descriptor instead.
-func (*TransferLeadershipResponse) Descriptor() ([]byte, []int) {
-	return file_hearth_cluster_v1_cluster_proto_rawDescGZIP(), []int{9}
-}
-
-// SchemaInfoRequest is empty.
-type SchemaInfoRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *SchemaInfoRequest) Reset() {
-	*x = SchemaInfoRequest{}
-	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[10]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *SchemaInfoRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SchemaInfoRequest) ProtoMessage() {}
-
-func (x *SchemaInfoRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[10]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SchemaInfoRequest.ProtoReflect.Descriptor instead.
-func (*SchemaInfoRequest) Descriptor() ([]byte, []int) {
-	return file_hearth_cluster_v1_cluster_proto_rawDescGZIP(), []int{10}
-}
-
-// SchemaInfoResponse is a hub's store schema.
-type SchemaInfoResponse struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// current is the schema version the hub's database is at.
-	Current int64 `protobuf:"varint,1,opt,name=current,proto3" json:"current,omitempty"`
-	// max is the newest schema version the hub's binary supports.
-	Max           int64 `protobuf:"varint,2,opt,name=max,proto3" json:"max,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *SchemaInfoResponse) Reset() {
-	*x = SchemaInfoResponse{}
-	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[11]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *SchemaInfoResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SchemaInfoResponse) ProtoMessage() {}
-
-func (x *SchemaInfoResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[11]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SchemaInfoResponse.ProtoReflect.Descriptor instead.
-func (*SchemaInfoResponse) Descriptor() ([]byte, []int) {
-	return file_hearth_cluster_v1_cluster_proto_rawDescGZIP(), []int{11}
-}
-
-func (x *SchemaInfoResponse) GetCurrent() int64 {
-	if x != nil {
-		return x.Current
-	}
-	return 0
-}
-
-func (x *SchemaInfoResponse) GetMax() int64 {
-	if x != nil {
-		return x.Max
-	}
-	return 0
-}
-
-// MigrateSchemaRequest names the target schema version.
-type MigrateSchemaRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// to is the schema version to migrate to. It must be newer than the
-	// cluster's and supported by every hub.
-	To            int64 `protobuf:"varint,1,opt,name=to,proto3" json:"to,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *MigrateSchemaRequest) Reset() {
-	*x = MigrateSchemaRequest{}
-	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[12]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *MigrateSchemaRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*MigrateSchemaRequest) ProtoMessage() {}
-
-func (x *MigrateSchemaRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[12]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use MigrateSchemaRequest.ProtoReflect.Descriptor instead.
-func (*MigrateSchemaRequest) Descriptor() ([]byte, []int) {
-	return file_hearth_cluster_v1_cluster_proto_rawDescGZIP(), []int{12}
-}
-
-func (x *MigrateSchemaRequest) GetTo() int64 {
-	if x != nil {
-		return x.To
-	}
-	return 0
-}
-
-// MigrateSchemaResponse is the outcome of a migration.
-type MigrateSchemaResponse struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// from is the schema version the cluster was at.
-	From          int64 `protobuf:"varint,1,opt,name=from,proto3" json:"from,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *MigrateSchemaResponse) Reset() {
-	*x = MigrateSchemaResponse{}
-	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[13]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *MigrateSchemaResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*MigrateSchemaResponse) ProtoMessage() {}
-
-func (x *MigrateSchemaResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[13]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use MigrateSchemaResponse.ProtoReflect.Descriptor instead.
-func (*MigrateSchemaResponse) Descriptor() ([]byte, []int) {
-	return file_hearth_cluster_v1_cluster_proto_rawDescGZIP(), []int{13}
-}
-
-func (x *MigrateSchemaResponse) GetFrom() int64 {
-	if x != nil {
-		return x.From
-	}
-	return 0
-}
-
-// ConfigDigestsRequest is empty.
-type ConfigDigestsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ConfigDigestsRequest) Reset() {
-	*x = ConfigDigestsRequest{}
-	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[14]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ConfigDigestsRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ConfigDigestsRequest) ProtoMessage() {}
-
-func (x *ConfigDigestsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[14]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ConfigDigestsRequest.ProtoReflect.Descriptor instead.
-func (*ConfigDigestsRequest) Descriptor() ([]byte, []int) {
-	return file_hearth_cluster_v1_cluster_proto_rawDescGZIP(), []int{14}
-}
-
-// ConfigDigestsResponse holds a hub's configuration digests.
-type ConfigDigestsResponse struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// digests maps a configuration item to its SHA-256 digest, in hex. An item
-	// the hub could not read is left out.
-	Digests       map[string]string `protobuf:"bytes,1,rep,name=digests,proto3" json:"digests,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ConfigDigestsResponse) Reset() {
-	*x = ConfigDigestsResponse{}
-	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[15]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ConfigDigestsResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ConfigDigestsResponse) ProtoMessage() {}
-
-func (x *ConfigDigestsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[15]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ConfigDigestsResponse.ProtoReflect.Descriptor instead.
-func (*ConfigDigestsResponse) Descriptor() ([]byte, []int) {
-	return file_hearth_cluster_v1_cluster_proto_rawDescGZIP(), []int{15}
-}
-
-func (x *ConfigDigestsResponse) GetDigests() map[string]string {
-	if x != nil {
-		return x.Digests
-	}
-	return nil
-}
-
-// FetchCAKeyRequest names the rotation and carries the caller's CSR.
+// FetchCAKeyRequest names the CA and carries the caller's CSR.
 type FetchCAKeyRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// new_ca_fingerprint is the SHA-256 of the new CA's certificate, hex.
+	// new_ca_fingerprint is the SHA-256 of the CA's certificate, hex: the new
+	// CA during a rotation.
 	NewCaFingerprint string `protobuf:"bytes,1,opt,name=new_ca_fingerprint,json=newCaFingerprint,proto3" json:"new_ca_fingerprint,omitempty"`
-	// csr is a DER certificate request for the caller's node certificate of
-	// the new CA; empty asks for the key only.
+	// csr is a DER certificate request for the caller's node certificate;
+	// empty asks for the key only.
 	Csr []byte `protobuf:"bytes,2,opt,name=csr,proto3" json:"csr,omitempty"`
-	// old_ca_key_proof, in an AP cluster's rotation, is a signature by the
-	// current CA's key over the message the hub names (ap key proof): a master
-	// proves it holds that key to be handed the new one. Without it, the
-	// caller gets a node certificate of the new CA, not the key.
+	// old_ca_key_proof, during a rotation, is a signature by the current CA's
+	// key over the message the hub names (key proof): a master proves it holds
+	// that key to be handed the new one. Without it, the caller gets a node
+	// certificate of the new CA, not the key.
 	OldCaKeyProof []byte `protobuf:"bytes,3,opt,name=old_ca_key_proof,json=oldCaKeyProof,proto3" json:"old_ca_key_proof,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -882,7 +202,7 @@ type FetchCAKeyRequest struct {
 
 func (x *FetchCAKeyRequest) Reset() {
 	*x = FetchCAKeyRequest{}
-	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[16]
+	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -894,7 +214,7 @@ func (x *FetchCAKeyRequest) String() string {
 func (*FetchCAKeyRequest) ProtoMessage() {}
 
 func (x *FetchCAKeyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[16]
+	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -907,7 +227,7 @@ func (x *FetchCAKeyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FetchCAKeyRequest.ProtoReflect.Descriptor instead.
 func (*FetchCAKeyRequest) Descriptor() ([]byte, []int) {
-	return file_hearth_cluster_v1_cluster_proto_rawDescGZIP(), []int{16}
+	return file_hearth_cluster_v1_cluster_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *FetchCAKeyRequest) GetNewCaFingerprint() string {
@@ -931,13 +251,12 @@ func (x *FetchCAKeyRequest) GetOldCaKeyProof() []byte {
 	return nil
 }
 
-// FetchCAKeyResponse carries the new CA's key and a node certificate.
+// FetchCAKeyResponse carries a CA key and a node certificate.
 type FetchCAKeyResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// ca_key is the new CA's private key, PKCS #8 DER.
+	// ca_key is the CA's private key, PKCS #8 DER.
 	CaKey []byte `protobuf:"bytes,1,opt,name=ca_key,json=caKey,proto3" json:"ca_key,omitempty"`
-	// certificate is the caller's node certificate of the new CA, DER. Only
-	// the leader issues one.
+	// certificate is the caller's node certificate, DER.
 	Certificate   []byte `protobuf:"bytes,2,opt,name=certificate,proto3" json:"certificate,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -945,7 +264,7 @@ type FetchCAKeyResponse struct {
 
 func (x *FetchCAKeyResponse) Reset() {
 	*x = FetchCAKeyResponse{}
-	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[17]
+	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -957,7 +276,7 @@ func (x *FetchCAKeyResponse) String() string {
 func (*FetchCAKeyResponse) ProtoMessage() {}
 
 func (x *FetchCAKeyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[17]
+	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -970,7 +289,7 @@ func (x *FetchCAKeyResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FetchCAKeyResponse.ProtoReflect.Descriptor instead.
 func (*FetchCAKeyResponse) Descriptor() ([]byte, []int) {
-	return file_hearth_cluster_v1_cluster_proto_rawDescGZIP(), []int{17}
+	return file_hearth_cluster_v1_cluster_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *FetchCAKeyResponse) GetCaKey() []byte {
@@ -987,206 +306,34 @@ func (x *FetchCAKeyResponse) GetCertificate() []byte {
 	return nil
 }
 
-// CAInfoRequest is empty.
-type CAInfoRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *CAInfoRequest) Reset() {
-	*x = CAInfoRequest{}
-	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[18]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CAInfoRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CAInfoRequest) ProtoMessage() {}
-
-func (x *CAInfoRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[18]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CAInfoRequest.ProtoReflect.Descriptor instead.
-func (*CAInfoRequest) Descriptor() ([]byte, []int) {
-	return file_hearth_cluster_v1_cluster_proto_rawDescGZIP(), []int{18}
-}
-
-// CAInfoResponse is a hub's side of a hub CA rotation.
-type CAInfoResponse struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// serving_ca_fingerprint is the CA whose certificates the hub serves.
-	ServingCaFingerprint string `protobuf:"bytes,1,opt,name=serving_ca_fingerprint,json=servingCaFingerprint,proto3" json:"serving_ca_fingerprint,omitempty"`
-	// next_ca_fingerprint is the new CA the hub trusts; empty outside a rotation.
-	NextCaFingerprint string `protobuf:"bytes,2,opt,name=next_ca_fingerprint,json=nextCaFingerprint,proto3" json:"next_ca_fingerprint,omitempty"`
-	// has_next_key is true once the hub holds the new CA's key.
-	HasNextKey bool `protobuf:"varint,3,opt,name=has_next_key,json=hasNextKey,proto3" json:"has_next_key,omitempty"`
-	// has_next_node_certificate is true once the hub holds a node certificate
-	// of the new CA.
-	HasNextNodeCertificate bool `protobuf:"varint,4,opt,name=has_next_node_certificate,json=hasNextNodeCertificate,proto3" json:"has_next_node_certificate,omitempty"`
-	// cut_over is true once the hub serves the new CA.
-	CutOver       bool `protobuf:"varint,5,opt,name=cut_over,json=cutOver,proto3" json:"cut_over,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *CAInfoResponse) Reset() {
-	*x = CAInfoResponse{}
-	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[19]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CAInfoResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CAInfoResponse) ProtoMessage() {}
-
-func (x *CAInfoResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hearth_cluster_v1_cluster_proto_msgTypes[19]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CAInfoResponse.ProtoReflect.Descriptor instead.
-func (*CAInfoResponse) Descriptor() ([]byte, []int) {
-	return file_hearth_cluster_v1_cluster_proto_rawDescGZIP(), []int{19}
-}
-
-func (x *CAInfoResponse) GetServingCaFingerprint() string {
-	if x != nil {
-		return x.ServingCaFingerprint
-	}
-	return ""
-}
-
-func (x *CAInfoResponse) GetNextCaFingerprint() string {
-	if x != nil {
-		return x.NextCaFingerprint
-	}
-	return ""
-}
-
-func (x *CAInfoResponse) GetHasNextKey() bool {
-	if x != nil {
-		return x.HasNextKey
-	}
-	return false
-}
-
-func (x *CAInfoResponse) GetHasNextNodeCertificate() bool {
-	if x != nil {
-		return x.HasNextNodeCertificate
-	}
-	return false
-}
-
-func (x *CAInfoResponse) GetCutOver() bool {
-	if x != nil {
-		return x.CutOver
-	}
-	return false
-}
-
 var File_hearth_cluster_v1_cluster_proto protoreflect.FileDescriptor
 
 const file_hearth_cluster_v1_cluster_proto_rawDesc = "" +
 	"\n" +
-	"\x1fhearth/cluster/v1/cluster.proto\x12\x11hearth.cluster.v1\"\xf1\x01\n" +
+	"\x1fhearth/cluster/v1/cluster.proto\x12\x11hearth.cluster.v1\"\xd7\x01\n" +
 	"\vJoinRequest\x12!\n" +
 	"\ftoken_secret\x18\x01 \x01(\tR\vtokenSecret\x12\x17\n" +
-	"\anode_id\x18\x02 \x01(\tR\x06nodeId\x12!\n" +
-	"\fraft_address\x18\x03 \x01(\tR\vraftAddress\x12\x10\n" +
+	"\anode_id\x18\x02 \x01(\tR\x06nodeId\x12\x18\n" +
+	"\aaddress\x18\x03 \x01(\tR\aaddress\x12\x10\n" +
 	"\x03csr\x18\x04 \x01(\fR\x03csr\x12%\n" +
-	"\x0eschema_version\x18\x05 \x01(\x03R\rschemaVersion\x12%\n" +
-	"\x0ecluster_epochs\x18\x06 \x01(\bR\rclusterEpochs\x12#\n" +
-	"\rallowed_roles\x18\a \x03(\tR\fallowedRoles\"\xaa\x01\n" +
+	"\x0eschema_version\x18\x05 \x01(\x03R\rschemaVersion\x12#\n" +
+	"\rallowed_roles\x18\a \x03(\tR\fallowedRolesJ\x04\b\x06\x10\aR\x0ecluster_epochs\"\x91\x01\n" +
 	"\fJoinResponse\x12 \n" +
 	"\vcertificate\x18\x01 \x01(\fR\vcertificate\x12%\n" +
 	"\x0eca_certificate\x18\x02 \x01(\fR\rcaCertificate\x12\x15\n" +
-	"\x06ca_key\x18\x03 \x01(\fR\x05caKey\x12\x1b\n" +
-	"\tleader_id\x18\x04 \x01(\tR\bleaderId\x12\x1d\n" +
-	"\n" +
-	"last_index\x18\x05 \x01(\x04R\tlastIndex\")\n" +
-	"\x0ePromoteRequest\x12\x17\n" +
-	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"\x11\n" +
-	"\x0fPromoteResponse\"*\n" +
-	"\x0eForwardRequest\x12\x18\n" +
-	"\acommand\x18\x01 \x01(\fR\acommand\"\x83\x01\n" +
-	"\x0fForwardResponse\x12\x16\n" +
-	"\x06result\x18\x01 \x01(\fR\x06result\x12\x1d\n" +
-	"\n" +
-	"error_kind\x18\x02 \x01(\tR\terrorKind\x12#\n" +
-	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage\x12\x14\n" +
-	"\x05index\x18\x04 \x01(\x04R\x05index\".\n" +
-	"\x13RemoveMemberRequest\x12\x17\n" +
-	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"0\n" +
-	"\x14RemoveMemberResponse\x12\x18\n" +
-	"\arevoked\x18\x01 \x01(\x05R\arevoked\"4\n" +
-	"\x19TransferLeadershipRequest\x12\x17\n" +
-	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"\x1c\n" +
-	"\x1aTransferLeadershipResponse\"\x13\n" +
-	"\x11SchemaInfoRequest\"@\n" +
-	"\x12SchemaInfoResponse\x12\x18\n" +
-	"\acurrent\x18\x01 \x01(\x03R\acurrent\x12\x10\n" +
-	"\x03max\x18\x02 \x01(\x03R\x03max\"&\n" +
-	"\x14MigrateSchemaRequest\x12\x0e\n" +
-	"\x02to\x18\x01 \x01(\x03R\x02to\"+\n" +
-	"\x15MigrateSchemaResponse\x12\x12\n" +
-	"\x04from\x18\x01 \x01(\x03R\x04from\"\x16\n" +
-	"\x14ConfigDigestsRequest\"\xa4\x01\n" +
-	"\x15ConfigDigestsResponse\x12O\n" +
-	"\adigests\x18\x01 \x03(\v25.hearth.cluster.v1.ConfigDigestsResponse.DigestsEntryR\adigests\x1a:\n" +
-	"\fDigestsEntry\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"|\n" +
+	"\x06ca_key\x18\x03 \x01(\fR\x05caKeyJ\x04\b\x04\x10\x05J\x04\b\x05\x10\x06R\tleader_idR\n" +
+	"last_index\"|\n" +
 	"\x11FetchCAKeyRequest\x12,\n" +
 	"\x12new_ca_fingerprint\x18\x01 \x01(\tR\x10newCaFingerprint\x12\x10\n" +
 	"\x03csr\x18\x02 \x01(\fR\x03csr\x12'\n" +
 	"\x10old_ca_key_proof\x18\x03 \x01(\fR\roldCaKeyProof\"M\n" +
 	"\x12FetchCAKeyResponse\x12\x15\n" +
 	"\x06ca_key\x18\x01 \x01(\fR\x05caKey\x12 \n" +
-	"\vcertificate\x18\x02 \x01(\fR\vcertificate\"\x0f\n" +
-	"\rCAInfoRequest\"\xee\x01\n" +
-	"\x0eCAInfoResponse\x124\n" +
-	"\x16serving_ca_fingerprint\x18\x01 \x01(\tR\x14servingCaFingerprint\x12.\n" +
-	"\x13next_ca_fingerprint\x18\x02 \x01(\tR\x11nextCaFingerprint\x12 \n" +
-	"\fhas_next_key\x18\x03 \x01(\bR\n" +
-	"hasNextKey\x129\n" +
-	"\x19has_next_node_certificate\x18\x04 \x01(\bR\x16hasNextNodeCertificate\x12\x19\n" +
-	"\bcut_over\x18\x05 \x01(\bR\acutOver2\x9e\a\n" +
+	"\vcertificate\x18\x02 \x01(\fR\vcertificate2\xb4\x01\n" +
 	"\x0eClusterService\x12G\n" +
-	"\x04Join\x12\x1e.hearth.cluster.v1.JoinRequest\x1a\x1f.hearth.cluster.v1.JoinResponse\x12P\n" +
-	"\aPromote\x12!.hearth.cluster.v1.PromoteRequest\x1a\".hearth.cluster.v1.PromoteResponse\x12P\n" +
-	"\aForward\x12!.hearth.cluster.v1.ForwardRequest\x1a\".hearth.cluster.v1.ForwardResponse\x12_\n" +
-	"\fRemoveMember\x12&.hearth.cluster.v1.RemoveMemberRequest\x1a'.hearth.cluster.v1.RemoveMemberResponse\x12q\n" +
-	"\x12TransferLeadership\x12,.hearth.cluster.v1.TransferLeadershipRequest\x1a-.hearth.cluster.v1.TransferLeadershipResponse\x12Y\n" +
+	"\x04Join\x12\x1e.hearth.cluster.v1.JoinRequest\x1a\x1f.hearth.cluster.v1.JoinResponse\x12Y\n" +
 	"\n" +
-	"SchemaInfo\x12$.hearth.cluster.v1.SchemaInfoRequest\x1a%.hearth.cluster.v1.SchemaInfoResponse\x12b\n" +
-	"\rMigrateSchema\x12'.hearth.cluster.v1.MigrateSchemaRequest\x1a(.hearth.cluster.v1.MigrateSchemaResponse\x12b\n" +
-	"\rConfigDigests\x12'.hearth.cluster.v1.ConfigDigestsRequest\x1a(.hearth.cluster.v1.ConfigDigestsResponse\x12Y\n" +
-	"\n" +
-	"FetchCAKey\x12$.hearth.cluster.v1.FetchCAKeyRequest\x1a%.hearth.cluster.v1.FetchCAKeyResponse\x12M\n" +
-	"\x06CAInfo\x12 .hearth.cluster.v1.CAInfoRequest\x1a!.hearth.cluster.v1.CAInfoResponseB\xcf\x01\n" +
+	"FetchCAKey\x12$.hearth.cluster.v1.FetchCAKeyRequest\x1a%.hearth.cluster.v1.FetchCAKeyResponseB\xcf\x01\n" +
 	"\x15com.hearth.cluster.v1B\fClusterProtoP\x01ZBgithub.com/gvart/hearth/internal/proto/hearth/cluster/v1;clusterv1\xa2\x02\x03HCX\xaa\x02\x11Hearth.Cluster.V1\xca\x02\x11Hearth\\Cluster\\V1\xe2\x02\x1dHearth\\Cluster\\V1\\GPBMetadata\xea\x02\x13Hearth::Cluster::V1b\x06proto3"
 
 var (
@@ -1201,57 +348,23 @@ func file_hearth_cluster_v1_cluster_proto_rawDescGZIP() []byte {
 	return file_hearth_cluster_v1_cluster_proto_rawDescData
 }
 
-var file_hearth_cluster_v1_cluster_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_hearth_cluster_v1_cluster_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_hearth_cluster_v1_cluster_proto_goTypes = []any{
-	(*JoinRequest)(nil),                // 0: hearth.cluster.v1.JoinRequest
-	(*JoinResponse)(nil),               // 1: hearth.cluster.v1.JoinResponse
-	(*PromoteRequest)(nil),             // 2: hearth.cluster.v1.PromoteRequest
-	(*PromoteResponse)(nil),            // 3: hearth.cluster.v1.PromoteResponse
-	(*ForwardRequest)(nil),             // 4: hearth.cluster.v1.ForwardRequest
-	(*ForwardResponse)(nil),            // 5: hearth.cluster.v1.ForwardResponse
-	(*RemoveMemberRequest)(nil),        // 6: hearth.cluster.v1.RemoveMemberRequest
-	(*RemoveMemberResponse)(nil),       // 7: hearth.cluster.v1.RemoveMemberResponse
-	(*TransferLeadershipRequest)(nil),  // 8: hearth.cluster.v1.TransferLeadershipRequest
-	(*TransferLeadershipResponse)(nil), // 9: hearth.cluster.v1.TransferLeadershipResponse
-	(*SchemaInfoRequest)(nil),          // 10: hearth.cluster.v1.SchemaInfoRequest
-	(*SchemaInfoResponse)(nil),         // 11: hearth.cluster.v1.SchemaInfoResponse
-	(*MigrateSchemaRequest)(nil),       // 12: hearth.cluster.v1.MigrateSchemaRequest
-	(*MigrateSchemaResponse)(nil),      // 13: hearth.cluster.v1.MigrateSchemaResponse
-	(*ConfigDigestsRequest)(nil),       // 14: hearth.cluster.v1.ConfigDigestsRequest
-	(*ConfigDigestsResponse)(nil),      // 15: hearth.cluster.v1.ConfigDigestsResponse
-	(*FetchCAKeyRequest)(nil),          // 16: hearth.cluster.v1.FetchCAKeyRequest
-	(*FetchCAKeyResponse)(nil),         // 17: hearth.cluster.v1.FetchCAKeyResponse
-	(*CAInfoRequest)(nil),              // 18: hearth.cluster.v1.CAInfoRequest
-	(*CAInfoResponse)(nil),             // 19: hearth.cluster.v1.CAInfoResponse
-	nil,                                // 20: hearth.cluster.v1.ConfigDigestsResponse.DigestsEntry
+	(*JoinRequest)(nil),        // 0: hearth.cluster.v1.JoinRequest
+	(*JoinResponse)(nil),       // 1: hearth.cluster.v1.JoinResponse
+	(*FetchCAKeyRequest)(nil),  // 2: hearth.cluster.v1.FetchCAKeyRequest
+	(*FetchCAKeyResponse)(nil), // 3: hearth.cluster.v1.FetchCAKeyResponse
 }
 var file_hearth_cluster_v1_cluster_proto_depIdxs = []int32{
-	20, // 0: hearth.cluster.v1.ConfigDigestsResponse.digests:type_name -> hearth.cluster.v1.ConfigDigestsResponse.DigestsEntry
-	0,  // 1: hearth.cluster.v1.ClusterService.Join:input_type -> hearth.cluster.v1.JoinRequest
-	2,  // 2: hearth.cluster.v1.ClusterService.Promote:input_type -> hearth.cluster.v1.PromoteRequest
-	4,  // 3: hearth.cluster.v1.ClusterService.Forward:input_type -> hearth.cluster.v1.ForwardRequest
-	6,  // 4: hearth.cluster.v1.ClusterService.RemoveMember:input_type -> hearth.cluster.v1.RemoveMemberRequest
-	8,  // 5: hearth.cluster.v1.ClusterService.TransferLeadership:input_type -> hearth.cluster.v1.TransferLeadershipRequest
-	10, // 6: hearth.cluster.v1.ClusterService.SchemaInfo:input_type -> hearth.cluster.v1.SchemaInfoRequest
-	12, // 7: hearth.cluster.v1.ClusterService.MigrateSchema:input_type -> hearth.cluster.v1.MigrateSchemaRequest
-	14, // 8: hearth.cluster.v1.ClusterService.ConfigDigests:input_type -> hearth.cluster.v1.ConfigDigestsRequest
-	16, // 9: hearth.cluster.v1.ClusterService.FetchCAKey:input_type -> hearth.cluster.v1.FetchCAKeyRequest
-	18, // 10: hearth.cluster.v1.ClusterService.CAInfo:input_type -> hearth.cluster.v1.CAInfoRequest
-	1,  // 11: hearth.cluster.v1.ClusterService.Join:output_type -> hearth.cluster.v1.JoinResponse
-	3,  // 12: hearth.cluster.v1.ClusterService.Promote:output_type -> hearth.cluster.v1.PromoteResponse
-	5,  // 13: hearth.cluster.v1.ClusterService.Forward:output_type -> hearth.cluster.v1.ForwardResponse
-	7,  // 14: hearth.cluster.v1.ClusterService.RemoveMember:output_type -> hearth.cluster.v1.RemoveMemberResponse
-	9,  // 15: hearth.cluster.v1.ClusterService.TransferLeadership:output_type -> hearth.cluster.v1.TransferLeadershipResponse
-	11, // 16: hearth.cluster.v1.ClusterService.SchemaInfo:output_type -> hearth.cluster.v1.SchemaInfoResponse
-	13, // 17: hearth.cluster.v1.ClusterService.MigrateSchema:output_type -> hearth.cluster.v1.MigrateSchemaResponse
-	15, // 18: hearth.cluster.v1.ClusterService.ConfigDigests:output_type -> hearth.cluster.v1.ConfigDigestsResponse
-	17, // 19: hearth.cluster.v1.ClusterService.FetchCAKey:output_type -> hearth.cluster.v1.FetchCAKeyResponse
-	19, // 20: hearth.cluster.v1.ClusterService.CAInfo:output_type -> hearth.cluster.v1.CAInfoResponse
-	11, // [11:21] is the sub-list for method output_type
-	1,  // [1:11] is the sub-list for method input_type
-	1,  // [1:1] is the sub-list for extension type_name
-	1,  // [1:1] is the sub-list for extension extendee
-	0,  // [0:1] is the sub-list for field type_name
+	0, // 0: hearth.cluster.v1.ClusterService.Join:input_type -> hearth.cluster.v1.JoinRequest
+	2, // 1: hearth.cluster.v1.ClusterService.FetchCAKey:input_type -> hearth.cluster.v1.FetchCAKeyRequest
+	1, // 2: hearth.cluster.v1.ClusterService.Join:output_type -> hearth.cluster.v1.JoinResponse
+	3, // 3: hearth.cluster.v1.ClusterService.FetchCAKey:output_type -> hearth.cluster.v1.FetchCAKeyResponse
+	2, // [2:4] is the sub-list for method output_type
+	0, // [0:2] is the sub-list for method input_type
+	0, // [0:0] is the sub-list for extension type_name
+	0, // [0:0] is the sub-list for extension extendee
+	0, // [0:0] is the sub-list for field type_name
 }
 
 func init() { file_hearth_cluster_v1_cluster_proto_init() }
@@ -1265,7 +378,7 @@ func file_hearth_cluster_v1_cluster_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_hearth_cluster_v1_cluster_proto_rawDesc), len(file_hearth_cluster_v1_cluster_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   21,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

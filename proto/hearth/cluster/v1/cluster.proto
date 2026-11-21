@@ -4,74 +4,41 @@ syntax = "proto3";
 
 package hearth.cluster.v1;
 
-// ClusterService admits new hubs into a Raft cluster. It is served on the
-// hub's TLS listener by the leader; a follower answers FAILED_PRECONDITION with
-// the leader in the error metadata (hearth-leader-id, hearth-leader-addr).
+// ClusterService admits new hubs into the cluster and hands members the CA
+// key and node certificates. Every master serves it on its TLS listener.
 service ClusterService {
-  // Join consumes a join token, signs the new hub's CSR and hands it the CA,
-  // key included, then adds it to the cluster as a non-voter. The joining hub
+  // Join consumes a join token, signs the new hub's CSR and hands it the CA
+  // (the key only to a host that allows the master role). The joining hub
   // pins the CA with the fingerprint embedded in the token before it sends
   // the secret.
   rpc Join(JoinRequest) returns (JoinResponse);
-  // Promote makes a joined hub a voter. The caller authenticates with the hub
-  // node certificate it received from Join.
-  rpc Promote(PromoteRequest) returns (PromoteResponse);
-  // Forward proposes a store write on behalf of a follower hub, which cannot
-  // propose to the Raft log itself. The caller authenticates with its hub
-  // node certificate. The write's policy decision and audit entry were made
-  // on the hub that received the user's request; this is only replication.
-  rpc Forward(ForwardRequest) returns (ForwardResponse);
-  // RemoveMember removes a hub from the Raft configuration and revokes its
-  // hub node certificates, on behalf of a member hub whose operator asked for
-  // it. Like Forward, the caller authenticates with its hub node certificate
-  // and the policy decision and audit entry were made on that hub.
-  rpc RemoveMember(RemoveMemberRequest) returns (RemoveMemberResponse);
-  // TransferLeadership hands leadership to another voter, on behalf of a
-  // member hub, authenticated and decided like RemoveMember.
-  rpc TransferLeadership(TransferLeadershipRequest) returns (TransferLeadershipResponse);
-  // SchemaInfo reports this hub's store schema: the version its database is
-  // at and the newest its binary supports. Every member serves it, to
-  // members presenting their hub node certificate. The leader asks every hub
-  // before it migrates the cluster's schema.
-  rpc SchemaInfo(SchemaInfoRequest) returns (SchemaInfoResponse);
-  // MigrateSchema migrates the cluster's store schema on behalf of a member
-  // hub, authenticated and decided like RemoveMember. The leader proposes it
-  // to the Raft log only if every hub's binary supports the target version.
-  rpc MigrateSchema(MigrateSchemaRequest) returns (MigrateSchemaResponse);
-  // ConfigDigests reports a digest of each per-hub configuration item, so
-  // hubs can notice that they disagree. Every member serves it, to members
-  // presenting their hub node certificate. Digests never leave this channel.
-  rpc ConfigDigests(ConfigDigestsRequest) returns (ConfigDigestsResponse);
-  // FetchCAKey hands a member the new CA's key during a hub CA rotation and,
-  // from the leader, a node certificate of the new CA for the CSR. The
-  // caller authenticates with its hub node certificate, which must be the
-  // one the rotation pinned for it or one of the new CA. Decided by policy
-  // and audited on the serving hub, refusals included.
+  // FetchCAKey hands a member the CA key (a promotion to master), the new
+  // CA's key during a hub CA rotation, or a renewed node certificate. The
+  // caller authenticates with its hub node certificate; during a rotation it
+  // must be the one the rotation pinned for it or one of the new CA. Decided
+  // by policy and audited on the serving master, refusals included.
   rpc FetchCAKey(FetchCAKeyRequest) returns (FetchCAKeyResponse);
-  // CAInfo reports this hub's side of a hub CA rotation. Every member serves
-  // it, to members presenting their hub node certificate.
-  rpc CAInfo(CAInfoRequest) returns (CAInfoResponse);
 }
 
 // JoinRequest describes the hub that wants to join.
 message JoinRequest {
   // token_secret is the secret part of the join token, not the full string.
   string token_secret = 1;
-  // node_id is the new hub's Raft server ID; it is bound into its certificate.
+  // node_id is the new hub's node ID; it is bound into its certificate.
   string node_id = 2;
-  // raft_address is the host:port other hubs dial for Raft traffic.
-  string raft_address = 3;
+  // address is the host:port other members dial for the hub's
+  // --cluster-listen.
+  string address = 3;
   // csr is a DER-encoded PKCS#10 certificate request. Its subject is ignored.
   bytes csr = 4;
   // schema_version is the newest store schema version the joining binary
-  // supports. It must be at least the cluster's current schema version.
+  // supports. It must be at least the schema the cluster has written.
   int64 schema_version = 5;
-  // cluster_epochs is true when the joining binary keeps a cluster epoch in its
-  // certificates. A cluster restored from a backup refuses a hub without it.
-  bool cluster_epochs = 6;
-  // allowed_roles are the roles the joining host allows (--allow-roles), in
-  // an AP cluster: only a host that allows "master" is sent the CA key.
+  // allowed_roles are the roles the joining host allows (--allow-roles):
+  // only a host that allows "master" is sent the CA key.
   repeated string allowed_roles = 7;
+  reserved 6;
+  reserved "cluster_epochs";
 }
 
 // JoinResponse is the new hub's identity and the cluster's CA.
@@ -80,142 +47,32 @@ message JoinResponse {
   bytes certificate = 1;
   // ca_certificate is the DER-encoded hub CA certificate.
   bytes ca_certificate = 2;
-  // ca_key is the CA private key, PKCS#8 DER. Store it at 0600; never log it.
-  // An AP cluster sends it only to a hub that allows the master role.
+  // ca_key is the CA private key, PKCS#8 DER, sent only to a hub that
+  // allows the master role. Store it at 0600; never log it.
   bytes ca_key = 3;
-  // leader_id is the Raft server ID of the hub that admitted this one.
-  string leader_id = 4;
-  // last_index is the leader's last Raft log index when it admitted the hub.
-  // The new hub is caught up once it has applied this index.
-  uint64 last_index = 5;
+  reserved 4, 5;
+  reserved "leader_id", "last_index";
 }
 
-// PromoteRequest asks the leader to make the calling hub a voter.
-message PromoteRequest {
-  // node_id must match the node ID in the caller's certificate.
-  string node_id = 1;
-}
-
-// PromoteResponse is empty: success means the hub is a voter.
-message PromoteResponse {}
-
-// ForwardRequest carries one store command.
-message ForwardRequest {
-  // command is the command as encoded by the store (a versioned JSON
-  // envelope), exactly the bytes that go into the Raft log.
-  bytes command = 1;
-}
-
-// ForwardResponse is the outcome of applying the command on the leader.
-message ForwardResponse {
-  // result is the store result as JSON; empty when error_message is set.
-  bytes result = 1;
-  // error_kind names a known store error (not_found, token_used,
-  // token_expired); empty for any other error.
-  string error_kind = 2;
-  // error_message is set when applying the command failed.
-  string error_message = 3;
-  // index is the Raft log index of the applied entry, also when the command
-  // failed with a known error. The follower waits until it has applied this
-  // index itself before it answers its caller (read-your-writes). Zero from
-  // a leader that predates the field.
-  uint64 index = 4;
-}
-
-// RemoveMemberRequest names the hub to remove.
-message RemoveMemberRequest {
-  // node_id is the Raft server ID of the hub to remove.
-  string node_id = 1;
-}
-
-// RemoveMemberResponse is the outcome of a removal.
-message RemoveMemberResponse {
-  // revoked is the number of hub node certificates revoked.
-  int32 revoked = 1;
-}
-
-// TransferLeadershipRequest names the voter to hand leadership to.
-message TransferLeadershipRequest {
-  // node_id is the voter to hand leadership to; empty lets the leader pick
-  // the most up-to-date one.
-  string node_id = 1;
-}
-
-// TransferLeadershipResponse is empty: success means the leader handed
-// leadership over.
-message TransferLeadershipResponse {}
-
-// SchemaInfoRequest is empty.
-message SchemaInfoRequest {}
-
-// SchemaInfoResponse is a hub's store schema.
-message SchemaInfoResponse {
-  // current is the schema version the hub's database is at.
-  int64 current = 1;
-  // max is the newest schema version the hub's binary supports.
-  int64 max = 2;
-}
-
-// MigrateSchemaRequest names the target schema version.
-message MigrateSchemaRequest {
-  // to is the schema version to migrate to. It must be newer than the
-  // cluster's and supported by every hub.
-  int64 to = 1;
-}
-
-// MigrateSchemaResponse is the outcome of a migration.
-message MigrateSchemaResponse {
-  // from is the schema version the cluster was at.
-  int64 from = 1;
-}
-
-// ConfigDigestsRequest is empty.
-message ConfigDigestsRequest {}
-
-// ConfigDigestsResponse holds a hub's configuration digests.
-message ConfigDigestsResponse {
-  // digests maps a configuration item to its SHA-256 digest, in hex. An item
-  // the hub could not read is left out.
-  map<string, string> digests = 1;
-}
-
-// FetchCAKeyRequest names the rotation and carries the caller's CSR.
+// FetchCAKeyRequest names the CA and carries the caller's CSR.
 message FetchCAKeyRequest {
-  // new_ca_fingerprint is the SHA-256 of the new CA's certificate, hex.
+  // new_ca_fingerprint is the SHA-256 of the CA's certificate, hex: the new
+  // CA during a rotation.
   string new_ca_fingerprint = 1;
-  // csr is a DER certificate request for the caller's node certificate of
-  // the new CA; empty asks for the key only.
+  // csr is a DER certificate request for the caller's node certificate;
+  // empty asks for the key only.
   bytes csr = 2;
-  // old_ca_key_proof, in an AP cluster's rotation, is a signature by the
-  // current CA's key over the message the hub names (ap key proof): a master
-  // proves it holds that key to be handed the new one. Without it, the
-  // caller gets a node certificate of the new CA, not the key.
+  // old_ca_key_proof, during a rotation, is a signature by the current CA's
+  // key over the message the hub names (key proof): a master proves it holds
+  // that key to be handed the new one. Without it, the caller gets a node
+  // certificate of the new CA, not the key.
   bytes old_ca_key_proof = 3;
 }
 
-// FetchCAKeyResponse carries the new CA's key and a node certificate.
+// FetchCAKeyResponse carries a CA key and a node certificate.
 message FetchCAKeyResponse {
-  // ca_key is the new CA's private key, PKCS #8 DER.
+  // ca_key is the CA's private key, PKCS #8 DER.
   bytes ca_key = 1;
-  // certificate is the caller's node certificate of the new CA, DER. Only
-  // the leader issues one.
+  // certificate is the caller's node certificate, DER.
   bytes certificate = 2;
-}
-
-// CAInfoRequest is empty.
-message CAInfoRequest {}
-
-// CAInfoResponse is a hub's side of a hub CA rotation.
-message CAInfoResponse {
-  // serving_ca_fingerprint is the CA whose certificates the hub serves.
-  string serving_ca_fingerprint = 1;
-  // next_ca_fingerprint is the new CA the hub trusts; empty outside a rotation.
-  string next_ca_fingerprint = 2;
-  // has_next_key is true once the hub holds the new CA's key.
-  bool has_next_key = 3;
-  // has_next_node_certificate is true once the hub holds a node certificate
-  // of the new CA.
-  bool has_next_node_certificate = 4;
-  // cut_over is true once the hub serves the new CA.
-  bool cut_over = 5;
 }
