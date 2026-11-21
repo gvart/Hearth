@@ -54,7 +54,7 @@ func (r ApprovalLinks) Peek(ctx context.Context, secret string, now time.Time) (
 		expires int64
 		used    sql.NullInt64
 	)
-	err = r.s.queryRowKey(ctx, keyString(h[:]), `SELECT approval_id, expires_at, used_at FROM approval_links WHERE hash = ?`, h[:]).
+	err = r.s.queryRowLive(ctx, "approval_links", keyString(h[:]), `SELECT approval_id, expires_at, used_at`, ` FROM approval_links WHERE hash = ?`, h[:]).
 		Scan(&id, &expires, &used)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):

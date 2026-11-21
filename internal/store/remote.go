@@ -268,6 +268,35 @@ func (s *Store) queryRowNewest(ctx context.Context, table, key, query string, ar
 	return rows[0], true, nil
 }
 
+// queryRowLive reads one row of table, sel + rest (sel the SELECT list,
+// rest from FROM on, ending in its WHERE clause), in partition key, like queryRowKey, for a
+// read a false not-found must not come from: in a sharded cluster through
+// queryRowNewest, so a replica that missed the row's write does not answer
+// "no row" for it, and the newest version among the replicas, a tombstone
+// included, decides. The row scans as sql.ErrNoRows unless that version is
+// live. On a store that holds every row it is the plain read, live rows of a
+// deletable table only.
+func (s *Store) queryRowLive(ctx context.Context, table, key, sel, rest string, args ...any) rowScanner {
+	if s.shards == nil {
+		if tables[table].deletable {
+			versioned, err := isVersioned(ctx, s.db)
+			if err != nil {
+				return memRow{err: err}
+			}
+			rest += liveOnly(versioned)
+		}
+		return s.db.QueryRowContext(ctx, sel+rest, args...)
+	}
+	vals, ok, err := s.queryRowNewest(ctx, table, key, sel+`, _deleted`+s.hidden(table)+rest, args...)
+	switch {
+	case err != nil:
+		return memRow{err: err}
+	case !ok || len(vals) == 0 || vals[len(vals)-1] != int64(0):
+		return memRow{}
+	}
+	return memRow{rows: [][]any{vals[:len(vals)-1]}}
+}
+
 func valuesRows(vs []Values) [][]any {
 	out := make([][]any, len(vs))
 	for i, v := range vs {

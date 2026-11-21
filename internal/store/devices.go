@@ -62,7 +62,7 @@ func (r Devices) Upsert(ctx context.Context, d Device) error {
 
 // Get returns the device with the given ID, or ErrNotFound.
 func (r Devices) Get(ctx context.Context, id string) (Device, error) {
-	row := r.s.queryRowKey(ctx, id, `SELECT `+deviceColumns+` FROM devices WHERE id = ?`, id)
+	row := r.s.queryRowLive(ctx, "devices", id, `SELECT `+deviceColumns, ` FROM devices WHERE id = ?`, id)
 	d, err := scanDevice(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Device{}, fmt.Errorf("get device %s: %w", id, ErrNotFound)
