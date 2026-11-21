@@ -1,0 +1,54 @@
+internal/policy/guardrails_test.go
+  s_18b57982fdff93::t_c34310e641dfbb 180
+internal/discovery/scanner.go
+  s_18b57982fdff93::t_e7ea4e2e7996f0 51-54,132-141,197-202,229-230,232-250,253,256,274,276,284-286,299-300,305,311
+  s_18b57982fdff93::t_898febb786afa3 55-58
+  s_18b57982fdff93::t_4d35508857b8e7 264
+internal/policy/policy.go
+  s_18b57982fdff93::t_60e27841e285e3 474-475
+  s_18b57982fdff93::t_2d031fb326dbef 176-177
+  s_18b57982fdff93::t_c34310e641dfbb 476
+internal/hub/networkscan.go
+  s_18b57982fdff93::t_f83d838643d80c 143-145
+  s_18b57982fdff93::t_23ec8347235cf8 1-142,146-155
+internal/hub/api.go
+  s_18b57982fdff93::t_f5c09d5ce360cc 275-276
+  s_18b57982fdff93::t_ae17489e4791e8 99,153,598-601
+internal/discovery/scanas_test.go
+  s_18b57982fdff93::t_d075fedf57493a 77,103
+  s_18b57982fdff93::t_858670a0eca7f1 1-76,78-102,104-107
+internal/hub/server.go
+  s_18b57982fdff93::t_ae17489e4791e8 102-104
+cmd/hearth/hub.go
+  s_18b57982fdff93::t_fa224ca5b55dbb 442-449,470,656,659-660
+internal/hub/networkscan_test.go
+  s_18b57982fdff93::t_268e941c3f7406 1-252
+cmd/hearth/network.go
+  s_18b57982fdff93::t_7ee2fa6301d410 1-126
+cmd/hearth/root.go
+  s_18b57982fdff93::t_0818cd062cd3e7 18
+cmd/hearth/network_test.go
+  s_18b57982fdff93::t_c40a81fe0d5308 1-97
+internal/hub/registry.go
+  s_18b57982fdff93::t_ae17489e4791e8 35-36
+cmd/hearth/hub_ap_loops.go
+  s_18b57982fdff93::t_6eb2ab0ca85d89 39-40
+  s_18b57982fdff93::t_fa224ca5b55dbb 70
+  s_18b57982fdff93::t_7113ee40c4bc8e 38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "23ce68b4f09003516dc40d00518541e9e4ff64b4",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
