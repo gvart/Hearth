@@ -45,6 +45,11 @@ test('pageOf reads the page from the hash', () => {
     ['#/approvals', 'approvals'],
     ['#/cluster', 'cluster'],
     ['#/settings', 'settings'],
+    // The longest link wins: a page under #/settings is not General.
+    ['#/settings/access', 'access'],
+    ['#/settings/policy', 'policy'],
+    ['#/settings/backup', 'backup'],
+    ['#/settings/integrations', 'integrations'],
   ];
   for (const [hash, page] of cases) {
     assert.equal(pageOf(hash), page, hash);
@@ -89,6 +94,9 @@ test('findCommands finds pages and devices by every word', () => {
   assert.deepEqual(find('talos cp'), ['Device: talos-cp-1']);
   assert.deepEqual(find('automate run'), ['Go to: Runbooks']);
   assert.deepEqual(find('zzz'), []);
+  // General is found as Settings: its own name says nothing in a list of results.
+  assert.deepEqual(find('general'), ['Go to: Settings']);
+  assert.deepEqual(find('integr'), ['Go to: Integrations']);
   assert.deepEqual(find('cluster'), ['Go to: Cluster']);
   assert.deepEqual(find('cluster', false), []);
 });

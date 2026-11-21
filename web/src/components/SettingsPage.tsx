@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { AutomationProblem } from '../api/automations.ts';
 import {
   problemsOf,
@@ -10,34 +10,84 @@ import {
   type Validation,
 } from '../api/admin.ts';
 import { ApiError } from '../api/client.ts';
-import { useSession } from '../api/hooks.ts';
+import { useSession, useTlsInfo } from '../api/hooks.ts';
+import { formatDateTime } from '../format.ts';
 import { chooseTheme, themes, useTheme } from '../theme.ts';
 import { McpTokens } from './McpTokens.tsx';
 import { Modal } from './Modal.tsx';
 import './PanelsPage.css';
 import './SettingsPage.css';
 
-/** The hub's own settings: version, password, MCP tokens, policy and backups. */
-export function SettingsPage() {
-  const session = useSession();
+export type SettingsSection = 'settings' | 'access' | 'policy' | 'backup';
+
+const sections: Record<SettingsSection, { title: string; lead: string }> = {
+  settings: { title: 'General', lead: 'How this browser shows Hearth, and which hub it talks to.' },
+  access: { title: 'Access', lead: 'Who and what may sign in to the hub: the admin password and the tokens of MCP clients.' },
+  policy: { title: 'Policy', lead: 'What every action is checked against before it runs.' },
+  backup: { title: 'Backup', lead: 'The hub’s state as one encrypted archive.' },
+};
+
+/** One page of the hub's own settings: what `hearth` does on the hub host, behind your session. */
+export function SettingsPage({ section }: { section: SettingsSection }) {
+  const { title, lead } = sections[section];
   return (
     <main className="content">
       <div className="page-head">
         <div>
-          <h1>Settings</h1>
-          <p className="muted">
-            Hearth {session.data?.version ?? ''} · what <code>hearth</code> does on the hub host, behind your session.
-          </p>
+          <h1>{title}</h1>
+          <p className="muted">{lead}</p>
         </div>
       </div>
       <div className="settings">
-        <AppearanceCard />
-        <PolicyCard />
-        <McpTokens />
-        <BackupCard />
-        <PasswordCard />
+        {section === 'settings' ? (
+          <>
+            <AppearanceCard />
+            <HubCard />
+          </>
+        ) : section === 'access' ? (
+          <>
+            <PasswordCard />
+            <McpTokens />
+          </>
+        ) : section === 'policy' ? (
+          <PolicyCard />
+        ) : (
+          <BackupCard />
+        )}
       </div>
     </main>
+  );
+}
+
+/** Which hub this is and how the browser reaches it. */
+function HubCard() {
+  const session = useSession();
+  const tls = useTlsInfo(true);
+  return (
+    <section className="panel-card" aria-labelledby="hub-title">
+      <h2 id="hub-title">This hub</h2>
+      <div>
+        <Fact k="Version" v={session.data?.version} />
+        <Fact k="Signed in as" v={session.data?.user} />
+        <Fact k="Session ends" v={session.data ? formatDateTime(session.data.expires_at) : undefined} />
+        <Fact k="HTTPS port" v={tls.data?.port} />
+        <Fact k="Certificate for" v={tls.data?.hosts.join(', ')} />
+        <Fact k="CA fingerprint" v={tls.data ? <span className="mono">{tls.data.ca_fingerprint}</span> : undefined} />
+      </div>
+      <p className="muted small">
+        An enrollment token carries this fingerprint, and <code>hearth agent join</code> pins the hub CA by it. Compare
+        it before you trust the hub’s CA certificate on a new machine.
+      </p>
+    </section>
+  );
+}
+
+function Fact({ k, v }: { k: string; v: ReactNode }) {
+  return (
+    <div className="kv">
+      <span className="muted">{k}</span>
+      <span>{v ?? '—'}</span>
+    </div>
   );
 }
 

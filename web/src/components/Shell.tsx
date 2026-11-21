@@ -1,4 +1,4 @@
-import { Fragment, lazy, Suspense, useEffect, useState } from 'react';
+import { Fragment, lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { isNotAPCluster, useClusterMembers } from '../api/cluster.ts';
 import { useApprovals, useDeviceEvents, useLogout } from '../api/hooks.ts';
 import { ApprovalsPage } from './ApprovalsPage.tsx';
@@ -10,6 +10,7 @@ import { CommandBar } from './CommandBar.tsx';
 import { ConfigDriftBanner } from './ConfigDriftBanner.tsx';
 import { DevicePage } from './DevicePage.tsx';
 import { DevicesPage } from './DevicesPage.tsx';
+import { IntegrationsPage } from './IntegrationsPage.tsx';
 import { KubernetesPage } from './KubernetesPage.tsx';
 import { Logo } from './Logo.tsx';
 import { NetworkPage } from './NetworkPage.tsx';
@@ -71,6 +72,11 @@ export function Shell() {
   const cluster = useClusterMembers();
   const apCluster = cluster.isSuccess || (cluster.isError && !isNotAPCluster(cluster.error));
   const shown = pagesOf(sheet, { cluster: apCluster, current: page });
+  // On a phone the open sheet's pages are one line that scrolls sideways: keep the open page in sight.
+  const subnav = useRef<HTMLElement>(null);
+  useEffect(() => {
+    subnav.current?.querySelector('[aria-current]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [page]);
 
   return (
     <div className={`app sheet-${sheet.id}`}>
@@ -120,7 +126,7 @@ export function Shell() {
         </nav>
         <div className="shell-main">
           {shown.length > 1 ? (
-            <nav className="shell-subnav" aria-label={`${sheet.label} pages`}>
+            <nav ref={subnav} className="shell-subnav" aria-label={`${sheet.label} pages`}>
               {shown.map((p) => (
                 <a key={p.id} href={p.hash} aria-current={page === p.id ? 'page' : undefined}>
                   {p.label}
@@ -157,8 +163,10 @@ export function Shell() {
             <AuditPage />
           ) : page === 'cluster' ? (
             <ClusterPage />
-          ) : page === 'settings' ? (
-            <SettingsPage />
+          ) : page === 'integrations' ? (
+            <IntegrationsPage />
+          ) : page === 'settings' || page === 'access' || page === 'policy' || page === 'backup' ? (
+            <SettingsPage section={page} />
           ) : deviceId !== undefined ? (
             <DevicePage key={deviceId} id={deviceId} />
           ) : (
