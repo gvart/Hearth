@@ -27,20 +27,36 @@
   gap: var(--space-1);
 }
 
+/* The map always fits its box: nothing scrolls. Drag moves it; the wheel, a pinch and the buttons zoom it. */
 .topo-wrap {
+  position: relative;
   background: var(--surface);
   border: var(--line-1) solid var(--border);
   border-radius: var(--radius);
-  overflow-x: auto;
+  overflow: hidden;
+}
+
+.topo-zoom {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  margin: 0;
+  background: var(--bg);
 }
 
 .topo {
   display: block;
   width: 100%;
-  /* On a phone the graph scrolls sideways rather than shrinking past legibility. */
-  min-width: 720px;
   height: auto;
+  max-height: 72vh;
   font-family: inherit;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.topo:active {
+  cursor: grabbing;
 }
 
 .topo-link {
