@@ -1,0 +1,20 @@
+docs/cluster.md
+  s_87f1c7baee7d5a::t_40b04670bb2ee4 158-173,182-183,185-187,515-536
+  s_87f1c7baee7d5a::t_63e11dc4037e1b 537
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f054a98ab1904c278e4e2c84c5c13fd35f07fb46",
+  "prompts": {},
+  "sessions": {
+    "s_87f1c7baee7d5a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "45cc2cdf-3130-4caa-8cb4-8cb365d2150d",
+        "model": "unknown"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
