@@ -1,0 +1,456 @@
+/* The runbook workbench: steps on the left, the file in the middle, a guide on demand. Tokens only. */
+.doc-editor.doc-wide {
+  max-width: none;
+}
+
+.wb {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: var(--line-1) solid var(--line);
+  background: var(--bg);
+}
+
+.wb :is(h3, h4, p, ol, ul) {
+  margin: 0;
+}
+
+.wb :is(ol, ul) {
+  padding: 0;
+  list-style: none;
+}
+
+.wb h4 {
+  font-family: var(--font-sans);
+  font-size: var(--type-16);
+}
+
+.wb-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: var(--line-1) solid var(--line);
+  background: var(--surface);
+}
+
+.wb-guide-toggle {
+  margin-left: auto;
+}
+
+.wb-grid {
+  position: relative;
+  display: grid;
+  grid-template-columns: calc(var(--rail) * 1.4) minmax(0, 1fr);
+  height: 70vh;
+  min-height: calc(var(--rail) * 1.5);
+}
+
+.wb-outline,
+.wb-guide {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-3);
+  background: var(--surface);
+}
+
+.wb-outline {
+  border-right: var(--line-1) solid var(--line);
+}
+
+.wb-guide {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: var(--z-bar);
+  width: calc(var(--rail) * 1.8);
+  max-width: 100%;
+  border-left: var(--line-1) solid var(--line);
+  box-shadow: var(--shadow);
+}
+
+.wb-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.wb-rows {
+  display: flex;
+  flex-direction: column;
+  border: var(--line-1) solid var(--border);
+  background: var(--bg);
+}
+
+.wb-rows li + li {
+  border-top: var(--line-1) solid var(--border);
+}
+
+.wb-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: var(--control-lg);
+  padding: var(--space-2);
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.wb-row:hover {
+  background: var(--surface-2);
+}
+
+/* The step the caret is in takes the inverse fill, like everything selected */
+.wb-row[aria-current='step'] {
+  background: var(--line);
+  color: var(--bg);
+}
+
+.wb-row[aria-current='step'] :is(.wb-sum, .wb-no) {
+  color: var(--bg);
+}
+
+.wb-row[aria-current='step'] :is(.wb-kind, .wb-mark) {
+  background: var(--bg);
+}
+
+.wb-no {
+  flex: none;
+  width: var(--space-4);
+  color: var(--muted);
+  font-size: var(--type-11);
+  text-align: right;
+}
+
+.wb-row-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.wb-row-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.wb-sum {
+  color: var(--muted);
+  font-size: var(--type-12);
+}
+
+/* What kind of step: ember acts, cyan checks, yellow asks, grey waits */
+.wb-kind,
+.wb-mark {
+  flex: none;
+  padding: 0 var(--space-1);
+  border: var(--line-1) solid currentColor;
+  font-size: var(--type-11);
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.wb-act {
+  color: var(--accent);
+}
+
+.wb-check {
+  color: var(--online);
+}
+
+.wb-ask,
+.wb-mark-warn {
+  color: var(--warn);
+}
+
+.wb-wait {
+  color: var(--muted);
+}
+
+.wb-mark-bad {
+  color: var(--danger);
+}
+
+.wb-palette {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: var(--line-1) solid var(--accent);
+  background: var(--bg);
+}
+
+.wb-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.wb-label {
+  color: var(--muted);
+  font-size: var(--type-11);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.wb-add {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.wb-add:hover,
+.wb-add:focus-visible {
+  background: var(--surface-2);
+}
+
+.wb-add-name {
+  font-weight: var(--weight-bold);
+}
+
+.wb-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* The file: coloured lines underneath, and a see-through text box on top that takes the typing.
+   Both use one font and one line height, so the caret sits on the text it edits. */
+.code {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: var(--bg);
+}
+
+.code:focus-within {
+  outline: var(--line-1) solid var(--accent);
+  outline-offset: calc(var(--line-1) * -1);
+}
+
+.code-inner {
+  position: relative;
+  width: max-content;
+  min-width: 100%;
+  min-height: 100%;
+}
+
+.code-lines,
+.code-input {
+  font-family: var(--font-mono);
+  font-size: var(--type-13);
+  font-weight: var(--weight-regular);
+  font-variant-ligatures: none;
+  line-height: var(--space-5);
+  letter-spacing: 0;
+  tab-size: 2;
+}
+
+.code-line {
+  display: flex;
+  min-height: var(--space-5);
+}
+
+.code-line.is-sel {
+  background: var(--surface);
+}
+
+.code-no {
+  position: sticky;
+  left: 0;
+  flex: none;
+  box-sizing: border-box;
+  width: var(--space-12);
+  padding-right: var(--space-2);
+  border-right: var(--line-1) solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  text-align: right;
+  user-select: none;
+}
+
+.code-line.is-cur .code-no {
+  color: var(--text);
+  font-weight: var(--weight-bold);
+}
+
+.code-line.is-err .code-no {
+  background: var(--danger);
+  color: var(--on-danger);
+}
+
+.code-line.is-warn .code-no {
+  background: var(--warn);
+  color: var(--bg);
+}
+
+.code-text {
+  padding: 0 var(--space-4) 0 var(--space-2);
+  white-space: pre;
+}
+
+.code-line.is-err .code-text {
+  text-decoration: underline wavy var(--danger);
+}
+
+.code-line.is-warn .code-text {
+  text-decoration: underline wavy var(--warn);
+}
+
+.code-input {
+  position: absolute;
+  top: 0;
+  left: calc(var(--space-12) + var(--space-2));
+  width: calc(100% - var(--space-12) - var(--space-2));
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  resize: none;
+  overflow: hidden;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--accent);
+  white-space: pre;
+}
+
+.code-input::selection {
+  background: var(--accent-soft);
+  color: transparent;
+}
+
+.y-key {
+  color: var(--online);
+}
+
+.y-str {
+  color: var(--ok);
+}
+
+.y-num {
+  color: var(--warn);
+}
+
+.y-kw,
+.y-var {
+  color: var(--violet);
+}
+
+.y-type {
+  color: var(--accent);
+}
+
+.y-com,
+.y-punct {
+  color: var(--muted);
+}
+
+.code-help {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  min-height: var(--control-md);
+  padding: var(--space-2) var(--space-3);
+  border-top: var(--line-1) solid var(--border);
+  background: var(--surface);
+  font-size: var(--type-12);
+}
+
+.wb-problems {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  max-height: 30%;
+  overflow: auto;
+  border-top: var(--line-1) solid var(--line);
+  background: var(--surface);
+}
+
+.wb-prob {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-1) var(--space-3);
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--type-12);
+  text-align: left;
+  cursor: pointer;
+}
+
+.wb-prob:hover {
+  background: var(--surface-2);
+}
+
+.wb-prob-line {
+  flex: none;
+  color: var(--muted);
+}
+
+.wb-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: var(--line-1) solid var(--border);
+  background: var(--bg);
+}
+
+.wb-kv {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-05);
+  padding-top: var(--space-2);
+  border-top: var(--line-1) solid var(--border);
+  font-size: var(--type-12);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  .wb-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    height: auto;
+  }
+
+  .wb-outline {
+    max-height: 40vh;
+    border-right: 0;
+    border-bottom: var(--line-1) solid var(--line);
+  }
+
+  .wb-main {
+    height: 70vh;
+  }
+}

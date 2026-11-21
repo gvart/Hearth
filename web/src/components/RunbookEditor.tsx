@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import {
   problemsOf,
   useDeleteRunbook,
@@ -11,6 +11,9 @@ import type { RunbookPlanStep } from '../api/client.ts';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
 import { ProblemList } from './SettingsPage.tsx';
 import './SettingsPage.css';
+
+// Loaded when a runbook is opened for editing: it brings the YAML parser, which the list does not need.
+const RunbookWorkbench = lazy(() => import('./RunbookWorkbench.tsx'));
 
 const listRoute = '#/runbooks';
 
@@ -84,7 +87,7 @@ function Editor({ file, initial, revision: initialRevision }: { file?: string; i
   };
 
   return (
-    <main className="content doc-editor">
+    <main className="content doc-editor doc-wide">
       <div className="page-head">
         <div className="doc-title">
           <a className="muted small" href={listRoute}>
@@ -216,26 +219,25 @@ function Editor({ file, initial, revision: initialRevision }: { file?: string; i
         </section>
       ) : null}
 
-      <label className="field">
-        Runbook file
-        <textarea
-          className="doc-yaml"
+      <Suspense
+        fallback={
+          <p className="muted" role="status">
+            Loading the editor…
+          </p>
+        }
+      >
+        <RunbookWorkbench
           value={yaml}
-          rows={Math.min(32, Math.max(14, yaml.split('\n').length + 2))}
-          spellCheck={false}
-          autoCapitalize="off"
-          autoCorrect="off"
-          wrap="off"
-          aria-invalid={problems.length > 0}
-          onChange={(e) => {
-            setYaml(e.target.value);
+          invalid={problems.length > 0}
+          onChange={(next) => {
+            setYaml(next);
             setChecked(null);
             setConfirming(false);
             setNote('');
             save.reset();
           }}
         />
-      </label>
+      </Suspense>
       <p className="muted small">
         See <a href="https://github.com/gvart/hearth/blob/main/docs/runbooks.md">docs/runbooks.md</a> for the steps a
         runbook can take.
@@ -270,7 +272,11 @@ function Editor({ file, initial, revision: initialRevision }: { file?: string; i
   );
 }
 
-const decisionPill = { allow: 'pill-ok', confirm: 'pill-warn', deny: 'pill-bad' } as const;
+const decisionPill = {
+  allow: 'pill-ok',
+  confirm: 'pill-warn',
+  deny: 'pill-bad',
+} as const;
 
 function PlanLine({ step }: { step: RunbookPlanStep }) {
   return (
