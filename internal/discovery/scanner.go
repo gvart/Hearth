@@ -124,8 +124,10 @@ type Scanner struct {
 	localNets func() ([]localNet, error)
 	sweep     func(ctx context.Context, targets []netip.Addr) error
 	neighbors func() ([]Neighbor, error)
-	mdns      func(ctx context.Context, ifaces []net.Interface, ips []netip.Addr) (map[netip.Addr]string, error)
-	rdns      func(ctx context.Context, ips []netip.Addr) map[netip.Addr]string
+	mdns      func(ctx context.Context, ifaces []net.Interface, ips []netip.Addr) (map[netip.Addr]mdnsHost, error)
+	// gateways are this host's IPv4 default gateways.
+	gateways func() ([]netip.Addr, error)
+	rdns     func(ctx context.Context, ips []netip.Addr) map[netip.Addr]string
 	// vendor names a MAC's vendor; nil on an agent (see Find), which leaves
 	// it to the hub.
 	vendor func(net.HardwareAddr) string
@@ -156,6 +158,7 @@ func New(cfg Config) *Scanner {
 	return &Scanner{
 		cfg: cfg, log: log, now: time.Now,
 		localNets: localNets, sweep: sweep, neighbors: readNeighbors, mdns: mdnsNames,
+		gateways: defaultGateways,
 		rdns: func(ctx context.Context, ips []netip.Addr) map[netip.Addr]string {
 			return reverseNames(ctx, lanResolver(), ips)
 		},
@@ -465,33 +468,42 @@ func (s *Scanner) find(ctx context.Context, subnets []netip.Prefix, nets []local
 		ips[i] = n.IP
 	}
 
-	names := map[netip.Addr]string{}
+	heard := map[netip.Addr]mdnsHost{}
 	if len(ips) > 0 && len(ifaces) > 0 {
 		m, err := s.mdns(ctx, ifaces, ips)
 		if err != nil && ctx.Err() == nil {
 			s.log.DebugContext(ctx, "mdns", "err", err)
 		}
-		names = m
-		if names == nil {
-			names = map[netip.Addr]string{}
+		if m != nil {
+			heard = m
 		}
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	names := map[netip.Addr]string{}
 	var unnamed []netip.Addr
 	for _, ip := range ips {
-		if names[ip] == "" {
+		if n := heard[ip].Name; n != "" {
+			names[ip] = n
+		} else {
 			unnamed = append(unnamed, ip)
 		}
 	}
 	for ip, name := range s.rdns(ctx, unnamed) {
 		names[ip] = name
 	}
+	gateways, err := s.gateways()
+	if err != nil {
+		s.log.DebugContext(ctx, "default gateway", "err", err)
+	}
 
 	hosts := make([]store.NetworkHost, 0, len(found))
 	for _, n := range found {
-		h := store.NetworkHost{MAC: n.MAC.String(), IP: n.IP.String(), Hostname: names[n.IP]}
+		h := store.NetworkHost{
+			MAC: n.MAC.String(), IP: n.IP.String(), Hostname: names[n.IP],
+			Services: heard[n.IP].Services, Gateway: slices.Contains(gateways, n.IP),
+		}
 		if s.vendor != nil {
 			h.Vendor = s.vendor(n.MAC)
 		}

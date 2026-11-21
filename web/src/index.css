@@ -643,6 +643,24 @@ table {
   white-space: nowrap;
 }
 
+/* What a host looks like (discovery's kind), under its name: a mark drawn in lines and a word. */
+.host-kind {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: var(--space-05);
+  font-size: var(--type-11);
+  letter-spacing: var(--tracking-label);
+  white-space: nowrap;
+}
+
+.host-kind svg {
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+
 .host-actions {
   display: inline-flex;
   gap: var(--space-1);

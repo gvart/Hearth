@@ -185,7 +185,15 @@ export interface NetworkHost {
   state: NetworkHostState;
   /** The device whose agent last found the host in a scan; empty when the hub did. */
   scanned_by: string;
+  /** The mDNS service types it answers for, as `_ipp._tcp`, sorted. */
+  services: string[];
+  /** What it looks like, from its services, vendor, hostname and being the gateway. */
+  kind: NetworkHostKind;
+  /** Whether it looks able to run a Hearth agent: a computer, or anything offering SSH. */
+  agent_capable: boolean;
 }
+
+export type NetworkHostKind = 'router' | 'printer' | 'media' | 'phone' | 'computer' | 'nas' | 'iot' | 'unknown';
 
 export type NetworkHostState = '' | 'known' | 'ignored';
 

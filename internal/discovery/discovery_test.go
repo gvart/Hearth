@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/netip"
 	"path/filepath"
@@ -192,20 +193,102 @@ func TestParseMDNS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ptr, a := map[netip.Addr]string{}, map[netip.Addr]string{}
-	parseMDNS(b, ptr, a)
-	if ptr[netip.MustParseAddr("192.168.2.171")] != "pi5.local" || a[netip.MustParseAddr("192.168.2.20")] != "nas.local" || len(ptr) != 1 {
-		t.Fatalf("parseMDNS: ptr %v, a %v", ptr, a)
+	pi, nas := netip.MustParseAddr("192.168.2.171"), netip.MustParseAddr("192.168.2.20")
+	ans := newMDNSAnswers()
+	ans.parse(b, pi)
+	got := ans.hosts([]netip.Addr{pi, nas})
+	// The Pi answered the NAS's _ssh._tcp PTR: whose it is comes from the
+	// SRV and A records, which come later, in another message.
+	if got[pi].Name != "pi5.local" || got[nas].Name != "nas.local" || len(got[pi].Services) != 1 {
+		t.Fatalf("hosts = %+v; want both names, and the NAS's service on the Pi until its SRV is heard", got)
 	}
+	srv := dnsmessage.Message{
+		Header: dnsmessage.Header{Response: true},
+		Answers: []dnsmessage.Resource{
+			{
+				Header: dnsmessage.ResourceHeader{Name: name("NAS._ssh._tcp.local."), Type: dnsmessage.TypeSRV, Class: dnsmessage.ClassINET},
+				Body:   &dnsmessage.SRVResource{Port: 22, Target: name("nas.local.")},
+			},
+			{
+				Header: dnsmessage.ResourceHeader{Name: name("_services._dns-sd._udp.local."), Type: dnsmessage.TypePTR, Class: dnsmessage.ClassINET},
+				Body:   &dnsmessage.PTRResource{PTR: name("_smb._tcp.local.")},
+			},
+			{
+				Header: dnsmessage.ResourceHeader{Name: name("_services._dns-sd._udp.local."), Type: dnsmessage.TypePTR, Class: dnsmessage.ClassINET},
+				Body:   &dnsmessage.PTRResource{PTR: name("_Not A Type._tcp.local.")},
+			},
+			{
+				// The instance is not of the type the PTR is for.
+				Header: dnsmessage.ResourceHeader{Name: name("_ipp._tcp.local."), Type: dnsmessage.TypePTR, Class: dnsmessage.ClassINET},
+				Body:   &dnsmessage.PTRResource{PTR: name("nas._ssh._tcp.local.")},
+			},
+		},
+	}
+	b, err = srv.Pack()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ans.parse(b, nas)
+	got = ans.hosts([]netip.Addr{pi, nas})
+	if !slices.Equal(got[nas].Services, []string{"_smb._tcp", "_ssh._tcp"}) || len(got[pi].Services) != 0 {
+		t.Errorf("hosts = %+v; want the NAS's services on the NAS, sorted, and none on the Pi", got)
+	}
+	if _, ok := ans.hosts([]netip.Addr{netip.MustParseAddr("192.168.2.99")})[nas]; ok {
+		t.Error("hosts returned an address not asked for")
+	}
+
 	// A query is not an answer.
 	msg.Response = false
 	b, _ = msg.Pack()
-	ptr = map[netip.Addr]string{}
-	parseMDNS(b, ptr, a)
-	if len(ptr) != 0 {
-		t.Errorf("parseMDNS took names from a query: %v", ptr)
+	ans = newMDNSAnswers()
+	ans.parse(b, pi)
+	if got := ans.hosts([]netip.Addr{pi, nas}); len(got) != 0 {
+		t.Errorf("took names from a query: %v", got)
 	}
-	parseMDNS([]byte("garbage"), ptr, a) // must not panic
+	ans.parse([]byte("garbage"), pi) // must not panic
+}
+
+func TestMDNSCapsServices(t *testing.T) {
+	ip := netip.MustParseAddr("192.168.2.5")
+	ans := newMDNSAnswers()
+	for i := range mdnsMaxServices + 10 {
+		ans.types[ip] = append(ans.types[ip], fmt.Sprintf("_s%02d._tcp", i))
+	}
+	if got := ans.hosts([]netip.Addr{ip})[ip].Services; len(got) != mdnsMaxServices {
+		t.Errorf("%d services kept; want %d", len(got), mdnsMaxServices)
+	}
+}
+
+func TestServiceType(t *testing.T) {
+	cases := map[string]string{
+		"_ipp._tcp.local":              "_ipp._tcp",
+		"_sleep-proxy._udp.local":      "_sleep-proxy._udp",
+		"_ipp._tcp":                    "",
+		"_ipp._sctp.local":             "",
+		"ipp._tcp.local":               "",
+		"_a-very-long-name._tcp.local": "",
+		"_sub._ipp._tcp.local":         "",
+		"_x y._tcp.local":              "",
+	}
+	for in, want := range cases {
+		if got, ok := serviceType(in); got != want || ok != (want != "") {
+			t.Errorf("serviceType(%q) = %q, %v; want %q", in, got, ok, want)
+		}
+	}
+}
+
+func TestParseProcRoute(t *testing.T) {
+	const table = "Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT\n" +
+		"eth0\t00000000\t0102A8C0\t0003\t0\t0\t100\t00000000\t0\t0\t0\n" +
+		"eth0\t0002A8C0\t00000000\t0001\t0\t0\t100\t00FFFFFF\t0\t0\t0\n" +
+		"wg0\t00000000\t00000000\t0001\t0\t0\t50\t00000000\t0\t0\t0\n" + // a default with no gateway
+		"eth1\t00000000\t010AA8C0\t0003\t0\t0\t200\t00000000\t0\t0\t0\n" +
+		"eth0\t00000000\t0102A8C0\t0003\t0\t0\t300\t00000000\t0\t0\t0\n" // a repeat
+	got, err := parseProcRoute(strings.NewReader(table))
+	want := []netip.Addr{netip.MustParseAddr("192.168.2.1"), netip.MustParseAddr("192.168.10.1")}
+	if err != nil || !slices.Equal(got, want) {
+		t.Errorf("parseProcRoute = %v, %v; want %v", got, err, want)
+	}
 }
 
 func TestLANNameservers(t *testing.T) {
@@ -256,15 +339,16 @@ func fakeScanner(t *testing.T, st *store.Store, pol Policy, ev Events, neigh *[]
 		return nil
 	}
 	s.neighbors = func() ([]Neighbor, error) { return *neigh, nil }
-	s.mdns = func(_ context.Context, _ []net.Interface, ips []netip.Addr) (map[netip.Addr]string, error) {
-		out := map[netip.Addr]string{}
+	s.mdns = func(_ context.Context, _ []net.Interface, ips []netip.Addr) (map[netip.Addr]mdnsHost, error) {
+		out := map[netip.Addr]mdnsHost{}
 		for _, ip := range ips {
 			if ip.String() == "192.168.2.171" || ip.String() == "192.168.2.172" {
-				out[ip] = "pi5.local"
+				out[ip] = mdnsHost{Name: "pi5.local", Services: []string{"_ssh._tcp", "_workstation._tcp"}}
 			}
 		}
 		return out, nil
 	}
+	s.gateways = func() ([]netip.Addr, error) { return []netip.Addr{netip.MustParseAddr("192.168.2.1")}, nil }
 	s.rdns = func(_ context.Context, ips []netip.Addr) map[netip.Addr]string {
 		out := map[netip.Addr]string{}
 		for _, ip := range ips {
@@ -339,7 +423,10 @@ func TestScanRecordsHostsKeyedByMAC(t *testing.T) {
 	if pi := got["2c:cf:67:00:00:01"]; pi.IP != "192.168.2.172" || pi.Hostname != "pi5.local" || pi.Vendor != "Raspberry Pi" {
 		t.Errorf("Pi = %+v; want the new IP, its mDNS name and vendor", pi)
 	}
-	if r := got["00:11:32:00:00:02"]; r.IP != "192.168.2.1" || r.Hostname != "router.lan" || r.Vendor != "Synology" {
+	if pi := got["2c:cf:67:00:00:01"]; !slices.Equal(pi.Services, []string{"_ssh._tcp", "_workstation._tcp"}) || pi.Gateway {
+		t.Errorf("Pi = %+v; want its mDNS services, and not the gateway", pi)
+	}
+	if r := got["00:11:32:00:00:02"]; r.IP != "192.168.2.1" || r.Hostname != "router.lan" || r.Vendor != "Synology" || !r.Gateway {
 		t.Errorf("router = %+v; want the lowest of its addresses, its reverse DNS name", r)
 	}
 

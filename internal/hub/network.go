@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gvart/hearth/internal/discovery"
 	"github.com/gvart/hearth/internal/policy"
 	"github.com/gvart/hearth/internal/store"
 )
@@ -37,6 +38,14 @@ type NetworkHostJSON struct {
 	// ScannedBy is the device whose agent last found the host in a scan;
 	// "" when the hub did, or no scan found it.
 	ScannedBy string `json:"scanned_by"`
+	// Services are the mDNS service types the host answers for, as
+	// "_ipp._tcp", sorted.
+	Services []string `json:"services"`
+	// Kind is what the host looks like (discovery.Classify): "router",
+	// "printer", "media", "phone", "computer", "nas", "iot" or "unknown".
+	Kind discovery.Kind `json:"kind"`
+	// AgentCapable is whether the host looks able to run a Hearth agent.
+	AgentCapable bool `json:"agent_capable"`
 }
 
 func networkHostJSON(h store.NetworkHost, deviceID string) NetworkHostJSON {
@@ -44,10 +53,16 @@ func networkHostJSON(h store.NetworkHost, deviceID string) NetworkHostJSON {
 	if sources == nil {
 		sources = []string{}
 	}
+	services := h.Services
+	if services == nil {
+		services = []string{}
+	}
+	kind, agent := discovery.Classify(h.Services, h.Vendor, h.Hostname, h.Gateway)
 	return NetworkHostJSON{
 		MAC: h.MAC, IP: h.IP, Hostname: h.Hostname, Vendor: h.Vendor, DeviceID: deviceID,
 		FirstSeen: h.FirstSeen, LastSeen: h.LastSeen, State: h.State,
 		Sources: sources, HostnameSource: h.HostnameSource, ScannedBy: h.ScannedBy,
+		Services: services, Kind: kind, AgentCapable: agent,
 	}
 }
 
