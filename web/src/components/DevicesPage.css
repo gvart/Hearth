@@ -10,13 +10,13 @@
   margin: 0;
 }
 
-.block-grid {
+.dev-block-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(calc(var(--rail) * 1.2), 100%), 1fr));
   gap: var(--space-6);
 }
 
-.block {
+.dev-block {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
@@ -30,20 +30,20 @@
   cursor: pointer;
 }
 
-.block:hover {
+.dev-block:hover {
   background: var(--surface-2);
 }
 
-.block:focus-visible {
+.dev-block:focus-visible {
   outline: var(--line-2) solid var(--accent);
 }
 
 /* A device that is not online is drawn dashed, like a part not yet built */
-.block-off {
+.dev-block-off {
   border-style: dashed;
 }
 
-.block-head {
+.dev-block-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -54,14 +54,14 @@
   text-transform: uppercase;
 }
 
-.block-state {
+.dev-block-state {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
   color: var(--text);
 }
 
-.block-name {
+.dev-block-name {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
