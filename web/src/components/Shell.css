@@ -273,9 +273,11 @@
     display: none;
   }
 
+  /* One line that scrolls sideways: a sheet may hold more pages than a phone is wide */
   .shell-subnav {
     display: flex;
-    flex-wrap: wrap;
+    overflow-x: auto;
+    scrollbar-width: none;
     gap: var(--space-1);
     padding: var(--space-2) var(--space-4) 0;
     border-bottom: var(--line-1) solid var(--line);
@@ -294,6 +296,8 @@
     letter-spacing: var(--tracking-label);
     text-transform: uppercase;
     text-decoration: none;
+    white-space: nowrap;
+    flex: none;
   }
 
   .shell-subnav a[aria-current='page'] {

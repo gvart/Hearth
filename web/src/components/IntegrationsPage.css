@@ -1,0 +1,18 @@
+/* Integrations: one card each, its state as a pill */
+.integrations {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.integrations-lead {
+  max-width: var(--measure);
+  margin-bottom: var(--space-4);
+}
+
+.integration-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  margin-top: auto;
+}
