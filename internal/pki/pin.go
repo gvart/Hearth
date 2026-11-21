@@ -29,6 +29,27 @@ func PinnedTLSConfig(fp [sha256.Size]byte, serverName string) *tls.Config {
 	}
 }
 
+// PinnedAnyTLSConfig is PinnedTLSConfig for a hub that may present a chain
+// of any of the CAs cas: during a hub CA rotation, the one it served or the
+// one it cut over to.
+func PinnedAnyTLSConfig(cas []*x509.Certificate, serverName string) *tls.Config {
+	return &tls.Config{
+		MinVersion: tls.VersionTLS13,
+		ServerName: serverName,
+		// Standard verification is replaced, not skipped: see PinnedTLSConfig.
+		InsecureSkipVerify: true, //nolint:gosec // see VerifyConnection
+		VerifyConnection: func(cs tls.ConnectionState) error {
+			err := ErrFingerprintMismatch
+			for _, ca := range cas {
+				if err = verifyPinned(cs.PeerCertificates, Fingerprint(ca), serverName); err == nil {
+					return nil
+				}
+			}
+			return err
+		},
+	}
+}
+
 func verifyPinned(chain []*x509.Certificate, fp [sha256.Size]byte, serverName string) error {
 	if len(chain) == 0 {
 		return errors.New("hub presented no certificate")

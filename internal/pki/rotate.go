@@ -311,11 +311,12 @@ func (c *CA) writeNext(kp keyPair) error {
 }
 
 // Cutover makes the hub serve certificates of the next CA. Setting it again
-// is a no-op; it needs the next CA's key.
+// is a no-op; it needs the next CA's key, unless the hub holds no CA key at
+// all (a member of an AP cluster that is no master, which signs nothing).
 func (c *CA) Cutover() error {
 	c.mu.Lock()
 	s := c.state()
-	if s.next == nil || s.next.key == nil || !s.active {
+	if s.next == nil || !s.active || (s.next.key == nil && s.cur.key != nil) {
 		c.mu.Unlock()
 		return ErrNoNextCA
 	}
@@ -334,16 +335,36 @@ func (c *CA) Cutover() error {
 // A crash between the two renames is completed by LoadOrCreateCA, and a
 // Finish that failed between them is completed by calling it again: a
 // rename whose source is gone is done when its target is the next CA's.
+//
+// A hub that holds no CA key (see Cutover) finishes with the next CA's
+// certificate alone, which replaces ca.crt.
 func (c *CA) Finish() error {
 	c.mu.Lock()
 	s := c.state()
-	if s.next == nil || s.next.key == nil {
+	if s.next == nil || (s.next.key == nil && s.cur.key != nil) {
 		c.mu.Unlock()
 		return ErrNoNextCA
 	}
 	if c.dir == "" {
 		c.mu.Unlock()
 		return errors.New("finish CA rotation: the CA has no data dir")
+	}
+	if s.next.key == nil {
+		err := replaceFile(filepath.Join(c.dir, CACertFile), EncodeCertPEM(s.next.cert), 0o644)
+		if err == nil {
+			if err = os.Remove(filepath.Join(c.dir, NextCACertFile)); errors.Is(err, os.ErrNotExist) {
+				err = nil
+			}
+		}
+		if err != nil {
+			c.mu.Unlock()
+			return fmt.Errorf("finish CA rotation: %w", err)
+		}
+		syncDir(c.dir)
+		c.st.Store(newState(*s.next, nil, false, false))
+		c.mu.Unlock()
+		c.changed()
+		return nil
 	}
 	for _, f := range [][2]string{{NextCACertFile, CACertFile}, {NextCAKeyFile, CAKeyFile}} {
 		src, dst := filepath.Join(c.dir, f[0]), filepath.Join(c.dir, f[1])

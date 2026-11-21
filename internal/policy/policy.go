@@ -70,6 +70,10 @@ const (
 	// ClusterCAFetchKey hands the new CA's key, and a node certificate of it,
 	// to a cluster member during a hub CA rotation.
 	ClusterCAFetchKey Action = "cluster.ca.fetch_key"
+	// ClusterNodeCertRenew issues a member of an AP cluster that holds no CA
+	// key a new node certificate of the same CA, for the same member and
+	// cluster epoch, as its certificate nears its expiry.
+	ClusterNodeCertRenew Action = "cluster.node_cert.renew"
 	// AutomationLog is an automation's log action: it writes a line to the
 	// hub log and touches no device.
 	AutomationLog Action = "automation.log"
@@ -385,6 +389,9 @@ var rules = map[Action]rule{
 	// A member fetching the new CA key proves itself with its pinned node
 	// certificate, in a protocol no operator could stop to approve.
 	ClusterCAFetchKey: {class: Dangerous, actors: []string{ActorHub}, fixed: true},
+	// A renewal grants nothing new: the same member, CA and epoch, for a
+	// live, unrevoked member whose certificate is about to expire.
+	ClusterNodeCertRenew: {class: Safe, actors: []string{ActorHub}, fixed: true},
 	// Writing a log line changes nothing.
 	AutomationLog: {class: Read, actors: []string{ActorAutomation}},
 	// A webhook touches no device: it tells another system something.

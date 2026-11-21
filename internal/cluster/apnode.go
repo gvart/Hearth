@@ -95,25 +95,39 @@ type APConfig struct {
 	// AgentURL is this hub's agent-facing URL (https://host:port), which
 	// agents are sent to fail over to; empty if unknown.
 	AgentURL string
-	Log      *slog.Logger
+	// ConfigSource, if set, reports this host's configuration digests
+	// (HostFlagsSource), gossiped so members compare their host flags.
+	ConfigSource ConfigSource
+	Log          *slog.Logger
 	// Tuning for tests; zero uses the defaults.
 	Gossip ReplicatorConfig
 	// RolesEvery is how often a drain or a catch-up after a promotion
 	// runs a round; zero means 2 s.
 	RolesEvery time.Duration
+	// CAReconcileEvery is how often the member brings its CA to the hub CA
+	// rotation's stage (apcarotation.go); zero means 10 s.
+	CAReconcileEvery time.Duration
 	// tuneGossip, in tests, speeds the membership up.
 	tuneGossip func(*MembershipConfig)
 }
 
 // APNode is a hub's place in an AP cluster.
 type APNode struct {
-	cfg        APConfig
-	log        *slog.Logger
-	cert       tls.Certificate
+	cfg APConfig
+	log *slog.Logger
+	// cert is the hub node certificate this member presents; a hub CA
+	// rotation replaces it (apcarotation.go).
+	cert atomic.Pointer[tls.Certificate]
+	// epoch is the cluster epoch of this member's certificate (epoch.go):
+	// a peer of another epoch is refused.
+	epoch      string
 	hints      *Hints
 	rep        *Replicator
 	membership *Membership
 	st         *store.Store
+	// schema computes the write schema and keeps the written one
+	// (apschema.go).
+	schema *schemaGate
 	// masters is the ring over the live masters, link the HTTP between
 	// them (masters.go, masterlink.go); both exist once Bind ran.
 	masters  *MasterRing
@@ -139,6 +153,22 @@ type APNode struct {
 	// changeFn runs the CLI's role changes while this member is a master
 	// (apcontrol.go).
 	changeFn atomic.Pointer[RoleChangeFunc]
+
+	// The hub CA rotation (apcarotation.go): this member's node
+	// certificate of the next CA, the rotation as last read, the policy
+	// engine and the re-sealer the master layer sets.
+	nextCert atomic.Pointer[tls.Certificate]
+	rot      atomic.Pointer[store.CARotation]
+	caPolicy atomic.Pointer[policy.Engine]
+	resealer atomic.Pointer[Resealer]
+	// rotMu runs one rotation step (rotate, finish, abort, a drop) at a
+	// time; recMu one reconcile.
+	rotMu, recMu sync.Mutex
+	caKick       chan struct{}
+	// unpinnedClosed is the rotation whose unpinned connections were
+	// closed; halted is set once a rotation finished without this member.
+	unpinnedClosed atomic.Pointer[string]
+	halted         atomic.Bool
 }
 
 // NewAPNode prepares this hub's AP membership: its node certificate
@@ -161,9 +191,23 @@ func NewAPNode(ctx context.Context, cfg APConfig) (*APNode, error) {
 	if err := os.WriteFile(filepath.Join(dir, apModeFile), []byte("ap\n"), 0o600); err != nil {
 		return nil, fmt.Errorf("ap node: %w", err)
 	}
-	cert, err := loadOrIssueNodeCert(dir, cfg.CA, cfg.NodeID, "", time.Now())
+	// A finished rotation's node certificate move a crash interrupted.
+	if err := recoverNodeCertFinish(dir, cfg.CA); err != nil {
+		return nil, fmt.Errorf("ap node: node certificate: %w", err)
+	}
+	// A restored hub's first certificate is in the epoch its restore
+	// started; a joined one's is in the epoch of the master it joined.
+	epoch, err := readEpoch(cfg.DataDir)
+	if err != nil {
+		return nil, fmt.Errorf("ap node: %w", err)
+	}
+	cert, err := loadAPNodeCert(dir, cfg.CA, cfg.NodeID, epoch, time.Now())
 	if err != nil {
 		return nil, fmt.Errorf("ap node: node certificate: %w", err)
+	}
+	nextCert, err := readNextNodeCert(dir)
+	if err != nil {
+		return nil, fmt.Errorf("ap node: %w", err)
 	}
 	hints, err := OpenHints(ctx, filepath.Join(cfg.DataDir, HintsFile), 0)
 	if err != nil {
@@ -177,10 +221,20 @@ func NewAPNode(ctx context.Context, cfg APConfig) (*APNode, error) {
 	if cfg.RolesEvery <= 0 {
 		cfg.RolesEvery = 2 * time.Second
 	}
-	n := &APNode{
-		cfg: cfg, log: cfg.Log.With("component", "ap-cluster"), cert: cert, hints: hints,
-		local: local, rolesKick: make(chan struct{}, 1),
+	if cfg.CAReconcileEvery <= 0 {
+		cfg.CAReconcileEvery = 10 * time.Second
 	}
+	n := &APNode{
+		cfg: cfg, log: cfg.Log.With("component", "ap-cluster"), epoch: pki.HubEpoch(cert.Leaf), hints: hints,
+		local: local, rolesKick: make(chan struct{}, 1), caKick: make(chan struct{}, 1),
+	}
+	n.cert.Store(&cert)
+	if nextCert != nil {
+		n.nextCert.Store(nextCert)
+	}
+	n.resumeCutover()
+	n.schema = newSchemaGate(cfg.NodeID, filepath.Join(dir, schemaWrittenFile), apNodePeers{n}.Members,
+		func() bool { return n.rep != nil && n.rep.seeking.Load() }, n.log)
 	rc := cfg.Gossip
 	rc.OnSynced = n.onSynced
 	rc.NodeID, rc.Peers, rc.Replicas, rc.Hints, rc.Log = cfg.NodeID, apNodePeers{n}, cfg.Replicas, hints, cfg.Log
@@ -223,7 +277,10 @@ func (p apNodePeers) DialReplica(ctx context.Context, id string) (net.Conn, erro
 // StoreOptions are the options to open this hub's store with: sharded
 // reads and replicated writes, stamped with this member's id.
 func (n *APNode) StoreOptions() []store.Option {
-	return []store.Option{store.WithShards(n.rep), store.WithApplier(n.rep.Bind), store.WithOrigin(n.cfg.NodeID)}
+	return []store.Option{
+		store.WithShards(n.rep), store.WithApplier(n.rep.Bind), store.WithOrigin(n.cfg.NodeID),
+		store.WithWriteSchema(n.schema.WriteSchema),
+	}
 }
 
 // Bind checks the opened store (a member away longer than the tombstone
@@ -237,20 +294,39 @@ func (n *APNode) Bind(ctx context.Context, st *store.Store) error {
 	if err := CheckRejoin(filepath.Join(n.cfg.DataDir, RaftDir, lastContactFile), has, time.Now()); err != nil {
 		return err
 	}
+	supported, err := st.SchemaVersion(ctx)
+	if err != nil {
+		return err
+	}
+	if h := n.schema.Written(); supported < h {
+		return fmt.Errorf("this hub's store is at schema %d but the cluster has written %d: run the cluster's "+
+			"hearth version or a newer one", supported, h)
+	}
+	n.schema.bind(supported)
 	n.st = st
-	cert := n.cert
+	// Before any peer is checked: during a rotation only pinned
+	// certificates of the old CA pass.
+	n.loadRotation(ctx)
 	mc := MembershipConfig{
 		NodeID: n.cfg.NodeID, Roles: n.local.Roles, Allowed: n.cfg.Allowed,
 		Listen: n.cfg.Listen, Listener: n.cfg.Listener, Advertise: n.cfg.Advertise,
-		Seeds:  n.seeds,
-		Schema: func(ctx context.Context) (int64, error) { return st.SchemaVersion(ctx) },
+		Seeds: n.seeds,
+		// The store's schema is fixed once it is open: gossip the one read
+		// above rather than asking the database at every refresh, where a
+		// failed read would leave the member saying none.
+		Schema: func(context.Context) (int64, error) { return supported, nil },
 		Log:    n.cfg.Log, CA: n.cfg.CA,
-		Cert:    func() *tls.Certificate { return &cert },
-		Check:   n.checkPeer,
-		Replica: n.rep.ServeConn,
-		Master:  func(c net.Conn, peer string) { n.link.Accept(c, peer) },
-		Message: n.handleMessage,
-		Removed: n.removed,
+		Cert:        n.cert.Load,
+		Check:       n.checkPeer,
+		Replica:     n.rep.ServeConn,
+		Master:      func(c net.Conn, peer string) { n.link.Accept(c, peer) },
+		Message:     n.handleMessage,
+		Removed:     n.removed,
+		Written:     n.schema.Written,
+		CheckSchema: n.schema.checkSchema,
+	}
+	if src := n.cfg.ConfigSource; src != nil {
+		mc.ConfigDigest = func() string { return digestOf(src()) }
 	}
 	if n.cfg.tuneGossip != nil {
 		n.cfg.tuneGossip(&mc)
@@ -420,8 +496,20 @@ func hasRows(ctx context.Context, st *store.Store) (bool, error) {
 	return false, nil
 }
 
-// checkPeer refuses a revoked hub certificate.
+// Epoch is this member's cluster epoch; empty for a cluster never restored
+// from a backup.
+func (n *APNode) Epoch() string { return n.epoch }
+
+// checkPeer refuses a hub certificate of another cluster epoch, a revoked
+// one and, during a hub CA rotation, an old-CA one other than the one
+// pinned for its hub.
 func (n *APNode) checkPeer(cert *x509.Certificate) error {
+	if pki.HubEpoch(cert) != n.epoch {
+		return errOtherEpoch
+	}
+	if err := n.checkRotationPin(cert); err != nil {
+		return err
+	}
 	if n.st == nil {
 		return nil
 	}
@@ -511,16 +599,24 @@ func (n *APNode) Run(ctx context.Context) error {
 		return nil
 	})
 	g.Go(func() error { n.runRoles(gctx); return nil })
+	g.Go(func() error { n.runCA(gctx); return nil })
+	g.Go(func() error {
+		changes, stop := n.membership.Changes()
+		defer stop()
+		n.runSchemaGate(gctx, changes)
+		return nil
+	})
 	return g.Wait()
 }
 
 // RecordNodeCert records this hub's node certificate in the hub
 // certificates, so removing the hub can revoke it.
 func (n *APNode) RecordNodeCert(ctx context.Context) error {
-	leaf := n.cert.Leaf
+	cert := n.cert.Load()
+	leaf := cert.Leaf
 	if leaf == nil {
 		var err error
-		if leaf, err = x509.ParseCertificate(n.cert.Certificate[0]); err != nil {
+		if leaf, err = x509.ParseCertificate(cert.Certificate[0]); err != nil {
 			return err
 		}
 	}
@@ -556,6 +652,9 @@ func ServeAPControl(ctx context.Context, dataDir string, n *APNode, log *slog.Lo
 		writeJSON(w, n.Status())
 	})
 	mux.HandleFunc("POST /v1/change", n.serveRoleChange)
+	mux.HandleFunc("POST /v1/ca/change", n.serveCAChange)
+	mux.HandleFunc("GET /v1/ca/status", n.serveCAStatus)
+	mux.HandleFunc("POST /v1/snapshot", n.serveSnapshot)
 	mux.HandleFunc("POST /v1/apply", func(w http.ResponseWriter, r *http.Request) {
 		b, err := io.ReadAll(io.LimitReader(r.Body, maxCommandSize))
 		if err != nil {
@@ -565,6 +664,11 @@ func ServeAPControl(ctx context.Context, dataDir string, n *APNode, log *slog.Lo
 		cmd, err := store.DecodeCommand(b)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if isRotationCommand(cmd) || cmd.Op() == (store.RevokeCACerts{}).Op() {
+			// Only the rotation, on a master, writes these.
+			writeJSON(w, applyReply{Error: toWireError(errRotationViaLog)})
 			return
 		}
 		res, err := n.rep.Apply(r.Context(), cmd)
@@ -665,22 +769,26 @@ func (s *APJoinServer) Join(ctx context.Context, req *connect.Request[clusterv1.
 		Target:    msg.GetNodeId(),
 		Detail:    map[string]any{"gossip_address": msg.GetRaftAddress(), "schema_version": msg.GetSchemaVersion(), "mode": "ap"},
 	}, func(ctx context.Context) error {
-		have, err := s.store.SchemaVersion(ctx)
-		if err != nil {
-			return err
-		}
-		if msg.GetSchemaVersion() < have {
-			refused = fmt.Sprintf("this hub's binary supports store schema up to %d but the cluster is at %d; "+
+		// A joiner needs the schema the cluster has written, not this
+		// master's: during a rolling upgrade an older binary still joins.
+		if have := s.node.WrittenSchema(); msg.GetSchemaVersion() < have {
+			refused = fmt.Sprintf("this hub's binary supports store schema up to %d but the cluster has written %d; "+
 				"run the cluster's hearth version or a newer one", msg.GetSchemaVersion(), have)
-			return fmt.Errorf("%w: joining binary supports %d, cluster at %d", errSchema, msg.GetSchemaVersion(), have)
+			return fmt.Errorf("%w: joining binary supports %d, cluster wrote %d", errSchema, msg.GetSchemaVersion(), have)
 		}
 		for _, m := range s.node.Status().Members {
 			if m.ID == msg.GetNodeId() && m.State != MemberLeft {
 				return errNodeTaken
 			}
 		}
+		// Every member takes part in a rotation from its start: a hub that
+		// joined during one would hold only the old CA.
+		if s.node.rotationActive() {
+			return store.ErrCARotationActive
+		}
 		now := s.now()
-		c, err := s.ca.SignHubCSRInEpoch(msg.GetCsr(), msg.GetNodeId(), "", now)
+		// In this member's epoch: the joiner records it (Join).
+		c, err := s.ca.SignHubCSRInEpoch(msg.GetCsr(), msg.GetNodeId(), s.node.epoch, now)
 		if err != nil {
 			return fmt.Errorf("%w: %w", errBadCSR, err)
 		}
@@ -722,6 +830,9 @@ func (s *APJoinServer) toConnectError(ctx context.Context, err error) error {
 		return connect.NewError(connect.CodeInvalidArgument, err)
 	case errors.Is(err, errNodeTaken):
 		return connect.NewError(connect.CodeAlreadyExists, err)
+	case errors.Is(err, store.ErrCARotationActive):
+		return connect.NewError(connect.CodeFailedPrecondition, errors.New("a hub CA rotation is under way: "+
+			"no hub joins until it is finished or aborted (`hearth cluster ca finish|abort`)"))
 	case errors.Is(err, store.ErrNotFound):
 		return connect.NewError(connect.CodeUnauthenticated, errors.New("unknown join token"))
 	case errors.Is(err, store.ErrTokenUsed):

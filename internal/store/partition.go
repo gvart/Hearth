@@ -290,11 +290,20 @@ func RouteOf(cmd Command) (Route, error) {
 		return global(false)
 	case RecordHubCert, RevokeHubCerts, SetPasswordHash, PutConfigDocs, DeleteConfigDoc:
 		return global(true)
-	case StartCARotation, AdvanceCARotation, ResealSecrets:
-		// A rotation reseals runbook runs and revokes certificates on
-		// every shard, from a master holding the CA key: it waits for
-		// masters (docs/impl/ap-cluster.md, item 6).
-		return Route{}, fmt.Errorf("%w: a hub CA rotation is not supported in an AP cluster yet", ErrNoRoute)
+	case StartCARotation, AdvanceCARotation:
+		return global(true)
+	case RevokeCACerts:
+		return Route{Kind: RouteEvery}, nil
+	case ResealSecrets:
+		// One secret per command in a sharded cluster: a runbook run's is
+		// written on its runbook's replicas, the others are global.
+		if len(c.Secrets) != 1 {
+			return Route{}, fmt.Errorf("%w: re-seal one secret per command in a sharded cluster", ErrNoRoute)
+		}
+		if sec := c.Secrets[0]; sec.Table == SealedRunbookRuns {
+			return key(sec.Key, true)
+		}
+		return global(true)
 	case CreateToken:
 		return key(keyString(c.Hash), true)
 	case ConsumeToken:

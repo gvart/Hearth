@@ -3,6 +3,7 @@
 package cluster
 
 import (
+	"cmp"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -37,6 +38,12 @@ type apTestNode struct {
 	// srv serves its ClusterService over TLS (FetchCAKey), at node.AgentURL.
 	srv  *httptest.Server
 	stop func()
+	// storeOpts and config, set before start, open its store and report
+	// its host flags (apschema_test.go).
+	storeOpts []store.Option
+	config    ConfigSource
+	// caEvery, if set, is how often it reconciles its CA (100 ms if not).
+	caEvery time.Duration
 }
 
 type apSpec struct {
@@ -83,6 +90,14 @@ func newAPTestCluster(t *testing.T, n int, specs ...apSpec) map[string]*apTestNo
 
 func startAPTestNode(t *testing.T, ca *pki.CA, s apSpec, n int, seed string) *apTestNode {
 	t.Helper()
+	tn := prepareAPTestNode(t, ca, s)
+	tn.start(t, n, seed)
+	return tn
+}
+
+// prepareAPTestNode makes the data dir of member s, not started yet.
+func prepareAPTestNode(t *testing.T, ca *pki.CA, s apSpec) *apTestNode {
+	t.Helper()
 	dir := t.TempDir()
 	raft := filepath.Join(dir, RaftDir)
 	if err := os.MkdirAll(raft, 0o700); err != nil {
@@ -105,9 +120,7 @@ func startAPTestNode(t *testing.T, ca *pki.CA, s apSpec, n int, seed string) *ap
 	if err := saveLocalRoles(dir, LocalRoles{Roles: s.roles}); err != nil {
 		t.Fatal(err)
 	}
-	tn := &apTestNode{id: s.id, dir: dir, allowed: s.allowed}
-	tn.start(t, n, seed)
-	return tn
+	return &apTestNode{id: s.id, dir: dir, allowed: s.allowed}
 }
 
 // start runs the member on its data dir.
@@ -137,7 +150,8 @@ func (tn *apTestNode) start(t *testing.T, n int, seed string) {
 	node, err := NewAPNode(t.Context(), APConfig{
 		DataDir: tn.dir, NodeID: tn.id, CA: ca, Allowed: tn.allowed,
 		Listen: ln.Addr().String(), Listener: ln, Advertise: ln.Addr().String(), Seeds: seeds,
-		Replicas: n, Log: testLogger(t), RolesEvery: 50 * time.Millisecond,
+		Replicas: n, Log: testLogger(t), RolesEvery: 50 * time.Millisecond, ConfigSource: tn.config,
+		CAReconcileEvery: cmp.Or(tn.caEvery, 100*time.Millisecond),
 		Gossip: ReplicatorConfig{
 			RequestTimeout: 2 * time.Second, AntiEntropyEvery: time.Hour, HintsEvery: time.Hour, GCEvery: time.Hour,
 		},
@@ -150,7 +164,15 @@ func (tn *apTestNode) start(t *testing.T, n int, seed string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	st := storetest.Open(t, node.StoreOptions()...)
+	// The store lives in the data dir, as a hub's does: a restart keeps it.
+	dbPath := filepath.Join(tn.dir, "hearth.db")
+	if _, err := os.Stat(dbPath); errors.Is(err, os.ErrNotExist) {
+		storetest.Migrated(t, dbPath)
+	}
+	st, err := store.Open(t.Context(), dbPath, append(node.StoreOptions(), tn.storeOpts...)...)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := node.Bind(t.Context(), st); err != nil {
 		t.Fatal(err)
 	}
@@ -173,6 +195,7 @@ func (tn *apTestNode) start(t *testing.T, n int, seed string) {
 		stopped = true
 		cancel()
 		<-done
+		_ = st.Close()
 		srv.Close()
 	}
 	t.Cleanup(tn.stop)

@@ -137,7 +137,7 @@ func startAPNode(ctx context.Context, opts hubOptions, allowed cluster.RoleSet, 
 	node, err := cluster.NewAPNode(ctx, cluster.APConfig{
 		DataDir: opts.dataDir, NodeID: nodeID, CA: ca, Allowed: allowed,
 		Listen: o.gossipListen, Listener: ln, Advertise: advertise, Seeds: seeds,
-		Replicas: o.replicas, AgentURL: agentURL, Log: log,
+		Replicas: o.replicas, AgentURL: agentURL, Log: log, ConfigSource: cluster.HostFlagsSource(opts.dangerousAutomations),
 	})
 	if err != nil {
 		_ = ln.Close()

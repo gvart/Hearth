@@ -42,6 +42,21 @@ type openConfig struct {
 	origin     string
 	digest     bool
 	shards     Shards
+	// writeSchema, if set, caps the schema writes use (WithWriteSchema).
+	writeSchema func() int64
+}
+
+// WithWriteSchema caps the schema version the store's writes use at what
+// schema returns: a command that needs a newer schema is refused with
+// ErrSchemaTooOld, and a command that writes a column only from some
+// schema on leaves it out below it. In an AP cluster schema returns the
+// cluster's write schema, the oldest schema a live member supports
+// (docs/design/ap-cluster.md §8): a member's database is migrated when it
+// opens, but a table or column a migration added is written only once
+// every live member supports it. Without it, writes use the database's
+// schema.
+func WithWriteSchema(schema func() int64) Option {
+	return func(c *openConfig) { c.writeSchema = schema }
 }
 
 // WithClock makes the store stamp its writes with clock instead of one of
@@ -137,10 +152,15 @@ func (s *Store) ApplyLocalMutations(ctx context.Context, cmd Command) (res Resul
 	if err != nil {
 		return Result{}, nil, fmt.Errorf("apply %s: %w", cmd.Op(), err)
 	}
+	// Versions follow the database; what is written, the write schema.
+	versioned := v >= VersionedSchema
+	if s.writeSchema != nil {
+		v = min(v, s.writeSchema())
+	}
 	if err = checkSchema(cmd, v); err != nil {
 		return Result{}, nil, err
 	}
-	w := &writer{s: s, tx: tx, stamp: stampOf(cmd), schema: v, versioned: v >= VersionedSchema, dt: s.newDigestTx()}
+	w := &writer{s: s, tx: tx, stamp: stampOf(cmd), schema: v, versioned: versioned, dt: s.newDigestTx()}
 	if res, err = cmd.apply(ctx, w); err != nil {
 		return Result{}, nil, err
 	}

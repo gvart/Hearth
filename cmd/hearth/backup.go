@@ -87,6 +87,17 @@ func runBackup(ctx context.Context, opts backupOptions, output, passphrase, vers
 		return err
 	}
 	defer st.Close()
+	// An AP member's database holds only its shards: the running hub
+	// copies the whole cluster store into the backup's staging file.
+	var snapshot func(context.Context, string) error
+	if cluster.IsAPMember(opts.dataDir) {
+		cc, err := cluster.DialControl(opts.dataDir)
+		if err != nil {
+			return err
+		}
+		defer cc.Close()
+		snapshot = cc.Snapshot
+	}
 	var m backup.Manifest
 	created := false
 	_, err = adminDo(ctx, opts.dataDir, st, out, false, policy.Request{
@@ -96,7 +107,7 @@ func runBackup(ctx context.Context, opts backupOptions, output, passphrase, vers
 		m, err = backup.Create(ctx, backup.CreateOptions{
 			DataDir: opts.dataDir, Store: st, Output: output, Passphrase: passphrase,
 			NotifyConfig: opts.notifyConfig, AutomationsDir: opts.automationsDir, RunbooksDir: opts.runbooksDir,
-			HearthVersion: version, Clustered: cluster.IsMember(opts.dataDir),
+			HearthVersion: version, Clustered: cluster.IsMember(opts.dataDir), Snapshot: snapshot,
 		})
 		created = err == nil
 		return err

@@ -88,7 +88,7 @@ func TestBackupScheduler(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var logs bytes.Buffer
-			got, err := backupScheduler(hubOptions{dataDir: dir, backup: tt.opts}, nil, nil, notifier, false,
+			got, err := backupScheduler(hubOptions{dataDir: dir, backup: tt.opts}, nil, nil, notifier, false, nil,
 				slog.New(slog.NewTextHandler(&logs, nil)))
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {

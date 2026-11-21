@@ -315,6 +315,7 @@ var wireKinds = map[string]error{
 	"unpinned_certs":       ErrUnpinnedCerts,
 	"old_ca_holders":       ErrOldCAHolders,
 	"no_rotation":          ErrNoRotation,
+	"rotation_owner":       ErrRotationOwner,
 }
 
 // kindError is a known store error received over the wire: it keeps the

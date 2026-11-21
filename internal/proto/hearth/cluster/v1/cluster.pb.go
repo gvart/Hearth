@@ -870,7 +870,12 @@ type FetchCAKeyRequest struct {
 	NewCaFingerprint string `protobuf:"bytes,1,opt,name=new_ca_fingerprint,json=newCaFingerprint,proto3" json:"new_ca_fingerprint,omitempty"`
 	// csr is a DER certificate request for the caller's node certificate of
 	// the new CA; empty asks for the key only.
-	Csr           []byte `protobuf:"bytes,2,opt,name=csr,proto3" json:"csr,omitempty"`
+	Csr []byte `protobuf:"bytes,2,opt,name=csr,proto3" json:"csr,omitempty"`
+	// old_ca_key_proof, in an AP cluster's rotation, is a signature by the
+	// current CA's key over the message the hub names (ap key proof): a master
+	// proves it holds that key to be handed the new one. Without it, the
+	// caller gets a node certificate of the new CA, not the key.
+	OldCaKeyProof []byte `protobuf:"bytes,3,opt,name=old_ca_key_proof,json=oldCaKeyProof,proto3" json:"old_ca_key_proof,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -915,6 +920,13 @@ func (x *FetchCAKeyRequest) GetNewCaFingerprint() string {
 func (x *FetchCAKeyRequest) GetCsr() []byte {
 	if x != nil {
 		return x.Csr
+	}
+	return nil
+}
+
+func (x *FetchCAKeyRequest) GetOldCaKeyProof() []byte {
+	if x != nil {
+		return x.OldCaKeyProof
 	}
 	return nil
 }
@@ -1146,10 +1158,11 @@ const file_hearth_cluster_v1_cluster_proto_rawDesc = "" +
 	"\adigests\x18\x01 \x03(\v25.hearth.cluster.v1.ConfigDigestsResponse.DigestsEntryR\adigests\x1a:\n" +
 	"\fDigestsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"S\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"|\n" +
 	"\x11FetchCAKeyRequest\x12,\n" +
 	"\x12new_ca_fingerprint\x18\x01 \x01(\tR\x10newCaFingerprint\x12\x10\n" +
-	"\x03csr\x18\x02 \x01(\fR\x03csr\"M\n" +
+	"\x03csr\x18\x02 \x01(\fR\x03csr\x12'\n" +
+	"\x10old_ca_key_proof\x18\x03 \x01(\fR\roldCaKeyProof\"M\n" +
 	"\x12FetchCAKeyResponse\x12\x15\n" +
 	"\x06ca_key\x18\x01 \x01(\fR\x05caKey\x12 \n" +
 	"\vcertificate\x18\x02 \x01(\fR\vcertificate\"\x0f\n" +

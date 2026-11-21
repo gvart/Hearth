@@ -42,6 +42,7 @@ func allCommands() []Command {
 		StartCARotation{NewCAFP: "c1", OldCAFP: "c0", NewCACert: "pem", Pins: `{"hub-a":"f0b"}`, Now: 20},
 		AdvanceCARotation{NewCAFP: "c1", From: CAStageStarted, To: CAStageCutover, Now: 21},
 		ResealSecrets{NewCAFP: "c1", Secrets: []SealedSecret{{Table: SealedKubeClusters, ID: "k1", Sealed: []byte{1}, Resealed: []byte{9}}}},
+		RevokeCACerts{CAFP: "c1", Now: 22},
 		RevokeDevice{DeviceID: "pi", Now: 8},
 		AppendAudit{
 			TS: 9, ActorKind: "agent", ActorID: "pi", Action: "agent.enroll", Target: "pi",
@@ -373,6 +374,11 @@ func runScenario(t *testing.T, s *Store) {
 	sealed, err := s.CARotations().Sealed(ctx)
 	must(err)
 	must(s.CARotations().Finish(ctx, "c1", SealedDigest(sealed), at(5*time.Hour)))
+	revoked, err := s.CARotations().RevokeCerts(ctx, "c2", at(5*time.Hour))
+	must(err)
+	if revoked != 0 {
+		t.Errorf("RevokeCerts of a CA that issued none = %d", revoked)
+	}
 
 	// An approval held, then decided; deciding it again is refused.
 	must(s.Approvals().Create(ctx, Approval{

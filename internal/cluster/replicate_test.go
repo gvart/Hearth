@@ -529,6 +529,11 @@ func TestAuditPagesAcrossMembers(t *testing.T) {
 	ids := []string{"a", "b", "c"}
 	an := newAPNet(t, 2, ids...)
 	for i := range 12 {
+		// Appends on different members within one millisecond are
+		// concurrent: their HLCs order them by each member's logical
+		// counter, not by when they were made. A millisecond apart, the
+		// physical part orders them.
+		time.Sleep(2 * time.Millisecond)
 		if _, err := an.m(ids[i%3]).st.Audit().Append(ctx, store.AuditEntry{
 			TS: time.Now(), ActorKind: "user", ActorID: "admin", Action: fmt.Sprintf("act%02d", i), Decision: "allow", Result: "ok",
 		}); err != nil {
@@ -939,4 +944,37 @@ func TestCheckMode(t *testing.T) {
 	if !IsAPMember(apDir) || IsAPMember(raftDir) {
 		t.Error("IsAPMember")
 	}
+}
+
+// TestDeadPooledConnRetried: a pooled connection closed under the
+// replicator (as a hub CA rotation closes the old CA's) costs a new
+// connection, not a write: the member is not taken as down.
+func TestDeadPooledConnRetried(t *testing.T) {
+	ctx := t.Context()
+	an := newAPNet(t, 2, "a", "b")
+	a := an.m("a")
+	if err := a.st.Devices().Upsert(ctx, device("d1", "n")); err != nil {
+		t.Fatal(err)
+	}
+	// The write reaches b in the background, over a connection pooled after.
+	waitUntil(t, 5*time.Second, "a connection to b in a's pool", func() bool {
+		a.rep.poolMu.Lock()
+		defer a.rep.poolMu.Unlock()
+		return len(a.rep.pool["b"]) > 0
+	})
+	a.rep.poolMu.Lock()
+	for _, c := range a.rep.pool["b"] {
+		_ = c.Close()
+	}
+	a.rep.poolMu.Unlock()
+	if err := a.st.Devices().Upsert(ctx, device("d2", "n")); err != nil {
+		t.Fatalf("write over a dead pooled connection: %v", err)
+	}
+	if a.rep.suspected("b") {
+		t.Fatal("b is taken as down")
+	}
+	waitUntil(t, 5*time.Second, "b to get d2", func() bool {
+		_, err := an.m("b").st.Devices().Get(ctx, "d2")
+		return err == nil
+	})
 }

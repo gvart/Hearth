@@ -5,6 +5,7 @@ package store
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"fmt"
 	"maps"
 	"slices"
@@ -50,6 +51,13 @@ func (s *Store) Merge(ctx context.Context, muts []Mutation) (err error) {
 		return fmt.Errorf("merge: %w: it needs %d", ErrSchemaTooOld, VersionedSchema)
 	}
 	dt := s.newDigestTx()
+	// The caller may send muts to other members too: filter a copy.
+	muts = slices.Clone(muts)
+	for i := range muts {
+		if muts[i].Row, err = s.knownColumns(ctx, tx, muts[i].Table, muts[i].Row); err != nil {
+			return fmt.Errorf("merge %s: %w", muts[i].Table, err)
+		}
+	}
 	for _, m := range muts {
 		err = dt.merge(ctx, tx, m, func() error {
 			if m.Table == auditTable {
@@ -67,6 +75,54 @@ func (s *Store) Merge(ctx context.Context, muts []Mutation) (err error) {
 	}
 	dt.commit()
 	return nil
+}
+
+// knownColumns returns row without the columns table lacks in this
+// member's database: a newer member's row carries the columns its newer
+// schema added, at their defaults until every live member supports that
+// schema (WithWriteSchema), and an older member leaves them out. The
+// columns of each table are read once and cached; a migration clears the
+// cache.
+func (s *Store) knownColumns(ctx context.Context, tx *sql.Tx, table string, row map[string]any) (map[string]any, error) {
+	cols, ok := s.columns.Load(table)
+	if !ok {
+		// table is a name of the store's own tables (checkMutation).
+		rows, err := tx.QueryContext(ctx, `SELECT name FROM pragma_table_info(?)`, table)
+		if err != nil {
+			return nil, err
+		}
+		known := map[string]bool{}
+		for rows.Next() {
+			var name string
+			if err := rows.Scan(&name); err != nil {
+				_ = rows.Close()
+				return nil, err
+			}
+			known[name] = true
+		}
+		if err := rows.Close(); err != nil {
+			return nil, err
+		}
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+		cols, _ = s.columns.LoadOrStore(table, known)
+	}
+	known := cols.(map[string]bool) //nolint:forcetypeassert // only maps are stored
+	var out map[string]any
+	for c := range row {
+		if known[c] {
+			continue
+		}
+		if out == nil {
+			out = maps.Clone(row)
+		}
+		delete(out, c)
+	}
+	if out == nil {
+		return row, nil
+	}
+	return out, nil
 }
 
 // checkMutation refuses a mutation no member makes.

@@ -186,6 +186,11 @@ message FetchCAKeyRequest {
   // csr is a DER certificate request for the caller's node certificate of
   // the new CA; empty asks for the key only.
   bytes csr = 2;
+  // old_ca_key_proof, in an AP cluster's rotation, is a signature by the
+  // current CA's key over the message the hub names (ap key proof): a master
+  // proves it holds that key to be handed the new one. Without it, the
+  // caller gets a node certificate of the new CA, not the key.
+  bytes old_ca_key_proof = 3;
 }
 
 // FetchCAKeyResponse carries the new CA's key and a node certificate.

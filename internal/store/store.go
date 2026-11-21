@@ -47,6 +47,12 @@ type Store struct {
 	ro *sql.DB
 	// stmts caches the statements the writer builds (see stmtFor).
 	stmts sync.Map
+	// writeSchema caps the schema writes use (WithWriteSchema); nil uses
+	// the database's.
+	writeSchema func() int64
+	// columns caches each table's columns in the local database, by table
+	// name (see knownColumns).
+	columns sync.Map
 }
 
 // Open opens (creating if needed) the SQLite database at path with WAL,
@@ -99,6 +105,7 @@ func Open(ctx context.Context, path string, opts ...Option) (*Store, error) {
 			return nil, fmt.Errorf("open sqlite %s: %w", path, err)
 		}
 	}
+	s.writeSchema = cfg.writeSchema
 	s.applier = ApplierFunc(s.ApplyLocal)
 	if cfg.newApplier != nil {
 		s.applier = cfg.newApplier(s)

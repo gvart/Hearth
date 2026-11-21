@@ -1042,22 +1042,40 @@ func (r *Replicator) call(ctx context.Context, m string, req apRequest) (apRespo
 	// whatever the request may take once it is: a write forwarded to a
 	// member cut off a moment ago costs that, not the request's timeout,
 	// before the next target is tried.
-	dctx, dcancel := context.WithTimeout(ctx, r.cfg.QuickTimeout)
-	c, err := r.conn(dctx, m)
-	dcancel()
-	if err != nil {
-		return unreachable(err)
-	}
-	d, _ := ctx.Deadline()
-	_ = c.SetDeadline(d)
-	var resp apResponse
-	if err := writeFrame(c, req); err != nil {
+	var (
+		c    net.Conn
+		resp apResponse
+	)
+	// A pooled connection may have been closed since it was pooled (a hub
+	// CA rotation closes the connections of the old CA's certificates): its
+	// request is sent again once, on a new connection. A merge or a read is
+	// harmless again (a merge applies by its stamps); a command forwarded
+	// for m to coordinate (opApply) is sent again only if it could not be
+	// written, as m may have applied it.
+	for tryPool := true; ; tryPool = false {
+		dctx, dcancel := context.WithTimeout(ctx, r.cfg.QuickTimeout)
+		var pooled bool
+		var err error
+		c, pooled, err = r.conn(dctx, m, tryPool)
+		dcancel()
+		if err != nil {
+			return unreachable(err)
+		}
+		d, _ := ctx.Deadline()
+		_ = c.SetDeadline(d)
+		sent := false
+		if err = writeFrame(c, req); err == nil {
+			sent = true
+			err = readFrame(c, &resp)
+		}
+		if err == nil {
+			break
+		}
 		_ = c.Close()
-		return unreachable(err)
-	}
-	if err := readFrame(c, &resp); err != nil {
-		_ = c.Close()
-		return unreachable(err)
+		if !pooled || ctx.Err() != nil || (sent && req.Op == opApply) {
+			return unreachable(err)
+		}
+		resp = apResponse{}
 	}
 	_ = c.SetDeadline(time.Time{})
 	if resp.Error != nil && resp.Error.Kind == "not_member" {
@@ -1109,16 +1127,21 @@ func (r *Replicator) suspected(m string) bool {
 	return ok
 }
 
-func (r *Replicator) conn(ctx context.Context, m string) (net.Conn, error) {
-	r.poolMu.Lock()
-	if cs := r.pool[m]; len(cs) > 0 {
-		c := cs[len(cs)-1]
-		r.pool[m] = cs[:len(cs)-1]
+// conn returns a connection to m: a pooled one if pool and there is one
+// (pooled is then true), else a new one.
+func (r *Replicator) conn(ctx context.Context, m string, pool bool) (c net.Conn, pooled bool, err error) {
+	if pool {
+		r.poolMu.Lock()
+		if cs := r.pool[m]; len(cs) > 0 {
+			c := cs[len(cs)-1]
+			r.pool[m] = cs[:len(cs)-1]
+			r.poolMu.Unlock()
+			return c, true, nil
+		}
 		r.poolMu.Unlock()
-		return c, nil
 	}
-	r.poolMu.Unlock()
-	return r.cfg.Peers.DialReplica(ctx, m)
+	c, err = r.cfg.Peers.DialReplica(ctx, m)
+	return c, false, err
 }
 
 func (r *Replicator) putConn(m string, c net.Conn) {

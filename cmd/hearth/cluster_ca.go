@@ -46,7 +46,7 @@ func newClusterCARotateCmd() *cobra.Command {
 			"records rotations, and present a node certificate whose fingerprint is recorded: a hub that does\n" +
 			"not is never given the new key, --accept-unpinned or not. Agent certificates without a recorded\n" +
 			"fingerprint refuse the rotation unless --accept-unpinned: those agents are cut off when the\n" +
-			"rotation finishes. Run it on the leader's host\n" +
+			"rotation finishes. Run it on the leader's (AP: a master's) host\n" +
 			"while its hub runs; finish it with `hearth cluster ca finish`.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -61,6 +61,14 @@ func newClusterCARotateCmd() *cobra.Command {
 }
 
 func runClusterCARotate(ctx context.Context, dataDir string, acceptUnpinned, dryRun bool, out io.Writer) error {
+	if cluster.IsAP(dataDir) {
+		req := cluster.CARequest{Op: cluster.CAOpRotate, AcceptUnpinned: acceptUnpinned}
+		res, err := apCAStep(ctx, dataDir, req, dryRun, out, func(r cluster.CAResult) error { return printRotatePlan(out, *r.Rotate) })
+		if err != nil || res.Rotate == nil {
+			return err
+		}
+		return printRotated(out, res.Rotate.NewCAFP)
+	}
 	st, cc, err := openClusterControl(ctx, dataDir)
 	if err != nil {
 		return err
@@ -72,16 +80,8 @@ func runClusterCARotate(ctx context.Context, dataDir string, acceptUnpinned, dry
 	if err != nil {
 		return err
 	}
-	tw := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "HUB\tPINNED NODE CERTIFICATE\t")
-	for _, id := range sortedKeys(plan.Pins) {
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t\n", id, plan.Pins[id])
-	}
-	if err := tw.Flush(); err != nil {
-		return fmt.Errorf("write plan: %w", err)
-	}
-	for _, u := range plan.Unpinned {
-		_, _ = fmt.Fprintf(out, "Not renewed, cut off at the finish: %s %s (serial %s)\n", u.Kind, u.ID, u.Serial)
+	if err := printRotatePlan(out, plan); err != nil {
+		return err
 	}
 	done, err := adminDo(ctx, dataDir, st, out, dryRun, policy.Request{
 		Action: policy.ClusterCARotate,
@@ -94,9 +94,67 @@ func runClusterCARotate(ctx context.Context, dataDir string, acceptUnpinned, dry
 	if err != nil || !done {
 		return err
 	}
-	_, err = fmt.Fprintf(out, "Started the hub CA rotation to %s. Hubs and agents renew on their own; check\n"+
-		"`hearth cluster ca status`, then run `hearth cluster ca finish`.\n", plan.NewCAFP)
+	return printRotated(out, plan.NewCAFP)
+}
+
+func printRotatePlan(out io.Writer, plan cluster.RotatePlan) error {
+	tw := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "HUB\tPINNED NODE CERTIFICATE\t")
+	for _, id := range sortedKeys(plan.Pins) {
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t\n", id, plan.Pins[id])
+	}
+	if err := tw.Flush(); err != nil {
+		return fmt.Errorf("write plan: %w", err)
+	}
+	for _, u := range plan.Unpinned {
+		_, _ = fmt.Fprintf(out, "Not renewed, cut off at the finish: %s %s (serial %s)\n", u.Kind, u.ID, u.Serial)
+	}
+	return nil
+}
+
+func printRotated(out io.Writer, newCAFP string) error {
+	_, err := fmt.Fprintf(out, "Started the hub CA rotation to %s. Hubs and agents renew on their own; check\n"+
+		"`hearth cluster ca status`, then run `hearth cluster ca finish`.\n", newCAFP)
 	return err
+}
+
+// apCAStep has the running hub of an AP master plan a hub CA rotation step,
+// prints the plan, then has the hub decide (by its policy engine, audited
+// there) and run it, or only decide it for a dry run. The result is empty
+// after a dry run.
+func apCAStep(ctx context.Context, dataDir string, req cluster.CARequest, dryRun bool, out io.Writer,
+	printPlan func(cluster.CAResult) error,
+) (cluster.CAResult, error) {
+	cc, err := cluster.DialControl(dataDir)
+	if err != nil {
+		return cluster.CAResult{}, err
+	}
+	defer cc.Close()
+	req.Actor = adminActor()
+	plan := req
+	plan.Plan = true
+	res, err := cc.ChangeCA(ctx, plan)
+	if err != nil {
+		return cluster.CAResult{}, err
+	}
+	if err := printPlan(res); err != nil {
+		return cluster.CAResult{}, err
+	}
+	if dryRun {
+		req.DryRun = true
+		res, err := cc.ChangeCA(ctx, req)
+		if err != nil {
+			return cluster.CAResult{}, err
+		}
+		return cluster.CAResult{}, writeOut(out, "Dry run: cluster.ca.%s would be %s. Nothing was done.\n",
+			req.Op, decisionWord(res.Decision))
+	}
+	if req.Op == cluster.CAOpFinish {
+		if err := writeOut(out, "Finishing: waiting for every hub to serve the new CA...\n"); err != nil {
+			return cluster.CAResult{}, err
+		}
+	}
+	return cc.ChangeCA(ctx, req)
 }
 
 func newClusterCAFinishCmd() *cobra.Command {
@@ -112,7 +170,7 @@ func newClusterCAFinishCmd() *cobra.Command {
 			"stored secrets are re-sealed with its key, and every hub drops the old CA and deletes its key. From\n" +
 			"then on nothing of the old CA is trusted. It refuses while agents or hubs hold only old-CA\n" +
 			"certificates, unless --force, which cuts them off: such an agent has to enroll again, a hub to join\n" +
-			"again. Run it on the leader's host while its hub runs.",
+			"again. Run it on the leader's (AP: the rotation's owner's) host while its hub runs.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runClusterCAFinish(cmd.Context(), dataDir, force, dryRun, cmd.OutOrStdout())
@@ -125,6 +183,14 @@ func newClusterCAFinishCmd() *cobra.Command {
 }
 
 func runClusterCAFinish(ctx context.Context, dataDir string, force, dryRun bool, out io.Writer) error {
+	if cluster.IsAP(dataDir) {
+		req := cluster.CARequest{Op: cluster.CAOpFinish, Force: force}
+		res, err := apCAStep(ctx, dataDir, req, dryRun, out, func(r cluster.CAResult) error { return printFinishPlan(out, *r.Finish) })
+		if err != nil || res.Finish == nil {
+			return err
+		}
+		return printFinished(out, *res.Finish)
+	}
 	st, cc, err := openClusterControl(ctx, dataDir)
 	if err != nil {
 		return err
@@ -135,11 +201,8 @@ func runClusterCAFinish(ctx context.Context, dataDir string, force, dryRun bool,
 	if err != nil {
 		return err
 	}
-	for _, id := range plan.OldHubs {
-		_, _ = fmt.Fprintf(out, "Cut off: hub %s holds only old-CA certificates and has to join again.\n", id)
-	}
-	for _, id := range plan.OldDevices {
-		_, _ = fmt.Fprintf(out, "Cut off: device %s holds only an old-CA certificate and has to enroll again.\n", id)
+	if err := printFinishPlan(out, plan); err != nil {
+		return err
 	}
 	done, err := adminDo(ctx, dataDir, st, out, dryRun, policy.Request{
 		Action: policy.ClusterCAFinish,
@@ -155,7 +218,21 @@ func runClusterCAFinish(ctx context.Context, dataDir string, force, dryRun bool,
 	if err != nil || !done {
 		return err
 	}
-	_, err = fmt.Fprintf(out, "Finished: every hub serves %s only; %d sealed secrets re-sealed. Backups taken before\n"+
+	return printFinished(out, plan)
+}
+
+func printFinishPlan(out io.Writer, plan cluster.FinishPlan) error {
+	for _, id := range plan.OldHubs {
+		_, _ = fmt.Fprintf(out, "Cut off: hub %s holds only old-CA certificates and has to join again.\n", id)
+	}
+	for _, id := range plan.OldDevices {
+		_, _ = fmt.Fprintf(out, "Cut off: device %s holds only an old-CA certificate and has to enroll again.\n", id)
+	}
+	return nil
+}
+
+func printFinished(out io.Writer, plan cluster.FinishPlan) error {
+	_, err := fmt.Fprintf(out, "Finished: every hub serves %s only; %d sealed secrets re-sealed. Backups taken before\n"+
 		"now still hold the old CA key.\n", plan.NewCAFP, plan.Resealed)
 	return err
 }
@@ -173,7 +250,7 @@ func newClusterCAAbortCmd() *cobra.Command {
 			"already renewed hold only a certificate of the dropped CA and have to enroll again; they are listed\n" +
 			"first. It is also the way out when the leader that made the new CA is lost before another hub\n" +
 			"fetched its key. After the cutover it is refused: finish the rotation instead. Run it on the\n" +
-			"leader's host while its hub runs.",
+			"leader's (AP: the rotation's owner's) host while its hub runs.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runClusterCAAbort(cmd.Context(), dataDir, dryRun, cmd.OutOrStdout())
@@ -185,6 +262,14 @@ func newClusterCAAbortCmd() *cobra.Command {
 }
 
 func runClusterCAAbort(ctx context.Context, dataDir string, dryRun bool, out io.Writer) error {
+	if cluster.IsAP(dataDir) {
+		res, err := apCAStep(ctx, dataDir, cluster.CARequest{Op: cluster.CAOpAbort}, dryRun, out,
+			func(r cluster.CAResult) error { return printAbortPlan(out, *r.Abort) })
+		if err != nil || res.Abort == nil {
+			return err
+		}
+		return printAborted(out, res.Abort.NewCAFP)
+	}
 	st, cc, err := openClusterControl(ctx, dataDir)
 	if err != nil {
 		return err
@@ -195,8 +280,8 @@ func runClusterCAAbort(ctx context.Context, dataDir string, dryRun bool, out io.
 	if err != nil {
 		return err
 	}
-	for _, id := range plan.RenewedDevices {
-		_, _ = fmt.Fprintf(out, "Cut off: device %s was renewed by this rotation and has to enroll again.\n", id)
+	if err := printAbortPlan(out, plan); err != nil {
+		return err
 	}
 	done, err := adminDo(ctx, dataDir, st, out, dryRun, policy.Request{
 		Action: policy.ClusterCAAbort,
@@ -209,8 +294,19 @@ func runClusterCAAbort(ctx context.Context, dataDir string, dryRun bool, out io.
 	if err != nil || !done {
 		return err
 	}
-	_, err = fmt.Fprintf(out, "Aborted the hub CA rotation to %s: every hub drops the new CA; hubs can join again.\n",
-		plan.NewCAFP)
+	return printAborted(out, plan.NewCAFP)
+}
+
+func printAbortPlan(out io.Writer, plan cluster.AbortPlan) error {
+	for _, id := range plan.RenewedDevices {
+		_, _ = fmt.Fprintf(out, "Cut off: device %s was renewed by this rotation and has to enroll again.\n", id)
+	}
+	return nil
+}
+
+func printAborted(out io.Writer, newCAFP string) error {
+	_, err := fmt.Fprintf(out, "Aborted the hub CA rotation to %s: every hub drops the new CA; hubs can join again.\n",
+		newCAFP)
 	return err
 }
 

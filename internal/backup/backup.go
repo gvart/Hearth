@@ -87,6 +87,11 @@ type CreateOptions struct {
 	Clustered     bool
 	// WithoutCAKey leaves the CA private key out of the backup.
 	WithoutCAKey bool
+	// Snapshot, if set, writes the copy of the store into the backup's
+	// staging file at path, in place of Store.VacuumInto: on a member of an
+	// AP cluster, whose own database holds only its shards, a copy of the
+	// whole cluster store (cluster.APNode.Snapshot).
+	Snapshot func(ctx context.Context, path string) error
 
 	// kdf overrides the KDF cost, for tests.
 	kdf kdfParams
@@ -131,7 +136,11 @@ func Create(ctx context.Context, opts CreateOptions) (Manifest, error) {
 	}
 	defer removeTmp()
 	snapshot := filepath.Join(tmp, dbName)
-	if err := opts.Store.VacuumInto(ctx, snapshot); err != nil {
+	copyStore := opts.Store.VacuumInto
+	if opts.Snapshot != nil {
+		copyStore = opts.Snapshot
+	}
+	if err := copyStore(ctx, snapshot); err != nil {
 		return Manifest{}, fmt.Errorf("backup store: %w", err)
 	}
 	schema, err := opts.Store.SchemaVersion(ctx)

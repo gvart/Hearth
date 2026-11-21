@@ -711,3 +711,50 @@ func TestBackupWhileWriting(t *testing.T) {
 		}
 	}
 }
+
+// A backup with a Snapshot (an AP member's: the whole cluster store, not
+// its own shards) archives what Snapshot wrote, and a failed Snapshot
+// leaves no backup.
+func TestCreateUsesSnapshot(t *testing.T) {
+	dir, st := newHub(t)
+	out := filepath.Join(t.TempDir(), "hub.hbk")
+	opts := createOpts(dir, st, out)
+	opts.Snapshot = func(ctx context.Context, path string) error {
+		if err := st.VacuumInto(ctx, path); err != nil {
+			return err
+		}
+		cp, err := store.Open(ctx, path)
+		if err != nil {
+			return err
+		}
+		defer cp.Close()
+		now := time.Now()
+		return cp.Devices().Upsert(ctx, store.Device{ID: "dev-elsewhere", Name: "far", FirstSeen: now, LastSeen: now})
+	}
+	if _, err := Create(t.Context(), opts); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(t.TempDir(), "restored")
+	if _, err := Restore(t.Context(), RestoreOptions{Input: out, Passphrase: testPassphrase, DataDir: target}); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := store.Open(t.Context(), filepath.Join(target, dbName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restored.Close()
+	list, err := restored.Devices().List(t.Context())
+	if err != nil || len(list) != 2 {
+		t.Fatalf("restored devices = %+v, %v; want dev-1 and dev-elsewhere", list, err)
+	}
+
+	failed := filepath.Join(t.TempDir(), "failed.hbk")
+	opts = createOpts(dir, st, failed)
+	opts.Snapshot = func(context.Context, string) error { return errors.New("no replica of shard buckets 0-9 answered") }
+	if _, err := Create(t.Context(), opts); err == nil {
+		t.Fatal("Create with a failed Snapshot succeeded")
+	}
+	if _, err := os.Stat(failed); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("a failed backup left %s: %v", failed, err)
+	}
+}
