@@ -143,29 +143,3 @@ func TestSSENetworkHostEvent(t *testing.T) {
 		}
 	}
 }
-
-// A follower publishes the network events of a scan it applies from the log.
-func TestAppliedNetworkScan(t *testing.T) {
-	st := newTestStore(t)
-	reg := NewRegistry(RegistryConfig{Store: st, Replicated: true})
-	ch, unsubscribe := reg.Subscribe()
-	defer unsubscribe()
-	h := store.NetworkHost{MAC: "3e:00:00:00:00:03", IP: "192.168.2.30"}
-	reg.Applied(store.RecordNetworkScan{}, store.Result{NewHosts: []store.NetworkHost{h}, ReturnedHosts: []store.NetworkHost{h}}, false)
-	reg.Applied(store.RecordNetworkScan{}, store.Result{NewHosts: []store.NetworkHost{h}}, true) // the leader's own: already published
-	for _, want := range []string{discovery.EventNew, discovery.EventReturned} {
-		select {
-		case ev := <-ch:
-			if ev.Type != want || len(ev.Hosts) != 1 || ev.Hosts[0].MAC != h.MAC {
-				t.Fatalf("event = %+v, want %s", ev, want)
-			}
-		case <-time.After(time.Second):
-			t.Fatalf("no %s event", want)
-		}
-	}
-	select {
-	case ev := <-ch:
-		t.Fatalf("unexpected event %+v", ev)
-	default:
-	}
-}

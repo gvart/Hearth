@@ -28,7 +28,7 @@ func TestAPNodeCertRenewal(t *testing.T) {
 	a := startAPTestNode(t, ca, apSpec{"a", storageMaster, storageMaster}, 2, "")
 	// c's certificate expires in 5 days.
 	c := prepareAPTestNode(t, ca, apSpec{"c", storageOnly, storageMaster})
-	raft := filepath.Join(c.dir, RaftDir)
+	raft := filepath.Join(c.dir, StateDir)
 	for _, f := range []string{nodeCertFile, nodeKeyFile} {
 		if err := os.Remove(filepath.Join(raft, f)); err != nil {
 			t.Fatal(err)

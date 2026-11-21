@@ -12,7 +12,7 @@ import (
 
 // telemetrySchema is the schema version whose migration (00021) added the
 // telemetry table. Before it the admin has not answered, and cannot until
-// `hearth cluster migrate`.
+// every hub of the cluster is upgraded.
 const telemetrySchema = 21
 
 // TelemetrySetting is the admin's answer to the telemetry prompt.
@@ -90,7 +90,7 @@ func (r Telemetry) requireSchema(ctx context.Context) error {
 		return err
 	}
 	if v < telemetrySchema {
-		return fmt.Errorf("%w: it needs %d, the database is at %d; run `hearth cluster migrate` first",
+		return fmt.Errorf("%w: it needs %d, the database is at %d; upgrade every hub of the cluster first",
 			ErrSchemaTooOld, telemetrySchema, v)
 	}
 	return nil

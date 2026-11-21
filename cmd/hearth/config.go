@@ -104,8 +104,8 @@ func openConfigStore(ctx context.Context, dataDir string) (*store.Store, error) 
 	docs := st.ConfigDocs()
 	ok, err := docs.Available(ctx)
 	if err == nil && !ok {
-		err = fmt.Errorf("the database is at an older schema without configuration documents: run `hearth cluster migrate`, " +
-			"restart the hubs, then try again")
+		err = fmt.Errorf("the database is at an older schema without configuration documents: upgrade every hub of the cluster, " +
+			"then try again")
 	}
 	if err == nil {
 		var all []store.ConfigDoc

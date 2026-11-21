@@ -3,7 +3,6 @@
 package beszel_test
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -212,36 +211,5 @@ func TestReaderDenied(t *testing.T) {
 	}
 	if s := r.Snapshot(); s.State != beszel.StateUnavailable || len(s.Systems) != 0 {
 		t.Errorf("snapshot = %+v", s)
-	}
-}
-
-// A cluster hub's reader is on standby until it runs, while it leads, and
-// on standby again with no systems once it stops.
-func TestReaderStandby(t *testing.T) {
-	st := newStore(t)
-	m := beszelmock.New(beszelmock.Email, beszelmock.Password)
-	r := beszel.NewReader(beszel.ReaderConfig{
-		Client: newClient(t, m, beszelmock.Password, nil), Policy: policy.New(st.Audit()), Standby: true, Interval: time.Hour,
-	})
-	if s := r.Snapshot(); s.State != beszel.StateStandby {
-		t.Fatalf("state = %q; want standby", s.State)
-	}
-	ctx, cancel := context.WithCancel(t.Context())
-	done := make(chan error, 1)
-	go func() { done <- r.Run(ctx) }()
-	deadline := time.Now().Add(5 * time.Second)
-	for r.Snapshot().State != beszel.StateOK {
-		if time.Now().After(deadline) {
-			cancel()
-			t.Fatalf("snapshot = %+v; want a read while leading", r.Snapshot())
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	cancel()
-	if err := <-done; err != nil {
-		t.Fatal(err)
-	}
-	if s := r.Snapshot(); s.State != beszel.StateStandby || len(s.Systems) != 0 {
-		t.Errorf("snapshot after leading = %+v; want standby, no systems", s)
 	}
 }

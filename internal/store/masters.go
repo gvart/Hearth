@@ -49,8 +49,8 @@ func OwnerOf(err error) string {
 }
 
 // checkOwner refuses master, a master consuming or deciding r, when r is
-// owned by another master. A row without an owner (a single hub, a Raft
-// cluster, a row from before mastersSchema) and a command without a master
+// owned by another master. A row without an owner (a row from before
+// mastersSchema) and a command without a master
 // pass.
 func checkOwner(r row, what, master string) error {
 	if owner := r.str("owner"); owner != "" && master != "" && owner != master {

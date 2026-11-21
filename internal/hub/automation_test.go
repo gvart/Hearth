@@ -54,8 +54,9 @@ func TestAutomationDevices(t *testing.T) {
 	if err := reg.ReportFacts(ctx, "pi", testHello()); err != nil {
 		t.Fatal(err)
 	}
-	// A restore ends every subscription; the watcher subscribes again.
-	reg.Restored()
+	// A dropped subscription (a subscriber that fell behind) ends; the
+	// watcher subscribes again.
+	reg.bus.dropAll()
 	waitSubscribed(t, reg)
 	clk.Advance(31 * time.Second)
 	if err := reg.Sweep(ctx); err != nil {
@@ -72,6 +73,24 @@ func TestAutomationDevices(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("WatchDevices did not stop")
+	}
+}
+
+// active reports whether anyone is subscribed to b.
+func (b *bus) active() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return len(b.subs) > 0
+}
+
+// dropAll ends every subscription to b, as publish does to a subscriber that
+// falls behind.
+func (b *bus) dropAll() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for ch := range b.subs {
+		delete(b.subs, ch)
+		close(ch)
 	}
 }
 

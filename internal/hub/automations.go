@@ -82,7 +82,7 @@ func (a *api) listAutomationRuns(w http.ResponseWriter, r *http.Request) {
 	}
 	runs, err := a.store.AutomationRuns().List(r.Context(), id, limit)
 	if errors.Is(err, store.ErrSchemaTooOld) {
-		writeError(w, http.StatusConflict, "schema_too_old", "the hub cluster's database predates run history: run `hearth cluster migrate` first")
+		writeError(w, http.StatusConflict, "schema_too_old", "the hub cluster's database predates run history: upgrade every hub of the cluster first")
 		return
 	}
 	if err != nil {

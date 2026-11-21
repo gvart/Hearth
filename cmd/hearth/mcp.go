@@ -154,7 +154,7 @@ func runMCPTokenCreate(ctx context.Context, dataDir, name, scope string, dryRun 
 		return st.MCPTokens().Create(ctx, name, secret, scope, time.Now())
 	})
 	if errors.Is(err, store.ErrSchemaTooOld) {
-		return errors.New("the hub cluster's database predates MCP tokens: run `hearth cluster migrate` first")
+		return errors.New("the hub cluster's database predates MCP tokens: upgrade every hub of the cluster first")
 	}
 	if err != nil {
 		if store.IsDomainError(err) {

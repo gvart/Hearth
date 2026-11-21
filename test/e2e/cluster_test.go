@@ -9,50 +9,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
+	"os/exec"
 	"slices"
 	"strings"
 	"testing"
 	"time"
-)
-
-// Time bounds of hub failover in a 3-hub cluster (cluster.compose.yaml). Never
-// raise one to make CI pass. DeviceVisibleWithin holds for a cluster too.
-const (
-	// FormationWithin bounds forming the cluster: from starting hub-a until
-	// all three hubs are voters with one leader. It covers three container
-	// starts, two joins and two promotions, not the image build.
-	FormationWithin = 60 * time.Second
-	// FailoverWithin bounds how long after the leader is killed (SIGKILL) the
-	// agent is connected to the newly elected leader: the election plus the
-	// agent's move to the new leader.
-	FailoverWithin = 10 * time.Second
-	// UnavailableWithin bounds how long after a second hub stops (no quorum
-	// left) an API write on the last hub takes to fail with 503
-	// cluster_unavailable: the leader stepping down, then up to 5 s waiting
-	// for a leader, once for the action and once for its audit entry.
-	UnavailableWithin = 15 * time.Second
-	// WritesResumeWithin bounds how long after the stopped hub starts again
-	// API writes succeed again: its start, an election and the barrier.
-	WritesResumeWithin = 15 * time.Second
-	// AgentBackWithin bounds how long after the quorum returns the agent is
-	// connected to the leader again. While no hub would take it, the agent
-	// failed whole rounds of hubs and backed off exponentially, up to the
-	// agent's 1 min cap (internal/agent/backoff.go), so it may be waiting out
-	// a long delay; then one round plus the leader's takeover.
-	AgentBackWithin = time.Minute + FailoverWithin
-	// RejoinWithin bounds how long after the killed hub starts again it is a
-	// follower serving the cluster's current data through its API.
-	RejoinWithin = 20 * time.Second
-	// RemoveWithin bounds how long after `hearth cluster remove` starts on a
-	// follower every survivor reports one leader and 2 voters: the forward to
-	// the leader, the configuration change and its replication.
-	RemoveWithin = 10 * time.Second
-	// ReplaceWithin bounds joining a replacement hub: from creating its join
-	// token until every hub reports one leader and 3 voters again. It covers
-	// one container start, a join and a promotion (FormationWithin covers
-	// three starts and two of each).
-	ReplaceWithin = 30 * time.Second
 )
 
 const (
@@ -60,21 +24,35 @@ const (
 	agentName  = "agent"
 )
 
+// Time bounds of the cluster test (cluster.compose.yaml). Never raise one to
+// make CI pass.
+const (
+	// FormationWithin bounds forming the cluster: three container
+	// starts and two joins, until every hub sees 3 live storage members.
+	FormationWithin = 60 * time.Second
+	// WritesWithin bounds how long after a hub is killed a critical write
+	// (an enrollment token: the token row and its audit entry) works on the
+	// survivors: none at all should be needed, a replica that does not
+	// answer is replaced by a stand-in at once.
+	WritesWithin = 5 * time.Second
+	// ConvergeWithin bounds how long after a partition heals every hub
+	// answers the same queries byte for byte: failure detection, hints and
+	// an anti-entropy round (every 30 s).
+	ConvergeWithin = 60 * time.Second
+)
+
 var clusterHubs = []string{"hub-a", "hub-b", "hub-c"}
 
-// replacementHub joins in place of a hub that was removed for good.
-const replacementHub = "hub-d"
-
-// TestClusterFailover guards hub high availability (docs/cluster.md): an
-// agent enrolled through a follower, the leader killed, writes on followers,
-// quorum lost and regained, the killed hub rejoining, and a dead hub removed
-// and replaced.
-func TestClusterFailover(t *testing.T) {
+// TestCluster guards the cluster (N=2, every hub
+// master and storage): a hub killed loses no acknowledged critical write and
+// the devices stay listed; a partition healed converges to byte-identical
+// query results on every hub.
+func TestCluster(t *testing.T) {
 	ctx := t.Context()
-	s := newStack(t, "hearth-e2e-cluster", "cluster.compose.yaml", append(slices.Clone(clusterHubs), replacementHub, agentName))
+	s := newStack(t, "hearth-e2e-cluster", "cluster.compose.yaml", append(clusterHubs[:3:3], "hub-d", agentName))
 	s.compose(ctx, "build")
 
-	// 1. hub-a forms the cluster; hub-b and hub-c join it with a token each.
+	// 1. hub-a forms the cluster alone; hub-b and hub-c join it.
 	formAt := time.Now()
 	s.compose(ctx, "up", "--detach", "--wait", "--wait-timeout", "60", "hub-a", agentName)
 	for _, h := range clusterHubs[1:] {
@@ -82,263 +60,358 @@ func TestClusterFailover(t *testing.T) {
 		s.composeEnv(ctx, []string{"HEARTH_JOIN_TOKEN=" + tok},
 			"up", "--detach", "--no-deps", "--wait", "--wait-timeout", "60", h)
 	}
-	leader := s.waitLeader(ctx, clusterHubs, formAt.Add(FormationWithin), 3)
-	t.Logf("TIMING formation: 3 voters, leader %s, in %v", leader, since(formAt))
+	s.waitMembers(ctx, clusterHubs, clusterHubs, formAt.Add(FormationWithin))
+	t.Logf("TIMING formation: 3 storage members, N=2, in %v", since(formAt))
 
-	// Log in on every hub up front (a login is a write, forwarded on a
-	// follower), so polling starts at once after the failover.
 	apis := map[string]*apiClient{}
 	for _, h := range clusterHubs {
 		apis[h] = s.loginTo(ctx, h)
 	}
 
-	// 2. Enroll the agent through a follower: the follower sends it to the
-	// leader, and the device is online within the headline bound.
-	follower := others(clusterHubs, leader)[0]
-	token := apis[follower].createToken(ctx)
+	// 2. Enroll the agent: token from hub-b, join through hub-c. The token
+	// names hub-b, its owner, and the agent enrolls there. Every hub lists
+	// it online within the headline bound.
+	token := apis["hub-b"].createToken(ctx)
+	if !strings.HasPrefix(token, "hearth2.") {
+		t.Fatalf("token from a master is not a hearth2 token naming its owner")
+	}
 	joinAt := time.Now()
-	s.compose(ctx, "exec", "-T", agentName, "hearth", "agent", "join", "https://"+follower+":7443", token, "--data-dir", agentDataDir)
+	s.compose(ctx, "exec", "-T", agentName, "hearth", "agent", "join", "https://hub-c:7443", token, "--data-dir", agentDataDir)
 	s.startAgent(ctx, agentName)
-	dev := apis[follower].waitDevice(ctx, agentName, joinAt.Add(DeviceVisibleWithin), "online", func(d device) bool {
-		return d.Status == "online"
-	})
-	t.Logf("TIMING enroll via follower %s → online in %v", follower, since(joinAt))
+	for _, h := range clusterHubs {
+		apis[h].waitDevice(ctx, agentName, joinAt.Add(DeviceVisibleWithin), "online on "+h, func(d device) bool {
+			return d.Status == "online"
+		})
+	}
+	t.Logf("TIMING enroll (token naming its owner hub-b) → online on every hub in %v", since(joinAt))
 
-	// 3. Kill the leader. A survivor is elected, the agent connects to it
-	// within FailoverWithin, and the device never goes offline, even past a
-	// full offline timeout under the new leader.
-	killed := leader
+	// The token is spent: used again on another master, even in its
+	// hearth1 form that names no owner, it is refused.
+	parts := strings.Split(token, ".")
+	for _, tok := range []string{token, "hearth1." + parts[1] + "." + parts[2]} {
+		if out, err := s.run(ctx, "exec", "-T", agentName, "hearth", "agent", "join", "https://hub-a:7443", tok,
+			"--data-dir", "/tmp/reuse"); err == nil {
+			t.Errorf("a spent token enrolled again through hub-a:\n%s", out)
+		}
+	}
+
+	// 2b. Kill the master the agent streams to (the first of its hubs): the
+	// agent is on another master, and the device online there, within the
+	// headline bound.
+	streamHub := s.agentStreamHub(ctx)
 	killAt := time.Now()
-	s.compose(ctx, "kill", "--signal", "SIGKILL", killed)
-	killedAt := s.finishedAt(ctx, killed) // the docker host's clock, which stamps last_seen
-	survivors := others(clusterHubs, killed)
-	leader = s.waitLeader(ctx, survivors, killAt.Add(FailoverWithin), 3)
-	electedAt := time.Now()
-	t.Logf("TIMING kill %s → %s elected in %v", killed, leader, since(killAt))
-	apis[leader].waitDevice(ctx, agentName, killAt.Add(FailoverWithin), "connected to the new leader", func(d device) bool {
+	s.compose(ctx, "kill", "--signal", "SIGKILL", streamHub)
+	killedAt := s.finishedAt(ctx, streamHub)
+	var movedTo string
+	waitFor(ctx, t, killAt.Add(DeviceVisibleWithin), "the agent on another master", func() (bool, string) {
+		movedTo = s.agentStreamHub(ctx)
+		return movedTo != streamHub && slices.Contains(clusterHubs, movedTo), "on " + movedTo
+	})
+	apis[movedTo].waitDevice(ctx, agentName, killAt.Add(DeviceVisibleWithin), "online on "+movedTo, func(d device) bool {
 		return d.Status == "online" && d.LastSeen.After(killedAt)
 	})
-	t.Logf("TIMING kill %s → agent connected to %s in %v", killed, leader, since(killAt))
+	t.Logf("TIMING kill %s (the agent's stream) → agent on %s and online in %v", streamHub, movedTo, since(killAt))
+	s.compose(ctx, "start", streamHub)
+	s.waitMembers(ctx, clusterHubs, clusterHubs, time.Now().Add(FormationWithin))
+	apis[streamHub] = s.loginTo(ctx, streamHub)
 
-	// 4. Writes on the remaining follower, through the API (a fresh login and
-	// a token) and through the CLI on its host, while the watch below runs on.
-	follower = others(survivors, leader)[0]
-	fapi := s.loginTo(ctx, follower)
-	fapi.createToken(ctx)
-	s.compose(ctx, "exec", "-T", follower, "hearth", "token", "create", "--data-dir", hubDataDir)
-	t.Logf("API login + token and CLI token create on follower %s: ok", follower)
-
-	// Without the agent, the new leader would mark the device offline
-	// OfflineAfter (30 s) after its term started, at the next 5 s sweep:
-	// OfflineWithin after the election is past that.
-	watchUntil := electedAt.Add(OfflineWithin)
-	apis[leader].watchDevice(ctx, agentName, watchUntil, func(d device) bool { return d.Status == "online" })
-	for _, h := range survivors {
-		if logs := s.compose(ctx, "logs", "--no-color", h); strings.Contains(logs, "device.offline") {
-			t.Errorf("%s logged a device.offline transition after the failover", h)
-		}
+	// 3. Critical writes on every hub, then kill hub-c. Every acknowledged
+	// audit entry is still on the survivors, the device is still listed,
+	// and critical writes go on.
+	for i := range 9 {
+		apis[clusterHubs[i%3]].createToken(ctx)
 	}
-	t.Logf("device stayed online on %s for %v after the election", leader, OfflineWithin)
-	// Gossip has noticed the killed hub by now: OfflineWithin is well past
-	// memberlist's failure detection.
-	if st := s.clusterStatus(ctx, leader).memberStates(); st[killed] == "alive" || st[follower] != "alive" {
-		t.Errorf("gossip members on %s after killing %s: %v", leader, killed, st)
-	}
-
-	// 5. Stop the follower: the leader alone has no quorum, and a write on it
-	// fails with 503 cluster_unavailable. Then start it again: writes work.
-	stopAt := time.Now()
-	s.compose(ctx, "stop", "--timeout", "5", follower)
-	last := apis[leader]
-	last.http.Timeout = 2 * UnavailableWithin // a no-quorum write waits, by design
-	status, code, err := last.postStatus(ctx, "/api/v1/tokens", map[string]string{"ttl": "5m"})
-	if err != nil || status != http.StatusServiceUnavailable || code != "cluster_unavailable" {
-		t.Fatalf("write without quorum on %s: got %d %q (err %v), want 503 cluster_unavailable", leader, status, code, err)
-	}
-	if took := time.Since(stopAt); took > UnavailableWithin {
-		t.Fatalf("write without quorum on %s failed after %v, want within %v", leader, took, UnavailableWithin)
-	}
-	t.Logf("TIMING stop %s → write on %s answered 503 cluster_unavailable in %v", follower, leader, since(stopAt))
-
-	startAt := time.Now()
-	s.compose(ctx, "start", follower)
-	quorumAt := s.startedAt(ctx, follower) // the docker host's clock
-	waitFor(ctx, t, startAt.Add(WritesResumeWithin), "writes on "+leader+" to work again", func() (bool, string) {
-		status, code, err := last.postStatus(ctx, "/api/v1/tokens", map[string]string{"ttl": "5m"})
-		if err != nil {
-			return false, err.Error()
-		}
-		return status == http.StatusCreated || status == http.StatusOK, fmt.Sprintf("%d %s", status, code)
-	})
-	t.Logf("TIMING start %s → writes work again in %v", follower, since(startAt))
-
-	// 6. Start the killed hub: it rejoins as a follower and its API serves the
-	// cluster's data, the device included.
-	rejoinAt := time.Now()
-	s.compose(ctx, "start", killed)
-	leader = s.waitLeader(ctx, clusterHubs, rejoinAt.Add(RejoinWithin), 3)
-	if leader == killed {
-		t.Fatalf("%s led the cluster right after rejoining; want it to rejoin as a follower", killed)
-	}
-	want := s.clusterStatus(ctx, leader)
-	waitFor(ctx, t, rejoinAt.Add(RejoinWithin), killed+" to catch up", func() (bool, string) {
-		st, err := s.status(ctx, killed)
-		if err != nil {
-			return false, err.Error()
-		}
-		return st.State == "Follower" && st.AppliedIndex >= want.CommitIndex,
-			fmt.Sprintf("state %s, applied %d of %d", st.State, st.AppliedIndex, want.CommitIndex)
-	})
-	kapi := s.loginTo(ctx, killed) // retries while it answers 503 catching_up
-	got := kapi.waitDevice(ctx, agentName, rejoinAt.Add(RejoinWithin), "online on the rejoined hub", func(d device) bool {
-		return d.Status == "online"
-	})
-	if got.ID != dev.ID {
-		t.Errorf("device id on the rejoined %s: %s, want %s", killed, got.ID, dev.ID)
-	}
-	t.Logf("TIMING start %s → follower serving the device in %v", killed, since(rejoinAt))
-	waitFor(ctx, t, rejoinAt.Add(RejoinWithin), "every hub alive in the gossip", func() (bool, string) {
-		st, err := s.status(ctx, killed)
-		if err != nil {
-			return false, err.Error()
-		}
-		ms := st.memberStates()
-		for _, h := range clusterHubs {
-			if ms[h] != "alive" {
-				return false, fmt.Sprintf("%v", ms)
-			}
-		}
-		return true, ""
-	})
-
-	// The agent finds its way back to the leader after the quorum loss.
-	apis[leader].waitDevice(ctx, agentName, startAt.Add(AgentBackWithin), "connected after the quorum loss", func(d device) bool {
-		return d.Status == "online" && d.LastSeen.After(quorumAt)
-	})
-	t.Logf("TIMING start %s → agent connected to %s again in %v", follower, leader, since(startAt))
-
-	// 7. A hub dies for good: kill the leader, remove it through a follower
-	// (forwarded to the new leader), join a replacement in its place, and
-	// survive another leader kill with 3 voters again.
-	dead := leader
-	deadAt := time.Now()
-	s.compose(ctx, "kill", "--signal", "SIGKILL", dead)
-	survivors = others(clusterHubs, dead)
-	leader = s.waitLeader(ctx, survivors, deadAt.Add(FailoverWithin), 3)
-	t.Logf("TIMING kill %s → %s elected in %v", dead, leader, since(deadAt))
-
-	via := others(survivors, leader)[0]
-	removeAt := time.Now()
-	out := s.compose(ctx, "exec", "-T", via, "hearth", "cluster", "remove", dead, "--data-dir", hubDataDir)
-	t.Logf("cluster remove %s on %s: %s", dead, via, strings.TrimSpace(out))
-	s.waitLeader(ctx, survivors, removeAt.Add(RemoveWithin), 2)
-	t.Logf("TIMING remove %s on follower %s → 2 voters in %v", dead, via, since(removeAt))
-
-	replaceAt := time.Now()
-	tok := s.clusterJoinToken(ctx, via, replaceAt.Add(ReplaceWithin))
-	s.composeEnv(ctx, []string{"HEARTH_JOIN_TOKEN=" + tok, "HEARTH_JOIN_URL=https://" + via + ":7443"},
-		"up", "--detach", "--no-deps", "--wait", "--wait-timeout", "60", replacementHub)
-	current := append(slices.Clone(survivors), replacementHub)
-	leader = s.waitLeader(ctx, current, replaceAt.Add(ReplaceWithin), 3)
-	t.Logf("TIMING join %s → 3 voters, leader %s, in %v", replacementHub, leader, since(replaceAt))
-
-	killed = leader
+	acked := apis["hub-a"].auditIDs(ctx)
 	killAt = time.Now()
-	s.compose(ctx, "kill", "--signal", "SIGKILL", killed)
-	killedAt = s.finishedAt(ctx, killed)
-	leader = s.waitLeader(ctx, others(current, killed), killAt.Add(FailoverWithin), 3)
-	t.Logf("TIMING kill %s → %s elected in %v", killed, leader, since(killAt))
-	lapi := s.loginTo(ctx, leader) // a write: it needs the majority
-	lapi.createToken(ctx)
-	lapi.waitDevice(ctx, agentName, killAt.Add(FailoverWithin), "connected after the replacement", func(d device) bool {
-		return d.Status == "online" && d.LastSeen.After(killedAt)
-	})
-	t.Logf("TIMING kill → login, token and agent connected to %s in %v", leader, since(killAt))
-}
-
-// clusterStatusJSON is the part of `hearth cluster status --json` the test reads.
-type clusterStatusJSON struct {
-	NodeID       string `json:"node_id"`
-	State        string `json:"state"`
-	LeaderID     string `json:"leader_id"`
-	CommitIndex  uint64 `json:"commit_index"`
-	AppliedIndex uint64 `json:"applied_index"`
-	Peers        []struct {
-		ID       string `json:"id"`
-		Suffrage string `json:"suffrage"`
-	} `json:"peers"`
-	Members []struct {
-		ID    string   `json:"id"`
-		State string   `json:"state"`
-		Roles []string `json:"roles"`
-	} `json:"members"`
-}
-
-// memberStates maps the gossip members of a status to their states.
-func (st clusterStatusJSON) memberStates() map[string]string {
-	out := map[string]string{}
-	for _, m := range st.Members {
-		out[m.ID] = m.State
-	}
-	return out
-}
-
-// status runs `hearth cluster status --json` on the hub's host.
-func (s *stack) status(ctx context.Context, hub string) (clusterStatusJSON, error) {
-	var st clusterStatusJSON
-	out, err := s.run(ctx, "exec", "-T", hub, "hearth", "cluster", "status", "--json", "--data-dir", hubDataDir)
-	if err != nil {
-		return st, err
-	}
-	if err := json.Unmarshal([]byte(out), &st); err != nil {
-		return st, fmt.Errorf("cluster status on %s: %w", hub, err)
-	}
-	return st, nil
-}
-
-func (s *stack) clusterStatus(ctx context.Context, hub string) clusterStatusJSON {
-	s.t.Helper()
-	st, err := s.status(ctx, hub)
-	if err != nil {
-		s.t.Fatal(err)
-	}
-	return st
-}
-
-// waitLeader waits until every one of hubs reports the same leader, that
-// leader is among hubs and calls itself Leader, and the cluster has voters
-// voters. It returns the leader's node ID, which is its service name.
-func (s *stack) waitLeader(ctx context.Context, hubs []string, deadline time.Time, voters int) string {
-	s.t.Helper()
-	var leader string
-	waitFor(ctx, s.t, deadline, "one leader among "+strings.Join(hubs, ", "), func() (bool, string) {
-		leader = ""
-		for _, h := range hubs {
-			st, err := s.status(ctx, h)
-			switch {
-			case err != nil:
-				return false, err.Error()
-			case st.LeaderID == "" || !slices.Contains(hubs, st.LeaderID):
-				return false, fmt.Sprintf("%s: leader %q", h, st.LeaderID)
-			case leader != "" && st.LeaderID != leader:
-				return false, fmt.Sprintf("%s: leader %s, another hub says %s", h, st.LeaderID, leader)
-			case st.NodeID == st.LeaderID && st.State != "Leader":
-				return false, fmt.Sprintf("%s: state %s", h, st.State)
+	s.compose(ctx, "kill", "--signal", "SIGKILL", "hub-c")
+	survivors := clusterHubs[:2]
+	for _, h := range survivors {
+		got := apis[h].auditIDs(ctx)
+		for id, what := range acked {
+			if _, ok := got[id]; !ok {
+				t.Errorf("audit entry %s (%s) acknowledged before the kill is missing on %s", id, what, h)
 			}
-			n := 0
-			for _, p := range st.Peers {
-				if p.Suffrage == "Voter" {
-					n++
+		}
+		if devs, err := apis[h].devices(ctx); err != nil || !hasHost(devs, agentName) {
+			t.Errorf("devices on %s after the kill: %v, %v", h, devs, err)
+		}
+	}
+	for _, h := range survivors {
+		waitFor(ctx, t, killAt.Add(WritesWithin), "a critical write on "+h, func() (bool, string) {
+			status, code, err := apis[h].postStatus(ctx, "/api/v1/tokens", map[string]string{"ttl": "5m"})
+			if err != nil {
+				return false, err.Error()
+			}
+			return status == http.StatusCreated, fmt.Sprintf("%d %s", status, code)
+		})
+	}
+	t.Logf("TIMING kill hub-c → no acknowledged write lost, critical writes on both survivors in %v", since(killAt))
+
+	// 4. hub-c back; the agent stops, so nothing changes but what the test
+	// writes. Cut hub-a off, write on both sides, heal.
+	s.compose(ctx, "start", "hub-c")
+	s.waitMembers(ctx, clusterHubs, clusterHubs, time.Now().Add(FormationWithin))
+	apis["hub-c"] = s.loginTo(ctx, "hub-c")
+	s.compose(ctx, "exec", "-T", agentName, "pkill", "-f", "hearth agent run")
+
+	s.network(ctx, "disconnect", "hub-a")
+	splitAt := time.Now()
+	s.waitMembers(ctx, []string{"hub-b", "hub-c"}, []string{"hub-b", "hub-c"}, splitAt.Add(30*time.Second))
+	for range 3 {
+		apis["hub-b"].createToken(ctx)
+		apis["hub-c"].createToken(ctx)
+	}
+	// hub-a alone refuses a critical write (a token and its audit entry need
+	// two replicas). Its published API port went with the network, so the
+	// CLI on its host asks.
+	refuseAt := time.Now()
+	if out, err := s.run(ctx, "exec", "-T", "hub-a", "hearth", "token", "create", "--data-dir", hubDataDir); err == nil {
+		t.Errorf("critical write on the cut-off hub-a succeeded:\n%s", out)
+	} else if !strings.Contains(err.Error(), "unavailable") {
+		t.Errorf("critical write on the cut-off hub-a: %v, want cluster unavailable", err)
+	}
+	t.Logf("TIMING critical write on the cut-off hub-a refused in %v", since(refuseAt))
+	s.network(ctx, "connect", "hub-a")
+	healAt := time.Now()
+	apis["hub-a"] = s.loginTo(ctx, "hub-a")
+	waitFor(ctx, t, healAt.Add(ConvergeWithin), "byte-identical answers on every hub", func() (bool, string) {
+		for _, path := range []string{"/api/v1/devices", "/api/v1/audit?limit=500"} {
+			var first []byte
+			for _, h := range clusterHubs {
+				b, err := apis[h].raw(ctx, path)
+				if err != nil {
+					return false, h + ": " + err.Error()
+				}
+				if first == nil {
+					first = b
+				} else if !bytes.Equal(first, b) {
+					return false, path + " differs on " + h
 				}
 			}
-			if n != voters {
-				return false, fmt.Sprintf("%s: %d voters", h, n)
-			}
-			leader = st.LeaderID
 		}
 		return true, ""
 	})
-	return leader
+	t.Logf("TIMING heal → byte-identical devices and audit on every hub in %v", since(healAt))
+
+	// 5. A fourth member: hub-d joins (master and storage), is demoted from
+	// storage by the CLI on hub-a (its rows handed off), then promoted back
+	// by the API of hub-b: syncing until it holds its rows again.
+	all := append(clusterHubs[:3:3], "hub-d")
+	tok := s.clusterJoinToken(ctx, "hub-a", time.Now().Add(FormationWithin))
+	s.composeEnv(ctx, []string{"HEARTH_JOIN_TOKEN=" + tok}, "up", "--detach", "--no-deps", "--wait", "--wait-timeout", "60", "hub-d")
+	s.waitMembers(ctx, all, all, time.Now().Add(FormationWithin))
+	demoteAt := time.Now()
+	s.compose(ctx, "exec", "-T", "hub-a", "hearth", "cluster", "demote", "hub-d", "storage", "--data-dir", hubDataDir)
+	waitFor(ctx, t, demoteAt.Add(ConvergeWithin), "hub-d drained and out of storage", func() (bool, string) {
+		m := s.memberOf(ctx, "hub-a", "hub-d")
+		return !slices.Contains(m.Roles, "storage") && !m.Draining, fmt.Sprintf("%+v", m)
+	})
+	t.Logf("TIMING demote hub-d from storage → drained in %v", since(demoteAt))
+	promoteAt := time.Now()
+	if status, code, err := apis["hub-b"].postStatus(ctx, "/api/v1/cluster/members/hub-d/promote",
+		map[string]string{"role": "storage"}); err != nil || status != http.StatusOK {
+		t.Fatalf("promote hub-d to storage: %d %s %v", status, code, err)
+	}
+	waitFor(ctx, t, promoteAt.Add(ConvergeWithin), "hub-d in sync", func() (bool, string) {
+		m := s.memberOf(ctx, "hub-a", "hub-d")
+		return slices.Contains(m.Roles, "storage") && !m.Syncing, fmt.Sprintf("%+v", m)
+	})
+	t.Logf("TIMING promote hub-d to storage → synced in %v", since(promoteAt))
+	apis["hub-d"] = s.loginTo(ctx, "hub-d")
+	for _, path := range []string{"/api/v1/devices", "/api/v1/audit?limit=500"} {
+		want, err := apis["hub-a"].raw(ctx, path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, err := apis["hub-d"].raw(ctx, path); err != nil || !bytes.Equal(got, want) {
+			t.Errorf("%s on hub-d after its catch-up differs from hub-a's (%v)", path, err)
+		}
+	}
+
+	// 6. Demote the master the agent streams to, through another master's
+	// API: the agent is on another master and the device online there
+	// within the headline bound.
+	s.startAgent(ctx, agentName)
+	apis["hub-a"].waitDevice(ctx, agentName, time.Now().Add(DeviceVisibleWithin), "online again", func(d device) bool {
+		return d.Status == "online"
+	})
+	streamHub = s.agentStreamHub(ctx)
+	other := "hub-a"
+	if streamHub == other {
+		other = "hub-b"
+	}
+	demoteAt = time.Now()
+	if status, code, err := apis[other].postStatus(ctx, "/api/v1/cluster/members/"+streamHub+"/demote",
+		map[string]string{"role": "master"}); err != nil || status != http.StatusOK {
+		t.Fatalf("demote %s from master: %d %s %v", streamHub, status, code, err)
+	}
+	waitFor(ctx, t, demoteAt.Add(DeviceVisibleWithin), "the agent on another master", func() (bool, string) {
+		movedTo = s.agentStreamHub(ctx)
+		return movedTo != streamHub && slices.Contains(all, movedTo), "on " + movedTo
+	})
+	apis[movedTo].waitDevice(ctx, agentName, demoteAt.Add(DeviceVisibleWithin), "online on "+movedTo, func(d device) bool {
+		return d.Status == "online" && d.LastSeen.After(demoteAt)
+	})
+	t.Logf("TIMING demote %s (the agent's stream) from master → agent on %s and online in %v", streamHub, movedTo, since(demoteAt))
+	if out, err := s.run(ctx, "exec", "-T", streamHub, "test", "-e", hubDataDir+"/ca.key"); err == nil {
+		t.Errorf("the demoted %s still holds the CA key:\n%s", streamHub, out)
+	}
+}
+
+// memberInfo is a member as `hearth cluster status --json` shows it.
+type memberInfo struct {
+	ID       string   `json:"id"`
+	State    string   `json:"state"`
+	Roles    []string `json:"roles"`
+	Syncing  bool     `json:"syncing"`
+	Draining bool     `json:"draining"`
+	Progress int      `json:"progress"`
+}
+
+// memberOf is member id as hub sees it.
+func (s *stack) memberOf(ctx context.Context, hub, id string) memberInfo {
+	s.t.Helper()
+	out, err := s.run(ctx, "exec", "-T", hub, "hearth", "cluster", "status", "--json", "--data-dir", hubDataDir)
+	if err != nil {
+		return memberInfo{}
+	}
+	var st struct {
+		Members []memberInfo `json:"members"`
+	}
+	if err := json.Unmarshal([]byte(out), &st); err != nil {
+		return memberInfo{}
+	}
+	for _, m := range st.Members {
+		if m.ID == id {
+			return m
+		}
+	}
+	return memberInfo{}
+}
+
+// waitMembers waits until every one of hubs sees each of alive as a live
+// member, and says it is highly available.
+func (s *stack) waitMembers(ctx context.Context, hubs, alive []string, deadline time.Time) {
+	s.t.Helper()
+	waitFor(ctx, s.t, deadline, strings.Join(alive, ", ")+" alive on "+strings.Join(hubs, ", "), func() (bool, string) {
+		for _, h := range hubs {
+			out, err := s.run(ctx, "exec", "-T", h, "hearth", "cluster", "status", "--json", "--data-dir", hubDataDir)
+			if err != nil {
+				return false, err.Error()
+			}
+			var st struct {
+				HighlyAvailable bool `json:"highly_available"`
+				Members         []struct {
+					ID    string `json:"id"`
+					State string `json:"state"`
+				} `json:"members"`
+			}
+			if err := json.Unmarshal([]byte(out), &st); err != nil {
+				return false, err.Error()
+			}
+			if !st.HighlyAvailable {
+				return false, h + ": not highly available"
+			}
+			states := map[string]string{}
+			for _, m := range st.Members {
+				states[m.ID] = m.State
+			}
+			for _, a := range alive {
+				if states[a] != "alive" {
+					return false, fmt.Sprintf("%s sees %s %q", h, a, states[a])
+				}
+			}
+		}
+		return true, ""
+	})
+}
+
+// agentStreamHub is the hub the agent streams to: the first of the hubs it
+// keeps, which it reorders on each Welcome.
+func (s *stack) agentStreamHub(ctx context.Context) string {
+	s.t.Helper()
+	out, err := s.run(ctx, "exec", "-T", agentName, "head", "-n", "1", agentDataDir+"/hubs")
+	if err != nil {
+		s.t.Fatalf("read the agent's hubs: %v", err)
+	}
+	u, err := url.Parse(strings.TrimSpace(out))
+	if err != nil {
+		s.t.Fatalf("the agent's first hub: %v", err)
+	}
+	return u.Hostname()
+}
+
+// network connects the service's container to the project network, or
+// disconnects it.
+func (s *stack) network(ctx context.Context, op, service string) {
+	s.t.Helper()
+	id := strings.TrimSpace(s.compose(ctx, "ps", "--all", "--quiet", service))
+	if out, err := exec.CommandContext(ctx, "docker", "network", op, s.project+"_default", id).CombinedOutput(); err != nil {
+		s.t.Fatalf("network %s %s: %v\n%s", op, service, err, out)
+	}
+}
+
+// auditIDs returns every audit entry, by id (its HLC), action and time:
+// two entries of two hubs may share an HLC.
+func (c *apiClient) auditIDs(ctx context.Context) map[string]string {
+	c.t.Helper()
+	out := map[string]string{}
+	path := "/api/v1/audit?limit=500"
+	for {
+		b, err := c.raw(ctx, path)
+		if err != nil {
+			c.t.Fatalf("audit: %v", err)
+		}
+		var page struct {
+			Entries []struct {
+				ID     int64  `json:"id"`
+				Action string `json:"action"`
+				Result string `json:"result"`
+				TS     string `json:"ts"`
+			} `json:"entries"`
+			NextCursor string `json:"next_cursor"`
+		}
+		if err := json.Unmarshal(b, &page); err != nil {
+			c.t.Fatalf("audit: %v", err)
+		}
+		for _, e := range page.Entries {
+			out[fmt.Sprintf("%d %s %s", e.ID, e.Action, e.TS)] = e.Result
+		}
+		if page.NextCursor == "" || len(page.Entries) == 0 {
+			return out
+		}
+		path = "/api/v1/audit?limit=500&before=" + url.QueryEscape(page.NextCursor)
+	}
+}
+
+// raw GETs path and returns the body.
+func (c *apiClient) raw(ctx context.Context, path string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GET %s: %s", path, resp.Status)
+	}
+	return b, nil
+}
+
+func hasHost(devs []device, host string) bool {
+	for _, d := range devs {
+		if d.Hostname == host {
+			return true
+		}
+	}
+	return false
 }
 
 // clusterJoinToken creates a cluster join token on the hub's host, retrying
@@ -368,6 +441,26 @@ func (s *stack) composeEnv(ctx context.Context, env []string, args ...string) {
 		s.t.Fatal(err)
 	}
 }
+
+// waitFor polls cond until it holds, and fails the test with the last reason
+// it gave if that has not happened by deadline.
+func waitFor(ctx context.Context, t *testing.T, deadline time.Time, what string, cond func() (bool, string)) {
+	t.Helper()
+	for {
+		ok, why := cond()
+		if ok {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s: %s", what, why)
+		}
+		if err := sleep(ctx, 200*time.Millisecond); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func since(t time.Time) time.Duration { return time.Since(t).Round(time.Millisecond) }
 
 // finishedAt is when the service's container last exited, by the docker
 // host's clock.
@@ -400,49 +493,3 @@ func (c *apiClient) postStatus(ctx context.Context, path string, body any) (int,
 	}
 	return resp.StatusCode, e.Code, nil
 }
-
-// watchDevice polls the device until, and fails the test as soon as it does
-// not satisfy ok or cannot be read before until.
-func (c *apiClient) watchDevice(ctx context.Context, hostname string, until time.Time, ok func(device) bool) {
-	c.t.Helper()
-	for time.Now().Before(until) {
-		devs, err := c.devices(ctx)
-		if err != nil {
-			c.t.Fatalf("watch %s: %v", hostname, err)
-		}
-		i := slices.IndexFunc(devs, func(d device) bool { return d.Hostname == hostname })
-		if i < 0 {
-			c.t.Fatalf("watch %s: not listed", hostname)
-		}
-		if d := devs[i]; !ok(d) {
-			c.t.Fatalf("watch %s: status %s, last_seen %s", hostname, d.Status, d.LastSeen.Format(time.RFC3339Nano))
-		}
-		if err := sleep(ctx, 200*time.Millisecond); err != nil {
-			c.t.Fatal(err)
-		}
-	}
-}
-
-// waitFor polls cond until it holds, and fails the test with the last reason
-// it gave if that has not happened by deadline.
-func waitFor(ctx context.Context, t *testing.T, deadline time.Time, what string, cond func() (bool, string)) {
-	t.Helper()
-	for {
-		ok, why := cond()
-		if ok {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for %s: %s", what, why)
-		}
-		if err := sleep(ctx, 200*time.Millisecond); err != nil {
-			t.Fatal(err)
-		}
-	}
-}
-
-func others(hubs []string, not string) []string {
-	return slices.DeleteFunc(slices.Clone(hubs), func(h string) bool { return h == not })
-}
-
-func since(t time.Time) time.Duration { return time.Since(t).Round(time.Millisecond) }

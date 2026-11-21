@@ -299,7 +299,7 @@ func TestCAKeyOnlyToMasters(t *testing.T) {
 			t.Fatal(err)
 		}
 		resp, err := srv.Join(ctx, connect.NewRequest(&clusterv1.JoinRequest{
-			TokenSecret: secret, NodeId: id, Csr: csr, RaftAddress: id + ":7946", SchemaVersion: schema,
+			TokenSecret: secret, NodeId: id, Csr: csr, Address: id + ":7946", SchemaVersion: schema,
 			AllowedRoles: roles,
 		}))
 		if err != nil {

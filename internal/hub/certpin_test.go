@@ -5,7 +5,6 @@ package hub
 import (
 	"context"
 	"crypto/x509"
-	"errors"
 	"log/slog"
 	"strings"
 	"sync/atomic"
@@ -117,15 +116,6 @@ func TestPinCertOnConnect(t *testing.T) {
 		return len(entries)
 	}
 
-	s.authority = func() error { return errors.New("not the leader") }
-	if connectAs(genuine) {
-		t.Error("a hub that cannot vouch reported the certificate settled")
-	}
-	if fp := recorded(); fp != "" {
-		t.Fatalf("a hub that cannot vouch pinned %q", fp)
-	}
-
-	s.authority = func() error { return nil }
 	if !connectAs(genuine) {
 		t.Error("pinning reported the certificate unsettled")
 	}
@@ -151,19 +141,28 @@ func TestPinCertOnConnect(t *testing.T) {
 	}
 }
 
+// oldSchemaPins is store.Certs on a store whose schema records no
+// fingerprints yet, until migrated is set.
+type oldSchemaPins struct {
+	certPinner
+	migrated *atomic.Bool
+}
+
+func (p oldSchemaPins) Fingerprint(ctx context.Context, serial, deviceID string) (string, error) {
+	if !p.migrated.Load() {
+		return "", store.ErrSchemaTooOld
+	}
+	return p.certPinner.Fingerprint(ctx, serial, deviceID)
+}
+
 // A stream that was open while the hub could not pin, as when the cluster
 // migrated to the schema that records fingerprints under it, is pinned on a
 // later heartbeat rather than on the agent's next connect.
 func TestPinCertOnHeartbeat(t *testing.T) {
 	t.Parallel()
-	var vouch atomic.Bool
-	f := newRevokeFixture(t, false, func() error {
-		if vouch.Load() {
-			return nil
-		}
-		return errors.New("catching up")
-	})
-	f.as.pins, f.as.audit = f.st.Certs(), f.st.Audit()
+	var migrated atomic.Bool
+	f := newRevokeFixture(t)
+	f.as.pins, f.as.audit = oldSchemaPins{certPinner: f.st.Certs(), migrated: &migrated}, f.st.Audit()
 	ca, err := pki.LoadOrCreateCA(t.TempDir(), time.Now())
 	if err != nil {
 		t.Fatal(err)
@@ -172,9 +171,9 @@ func TestPinCertOnHeartbeat(t *testing.T) {
 	f.chains = map[string][]*x509.Certificate{"dev-1": {leaf, ca.Cert()}}
 	stream := f.open(t.Context(), t, "dev-1", "0a")
 	if fp, err := f.st.Certs().Fingerprint(t.Context(), "0a", "dev-1"); err != nil || fp != "" {
-		t.Fatalf("pinned at connect by a hub that cannot vouch: %q, %v", fp, err)
+		t.Fatalf("pinned at connect on the old schema: %q, %v", fp, err)
 	}
-	vouch.Store(true)
+	migrated.Store(true)
 	if err := stream.Send(heartbeat()); err != nil {
 		t.Fatal(err)
 	}

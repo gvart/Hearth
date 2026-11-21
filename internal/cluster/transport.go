@@ -13,28 +13,22 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/hashicorp/raft"
-
 	"github.com/gvart/hearth/internal/pki"
 )
 
-// tlsStream is a raft.StreamLayer over TCP with mutual TLS: both ends present
-// a hub node certificate from the hub CA that is not revoked.
+// tlsStream is a stream layer over TCP with mutual TLS: both ends present a
+// hub node certificate from the hub CA that is not revoked. The gossip and
+// the replication share it (gossiptransport.go).
 type tlsStream struct {
 	net.Listener
 	advertise advertiseAddr
 	client    *tls.Config
-	// cert is the hub node certificate this hub presents, both ways; a hub
-	// CA rotation swaps it at the cutover (see setCert).
-	cert atomic.Pointer[tls.Certificate]
 
 	// conns are the open connections, both accepted and dialed, so the
 	// ones of a revoked peer can be closed (see closeRevoked).
 	mu    sync.Mutex
 	conns map[*trackedConn]struct{}
 }
-
-var _ raft.StreamLayer = (*tlsStream)(nil)
 
 // advertiseAddr is the address other hubs dial, kept as given (a host name
 // stays a host name).
@@ -47,35 +41,7 @@ func (a advertiseAddr) String() string  { return string(a) }
 // one. nil accepts every hub certificate from the CA.
 type peerCheck func(*x509.Certificate) error
 
-// listenTLS listens on listen, or takes ln if it is not nil.
-func listenTLS(ctx context.Context, ln net.Listener, listen, advertise string, cert tls.Certificate, ca *pki.CA, check peerCheck) (*tlsStream, error) {
-	if ln == nil {
-		var err error
-		if ln, err = (&net.ListenConfig{}).Listen(ctx, "tcp", listen); err != nil {
-			return nil, fmt.Errorf("raft listen on %s: %w", listen, err)
-		}
-	}
-	if advertise == "" {
-		advertise = ln.Addr().String()
-	}
-	if _, _, err := net.SplitHostPort(advertise); err != nil {
-		_ = ln.Close()
-		return nil, fmt.Errorf("advertise address %q: %w", advertise, err)
-	}
-	s := &tlsStream{advertise: advertiseAddr(advertise), conns: map[*trackedConn]struct{}{}}
-	s.cert.Store(&cert)
-	s.Listener = tls.NewListener(ln, serverTLSFunc(s.currentCert, ca, check))
-	s.client = clientTLSFunc(s.currentCert, ca, check)
-	return s, nil
-}
-
-// currentCert is the hub node certificate this hub presents.
-func (s *tlsStream) currentCert() *tls.Certificate { return s.cert.Load() }
-
-// setCert makes new connections present cert; open ones keep theirs.
-func (s *tlsStream) setCert(cert *tls.Certificate) { s.cert.Store(cert) }
-
-// Addr is the advertised address: raft hands it to peers.
+// Addr is the advertised address, the one peers dial.
 func (s *tlsStream) Addr() net.Addr { return s.advertise }
 
 // Accept waits for a peer's connection. The TLS handshake, and with it the
@@ -96,21 +62,21 @@ func (s *tlsStream) trackConn(c net.Conn, dialed string) (*trackedConn, error) {
 	tc, ok := c.(*tls.Conn)
 	if !ok {
 		_ = c.Close()
-		return nil, errors.New("raft transport: not a TLS connection")
+		return nil, errors.New("cluster transport: not a TLS connection")
 	}
 	return s.track(tc, dialed), nil
 }
 
 // Dial opens a mutually authenticated connection to a peer.
-func (s *tlsStream) Dial(addr raft.ServerAddress, timeout time.Duration) (net.Conn, error) {
+func (s *tlsStream) Dial(addr string, timeout time.Duration) (net.Conn, error) {
 	d := &tls.Dialer{NetDialer: &net.Dialer{Timeout: timeout}, Config: s.client}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	c, err := d.DialContext(ctx, "tcp", string(addr))
+	c, err := d.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return nil, err
 	}
-	tc, err := s.trackConn(c, string(addr))
+	tc, err := s.trackConn(c, addr)
 	if err != nil {
 		return nil, err
 	}
@@ -219,14 +185,10 @@ func serverTLSFunc(cert func() *tls.Certificate, ca *pki.CA, check peerCheck) *t
 	}
 }
 
-// clientTLS dials peers by address, often an IP, so there is no host name to
-// check: the peer is authenticated by its CA-issued hub node certificate.
-func clientTLS(cert tls.Certificate, ca *pki.CA, check peerCheck) *tls.Config {
-	return clientTLSFunc(func() *tls.Certificate { return &cert }, ca, check)
-}
-
-// clientTLSFunc is clientTLS presenting the certificate cert returns at each
-// handshake, and trusting ca's CAs at each handshake.
+// clientTLSFunc dials peers by address, often an IP, so there is no host name
+// to check: the peer is authenticated by its CA-issued hub node certificate.
+// It presents the certificate cert returns at each handshake, and trusts ca's
+// CAs at each handshake.
 func clientTLSFunc(cert func() *tls.Certificate, ca *pki.CA, check peerCheck) *tls.Config {
 	return &tls.Config{
 		MinVersion: tls.VersionTLS13,

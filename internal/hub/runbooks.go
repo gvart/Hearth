@@ -202,7 +202,7 @@ func (a *api) writeRunbookError(w http.ResponseWriter, r *http.Request, what str
 			"this runbook has %d runs of unknown outcome or with a stopped rollback: retry them, roll them back or pass over their rollback step before starting another",
 			store.RunbookRunsKept))
 	case errors.Is(err, store.ErrSchemaTooOld):
-		writeError(w, http.StatusConflict, "schema_too_old", "run `hearth cluster migrate` to use runbooks on this cluster")
+		writeError(w, http.StatusConflict, "schema_too_old", "upgrade every hub of the cluster to use runbooks")
 	case errors.Is(err, policy.ErrDenied):
 		writeError(w, http.StatusForbidden, "forbidden", "denied by policy")
 	case errors.Is(err, store.ErrUnavailable):

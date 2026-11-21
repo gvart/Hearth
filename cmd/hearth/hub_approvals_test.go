@@ -34,7 +34,10 @@ func startConfig(t *testing.T, st *store.Store, dataDir string) (*policy.Engine,
 			AutomationsDir: filepath.Join(dataDir, "automations"), RunbooksDir: runbooksDirOf(opts),
 		},
 	})
-	_, err = applyHubConfig(t.Context(), opts, st, true, w, pol, n, slog.New(slog.DiscardHandler))
+	if err := w.ImportFirst(t.Context()); err != nil {
+		return nil, nil, err
+	}
+	_, err = applyHubConfig(t.Context(), opts, st, w, pol, n, slog.New(slog.DiscardHandler))
 	return pol, n, err
 }
 

@@ -3,33 +3,45 @@
 package cluster
 
 import (
-	"context"
-	"errors"
-	"io/fs"
+	"crypto/tls"
 	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
-	"runtime/pprof"
-	"strings"
 	"testing"
 	"time"
 
-	"github.com/hashicorp/raft"
-
 	"github.com/gvart/hearth/internal/pki"
-	"github.com/gvart/hearth/internal/store"
-	"github.com/gvart/hearth/internal/store/storetest"
 )
 
 const waitFor = 15 * time.Second
 
+// testLogger discards the log, unless HEARTH_TEST_CLUSTER_LOG is set.
 func testLogger(t *testing.T) *slog.Logger {
 	t.Helper()
-	if os.Getenv("HEARTH_TEST_RAFT_LOG") != "" {
+	if os.Getenv("HEARTH_TEST_CLUSTER_LOG") != "" {
 		return slog.New(slog.NewTextHandler(os.Stderr, nil)).With("test", t.Name())
 	}
 	return slog.New(slog.DiscardHandler)
+}
+
+// mintHubCert issues a node certificate for id with ca, as whoever holds
+// that CA's key could.
+func mintHubCert(t *testing.T, ca *pki.CA, id string) tls.Certificate {
+	t.Helper()
+	key, err := pki.NewKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	csr, err := pki.NewCSR(key, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := ca.SignHubCSR(csr, id, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tls.Certificate{Certificate: [][]byte{c.Raw}, PrivateKey: key, Leaf: c}
 }
 
 func newTestCA(t *testing.T) *pki.CA {
@@ -41,35 +53,8 @@ func newTestCA(t *testing.T) *pki.CA {
 	return ca
 }
 
-type testNode struct {
-	*Node
-	st    *store.Store
-	dir   string
-	fatal chan error
-	down  bool
-	t     *testing.T
-}
-
-// heldAddr binds a loopback port for a node to take with withListener: the
-// address is known before the node starts, and no other process can take
-// the port in between.
-func heldAddr(t *testing.T) net.Listener {
-	t.Helper()
-	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = ln.Close() })
-	return ln
-}
-
-// withListener makes the node take ln (see heldAddr).
-func withListener(ln net.Listener) func(*Config) {
-	return func(c *Config) { c.Listener = ln }
-}
-
 // freeAddr returns a loopback address with a port that was free a moment
-// ago, for a hub that never listens on it. A node takes heldAddr instead.
+// ago, for a hub that never listens on it.
 func freeAddr(t *testing.T) string {
 	t.Helper()
 	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
@@ -81,180 +66,28 @@ func freeAddr(t *testing.T) string {
 	return addr
 }
 
-// startNode starts a node with its own data dir. dir may be empty for a new one.
-func startNode(t *testing.T, ca *pki.CA, id, dir, addr string, bootstrap bool, tune ...func(*Config)) *testNode {
+func hubCert(t *testing.T, ca *pki.CA, id string) tls.Certificate {
 	t.Helper()
-	return startNodeBound(t, ca, id, dir, addr, bootstrap, (*Node).Bind, tune...)
-}
-
-// startNodeBound is startNode with the store bound by bind, e.g.
-// (*Node).BindForwarding for a hub whose follower writes are forwarded.
-func startNodeBound(t *testing.T, ca *pki.CA, id, dir, addr string, bootstrap bool,
-	bind func(*Node, *store.Store) store.Applier, tune ...func(*Config),
-) *testNode {
-	t.Helper()
-	return startNodeStore(t, ca, id, dir, addr, bootstrap, bind, nil, tune...)
-}
-
-// startNodeStore is startNodeBound with extra store options, e.g.
-// store.WithExtraMigration for a hub running a newer binary.
-func startNodeStore(t *testing.T, ca *pki.CA, id, dir, addr string, bootstrap bool,
-	bind func(*Node, *store.Store) store.Applier, storeOpts []store.Option, tune ...func(*Config),
-) *testNode {
-	t.Helper()
-	if dir == "" {
-		dir = t.TempDir()
-	}
-	if addr == "" {
-		addr = "127.0.0.1:0"
-	}
-	tn := &testNode{dir: dir, fatal: make(chan error, 1), t: t}
-	cfg := Config{
-		DataDir: dir, NodeID: id, Listen: addr, CA: ca, Bootstrap: bootstrap,
-		Log: testLogger(t), OnFatal: func(err error) { tn.fatal <- err },
-	}
-	// Raft's default timeouts. Tests once used 400 ms ones with a 200 ms
-	// lease: under -race on one CPU (argon2 password hashing on the same P)
-	// the leader missed its lease and leadership flapped, which tests that
-	// assume a stable leader cannot tell from a bug.
-	for _, f := range tune {
-		f(&cfg)
-	}
-	n, err := New(cfg)
+	cert, err := loadOrIssueNodeCert(t.TempDir(), ca, id, "", time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	opts := []store.Option{
-		store.WithoutUpgrade(),
-		store.WithApplier(func(s *store.Store) store.Applier { return bind(n, s) }),
-	}
-	path := filepath.Join(dir, "hearth.db")
-	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) && storeOpts == nil {
-		// A new hub's database, migrated as Open would migrate it, from a
-		// template: migrating is the costliest part of starting a node.
-		storetest.Migrated(t, path)
-	}
-	opts = append(opts, storeOpts...)
-	st, err := store.Open(t.Context(), path, opts...)
+	return cert
+}
+
+func deviceCert(t *testing.T, ca *pki.CA) tls.Certificate {
+	t.Helper()
+	key, err := pki.NewKey()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := n.Start(t.Context()); err != nil {
-		_ = st.Close()
-		t.Fatalf("Start %s: %v", id, err)
+	csr, err := pki.NewCSR(key, "pi")
+	if err != nil {
+		t.Fatal(err)
 	}
-	tn.Node, tn.st = n, st
-	t.Cleanup(tn.stop)
-	return tn
-}
-
-// stop shuts the node down as a crash would look to its peers.
-func (tn *testNode) stop() {
-	if tn.down {
-		return
+	leaf, err := ca.SignClientCSR(csr, "pi", time.Now())
+	if err != nil {
+		t.Fatal(err)
 	}
-	tn.down = true
-	within(tn.t, "shutdown of "+tn.ID(), func() { _ = tn.Shutdown() })
-	_ = tn.st.Close()
-}
-
-// within runs fn, and fails the test with every goroutine's stack if fn
-// has not returned after waitFor: a hang in teardown then fails fast with
-// the culprit instead of eating the package's whole test timeout. fn keeps
-// running in the background.
-func within(t *testing.T, what string, fn func()) {
-	t.Helper()
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		fn()
-	}()
-	select {
-	case <-done:
-	case <-time.After(waitFor):
-		var stacks strings.Builder
-		_ = pprof.Lookup("goroutine").WriteTo(&stacks, 2)
-		t.Errorf("%s did not finish within %v; goroutines:\n%s", what, waitFor, stacks.String())
-	}
-}
-
-func eventually(t *testing.T, what string, cond func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(waitFor)
-	for !cond() {
-		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for %s", what)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-}
-
-// leaderOf waits until exactly one live node is leader and returns it.
-func leaderOf(t *testing.T, nodes ...*testNode) *testNode {
-	t.Helper()
-	var leader *testNode
-	eventually(t, "a leader", func() bool {
-		leader = nil
-		for _, n := range nodes {
-			if n.down || !n.IsLeader() {
-				continue
-			}
-			if leader != nil {
-				return false
-			}
-			leader = n
-		}
-		return leader != nil
-	})
-	return leader
-}
-
-// addVoter adds n as a voter through leader, as Promote does.
-func addVoter(t *testing.T, leader, n *testNode) {
-	t.Helper()
-	if err := leader.raft.AddVoter(raft.ServerID(n.ID()), raft.ServerAddress(n.Addr()), 0, waitFor).Error(); err != nil {
-		t.Fatalf("AddVoter %s: %v", n.ID(), err)
-	}
-}
-
-// threeNodes forms a 3-voter cluster: n1 bootstraps, n2 and n3 are added.
-func threeNodes(t *testing.T, ca *pki.CA, tune ...func(*Config)) []*testNode {
-	t.Helper()
-	n1 := startNode(t, ca, "n1", "", "", true, tune...)
-	leaderOf(t, n1)
-	n2 := startNode(t, ca, "n2", "", "", false, tune...)
-	n3 := startNode(t, ca, "n3", "", "", false, tune...)
-	addVoter(t, n1, n2)
-	addVoter(t, n1, n3)
-	waitReady(t, n2, n3)
-	return []*testNode{n1, n2, n3}
-}
-
-// waitReady waits until each node has caught up with the cluster. A node
-// added as a voter installs the leader's snapshot after AddVoter returns;
-// a test that touches its store or subscribes to its events before then
-// races that restore.
-func waitReady(t *testing.T, nodes ...*testNode) {
-	t.Helper()
-	for _, n := range nodes {
-		ctx, cancel := context.WithTimeout(t.Context(), waitFor)
-		err := n.WaitReady(ctx)
-		cancel()
-		if err != nil {
-			t.Fatalf("%s: %v", n.ID(), err)
-		}
-	}
-}
-
-func hasDevice(n *testNode, id string) bool {
-	_, err := n.st.Devices().Get(context.Background(), id)
-	return err == nil
-}
-
-func upsert(t *testing.T, n *testNode, id string) {
-	t.Helper()
-	now := time.Now()
-	if err := n.st.Devices().Upsert(t.Context(), store.Device{ID: id, Name: id, FirstSeen: now, LastSeen: now}); err != nil {
-		t.Fatalf("upsert %s on %s: %v", id, n.ID(), err)
-	}
+	return tls.Certificate{Certificate: [][]byte{leaf.Raw}, PrivateKey: key, Leaf: leaf}
 }

@@ -51,6 +51,7 @@ func (s *Store) Merge(ctx context.Context, muts []Mutation) (err error) {
 		return fmt.Errorf("merge: %w: it needs %d", ErrSchemaTooOld, VersionedSchema)
 	}
 	dt := s.newDigestTx()
+	var took []MergedRow
 	// The caller may send muts to other members too: filter a copy.
 	muts = slices.Clone(muts)
 	for i := range muts {
@@ -63,7 +64,10 @@ func (s *Store) Merge(ctx context.Context, muts []Mutation) (err error) {
 			if m.Table == auditTable {
 				return mergeAudit(ctx, tx, m)
 			}
-			_, err := mergeRow(ctx, s, tx, m, true)
+			ok, err := mergeRow(ctx, s, tx, m, true)
+			if ok {
+				took = append(took, MergedRow{Table: m.Table, Key: pkOf(tables[m.Table], m.Row), Deleted: m.Deleted})
+			}
 			return err
 		})
 		if err != nil {
@@ -74,7 +78,30 @@ func (s *Store) Merge(ctx context.Context, muts []Mutation) (err error) {
 		return fmt.Errorf("merge: %w", err)
 	}
 	dt.commit()
+	if fn := s.merged.Load(); fn != nil && len(took) > 0 {
+		(*fn)(took)
+	}
 	return nil
+}
+
+// MergedRow is a row a Merge took from another member: its table, primary
+// key values in the table's key order, and whether it is a tombstone.
+type MergedRow struct {
+	Table   string
+	Key     []any
+	Deleted bool
+}
+
+// ObserveMerges has fn told, after each Merge commits, the rows it took:
+// those newer than this member's own, so a row that comes back unchanged
+// tells nothing. fn runs on the merging goroutine and must not block; nil
+// stops it. Audit entries are not told.
+func (s *Store) ObserveMerges(fn func([]MergedRow)) {
+	if fn == nil {
+		s.merged.Store(nil)
+		return
+	}
+	s.merged.Store(&fn)
 }
 
 // knownColumns returns row without the columns table lacks in this

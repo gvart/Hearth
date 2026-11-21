@@ -133,7 +133,7 @@ func (a *api) writeKubeError(w http.ResponseWriter, r *http.Request, op string, 
 		writeError(w, http.StatusConflict, "conflict", "a cluster with that name exists")
 	case errors.Is(err, store.ErrSchemaTooOld):
 		writeError(w, http.StatusConflict, "schema_too_old",
-			"the hub cluster's database predates Kubernetes clusters: run `hearth cluster migrate` first")
+			"the hub cluster's database predates Kubernetes clusters: upgrade every hub of the cluster first")
 	case errors.Is(err, policy.ErrDenied):
 		writeError(w, http.StatusForbidden, "forbidden", "denied by policy")
 	case errors.Is(err, store.ErrUnavailable):

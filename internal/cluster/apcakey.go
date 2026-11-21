@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sync"
 	"time"
 
 	"connectrpc.com/connect"
@@ -208,4 +209,56 @@ func (s *APJoinServer) auditFetchRefused(ctx context.Context, refusal error, pro
 	}); err != nil {
 		s.log.ErrorContext(ctx, "audit a refused CA key fetch", "err", err)
 	}
+}
+
+// errNoNextKey is FetchCAKey's answer from a hub without the new CA's key.
+var errNoNextKey = errors.New("this hub does not hold the new CA's key")
+
+// Refused FetchCAKey calls get at most one audit entry per caller, and
+// fetchRefusalBurst in all, per fetchRefusalEvery; an entry counts the
+// refusals left out since the one before. The caller's node ID is its
+// certificate's, which whoever minted it chose, so the bound on all callers
+// and on the callers remembered (fetchRefusalCallers) is what holds.
+const (
+	fetchRefusalEvery   = time.Minute
+	fetchRefusalBurst   = 10
+	fetchRefusalCallers = 64
+)
+
+// fetchRefusals rate-limits the audit entries of refused FetchCAKey calls.
+type fetchRefusals struct {
+	mu         sync.Mutex
+	last       map[string]time.Time // the last entry per caller
+	windowAt   time.Time
+	windowN    int
+	suppressed int
+}
+
+// admit reports whether a refusal of caller at now gets an audit entry and,
+// if so, how many refusals were left out since the last entry.
+func (f *fetchRefusals) admit(caller string, now time.Time) (bool, int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.last == nil {
+		f.last = map[string]time.Time{}
+	}
+	if now.Sub(f.windowAt) >= fetchRefusalEvery {
+		f.windowAt, f.windowN = now, 0
+		for k, at := range f.last {
+			if now.Sub(at) >= fetchRefusalEvery {
+				delete(f.last, k)
+			}
+		}
+	}
+	at, seen := f.last[caller]
+	if (seen && now.Sub(at) < fetchRefusalEvery) || f.windowN >= fetchRefusalBurst ||
+		(!seen && len(f.last) >= fetchRefusalCallers) {
+		f.suppressed++
+		return false, 0
+	}
+	f.last[caller] = now
+	f.windowN++
+	suppressed := f.suppressed
+	f.suppressed = 0
+	return true, suppressed
 }

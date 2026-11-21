@@ -48,7 +48,7 @@ var (
 	// ErrAgentHost refuses a role for an enrolled device: the agent cannot
 	// hold storage or master.
 	ErrAgentHost = errors.New("this is an agent host: an agent cannot take the storage or master role; " +
-		"run `hearth hub --cluster-mode ap --join <master URL> --allow-roles storage,master` on it to make it a cluster member")
+		"run `hearth hub --join <master URL> --allow-roles storage,master` on it to make it a cluster member")
 	// ErrRoleCeiling refuses a role the member's own --allow-roles does not
 	// list.
 	ErrRoleCeiling = errors.New("the role is not in the member's --allow-roles")

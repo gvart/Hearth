@@ -36,7 +36,6 @@ import (
 	"github.com/gvart/hearth/internal/mcpserver"
 	"github.com/gvart/hearth/internal/metrics"
 	"github.com/gvart/hearth/internal/notify"
-	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/plugins"
 	"github.com/gvart/hearth/internal/policy"
 	"github.com/gvart/hearth/internal/store"
@@ -136,8 +135,8 @@ func newHubCmd() *cobra.Command {
 			"/install.sh, /download/ and the CA certificate at /ca.crt (see docs/https.md).\n\n" +
 			"If HEARTH_ADMIN_PASSWORD is set and no admin password is stored yet, it becomes the\n" +
 			"admin password. Otherwise use `hearth admin set-password`.\n\n" +
-			"Without cluster flags the hub runs standalone. --cluster forms a Raft cluster from this hub;\n" +
-			"--join adds this hub to an existing one (see docs/design/ha-hub.md).\n\n" +
+			"A hub is a cluster of one; --join adds it to the cluster of another hub, with which it\n" +
+			"shares its store over --cluster-listen (see docs/cluster.md).\n\n" +
 			"--prometheus-url points the hub at an existing Prometheus; device charts then show its\n" +
 			"node-exporter data (see docs/prometheus.md).\n\n" +
 			"--discover-subnet turns on network discovery: hosts without an agent show up as\n" +
@@ -150,7 +149,7 @@ func newHubCmd() *cobra.Command {
 			"--talosconfig reads Talos nodes through the Talos API: versions, services, memory and load (see docs/talos.md).\n\n" +
 			"--plugin runs the exec plugin a manifest describes, as a child process of the hub (see docs/plugins.md).\n\n" +
 			"--backup-interval uploads an encrypted backup to an S3-compatible bucket at that interval and keeps\n" +
-			"the newest --backup-keep, without the CA key unless --backup-include-ca; in a cluster the leader does (see docs/backup.md).\n\n" +
+			"the newest --backup-keep, without the CA key unless --backup-include-ca; in a cluster one master does (see docs/backup.md).\n\n" +
 			"--mqtt-listen serves an embedded MQTT broker over TLS for the users and devices of --mqtt-clients (see docs/mqtt.md).",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -279,18 +278,13 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	if err := opts.cluster.checkMode(); err != nil {
+	if err := opts.cluster.check(); err != nil {
 		return err
 	}
-	if opts.cluster.ap() && opts.apm == nil {
-		// An AP member runs its store and gossip all along, and the
-		// master layer below only while it is a master.
-		return runAPHub(ctx, opts, allowedRoles, log)
-	}
-	if !opts.cluster.ap() {
-		if err := cluster.CheckCeiling(cluster.HubRoles, allowedRoles); err != nil {
-			return fmt.Errorf("a hub is master and storage: %w", err)
-		}
+	if opts.apm == nil {
+		// A member runs its store and gossip all along, and the master
+		// layer below only while it is a master.
+		return runClusterHub(ctx, opts, allowedRoles, log)
 	}
 	telemetryOff, err := opts.telemetry.off()
 	if err != nil {
@@ -333,57 +327,16 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if _, port, err := net.SplitHostPort(opts.listen); err == nil && port != "0" {
 		agentPort = port
 	}
-	// A Raft node that fails to apply a committed write stops the hub.
-	fatal := make(chan error, 1)
-	var (
-		st         *store.Store
-		ca         *pki.CA
-		node       *cluster.Node
-		membership *cluster.Membership
-		apNode     *cluster.APNode
-	)
-	if opts.apm != nil {
-		// Opened and closed by runAPHub.
-		st, ca, apNode = opts.apm.st, opts.apm.ca, opts.apm.node
-	} else if opts.cluster.clustered(opts.dataDir) {
-		// Agents and other hubs reach this hub by its first --host name.
-		var agentURL string
-		if agentPort != "" {
-			agentURL = "https://" + net.JoinHostPort(hosts[0], agentPort)
-		}
-		st, ca, node, err = startClusterNode(ctx, opts, log, func(err error) { fatal <- err }, agentURL, agentPort)
-		if err != nil {
-			return err
-		}
-		defer st.Close()
-		defer func() { _ = node.Shutdown() }() // before the store closes
-		if membership, err = newMembership(ctx, opts.cluster, node, allowedRoles, log); err != nil {
-			return err
-		}
-	} else {
-		st, err = store.Open(ctx, filepath.Join(opts.dataDir, dbFile))
-		if err != nil {
-			return err
-		}
-		defer st.Close()
-		if ca, err = loadStandaloneCA(opts.dataDir, log); err != nil {
-			return err
-		}
-	}
+	// Opened and closed by runClusterHub.
+	st, ca, node := opts.apm.st, opts.apm.ca, opts.apm.node
 	// Host metrics stay in a database of this hub's own, outside the
-	// replicated store: they are too many writes for the Raft log.
+	// replicated store: they are too many writes to replicate.
 	ms, err := metrics.Open(ctx, filepath.Join(opts.dataDir, metricsDBFile), nil, log)
 	if err != nil {
 		return err
 	}
 	defer ms.Close()
-	var epoch string
-	if node != nil {
-		epoch = node.Epoch()
-	} else if apNode != nil {
-		epoch = apNode.Epoch()
-	}
-	serverCert, err := newServerCert(ctx, ca, hosts, epoch, log)
+	serverCert, err := newServerCert(ctx, ca, hosts, node.Epoch(), log)
 	if err != nil {
 		return err
 	}
@@ -391,12 +344,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	if node != nil {
-		node.SetResealer(sealers.reseal)
-	}
-	if apNode != nil {
-		apNode.SetResealer(sealers.reseal)
-	}
+	node.SetResealer(sealers.reseal)
 
 	// The configuration is set below, before anything decides: from the
 	// store's documents, or from the files until the store holds any.
@@ -406,12 +354,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if automationsDir == "" {
 		automationsDir = filepath.Join(opts.dataDir, "automations")
 	}
-	hubID := hostnameOr("hub")
-	if node != nil {
-		hubID = node.ID()
-	} else if apNode != nil {
-		hubID = apNode.ID()
-	}
+	hubID := node.ID()
 	configWatcher := hubconfig.NewWatcher(hubconfig.WatcherConfig{
 		Store: st.ConfigDocs(), Sealer: sealers.notify, Policy: pol, Notifier: notifier,
 		HostDangerous: opts.dangerousAutomations, Actor: hubID, Log: log.With("component", "config"),
@@ -420,7 +363,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 			AutomationsDir: automationsDir, RunbooksDir: runbooksDirOf(opts),
 		},
 	})
-	configDocs, err := applyHubConfig(ctx, opts, st, node == nil && apNode == nil, configWatcher, pol, notifier, log)
+	configDocs, err := applyHubConfig(ctx, opts, st, configWatcher, pol, notifier, log)
 	if err != nil {
 		return err
 	}
@@ -434,24 +377,19 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if beszelClient != nil {
 		beszelReader = beszel.NewReader(beszel.ReaderConfig{
 			Client: beszelClient, Interval: opts.discoverInterval, Policy: pol, Log: log.With("component", "beszel"),
-			// In a cluster only the leader reads, as only it can audit.
-			Standby: node != nil,
 		})
 	}
 	var talosReader *talos.Reader
 	if talosClient != nil {
 		talosReader = talos.NewReader(talos.ReaderConfig{
 			Client: talosClient, Interval: opts.discoverInterval, Policy: pol, Log: log.With("component", "talos"),
-			// In a cluster only the leader reads, as only it can audit.
-			Standby: node != nil,
 		})
 	}
-	if node == nil && apNode == nil {
-		if err := ensureAdminPassword(ctx, st, pol, opts, log); err != nil {
-			return err
-		}
-	}
-	reg := hub.NewRegistry(hub.RegistryConfig{Store: st, Log: log, Replicated: node != nil})
+	reg := hub.NewRegistry(hub.RegistryConfig{Store: st, Log: log})
+	// Devices whose agents stream to another master change here by
+	// merges: the UI follows them, the automations do not (#266).
+	st.ObserveMerges(reg.Merged)
+	defer st.ObserveMerges(nil)
 	agents := hub.NewAgents(st.Devices())
 	kube, err := newKubeManager(st, sealers.kube, pol, log)
 	if err != nil {
@@ -472,13 +410,11 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if opts.newDeviceAlerts != "" && !notifier.Has(opts.newDeviceAlerts) {
 		return fmt.Errorf("--new-device-alerts: no notification channel %q (see --notify-config)", opts.newDeviceAlerts)
 	}
-	// An AP member's database holds only its shards: its backups copy the
+	// A member's database holds only its shards: its backups copy the
 	// whole cluster store.
-	var snapshot func(context.Context, string) error
-	if apNode != nil {
-		snapshot = apNode.Snapshot
-	}
-	backups, err := backupScheduler(opts, st, pol, notifier, node != nil || apNode != nil, snapshot,
+	snapshot := node.Snapshot
+	clustered := func() bool { return !node.Status().Alone() }
+	backups, err := backupScheduler(opts, st, pol, notifier, clustered, snapshot,
 		log.With("component", "backup"))
 	if err != nil {
 		return err
@@ -493,15 +429,12 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if configDocs {
 		runbookDocs = hubconfig.StoreDocs(st.ConfigDocs(), store.ConfigRunbook, runbooksDirOf(opts), "", time.Now)
 	}
-	// owns, in an AP cluster, says which items (automations, runbook runs,
+	// owns says which items (automations, runbook runs,
 	// approvals) this master runs: those it owns on the ring of masters.
-	var owns func(string) bool
-	if apNode != nil {
-		owns = apNode.Masters().Owns
-		pol.SweepOnly(owns)
-		// A master cut off from every other member fails closed.
-		pol.FailClosedWhen(apNode.Isolated)
-	}
+	owns := node.Masters().Owns
+	pol.SweepOnly(owns)
+	// A master cut off from every other member fails closed.
+	pol.FailClosedWhen(node.Isolated)
 	runbooks, err := newRunbooks(opts, st, sealers.runbook, pol, agents, notifier, kube, pluginMgr, talosClient, runbookDocs, owns, log)
 	if err != nil {
 		return err
@@ -537,25 +470,16 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	} else {
 		log.WarnContext(ctx, "cannot find own binary: verifying login passwords in-process", "err", err)
 	}
-	// ready is closed once a clustered hub has caught up with the cluster.
-	ready := make(chan struct{})
-	if opts.apm != nil {
-		ready = opts.apm.ready
-	}
-	if node != nil {
-		cfg.Leadership = node
-		cfg.Ready = ready
-		cfg.ConfigDrift = func(ctx context.Context) (any, error) { return node.ConfigDrift(ctx) }
-	}
-	if apNode != nil {
-		// Requests wait for the first sync with the cluster. Every master
-		// takes agent streams; calls for a stream on another master are
-		// forwarded to it.
-		cfg.Ready = ready
-		cfg.Leadership = apNode
-		cfg.Masters = apNode
-		cfg.ClusterAdmin = apClusterAdmin{apNode}
-	}
+	// ready is closed once the hub has caught up with the cluster.
+	ready := opts.apm.ready
+	// Requests wait for the first sync with the cluster. Every master
+	// takes agent streams; calls for a stream on another master are
+	// forwarded to it.
+	cfg.Ready = ready
+	cfg.Leadership = node
+	cfg.ConfigDrift = func(context.Context) (any, error) { return node.Status().HostFlagDrift(), nil }
+	cfg.Masters = node
+	cfg.ClusterAdmin = apClusterAdmin{node}
 	if _, port, err := net.SplitHostPort(opts.httpListen); err == nil && port != "0" {
 		cfg.HTTPPort = port
 	}
@@ -571,7 +495,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	maps.Copy(kinds.Actions, automation.Actions(automation.ActionDeps{
 		Agents: agents, Notifier: notifier, Kube: kube, Plugins: pluginMgr,
 	}))
-	kinds.Actions["script"] = automation.Script(automation.ScriptDeps{Devices: st.Devices(), Live: reg.Live})
+	kinds.Actions["script"] = automation.Script(automation.ScriptDeps{Devices: st.Devices()})
 	cfg.AutomationsDir, cfg.AutomationKinds = automationsDir, kinds
 	var automationDocs automation.DocStore
 	if configDocs {
@@ -583,17 +507,14 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		cfg.ConfigSealer, cfg.ConfigKinds = sealers.notify, cliKinds
 	}
 	// A backup from the web UI is the one `hearth backup` writes.
-	cfg.Backup, cfg.BackupDir = webBackup(opts, st, node != nil || apNode != nil, snapshot), opts.dataDir
+	cfg.Backup, cfg.BackupDir = webBackup(opts, st, clustered, snapshot), opts.dataDir
 	// The web editor and MCP write the same directory under one lock.
 	var automationsMu sync.Mutex
 	cfg.AutomationsLock = &automationsMu
 	errLog := slog.NewLogLogger(log.Handler(), slog.LevelWarn)
-	baseCtx := func(net.Listener) context.Context { return ctx }
-	if opts.apm != nil {
-		// A request that demotes this master ends the master layer: it
-		// still answers, and audits its outcome.
-		baseCtx = func(net.Listener) context.Context { return opts.apm.ctx }
-	}
+	// A request that demotes this master ends the master layer: it still
+	// answers, and audits its outcome.
+	baseCtx := func(net.Listener) context.Context { return opts.apm.ctx }
 	// The UI and API, served on both listeners. Over TLS they share the agent
 	// port, so browsers get HTTPS with the hub CA (see docs/https.md).
 	dashboardAudit := hub.NewDashboardAudit(pol, log)
@@ -604,48 +525,28 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	uiMux.Handle("GET /api/v1/events", hub.EndOnStop(stopping, webH))
 	uiMux.Handle("GET /api/v1/devices/{id}/logs", hub.EndOnStop(stopping, webH))
 	uiMux.Handle("GET /api/v1/devices/{id}/shell", hub.EndOnStop(stopping, webH))
-	if apNode != nil {
-		// Other masters forward calls for the agents streaming here, and
-		// proxy the log streams and terminals of their devices.
-		mm := http.NewServeMux()
-		mm.Handle("/agents/", hub.AgentsHandler(agents, log))
-		mm.Handle("/api/", hub.ProxiedHandler(uiMux))
-		apNode.SetMasterHandler(mm)
-		defer apNode.SetMasterHandler(nil)
-	}
+	// Other masters forward calls for the agents streaming here, and
+	// proxy the log streams and terminals of their devices.
+	mm := http.NewServeMux()
+	mm.Handle("/agents/", hub.AgentsHandler(agents, log))
+	mm.Handle("/api/", hub.ProxiedHandler(uiMux))
+	node.SetMasterHandler(mm)
+	defer node.SetMasterHandler(nil)
 	uiMux.Handle("GET /api/v1/guest/{token}/events", hub.EndOnStop(stopping, webH))
-	if node != nil {
-		node.SetConfigSource(cluster.HostFlagsSource(opts.dangerousAutomations))
-	}
 	var mcpPlugins mcpserver.Plugins
 	if pluginMgr != nil {
 		mcpPlugins = pluginMgr
 	}
 	uiMux.Handle(mcpserver.Path, hub.EndOnStop(stopping, mcpserver.Handler(mcpserver.Config{
-		Devices: st.Devices(), Live: reg.Live, Tokens: st.MCPTokens(), Policy: pol, Agents: agents, Kube: kube, Plugins: mcpPlugins,
+		Devices: st.Devices(), Tokens: st.MCPTokens(), Policy: pol, Agents: agents, Kube: kube, Plugins: mcpPlugins,
 		Metrics: hub.AutomationMetrics(st, prom, ms), AutomationsDir: automationsDir, AutomationDocs: automationDocs, AutomationKinds: kinds, AutomationsLock: &automationsMu,
 		Version: opts.version, Log: log,
 	})))
-	var tlsWeb http.Handler = uiMux
 	tlsCfg := hub.TLSConfigFunc(ca, serverCert.Load)
-	if node != nil {
-		// During a hub CA rotation other hubs call ClusterService
-		// against this hub's pinned node certificate.
-		tlsCfg = node.ServeNodeCert(tlsCfg)
-		// ClusterService is served over TLS only: Promote authenticates
-		// hubs by their client certificate.
-		m := http.NewServeMux()
-		m.Handle("/", uiMux)
-		m.Handle(cluster.NewJoinServer(node, st, ca, pol, log).Handler())
-		tlsWeb = m
-	}
-	if apNode != nil {
-		// Joining hubs call ClusterService.Join over TLS.
-		m := http.NewServeMux()
-		m.Handle("/", uiMux)
-		m.Handle(cluster.NewAPJoinServer(apNode, st, ca, pol, log).Handler())
-		tlsWeb = m
-	}
+	// Joining hubs call ClusterService.Join over TLS.
+	tlsWeb := http.NewServeMux()
+	tlsWeb.Handle("/", uiMux)
+	tlsWeb.Handle(cluster.NewAPJoinServer(node, st, ca, pol, log).Handler())
 	agentSrv := &http.Server{
 		Handler:           hub.NewTLSHandler(cfg, tlsWeb),
 		TLSConfig:         tlsCfg,
@@ -686,9 +587,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		"addr", agentLn.Addr().String(), "http_addr", webLn.Addr().String(),
 		"hosts", hosts, "data_dir", opts.dataDir, "ca_fingerprint", hex.EncodeToString(fp[:]),
 	}
-	if node != nil {
-		logAttrs = append(logAttrs, "node_id", node.ID(), "raft_addr", node.Addr())
-	}
+	logAttrs = append(logAttrs, "node_id", node.ID())
 	logAttrs = append(logAttrs, "prometheus", prom != nil, "pihole", opts.piholeURL != "", "netalertx", opts.netalertxURL != "",
 		"beszel", opts.beszelURL != "", "talos", opts.talosconfig != "", "dhcp_lease_files", len(opts.dhcpLeases),
 		"plugins", len(manifests))
@@ -710,11 +609,9 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		automationSource = configWatcher.Automations()
 	}
 	var ringChanged <-chan struct{}
-	if apNode != nil {
-		c, unsubscribe := apNode.Masters().Subscribe()
-		defer unsubscribe()
-		ringChanged = c
-	}
+	c, unsubscribe := node.Masters().Subscribe()
+	defer unsubscribe()
+	ringChanged = c
 	automations := automation.New(automation.Config{
 		Dir:     automationsDir,
 		Source:  automationSource,
@@ -751,36 +648,11 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		return err
 	}
 	g, gctx := errgroup.WithContext(ctx)
-	if apNode != nil {
-		runAPLoops(gctx, g, apNode, apLoops{
-			agents: agents, reg: reg, st: st, pol: pol, automations: automations, runbooks: runbooks,
-			scanner: scanner, importer: importer, beszel: beszelReader, talos: talosReader, backups: backups,
-			ready: ready, log: log,
-		})
-	}
-	if node == nil && apNode == nil {
-		g.Go(func() error { return reg.Run(gctx) })
-		g.Go(func() error { return automations.Run(gctx) })
-		g.Go(func() error { return runbooks.Run(gctx) })
-		g.Go(func() error { return hub.RunApprovalSweep(gctx, pol, nil, nil, log) })
-		if scanner != nil {
-			g.Go(func() error { return scanner.Run(gctx) })
-		}
-		if importer != nil {
-			g.Go(func() error { return importer.Run(gctx) })
-		}
-		// What a Beszel read finds is kept in memory, not stored.
-		if beszelReader != nil {
-			g.Go(func() error { return beszelReader.Run(gctx) })
-		}
-		// And what a Talos read finds.
-		if talosReader != nil {
-			g.Go(func() error { return talosReader.Run(gctx) })
-		}
-		if backups != nil {
-			g.Go(func() error { return backups.Run(gctx) })
-		}
-	}
+	runAPLoops(gctx, g, node, apLoops{
+		agents: agents, reg: reg, st: st, pol: pol, automations: automations, runbooks: runbooks,
+		scanner: scanner, importer: importer, beszel: beszelReader, talos: talosReader, backups: backups,
+		ready: ready, log: log,
+	})
 	// Every hub of a cluster watches the Kubernetes clusters itself.
 	g.Go(func() error { return kube.Run(gctx) })
 	// And reads the Proxmox servers itself.
@@ -793,164 +665,47 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	// them; a cluster member imports its files once it has caught up.
 	if configDocs {
 		g.Go(func() error { return configWatcher.Run(gctx) })
-		if node != nil {
-			g.Go(func() error {
-				if node.WaitReady(gctx) != nil {
-					return nil
-				}
-				if err := configWatcher.ImportFirst(gctx); err != nil {
-					log.ErrorContext(gctx, "configuration files not imported", "err", err)
-				}
+		// A member imports once it has found the cluster and copied
+		// its rows: before, it would see no documents of the cluster's,
+		// and import its files over them, alone on a ring of itself.
+		g.Go(func() error {
+			select {
+			case <-gctx.Done():
 				return nil
-			})
-		}
-		if apNode != nil {
-			// An AP member imports once it has found the cluster and copied
-			// its rows: before, it would see no documents of the cluster's,
-			// and import its files over them, alone on a ring of itself.
-			g.Go(func() error {
-				select {
-				case <-gctx.Done():
-					return nil
-				case <-ready:
-				}
-				if !opts.apm.caughtUp.Load() {
-					log.WarnContext(gctx, "configuration files not imported: this member has not caught up with the "+
-						"ap cluster; import them with `hearth config import` if the cluster holds none")
-					return nil
-				}
-				if err := configWatcher.ImportFirst(gctx); err != nil {
-					log.ErrorContext(gctx, "configuration files not imported", "err", err)
-				}
+			case <-ready:
+			}
+			if !opts.apm.caughtUp.Load() {
+				log.WarnContext(gctx, "configuration files not imported: this member has not caught up with the "+
+					"cluster; import them with `hearth config import` if the cluster holds none")
 				return nil
-			})
-		}
+			}
+			if err := configWatcher.ImportFirst(gctx); err != nil {
+				log.ErrorContext(gctx, "configuration files not imported", "err", err)
+			}
+			return nil
+		})
 	}
 	// Every hub prunes its own metrics.
 	g.Go(func() error { return ms.Run(gctx) })
 	g.Go(func() error { return dashboardAudit.Run(gctx) })
-	// Every hub checks the telemetry answer; only the leader sends.
-	var telemetryLeader interface{ IsLeader() bool }
-	if node != nil {
-		telemetryLeader = node
-	} else if apNode != nil {
-		telemetryLeader = apNode.Masters().Singleton("loop/telemetry", ready)
-	}
+	// Every hub checks the telemetry answer; one master sends.
+	telemetryLeader := node.Masters().Singleton("loop/telemetry", ready)
 	telemetrySender := newTelemetrySender(opts, telemetryOff, st, telemetryLeader, log.With("component", "telemetry"))
 	g.Go(func() error { return telemetrySender.Run(gctx) })
-	// Every hub writes the audit entries it spooled; a cluster member once
-	// its store has caught up, so it reads the cluster's schema.
-	g.Go(func() error {
-		if node != nil && node.WaitReady(gctx) != nil {
-			return nil
-		}
-		return spool.Run(gctx)
-	})
+	// Every hub writes the audit entries it spooled.
+	g.Go(func() error { return spool.Run(gctx) })
 	g.Go(func() error { return serve(gctx, agentSrv, func() error { return agentSrv.ServeTLS(agentLn, "", "") }) })
 	g.Go(func() error { return serve(gctx, webSrv, func() error { return webSrv.Serve(webLn) }) })
 	// Every hub with --mqtt-listen runs a broker of its own.
 	if broker != nil {
 		g.Go(func() error { return broker.Run(gctx) })
 	}
-	if node != nil {
-		// Followers publish device events from the entries they apply.
-		node.ObserveApplies(reg)
-		// Presence, automations and network discovery run on the leader
-		// only and follow leadership.
-		changed, automationsChanged, discoveryChanged := make(chan struct{}, 1), make(chan struct{}, 1), make(chan struct{}, 1)
-		importChanged, runbooksChanged, beszelChanged := make(chan struct{}, 1), make(chan struct{}, 1), make(chan struct{}, 1)
-		talosChanged := make(chan struct{}, 1)
-		approvalsChanged, backupsChanged := make(chan struct{}, 1), make(chan struct{}, 1)
-		node.OnLeaderChange(func(cluster.LeaderInfo) {
-			for _, c := range []chan struct{}{
-				changed, automationsChanged, discoveryChanged, importChanged, runbooksChanged, approvalsChanged,
-				beszelChanged, talosChanged, backupsChanged,
-			} {
-				select {
-				case c <- struct{}{}:
-				default:
-				}
-			}
-		})
-		g.Go(func() error { return reg.RunReplicated(gctx, node, changed) })
-		g.Go(func() error {
-			return automation.RunWhileLeading(gctx, node, automationsChanged, log, automations.Run)
-		})
-		g.Go(func() error { return hub.RunApprovalSweep(gctx, pol, node, approvalsChanged, log) })
-		g.Go(func() error {
-			return automation.RunWhileLeading(gctx, node, runbooksChanged, log.With("component", "runbooks"), runbooks.Run)
-		})
-		if scanner != nil {
-			g.Go(func() error {
-				return automation.RunWhileLeading(gctx, node, discoveryChanged, log.With("component", "discovery"), scanner.Run)
-			})
-		}
-		if importer != nil {
-			g.Go(func() error {
-				return automation.RunWhileLeading(gctx, node, importChanged, log.With("component", "network-import"), importer.Run)
-			})
-		}
-		if beszelReader != nil {
-			g.Go(func() error {
-				return automation.RunWhileLeading(gctx, node, beszelChanged, log.With("component", "beszel"), beszelReader.Run)
-			})
-		}
-		if talosReader != nil {
-			g.Go(func() error {
-				return automation.RunWhileLeading(gctx, node, talosChanged, log.With("component", "talos"), talosReader.Run)
-			})
-		}
-		if backups != nil {
-			// Only the leader backs up, as only it can audit.
-			g.Go(func() error {
-				return automation.RunWhileLeading(gctx, node, backupsChanged, log.With("component", "backup"), backups.Run)
-			})
-		}
-		g.Go(func() error {
-			if node.WaitReady(gctx) != nil {
-				return nil
-			}
-			close(ready)
-			log.InfoContext(gctx, "caught up with the cluster")
-			// After catching up, so a new member sees the cluster's password
-			// and does not replace it.
-			if err := ensureAdminPassword(gctx, st, pol, opts, log); err != nil {
-				log.ErrorContext(gctx, "HEARTH_ADMIN_PASSWORD not applied", "err", err)
-			}
-			node.Announce(gctx)
-			node.RecordNodeCert(gctx)
-			return nil
-		})
-		g.Go(func() error {
-			return cluster.ServeControl(gctx, opts.dataDir, node, log)
-		})
-		g.Go(func() error { return promoteUntilVoter(gctx, node, opts.dataDir, log) })
-		if membership != nil {
-			// Gossip runs beside Raft; the hub runs on without it.
-			g.Go(func() error {
-				if err := membership.Run(gctx); err != nil {
-					log.ErrorContext(gctx, "gossip membership stopped", "err", err)
-				}
-				return nil
-			})
-		}
-		g.Go(func() error {
-			select {
-			case err := <-fatal:
-				return err
-			case <-gctx.Done():
-				return nil
-			}
-		})
-	}
-	if apNode != nil {
-		// The CLI's promote, demote and remove, decided here.
-		apNode.SetRoleChanges(apRoleChanges(pol, apClusterAdmin{apNode}))
-		defer apNode.SetRoleChanges(nil)
-		// And its hub CA rotation steps.
-		apNode.SetCAPolicy(pol)
-		defer apNode.SetCAPolicy(nil)
-	}
+	// The CLI's promote, demote and remove, decided here.
+	node.SetRoleChanges(apRoleChanges(pol, apClusterAdmin{node}))
+	defer node.SetRoleChanges(nil)
+	// And its hub CA rotation steps.
+	node.SetCAPolicy(pol)
+	defer node.SetCAPolicy(nil)
 	err = g.Wait()
 	log.InfoContext(ctx, "hub stopped")
 	return err
@@ -1074,10 +829,10 @@ func notifyApprovals(pol *policy.Engine, st *store.Store, n *notify.Notifier, ho
 
 // applyHubConfig puts the hub's configuration in effect before anything
 // decides, and reports whether the store's documents are its source (schema
-// 28 or newer). A standalone hub first imports its files into an empty
-// store; a cluster member does once it has caught up. Until the store holds
-// documents, the files are in effect, as they always were.
-func applyHubConfig(ctx context.Context, opts hubOptions, st *store.Store, standalone bool, w *hubconfig.Watcher,
+// 28 or newer). A master imports its files into an empty store once it has
+// caught up with the cluster. Until the store holds documents, the files are
+// in effect, as they always were.
+func applyHubConfig(ctx context.Context, opts hubOptions, st *store.Store, w *hubconfig.Watcher,
 	pol *policy.Engine, notifier *notify.Notifier, log *slog.Logger,
 ) (bool, error) {
 	docs, err := st.ConfigDocs().Available(ctx)
@@ -1086,17 +841,12 @@ func applyHubConfig(ctx context.Context, opts hubOptions, st *store.Store, stand
 	}
 	applied := false
 	if docs {
-		if standalone {
-			if err := w.ImportFirst(ctx); err != nil {
-				return false, err
-			}
-		}
 		if applied, err = w.Sync(ctx); err != nil {
 			return false, err
 		}
 	} else {
 		log.WarnContext(ctx, "the database predates configuration documents: this hub reads its configuration files "+
-			"until `hearth cluster migrate` and a restart", "schema_needed", store.ConfigDocsSchema)
+			"until every hub of the cluster is upgraded and it restarts", "schema_needed", store.ConfigDocsSchema)
 	}
 	if applied {
 		return docs, nil

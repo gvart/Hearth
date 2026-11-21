@@ -58,7 +58,10 @@ type Manifest struct {
 	HearthVersion string    `json:"hearth_version"`
 	// Schema is the store's schema version.
 	Schema int64 `json:"schema"`
-	// Clustered is true for a backup of a Raft cluster member.
+	// Clustered is set when the backup was taken on a member of a cluster of
+	// more than one hub: the database is a whole-cluster snapshot, every shard
+	// pulled from the live members. A restore makes the hub a new cluster of
+	// one, in a new cluster epoch; the other hubs join it again.
 	Clustered bool `json:"clustered"`
 	// NoCAKey is true for a backup without the CA private key: it holds the
 	// CA certificate only, and a restore needs the key from another backup.

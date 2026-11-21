@@ -253,7 +253,7 @@ func TestAuditOpMigrationBackfills(t *testing.T) {
 }
 
 // TestAuditBeforeTheOpColumns: a node still on the schema before the columns
-// (a cluster that has not run `hearth cluster migrate`) applies the same
+// (a cluster with a hub not yet upgraded) applies the same
 // command and reads the log as before.
 func TestAuditBeforeTheOpColumns(t *testing.T) {
 	ctx := t.Context()

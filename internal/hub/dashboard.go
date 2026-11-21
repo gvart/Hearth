@@ -220,7 +220,7 @@ func (a *api) writeDashboardTokenError(w http.ResponseWriter, r *http.Request, o
 		writeError(w, http.StatusForbidden, "forbidden", "denied by policy")
 	case errors.Is(err, store.ErrSchemaTooOld):
 		writeError(w, http.StatusConflict, "schema_too_old",
-			"the hub cluster's database predates dashboard tokens: run `hearth cluster migrate` first")
+			"the hub cluster's database predates dashboard tokens: upgrade every hub of the cluster first")
 	case errors.Is(err, store.ErrUnavailable):
 		writeUnavailable(w)
 	default:
@@ -379,7 +379,6 @@ func (a *api) dashboardSummaryOf(ctx context.Context) (DashboardSummaryJSON, err
 		Devices: make([]DashboardDeviceJSON, 0, min(len(devs), maxDashboardDevices)),
 	}
 	for _, d := range devs {
-		d = a.registry.Live(d)
 		out.Counts.Total++
 		if d.Status == store.StatusOnline {
 			out.Counts.Online++

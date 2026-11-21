@@ -27,10 +27,6 @@ import (
 	"github.com/gvart/hearth/internal/pki"
 )
 
-// DefaultGossipPort is the default port of membership gossip. Raft keeps
-// 7444 until it is removed (docs/impl/ap-cluster.md, item 8).
-const DefaultGossipPort = "7445"
-
 // Member states, as `hearth cluster status` shows them.
 const (
 	MemberAlive   = "alive"
@@ -52,7 +48,7 @@ type MembershipConfig struct {
 	// lie within Allowed and include storage or master: node-only hosts do
 	// not gossip.
 	Roles, Allowed RoleSet
-	// Listen is the gossip address, e.g. ":7445". Listener, if set, is
+	// Listen is the cluster address, e.g. ":7444". Listener, if set, is
 	// already bound to it; the membership closes it when it stops.
 	Listen   string
 	Listener net.Listener
@@ -78,8 +74,7 @@ type MembershipConfig struct {
 
 	// CA, Cert and Check authenticate peers: both ends present a hub node
 	// certificate from CA (Cert returns this member's at each handshake),
-	// and Check refuses a peer's, e.g. a revoked one. Node.NewMembership
-	// sets them to the Raft transport's.
+	// and Check refuses a peer's, e.g. a revoked one.
 	CA    *pki.CA
 	Cert  func() *tls.Certificate
 	Check func(*x509.Certificate) error
@@ -127,7 +122,6 @@ type LocalState struct {
 // (hashicorp/memberlist, SWIM) among storage and master members, over a
 // mutual-TLS TCP transport (gossiptransport.go). Each member's metadata
 // carries its roles, allowed roles, schema version, clock and config digest.
-// It runs alongside Raft and changes nothing about it.
 type Membership struct {
 	cfg MembershipConfig
 	log *slog.Logger
@@ -257,63 +251,6 @@ func (m *Membership) LastContact() time.Time {
 		return last
 	}
 	return *started
-}
-
-// NewMembership returns the membership of this hub, authenticated like the
-// Raft transport: it presents the node's current hub node certificate and
-// refuses revoked hub certificates. Unset Schema, ConfigDigest and Seeds come
-// from the node: its store's schema, its config digests (SetConfigSource)
-// and the hosts of the Raft peers at this member's gossip port. Call it after
-// Start; Status then lists the members.
-func (n *Node) NewMembership(cfg MembershipConfig) (*Membership, error) {
-	if n.stream == nil {
-		return nil, errors.New("membership: node not started")
-	}
-	cfg.NodeID, cfg.CA, cfg.Cert, cfg.Check = n.cfg.NodeID, n.cfg.CA, n.stream.currentCert, n.refuseRevoked
-	if cfg.Schema == nil {
-		cfg.Schema = func(ctx context.Context) (int64, error) { return n.store.SchemaVersion(ctx) }
-	}
-	if cfg.ConfigDigest == nil {
-		cfg.ConfigDigest = func() string { return digestOf(n.localDigests()) }
-	}
-	if cfg.Seeds == nil {
-		cfg.Seeds = n.gossipSeeds(cfg.Listen, cfg.Advertise)
-	}
-	m, err := NewMembership(cfg)
-	if err != nil {
-		return nil, err
-	}
-	n.membership.Store(m)
-	return m, nil
-}
-
-// gossipSeeds returns the Raft peers' hosts at this member's gossip port:
-// until gossip and Raft share a port (item 8), every member is expected to
-// gossip on the same port.
-func (n *Node) gossipSeeds(listen, advertise string) func() []string {
-	port := DefaultGossipPort
-	for _, a := range []string{advertise, listen} {
-		if _, p, err := net.SplitHostPort(a); err == nil && p != "" && p != "0" {
-			port = p
-			break
-		}
-	}
-	return func() []string {
-		st, err := n.Status()
-		if err != nil {
-			return nil
-		}
-		var out []string
-		for _, p := range st.Peers {
-			if p.ID == n.cfg.NodeID {
-				continue
-			}
-			if host, _, err := net.SplitHostPort(p.Address); err == nil {
-				out = append(out, net.JoinHostPort(host, port))
-			}
-		}
-		return out
-	}
 }
 
 // digestOf folds a hub's config digests (by item) into one.
@@ -969,4 +906,12 @@ func (m *Membership) updateNode(ml *memberlist.Memberlist, timeout time.Duration
 	m.updateMu.Lock()
 	defer m.updateMu.Unlock()
 	return ml.UpdateNode(timeout)
+}
+
+// setIfNonZero sets *dst to v unless v is the zero value.
+func setIfNonZero[T comparable](dst *T, v T) {
+	var zero T
+	if v != zero {
+		*dst = v
+	}
 }

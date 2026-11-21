@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -42,23 +43,24 @@ func holdAddr(t *testing.T) *net.TCPListener {
 }
 
 // testHubOptions are the options of a hub on dataDir that listens on
-// loopback ports held for the whole test.
+// loopback ports held for the whole test, its cluster port included.
 func testHubOptions(t *testing.T, dataDir string) hubOptions {
 	t.Helper()
 	agentLn, webLn := holdAddr(t), holdAddr(t)
 	return hubOptions{
 		dataDir: dataDir, hosts: []string{"127.0.0.1"},
 		listen: agentLn.Addr().String(), agentLn: agentLn, httpListen: webLn.Addr().String(), webLn: webLn,
+		cluster: testClusterOptions(t, ""),
 	}
 }
 
-// testClusterOptions are the options of cluster node nodeID on a loopback
-// Raft port held for the whole test.
+// testClusterOptions are the cluster options of member nodeID on a loopback
+// cluster port held for the whole test.
 func testClusterOptions(t *testing.T, nodeID string) clusterOptions {
 	t.Helper()
-	raftLn := holdAddr(t)
-	addr := raftLn.Addr().String()
-	return clusterOptions{nodeID: nodeID, raftListen: addr, advertise: addr, raftLn: raftLn}
+	ln := holdAddr(t)
+	addr := ln.Addr().String()
+	return clusterOptions{nodeID: nodeID, listen: addr, advertise: addr, ln: ln}
 }
 
 // copyListener returns a listener on a duplicate of l's socket: closing it
@@ -105,7 +107,7 @@ func serving(t *testing.T, httpAddr string) func() bool {
 func runBackupTestHub(t *testing.T, opts hubOptions) (stop func()) {
 	t.Helper()
 	opts.agentLn, opts.webLn = copyListener(t, opts.agentLn), copyListener(t, opts.webLn)
-	opts.cluster.raftLn = copyListener(t, opts.cluster.raftLn)
+	opts.cluster.ln = copyListener(t, opts.cluster.ln)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- runHub(ctx, opts, slog.New(slog.DiscardHandler)) }()
@@ -313,14 +315,15 @@ func testRestoredHub(t *testing.T, mode string) {
 }
 
 // TestRestoredClusterMemberFormsANewCluster backs up a member of a two-hub
-// cluster: the restored hub is alone in its new cluster, with no trace of the
-// old peer, and the old peer's certificate no longer works against it.
+// cluster: the backup says it comes from a cluster, and the restored hub is
+// alone in a new cluster of one, with no trace of the old peer. That the old
+// peer's certificate no longer works against it is the cluster epoch's
+// (internal/cluster TestAPClusterEpoch).
 func TestRestoredClusterMemberFormsANewCluster(t *testing.T) {
 	t.Setenv(passphraseEnv, testBackupPassphrase)
 	dirA, dirB := t.TempDir(), t.TempDir()
 	optsA := testHubOptions(t, dirA)
-	optsA.cluster = testClusterOptions(t, "hub-a")
-	optsA.cluster.form = true
+	optsA.cluster.nodeID = "hub-a"
 	listenA := optsA.listen
 	stopA := runBackupTestHub(t, optsA)
 	clusterStatus := func(dir string) (cluster.Status, bool) {
@@ -331,9 +334,18 @@ func TestRestoredClusterMemberFormsANewCluster(t *testing.T) {
 		var s cluster.Status
 		return s, json.Unmarshal([]byte(out), &s) == nil
 	}
-	waitFor(t, "hub-a to lead", 30*time.Second, func() bool {
+	alive := func(s cluster.Status) []string {
+		var ids []string
+		for _, m := range s.Members {
+			if m.State == cluster.MemberAlive {
+				ids = append(ids, m.ID)
+			}
+		}
+		return ids
+	}
+	waitFor(t, "hub-a to serve", 30*time.Second, func() bool {
 		s, ok := clusterStatus(dirA)
-		return ok && s.LeaderID == "hub-a"
+		return ok && slices.Equal(alive(s), []string{"hub-a"})
 	})
 
 	out, err := execute(t, "cluster", "token", "create", "--data-dir", dirA, "--hub-url", "https://"+listenA)
@@ -345,26 +357,13 @@ func TestRestoredClusterMemberFormsANewCluster(t *testing.T) {
 		t.Fatalf("no join token in %q", out)
 	}
 	optsB := testHubOptions(t, dirB)
-	optsB.cluster = testClusterOptions(t, "hub-b")
+	optsB.cluster.nodeID = "hub-b"
 	optsB.cluster.join, optsB.cluster.joinToken = "https://"+listenA, token
+	optsB.cluster.seeds = []string{optsA.cluster.listen}
 	stopB := runBackupTestHub(t, optsB)
-	waitFor(t, "hub-b to become a voter with a recorded certificate", 60*time.Second, func() bool {
+	waitFor(t, "hub-b to join", 60*time.Second, func() bool {
 		s, ok := clusterStatus(dirA)
-		if !ok || len(s.Peers) != 2 {
-			return false
-		}
-		for _, p := range s.Peers {
-			if p.Suffrage != "Voter" {
-				return false
-			}
-		}
-		st, err := store.Open(t.Context(), filepath.Join(dirA, dbFile), store.WithoutUpgrade())
-		if err != nil {
-			return false
-		}
-		defer st.Close()
-		certs, err := st.Hubs().Certs(t.Context(), "hub-b")
-		return err == nil && len(certs) > 0
+		return ok && slices.Equal(alive(s), []string{"hub-a", "hub-b"})
 	})
 
 	file := filepath.Join(t.TempDir(), "cluster.hbk")
@@ -379,37 +378,22 @@ func TestRestoredClusterMemberFormsANewCluster(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "--cluster") {
+	if !strings.Contains(out, "comes from a cluster") || !strings.Contains(out, "--cluster-seeds") {
 		t.Errorf("restore output does not explain the cluster: %q", out)
 	}
 	if cluster.IsMember(restored) {
-		t.Fatal("the restored data dir holds Raft state")
+		t.Fatal("the restored data dir holds cluster state")
 	}
 
 	optsA.dataDir = restored
 	optsA.cluster.nodeID = "hub-r"
 	runBackupTestHub(t, optsA)
-	waitFor(t, "the restored hub to lead a new cluster", 30*time.Second, func() bool {
+	waitFor(t, "the restored hub to serve", 30*time.Second, func() bool {
 		s, ok := clusterStatus(restored)
-		return ok && s.LeaderID == "hub-r"
+		return ok && slices.Equal(alive(s), []string{"hub-r"})
 	})
-	s, ok := clusterStatus(restored)
-	if !ok || len(s.Peers) != 1 || s.Peers[0].ID != "hub-r" {
-		t.Errorf("peers after the restore = %+v, want only hub-r", s.Peers)
-	}
-	st, err := store.Open(t.Context(), filepath.Join(restored, dbFile), store.WithoutUpgrade())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer st.Close()
-	certs, err := st.Hubs().Certs(t.Context(), "hub-b")
-	if err != nil || len(certs) == 0 {
-		t.Fatalf("hub-b's certificates = %v, %v", certs, err)
-	}
-	for _, c := range certs {
-		if !c.Revoked {
-			t.Errorf("hub-b's certificate %s still works against the restored hub", c.Serial)
-		}
+	if s, _ := clusterStatus(restored); !s.Alone() {
+		t.Errorf("members after the restore = %+v, want only hub-r", s.Members)
 	}
 }
 

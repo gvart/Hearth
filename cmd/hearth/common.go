@@ -146,10 +146,10 @@ func adminDo(ctx context.Context, dataDir string, st *store.Store, out io.Writer
 }
 
 // openHubStore opens the hub database for a CLI command on the hub host. On a
-// standalone hub it opens the file directly, as always. On a cluster member,
-// reads still come from the local file but writes go through the running
-// hub's control socket and so through Raft: writing the local file directly
-// would silently diverge from the other hubs.
+// data dir that holds no hub yet it opens the file directly. On a cluster
+// member, reads still come from the local file but writes go through the
+// running hub's control socket and so to the cluster: writing the local file
+// directly would silently diverge from the other hubs.
 func openHubStore(ctx context.Context, dataDir string) (*store.Store, error) {
 	path := filepath.Join(dataDir, dbFile)
 	if !cluster.IsMember(dataDir) {

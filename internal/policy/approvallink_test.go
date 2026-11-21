@@ -36,7 +36,7 @@ func TestOnHeldSeesEveryHold(t *testing.T) {
 	}
 	// Allowed and denied requests are never held.
 	_ = e.Do(t.Context(), Request{ActorKind: ActorToken, ActorID: "t", Action: DeviceEnroll}, func(context.Context) error { return nil })
-	_ = e.Do(t.Context(), Request{ActorKind: ActorWeb, ActorID: "w", Action: ClusterMigrate}, func(context.Context) error { return nil })
+	_ = e.Do(t.Context(), Request{ActorKind: ActorJoinToken, ActorID: "w", Action: ClusterRemove}, func(context.Context) error { return nil })
 	if len(got) != 1 {
 		t.Errorf("OnHeld called %d times, want 1", len(got))
 	}

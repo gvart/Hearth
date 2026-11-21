@@ -24,10 +24,9 @@ import (
 // A restore writes a new random epoch to EpochFile. The first node certificate
 // of the restored hub carries it, every hub that joins gets it from the hub
 // that signs its certificate and keeps it in EpochFile too, and a renewed
-// certificate keeps it. A restored cluster refuses to admit a binary that does
-// not know epochs, since it could not serve as leader. Hubs compare
-// epochs on the Raft transport and on hub-to-hub calls, in both directions. A
-// cluster that was never restored has no epoch, so nothing changes for it.
+// certificate keeps it. Hubs compare epochs on the cluster transport and on
+// hub-to-hub calls, in both directions. A cluster that was never restored has
+// no epoch, so nothing changes for it.
 //
 // This keeps out hubs that are merely out of date. It does not stop a hostile
 // one: every voter of the old cluster holds the CA key.
@@ -83,7 +82,3 @@ func requireEpoch(epoch string) func(tls.ConnectionState) error {
 		return nil
 	}
 }
-
-// Epoch is this node's cluster epoch. It is empty before Start, and for a
-// cluster that was never restored from a backup.
-func (n *Node) Epoch() string { return n.epoch }

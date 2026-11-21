@@ -65,9 +65,7 @@ export function TalosNodes({ now, onSelect }: { now: number; onSelect: (deviceId
         <p className="muted">
           {data.status === 'connecting'
             ? 'Reading the Talos API…'
-            : data.status === 'standby'
-              ? 'The cluster leader reads Talos: open its UI to see the nodes'
-              : `${String(healthy)} of ${String(data.nodes.length)} healthy${data.read_at ? `, read ${relativeTime(data.read_at, now)}` : ''}`}
+            : `${String(healthy)} of ${String(data.nodes.length)} healthy${data.read_at ? `, read ${relativeTime(data.read_at, now)}` : ''}`}
         </p>
       </div>
       {data.status === 'unavailable' ? (

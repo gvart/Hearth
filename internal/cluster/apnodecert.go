@@ -110,7 +110,7 @@ func (n *APNode) renewNodeCert(ctx context.Context) error {
 	// Written next to the old one, then moved over it: a crash part way is
 	// completed when the member starts again (recoverNodeCertFinish), as a
 	// rotation's finish is.
-	dir := filepath.Join(n.cfg.DataDir, RaftDir)
+	dir := filepath.Join(n.cfg.DataDir, StateDir)
 	if _, err := writeNextNodeCert(dir, leaf, key); err != nil {
 		return err
 	}

@@ -2,10 +2,7 @@
 
 package cluster
 
-import (
-	"testing"
-	"time"
-)
+import "testing"
 
 func TestHostFlagsSource(t *testing.T) {
 	digest := func(ids ...string) string { return HostFlagsSource(ids)()[ConfigHostFlags] }
@@ -20,21 +17,5 @@ func TestHostFlagsSource(t *testing.T) {
 	}
 	if got := HostFlagsSource(nil)(); len(got) != 1 {
 		t.Errorf("items = %v, want the host flags only", got)
-	}
-}
-
-// TestConfigDriftHostFlags compares the host flags of three hubs over the
-// hubs' mTLS channel: one hub granting a dangerous automation the others do
-// not is a difference.
-func TestConfigDriftHostFlags(t *testing.T) {
-	hubs := startHubs(t, hubOpts{offlineAfter: time.Minute, flushEvery: time.Minute})
-	for _, h := range hubs {
-		h.SetConfigSource(HostFlagsSource([]string{"backup"}))
-	}
-	wantItem(t, itemOf(t, driftOf(t, hubs[0].testNode), ConfigHostFlags), DriftInSync, allThree, []string{})
-	hubs[2].SetConfigSource(HostFlagsSource([]string{"backup", "reboot-nas"}))
-	for _, h := range hubs {
-		wantItem(t, itemOf(t, driftOf(t, h.testNode), ConfigHostFlags), DriftDiffers,
-			[][]string{{"n1", "n2"}, {"n3"}}, []string{})
 	}
 }

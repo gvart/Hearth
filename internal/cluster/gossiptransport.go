@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/hashicorp/memberlist"
-	"github.com/hashicorp/raft"
 
 	"github.com/gvart/hearth/internal/pki"
 )
@@ -60,8 +59,8 @@ const (
 
 // gossipTransport is a memberlist.Transport over TCP with mutual TLS, so
 // membership needs no UDP and no shared gossip key: both ends present a hub
-// node certificate from the hub CA, and the same check as the Raft transport
-// (a revoked hub certificate is refused) runs on every handshake.
+// node certificate from the hub CA, and the member's peer check (a revoked
+// hub certificate is refused) runs on every handshake.
 //
 // memberlist's packets, which it would send over UDP, go over one TLS
 // connection per peer that a sender goroutine owns. WriteTo never blocks
@@ -111,7 +110,7 @@ var _ memberlist.Transport = (*gossipTransport)(nil)
 // when ln is nil. advertise is the host:port other members dial; its host is
 // resolved to an IP, which memberlist requires. cert returns the hub node
 // certificate to present at each handshake, so a hub CA rotation reaches new
-// connections; check refuses peers, as the Raft transport's does.
+// connections; check refuses peers.
 func newGossipTransport(ctx context.Context, ln net.Listener, listen, advertise string, cert func() *tls.Certificate,
 	ca *pki.CA, check peerCheck, dialTimeout time.Duration, log *slog.Logger,
 ) (*gossipTransport, error) {
@@ -169,7 +168,7 @@ func resolveAdvertise(ctx context.Context, advertise string) (net.IP, int, error
 			}
 		}
 		if ip == nil {
-			return nil, 0, fmt.Errorf("gossip advertise address %q: %s resolves only to loopback; set --gossip-advertise",
+			return nil, 0, fmt.Errorf("cluster advertise address %q: %s resolves only to loopback; set --cluster-advertise",
 				advertise, host)
 		}
 	}
@@ -248,7 +247,7 @@ func (t *gossipTransport) send(addr string, q chan []byte) {
 			idle.Reset(gossipIdle)
 			frame := make([]byte, 0, 5+len(b))
 			if conn == nil {
-				c, err := t.stream.Dial(raft.ServerAddress(addr), t.dialTimeout)
+				c, err := t.stream.Dial(addr, t.dialTimeout)
 				if err != nil {
 					t.log.Debug("gossip dial failed; dropping queued packets", "peer", addr, "err", err)
 					drain(q)
@@ -281,7 +280,7 @@ func drain(q chan []byte) {
 
 // DialTimeout opens a stream to addr.
 func (t *gossipTransport) DialTimeout(addr string, timeout time.Duration) (net.Conn, error) {
-	c, err := t.stream.Dial(raft.ServerAddress(addr), timeout)
+	c, err := t.stream.Dial(addr, timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -450,7 +449,7 @@ func (t *gossipTransport) verifyOwner(addr string) (string, error) {
 	if id, ok := t.ownerOf(addr); ok {
 		return id, nil
 	}
-	c, err := t.stream.Dial(raft.ServerAddress(addr), t.dialTimeout)
+	c, err := t.stream.Dial(addr, t.dialTimeout)
 	if err != nil {
 		return "", err
 	}

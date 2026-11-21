@@ -12,7 +12,7 @@ import (
 
 // automationRunsSchema is the schema version whose migration (00007) added
 // the automation_runs table. A newer binary runs on an older cluster
-// database until `hearth cluster migrate`; until then no run is recorded.
+// database until every hub of the cluster is upgraded; until then no run is recorded.
 const automationRunsSchema = 7
 
 // RunsKept is how many runs each automation keeps in its history.

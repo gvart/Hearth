@@ -56,7 +56,7 @@ func networkHostJSON(h store.NetworkHost, deviceID string) NetworkHostJSON {
 // implements discovery.Events.
 func (r *Registry) NetworkHosts(typ string, hosts []store.NetworkHost) {
 	if len(hosts) > 0 {
-		r.bus.publish(Event{Type: typ, Hosts: hosts})
+		r.fanout(Event{Type: typ, Hosts: hosts})
 	}
 }
 
@@ -134,7 +134,7 @@ func (a *api) markNetworkHost(state string) http.HandlerFunc {
 			writeError(w, http.StatusNotFound, "not_found", "no such host")
 		case errors.Is(err, store.ErrSchemaTooOld):
 			writeError(w, http.StatusConflict, "schema_too_old",
-				"the hub cluster's database predates marking hosts: run `hearth cluster migrate` first")
+				"the hub cluster's database predates marking hosts: upgrade every hub of the cluster first")
 		case errors.Is(err, store.ErrUnavailable):
 			writeUnavailable(w)
 		default:

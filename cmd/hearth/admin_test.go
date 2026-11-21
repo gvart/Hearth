@@ -161,6 +161,7 @@ func TestRunHubServesAPIAndStops(t *testing.T) {
 	go func() {
 		done <- runHub(ctx, hubOptions{
 			dataDir: dir, listen: "127.0.0.1:0", httpListen: "127.0.0.1:0", hosts: []string{"127.0.0.1"},
+			cluster: clusterOptions{listen: "127.0.0.1:0"},
 		}, slog.New(slog.NewTextHandler(logs, nil)))
 	}()
 
@@ -173,6 +174,10 @@ func TestRunHubServesAPIAndStops(t *testing.T) {
 	}
 	if httpAddr == "" {
 		t.Fatalf("hub did not start:\n%s", logs.String())
+	}
+	// The hint comes once the member has caught up, after the listeners.
+	for deadline := time.Now().Add(10 * time.Second); !strings.Contains(logs.String(), "admin password not set") && time.Now().Before(deadline); {
+		time.Sleep(20 * time.Millisecond)
 	}
 	if !strings.Contains(logs.String(), "admin password not set") {
 		t.Errorf("no set-password hint in logs:\n%s", logs.String())

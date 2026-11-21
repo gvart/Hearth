@@ -8,6 +8,13 @@ import (
 	"slices"
 )
 
+// ConfigHostFlags is the item of the host flags members compare.
+const ConfigHostFlags = "host_flags"
+
+// ConfigSource returns this hub's digest of each configuration item. An item
+// it cannot read is left out.
+type ConfigSource func() map[string]string
+
 // HostFlagsSource reports the digest of this hub's host flags that grant
 // what the replicated policy does not: the --allow-dangerous-automation ids,
 // in any order. The policy, notify, automation and runbook documents are in

@@ -17,8 +17,8 @@ import (
 	"github.com/gvart/hearth/internal/store"
 )
 
-// apMember is what the master layer of an AP member shares with the member
-// (runAPHub): its store, CA and node, the ready channel closed after the
+// apMember is what the master layer of a member shares with the member
+// (runClusterHub): its store, CA and node, the ready channel closed after the
 // first sync, and the member's context, which outlives the layer.
 type apMember struct {
 	st    *store.Store
@@ -31,12 +31,12 @@ type apMember struct {
 	ctx      context.Context
 }
 
-// runAPHub runs a member of an AP cluster: its store, gossip, replication
+// runClusterHub runs a cluster member: its store, gossip, replication
 // and control socket all along; the master layer (API, UI, agents,
 // enrollments, the masters' loops: runHub) while it is a master. A
 // promotion to master starts the layer, a demotion stops it, and the
 // member's agents move to the other masters.
-func runAPHub(ctx context.Context, opts hubOptions, allowed cluster.RoleSet, log *slog.Logger) error {
+func runClusterHub(ctx context.Context, opts hubOptions, allowed cluster.RoleSet, log *slog.Logger) error {
 	hosts := opts.hosts
 	if len(hosts) == 0 {
 		hosts = []string{hostnameOr("localhost")}
@@ -45,7 +45,7 @@ func runAPHub(ctx context.Context, opts hubOptions, allowed cluster.RoleSet, log
 	if _, port, err := net.SplitHostPort(opts.listen); err == nil && port != "0" {
 		agentURL = "https://" + net.JoinHostPort(hosts[0], port)
 	}
-	st, ca, node, err := startAPNode(ctx, opts, allowed, agentURL, log)
+	st, ca, node, err := startClusterNode(ctx, opts, allowed, agentURL, log)
 	if err != nil {
 		return err
 	}
@@ -59,7 +59,7 @@ func runAPHub(ctx context.Context, opts hubOptions, allowed cluster.RoleSet, log
 	g.Go(func() error { return node.Run(gctx) })
 	g.Go(func() error { return cluster.ServeAPControl(gctx, opts.dataDir, node, log) })
 	g.Go(func() error {
-		return runAPMember(gctx, node, func(ctx context.Context) error {
+		return runClusterMember(gctx, node, func(ctx context.Context) error {
 			return ensureAdminPassword(ctx, st, setupPol, opts, log)
 		}, ready, caughtUp, log)
 	})

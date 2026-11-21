@@ -98,7 +98,7 @@ type MCPTokenJSON struct {
 func (a *api) listMCPTokens(w http.ResponseWriter, r *http.Request) {
 	toks, err := a.store.MCPTokens().List(r.Context())
 	if errors.Is(err, store.ErrSchemaTooOld) {
-		writeError(w, http.StatusConflict, "schema_too_old", "the hub cluster's database predates MCP tokens: run `hearth cluster migrate` first")
+		writeError(w, http.StatusConflict, "schema_too_old", "the hub cluster's database predates MCP tokens: upgrade every hub of the cluster first")
 		return
 	}
 	if err != nil {
@@ -165,7 +165,7 @@ func (a *api) createMCPToken(w http.ResponseWriter, r *http.Request) {
 	case err == nil:
 		writeJSON(w, http.StatusCreated, CreatedMCPTokenJSON{Name: body.Name, Scope: body.Scope, Secret: secret, Path: mcpserver.Path})
 	case errors.Is(err, store.ErrSchemaTooOld):
-		writeError(w, http.StatusConflict, "schema_too_old", "the hub cluster's database predates MCP tokens: run `hearth cluster migrate` first")
+		writeError(w, http.StatusConflict, "schema_too_old", "the hub cluster's database predates MCP tokens: upgrade every hub of the cluster first")
 	case store.IsDomainError(err):
 		writeError(w, http.StatusConflict, "name_taken", "the name is taken: names are never reused, even revoked ones")
 	default:

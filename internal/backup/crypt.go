@@ -60,7 +60,7 @@ type kdfParams struct {
 
 // defaultKDF matches the admin password hash: RFC 9106's second recommended
 // option with less memory, and one lane, because backups run next to a live
-// hub and several lanes starve Raft on a single-core one (#94).
+// hub and several lanes starve the hub's own goroutines on a single-core one (#94).
 func defaultKDF() kdfParams { return kdfParams{time: 3, memory: 64 * 1024, threads: 1} }
 
 func (p kdfParams) valid() bool {

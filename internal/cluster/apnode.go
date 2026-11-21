@@ -30,50 +30,19 @@ import (
 	"github.com/gvart/hearth/internal/store"
 )
 
-// A hub in an AP cluster (`--cluster-mode ap`, docs/design/ap-cluster.md):
-// no Raft. Its identity is the same as a Raft member's (a hub node
-// certificate from the cluster CA, in DataDir/raft), its membership is the
+// A hub in the cluster (docs/cluster.md). Its identity is a hub node
+// certificate from the cluster CA, in DataDir/cluster, its membership is the
 // gossip, and its store is sharded by the Replicator. A hub alone is a
 // cluster of one, N = 1, not highly available.
 
-// Files of an AP member, in DataDir/raft.
+// Files of a member, in DataDir/cluster.
 const (
-	// apModeFile marks a data dir as an AP member's, so it is never
-	// started as a Raft member, nor a Raft member's as an AP one.
-	apModeFile = "mode"
 	// lastContactFile records when the member last reached the cluster.
 	lastContactFile = "last-contact"
 	// seedsFile keeps the gossip addresses this member learnt, so it finds
 	// the cluster again after a restart.
 	seedsFile = "gossip-seeds"
 )
-
-// ErrModeMismatch refuses to start a data dir in the other cluster mode.
-var ErrModeMismatch = errors.New("cluster mode mismatch")
-
-// CheckMode checks that dataDir may run in mode ("ap" or "raft"): an AP
-// member's data dir runs only as AP, a Raft member's only as Raft.
-func CheckMode(dataDir, mode string) error {
-	dir := filepath.Join(dataDir, RaftDir)
-	b, err := os.ReadFile(filepath.Join(dir, apModeFile))
-	isAP := err == nil && strings.TrimSpace(string(b)) == "ap"
-	_, boltErr := os.Stat(filepath.Join(dir, boltFile))
-	isRaft := boltErr == nil
-	switch {
-	case mode == "ap" && isRaft:
-		return fmt.Errorf("%w: %s belongs to a Raft cluster member; an AP cluster starts from a fresh data dir "+
-			"(or a backup restored into one)", ErrModeMismatch, dataDir)
-	case mode != "ap" && isAP:
-		return fmt.Errorf("%w: %s belongs to an AP cluster member: start it with --cluster-mode ap", ErrModeMismatch, dataDir)
-	}
-	return nil
-}
-
-// IsAPMember reports whether dataDir belongs to an AP cluster member.
-func IsAPMember(dataDir string) bool {
-	b, err := os.ReadFile(filepath.Join(dataDir, RaftDir, apModeFile))
-	return err == nil && strings.TrimSpace(string(b)) == "ap"
-}
 
 // APConfig configures an APNode.
 type APConfig struct {
@@ -181,14 +150,8 @@ func NewAPNode(ctx context.Context, cfg APConfig) (*APNode, error) {
 	if err := ValidNodeID(cfg.NodeID); err != nil {
 		return nil, err
 	}
-	if err := CheckMode(cfg.DataDir, "ap"); err != nil {
-		return nil, err
-	}
-	dir := filepath.Join(cfg.DataDir, RaftDir)
+	dir := filepath.Join(cfg.DataDir, StateDir)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return nil, fmt.Errorf("ap node: %w", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, apModeFile), []byte("ap\n"), 0o600); err != nil {
 		return nil, fmt.Errorf("ap node: %w", err)
 	}
 	// A finished rotation's node certificate move a crash interrupted.
@@ -291,7 +254,7 @@ func (n *APNode) Bind(ctx context.Context, st *store.Store) error {
 	if err != nil {
 		return err
 	}
-	if err := CheckRejoin(filepath.Join(n.cfg.DataDir, RaftDir, lastContactFile), has, time.Now()); err != nil {
+	if err := CheckRejoin(filepath.Join(n.cfg.DataDir, StateDir, lastContactFile), has, time.Now()); err != nil {
 		return err
 	}
 	supported, err := st.SchemaVersion(ctx)
@@ -526,7 +489,7 @@ func (n *APNode) checkPeer(cert *x509.Certificate) error {
 // seeds are the configured seeds and the members learnt before.
 func (n *APNode) seeds() []string {
 	out := slices.Clone(n.cfg.Seeds)
-	if b, err := os.ReadFile(filepath.Join(n.cfg.DataDir, RaftDir, seedsFile)); err == nil {
+	if b, err := os.ReadFile(filepath.Join(n.cfg.DataDir, StateDir, seedsFile)); err == nil {
 		out = append(out, strings.Fields(string(b))...)
 	}
 	if m := n.membership; m != nil {
@@ -538,7 +501,7 @@ func (n *APNode) seeds() []string {
 		}
 		if len(learnt) > 0 {
 			slices.Sort(learnt)
-			_ = os.WriteFile(filepath.Join(n.cfg.DataDir, RaftDir, seedsFile), []byte(strings.Join(learnt, "\n")+"\n"), 0o600)
+			_ = os.WriteFile(filepath.Join(n.cfg.DataDir, StateDir, seedsFile), []byte(strings.Join(learnt, "\n")+"\n"), 0o600)
 		}
 	}
 	slices.Sort(out)
@@ -628,7 +591,7 @@ func (n *APNode) RecordNodeCert(ctx context.Context) error {
 
 // Status is this member's view of the AP cluster.
 func (n *APNode) Status() Status {
-	st := Status{NodeID: n.cfg.NodeID, State: "ap", Mode: "ap"}
+	st := Status{NodeID: n.cfg.NodeID}
 	if n.membership != nil {
 		st.Members = n.membership.Members()
 	}
@@ -718,10 +681,10 @@ func serveControlHandler(ctx context.Context, dataDir string, h http.Handler) er
 	return nil
 }
 
-// APJoinServer serves the Join call of ClusterService on an AP member: it
-// admits a new hub with a join token, as JoinServer does on a Raft leader,
-// without Raft: the hub gets its node certificate and the CA, and joins the
-// gossip on its own.
+// APJoinServer serves ClusterService on a master: Join admits a new hub with
+// a join token (the hub gets its node certificate and the CA, and joins the
+// gossip on its own), and FetchCAKey hands members the CA key and node
+// certificates (apcakey.go).
 type APJoinServer struct {
 	clusterv1connect.UnimplementedClusterServiceHandler
 	node   *APNode
@@ -767,7 +730,7 @@ func (s *APJoinServer) Join(ctx context.Context, req *connect.Request[clusterv1.
 		ActorID:   tokenActorID(msg.GetTokenSecret()),
 		Action:    policy.ClusterJoin,
 		Target:    msg.GetNodeId(),
-		Detail:    map[string]any{"gossip_address": msg.GetRaftAddress(), "schema_version": msg.GetSchemaVersion(), "mode": "ap"},
+		Detail:    map[string]any{"address": msg.GetAddress(), "schema_version": msg.GetSchemaVersion()},
 	}, func(ctx context.Context) error {
 		// A joiner needs the schema the cluster has written, not this
 		// master's: during a rolling upgrade an older binary still joins.
@@ -820,7 +783,7 @@ func (s *APJoinServer) Join(ctx context.Context, req *connect.Request[clusterv1.
 	}
 	s.log.InfoContext(ctx, "hub joined the AP cluster", "joined_id", msg.GetNodeId(), "ca_key_sent", keyDER != nil)
 	return connect.NewResponse(&clusterv1.JoinResponse{
-		Certificate: cert.Raw, CaCertificate: s.ca.Cert().Raw, CaKey: keyDER, LeaderId: s.node.ID(),
+		Certificate: cert.Raw, CaCertificate: s.ca.Cert().Raw, CaKey: keyDER,
 	}), nil
 }
 

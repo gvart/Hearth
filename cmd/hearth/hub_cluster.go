@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -21,36 +23,29 @@ import (
 	"github.com/gvart/hearth/internal/store"
 )
 
-// clusterOptions are the hub's Raft flags. None is needed on a standalone hub.
+// clusterOptions are the hub's cluster flags. A hub started without any is a
+// cluster of one.
 type clusterOptions struct {
-	// form makes this hub the first member of a new cluster.
-	form       bool
-	join       string
-	joinToken  string
-	nodeID     string
-	raftListen string
-	advertise  string
-	// raftLn, if set, is a listener already bound to raftListen (see
-	// cluster.Config.Listener).
-	raftLn net.Listener
+	join      string
+	joinToken string
+	nodeID    string
+	// listen is the address members gossip and replicate over (mutual
+	// TLS); advertise is the host:port other members dial for it.
+	listen    string
+	advertise string
+	// ln, if set, is a listener already bound to listen (tests).
+	ln net.Listener
+	// seeds are the addresses of other members to find the cluster by.
+	seeds []string
 	// allowRoles is this host's --allow-roles, the roles it may take; empty
 	// means the hub's own, master and storage.
 	allowRoles string
-	// gossipListen is the membership gossip address; empty turns gossip
-	// off. gossipAdvertise is the host:port other hubs dial for it.
-	gossipListen    string
-	gossipAdvertise string
-	// mode is "raft" or "ap" (--cluster-mode); replicas and gossipSeeds
-	// configure an AP cluster (hub_cluster_ap.go).
-	mode        string
-	replicas    int
-	gossipSeeds []string
+	// replicas is N, the copies of each row; 0 means min(2, storage
+	// members).
+	replicas int
 }
 
 func addClusterFlags(cmd *cobra.Command, o *clusterOptions) {
-	cmd.Flags().BoolVar(&o.form, "cluster", false,
-		"form a new Raft cluster with this hub as its first member (from its current data); "+
-			"remembered in the data dir, so later starts need no flag")
 	cmd.Flags().StringVar(&o.join, "join", "",
 		"join the cluster of the hub at this URL (e.g. https://hub-a:"+defaultPort+") with a join token "+
 			"from `hearth cluster token create`; needs a fresh data dir")
@@ -58,22 +53,41 @@ func addClusterFlags(cmd *cobra.Command, o *clusterOptions) {
 		"cluster join token (prefer env HEARTH_JOIN_TOKEN, which keeps it out of the process list)")
 	cmd.Flags().StringVar(&o.nodeID, "node-id", "",
 		"this hub's cluster node ID (default: derived from the hostname, persisted in the data dir)")
-	cmd.Flags().StringVar(&o.raftListen, "raft-listen", ":"+cluster.DefaultRaftPort,
-		"address for Raft traffic between hubs (mutual TLS) in a cluster")
-	cmd.Flags().StringVar(&o.advertise, "advertise", "",
-		"host:port other hubs use to reach this hub's --raft-listen (default: this hostname and the Raft port)")
+	listen := os.Getenv("HEARTH_CLUSTER_LISTEN")
+	if listen == "" {
+		listen = ":" + cluster.DefaultPort
+	}
+	cmd.Flags().StringVar(&o.listen, "cluster-listen", listen,
+		"address for gossip and replication between the cluster's hubs (TCP, mutual TLS) (env HEARTH_CLUSTER_LISTEN)")
+	cmd.Flags().StringVar(&o.advertise, "cluster-advertise", os.Getenv("HEARTH_CLUSTER_ADVERTISE"),
+		"host:port other hubs use to reach this hub's --cluster-listen (default: this hostname and the "+
+			"--cluster-listen port) (env HEARTH_CLUSTER_ADVERTISE)")
+	cmd.Flags().StringSliceVar(&o.seeds, "cluster-seeds", splitList(os.Getenv("HEARTH_CLUSTER_SEEDS")),
+		"cluster addresses (host:port) of other members to find the cluster by; the --join hub's is added "+
+			"(env HEARTH_CLUSTER_SEEDS, comma-separated)")
 	allow := os.Getenv("HEARTH_ALLOW_ROLES")
 	if allow == "" {
 		allow = cluster.HubRoles.String()
 	}
 	cmd.Flags().StringVar(&o.allowRoles, "allow-roles", allow,
-		"cluster roles this host may take, comma-separated from node, storage and master (env HEARTH_ALLOW_ROLES); "+
-			"a hub is master and storage, so both must be allowed")
-	cmd.Flags().StringVar(&o.gossipListen, "gossip-listen", ":"+cluster.DefaultGossipPort,
-		"address for membership gossip between cluster hubs (TCP, mutual TLS); empty turns gossip off")
-	cmd.Flags().StringVar(&o.gossipAdvertise, "gossip-advertise", "",
-		"host:port other hubs use to reach this hub's --gossip-listen (default: the --advertise host and the gossip port)")
-	addAPClusterFlags(cmd, o)
+		"cluster roles this host may take, comma-separated from storage and master (env HEARTH_ALLOW_ROLES)")
+	replicas := 0
+	if v := os.Getenv("HEARTH_REPLICAS"); v != "" {
+		replicas, _ = strconv.Atoi(v)
+	}
+	cmd.Flags().IntVar(&o.replicas, "replicas", replicas,
+		"copies of each row (N); 0 means min(2, storage members) (env HEARTH_REPLICAS)")
+}
+
+// check checks the cluster flags.
+func (o clusterOptions) check() error {
+	if o.replicas < 0 {
+		return errors.New("--replicas must be at least 1 (0 picks the default)")
+	}
+	if o.listen == "" {
+		return errors.New("--cluster-listen is empty: a hub's store replicates over it")
+	}
+	return nil
 }
 
 // allowedRoles parses --allow-roles; empty means the hub's roles.
@@ -88,114 +102,76 @@ func (o clusterOptions) allowedRoles() (cluster.RoleSet, error) {
 	return allowed, nil
 }
 
-// gossipAdvertiseAddr is --gossip-advertise, or the host other hubs reach
-// this one by (see advertiseAddr) with the --gossip-listen port.
-func (o clusterOptions) gossipAdvertiseAddr() (string, error) {
-	if o.gossipAdvertise != "" {
-		if _, _, err := net.SplitHostPort(o.gossipAdvertise); err != nil {
-			return "", fmt.Errorf("--gossip-advertise %s: %w", o.gossipAdvertise, err)
-		}
-		return o.gossipAdvertise, nil
-	}
-	_, port, err := net.SplitHostPort(o.gossipListen)
-	if err != nil {
-		return "", fmt.Errorf("--gossip-listen %s: %w", o.gossipListen, err)
-	}
-	raft, err := o.advertiseAddr()
-	if err != nil {
-		return "", err
-	}
-	host, _, _ := net.SplitHostPort(raft)
-	return net.JoinHostPort(host, port), nil
-}
-
-// newMembership returns the started node's gossip membership, its listener
-// bound; nil when gossip is off or its port is taken. The caller runs it.
-func newMembership(ctx context.Context, o clusterOptions, node *cluster.Node, allowed cluster.RoleSet, log *slog.Logger) (
-	*cluster.Membership, error,
-) {
-	if o.gossipListen == "" {
-		return nil, nil
-	}
-	advertise, err := o.gossipAdvertiseAddr()
-	if err != nil {
-		return nil, err
-	}
-	ln, err := (&net.ListenConfig{}).Listen(ctx, "tcp", o.gossipListen)
-	if err != nil {
-		// Gossip only reports membership for now; the hub runs on without it.
-		log.WarnContext(ctx, "gossip membership off: cannot listen", "gossip_listen", o.gossipListen, "err", err)
-		return nil, nil
-	}
-	if host, port, err := net.SplitHostPort(advertise); err == nil && port == "0" {
-		// Listening on port 0 (tests): advertise the port taken.
-		advertise = net.JoinHostPort(host, strconv.Itoa(ln.Addr().(*net.TCPAddr).Port))
-	}
-	m, err := node.NewMembership(cluster.MembershipConfig{
-		Roles: cluster.HubRoles, Allowed: allowed,
-		Listen: o.gossipListen, Listener: ln, Advertise: advertise, Log: log,
-	})
-	if err != nil {
-		_ = ln.Close()
-		return nil, err
-	}
-	return m, nil
-}
-
-// clustered reports whether the hub runs as a Raft cluster member: it was
-// told to form or join one, or its data dir already belongs to one.
-func (o clusterOptions) clustered(dataDir string) bool {
-	return o.form || o.join != "" || cluster.IsMember(dataDir)
-}
-
-func (o clusterOptions) advertiseAddr() (string, error) {
+// advertiseAddr is --cluster-advertise, or this hostname (the listen host
+// when it is a specific address) with the --cluster-listen port.
+func (o clusterOptions) advertiseAddr(ctx context.Context) (string, error) {
 	if o.advertise != "" {
 		if _, _, err := net.SplitHostPort(o.advertise); err != nil {
-			return "", fmt.Errorf("--advertise %s: %w", o.advertise, err)
+			return "", fmt.Errorf("--cluster-advertise %s: %w", o.advertise, err)
 		}
 		return o.advertise, nil
 	}
-	host, port, err := net.SplitHostPort(o.raftListen)
+	host, port, err := net.SplitHostPort(o.listen)
 	if err != nil {
-		return "", fmt.Errorf("--raft-listen %s: %w", o.raftListen, err)
+		return "", fmt.Errorf("--cluster-listen %s: %w", o.listen, err)
 	}
 	if ip := net.ParseIP(host); host == "" || (ip != nil && ip.IsUnspecified()) {
-		host = hostnameOr("localhost")
+		host = dialableHost(ctx, hostnameOr("localhost"))
 	}
 	return net.JoinHostPort(host, port), nil
 }
 
-// startClusterNode opens the store as a Raft cluster member and starts the
-// node. First, if asked to join and not joined yet, it runs the join: the
-// node certificate and the cluster's CA, key included, land in the data dir.
-// A member never migrates its database on its own: once it holds Raft state,
-// its store stays at the cluster's schema, which this binary must support;
-// the schema moves only by `hearth cluster migrate`. The store's
-// writes go through the node: proposed on the leader, forwarded to it on a
-// follower. agentURL is this hub's agent-facing URL and agentPort its port.
-func startClusterNode(ctx context.Context, opts hubOptions, log *slog.Logger, onFatal func(error), agentURL, agentPort string) (
-	*store.Store, *pki.CA, *cluster.Node, error,
+// dialableHost is host, unless it resolves only to loopback addresses (as a
+// hostname does with Debian's 127.0.1.1 in /etc/hosts), which other members
+// cannot dial: then this host's first private address, or 127.0.0.1 on a
+// host with none, where the hub stays a cluster of one until it gets one.
+func dialableHost(ctx context.Context, host string) string {
+	ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
+	if err == nil {
+		for _, ip := range ips {
+			if !ip.IsLoopback() {
+				return host
+			}
+		}
+	}
+	addrs, err := net.InterfaceAddrs()
+	if err == nil {
+		for _, a := range addrs {
+			if n, ok := a.(*net.IPNet); ok && n.IP.To4() != nil && n.IP.IsPrivate() {
+				return n.IP.String()
+			}
+		}
+	}
+	return "127.0.0.1"
+}
+
+// startClusterNode opens the store as a member of the hub's cluster. On a
+// first start with --join it joins through that hub with the join token (its
+// node certificate and the CA land in the data dir); without, the hub forms a
+// cluster of one, creating its CA if it has none. Writes go through the
+// node's replicator, reads to the members holding the rows.
+func startClusterNode(ctx context.Context, opts hubOptions, allowed cluster.RoleSet, agentURL string, log *slog.Logger) (
+	*store.Store, *pki.CA, *cluster.APNode, error,
 ) {
 	o := opts.cluster
-	if err := cluster.CheckMode(opts.dataDir, clusterModeRaft); err != nil {
-		return nil, nil, nil, err
-	}
-	if o.form && o.join != "" {
-		return nil, nil, nil, errors.New("--cluster forms a new cluster and --join joins one: pick one")
-	}
-	firstStart := !cluster.IsMember(opts.dataDir)
-	if !firstStart && (o.join != "" || o.form) {
-		log.InfoContext(ctx, "this data dir already belongs to a cluster; ignoring --cluster/--join")
-	}
-	advertise, err := o.advertiseAddr()
-	if err != nil {
-		return nil, nil, nil, err
-	}
 	nodeID, err := cluster.NodeID(opts.dataDir, o.nodeID, hostnameOr("hub"))
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	if firstStart && o.join != "" {
+	advertise, err := o.advertiseAddr(ctx)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	// A member that is no master holds the CA certificate only.
+	_, statErr := os.Stat(filepath.Join(opts.dataDir, pki.CACertFile))
+	hasCA := statErr == nil
+	seeds := o.seeds
+	if o.join != "" {
+		if s, err := joinSeed(o.join, o.listen); err == nil {
+			seeds = append(seeds, s)
+		}
+	}
+	if !hasCA && o.join != "" {
 		token := o.joinToken
 		if token == "" {
 			token = opts.joinTokenEnv
@@ -204,79 +180,111 @@ func startClusterNode(ctx context.Context, opts hubOptions, log *slog.Logger, on
 			return nil, nil, nil, errors.New("--join needs a join token: set HEARTH_JOIN_TOKEN (or --join-token)")
 		}
 		if err := cluster.Join(ctx, cluster.JoinParams{
-			URL: o.join, Token: token, DataDir: opts.dataDir, NodeID: nodeID, RaftAddress: advertise,
+			URL: o.join, Token: token, DataDir: opts.dataDir, NodeID: nodeID, Address: advertise,
+			AllowedRoles: allowed,
 		}); err != nil {
 			return nil, nil, nil, err
 		}
-		log.InfoContext(ctx, "joined the cluster as a non-voter", "node_id", nodeID, "via", o.join)
+		log.InfoContext(ctx, "joined the cluster", "node_id", nodeID, "via", o.join)
+	} else if !hasCA && !allowed.Has(cluster.RoleMaster) {
+		return nil, nil, nil, errors.New("the first hub of a cluster is a master: allow the master role " +
+			"(--allow-roles), or join a cluster with --join")
 	}
-
-	// Only the hub that forms a cluster may create a CA; a member gets the
-	// cluster's at join.
-	ca, err := loadClusterCA(opts.dataDir, o.form && firstStart)
+	ca, err := pki.LoadCA(opts.dataDir, time.Now())
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	node, err := cluster.New(cluster.Config{
-		DataDir: opts.dataDir, NodeID: nodeID, Listen: o.raftListen, Listener: o.raftLn, Advertise: advertise,
-		CA: ca, Bootstrap: o.form, Log: log, OnFatal: onFatal, AgentURL: agentURL, AgentPort: agentPort,
+	ln := o.ln
+	if ln == nil {
+		if ln, err = (&net.ListenConfig{}).Listen(ctx, "tcp", o.listen); err != nil {
+			return nil, nil, nil, fmt.Errorf("--cluster-listen %s: %w", o.listen, err)
+		}
+	}
+	if host, port, err := net.SplitHostPort(advertise); err == nil && port == "0" {
+		advertise = net.JoinHostPort(host, strconv.Itoa(ln.Addr().(*net.TCPAddr).Port))
+	}
+	node, err := cluster.NewAPNode(ctx, cluster.APConfig{
+		DataDir: opts.dataDir, NodeID: nodeID, CA: ca, Allowed: allowed,
+		Listen: o.listen, Listener: ln, Advertise: advertise, Seeds: seeds,
+		Replicas: o.replicas, AgentURL: agentURL, Log: log, ConfigSource: cluster.HostFlagsSource(opts.dangerousAutomations),
 	})
 	if err != nil {
+		_ = ln.Close()
 		return nil, nil, nil, err
 	}
-	storeOpts := []store.Option{store.WithApplier(node.BindForwarding)}
-	if !firstStart {
-		storeOpts = append(storeOpts, store.WithoutUpgrade())
+	if !node.Roles().Has(cluster.RoleMaster) && ca.HasKey() {
+		// Demoted, or no longer allowed the role: the key goes.
+		if err := ca.DropKey(); err != nil {
+			_ = ln.Close()
+			return nil, nil, nil, fmt.Errorf("delete the CA key of a member that is no master: %w", err)
+		}
+		log.InfoContext(ctx, "not a master: deleted the CA key")
 	}
-	st, err := store.Open(ctx, filepath.Join(opts.dataDir, dbFile), storeOpts...)
-	if errors.Is(err, store.ErrSchemaMismatch) {
-		return nil, nil, nil, fmt.Errorf("%w: this hearth is older than the cluster's schema and downgrades are "+
-			"not supported; run the cluster's hearth version or a newer one (rolling upgrades: see docs/cluster.md)", err)
-	}
+	st, err := store.Open(ctx, filepath.Join(opts.dataDir, dbFile), node.StoreOptions()...)
 	if err != nil {
+		_ = ln.Close()
 		return nil, nil, nil, err
 	}
-	if v, err := st.SchemaVersion(ctx); err == nil && v < st.MaxSchemaVersion() {
-		log.InfoContext(ctx, "this hearth supports a newer schema than the database is at; once every hub "+
-			"runs a hearth that supports it, run `hearth cluster migrate`", "schema", v, "supported", st.MaxSchemaVersion())
-	}
-	if err := node.Start(ctx); err != nil {
+	if err := node.Bind(ctx, st); err != nil {
+		_ = ln.Close()
 		_ = st.Close()
 		return nil, nil, nil, err
 	}
+	log.InfoContext(ctx, "cluster member", "node_id", nodeID, "address", advertise, "seeds", seeds)
 	return st, ca, node, nil
 }
 
-func loadClusterCA(dataDir string, mayCreate bool) (*pki.CA, error) {
-	if !mayCreate {
-		if _, err := os.Stat(filepath.Join(dataDir, pki.CAKeyFile)); err != nil {
-			return nil, fmt.Errorf("cluster member without a CA in %s (did a --join fail? start over with an empty "+
-				"data dir and a new join token): %w", dataDir, err)
-		}
+// joinSeed is the cluster address of the hub at joinURL: its host, at this
+// hub's cluster port (every member is expected to listen on one port).
+func joinSeed(joinURL, listen string) (string, error) {
+	u, err := url.Parse(joinURL)
+	if err != nil {
+		return "", err
 	}
-	return pki.LoadOrCreateCA(dataDir, time.Now())
+	_, port, err := net.SplitHostPort(listen)
+	if err != nil || port == "" || port == "0" {
+		port = cluster.DefaultPort
+	}
+	return net.JoinHostPort(u.Hostname(), port), nil
 }
 
-// promoteUntilVoter asks the leader to make this joined hub a voter, retrying
-// until it is one or ctx ends. Hubs that formed the cluster are voters already.
-func promoteUntilVoter(ctx context.Context, node *cluster.Node, dataDir string, log *slog.Logger) error {
-	for {
-		voter, err := node.IsVoter()
-		if err == nil && voter {
-			return nil
-		}
-		if err == nil && node.Leader().ID != "" {
-			if err := cluster.Promote(ctx, dataDir, node.ID()); err != nil {
-				log.WarnContext(ctx, "promotion to voter failed; retrying", "err", err)
-			} else {
-				log.InfoContext(ctx, "promoted to cluster voter")
-				return nil
-			}
-		}
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-time.After(2 * time.Second):
-		}
+// runClusterMember waits for a first sync with the cluster, then records this
+// hub's node certificate, applies HEARTH_ADMIN_PASSWORD (after the sync, so
+// a new member does not replace the cluster's password) and says whether
+// the cluster is highly available. caughtUp says, once ready is closed,
+// whether it found the cluster and finished the sync.
+func runClusterMember(ctx context.Context, node *cluster.APNode, setup func(context.Context) error, ready chan<- struct{},
+	caughtUp *atomic.Bool, log *slog.Logger,
+) error {
+	found := true
+	if err := node.WaitPeers(ctx, 30*time.Second); err != nil && ctx.Err() == nil {
+		log.WarnContext(ctx, "starting alone: no other member of the cluster reached; critical writes are "+
+			"acknowledged with one copy until one is", "err", err)
+		found = false
+		node.StartAlone()
 	}
+	synced := true
+	if err := node.Replicator().WaitSynced(ctx, 30*time.Second); err != nil && ctx.Err() == nil {
+		log.WarnContext(ctx, "first sync with the cluster incomplete; going on", "err", err)
+		synced = false
+	}
+	if ctx.Err() != nil {
+		return nil
+	}
+	caughtUp.Store(found && synced)
+	if err := node.RecordNodeCert(ctx); err != nil {
+		log.WarnContext(ctx, "record this hub's node certificate", "err", err)
+	}
+	if err := setup(ctx); err != nil {
+		log.ErrorContext(ctx, "HEARTH_ADMIN_PASSWORD not applied", "err", err)
+	}
+	close(ready)
+	st := node.Status()
+	if !st.HighlyAvailable {
+		log.WarnContext(ctx, "the cluster is not highly available: fewer than 2 storage members or N < 2",
+			"storage_members", st.StorageMembers, "replicas", st.Replicas)
+	} else {
+		log.InfoContext(ctx, "caught up with the cluster", "storage_members", st.StorageMembers, "replicas", st.Replicas)
+	}
+	return nil
 }

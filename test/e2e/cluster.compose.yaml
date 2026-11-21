@@ -1,14 +1,13 @@
-# Three clustered hubs, a fourth that replaces a removed one, and one idle
-# agent, all built from the current checkout.
-# Driven by cluster_test.go (`task e2e:cluster`): hub-a forms the cluster on
-# `up`; the test starts hub-b and hub-c itself, each with a fresh join token in
-# HEARTH_JOIN_TOKEN, and runs `hearth agent join` / `hearth agent run` inside
-# the agent container. A restarted hub already belongs to the cluster, so it
-# ignores --cluster, --join and the (spent) token.
+# Three hubs in a cluster (leaderless, sharded, N=2),
+# each master and storage, and one idle agent, all built from the current
+# checkout. Driven by cluster_test.go (`task e2e:cluster`): hub-a forms the cluster on
+# `up`; the test starts hub-b and hub-c itself, each with a fresh join token
+# in HEARTH_JOIN_TOKEN, and later hub-d, a fourth member it demotes and
+# promotes. Members gossip and replicate on port 7444.
 
 x-hearth: &hearth
   image: hearth-e2e:local
-  init: true # forwards SIGTERM, so `compose stop` is quick
+  init: true
 
 x-hub: &hub
   <<: *hearth
@@ -16,8 +15,9 @@ x-hub: &hub
   environment:
     HEARTH_ADMIN_PASSWORD: e2e-admin-password
     HEARTH_JOIN_TOKEN: ${HEARTH_JOIN_TOKEN:-}
+    HEARTH_REPLICAS: "2"
   ports:
-    - "127.0.0.1::7080" # API on a random host port: `compose port hub-a 7080`
+    - "127.0.0.1::7080"
   healthcheck:
     test: [CMD, nc, -z, 127.0.0.1, "7080"]
     interval: 1s
@@ -27,37 +27,35 @@ x-hub: &hub
 services:
   hub-a:
     <<: *hub
-    build: # one build; the other services reuse the image
+    build:
       context: ../..
       dockerfile: test/e2e/Dockerfile
     hostname: hub-a
-    # --host: agents and the other hubs reach this hub by its service name,
-    # which must be in its certificate's SANs. The node ID is the service name
-    # too: the test finds the leader's service by it.
-    command: [hearth, hub, --data-dir, /var/lib/hearth/hub, --node-id, hub-a, --host, hub-a, --advertise, "hub-a:7444", --cluster]
+    command: [hearth, hub, --data-dir, /var/lib/hearth/hub, --node-id, hub-a, --host, hub-a, --cluster-advertise, "hub-a:7444"]
     volumes:
       - hub-a-data:/var/lib/hearth/hub
 
   hub-b:
     <<: *hub
     hostname: hub-b
-    command: [hearth, hub, --data-dir, /var/lib/hearth/hub, --node-id, hub-b, --host, hub-b, --advertise, "hub-b:7444", --join, "https://hub-a:7443"]
+    command: [hearth, hub, --data-dir, /var/lib/hearth/hub, --node-id, hub-b, --host, hub-b, --cluster-advertise, "hub-b:7444",
+      --join, "https://hub-a:7443", --cluster-seeds, "hub-a:7444"]
     volumes:
       - hub-b-data:/var/lib/hearth/hub
 
   hub-c:
     <<: *hub
     hostname: hub-c
-    command: [hearth, hub, --data-dir, /var/lib/hearth/hub, --node-id, hub-c, --host, hub-c, --advertise, "hub-c:7444", --join, "https://hub-a:7443"]
+    command: [hearth, hub, --data-dir, /var/lib/hearth/hub, --node-id, hub-c, --host, hub-c, --cluster-advertise, "hub-c:7444",
+      --join, "https://hub-a:7443", --cluster-seeds, "hub-a:7444,hub-b:7444"]
     volumes:
       - hub-c-data:/var/lib/hearth/hub
 
-  # The replacement for a hub the test kills and removes for good; it joins
-  # through a surviving hub, HEARTH_JOIN_URL.
   hub-d:
     <<: *hub
     hostname: hub-d
-    command: [hearth, hub, --data-dir, /var/lib/hearth/hub, --node-id, hub-d, --host, hub-d, --advertise, "hub-d:7444", --join, "${HEARTH_JOIN_URL:-https://hub-a:7443}"]
+    command: [hearth, hub, --data-dir, /var/lib/hearth/hub, --node-id, hub-d, --host, hub-d, --cluster-advertise, "hub-d:7444",
+      --join, "https://hub-a:7443", --cluster-seeds, "hub-a:7444,hub-b:7444"]
     volumes:
       - hub-d-data:/var/lib/hearth/hub
 

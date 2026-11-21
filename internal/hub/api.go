@@ -224,7 +224,7 @@ type api struct {
 	ready     <-chan struct{}
 	readyWait time.Duration
 	// verify runs one argon2 verification at a time, so a flood of login
-	// attempts can neither exhaust a small hub's memory nor starve Raft.
+	// attempts can neither exhaust a small hub's memory nor starve the cluster.
 	verify         verifyGate
 	verifyWait     time.Duration
 	verifyPassword PasswordVerifier
@@ -518,7 +518,7 @@ func (a *api) listDevices(w http.ResponseWriter, r *http.Request) {
 		Devices []DeviceJSON `json:"devices"`
 	}{Devices: make([]DeviceJSON, 0, len(devs))}
 	for _, d := range devs {
-		out.Devices = append(out.Devices, deviceJSON(a.registry.Live(d)))
+		out.Devices = append(out.Devices, deviceJSON(d))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -534,7 +534,7 @@ func (a *api) getDevice(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "cannot get device")
 		return
 	}
-	writeJSON(w, http.StatusOK, deviceJSON(a.registry.Live(d)))
+	writeJSON(w, http.StatusOK, deviceJSON(d))
 }
 
 // EventJSON is the data of one server-sent event; the SSE event name is Type.
@@ -556,7 +556,7 @@ type NetworkEventJSON struct {
 func (a *api) events(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	rc := http.NewResponseController(w)
-	ch, unsubscribe := a.registry.Subscribe()
+	ch, unsubscribe := a.registry.SubscribeUI()
 	defer unsubscribe()
 	var kubeCh <-chan kubernetes.Notice // nil, never ready, without a.kube
 	if a.kube != nil {

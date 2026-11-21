@@ -87,7 +87,7 @@ const (
 var ErrOutcomeNotRecorded = errors.New("its outcome was not recorded")
 
 // outcomeTimeout bounds the write of an action's outcome, which outlives the
-// request. It covers waiting for a cluster leader and the Raft apply.
+// request. It covers a replicated write that waits for its replicas.
 const outcomeTimeout = 20 * time.Second
 
 type scopeKey struct{}

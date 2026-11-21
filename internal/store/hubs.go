@@ -16,7 +16,7 @@ import (
 var ErrUnavailable = errors.New("cluster unavailable: no leader reachable")
 
 // Hubs is the repository for cluster hub metadata: the agent-facing URL of
-// each hub, keyed by its Raft node ID.
+// each hub, keyed by its cluster node ID.
 type Hubs struct{ s *Store }
 
 // Hubs returns the cluster hub repository.
@@ -75,7 +75,7 @@ func (r Hubs) RevokeCerts(ctx context.Context, nodeID string, now time.Time) (in
 
 // hubCertsSchema is the schema version whose migration (00006) added the
 // hub_certs table. A newer binary runs on an older cluster database until
-// `hearth cluster migrate`; before this version there is no deny list.
+// every hub of the cluster is upgraded; before this version there is no deny list.
 const hubCertsSchema = 6
 
 // RequireCerts returns ErrSchemaTooOld if the database is at a schema before
@@ -87,7 +87,7 @@ func (r Hubs) RequireCerts(ctx context.Context) error {
 		return fmt.Errorf("hub certs: %w", err)
 	}
 	if v < hubCertsSchema {
-		return fmt.Errorf("hub certs: %w: they need %d, the database is at %d; run `hearth cluster migrate` first",
+		return fmt.Errorf("hub certs: %w: they need %d, the database is at %d; upgrade every hub of the cluster first",
 			ErrSchemaTooOld, hubCertsSchema, v)
 	}
 	return nil

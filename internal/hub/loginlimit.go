@@ -26,7 +26,7 @@ var errVerifyBusy = errors.New("password verification busy")
 
 // verifyGate runs one password verification at a time. argon2 is CPU and
 // memory bound: on a hub with one slow or quota-limited core, verifications
-// side by side starve Raft's heartbeats and cost the hub its leadership.
+// side by side starve the hub's cluster gossip and agent heartbeats.
 type verifyGate chan struct{}
 
 func newVerifyGate() verifyGate { return make(verifyGate, 1) }

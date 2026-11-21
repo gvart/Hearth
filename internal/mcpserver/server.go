@@ -59,12 +59,9 @@ type Kube interface {
 // Config holds the server's dependencies.
 type Config struct {
 	Devices Devices
-	// Live overlays what the hub knows of a device beyond the store, such
-	// as Registry.Live; nil means the store's view.
-	Live   func(store.Device) store.Device
-	Tokens Tokens
-	Policy *policy.Engine
-	Agents Agents
+	Tokens  Tokens
+	Policy  *policy.Engine
+	Agents  Agents
 	// Kube is nil when Kubernetes clusters are not served.
 	Kube Kube
 	// Plugins is nil when the hub runs no exec plugins.
@@ -96,9 +93,6 @@ type Config struct {
 func Handler(cfg Config) http.Handler {
 	if cfg.AutomationsLock == nil {
 		cfg.AutomationsLock = new(sync.Mutex)
-	}
-	if cfg.Live == nil {
-		cfg.Live = func(d store.Device) store.Device { return d }
 	}
 	return requireToken(cfg.Tokens, cfg.Log, &endpoint{cfg: cfg})
 }

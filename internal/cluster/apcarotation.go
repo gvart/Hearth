@@ -45,7 +45,7 @@ import (
 // (CAMeta). Each stage is kept in the replicated row and on each member's
 // disk, so a restart, of the owner or of any member, resumes it.
 
-// caCutoverFile, in the raft dir, holds the fingerprint of the next CA a
+// caCutoverFile, in the cluster dir, holds the fingerprint of the next CA a
 // member cut over to: a master that restarts during the cutover serves and
 // seals with it again before anything else runs.
 const caCutoverFile = "ca-cutover"
@@ -124,7 +124,7 @@ func (n *APNode) checkRotationPin(cert *x509.Certificate) error {
 // a certificate, of the old CA until the reconcile loop runs.
 func (n *APNode) resumeCutover() {
 	ca, next := n.cfg.CA, n.cfg.CA.Next()
-	b, err := os.ReadFile(filepath.Join(n.cfg.DataDir, RaftDir, caCutoverFile))
+	b, err := os.ReadFile(filepath.Join(n.cfg.DataDir, StateDir, caCutoverFile))
 	nextCert := n.nextCert.Load()
 	if err != nil || next == nil || nextCert == nil || strings.TrimSpace(string(b)) != pki.FingerprintHex(next) {
 		return
@@ -308,7 +308,7 @@ func (n *APNode) reconcileCA(ctx context.Context) {
 	if master {
 		// Kept on disk first: once serving the new CA, a master that
 		// restarts must not seal with the old key again.
-		if err := writeFileSync(filepath.Join(n.cfg.DataDir, RaftDir, caCutoverFile), []byte(rot.NewCAFP+"\n"), 0o600); err != nil {
+		if err := writeFileSync(filepath.Join(n.cfg.DataDir, StateDir, caCutoverFile), []byte(rot.NewCAFP+"\n"), 0o600); err != nil {
 			n.log.ErrorContext(ctx, "record the cutover to the new hub CA", "err", err)
 			return
 		}
@@ -372,7 +372,7 @@ func (n *APNode) dropNextLocal(ctx context.Context) error {
 	if err := n.cfg.CA.DropNext(); err != nil {
 		return fmt.Errorf("drop the next CA: %w", err)
 	}
-	dir := filepath.Join(n.cfg.DataDir, RaftDir)
+	dir := filepath.Join(n.cfg.DataDir, StateDir)
 	for _, f := range []string{nextNodeCertFile, nextNodeKeyFile, caCutoverFile} {
 		if err := os.Remove(filepath.Join(dir, f)); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("drop the node certificate of the next CA: %w", err)
@@ -512,7 +512,7 @@ func (n *APNode) issueNextNodeCert(ctx context.Context, csr []byte, id string) (
 // saveNextCert keeps this member's node certificate of the new CA, on disk
 // and for the cutover.
 func (n *APNode) saveNextCert(cert *x509.Certificate, key any) error {
-	tc, err := writeNextNodeCert(filepath.Join(n.cfg.DataDir, RaftDir), cert, key)
+	tc, err := writeNextNodeCert(filepath.Join(n.cfg.DataDir, StateDir), cert, key)
 	if err != nil {
 		return err
 	}
@@ -546,7 +546,7 @@ func (n *APNode) finishLocal(ctx context.Context, rot store.CARotation) {
 		n.log.ErrorContext(ctx, "finish the hub CA rotation", "err", err)
 		return
 	}
-	dir := filepath.Join(n.cfg.DataDir, RaftDir)
+	dir := filepath.Join(n.cfg.DataDir, StateDir)
 	if err := recoverNodeCertFinish(dir, ca); err != nil {
 		n.log.ErrorContext(ctx, "replace the node certificate with the new CA's", "err", err)
 	}
@@ -572,7 +572,7 @@ func (n *APNode) missedRotation(ctx context.Context, rot store.CARotation) {
 	if err != nil {
 		n.log.ErrorContext(ctx, "drop the old hub CA", "err", err)
 	}
-	dir := filepath.Join(n.cfg.DataDir, RaftDir)
+	dir := filepath.Join(n.cfg.DataDir, StateDir)
 	for _, f := range []string{nextNodeCertFile, nextNodeKeyFile, caCutoverFile} {
 		_ = os.Remove(filepath.Join(dir, f))
 	}

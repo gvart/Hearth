@@ -269,7 +269,6 @@ func (a *api) guestWidget(ctx context.Context, wd PanelWidgetJSON) (GuestWidgetJ
 	if err != nil {
 		return GuestWidgetJSON{}, err
 	}
-	d = a.registry.Live(d)
 	out.Name, out.Status = d.Name, d.Status
 	if !d.LastSeen.IsZero() {
 		out.LastSeen = &d.LastSeen
@@ -462,7 +461,7 @@ func (a *api) guestEvents(w http.ResponseWriter, r *http.Request) {
 	defer closeStream()
 	updated := p.UpdatedAt
 	rc := http.NewResponseController(w)
-	ch, unsubscribe := a.registry.Subscribe()
+	ch, unsubscribe := a.registry.SubscribeUI()
 	defer unsubscribe()
 
 	w.Header().Set("Content-Type", "text/event-stream")

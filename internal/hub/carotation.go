@@ -79,9 +79,6 @@ func (s *AgentStream) renewal(ctx context.Context, log *slog.Logger, deviceID st
 	if issuerFP(s.ca, leaf) == rot.NewCAFP {
 		return nil, nil // renewed already
 	}
-	if s.authority() != nil {
-		return nil, nil
-	}
 	recorded, err := s.pins.Fingerprint(ctx, serial, deviceID)
 	if err != nil || recorded != pki.FingerprintHex(leaf) {
 		log.WarnContext(ctx, "agent certificate not renewed for the hub CA rotation: it is not the certificate "+

@@ -11,7 +11,7 @@ import (
 
 // kubeClustersSchema is the schema version whose migration (00008) added the
 // kube_clusters table. A newer binary runs on an older cluster database until
-// `hearth cluster migrate`; before this version no cluster can be added.
+// every hub of the cluster is upgraded; before this version no cluster can be added.
 const kubeClustersSchema = 8
 
 // KubeCluster is a Kubernetes cluster adopted through a kubeconfig.
