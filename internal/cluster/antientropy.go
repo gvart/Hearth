@@ -228,13 +228,18 @@ func (r *Replicator) handOff(ctx context.Context, v view) error {
 // shard buckets both hold.
 func (r *Replicator) SyncWith(ctx context.Context, peer string) error {
 	v := r.view()
-	if err := r.syncSpace(ctx, peer, store.SpaceGlobal, []bucketRange{{0, store.GlobalBuckets}}, false); err != nil {
+	if err := r.SyncGlobal(ctx, peer); err != nil {
 		return err
 	}
 	if ranges := v.sharedRanges(peer); len(ranges) > 0 {
 		return r.syncSpace(ctx, peer, store.SpaceShard, ranges, false)
 	}
 	return nil
+}
+
+// SyncGlobal runs one anti-entropy round of the global rows with peer.
+func (r *Replicator) SyncGlobal(ctx context.Context, peer string) error {
+	return r.syncSpace(ctx, peer, store.SpaceGlobal, []bucketRange{{0, store.GlobalBuckets}}, false)
 }
 
 // ownedRanges are the shard buckets this member owns.

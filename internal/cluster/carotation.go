@@ -53,6 +53,9 @@ const (
 	// caMemberWait bounds how long FinishCA waits for every hub to reach
 	// a stage.
 	caMemberWait = 2 * time.Minute
+	// caGoneGrace is how long a member must stay down before FinishCA
+	// gives up on it rather than waits.
+	caGoneGrace = 5 * time.Second
 	// caInfoTimeout bounds one CAInfo or FetchCAKey call.
 	caInfoTimeout = 5 * time.Second
 	// caFinishTimeout bounds a finish over the control socket: two waits

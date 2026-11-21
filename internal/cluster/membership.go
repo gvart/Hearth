@@ -136,6 +136,9 @@ type Membership struct {
 	meta  atomic.Pointer[[]byte]
 	ml    atomic.Pointer[memberlist.Memberlist]
 	trans atomic.Pointer[gossipTransport]
+	// updateMu serializes UpdateNode: memberlist reads this member's own
+	// node outside its lock there, so two calls at once race.
+	updateMu sync.Mutex
 
 	// mu guards live and gone, the members memberlist reported alive and
 	// those it reported dead or left. They are copies made in memberlist's
@@ -427,7 +430,7 @@ func (m *Membership) Run(ctx context.Context) error {
 		case <-t.C:
 			if err := m.setMeta(ctx, false); err != nil {
 				m.log.WarnContext(ctx, "refresh member metadata", "err", err)
-			} else if err := ml.UpdateNode(m.cfg.RefreshEvery); err != nil {
+			} else if err := m.updateNode(ml, m.cfg.RefreshEvery); err != nil {
 				m.log.DebugContext(ctx, "announce member metadata", "err", err)
 			}
 			m.joinSeeds(ctx)
@@ -531,7 +534,7 @@ func (m *Membership) isSelf(addr string) bool {
 func (m *Membership) leave() {
 	ml := m.ml.Load()
 	if err := m.setMeta(context.Background(), true); err == nil {
-		_ = ml.UpdateNode(gossipLeaveTimeout)
+		_ = m.updateNode(ml, gossipLeaveTimeout)
 	}
 	if err := ml.Leave(gossipLeaveTimeout); err != nil {
 		m.log.Debug("leave the gossip", "err", err)
@@ -664,7 +667,7 @@ func (m *Membership) SetLocal(ls LocalState) error {
 		return err
 	}
 	if ml := m.ml.Load(); ml != nil {
-		if err := ml.UpdateNode(m.cfg.RefreshEvery); err != nil {
+		if err := m.updateNode(ml, m.cfg.RefreshEvery); err != nil {
 			m.log.Debug("announce member metadata", "err", err)
 		}
 	}
@@ -684,7 +687,7 @@ func (m *Membership) SetCA(c CAMeta) {
 		return
 	}
 	if ml := m.ml.Load(); ml != nil {
-		if err := ml.UpdateNode(m.cfg.RefreshEvery); err != nil {
+		if err := m.updateNode(ml, m.cfg.RefreshEvery); err != nil {
 			m.log.Debug("announce member metadata", "err", err)
 		}
 	}
@@ -958,4 +961,12 @@ func (w memberlistLog) Write(p []byte) (int, error) {
 	}
 	w.log.Log(context.Background(), level, strings.TrimPrefix(msg, "memberlist: "))
 	return len(p), nil
+}
+
+// updateNode announces this member's metadata through ml (UpdateNode), one
+// call at a time.
+func (m *Membership) updateNode(ml *memberlist.Memberlist, timeout time.Duration) error {
+	m.updateMu.Lock()
+	defer m.updateMu.Unlock()
+	return ml.UpdateNode(timeout)
 }

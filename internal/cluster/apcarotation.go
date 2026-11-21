@@ -186,6 +186,49 @@ func (n *APNode) publishCA() {
 	}
 }
 
+// rotationAhead names a live master whose side of a rotation, as it says
+// on the gossip, is past this member's row of it (rot; ok is false when
+// there is none): it cut over or finished the rotation this member still
+// has at an earlier stage, or it trusts a next CA of a rotation this member
+// has no row of. Empty when there is none.
+func (n *APNode) rotationAhead(rot store.CARotation, ok bool) string {
+	if n.membership == nil {
+		return ""
+	}
+	fp := shortFP(rot.NewCAFP)
+	for _, m := range n.membership.Members() {
+		if m.ID == n.cfg.NodeID || m.State != MemberAlive || !m.Roles.Has(RoleMaster) || m.CA == nil {
+			continue
+		}
+		c := m.CA
+		switch {
+		case (!ok || !rot.Active()) && c.Next != "" && (!ok || c.Next != fp):
+			return m.ID // a rotation this member missed the start of
+		case ok && rot.Stage == store.CAStageStarted && c.CutOver && c.Next == fp:
+			return m.ID // cut over there
+		case ok && rot.Active() && c.Next == "" && c.Serving == fp:
+			return m.ID // finished there
+		}
+	}
+	return ""
+}
+
+// pullRotation copies the global rows, the rotation's among them, from
+// peer, a master past this member's stage of a rotation (rotationAhead), and
+// reads the rotation again. A stage this member missed (its copy of the
+// write was hinted, say while it restarted) so arrives at the next
+// reconcile, not at the next hint replay or anti-entropy round, and a
+// finish does not wait on it.
+func (n *APNode) pullRotation(ctx context.Context, peer string, rot store.CARotation, ok bool) (store.CARotation, bool) {
+	if err := n.rep.SyncGlobal(ctx, peer); err != nil {
+		if ctx.Err() == nil {
+			n.log.WarnContext(ctx, "pull the hub CA rotation from a master ahead of this member", "master", peer, "err", err)
+		}
+		return rot, ok
+	}
+	return n.loadRotation(ctx)
+}
+
 // reconcileCA brings this member's CA, and the node certificate it
 // presents, to the stage of the replicated rotation. It is idempotent; a
 // failed step is retried on the next run.
@@ -198,6 +241,9 @@ func (n *APNode) reconcileCA(ctx context.Context) {
 	}
 	ca := n.cfg.CA
 	rot, ok := n.loadRotation(ctx)
+	if peer := n.rotationAhead(rot, ok); peer != "" {
+		rot, ok = n.pullRotation(ctx, peer, rot, ok)
+	}
 	if !ok {
 		n.dropLeftoverNext(ctx)
 		return
@@ -797,6 +843,10 @@ func (n *APNode) FinishCA(ctx context.Context, opts FinishOptions) (FinishPlan, 
 // ready accepts; this member answers for itself.
 func (n *APNode) waitMembers(ctx context.Context, members []MemberInfo, what string, ready func(MemberInfo, CAMeta) bool) error {
 	deadline := time.Now().Add(caMemberWait)
+	// goneSince is when each member was first seen down, this time down: a
+	// member that just restarted can show dead for a moment, until its new
+	// incarnation reaches every member.
+	goneSince := map[string]time.Time{}
 	for {
 		now := map[string]MemberInfo{}
 		for _, m := range n.membership.Members() {
@@ -813,9 +863,21 @@ func (n *APNode) waitMembers(ctx context.Context, members []MemberInfo, what str
 			default:
 				c = *cur.CA
 			}
+			if cur.State != MemberDead && cur.State != MemberLeft {
+				delete(goneSince, m.ID)
+			}
 			switch {
 			case m.ID != n.cfg.NodeID && ok && (cur.State == MemberDead || cur.State == MemberLeft):
-				gone = append(gone, m.ID)
+				since, seen := goneSince[m.ID]
+				if !seen {
+					since = time.Now()
+					goneSince[m.ID] = since
+				}
+				if time.Since(since) >= caGoneGrace {
+					gone = append(gone, m.ID)
+				} else {
+					waiting = append(waiting, fmt.Sprintf("%s (%s)", m.ID, cur.State))
+				}
 				continue
 			case !ok || (m.ID != n.cfg.NodeID && cur.State != MemberAlive):
 				waiting = append(waiting, fmt.Sprintf("%s (%s)", m.ID, cmp.Or(cur.State, "unknown")))
