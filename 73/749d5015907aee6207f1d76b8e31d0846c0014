@@ -1,0 +1,192 @@
+cmd/hearth/hub_cluster_ap.go
+  s_87f1c7baee7d5a::t_655a847cd89aaf 140
+internal/store/carotation.go
+  s_87f1c7baee7d5a::t_5af45be238ea37 7,16-17,210,220-221,223,226-229,231-234,242-244,247,251,257,261-314,316-319,321,323-324,356-360,365-367,369-376,378-407,410-412,430-431,434-441,448
+  s_87f1c7baee7d5a::t_17aba00cbb5d47 377
+  s_87f1c7baee7d5a::t_ea673e6316c953 552-558,564-566,602-611,635-642,653-663
+  s_87f1c7baee7d5a::t_b1e13a570382bd 61-64,78-86,93,148
+  s_87f1c7baee7d5a::t_12752a1fbeaab5 112-118,643-652
+internal/store/shard_test.go
+  s_87f1c7baee7d5a::t_8a09ea0c9b2f92 69-78
+internal/store/command.go
+  s_87f1c7baee7d5a::t_ea673e6316c953 762-763
+internal/cluster/antientropy.go
+  s_87f1c7baee7d5a::t_85c8ba1c9379ac 310-320
+  s_87f1c7baee7d5a::t_d1cbd17487a1e1 376-384
+internal/pki/rotate.go
+  s_87f1c7baee7d5a::t_c7549bcbd7af77 314-315,319,338-340,344,352-367
+  s_87f1c7baee7d5a::t_e98794a56dbb84 368
+internal/cluster/apschema_test.go
+  s_87f1c7baee7d5a::t_c10b6ea7e406e0 1-85,87-117
+  s_87f1c7baee7d5a::t_88ff3a73b530db 86
+cmd/hearth/cluster_ca.go
+  s_87f1c7baee7d5a::t_0e7cabd1dba246 64-71,83-84,97-117,121-159,173,186-193,204-205,221-235,253,265-272,283-284,297-309
+  s_87f1c7baee7d5a::t_832ddb47e33680 49
+internal/cluster/replicate.go
+  s_87f1c7baee7d5a::t_a7174a0f5a6985 1045-1052,1054-1056,1058-1073,1075-1078,1130-1140
+  s_87f1c7baee7d5a::t_cbecd52d807542 1053,1057
+  s_87f1c7baee7d5a::t_ebfedbb09ee9e6 1143-1144
+internal/cluster/apnode.go
+  s_87f1c7baee7d5a::t_56a9d181cdbe0f 228,500-502
+  s_87f1c7baee7d5a::t_19667795f61966 652-653,666-668
+  s_87f1c7baee7d5a::t_466454d6bf771c 121-123
+  s_87f1c7baee7d5a::t_9ca115a834b8e0 316
+  s_87f1c7baee7d5a::t_84051cefb308c9 198-204
+  s_87f1c7baee7d5a::t_a28b57f6f5a3f1 98-101,128-130,236-237,280-283,297-305,317-326,600-605,769,771-772,774
+  s_87f1c7baee7d5a::t_a483664dfdd32a 787-788
+  s_87f1c7baee7d5a::t_85c097368d4abf 120
+  s_87f1c7baee7d5a::t_e34cc72a4abfac 654
+  s_87f1c7baee7d5a::t_4386d8727eca2e 770
+  s_87f1c7baee7d5a::t_88e1d2f3f95e6b 107-109,116-119,156-171,194-197,208-211,224-226,229,231-235,307-309,507-509,599,612-613,616,781-785,830-832
+  s_87f1c7baee7d5a::t_0bcd67c4e32502 496-499,504-506
+  s_87f1c7baee7d5a::t_8a2d1f2e330b9f 669-670
+internal/store/merge.go
+  s_87f1c7baee7d5a::t_1e6700e00527b5 8,56-60,80-125
+  s_87f1c7baee7d5a::t_0700f5dfc192ac 54-55
+  s_87f1c7baee7d5a::t_0c954a66b77fdd 126-127
+internal/backup/backup.go
+  s_87f1c7baee7d5a::t_ce4107367f320f 139-143
+  s_87f1c7baee7d5a::t_1b8b0eeb9b8c6d 90-94
+internal/cluster/replicate_test.go
+  s_87f1c7baee7d5a::t_87e784e06d797e 532-536
+  s_87f1c7baee7d5a::t_de83037352021f 948-980
+internal/pki/pin.go
+  s_87f1c7baee7d5a::t_c7549bcbd7af77 32-52
+internal/cluster/carotation.go
+  s_87f1c7baee7d5a::t_46b8a19f8b9275 1064-1069,1074,1078,1081,1094-1105,1108,1112-1113,1115-1116,1120,1122,1127-1138,1141,1143,1145-1150
+internal/cluster/apepoch_test.go
+  s_87f1c7baee7d5a::t_4946529ea6e03c 1-72,75-84,86-87,89-95,103-133
+  s_87f1c7baee7d5a::t_9f7fd39f99b774 73-74,85,88
+  s_87f1c7baee7d5a::t_ca25218fdc3633 96-102
+internal/store/command_test.go
+  s_87f1c7baee7d5a::t_12752a1fbeaab5 378,381
+  s_87f1c7baee7d5a::t_0236127b810c1b 377
+  s_87f1c7baee7d5a::t_a8839f3139c47d 379-380
+  s_87f1c7baee7d5a::t_8a09ea0c9b2f92 45
+internal/cluster/promote.go
+  s_87f1c7baee7d5a::t_9f65a700d683b3 64-67,82,221-222
+internal/cluster/membership.go
+  s_87f1c7baee7d5a::t_8873faf93f7c9f 561-562
+  s_87f1c7baee7d5a::t_38b8ec904a451b 70-75,162-164,334-335,398-400,563-564,865-872
+  s_87f1c7baee7d5a::t_d054e4c81740e2 628
+  s_87f1c7baee7d5a::t_def81f6d8fdc47 714
+  s_87f1c7baee7d5a::t_651125c7d550ed 152-153,348-361,397,574-575,675-713
+  s_87f1c7baee7d5a::t_9ca115a834b8e0 583
+internal/store/schema.go
+  s_87f1c7baee7d5a::t_1e6700e00527b5 66
+cmd/hearth/backup.go
+  s_87f1c7baee7d5a::t_2ed5fd0072a453 110
+  s_87f1c7baee7d5a::t_5888b738086a2f 90-100
+cmd/hearth/hub.go
+  s_87f1c7baee7d5a::t_d6ccc59a7e3066 397-399,412,946-948
+  s_87f1c7baee7d5a::t_7507b4c0218dfb 475-482
+  s_87f1c7baee7d5a::t_246c5b0166a520 383-384
+  s_87f1c7baee7d5a::t_0e7cc3606c80e3 413
+internal/cluster/apcarotation.go
+  s_87f1c7baee7d5a::t_ffa1a57dc3f076 519-521,523,712-719,815
+  s_87f1c7baee7d5a::t_1a3547849841d6 204
+  s_87f1c7baee7d5a::t_2d82fb178a0b3e 1-5,7-203,205-274,276-278,288-518,522,524-637,639-682,687,689-711,720-785,787-796,803-808,816-1008,1010
+  s_87f1c7baee7d5a::t_2cb71d749dffc1 275,279-287,638
+  s_87f1c7baee7d5a::t_c43f35a09f87f0 786,797-801,809-814
+  s_87f1c7baee7d5a::t_5a89ae3e201d0b 683-686,688
+  s_87f1c7baee7d5a::t_4ee57f7f196de3 6,802
+  s_87f1c7baee7d5a::t_169f3bce707afc 1009,1011-1046
+cmd/hearth/hub_backup.go
+  s_87f1c7baee7d5a::t_bf6e28dc236d72 113,167
+  s_87f1c7baee7d5a::t_5c29e682cc2490 6
+internal/cluster/apbackup_test.go
+  s_87f1c7baee7d5a::t_e809343859f10d 101-121
+  s_87f1c7baee7d5a::t_9e552505e1b157 1-100
+cmd/hearth/cluster.go
+  s_87f1c7baee7d5a::t_3ddec7d2f99505 481-487
+internal/cluster/apbackup.go
+  s_87f1c7baee7d5a::t_366fb63e4d7a73 1-156
+internal/pki/ca.go
+  s_87f1c7baee7d5a::t_126c7e1ee63eba 94-97
+internal/cluster/apcontrol.go
+  s_87f1c7baee7d5a::t_19667795f61966 112-271
+internal/store/snapshot.go
+  s_87f1c7baee7d5a::t_0fcbc8f275eed0 62-63
+internal/store/store.go
+  s_87f1c7baee7d5a::t_e6e35b4b9f8cfe 50-55,108
+internal/store/applier.go
+  s_87f1c7baee7d5a::t_0018e1826443b2 155-156,163
+  s_87f1c7baee7d5a::t_e6e35b4b9f8cfe 45-59,157-158
+  s_87f1c7baee7d5a::t_0c063e7541950e 159
+internal/cluster/apschema.go
+  s_87f1c7baee7d5a::t_73425d6bea5ae1 148,162,165,168-175,177-215
+  s_87f1c7baee7d5a::t_dfad3dffce17c0 12
+  s_87f1c7baee7d5a::t_ab95ee81b7f600 42-45
+  s_87f1c7baee7d5a::t_97805d995975fa 118-121
+  s_87f1c7baee7d5a::t_34afa708991c92 64-65
+  s_87f1c7baee7d5a::t_d0558798d13eb5 6
+  s_87f1c7baee7d5a::t_7bcd38b70d16c5 1-5,7-11,13-16,18-41,46-63,66-117,122-147
+  s_87f1c7baee7d5a::t_32b13bc2c14109 17
+  s_87f1c7baee7d5a::t_bea8d63189a50f 163-164,166-167,176
+  s_87f1c7baee7d5a::t_5c949fabbec172 149-161
+internal/cluster/promote_test.go
+  s_87f1c7baee7d5a::t_f581c514bb971b 153
+  s_87f1c7baee7d5a::t_fa7239008a7a42 41-44
+  s_87f1c7baee7d5a::t_dbe0e18e421a28 92
+  s_87f1c7baee7d5a::t_c43f35a09f87f0 6,45-46,154
+  s_87f1c7baee7d5a::t_661501cb077fb5 123
+  s_87f1c7baee7d5a::t_14513da443ea06 93-99
+  s_87f1c7baee7d5a::t_4e9d010a8d5bb4 167-175,198
+internal/cluster/apcarotation_test.go
+  s_87f1c7baee7d5a::t_366fcadb28ba0a 1-7,9,11-12,14-16,19-20,23-125,128-143,145,147-148,153-189
+  s_87f1c7baee7d5a::t_ffa1a57dc3f076 263-266
+  s_87f1c7baee7d5a::t_e9d22a54af3095 307-309
+  s_87f1c7baee7d5a::t_1df20db848a7ea 8,10,13,17-18,21-22,190-262,267-306,310-319,323-444
+  s_87f1c7baee7d5a::t_5e0cc6313715bb 149-152
+  s_87f1c7baee7d5a::t_37a46db572ac04 320-322
+  s_87f1c7baee7d5a::t_f76ad92a6cb7d7 126-127,144,146
+  s_87f1c7baee7d5a::t_7cd3437939707b 445-633
+internal/backup/backup_test.go
+  s_87f1c7baee7d5a::t_72cbb353630838 714-760
+internal/cluster/apcakey.go
+  s_87f1c7baee7d5a::t_248f5b61cefa2c 164
+  s_87f1c7baee7d5a::t_96e7a8db74a599 165
+  s_87f1c7baee7d5a::t_88e1d2f3f95e6b 8,80,99-104,107,149-154,157,162-163,168,171,173,176,178,182-184,186
+  s_87f1c7baee7d5a::t_927c62344397e1 72-79
+cmd/hearth/hub_backup_test.go
+  s_87f1c7baee7d5a::t_bf6e28dc236d72 91
+internal/store/writeschema_test.go
+  s_87f1c7baee7d5a::t_b9685e071e6e97 79-80
+  s_87f1c7baee7d5a::t_6fe55c07f075b9 1-26,28-71,73-78,81-90,92-98
+  s_87f1c7baee7d5a::t_266eb309830a27 72,91
+  s_87f1c7baee7d5a::t_14d909203b7e4a 27
+internal/store/partition.go
+  s_87f1c7baee7d5a::t_ea673e6316c953 293-306
+internal/cluster/apnodecert.go
+  s_87f1c7baee7d5a::t_f06bd10e28cee3 1-223
+internal/cluster/apnodecert_test.go
+  s_87f1c7baee7d5a::t_ce44d5ae1abbe3 1-88
+internal/cluster/control.go
+  s_87f1c7baee7d5a::t_bf7a8c255158a8 318
+internal/pki/proof_test.go
+  s_87f1c7baee7d5a::t_52e4240d7bbd3c 1-55
+internal/policy/guardrails_test.go
+  s_87f1c7baee7d5a::t_a7cd404b247086 142
+internal/policy/policy.go
+  s_87f1c7baee7d5a::t_efd81af5f3b848 70-73,383-385
+internal/proto/hearth/cluster/v1/cluster.pb.go
+  s_87f1c7baee7d5a::t_7ed6ef76797eec 873-878,927-933,1161,1164-1165
+proto/hearth/cluster/v1/cluster.proto
+  s_87f1c7baee7d5a::t_c9ef0dcd1a914c 189-193
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "73749d5015907aee6207f1d76b8e31d0846c0014",
+  "prompts": {},
+  "sessions": {
+    "s_87f1c7baee7d5a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "45cc2cdf-3130-4caa-8cb4-8cb365d2150d",
+        "model": "unknown"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
