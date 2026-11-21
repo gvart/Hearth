@@ -35,8 +35,16 @@
   background: var(--surface);
 }
 
-.wb-guide-toggle {
+.wb-tools {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
   margin-left: auto;
+}
+
+.wb-tools .btn[aria-pressed='true'] {
+  background: var(--line);
+  color: var(--bg);
 }
 
 .wb-grid {
@@ -47,7 +55,13 @@
   min-height: calc(var(--rail) * 1.5);
 }
 
+/* With the form open the file sits between its steps and the step's form */
+.wb-with-form {
+  grid-template-columns: calc(var(--rail) * 1.4) minmax(0, 1fr) calc(var(--rail) * 1.6);
+}
+
 .wb-outline,
+.wb-form,
 .wb-guide {
   display: flex;
   flex-direction: column;
@@ -61,6 +75,49 @@
 
 .wb-outline {
   border-right: var(--line-1) solid var(--line);
+}
+
+.wb-form {
+  border-left: var(--line-1) solid var(--line);
+}
+
+.wb-step-tools {
+  display: inline-flex;
+  gap: var(--space-05);
+}
+
+.wb-field-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.wb-field {
+  gap: var(--space-1);
+}
+
+.wb-field input,
+.wb-field-block {
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: var(--type-13);
+}
+
+.wb-field-block {
+  resize: vertical;
+}
+
+/* Full screen: the app around the editor steps aside, and the workbench takes the height it frees */
+body:has(.wb-full) :is(.topbar, .shell-rail, .shell-subnav, .shell-bottom, .telemetry-status) {
+  display: none;
+}
+
+.content:has(.wb-full) {
+  padding: var(--space-3) var(--space-4);
+}
+
+.wb-full .wb-grid {
+  height: calc(100dvh - var(--space-16) * 3);
 }
 
 .wb-guide {
@@ -437,6 +494,24 @@
   overflow-wrap: anywhere;
 }
 
+/* Not wide enough for three columns: the form lies over the file's right side, like the guide */
+@media (max-width: 1180px) {
+  .wb-with-form {
+    grid-template-columns: calc(var(--rail) * 1.4) minmax(0, 1fr);
+  }
+
+  .wb-form {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: var(--z-bar);
+    width: calc(var(--rail) * 1.6);
+    max-width: 100%;
+    box-shadow: var(--shadow);
+  }
+}
+
 @media (max-width: 640px) {
   .wb-grid {
     grid-template-columns: minmax(0, 1fr);
@@ -452,5 +527,20 @@
 
   .wb-main {
     height: 70vh;
+  }
+
+  /* On a phone the form is a part of the page under the file, not a sheet over it */
+  .wb-with-form {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+
+  .wb-form {
+    position: static;
+    width: auto;
+    max-height: 60vh;
+    border-top: var(--line-1) solid var(--line);
+    border-left: 0;
+    box-shadow: none;
   }
 }
