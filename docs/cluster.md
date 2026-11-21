@@ -155,6 +155,22 @@ hearth cluster remove hub-c          # a member gone for good
   does not remove itself, nor the last master or storage member. To come back, it joins again with a
   new token and an empty data dir.
 
+Upgrading an AP cluster needs no `hearth cluster migrate`. A member migrates its own database when
+it starts, and gossips the newest schema its binary supports. A table or column a migration added is
+written only once every live member supports it, so during a rolling upgrade the cluster writes at the
+oldest live member's schema. The newest schema the cluster has written is kept in each member's
+`raft/schema-written` and never goes back: a member, or a joining hub, whose Hearth supports less is
+refused, so upgrade before you bring an old member back.
+
+A hub node certificate is valid for a year. A master renews its own with the CA key, at start; a
+member holding no CA key asks a master for a new one while it runs, once its certificate expires
+within 30 days (the action `cluster.node_cert.renew`, safe, decided and audited by the master).
+
+A backup (`hearth backup`, or a scheduled one) on an AP member copies the whole cluster store from
+the live members, every shard included, and is refused while some shard has no live replica. A hub
+restored from a backup starts a new cluster epoch: members of the old cluster are refused until they
+join it again.
+
 Known limitations of AP mode:
 
 - `hearth` commands run on a member's host (`hearth token create`, `hearth cluster token create`)
@@ -163,11 +179,12 @@ Known limitations of AP mode:
 - An approval link opens on the master that owns the approval. With `approval_notify.url` set to
   one fixed address, a link for an approval owned by another master answers 409 `not_owner`, naming
   the master to open it on.
-- Hub CA rotation (refused, as it needs the Raft leader) and `transfer-leadership` are not
-  available.
-- A member that is no master cannot renew its own hub node certificate: promote it, or join it again,
-  before the certificate expires.
+- `transfer-leadership` and `hearth cluster migrate` are Raft commands: an AP cluster has no
+  leader, and it moves to a newer schema on its own (below).
 - A storage member that is down for good holds up a drain whose rows it would own: remove it first.
+- Live updates in the UI (a device coming online or going offline) show at once only for devices whose
+  agents stream to the master the UI is open on; others show on a reload
+  ([#266](https://github.com/gvart/Hearth/issues/266)).
 
 ## Forming the cluster
 
@@ -494,6 +511,29 @@ The commands are policy actions run by the local admin, `cluster.ca.rotate`, `cl
 `cluster.ca.abort` (dangerous), and audited. A hub fetching the new key is the action `cluster.ca.fetch_key`, decided and
 audited by the hub that serves it, refusals included (at most one entry a minute per caller for
 refusals before the decision, counting those left out).
+
+### Rotating the hub CA of an AP cluster
+
+The same commands work in AP mode, run on a master's host; the running hub decides them with its
+policy engine, so a master cut off from the others (isolated) refuses them.
+
+- **The rotation belongs to the master that starts it.** `finish` and `abort` run on that master
+  while it is alive; another master refuses, naming it. Once it is down, any other master can drive
+  the rotation on.
+- **Every member takes part.** `rotate` needs every member alive. A member's node certificate is
+  pinned as it presents it on the gossip. Each member then fetches a node certificate of the new CA
+  from a master holding the new key, the owner first, over the masters' mutual TLS. A master also
+  fetches the new key; a storage-only member never gets it, and keeps no `ca.next.key`. Until the
+  rotation ends no hub joins, and no member is promoted to master or demoted from it.
+- **A finish waits** until every member holds the new CA, then cuts over (each master writes
+  `raft/ca-cutover` first, so a restart serves the new CA again at once), re-seals the sealed secrets
+  and finishes. A member that is down stops the finish at once with its name: bring it back and run
+  the finish again, or remove it. Every stage is resumable: run the command again.
+- **The owner died before another master fetched the key:** the finish says so; give the rotation
+  up with `hearth cluster ca abort` on another master and start a new one. If another master already
+  holds the key, remove the dead owner (`hearth cluster remove`) and finish on that master.
+- A member that comes back after a rotation finished without it stops taking part, with a log line
+  saying so: remove it, wipe its data dir and join it again.
 
 ## CLI on a member's host
 
