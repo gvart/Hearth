@@ -150,6 +150,14 @@ dialog { border: var(--line-2) solid var(--line); }
 .drawer { border-width: 0 0 0 var(--line-2); }
 .login-card { border: var(--line-2) solid var(--line); }
 
+/* Colour has a job, so a screen reads at a glance. Cyan is live: a device that is online, a level, a
+   chart. Green went well: allowed, approved, succeeded, active. Yellow waits or might go wrong, red
+   went wrong, ember acts or needs you, violet is automation. */
+.pill-ok { background: transparent; color: var(--ok); }
+.metric-line { stroke: var(--online); }
+.metric-area { fill: var(--ok-soft); }
+.block:not(.block-off) .block-state { color: var(--online); }
+
 /* Scroll bars: a square thumb on a ruled track. It warms to ember while you drag it. */
 @supports not selector(::-webkit-scrollbar) {
   * { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
