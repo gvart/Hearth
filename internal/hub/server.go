@@ -99,6 +99,9 @@ type Config struct {
 	// Plugins serves the hub's exec plugins under /api/v1/plugins. Nil
 	// disables it.
 	Plugins *plugins.Manager
+	// NetworkScans runs the network scans asked for with
+	// POST /api/v1/network/scan; run it (NetworkScans.Run). Nil disables it.
+	NetworkScans *NetworkScans
 	// Notify serves the notification channels under /api/v1/notify. Nil
 	// disables it.
 	Notify *notify.Notifier

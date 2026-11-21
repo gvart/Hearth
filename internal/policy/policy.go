@@ -173,7 +173,8 @@ const (
 	// NetworkScan is one network discovery scan by the hub: an ARP sweep
 	// and an mDNS browse of the configured subnets, from the hub or, for a
 	// subnet configured with a device, from that device's agent, within its
-	// capability ceiling.
+	// capability ceiling. The hub scans on its schedule, and when an admin
+	// asks from the web UI or CLI.
 	NetworkScan Action = "network.scan"
 	// NetworkHostMark marks a host network discovery found known or
 	// ignored, or neither again, which silences or restores its new-device
@@ -470,8 +471,9 @@ var rules = map[Action]rule{
 	MCPTokenRevoke: {class: Safe, actors: []string{ActorAdmin, ActorWeb}},
 	// A scan only asks who is there (one datagram per address, one mDNS
 	// query) and changes nothing on any host, whether the hub or a device's
-	// agent sends it; an agent scans only subnets its ceiling allows.
-	NetworkScan: {class: Read, actors: []string{ActorHub}},
+	// agent sends it, on the hub's schedule or an admin's request; an agent
+	// scans only subnets its ceiling allows.
+	NetworkScan: {class: Read, actors: []string{ActorHub, ActorWeb}},
 	// Marking a host changes only which alerts the operator gets about it.
 	NetworkHostMark: {class: Safe, actors: []string{ActorWeb}},
 	// An import reads Pi-hole's and NetAlertX's APIs and lease files; it

@@ -177,7 +177,7 @@ var expected = map[Action]struct {
 	AutomationApply:        {Dangerous, []string{ActorMCP, ActorWeb}, false},
 	MCPTokenCreate:         {Dangerous, []string{ActorAdmin, ActorWeb}, false},
 	MCPTokenRevoke:         {Safe, []string{ActorAdmin, ActorWeb}, false},
-	NetworkScan:            {Read, []string{ActorHub}, false},
+	NetworkScan:            {Read, []string{ActorHub, ActorWeb}, false},
 	NetworkHostMark:        {Safe, []string{ActorWeb}, false},
 	NetworkImport:          {Read, []string{ActorHub}, false},
 	BeszelRead:             {Read, []string{ActorHub}, false},

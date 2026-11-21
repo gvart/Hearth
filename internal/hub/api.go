@@ -96,6 +96,7 @@ func newAPI(cfg Config) *api {
 		automations:   automation.Files{Dir: cfg.AutomationsDir, Docs: cfg.AutomationDocs, Kinds: cfg.AutomationKinds},
 		automationsMu: automationsLock(cfg.AutomationsLock),
 		agents:        cfg.Agents,
+		scans:         cfg.NetworkScans,
 		dryRuns:       newLoginLimiter(time.Now, dryRunBurst, dryRunEvery),
 		// Only a release tag is pinned: dev builds have no release to install.
 		installVersion: releaseVersion(cfg.Version),
@@ -149,6 +150,7 @@ func (a *api) routes() http.Handler {
 	mux.Handle("POST /api/v1/network/hosts/{mac}/known", a.auth(a.markNetworkHost(store.HostKnown)))
 	mux.Handle("POST /api/v1/network/hosts/{mac}/ignore", a.auth(a.markNetworkHost(store.HostIgnored)))
 	mux.Handle("POST /api/v1/network/hosts/{mac}/unmark", a.auth(a.markNetworkHost(store.HostUnreviewed)))
+	mux.Handle("POST /api/v1/network/scan", a.auth(a.scanNetwork))
 	mux.Handle("GET /api/v1/events", a.auth(a.events))
 	mux.Handle("POST /api/v1/tokens", a.auth(a.createToken))
 	a.kubeRoutes(mux)
@@ -270,6 +272,8 @@ type api struct {
 	dryRuns *loginLimiter
 	// agents is Config.Agents; nil when device logs and terminals are not served.
 	agents *Agents
+	// scans is Config.NetworkScans; nil when scans cannot be asked for.
+	scans *NetworkScans
 	// installVersion is the --version install commands pin, or "" for none.
 	installVersion string
 	// version is the hub's build version, shown by the web UI.
@@ -591,7 +595,10 @@ func (a *api) events(w http.ResponseWriter, r *http.Request) {
 			}
 			// Clients get one message per host of a network discovery event.
 			bodies := []any{EventJSON{Type: ev.Type, Device: deviceJSON(ev.Device)}}
-			if ev.Hosts != nil {
+			switch {
+			case ev.Scan != nil:
+				bodies = []any{ev.Scan}
+			case ev.Hosts != nil:
 				bodies = bodies[:0]
 				for _, h := range ev.Hosts {
 					bodies = append(bodies, NetworkEventJSON{Type: ev.Type, Host: networkHostJSON(h, "")})

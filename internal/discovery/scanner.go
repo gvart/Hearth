@@ -48,6 +48,14 @@ const (
 	agentScanGrace   = 10 * time.Second
 )
 
+// ErrScanRunning is returned by Scan and ScanAs while another scan by the hub
+// is running: nothing is swept and nothing is audited.
+var ErrScanRunning = errors.New("a network scan is already running")
+
+// ErrNoSubnet is returned by Scan and ScanAs when there is nothing to sweep:
+// no subnet is configured and the hub has no private IPv4 address.
+var ErrNoSubnet = errors.New("no subnet to scan: the hub has no private IPv4 address")
+
 // ErrScanSkipped is returned by ScanFrom for a scan it did not attempt: the
 // device is unknown or its agent is not connected to this hub. Nothing is
 // sent and nothing is audited; the next scan tries again.
@@ -121,6 +129,16 @@ type Scanner struct {
 	// vendor names a MAC's vendor; nil on an agent (see Find), which leaves
 	// it to the hub.
 	vendor func(net.HardwareAddr) string
+
+	// running is held by the hub's own scan, scheduled or asked for, so
+	// that one runs at a time.
+	running sync.Mutex
+}
+
+// ScanSummary is what one scan found.
+type ScanSummary struct {
+	Hosts, New, Returned int
+	Duration             time.Duration
 }
 
 // New returns a scanner. Call Run to start scanning.
@@ -176,7 +194,12 @@ func (s *Scanner) Run(ctx context.Context) error {
 		var wg sync.WaitGroup
 		if len(s.cfg.Subnets) > 0 || s.cfg.Auto {
 			wg.Go(func() {
-				if err := s.Scan(ctx); err != nil && ctx.Err() == nil {
+				err := s.Scan(ctx)
+				switch {
+				case err == nil || ctx.Err() != nil:
+				case errors.Is(err, ErrScanRunning):
+					s.log.InfoContext(ctx, "network scan skipped", "err", err)
+				default:
 					s.log.WarnContext(ctx, "network scan failed", "err", err)
 				}
 			})
@@ -203,14 +226,34 @@ func (s *Scanner) Run(ctx context.Context) error {
 }
 
 // Scan runs one scan through policy (network.scan, one audit entry per
-// scan), records what it found and publishes the new and returned hosts.
+// scan), records what it found and publishes the new and returned hosts. It
+// fails with ErrScanRunning while another scan by the hub runs.
 func (s *Scanner) Scan(ctx context.Context) error {
+	_, err := s.scan(ctx, policy.ActorHub, actorID, s.cfg.Auto, nil)
+	return err
+}
+
+// ScanAs runs one scan as Scan does, asked for by an actor other than the
+// hub's schedule (actorKind, actorID: the audit entry's actor): of the
+// configured subnets or, when there are none, of the hub's own LANs.
+// accepted, if not nil, is called once policy has allowed the scan, before
+// anything is swept. It fails with ErrScanRunning while another scan by the
+// hub runs.
+func (s *Scanner) ScanAs(ctx context.Context, actorKind, actorID string, accepted func()) (ScanSummary, error) {
+	return s.scan(ctx, actorKind, actorID, s.cfg.Auto || len(s.cfg.Subnets) == 0, accepted)
+}
+
+func (s *Scanner) scan(ctx context.Context, actorKind, actorID string, auto bool, accepted func()) (ScanSummary, error) {
+	if !s.running.TryLock() {
+		return ScanSummary{}, ErrScanRunning
+	}
+	defer s.running.Unlock()
 	nets, err := s.localNets()
 	if err != nil {
-		return err
+		return ScanSummary{}, err
 	}
 	subnets := slices.Clone(s.cfg.Subnets)
-	if s.cfg.Auto {
+	if auto {
 		for _, p := range autoSubnets(nets) {
 			if !slices.Contains(subnets, p) {
 				subnets = append(subnets, p)
@@ -218,7 +261,7 @@ func (s *Scanner) Scan(ctx context.Context) error {
 		}
 	}
 	if len(subnets) == 0 {
-		return errors.New("no subnet to scan: the hub has no private IPv4 address")
+		return ScanSummary{}, ErrNoSubnet
 	}
 	names := make([]string, len(subnets))
 	for i, p := range subnets {
@@ -228,8 +271,9 @@ func (s *Scanner) Scan(ctx context.Context) error {
 	// filled in below are audited with the scan.
 	detail := map[string]any{"subnets": names}
 	var res store.ScanResult
+	var sum ScanSummary
 	err = s.cfg.Policy.Do(ctx, policy.Request{
-		ActorKind: policy.ActorHub,
+		ActorKind: actorKind,
 		ActorID:   actorID,
 		Action:    policy.NetworkScan,
 		Target:    strings.Join(names, ","),
@@ -237,6 +281,9 @@ func (s *Scanner) Scan(ctx context.Context) error {
 		// The counts filled in below are what this entry is for.
 		RecordOutcome: true,
 	}, func(ctx context.Context) error {
+		if accepted != nil {
+			accepted()
+		}
 		start := s.now()
 		hosts, err := s.find(ctx, subnets, nets)
 		if err != nil {
@@ -249,18 +296,19 @@ func (s *Scanner) Scan(ctx context.Context) error {
 		took := s.now().Sub(start)
 		detail["hosts"], detail["new"], detail["returned"] = len(hosts), len(res.New), len(res.Returned)
 		detail["duration_ms"] = took.Milliseconds()
-		s.log.InfoContext(ctx, "network scan", "subnets", names, "hosts", len(hosts),
+		sum = ScanSummary{Hosts: len(hosts), New: len(res.New), Returned: len(res.Returned), Duration: took}
+		s.log.InfoContext(ctx, "network scan", "actor", actorKind+"/"+actorID, "subnets", names, "hosts", len(hosts),
 			"new", len(res.New), "returned", len(res.Returned), "took", took.Round(time.Millisecond))
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("network scan: %w", err)
+		return ScanSummary{}, fmt.Errorf("network scan: %w", err)
 	}
 	if s.cfg.Events != nil {
 		s.cfg.Events.NetworkHosts(EventNew, res.New)
 		s.cfg.Events.NetworkHosts(EventReturned, res.Returned)
 	}
-	return nil
+	return sum, nil
 }
 
 // ScanFrom runs one scan of the subnets of device in From from its agent,
