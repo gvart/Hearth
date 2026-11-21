@@ -16,6 +16,7 @@ import { ClusterCASection } from './ClusterCA.tsx';
 import { Modal } from './Modal.tsx';
 import { Meter } from './Meter.tsx';
 import './ClusterPage.css';
+import { Tip } from './Tip.tsx';
 
 /** The members of the AP cluster, with their roles, and the role changes; the hub CA and new hubs. */
 export function ClusterPage() {
@@ -32,7 +33,9 @@ export function ClusterPage() {
     <main className="content">
       <div className="page-head">
         <div>
-          <h1>Cluster</h1>
+          <h1>
+            Cluster <Tip id="cluster" />
+          </h1>
           {data ? (
             <p className="muted">
               {members.length} member{members.length === 1 ? '' : 's'} · {data.storage_members ?? 0} storage · N=

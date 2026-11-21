@@ -2,7 +2,8 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { docsURL, integrationSummary, integrations } from '../src/integrations.ts';
+import { docsURL } from '../src/docs.ts';
+import { integrationSummary, integrations } from '../src/integrations.ts';
 
 const by = (list) => Object.fromEntries(list.map((i) => [i.id, i]));
 

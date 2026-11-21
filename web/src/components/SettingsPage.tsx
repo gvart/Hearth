@@ -14,6 +14,7 @@ import { useSession, useTlsInfo } from '../api/hooks.ts';
 import { formatDateTime } from '../format.ts';
 import { chooseTheme, themes, useTheme } from '../theme.ts';
 import { McpTokens } from './McpTokens.tsx';
+import { Tip } from './Tip.tsx';
 import { Modal } from './Modal.tsx';
 import './PanelsPage.css';
 import './SettingsPage.css';
@@ -34,7 +35,9 @@ export function SettingsPage({ section }: { section: SettingsSection }) {
     <main className="content">
       <div className="page-head">
         <div>
-          <h1>{title}</h1>
+          <h1>
+            {title} {section === 'policy' ? <Tip id="policy" /> : null}
+          </h1>
           <p className="muted">{lead}</p>
         </div>
       </div>
