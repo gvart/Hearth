@@ -3,6 +3,7 @@ import type { KubeActionRequest, KubeCluster, KubePod, KubeSnapshot, KubeState }
 import { useDevices, useKubeCluster, useKubeClusters, useRemoveKubeCluster } from '../api/hooks.ts';
 import { displayName, relativeTime } from '../format.ts';
 import { AddClusterDialog } from './AddClusterDialog.tsx';
+import { ConfirmDialog } from './ConfirmDialog.tsx';
 import { DeviceDrawer } from './DeviceDrawer.tsx';
 import { KubeActionDialog } from './KubeActionDialog.tsx';
 import { PodLogsDialog } from './PodLogsDialog.tsx';
@@ -151,6 +152,7 @@ export function KubernetesPage() {
 function ClusterView({ cluster }: { cluster: KubeCluster }) {
   const snap = useKubeCluster(cluster.id);
   const remove = useRemoveKubeCluster();
+  const [removing, setRemoving] = useState(false);
   const [tab, setTab] = useState<Tab>('pods');
   const [namespace, setNamespace] = useState('');
   const [logsOf, setLogsOf] = useState<KubePod>();
@@ -178,22 +180,33 @@ function ClusterView({ cluster }: { cluster: KubeCluster }) {
           type="button"
           disabled={remove.isPending}
           onClick={() => {
-            if (window.confirm(`Stop watching ${cluster.name} and forget its kubeconfig? The cluster itself is not touched.`)) {
-              remove.mutate(cluster.id);
-            }
+            setRemoving(true);
           }}
         >
           Remove
         </button>
       </div>
+      {removing ? (
+        <ConfirmDialog
+          title={`Remove ${cluster.name}`}
+          actionClass="safe"
+          confirmLabel="Remove cluster"
+          pendingLabel="Removing…"
+          pending={remove.isPending}
+          error={remove.isError ? remove.error.message : undefined}
+          onConfirm={() => {
+            remove.mutate(cluster.id);
+          }}
+          onClose={() => {
+            setRemoving(false);
+          }}
+        >
+          Hearth stops watching the cluster and forgets its kubeconfig. The cluster itself is not touched.
+        </ConfirmDialog>
+      ) : null}
       {cluster.state === 'error' && cluster.error ? (
         <div className="error-box" role="alert">
           Cannot reach the cluster: {cluster.error}
-        </div>
-      ) : null}
-      {remove.isError ? (
-        <div className="error-box" role="alert">
-          Could not remove: {remove.error.message}
         </div>
       ) : null}
 
