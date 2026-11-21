@@ -60,6 +60,47 @@ export function memberActions(m: ClusterMember, self: string): ClusterAction[] {
   return out;
 }
 
+/** One of the two roles on a member's card: held, allowed and not taken (open), or not allowed (off). */
+export interface RoleSlot {
+  role: ClusterRole;
+  state: 'held' | 'open' | 'off';
+  /** What holding it means here, or why it is not held. */
+  text: string;
+  /** Demote from a role it holds, promote to one it allows. The hub refuses what it must. */
+  action?: ClusterAction;
+}
+
+/** A member's two role slots, master first. */
+export function roleSlots(m: ClusterMember): RoleSlot[] {
+  return (['master', 'storage'] as const).map((role) => {
+    if (m.roles.includes(role)) {
+      const text =
+        role === 'master'
+          ? 'Serves the UI, the API and agents. Holds the CA key.'
+          : m.syncing
+            ? 'Copying its share of the store.'
+            : m.draining
+              ? 'Handing its rows to the other members.'
+              : 'Keeps a share of the store.';
+      return { role, state: 'held', text, action: { op: 'demote', role, label: `Demote from ${role}` } };
+    }
+    if (m.allowed_roles.includes(role)) {
+      return {
+        role,
+        state: 'open',
+        text: 'Allowed on this host, not taken.',
+        action: { op: 'promote', role, label: `Promote to ${role}` },
+      };
+    }
+    return { role, state: 'off', text: 'Not allowed by this host (--allow-roles).' };
+  });
+}
+
+/** How many members serve the UI, the API and agents. */
+export function masterCount(members: ClusterMember[]): number {
+  return members.filter((m) => m.roles.includes('master')).length;
+}
+
 /** What an action does, for its confirm dialog. */
 export function actionEffect(a: ClusterAction, member: string): string {
   switch (a.op) {

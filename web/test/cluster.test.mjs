@@ -8,9 +8,11 @@ import {
   caStepEffect,
   caSteps,
   hubProgress,
+  masterCount,
   memberActions,
   memberState,
   refusalMessage,
+  roleSlots,
   waitingFor,
 } from '../src/cluster.ts';
 
@@ -134,4 +136,36 @@ test('caRefusalMessage names the owner and keeps the hub reason otherwise', () =
   assert.match(msg, /https:\/\/hub-a:7443/);
   assert.equal(caRefusalMessage('rotation_failed', 'these members are down: hub-c', rotation()), 'these members are down: hub-c');
   assert.match(caRefusalMessage('isolated', 'x', undefined), /no other member/);
+});
+
+test('roleSlots: held roles can be demoted, allowed ones promoted, forbidden ones neither', () => {
+  const view = (m) => roleSlots(m).map((s) => [s.role, s.state, s.action?.op, s.action?.role]);
+  assert.deepEqual(view(member({})), [
+    ['master', 'held', 'demote', 'master'],
+    ['storage', 'held', 'demote', 'storage'],
+  ]);
+  assert.deepEqual(view(member({ roles: ['storage'] })), [
+    ['master', 'open', 'promote', 'master'],
+    ['storage', 'held', 'demote', 'storage'],
+  ]);
+  assert.deepEqual(view(member({ roles: ['storage'], allowed_roles: ['storage'] })), [
+    ['master', 'off', undefined, undefined],
+    ['storage', 'held', 'demote', 'storage'],
+  ]);
+  assert.deepEqual(view(member({ roles: ['node'], allowed_roles: [] })), [
+    ['master', 'off', undefined, undefined],
+    ['storage', 'off', undefined, undefined],
+  ]);
+});
+
+test('roleSlots says what a storage member is doing while it syncs or drains', () => {
+  const storage = (over) => roleSlots(member(over)).find((s) => s.role === 'storage').text;
+  assert.equal(storage({}), 'Keeps a share of the store.');
+  assert.equal(storage({ syncing: true }), 'Copying its share of the store.');
+  assert.equal(storage({ draining: true, progress: 40 }), 'Handing its rows to the other members.');
+});
+
+test('masterCount counts the members that serve the UI', () => {
+  assert.equal(masterCount([member({}), member({ id: 'c', roles: ['storage'] }), member({ id: 'd', roles: ['master'] })]), 2);
+  assert.equal(masterCount([]), 0);
 });

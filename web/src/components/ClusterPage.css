@@ -4,14 +4,6 @@
   color: var(--muted);
 }
 
-.cluster-progress {
-  display: block;
-  width: 6rem;
-  height: var(--dot);
-  margin-top: var(--space-1);
-  accent-color: var(--warn);
-}
-
 /* A member offers up to three actions: they wrap rather than widen the table. */
 .cluster-table .row-actions {
   white-space: normal;
@@ -90,12 +82,134 @@
 }
 
 @media (max-width: 640px) {
-  .cluster-wide {
-    display: none;
-  }
-
   .cluster-table th,
   .cluster-table td {
     padding: var(--space-3) var(--space-2);
   }
+}
+
+/* The cluster at a glance, then each member as a card with a slot for each of the two roles */
+.cluster-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(calc(var(--rail) * 0.9), 100%), 1fr));
+  gap: var(--line-1);
+  margin: 0 0 var(--space-5);
+  border: var(--line-1) solid var(--line);
+  background: var(--border);
+}
+
+.cluster-fact {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+}
+
+.cluster-fact dt {
+  color: var(--muted);
+  font-size: var(--type-11);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.cluster-fact dd {
+  margin: 0;
+}
+
+.cluster-fact-n {
+  font-family: var(--font-sans);
+  font-size: var(--type-28);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-flat);
+}
+
+.member-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(calc(var(--rail) * 1.6), 100%), 1fr));
+  gap: var(--space-5);
+  margin-bottom: var(--space-8);
+}
+
+.member-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.member-id {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.member-state {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.role-slots {
+  display: flex;
+  flex-direction: column;
+  border: var(--line-1) solid var(--border);
+  background: var(--bg);
+}
+
+.role-slot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--control-lg);
+  padding: var(--space-2) var(--space-3);
+}
+
+.role-slot + .role-slot {
+  border-top: var(--line-1) solid var(--border);
+}
+
+.role-text {
+  flex: 1;
+  min-width: 0;
+}
+
+/* A role a member holds is filled, one it may take is dashed, one its host forbids is struck out */
+.role-name {
+  flex: none;
+  width: calc(var(--space-16) + var(--space-4));
+  padding: var(--space-05) 0;
+  border: var(--line-1) solid var(--line);
+  font-size: var(--type-11);
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-label);
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.role-held .role-name {
+  background: var(--line);
+  color: var(--bg);
+}
+
+.role-open .role-name {
+  border-style: dashed;
+}
+
+.role-off {
+  color: var(--muted);
+}
+
+.role-off .role-name {
+  border-color: var(--border);
+  text-decoration: line-through;
+}
+
+.member-foot {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: auto;
+}
+
+.member-card .meter-label {
+  width: auto;
 }
