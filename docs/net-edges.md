@@ -6,7 +6,7 @@ description: See who each device talks to, from the device itself, without route
 An agent can report what its device sees of the network: the entries of its neighbour (ARP) table,
 and a summary of its established TCP connections. The hub turns each address into the enrolled
 device, the hub itself or the [discovered host](discovery.md) it belongs to, and shows them in the
-device's drawer under **Neighbors and connections**. No router, switch or conntrack access needed.
+device's page under **Neighbors and connections**. No router, switch or conntrack access needed.
 
 ## Turn it on, per device
 
@@ -49,14 +49,14 @@ refill them within a minute. The hub takes at most one report every 30 seconds f
 
 Open a device and scroll to **Neighbors and connections**. Each peer shows as a device, `hub` (an
 address of the hub's own interfaces) or a host network discovery found, or as unknown. The panel
-reads once when the drawer opens; **Refresh** reads again.
+reads once when the device's page opens; **Refresh** reads again.
 
 Every read is the policy action `device.net_edges` (class `read`) and is audited, as opening a log
 stream is. The API is `GET /api/v1/devices/{id}/net-edges`.
 
 ## The topology view
 
-**Network** in the top bar draws the edges of every device at once, as a graph:
+**Network**, on the Lab sheet, draws the edges of every device at once, as a graph:
 
 - **Nodes**: the devices whose agents report edges, the hub's host, the hosts network discovery
   found and, unless you untick **Unknown addresses**, addresses the hub knows nothing of (internet
@@ -67,7 +67,7 @@ stream is. The API is `GET /api/v1/devices/{id}/net-edges`.
 - **Neighbours**: a dashed, lighter line between a device and an entry of its neighbour table. Untick
   **Neighbours** to see only who talks to whom.
 
-Hover a node to bring out its own lines; click a device to open its drawer. A device whose agent
+Hover a node to bring out its own lines; click a device to open its page. A device whose agent
 does not report edges contributes none, even when it reported some before; it can still show up as
 the peer of a device that does.
 

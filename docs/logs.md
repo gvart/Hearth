@@ -36,7 +36,7 @@ not split per user) and to the Docker socket.
 
 ## In the UI
 
-The device drawer lists the allowed sources. An exact entry opens at once; a glob asks for the unit
+The device's page lists the allowed sources. An exact entry opens at once; a glob asks for the unit
 or container name. The viewer has:
 
 - **Follow**: keep the newest line in view.

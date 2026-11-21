@@ -22,11 +22,11 @@
 #     no prompt, step or audit entry.
 #   - curl and sha256sum are on the machine, and it can reach GitHub.
 #   - The server answers on port 6443 and the machine can reach it.
-#   - The cluster is adopted on the hub's Kubernetes page, so the hub can check
+#   - The cluster is adopted on the hub's Platforms page, so the hub can check
 #     the node and delete its Node object on a rollback.
 #   - Edit the vars below: the new device, the k3s server's address, the name
 #     the node registers with (its hostname, by default), the cluster's name on
-#     the Kubernetes page, the k3s version (use the server's) and the sha256 of
+#     the Platforms page, the k3s version (use the server's) and the sha256 of
 #     install.sh at that version. The two go together: when you change the
 #     version, download install.sh from the same tag and put its sha256 here:
 #       curl -sfL https://raw.githubusercontent.com/k3s-io/k3s/<version>/install.sh | sha256sum

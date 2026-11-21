@@ -33,7 +33,7 @@ reads a device's newest value from the master its agent streams to. Deleting the
 ## Prometheus
 
 If you already run Prometheus with node-exporter, the hub can read from it and draw device charts
-(CPU, memory, root disk usage over 1 hour, 24 hours or 7 days) in the device drawer. Hearth only reads; it never
+(CPU, memory, root disk usage over 1 hour, 24 hours or 7 days) on the device's page. Hearth only reads; it never
 writes to Prometheus or changes its scrape config.
 
 ## Configure

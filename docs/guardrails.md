@@ -153,8 +153,8 @@ imported channels). Anything invalid refuses the whole import and writes nothing
 never half applied. Every hub then applies the documents within seconds; a stored configuration whose
 policy or notify document does not parse is not applied, and the hub keeps the one in effect.
 
-The web UI edits the same documents, with the same checks: **Settings** shows the policy to anyone
-signed in and edits it, **Notifications** adds, edits and deletes channels, and **Runbooks** creates,
+The web UI edits the same documents, with the same checks: **Settings → Policy** shows the policy to
+anyone signed in and edits it, **Notifications** adds, edits and deletes channels, and **Runbooks** creates,
 edits and deletes runbook files, each with a check (and a plan, for a runbook) before saving. An
 automation can be deleted from its editor. Each save is `config.import` by `web`; saving the policy or
 a channel also asks for the admin password again (see
