@@ -60,15 +60,23 @@ func TestNetworkScanCommand(t *testing.T) {
 		want       string
 		wantErr    string
 	}{
-		{name: "prints the result", status: http.StatusAccepted, body: `{"status":"started"}`,
+		{
+			name: "prints the result", status: http.StatusAccepted, body: `{"status":"started"}`,
 			done: `{"type":"network.scan.done","hosts":14,"new":3,"returned":1,"duration_ms":2300}`,
-			want: "Found 14 hosts: 3 new, 1 back (2.3s)"},
-		{name: "a failed scan is an error", status: http.StatusAccepted, body: `{"status":"started"}`,
-			done: `{"type":"network.scan.done","error":"sweep: boom"}`, wantErr: "the scan failed: sweep: boom"},
-		{name: "a running scan is an error", status: http.StatusConflict,
-			body: `{"error":"a network scan is already running","code":"scan_running"}`, wantErr: "already running"},
-		{name: "a denied scan is an error", status: http.StatusForbidden,
-			body: `{"error":"denied by policy","code":"forbidden"}`, wantErr: "denied by policy"},
+			want: "Found 14 hosts: 3 new, 1 back (2.3s)",
+		},
+		{
+			name: "a failed scan is an error", status: http.StatusAccepted, body: `{"status":"started"}`,
+			done: `{"type":"network.scan.done","error":"sweep: boom"}`, wantErr: "the scan failed: sweep: boom",
+		},
+		{
+			name: "a running scan is an error", status: http.StatusConflict,
+			body: `{"error":"a network scan is already running","code":"scan_running"}`, wantErr: "already running",
+		},
+		{
+			name: "a denied scan is an error", status: http.StatusForbidden,
+			body: `{"error":"denied by policy","code":"forbidden"}`, wantErr: "denied by policy",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

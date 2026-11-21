@@ -94,18 +94,24 @@ func TestAPINetworkScan(t *testing.T) {
 		// wantDone is the event the scan ends with; nil if it never ran.
 		wantDone *NetworkScanJSON
 	}{
-		{name: "allowed", wantStatus: http.StatusAccepted,
-			wantDone: &NetworkScanJSON{Type: EventNetworkScanDone, Hosts: 14, New: 3, Returned: 1, DurationMS: 1500}},
-		{name: "fails after it started", after: errors.New("sweep: boom"), wantStatus: http.StatusAccepted,
-			wantDone: &NetworkScanJSON{Type: EventNetworkScanDone, Error: "sweep: boom"}},
+		{
+			name: "allowed", wantStatus: http.StatusAccepted,
+			wantDone: &NetworkScanJSON{Type: EventNetworkScanDone, Hosts: 14, New: 3, Returned: 1, DurationMS: 1500},
+		},
+		{
+			name: "fails after it started", after: errors.New("sweep: boom"), wantStatus: http.StatusAccepted,
+			wantDone: &NetworkScanJSON{Type: EventNetworkScanDone, Error: "sweep: boom"},
+		},
 		{name: "nothing to scan", before: discovery.ErrNoSubnet, wantStatus: http.StatusConflict, wantCode: "no_subnet"},
 		{name: "denied", before: policy.ErrDenied, wantStatus: http.StatusForbidden, wantCode: "forbidden"},
 		{name: "store down", before: errors.New("boom"), wantStatus: http.StatusInternalServerError, wantCode: "internal"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			sc := &fakeScanner{before: tt.before, after: tt.after, release: make(chan struct{}),
-				sum: discovery.ScanSummary{Hosts: 14, New: 3, Returned: 1, Duration: 1500 * time.Millisecond}}
+			sc := &fakeScanner{
+				before: tt.before, after: tt.after, release: make(chan struct{}),
+				sum: discovery.ScanSummary{Hosts: 14, New: 3, Returned: 1, Duration: 1500 * time.Millisecond},
+			}
 			close(sc.release)
 			f, cookie, events := scanFixture(t, sc)
 			resp := f.do(t, http.MethodPost, "/api/v1/network/scan", "", cookie)
