@@ -10,8 +10,8 @@ one Go binary.
 
 > 🚧 Pre-alpha, built in public. Try it with [Getting started](docs/getting-started.md); follow along via the devlog at [gvart.dev](https://gvart.dev).
 
-Documentation lives in [`docs/`](docs/) and is published as a site built from [`site/`](site/)
-(`task docs` to preview it).
+Documentation: **[gvart.dev/Hearth](https://gvart.dev/Hearth/)**. Its source lives in [`docs/`](docs/)
+and the site is built from [`site/`](site/) (`task docs` to preview it).
 
 ## Why
 
