@@ -3,14 +3,17 @@ internal/cluster/apnode.go
   s_87f1c7baee7d5a::t_0bcd67c4e32502 496-499,504-506
   s_87f1c7baee7d5a::t_a483664dfdd32a 787-788
   s_87f1c7baee7d5a::t_84051cefb308c9 198-204
+  s_87f1c7baee7d5a::t_56a9d181cdbe0f 228,500-502
 internal/cluster/apcakey.go
   s_87f1c7baee7d5a::t_927c62344397e1 72-79
   s_87f1c7baee7d5a::t_248f5b61cefa2c 161,163
+  s_87f1c7baee7d5a::t_96e7a8db74a599 162
 cmd/hearth/hub.go
   s_87f1c7baee7d5a::t_246c5b0166a520 383-384
 internal/cluster/apepoch_test.go
   s_87f1c7baee7d5a::t_ca25218fdc3633 96-102
   s_87f1c7baee7d5a::t_4946529ea6e03c 1-72,75-84,86-87,89-95,103-133
+  s_87f1c7baee7d5a::t_9f7fd39f99b774 73-74,85,88
 ---
 {
   "schema_version": "authorship/3.0.0",
