@@ -139,6 +139,9 @@ type Config struct {
 	// ClusterAdmin, in an AP cluster, promotes, demotes and removes members
 	// (the cluster page of the UI); nil elsewhere.
 	ClusterAdmin ClusterAdmin
+	// ClusterCA, in an AP cluster, shows and moves on the hub CA rotation
+	// and creates join tokens (the cluster page of the UI); nil elsewhere.
+	ClusterCA ClusterCA
 	// ConfigSealer seals the notify document, as `hearth config import`
 	// does; with ConfigKinds it enables the web UI's editors of the store's
 	// configuration documents (policy, notification channels, runbooks,

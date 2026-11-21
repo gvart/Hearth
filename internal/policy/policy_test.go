@@ -126,8 +126,15 @@ func TestEngineDo(t *testing.T) {
 			wantResult:   "actor kind not allowed",
 		},
 		{
-			name:         "web session cannot create a join token",
-			req:          Request{ActorKind: ActorWeb, ActorID: "192.0.2.1", Action: ClusterTokenCreate},
+			name:         "MCP client cannot create a join token",
+			req:          Request{ActorKind: ActorMCP, ActorID: "claude", Action: ClusterTokenCreate},
+			wantErr:      ErrDenied,
+			wantDecision: Deny,
+			wantResult:   "actor kind not allowed",
+		},
+		{
+			name:         "automation cannot rotate the hub CA",
+			req:          Request{ActorKind: ActorAutomation, ActorID: "nightly", Action: ClusterCARotate},
 			wantErr:      ErrDenied,
 			wantDecision: Deny,
 			wantResult:   "actor kind not allowed",

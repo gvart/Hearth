@@ -356,8 +356,10 @@ var rules = map[Action]rule{
 	// Entering the password again only proves who is at the session; the
 	// password decides, as at login.
 	AdminReauth: {class: Safe, actors: []string{ActorWeb}, fixed: true},
-	// Joining hands out the CA key: every step of it is dangerous.
-	ClusterTokenCreate: {class: Dangerous, actors: []string{ActorAdmin}},
+	// Joining hands out the CA key: every step of it is dangerous. The web
+	// UI's "Add hub" creates a token behind an admin session and the
+	// password again.
+	ClusterTokenCreate: {class: Dangerous, actors: []string{ActorAdmin, ActorWeb}},
 	ClusterJoin:        {class: Dangerous, actors: []string{ActorJoinToken}, fixed: true},
 	// A promotion moves the CA key or the rows: dangerous, and held or
 	// denied as the policy says.
@@ -368,10 +370,11 @@ var rules = map[Action]rule{
 	// Removal changes the quorum and locks a hub out for good.
 	ClusterRemove: {class: Dangerous, actors: []string{ActorAdmin, ActorWeb}},
 	// A rotation hands out a new CA key and, once finished, cuts off whatever
-	// still holds an old-CA certificate.
-	ClusterCARotate: {class: Dangerous, actors: []string{ActorAdmin}},
-	ClusterCAFinish: {class: Dangerous, actors: []string{ActorAdmin}},
-	ClusterCAAbort:  {class: Dangerous, actors: []string{ActorAdmin}},
+	// still holds an old-CA certificate. The web UI asks behind an admin
+	// session and the password again.
+	ClusterCARotate: {class: Dangerous, actors: []string{ActorAdmin, ActorWeb}},
+	ClusterCAFinish: {class: Dangerous, actors: []string{ActorAdmin, ActorWeb}},
+	ClusterCAAbort:  {class: Dangerous, actors: []string{ActorAdmin, ActorWeb}},
 	// A member fetching the new CA key proves itself with its pinned node
 	// certificate, in a protocol no operator could stop to approve.
 	ClusterCAFetchKey: {class: Dangerous, actors: []string{ActorHub}, fixed: true},

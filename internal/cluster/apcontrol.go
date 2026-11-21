@@ -11,6 +11,7 @@ import (
 	"net/http"
 
 	"github.com/gvart/hearth/internal/policy"
+	"github.com/gvart/hearth/internal/store"
 )
 
 // RoleChangeRequest is a promotion, demotion or removal the CLI on a
@@ -143,20 +144,78 @@ type caChangeReply struct {
 // req.Plan, has it decided by the master layer's policy engine (an isolated
 // master refuses it) and audited as the admin req.Actor.
 func (n *APNode) ChangeCA(ctx context.Context, req CARequest) (CAResult, error) {
+	return n.changeCA(ctx, req, CAActor{Kind: policy.ActorAdmin, ID: req.Actor}, false)
+}
+
+// CAActor is who asks for a hub CA rotation step other than the admin on a
+// master's host: the web UI.
+type CAActor struct {
+	// Kind and ID name the actor, as policy decides and audits it.
+	Kind, ID string
+	// Precheck is the request's policy.Request.Precheck: the web UI's
+	// re-authentication.
+	Precheck func(context.Context) error
+}
+
+// ChangeCAAs runs the step req.Op on this master for actor, under the
+// rules of ChangeCA (the owner, a takeover while the owner is not alive, an
+// isolated master refusing), with req.Plan and req.DryRun ignored. A step
+// its plan refuses, such as a finish on a master that does not own the
+// rotation, is a denial that policy audits with the refusal as its reason,
+// once actor.Precheck passes: the error matches policy.ErrDenied and the
+// refusal.
+func (n *APNode) ChangeCAAs(ctx context.Context, req CARequest, actor CAActor) (CAResult, error) {
+	req.Plan, req.DryRun, req.Actor = false, false, actor.ID
+	return n.changeCA(ctx, req, actor, true)
+}
+
+// caRefusal is a hub CA rotation step its plan refused, as a policy denial.
+type caRefusal struct{ err error }
+
+func (r caRefusal) Error() string   { return r.err.Error() }
+func (r caRefusal) Unwrap() []error { return []error{r.err, policy.ErrDenied} }
+
+// caKinds are the refusals of a hub CA rotation step, by kind.
+var caKinds = map[string]error{
+	"rotation_owner":       ErrRotationOwner,
+	"no_rotation":          ErrNoRotation,
+	"ca_rotation_active":   store.ErrCARotationActive,
+	"ca_rotation_conflict": store.ErrCARotationConflict,
+	"unpinned_certs":       ErrUnpinnedCerts,
+	"old_ca_holders":       ErrOldCAHolders,
+	"not_master":           ErrNotMasterHere,
+}
+
+// CAErrorKind is the kind of a refusal of a hub CA rotation step
+// ("rotation_owner", "old_ca_holders", ...), or "" for any other error.
+func CAErrorKind(err error) string {
+	for k, target := range caKinds {
+		if errors.Is(err, target) {
+			return k
+		}
+	}
+	return ""
+}
+
+// changeCA plans req and runs it as actor. With auditRefusals, a step the
+// plan refuses is denied by policy, after actor.Precheck, instead of
+// refused before policy.
+func (n *APNode) changeCA(ctx context.Context, req CARequest, actor CAActor, auditRefusals bool) (CAResult, error) {
 	pol := n.caPolicy.Load()
 	if pol == nil || !n.IsMaster() {
 		return CAResult{}, ErrNotMasterHere
 	}
 	var (
-		res  CAResult
-		preq policy.Request
-		do   func(context.Context) error
+		res     CAResult
+		preq    policy.Request
+		do      func(context.Context) error
+		planErr error
 	)
 	switch req.Op {
 	case CAOpRotate:
 		plan, err := n.RotateCA(ctx, RotateOptions{AcceptUnpinned: req.AcceptUnpinned, DryRun: true})
-		res.Rotate = &plan
-		if err != nil || req.Plan {
+		res.Rotate, planErr = &plan, err
+		if (err != nil && !auditRefusals) || req.Plan {
 			return res, err
 		}
 		preq = policy.Request{Action: policy.ClusterCARotate, Target: "hub CA", Detail: map[string]any{
@@ -169,8 +228,8 @@ func (n *APNode) ChangeCA(ctx context.Context, req CARequest) (CAResult, error) 
 		}
 	case CAOpFinish:
 		plan, err := n.FinishCA(ctx, FinishOptions{Force: req.Force, DryRun: true})
-		res.Finish = &plan
-		if err != nil || req.Plan {
+		res.Finish, planErr = &plan, err
+		if (err != nil && !auditRefusals) || req.Plan {
 			return res, err
 		}
 		preq = policy.Request{Action: policy.ClusterCAFinish, Target: "hub CA " + plan.NewCAFP, Detail: map[string]any{
@@ -183,8 +242,8 @@ func (n *APNode) ChangeCA(ctx context.Context, req CARequest) (CAResult, error) 
 		}
 	case CAOpAbort:
 		plan, err := n.AbortCA(ctx, AbortOptions{DryRun: true})
-		res.Abort = &plan
-		if err != nil || req.Plan {
+		res.Abort, planErr = &plan, err
+		if (err != nil && !auditRefusals) || req.Plan {
 			return res, err
 		}
 		preq = policy.Request{Action: policy.ClusterCAAbort, Target: "hub CA " + plan.NewCAFP, Detail: map[string]any{
@@ -198,8 +257,23 @@ func (n *APNode) ChangeCA(ctx context.Context, req CARequest) (CAResult, error) 
 	default:
 		return res, fmt.Errorf("hub CA rotation: no step %q: want rotate, finish or abort", req.Op)
 	}
-	preq.ActorKind, preq.ActorID, preq.DryRun = policy.ActorAdmin, req.Actor, req.DryRun
+	preq.ActorKind, preq.ActorID, preq.DryRun, preq.Precheck = actor.Kind, actor.ID, req.DryRun, actor.Precheck
+	if planErr != nil {
+		// Refused by its plan: denied once the precheck passes, never run.
+		preq.Precheck = func(ctx context.Context) error {
+			if actor.Precheck != nil {
+				if err := actor.Precheck(ctx); err != nil {
+					return err
+				}
+			}
+			return caRefusal{planErr}
+		}
+		do = func(context.Context) error { return planErr }
+	}
 	if err := pol.Do(ctx, preq, do); err != nil {
+		if r := (caRefusal{}); errors.As(err, &r) {
+			return res, r // its own words, without the denial's prefix
+		}
 		return res, err
 	}
 	if req.DryRun {
