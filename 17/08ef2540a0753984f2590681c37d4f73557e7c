@@ -5,6 +5,7 @@ cmd/hearth/cluster.go
 internal/cluster/apnode.go
   s_87f1c7baee7d5a::t_4386d8727eca2e 752
   s_87f1c7baee7d5a::t_a28b57f6f5a3f1 98-101,125-127,227-228,271-274,288-296,308-317,583-588,751,753-754,756
+  s_87f1c7baee7d5a::t_9ca115a834b8e0 307
 internal/cluster/promote_test.go
   s_87f1c7baee7d5a::t_fa7239008a7a42 40-43
   s_87f1c7baee7d5a::t_f581c514bb971b 150,163
@@ -37,6 +38,7 @@ internal/store/store.go
 internal/cluster/membership.go
   s_87f1c7baee7d5a::t_38b8ec904a451b 70-75,162-164,334-335,398-400,563-564,865-872
   s_87f1c7baee7d5a::t_8873faf93f7c9f 561-562
+  s_87f1c7baee7d5a::t_9ca115a834b8e0 583
 internal/cluster/apschema_test.go
   s_87f1c7baee7d5a::t_c10b6ea7e406e0 1-85,87-117
   s_87f1c7baee7d5a::t_88ff3a73b530db 86
