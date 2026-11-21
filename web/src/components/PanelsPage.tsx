@@ -8,9 +8,10 @@ import {
   useRevokePanelLink,
   useSavePanel,
 } from '../api/hooks.ts';
-import { displayName, formatDateTime } from '../format.ts';
+import { displayName, formatDateTime, statusLabel } from '../format.ts';
 import { addDevice, linkExpiries, moveWidget, restartServices, shareURL, toggleRestart, toInput } from '../panels.ts';
 import { Command } from './AddDeviceDialog.tsx';
+import { ConfirmDialog } from './ConfirmDialog.tsx';
 import { DashboardTokens } from './DashboardTokens.tsx';
 import { Modal } from './Modal.tsx';
 import { StatusDot } from './StatusDot.tsx';
@@ -118,6 +119,8 @@ function PanelCard({
   const del = useDeletePanel();
   const revoke = useRevokePanelLink();
   const active = panel.links.filter((l) => l.status === 'active');
+  const [deleting, setDeleting] = useState(false);
+  const buttons = panel.widgets.reduce((n, w) => n + w.actions.length, 0);
 
   return (
     <section className="panel-card" aria-labelledby={`panel-${panel.id}`}>
@@ -135,9 +138,7 @@ function PanelCard({
             type="button"
             disabled={del.isPending}
             onClick={() => {
-              if (window.confirm(`Delete the panel "${panel.name}" and every link to it?`)) {
-                del.mutate(panel.id);
-              }
+              setDeleting(true);
             }}
           >
             Delete
@@ -147,22 +148,32 @@ function PanelCard({
       {panel.widgets.length === 0 ? (
         <p className="muted small">No devices yet.</p>
       ) : (
-        <ul className="panel-widgets">
-          {panel.widgets.map((w) => {
-            const d = devices.get(w.entity);
-            return (
-              <li key={w.id}>
-                <StatusDot status={d?.status ?? 'unknown'} />
-                <span>{d ? displayName(d) : w.entity}</span>
-                {w.actions.map((a) => (
-                  <span key={a.id} className="pill pill-muted mono">
-                    restart {a.service}
+        <>
+          <div className="panel-preview" role="img" aria-label={`What a guest sees on ${panel.name}`}>
+            {panel.widgets.map((w) => {
+              const d = devices.get(w.entity);
+              const status = d?.status ?? 'unknown';
+              return (
+                <div key={w.id} className={status === 'online' ? 'mini-tile' : 'mini-tile mini-tile-off'}>
+                  <span className="mini-tile-head">
+                    <StatusDot status={status} />
+                    <span className="name">{d ? displayName(d) : w.entity}</span>
                   </span>
-                ))}
-              </li>
-            );
-          })}
-        </ul>
+                  <span className="muted small">{statusLabel(status)}</span>
+                  {w.actions.map((a) => (
+                    <span key={a.id} className="mini-btn">
+                      Restart {a.service}
+                    </span>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+          <p className="muted small">
+            What a guest sees: {panel.widgets.length} device{panel.widgets.length === 1 ? '' : 's'}
+            {buttons > 0 ? ` and ${String(buttons)} button${buttons === 1 ? '' : 's'}` : ', status only'}.
+          </p>
+        </>
       )}
       <h3 className="panel-links-head">
         Share links <span className="muted small">({active.length} active)</span>
@@ -198,6 +209,25 @@ function PanelCard({
         <p className="error" role="alert">
           {(del.error ?? revoke.error)?.message}
         </p>
+      ) : null}
+      {deleting ? (
+        <ConfirmDialog
+          title={`Delete ${panel.name}`}
+          actionClass="safe"
+          confirmLabel="Delete panel"
+          pendingLabel="Deleting…"
+          pending={del.isPending}
+          error={del.isError ? del.error.message : undefined}
+          onConfirm={() => {
+            del.mutate(panel.id);
+          }}
+          onClose={() => {
+            setDeleting(false);
+          }}
+        >
+          The panel and every share link to it stop working at once
+          {active.length > 0 ? ` (${String(active.length)} active)` : ''}. The devices on it are not touched.
+        </ConfirmDialog>
       ) : null}
     </section>
   );
