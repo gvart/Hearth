@@ -85,6 +85,11 @@ pre,
   transition: background var(--duration-fast), border-color var(--duration-fast);
 }
 
+/* A link that looks like a button takes the button's look whole */
+a.btn {
+  text-decoration: none;
+}
+
 .btn:hover {
   background: var(--surface-2);
 }

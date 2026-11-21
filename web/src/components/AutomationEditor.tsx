@@ -24,6 +24,7 @@ import {
 } from '../automations/model.ts';
 import { mayEdit, savedNotice } from '../automations/session.ts';
 import { AutomationRuns, DeleteAutomationButton } from './AutomationRuns.tsx';
+import { Modal } from './Modal.tsx';
 
 const listRoute = '#/automations';
 
@@ -82,6 +83,7 @@ function Editor({ id, file, initial, revision: initialRevision, problems = [] }:
   const [savedNote, setSavedNote] = useState('');
   const [loadProblems, setLoadProblems] = useState(problems);
   const [dryRunResult, setDryRunResult] = useState<AutomationDryRun | null>(null);
+  const [leaving, setLeaving] = useState(false);
   const save = useSaveAutomation();
   const dryRun = useDryRunAutomation();
   const read = useMemo(() => readAutomation(source), [source]);
@@ -175,8 +177,9 @@ function Editor({ id, file, initial, revision: initialRevision, problems = [] }:
             className="muted small"
             href={listRoute}
             onClick={(e) => {
-              if (dirty && !window.confirm('Leave without saving your changes?')) {
+              if (dirty) {
                 e.preventDefault();
+                setLeaving(true);
               }
             }}
           >
@@ -272,6 +275,32 @@ function Editor({ id, file, initial, revision: initialRevision, problems = [] }:
         )}
       </fieldset>
       {id !== undefined ? <AutomationRuns id={id} /> : null}
+      {leaving ? (
+        <Modal
+          className="dialog"
+          labelledBy="leave-title"
+          onClose={() => {
+            setLeaving(false);
+          }}
+        >
+          <h2 id="leave-title">Leave without saving?</h2>
+          <p>Your changes to {id ?? 'the new automation'} are not saved and will be lost.</p>
+          <div className="form-actions">
+            <button
+              className="btn btn-ghost"
+              type="button"
+              onClick={() => {
+                setLeaving(false);
+              }}
+            >
+              Keep editing
+            </button>
+            <a className="btn btn-danger" href={listRoute}>
+              Leave
+            </a>
+          </div>
+        </Modal>
+      ) : null}
     </main>
   );
 }

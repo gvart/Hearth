@@ -11,6 +11,7 @@ import {
 } from '../api/proxmox.ts';
 import { formatBytes } from '../format.ts';
 import { AddProxmoxDialog } from './AddProxmoxDialog.tsx';
+import { ConfirmDialog } from './ConfirmDialog.tsx';
 import { ProxmoxActionDialog } from './ProxmoxActionDialog.tsx';
 import './ProxmoxPage.css';
 
@@ -179,6 +180,7 @@ export function ProxmoxPage() {
 function ServerView({ server }: { server: ProxmoxServer }) {
   const snap = useProxmoxServer(server.id);
   const remove = useRemoveProxmoxServer();
+  const [removing, setRemoving] = useState(false);
   const [tab, setTab] = useState<Tab>('guests');
   const [action, setAction] = useState<{ action: ProxmoxActionName; guest: ProxmoxGuest }>();
   const data = snap.data;
@@ -202,22 +204,33 @@ function ServerView({ server }: { server: ProxmoxServer }) {
           type="button"
           disabled={remove.isPending}
           onClick={() => {
-            if (window.confirm(`Stop reading ${server.name} and forget its API token? The server itself is not touched.`)) {
-              remove.mutate(server.id);
-            }
+            setRemoving(true);
           }}
         >
           Remove
         </button>
       </div>
+      {removing ? (
+        <ConfirmDialog
+          title={`Remove ${server.name}`}
+          actionClass="safe"
+          confirmLabel="Remove server"
+          pendingLabel="Removing…"
+          pending={remove.isPending}
+          error={remove.isError ? remove.error.message : undefined}
+          onConfirm={() => {
+            remove.mutate(server.id);
+          }}
+          onClose={() => {
+            setRemoving(false);
+          }}
+        >
+          Hearth stops reading the server and forgets its API token. The server itself is not touched.
+        </ConfirmDialog>
+      ) : null}
       {server.state === 'unavailable' ? (
         <div className="error-box" role="alert">
           Cannot read this server: {server.error || 'no answer'}. Hearth keeps trying.
-        </div>
-      ) : null}
-      {remove.isError ? (
-        <div className="error-box" role="alert">
-          Could not remove: {remove.error.message}
         </div>
       ) : null}
 
