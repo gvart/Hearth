@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react';
 import type { KubeActionRequest, KubeCluster, KubePod, KubeSnapshot, KubeState } from '../api/client.ts';
 import { useDevices, useKubeCluster, useKubeClusters, useRemoveKubeCluster } from '../api/hooks.ts';
 import { displayName, relativeTime } from '../format.ts';
+import { deviceHash } from '../nav.ts';
 import { AddClusterDialog } from './AddClusterDialog.tsx';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
-import { DeviceDrawer } from './DeviceDrawer.tsx';
 import { KubeActionDialog } from './KubeActionDialog.tsx';
 import { PodLogsDialog } from './PodLogsDialog.tsx';
 
@@ -313,9 +313,7 @@ function RowAction({ label, title, onClick }: { label: string; title: string; on
 function ClusterTab({ tab, data, namespace, onLogs, onAction }: TabProps) {
   const now = useNow(10_000);
   const devices = useDevices();
-  const [deviceId, setDeviceId] = useState<string>();
   const inNs = <T extends { namespace: string }>(xs: T[]) => (namespace ? xs.filter((x) => x.namespace === namespace) : xs);
-  const device = devices.data?.find((d) => d.id === deviceId);
 
   switch (tab) {
     case 'pods': {
@@ -423,15 +421,7 @@ function ClusterTab({ tab, data, namespace, onLogs, onAction }: TabProps) {
                       <td className="mono">{n.addresses.join(', ') || '—'}</td>
                       <td>
                         {d ? (
-                          <button
-                            type="button"
-                            className="link"
-                            onClick={() => {
-                              setDeviceId(d.id);
-                            }}
-                          >
-                            {displayName(d)}
-                          </button>
+                          <a href={deviceHash(d.id)}>{displayName(d)}</a>
                         ) : (
                           <span className="muted">—</span>
                         )}
@@ -458,14 +448,6 @@ function ClusterTab({ tab, data, namespace, onLogs, onAction }: TabProps) {
               </tbody>
             </table>
           </div>
-          {device ? (
-            <DeviceDrawer
-              device={device}
-              onClose={() => {
-                setDeviceId(undefined);
-              }}
-            />
-          ) : null}
         </>
       );
     case 'workloads': {

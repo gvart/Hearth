@@ -92,7 +92,7 @@ export function useTopology() {
 
 /**
  * The device's edges. Every read is audited on the hub, so this never polls
- * or refetches on focus: it reads once per drawer opening, and on refetch().
+ * or refetches on focus: it reads once per opening of the device page, and on refetch().
  */
 export function useNetEdges(device: string) {
   return useQuery({
