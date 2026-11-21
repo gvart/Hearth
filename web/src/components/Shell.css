@@ -330,3 +330,34 @@
     padding-bottom: calc(var(--bar) + var(--control-lg) + var(--space-4) + env(safe-area-inset-bottom));
   }
 }
+
+/* Each sheet has its ink: Lab is live (cyan), Automate is automation (violet), Activity is what waits
+   (yellow), Settings stays neutral. It marks the sheet's number and rules off the page title. */
+.sheet-no-lab {
+  color: var(--online);
+}
+
+.sheet-no-automate {
+  color: var(--violet);
+}
+
+.sheet-no-activity {
+  color: var(--warn);
+}
+
+.shell-main .page-head {
+  padding-bottom: var(--space-3);
+  border-bottom: var(--line-2) solid var(--muted);
+}
+
+.sheet-lab .shell-main .page-head {
+  border-bottom-color: var(--online);
+}
+
+.sheet-automate .shell-main .page-head {
+  border-bottom-color: var(--violet);
+}
+
+.sheet-activity .shell-main .page-head {
+  border-bottom-color: var(--warn);
+}

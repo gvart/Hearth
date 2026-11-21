@@ -65,7 +65,7 @@ export function Shell() {
   const shown = pagesOf(sheet, { cluster: apCluster, current: page });
 
   return (
-    <div className="app">
+    <div className={`app sheet-${sheet.id}`}>
       <header className="topbar">
         <a className="brand" href="#/">
           <Logo size={28} />
@@ -95,7 +95,7 @@ export function Shell() {
           {sheets.map((s) => (
             <Fragment key={s.id}>
               <a className="sheet-tab" href={sheetHash(s)} aria-current={s.id === sheet.id ? 'true' : undefined}>
-                <span className="sheet-no">{s.no}</span>
+                <span className={`sheet-no sheet-no-${s.id}`}>{s.no}</span>
                 {s.label}
                 {s.id === 'activity' && s.id !== sheet.id ? <Waiting count={waiting} /> : null}
               </a>
@@ -158,7 +158,7 @@ export function Shell() {
         <nav className="tabbar" aria-label="Sections">
           {sheets.map((s) => (
             <a key={s.id} className="sheet-tab" href={sheetHash(s)} aria-current={s.id === sheet.id ? 'true' : undefined}>
-              <span className="sheet-no">{s.no}</span>
+              <span className={`sheet-no sheet-no-${s.id}`}>{s.no}</span>
               {s.label}
               {s.id === 'activity' ? <Waiting count={waiting} /> : null}
             </a>
