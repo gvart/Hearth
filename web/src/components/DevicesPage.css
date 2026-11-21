@@ -27,6 +27,7 @@
   color: var(--text);
   font: inherit;
   text-align: left;
+  text-decoration: none;
   cursor: pointer;
 }
 
@@ -149,7 +150,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* In the drawer's disk table the meter has no label of its own: the row names the disk */
+/* In the device page's disk table the meter has no label of its own: the row names the disk */
 .mini .disk-use {
   min-width: calc(var(--space-16) * 2);
   padding-left: var(--space-4);
@@ -163,4 +164,55 @@
   display: block;
   color: var(--muted);
   font-size: var(--type-11);
+}
+
+/* A device's own page: cards on a grid, the wide ones (charts, tables) across it */
+.back-link {
+  display: inline-block;
+  margin-bottom: var(--space-3);
+  color: var(--muted);
+  font-size: var(--type-13);
+  text-decoration: none;
+}
+
+.back-link:hover {
+  color: var(--text);
+}
+
+.device-page .page-head {
+  align-items: flex-start;
+}
+
+.device-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(calc(var(--rail) * 1.5), 100%), 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.device-grid .panel-card {
+  min-width: 0;
+}
+
+.card-wide {
+  grid-column: 1 / -1;
+}
+
+/* A card named by a small label, not a title: the card's content is the subject */
+.panel-card .card-label {
+  margin: 0;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--type-11);
+  font-weight: var(--weight-regular);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.panel-card h3.card-label {
+  margin-top: var(--space-3);
+}
+
+.device-grid .mini {
+  width: 100%;
 }

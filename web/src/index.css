@@ -596,7 +596,7 @@ table {
   max-width: var(--measure);
 }
 
-/* Dialogs and the drawer are native <dialog>s */
+/* Dialogs are native <dialog>s */
 dialog {
   padding: 0;
   border: var(--line-1) solid var(--border);
@@ -632,8 +632,7 @@ dialog::backdrop {
   }
 }
 
-.dialog-head,
-.drawer-head {
+.dialog-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -734,43 +733,11 @@ dialog::backdrop {
   }
 }
 
-/* Drawer: a dialog pinned to the right edge */
-.drawer {
-  width: min(100vw, var(--drawer));
-  max-width: 100vw;
-  height: 100dvh;
-  max-height: 100dvh;
-  margin: 0 0 0 auto;
-  border-width: 0 0 0 var(--line-1);
-  border-radius: 0;
-}
-
-.drawer[open] {
-  animation: slide var(--duration-base) ease-out;
-}
-
-@keyframes slide {
-  from {
-    transform: translateX(var(--space-8));
-    opacity: 0;
-  }
-}
-
-.drawer .dialog-body {
-  gap: var(--space-6);
-}
-
 .status-line {
   display: flex;
   align-items: center;
   gap: var(--space-1);
   margin-top: var(--space-1);
-}
-
-.drawer-section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
 }
 
 .kv {
@@ -1040,7 +1007,7 @@ dialog::backdrop {
   }
 }
 
-/* On phones the CPU trend takes the place of last seen, which the drawer shows. */
+/* On phones the CPU trend takes the place of last seen, which the device's page shows. */
 @media (max-width: 640px) {
   .spark[data-metric='memory'],
   .devices:has(.spark-col) th:nth-child(4),
