@@ -29,7 +29,7 @@ func TestHashPassword(t *testing.T) {
 	if ok, err := verifyPassword(h, "correct horse"); err != nil || !ok {
 		t.Fatalf("default hash does not verify: %v %v", ok, err)
 	}
-	// One lane, so hashing cannot crowd Raft off a single-core hub (#94), at no
+	// One lane, so hashing cannot crowd the cluster traffic off a single-core hub (#94), at no
 	// less than OWASP's argon2id minimum (m=19 MiB, t=2).
 	if !strings.Contains(h, "$m=65536,t=3,p=1$") {
 		t.Fatalf("default parameters changed: %q", h)

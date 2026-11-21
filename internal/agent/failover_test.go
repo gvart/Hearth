@@ -16,7 +16,7 @@ import (
 )
 
 // cluster is the leadership view every fake hub shares: one leader URL and
-// every hub URL, as Raft would report them.
+// every hub URL, as the cluster would report them.
 type cluster struct {
 	mu     sync.Mutex
 	leader string

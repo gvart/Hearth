@@ -74,7 +74,7 @@ func WithOrigin(id string) Option {
 
 // WithApplier makes the store route every write through the Applier returned
 // by newApplier. newApplier is called once, after migrations, with the opened
-// store, so the Applier it builds can call s.ApplyLocal, Snapshot and Restore.
+// store, so the Applier it builds can call s.ApplyLocal.
 func WithApplier(newApplier func(s *Store) Applier) Option {
 	return func(c *openConfig) { c.newApplier = newApplier }
 }

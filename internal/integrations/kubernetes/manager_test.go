@@ -314,7 +314,7 @@ func TestManagerLogs(t *testing.T) {
 	}
 }
 
-// A cluster added through another hub of a Raft cluster reaches this hub's
+// A cluster added through another hub of the hub cluster reaches this hub's
 // store by replication; the manager picks it up on its next sync.
 func TestManagerFollowsTheStore(t *testing.T) {
 	f := newFixture(t)
