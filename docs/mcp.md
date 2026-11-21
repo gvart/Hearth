@@ -22,7 +22,7 @@ hearth mcp token revoke claude              # refused from its next request
 The token is printed once; the hub stores only its SHA-256 hash. Its name identifies the client in
 policy and the audit log, and is never reused, even after a revocation.
 
-The web UI does the same in **Settings → MCP tokens**: **New token** shows the token once, with the
+The web UI does the same in **Settings → Access → MCP tokens**: **New token** shows the token once, with the
 `claude mcp add` command for it, and **Revoke** cuts a client off. Both ask for the admin password
 again (see [security](security.md#sensitive-actions-ask-for-the-password-again)) and go through
 policy as `mcp.token.create` (dangerous) and `mcp.token.revoke` (safe) by `web`.

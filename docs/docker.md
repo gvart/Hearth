@@ -39,7 +39,7 @@ hearth agent run --allow-docker --docker-socket unix:///home/me/.colima/default/
 The agent's user must be able to open the socket: in the `docker` group for Docker, or the user who
 runs rootless Podman. Access to the Docker socket is as much as root on the host, which is why the
 agent asks the engine for a few things only (below), and why the flag is off by default. A missing
-socket, or one nobody listens on, shows as an error in the drawer that names the paths tried.
+socket, or one nobody listens on, shows as an error on the device's page that names the paths tried.
 
 ## What the hub can do
 
@@ -71,9 +71,9 @@ and starting are `safe`, as a service restart is; hold them for approval with a 
 
 ## Nothing kept on the hub
 
-The hub asks the agent when you open the drawer, press **Refresh** or take an action, and keeps
+The hub asks the agent when you open the device's page, press **Refresh** or take an action, and keeps
 nothing: container state never goes into the replicated store, and an agent with `--allow-docker`
-holds no connection to the engine between requests. The drawer never polls.
+holds no connection to the engine between requests. The page never polls.
 
 The API, behind an admin session:
 
