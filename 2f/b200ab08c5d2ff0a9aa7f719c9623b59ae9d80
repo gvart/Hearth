@@ -1,0 +1,31 @@
+internal/cluster/antientropy.go
+  s_87f1c7baee7d5a::t_8a6b7a4a1a841a 231,240-242
+  s_87f1c7baee7d5a::t_442690b491902f 243-244
+internal/cluster/membership.go
+  s_87f1c7baee7d5a::t_d0d047a05cb1e5 139-141,433,537,670,690,965-971
+  s_87f1c7baee7d5a::t_506dcebf523174 972
+internal/cluster/apcarotation_test.go
+  s_87f1c7baee7d5a::t_df5d053892ac0a 335-375
+  s_87f1c7baee7d5a::t_8365ddd64076bb 376
+internal/cluster/carotation.go
+  s_87f1c7baee7d5a::t_f4842248fb0870 56-58
+internal/cluster/apcarotation.go
+  s_87f1c7baee7d5a::t_8a6b7a4a1a841a 189-231,244-246
+  s_87f1c7baee7d5a::t_f4842248fb0870 846-849,866-868,871-880
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2fb200ab08c5d2ff0a9aa7f719c9623b59ae9d80",
+  "prompts": {},
+  "sessions": {
+    "s_87f1c7baee7d5a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "45cc2cdf-3130-4caa-8cb4-8cb365d2150d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
