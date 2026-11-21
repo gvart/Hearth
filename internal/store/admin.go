@@ -62,17 +62,33 @@ func (r Admin) CreateSession(ctx context.Context, secret string, now, expiresAt 
 // ErrNotFound or ErrSessionExpired otherwise.
 func (r Admin) CheckSession(ctx context.Context, secret string, now time.Time) (time.Time, error) {
 	h := hashSecret(secret)
-	versioned, err := isVersioned(ctx, r.s.db)
-	if err != nil {
-		return time.Time{}, fmt.Errorf("check session: %w", err)
-	}
 	var expiresAt int64
-	err = r.s.queryRowKey(ctx, keyString(h[:]), `SELECT expires_at FROM sessions WHERE hash = ?`+liveOnly(versioned), h[:]).Scan(&expiresAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return time.Time{}, fmt.Errorf("check session: %w", ErrNotFound)
-	}
-	if err != nil {
-		return time.Time{}, fmt.Errorf("check session: %w", err)
+	if r.s.shards != nil {
+		// A session is checked on every request: one a replica missed
+		// (written while it was down) must not sign its user out.
+		vals, ok, err := r.s.queryRowNewest(ctx, "sessions", keyString(h[:]),
+			`SELECT expires_at, _deleted`+r.s.hidden("sessions")+` FROM sessions WHERE hash = ?`, h[:])
+		if err != nil {
+			return time.Time{}, fmt.Errorf("check session: %w", err)
+		}
+		if !ok || len(vals) != 2 || vals[1] != int64(0) {
+			return time.Time{}, fmt.Errorf("check session: %w", ErrNotFound)
+		}
+		if expiresAt, ok = vals[0].(int64); !ok {
+			return time.Time{}, fmt.Errorf("check session: expires_at is %T", vals[0])
+		}
+	} else {
+		versioned, err := isVersioned(ctx, r.s.db)
+		if err != nil {
+			return time.Time{}, fmt.Errorf("check session: %w", err)
+		}
+		err = r.s.db.QueryRowContext(ctx, `SELECT expires_at FROM sessions WHERE hash = ?`+liveOnly(versioned), h[:]).Scan(&expiresAt)
+		if errors.Is(err, sql.ErrNoRows) {
+			return time.Time{}, fmt.Errorf("check session: %w", ErrNotFound)
+		}
+		if err != nil {
+			return time.Time{}, fmt.Errorf("check session: %w", err)
+		}
 	}
 	if expiresAt <= toMillis(now) {
 		return time.Time{}, fmt.Errorf("check session: %w", ErrSessionExpired)

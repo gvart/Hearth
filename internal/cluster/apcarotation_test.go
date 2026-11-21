@@ -344,6 +344,48 @@ func TestAPCARotationResumesAfterRestart(t *testing.T) {
 	}
 }
 
+// TestAPCARotationPullsAMissedStage: a member down while the cutover is
+// written gets only a hint of it, replayed hourly here; once back, it sees
+// on the gossip that the masters cut over, pulls the rotation from one and
+// cuts over too, so the finish need not wait for the hint.
+func TestAPCARotationPullsAMissedStage(t *testing.T) {
+	ctx := t.Context()
+	a, b, c := rotationTrio(t)
+	plan, err := a.node.RotateCA(ctx, RotateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitUntil(t, 10*time.Second, "b and c to hold the new CA", func() bool {
+		return b.ca.HasNextKey() && b.node.nextCert.Load() != nil && c.node.nextCert.Load() != nil
+	})
+	c.stop()
+	waitUntil(t, 10*time.Second, "a to see c down", func() bool {
+		st := c.memberOn(a).State
+		return st == MemberDead || st == MemberLeft
+	})
+	if err := a.st.CARotations().Advance(ctx, plan.NewCAFP, store.CAStageStarted, store.CAStageCutover, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	waitUntil(t, 10*time.Second, "a and b to cut over", func() bool { return a.ca.CutOver() && b.ca.CutOver() })
+	c.start(t, 2, a.addr)
+	prepareRotation(t, c)
+	waitUntil(t, 10*time.Second, "c to pull the cutover", func() bool {
+		rot, err := c.st.CARotations().Latest(ctx)
+		return err == nil && rot.Stage == store.CAStageCutover && c.ca.CutOver()
+	})
+	for _, tn := range []*apTestNode{b, c} {
+		waitUntil(t, 10*time.Second, "a to see "+tn.id+" alive", func() bool { return tn.memberOn(a).State == MemberAlive })
+	}
+	if _, err := a.node.FinishCA(ctx, FinishOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, tn := range []*apTestNode{a, b, c} {
+		waitUntil(t, 10*time.Second, tn.id+" to serve only the new CA", func() bool {
+			return caFP(tn.ca) == plan.NewCAFP && tn.ca.Next() == nil
+		})
+	}
+}
+
 // fetchNextAs calls FetchCAKey on the master at url for caFP, presenting
 // cert and trusting the CAs of trust.
 func fetchNextAs(t *testing.T, trust *pki.CA, cert tls.Certificate, url, caFP string, proof []byte) (*clusterv1.FetchCAKeyResponse, error) {
