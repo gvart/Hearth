@@ -2,7 +2,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildGraph, layout, portsLabel } from '../src/topology.ts';
+import { buildGraph, layout, portsLabel, tiers } from '../src/topology.ts';
 
 const topology = {
   reporting: 2,
@@ -89,4 +89,55 @@ test('ports label', () => {
   assert.equal(portsLabel([22, 80, 443, 7443, 8080], 10), '22, 80 +3');
   assert.equal(portsLabel([17443, 17461, 17462], 8), '17443 +2');
   assert.equal(portsLabel([17443], 0), '17443');
+});
+
+test('tiers puts each kind on its own rows, top to bottom, inside the box', () => {
+  const g = buildGraph(topology, all);
+  const t = tiers(g.nodes, g.links, 1000, 640);
+  assert.deepEqual(t, tiers(g.nodes, g.links, 1000, 640), 'deterministic');
+  assert.deepEqual(
+    t.rows.map((r) => r.kind),
+    ['hub', 'device', 'host', 'unknown'],
+  );
+  const y = (id) => t.nodes.find((n) => n.id === id).y;
+  assert.ok(y('hub') < y('device:pi') && y('device:pi') < y('host:aa:bb:cc:00:00:01'));
+  assert.ok(y('host:aa:bb:cc:00:00:01') < y('ip:198.51.100.9'));
+  assert.equal(y('device:pi'), y('device:nas'));
+  for (const n of t.nodes) {
+    assert.ok(n.x >= 60 && n.x <= 940 && n.y >= 60 && n.y <= 580, `${n.id} in the box`);
+  }
+  assert.deepEqual(tiers([], [], 1000, 640), { nodes: [], rows: [] });
+});
+
+test('tiers wraps a crowded kind into rows and keeps nodes a slot apart', () => {
+  const nodes = Array.from({ length: 17 }, (_, i) => ({ id: `ip:10.0.0.${String(i).padStart(2, '0')}`, kind: 'unknown', name: `10.0.0.${String(i)}` }));
+  nodes.push({ id: 'hub', kind: 'hub', name: 'hub' });
+  const t = tiers(nodes, [], 1000, 640);
+  // 880 wide at 124 a slot: seven fit, so seventeen take three rows of six, six and five.
+  assert.deepEqual(
+    t.rows.map((r) => r.kind),
+    ['hub', 'unknown', 'unknown', 'unknown'],
+  );
+  for (const row of t.rows.slice(1)) {
+    const xs = t.nodes.filter((n) => n.y === row.y).map((n) => n.x).sort((a, b) => a - b);
+    assert.ok(xs.length === 6 || xs.length === 5);
+    xs.slice(1).forEach((x, i) => assert.ok(x - xs[i] >= 124, 'a slot apart'));
+  }
+});
+
+test('tiers orders a row under what it links to, so lines cross less', () => {
+  const nodes = [
+    { id: 'device:a', kind: 'device', name: 'a' },
+    { id: 'device:b', kind: 'device', name: 'b' },
+    { id: 'host:1', kind: 'host', name: 'one' },
+    { id: 'host:2', kind: 'host', name: 'two' },
+  ];
+  // a talks to host 2 and b to host 1: by name alone the two lines would cross.
+  const links = [
+    { a: 'device:a', b: 'host:2', kind: 'neighbor', ports: [], count: 0 },
+    { a: 'device:b', b: 'host:1', kind: 'neighbor', ports: [], count: 0 },
+  ];
+  const t = tiers(nodes, links, 1000, 640);
+  const x = (id) => t.nodes.find((n) => n.id === id).x;
+  assert.equal(Math.sign(x('device:a') - x('device:b')), Math.sign(x('host:2') - x('host:1')));
 });
