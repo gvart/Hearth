@@ -24,7 +24,11 @@ test('pageOf reads the page from the hash', () => {
     ['#/devices/d1', 'devices'],
     ['#/nothing-here', 'devices'],
     ['#/network', 'network'],
-    ['#/kubernetes/homelab', 'kubernetes'],
+    ['#/platforms', 'platforms'],
+    ['#/platforms/kubernetes/homelab', 'platforms'],
+    // Where the two lived before Platforms: old links still land there.
+    ['#/kubernetes/homelab', 'platforms'],
+    ['#/proxmox', 'platforms'],
     ['#/runbooks/run/42', 'runbooks'],
     ['#/approvals', 'approvals'],
     ['#/cluster', 'cluster'],
@@ -66,7 +70,8 @@ test('findCommands finds pages and devices by every word', () => {
   const find = (q, cluster = true) => findCommands(q, devices, { cluster }).map((c) => `${c.kind}: ${c.label}`);
   assert.deepEqual(find(''), []);
   assert.deepEqual(find('   '), []);
-  assert.deepEqual(find('net'), ['Go to: Network', 'Go to: Kubernetes']);
+  assert.deepEqual(find('net'), ['Go to: Network']);
+  assert.deepEqual(find('plat'), ['Go to: Platforms']);
   assert.deepEqual(find('PI5'), ['Device: pi5']);
   assert.deepEqual(find('storage'), ['Device: nas']);
   assert.deepEqual(find('talos cp'), ['Device: talos-cp-1']);

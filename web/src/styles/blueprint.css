@@ -95,14 +95,13 @@ input[type='checkbox'], input[type='radio'] { accent-color: var(--accent); }
 }
 .field [aria-invalid='true'], .auto-editor .field [aria-invalid='true'] { border-color: var(--danger); }
 @media (pointer: coarse) {
-  .btn, .btn-small, .nav-link, .tab, .segment, .range-option,
+  .btn, .btn-small, .nav-link, .tab, .range-option,
   .field :is(input, select), .filter :is(input, select), .ns-filter select, .logs-filter, .label-row input { min-height: var(--control-lg); }
 }
 
 /* Selection is always the inverse fill */
 .nav-link { font-size: var(--type-12); letter-spacing: var(--tracking-label); text-transform: uppercase; }
 .nav-link[aria-current='page'],
-.segment[aria-selected='true'],
 .range-option[aria-pressed='true'],
 .auto-view .btn[aria-pressed='true'] {
   background: var(--line);
@@ -110,7 +109,6 @@ input[type='checkbox'], input[type='radio'] { accent-color: var(--accent); }
   color: var(--bg);
   box-shadow: none;
 }
-.segment[aria-selected='true'] .dot { background: var(--bg); border-color: var(--bg); box-shadow: none; }
 .tab { font-size: var(--type-12); letter-spacing: var(--tracking-label); text-transform: uppercase; }
 .tabs-row { border-bottom-color: var(--line); }
 .range-picker { border-color: var(--line); }
@@ -118,8 +116,8 @@ input[type='checkbox'], input[type='radio'] { accent-color: var(--accent); }
 
 /* Blocks: drawn with the line, never with shade */
 .topbar { background: var(--bg); border-bottom: var(--line-2) solid var(--line); }
-.table-wrap, .cluster-head, .events, .filters, .auto-list, .auto-card, .panel-card, .guest-tile, .auto-run,
-.runbook-card, .runbook-step, .runbook-log, .topo-wrap, .segment { border-color: var(--line); }
+.table-wrap, .events, .filters, .auto-list, .auto-card, .panel-card, .guest-tile, .auto-run,
+.runbook-card, .runbook-step, .runbook-log, .topo-wrap { border-color: var(--line); }
 .devices th { font-weight: var(--weight-regular); border-bottom-color: var(--line); }
 .mini th { font-size: var(--type-11); font-weight: var(--weight-regular); letter-spacing: var(--tracking-label); text-transform: uppercase; }
 .empty { border: var(--line-1) dashed var(--line); }

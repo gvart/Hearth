@@ -643,7 +643,7 @@ const keyDocs: Record<string, string> = {
   body: 'The request body. It may use a prompt answer, as {{ .Input.step-id }}.',
   channel: 'A notification channel of this hub.',
   title: 'An optional title for the notification.',
-  cluster: 'A Kubernetes cluster, by its name on the Kubernetes page.',
+  cluster: 'A Kubernetes cluster, by its name on the Platforms page.',
   node: 'The node to check: its name for Kubernetes, its address for Talos.',
   name: 'The DNS name to look up.',
   server: 'Which DNS server to ask.',

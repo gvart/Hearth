@@ -4,8 +4,7 @@
 export type Page =
   | 'devices'
   | 'network'
-  | 'kubernetes'
-  | 'proxmox'
+  | 'platforms'
   | 'runbooks'
   | 'automations'
   | 'notifications'
@@ -38,8 +37,7 @@ const lab: Sheet = {
   pages: [
     { id: 'devices', label: 'Devices', hash: '#/' },
     { id: 'network', label: 'Network', hash: '#/network' },
-    { id: 'kubernetes', label: 'Kubernetes', hash: '#/kubernetes' },
-    { id: 'proxmox', label: 'Proxmox', hash: '#/proxmox' },
+    { id: 'platforms', label: 'Platforms', hash: '#/platforms' },
   ],
 };
 
@@ -78,8 +76,14 @@ export const sheets: Sheet[] = [
 
 const allPages = sheets.flatMap((s) => s.pages);
 
+/** Where Kubernetes and Proxmox lived before Platforms held them: old links still land there. */
+const moved = ['#/kubernetes', '#/proxmox'];
+
 /** The page a URL hash names. Anything unknown, and a device link, is Devices. */
 export function pageOf(hash: string): Page {
+  if (moved.some((m) => hash.startsWith(m))) {
+    return 'platforms';
+  }
   return allPages.find((p) => p.hash !== '#/' && hash.startsWith(p.hash))?.id ?? 'devices';
 }
 
