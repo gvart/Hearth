@@ -252,7 +252,9 @@ func (c CreateRunbookRun) apply(ctx context.Context, w *writer) (Result, error) 
 
 // SaveRunbookRun replaces a run's status and state if it is still at Version.
 // The check is made inside apply, so of two hubs saving from one version
-// exactly one wins on the replica that runs both. It fails with
+// exactly one wins on the replica that runs both. In a sharded cluster that
+// is the run's first live replica, which first copies the newest version of
+// the run from the others (ReadsOf), and the save is critical. It fails with
 // ErrRunbookRunConflict or ErrNotFound.
 type SaveRunbookRun struct {
 	Stamp

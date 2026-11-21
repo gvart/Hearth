@@ -105,6 +105,10 @@ func ReadsOf(cmd Command) []Read {
 			// The first import, refused if any document is stored.
 			return []Read{{Table: "config_docs", Where: `1 = 1`}}
 		}
+	case SaveRunbookRun:
+		// A copy behind the newest refuses the newest version as a conflict,
+		// and takes a save from the version it holds over the newer ones.
+		return []Read{key("runbook_runs", c.ID)}
 	case DeleteConfigDoc:
 		return []Read{key("config_docs", ConfigDocID(c.Kind, c.Name))}
 	}
