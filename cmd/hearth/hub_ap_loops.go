@@ -20,7 +20,7 @@ import (
 	"github.com/gvart/hearth/internal/store"
 )
 
-// apLoops are the loops that, in a Raft cluster, only the leader runs.
+// apLoops are the loops each runs on one master of the cluster.
 type apLoops struct {
 	agents      *hub.Agents
 	reg         *hub.Registry
@@ -55,7 +55,7 @@ func runAPLoops(ctx context.Context, g *errgroup.Group, node *cluster.APNode, l 
 	})
 	g.Go(func() error { return l.automations.Run(ctx) })
 	g.Go(func() error { return l.runbooks.Run(ctx) })
-	g.Go(func() error { return hub.RunApprovalSweep(ctx, l.pol, nil, nil, l.log) })
+	g.Go(func() error { return l.pol.RunApprovalSweep(ctx, l.log) })
 	singleton := func(key string, run func(context.Context) error) {
 		changed, unsubscribe := ring.Subscribe()
 		g.Go(func() error {

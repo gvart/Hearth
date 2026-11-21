@@ -1,25 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-// Package cluster replicates the hub store across 3 or 5 hubs with Raft
-// (hashicorp/raft, log and stable store in bbolt under <data-dir>/raft).
+// Package cluster runs every hub as a member of a leaderless (AP) cluster; a
+// hub alone is a cluster of one (docs/cluster.md).
 //
-// The state machine is the store itself: every node decodes each committed
-// log entry with store.DecodeCommand and applies it with Store.ApplyLocal, and
-// raft snapshots are Store.Snapshot / Store.Restore. A Node is the store's
-// Applier: on the leader it proposes the encoded command and returns what the
-// state machine returned; on a follower Apply fails with *ErrNotLeader, and
-// ApplyOrForward (what a hub binds with BindForwarding) sends the command to
-// the leader's ClusterService.Forward instead.
+// Members find each other by memberlist gossip (Membership) and take roles:
+// storage members hold the store's rows, sharded on a ring of N copies
+// (Replicator: last-writer-wins by HLC, hints and anti-entropy), and masters
+// serve the API, UI and agents and hold the CA key. Gossip and replication
+// share one TCP port, --cluster-listen, over mutual TLS: every member
+// presents a hub node certificate issued by the hub CA (URI SAN
+// urn:hearth:hub:<node-id>) and accepts only peers with one, so an enrolled
+// device's certificate cannot join.
 //
-// Hubs talk Raft over TCP with mutual TLS. Every node presents a hub node
-// certificate issued by the hub CA (URI SAN urn:hearth:hub:<node-id>) and
-// accepts only peers with one, so an enrolled device's certificate cannot
-// join the transport.
-//
-// A cluster forms from an existing hub: its first clustered start bootstraps a
-// one-voter configuration from a snapshot of its current database. New hubs
-// join through ClusterService on the leader's TLS listener with a single-use
-// join token, receive a node certificate and the CA (key included) over the
-// pinned channel, are added as non-voters, catch up through a snapshot and
-// then ask to be promoted to voters.
+// A hub joins through ClusterService on a master's TLS listener with a
+// single-use join token, and receives a node certificate and the CA (the key
+// only if it allows the master role) over the pinned channel.
 package cluster

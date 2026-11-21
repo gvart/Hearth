@@ -11,7 +11,7 @@ import (
 
 // proxmoxServersSchema is the schema version whose migration (00015) added
 // the proxmox_servers table. A newer binary runs on an older cluster database
-// until `hearth cluster migrate`; before this version no server can be added.
+// until every hub of the cluster is upgraded; before this version no server can be added.
 const proxmoxServersSchema = 15
 
 // ProxmoxServer is a Proxmox VE server adopted through an API token.
@@ -75,7 +75,7 @@ func (r ProxmoxServers) requireSchema(ctx context.Context) error {
 		return err
 	}
 	if v < proxmoxServersSchema {
-		return fmt.Errorf("%w: it needs %d, the database is at %d; run `hearth cluster migrate` first",
+		return fmt.Errorf("%w: it needs %d, the database is at %d; upgrade every hub of the cluster first",
 			ErrSchemaTooOld, proxmoxServersSchema, v)
 	}
 	return nil

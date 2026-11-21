@@ -23,13 +23,17 @@ Read this file fully before starting any task. Task specs live in `docs/tasks/`.
 clients (React PWA, CLI, MCP clients)
         │  LAN or tailnet (tsnet)
         ▼
-hub ── api + mcp ── policy ── automations/runbooks ── integrations ── store (SQLite)
-        ▲                                                   │
-        │ agents dial out (mTLS, Connect-RPC stream)        ▼ pull (k8s, Talos, Pi-hole, Prometheus)
-agents (linux/macOS/windows/android)      network scan (ARP, mDNS, DHCP leases)
+hub (master) ── api + mcp ── policy ── automations/runbooks ── integrations ── store (SQLite shard)
+   ▲     ▲                                                          │
+   │     │ gossip + replication (mTLS, :7444)                       ▼ pull (k8s, Talos, Pi-hole, Prometheus)
+   │     └──► other hubs: masters and storage members, no leader    network scan (ARP, mDNS, DHCP leases)
+   │ agents dial out to any master (mTLS, Connect-RPC stream)
+agents (linux/macOS/windows/android)
 ```
 
 - One binary, two modes: `hearth hub` and `hearth agent`. Any node can become the hub.
+- Every hub is a member of a leaderless AP cluster (roles `storage`, `master`); a hub alone is a
+  cluster of one (N=1). See `docs/cluster.md`.
 - Agents always dial out to the hub. No inbound ports on devices.
 - Hub state: SQLite (WAL). Pure Go driver only — the build must stay `CGO_ENABLED=0`.
 
@@ -44,7 +48,7 @@ internal/pki/          CA, CSR signing, enrollment tokens
 internal/store/        SQLite access + goose migrations
 internal/policy/       action classes, decisions, audit log
 internal/discovery/    network discovery: ARP sweep, mDNS, OUI vendors, DHCP lease import (unmanaged hosts)
-internal/cluster/      Raft replication of the hub store (hashicorp/raft), hub join, mTLS transport
+internal/cluster/      AP cluster: memberlist gossip membership, sharded replication (HLC LWW), hints, anti-entropy, masters, join, mTLS on one port
 internal/s3/           minimal SigV4 S3 client (put, list, delete) for scheduled backups
 internal/plugins/      exec plugins: child processes speaking JSON lines over stdio (docs/plugins.md)
 internal/mqtt/         embedded MQTT broker (mochi-mqtt): TLS, device-cert or password auth, topic ACLs
@@ -78,8 +82,7 @@ task test:web     # web UI tests (node --test): the automation editor's YAML rou
 task lint         # SPDX header check + golangci-lint + eslint + tsc
 task proto        # buf lint + buf generate (into internal/proto)
 task e2e          # compose-based end-to-end test of the headline demo
-task e2e:cluster  # compose-based end-to-end test of 3-hub cluster failover
-task e2e:ap       # compose-based end-to-end test of a 3-hub AP cluster: kill, partition, heal
+task e2e:cluster  # compose-based end-to-end test of a 3-hub cluster: kill a master and a storage member, partition, heal
 task e2e:install  # install.sh end to end in a Debian 12 container (Docker)
 task dev          # web UI dev server with hot reload (Vite)
 task docs         # docs site dev server with hot reload (site/, Astro Starlight)
@@ -104,14 +107,14 @@ Keep this list in sync with `Taskfile.yml`. If you add a task, document it here.
 - Never log secrets, tokens, private keys or full certificates.
 - Enrollment tokens: single-use, short TTL, stored hashed.
 - mTLS everywhere between hub and agents, and between hubs; the hub CA key never leaves a master's data
-  dir (0600; in a Raft cluster, a hub voter's), except inside an encrypted backup archive created by an
-  authenticated admin through policy and audited, or by a scheduled hub backup when the operator opts in with
-  `--backup-include-ca` (also through policy and audited); it is replicated only over the pinned mTLS join
-  channel (in an AP cluster, only to a joining hub that allows the `master` role; a storage-only member never
-  receives it) and over the pinned mTLS `FetchCAKey` channel: during a Raft hub CA rotation, and in an AP
-  cluster to a member being promoted to master, only while the promoting master's audited `cluster.promote`
-  runs (policy-checked and audited, refusals too). A demoted master deletes its copy. A CA key never goes
-  into the store, the Raft log, a snapshot or the gossip.
+  dir (0600), except inside an encrypted backup archive created by an authenticated admin through policy and
+  audited, or by a scheduled hub backup when the operator opts in with `--backup-include-ca` (also through
+  policy and audited); it is replicated only over the pinned mTLS join channel (only to a joining hub that
+  allows the `master` role; a storage-only member never receives it) and over the pinned mTLS `FetchCAKey`
+  channel: to a member being promoted to master, only while the promoting master's audited `cluster.promote`
+  runs, and during a hub CA rotation only to a master that proves it holds the current CA key (policy-checked
+  and audited, refusals too). A demoted master deletes its copy. A CA key never goes into the store, the
+  replication stream, a snapshot or the gossip.
 - Agent-side config is the capability ceiling; the hub can never grant more than the device allows.
 - Any new action type must declare its class (`read` / `safe` / `dangerous`) in `internal/policy`.
 - Shell-outs: no string concatenation into shells; use `exec.Command` with args.

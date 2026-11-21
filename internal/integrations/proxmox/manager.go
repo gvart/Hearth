@@ -48,7 +48,7 @@ const (
 	DefaultPollInterval = 15 * time.Second
 	// DefaultSyncInterval is how often the manager rereads the server list
 	// from the store, which picks up servers added or removed through
-	// another hub of a Raft cluster.
+	// another hub of the cluster.
 	DefaultSyncInterval = 5 * time.Second
 	maxNameLength       = 63
 	// maxFieldLength caps a name or other text the server reports: Proxmox VE
@@ -187,7 +187,7 @@ type Config struct {
 // Manager adopts Proxmox VE servers. It keeps one poller per server stored in
 // the hub, serves their state and carries out guest actions (see Act).
 //
-// Every hub of a Raft cluster reads every server itself: the state is a cache
+// Every master of the cluster reads every server itself: the state is a cache
 // of the Proxmox API, never written to the store.
 type Manager struct {
 	store  *store.Store

@@ -82,7 +82,7 @@ const (
 	maxEvents = 200
 	// DefaultSyncInterval is how often the manager rereads the cluster list
 	// from the store, which picks up clusters added or removed through
-	// another hub of a Raft cluster.
+	// another hub of the cluster.
 	DefaultSyncInterval = 5 * time.Second
 	// MaxLogLines caps one pod log request.
 	MaxLogLines   = 5000
@@ -116,7 +116,7 @@ type Config struct {
 // stored in the hub, serves their state and streams their changes, and
 // carries out the few Kubernetes actions (see Act).
 //
-// Every hub of a Raft cluster runs its own Manager and watches every
+// Every master of the cluster runs its own Manager and watches every
 // cluster itself: Kubernetes state is a cache of the API server, never
 // written to the store, so each hub serves its own UI from its own watch.
 type Manager struct {
@@ -340,7 +340,7 @@ func (m *Manager) infoLocked(r *running) ClusterInfo {
 }
 
 // Clusters lists the clusters this hub watches, by name. A cluster added
-// on another hub of a Raft cluster appears within SyncInterval.
+// on another hub of the cluster appears within SyncInterval.
 func (m *Manager) Clusters() []ClusterInfo {
 	m.mu.Lock()
 	defer m.mu.Unlock()

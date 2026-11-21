@@ -14,17 +14,17 @@ import (
 )
 
 func newClusterPromoteCmd() *cobra.Command {
-	return newClusterRoleCmd(hub.ClusterOpPromote, "Give a member of an AP cluster the storage or master role",
-		"Give a member of an AP cluster (--cluster-mode ap) the storage or master role. The member must allow it\n"+
+	return newClusterRoleCmd(hub.ClusterOpPromote, "Give a cluster member the storage or master role",
+		"Give a cluster member the storage or master role. The member must allow it\n"+
 			"(its --allow-roles). A member promoted to storage copies its rows from the others and shows\n"+
 			"\"syncing\" until it has them all; one promoted to master fetches the CA key from this master and\n"+
 			"starts serving the API and agents. Run it on a master's host while its hub runs. An agent host\n"+
-			"cannot take a role: run `hearth hub --cluster-mode ap --join ...` on it instead.")
+			"cannot take a role: run `hearth hub --join ...` on it instead.")
 }
 
 func newClusterDemoteCmd() *cobra.Command {
-	return newClusterRoleCmd(hub.ClusterOpDemote, "Take the storage or master role from a member of an AP cluster",
-		"Take the storage or master role from a member of an AP cluster (--cluster-mode ap). A storage member\n"+
+	return newClusterRoleCmd(hub.ClusterOpDemote, "Take the storage or master role from a cluster member",
+		"Take the storage or master role from a cluster member. A storage member\n"+
 			"hands its rows off first and keeps the role (\"draining\", with its progress in `hearth cluster\n"+
 			"status`) until every row has its copies on the others. A demoted master spends its unused tokens,\n"+
 			"expires its pending approvals, deletes the CA key and stops serving; its agents move to the other\n"+
@@ -51,16 +51,13 @@ func newClusterRoleCmd(op, short, long string) *cobra.Command {
 	return cmd
 }
 
-// runClusterRoleChange has the running hub of an AP master promote, demote
+// runClusterRoleChange has the running hub of a master promote, demote
 // or remove a member: decided by its policy engine and audited there.
 func runClusterRoleChange(ctx context.Context, dataDir string, c hub.ClusterChange, dryRun bool, out io.Writer) error {
 	if err := c.Check(); err != nil {
 		return err
 	}
-	if !cluster.IsAP(dataDir) {
-		return fmt.Errorf("%s is not a member of an ap cluster (--cluster-mode ap): roles change only there", dataDir)
-	}
-	cc, err := cluster.DialControl(dataDir)
+	cc, err := dialHub(dataDir)
 	if err != nil {
 		return err
 	}

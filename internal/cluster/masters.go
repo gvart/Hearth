@@ -13,9 +13,9 @@ import (
 	"github.com/gvart/hearth/internal/store"
 )
 
-// The masters of an AP cluster (docs/design/ap-cluster.md §6). Work one hub
-// of a Raft cluster did as its leader has an owner among the live masters
-// instead: a consistent-hash ring over them places each key (an automation,
+// The masters of the cluster (docs/cluster.md). Work that needs one hub has
+// an owner among the live masters: a consistent-hash ring over them places
+// each key (an automation,
 // a runbook, an approval, a device without a stream, or the fixed key of a
 // singleton loop) on one master. When a master dies its keys move to the
 // others; during a split both sides may own a key (AP: accepted).

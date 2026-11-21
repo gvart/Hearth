@@ -44,7 +44,6 @@ func TestRenewalForCARotation(t *testing.T) {
 
 	s := NewAgentStream(slog.New(slog.DiscardHandler), time.Second, NewRegistry(RegistryConfig{Store: st}))
 	s.pins, s.audit, s.ca, s.rotations, s.renew = st.Certs(), st.Audit(), ca, st.CARotations(), st.Certs()
-	s.authority = func() error { return nil }
 	renew := func(leaf *x509.Certificate, serial string) (cert, bundle []byte) {
 		c := context.WithValue(withDeviceID(ctx, "pi"), serialKey{}, serial)
 		c = context.WithValue(c, chainKey{}, []*x509.Certificate{leaf})
@@ -72,14 +71,11 @@ func TestRenewalForCARotation(t *testing.T) {
 		name   string
 		leaf   *x509.Certificate
 		serial string
-		vouch  error
 	}{
-		{"another certificate with the recorded serial", forged, pki.SerialString(genuine), nil},
-		{"a certificate without a recorded fingerprint", unrecorded, pki.SerialString(unrecorded), nil},
-		{"a hub that cannot vouch for its store", genuine, pki.SerialString(genuine), errors.New("not the leader")},
+		{"another certificate with the recorded serial", forged, pki.SerialString(genuine)},
+		{"a certificate without a recorded fingerprint", unrecorded, pki.SerialString(unrecorded)},
 	}
 	for _, tt := range tests {
-		s.authority = func() error { return tt.vouch }
 		cert, bundle := renew(tt.leaf, tt.serial)
 		if cert != nil {
 			t.Errorf("%s: renewed", tt.name)
@@ -90,7 +86,6 @@ func TestRenewalForCARotation(t *testing.T) {
 		}
 	}
 
-	s.authority = func() error { return nil }
 	cert, bundle := renew(genuine, pki.SerialString(genuine))
 	if cert == nil || strings.Count(string(bundle), "BEGIN CERTIFICATE") != 2 {
 		t.Fatal("the recorded certificate was not renewed with both CAs to trust")
@@ -127,7 +122,7 @@ func TestRequireClientCertRefusesUntrustedCA(t *testing.T) {
 	if err := st.Certs().Create(t.Context(), pki.SerialString(leaf), "pi"); err != nil {
 		t.Fatal(err)
 	}
-	h := requireClientCert(st.Certs(), ca, slog.New(slog.DiscardHandler), func() error { return nil },
+	h := requireClientCert(st.Certs(), ca, slog.New(slog.DiscardHandler),
 		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
 	serve := func() int {
 		r := httptest.NewRequest(http.MethodPost, "/", nil)

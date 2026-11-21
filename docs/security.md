@@ -35,11 +35,13 @@ between Hearth processes is mutually authenticated TLS.
 | Admin (web)    | the admin password (argon2id hash), then a session cookie that lasts 7 days         |
 | Admin (CLI)    | access to the hub's data dir on the hub host                                       |
 
-The hub CA is created on the first start in the hub's data dir (`ca.crt`, `ca.key`, mode 0600). Its
-private key never leaves that directory, except to a new hub joining a cluster, over the pinned,
-mutually authenticated join channel; to the members of a cluster during a hub CA rotation, over the
-cluster's mutual TLS, and only to a member presenting exactly the node certificate pinned when the
-rotation started (the key itself never enters the database, the Raft log or a snapshot); and inside
+The hub CA is created on the first start in the hub's data dir (`ca.crt`, `ca.key`, mode 0600). Only
+masters of a cluster hold it. Its private key never leaves a master's data dir, except to a new hub
+joining a cluster as a master, over the pinned, mutually authenticated join channel; to a member being
+promoted to master, and to the masters during a hub CA rotation, over the pinned, mutually
+authenticated `FetchCAKey` channel, policy-checked and audited, and during a rotation only to a master
+presenting exactly the node certificate pinned when the rotation started and proving it holds the
+current key (the key itself never enters the store, the replication between hubs or a snapshot); and inside
 a passphrase-encrypted [backup](backup.md) archive:
 one that only an authenticated admin can create, through policy (`hub.backup`, from the CLI or the
 web UI, where it also takes the admin password again) and with an audit entry,
@@ -83,7 +85,8 @@ All three are dangerous policy actions for the local admin, audited. What it doe
 - A leaked database also leaked the Kubernetes and Proxmox credentials and the notification channel
   credentials sealed in it, whatever the key: rotate them at their source.
 - Enrollment and join tokens created before the finish stop working.
-- Standalone hubs have no rotation: delete `ca.crt` and `ca.key` and enroll every agent again.
+- A cluster of one can also replace its CA without a rotation: delete `ca.crt` and `ca.key` and enroll
+  every agent again.
 
 ## Enrollment tokens
 
@@ -108,7 +111,7 @@ and session cookie travel unencrypted: prefer HTTPS, or your own reverse proxy w
 
 Logins are limited to 5 attempts in a row per client address, then one every 12 seconds (answered
 `429` with `Retry-After`). The hub checks one password at a time, in a child process at the lowest
-CPU priority so a login cannot starve the hub (or a cluster leader's heartbeats) of CPU; a login that
+CPU priority so a login cannot starve the hub (or its cluster gossip) of CPU; a login that
 waits more than 10 seconds for its turn is answered `503 busy` with `Retry-After`. Behind a reverse
 proxy every login comes from the proxy's address and shares one limit.
 

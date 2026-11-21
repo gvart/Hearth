@@ -122,6 +122,6 @@ without approval, unless `actors.mcp` says otherwise.
 
 ## In a cluster
 
-The MCP endpoint is on every hub, but only the leader has the agents' streams: point clients at
-the leader (or at an address that follows it) to restart services or run commands. Automations
-written by `apply_automation` go into the replicated store, so every hub has them.
+The MCP endpoint is on every master. A call for a device whose agent streams to another master is
+forwarded to it, so point clients at any master. Automations written by `apply_automation` go into
+the replicated store, so every hub has them.

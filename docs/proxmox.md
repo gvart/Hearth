@@ -109,14 +109,12 @@ actions too.
 ## How it works
 
 - **Stored encrypted.** The address, token and trust anchor are sealed with AES-256-GCM before they
-  reach the database, so the database, the Raft log and snapshots only ever hold ciphertext. The key is
+  reach the database, so the database, the replication between hubs and snapshots only ever hold ciphertext. The key is
   derived (HKDF-SHA256) from the hub CA's private key, and is separate from the key that seals
   kubeconfigs. The token never appears in the audit log, the hub log or the API, and is not shown again
   after it is added. To replace it, remove the server and add it again.
-- **Every hub reads.** In a hub cluster each hub reads every Proxmox VE server itself and serves its own
-  UI. The state is a cache of the Proxmox VE API and is never written to the hub database.
+- **Every master reads.** In a hub cluster each master reads every Proxmox VE server itself and serves
+  its own UI. The state is a cache of the Proxmox VE API and is never written to the hub database.
 - **One request.** Each read is a single `GET /cluster/resources`, which still answers when a node of
   the Proxmox VE cluster is down. Requests time out after 15 seconds, and redirects are not followed.
 
-On a hub cluster upgraded from an older version, run `hearth cluster migrate` before adding a server
-(the table arrives with schema 15).

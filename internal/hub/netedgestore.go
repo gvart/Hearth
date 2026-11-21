@@ -53,7 +53,7 @@ func boolInt(b bool) int {
 // NetEdges keeps the network edges each device's agent last reported. Like
 // the host metrics, they are hub-local: kept in this hub's memory, never in
 // the replicated store, so a report every minute from every agent costs no
-// Raft entry. Only the cluster leader serves agents; after a failover or a
+// replicated write. Each agent streams to one master; after it moves or a
 // restart the agents refill it within a minute. It is safe for concurrent
 // use.
 type NetEdges struct {

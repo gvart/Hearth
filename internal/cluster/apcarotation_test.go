@@ -146,7 +146,7 @@ func TestAPCARotation(t *testing.T) {
 		for _, f := range []string{pki.NextCAKeyFile, nextNodeCertFile, nextNodeKeyFile, caCutoverFile} {
 			dir := tn.dir
 			if f != pki.NextCAKeyFile {
-				dir = filepath.Join(tn.dir, RaftDir)
+				dir = filepath.Join(tn.dir, StateDir)
 			}
 			waitUntil(t, 5*time.Second, tn.id+" to delete "+f, func() bool {
 				_, err := os.Stat(filepath.Join(dir, f))

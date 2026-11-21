@@ -73,7 +73,7 @@ func (r ConfigDocs) requireSchema(ctx context.Context) error {
 		return err
 	}
 	if !ok {
-		return fmt.Errorf("%w: configuration documents need schema %d; run `hearth cluster migrate` first",
+		return fmt.Errorf("%w: configuration documents need schema %d; upgrade every hub of the cluster first",
 			ErrSchemaTooOld, configDocsSchema)
 	}
 	return nil

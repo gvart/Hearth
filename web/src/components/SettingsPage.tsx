@@ -81,7 +81,7 @@ function PolicyCard() {
       {policy.isError ? (
         <p className="error" role="alert">
           {policy.error instanceof ApiError && policy.error.status === 404
-            ? 'This hub keeps its configuration in files: run `hearth cluster migrate` to edit it here.'
+            ? 'This hub keeps its configuration in files: upgrade every hub of the cluster to edit it here.'
             : `Could not load the policy: ${policy.error.message}`}
         </p>
       ) : policy.data ? (

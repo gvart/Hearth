@@ -38,10 +38,8 @@ type AgentStream struct {
 	now               func() time.Time
 	// certs, when set, re-checks each stream's client certificate on every
 	// heartbeat, so a revocation (also one written by the CLI in another
-	// process) ends a live stream within one heartbeat interval. authority
-	// gates that judgement exactly as in requireClientCert.
-	certs     certChecker
-	authority func() error
+	// process) ends a live stream within one heartbeat interval.
+	certs certChecker
 	// pins, when set, records the fingerprint of a client certificate
 	// issued before fingerprints were (see pinCert).
 	pins certPinner
@@ -72,7 +70,7 @@ var _ agentv1connect.AgentServiceHandler = (*AgentStream)(nil)
 func NewAgentStream(log *slog.Logger, heartbeatInterval time.Duration, reg *Registry) *AgentStream {
 	return &AgentStream{
 		log: log, heartbeatInterval: heartbeatInterval, registry: reg, leadership: soloLeadership{}, now: time.Now,
-		authority: func() error { return nil }, agents: NewAgents(reg.devices),
+		agents: NewAgents(reg.devices),
 	}
 }
 
@@ -90,13 +88,6 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 	if !s.leadership.IsLeader() {
 		s.log.DebugContext(ctx, "agent refused: not the leader", "device_id", deviceID)
 		return notLeaderError(s.leadership)
-	}
-	if s.registry.replicated {
-		// A clustered leader serves agents only within a leadership term,
-		// which starts once it has caught up with the cluster.
-		if term, _ := ctx.Value(termKey{}).(context.Context); term == nil || term.Err() != nil {
-			return connect.NewError(connect.CodeUnavailable, errors.New("this hub is taking over as the cluster leader; retry shortly"))
-		}
 	}
 	first, err := stream.Receive()
 	if err != nil {
@@ -155,9 +146,6 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 			if cause := context.Cause(ctx); errors.Is(cause, errStopping) {
 				log.InfoContext(ctx, "agent stream ended: hub shutting down")
 				return connect.NewError(connect.CodeUnavailable, cause)
-			} else if errors.Is(cause, errSteppedDown) {
-				log.InfoContext(ctx, "agent stream ended: no longer the cluster leader")
-				return notLeaderError(s.leadership)
 			} else if errors.Is(cause, errStreamStalled) {
 				log.WarnContext(ctx, "agent stream torn down: the agent stopped reading it")
 				return connect.NewError(connect.CodeUnavailable, cause)
@@ -230,12 +218,9 @@ func (s *AgentStream) route(ctx context.Context, log *slog.Logger, deviceID stri
 }
 
 // recheckCert re-runs the client certificate check of requireClientCert on an
-// open stream. If the certificate is now revoked or unknown, and this hub can
-// vouch for its store (authority returns nil: standalone, or the cluster
-// leader within its term), it marks the device offline and returns the error
-// that ends the stream. A hub that cannot vouch, or a failed lookup, keeps
-// the stream: a follower or a hub catching up must not kick agents on stale
-// data, and the next heartbeat checks again.
+// open stream. If the certificate is now revoked or unknown, it marks the
+// device offline and returns the error that ends the stream. A failed lookup
+// keeps the stream: the next heartbeat checks again.
 func (s *AgentStream) recheckCert(ctx context.Context, log *slog.Logger, deviceID string) error {
 	if !trustedLeaf(ctx, s.ca) {
 		log.InfoContext(ctx, "agent stream ended: its certificate is of a hub CA no longer trusted")
@@ -256,8 +241,6 @@ func (s *AgentStream) recheckCert(ctx context.Context, log *slog.Logger, deviceI
 	case !revoked && !errors.Is(err, store.ErrNotFound):
 		log.WarnContext(ctx, "recheck client certificate", "err", err)
 		return nil
-	case s.authority() != nil:
-		return nil
 	}
 	reason := "certificate unknown"
 	if revoked {
@@ -271,39 +254,15 @@ func (s *AgentStream) recheckCert(ctx context.Context, log *slog.Logger, deviceI
 }
 
 // markOffline marks one online device offline now and publishes
-// device.offline, the transition Sweep makes for a silent device: the same
-// MarkDevicesOffline command a clustered leader's sweep writes, the same
-// cleanup of its presence memory, the same event. Only a standalone hub or a
-// clustered leader (which holds presence memory) writes; elsewhere it does
-// nothing. It lives here rather than in registry.go only to keep this change
-// apart from concurrent registry work; it belongs next to Sweep.
+// device.offline, the transition Sweep makes for a silent device. It lives
+// here rather than in registry.go only to keep this change apart from
+// concurrent registry work; it belongs next to Sweep.
 func (r *Registry) markOffline(ctx context.Context, deviceID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.replicated {
-		r.liveMu.Lock()
-		leading := r.seen != nil
-		_, dirty := r.dirty[deviceID]
-		r.liveMu.Unlock()
-		if !leading {
-			return nil
-		}
-		if dirty {
-			if err := r.flushLocked(ctx); err != nil {
-				return err
-			}
-		}
-	}
 	devs, err := r.devices.MarkDevicesOffline(ctx, []string{deviceID})
 	if err != nil {
 		return err
-	}
-	if r.replicated {
-		r.liveMu.Lock()
-		for _, d := range devs {
-			delete(r.seen, d.ID)
-		}
-		r.liveMu.Unlock()
 	}
 	for _, d := range devs {
 		r.publish(ctx, Event{Type: EventDeviceOffline, Device: d})
@@ -335,18 +294,14 @@ const ActionCertMismatch = "agent.cert_mismatch"
 // minted by someone else with the CA key: the first sighting is recorded on
 // the certificate and in the audit log.
 //
-// Only a hub that can vouch for its store pins (see Registry.certAuthority).
 // It reports whether the certificate is settled: pinned, matching, or its
 // mismatch recorded. Connect calls it again on every heartbeat until it is,
-// so a stream that was open when the cluster migrated is pinned too.
+// so a stream that was open when the cluster was upgraded is pinned too.
 func (s *AgentStream) pinCert(ctx context.Context, log *slog.Logger, deviceID string) bool {
 	serial, ok := serialFrom(ctx)
 	chain, hasChain := chainFrom(ctx)
 	if s.pins == nil || !ok || !hasChain {
 		return true
-	}
-	if s.authority() != nil {
-		return false
 	}
 	leaf := chain[0]
 	fp := pki.FingerprintHex(leaf)

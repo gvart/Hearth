@@ -3,9 +3,9 @@
 // Package metrics stores the host metrics agents send (CPU, memory, disk,
 // network, temperature) in a SQLite database of the hub's own.
 //
-// The database is hub-local: it is not part of the replicated store and never
-// goes through Raft. Only the cluster leader serves agents, so the leader
-// records the samples; a hub keeps what it recorded while it led. Raw samples
+// The database is hub-local: it is not part of the replicated store. The
+// master an agent is connected to records its samples; a hub keeps what it
+// recorded while it served the agent. Raw samples
 // are kept for RawRetention, and rollups for RollupRetention: one-minute
 // rollups, and ten-minute and hourly ones so that a day's or a week's chart
 // reads a few hundred rows. All are written along with each sample.

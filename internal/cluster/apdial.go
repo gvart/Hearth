@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"net"
 	"time"
-
-	"github.com/hashicorp/raft"
 )
 
 // replicaDialTimeout bounds dialing a member for replication.
@@ -44,7 +42,7 @@ func (m *Membership) dialKind(ctx context.Context, id string, kind byte, what st
 	if d, ok := ctx.Deadline(); ok && time.Until(d) < timeout {
 		timeout = max(time.Until(d), time.Millisecond)
 	}
-	c, err := t.stream.Dial(raft.ServerAddress(l.info.Address), timeout)
+	c, err := t.stream.Dial(l.info.Address, timeout)
 	if err != nil {
 		return nil, fmt.Errorf("%s: dial %s: %w", what, id, err)
 	}

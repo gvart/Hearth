@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/store"
 )
 
@@ -46,10 +45,10 @@ func TestFetchRefusalsAuditedOncePerMinute(t *testing.T) {
 	}
 	defer st.Close()
 	now := time.Now()
-	s := &JoinServer{store: st, log: testLogger(t), now: func() time.Time { return now }}
+	s := &APJoinServer{store: st, log: testLogger(t), now: func() time.Time { return now }}
 	refusal := errors.New("not pinned")
 	for range 3 {
-		s.auditFetchRefused(t.Context(), refusal)
+		s.auditFetchRefused(t.Context(), refusal, false)
 	}
 	entries := func() []store.AuditEntry {
 		t.Helper()
@@ -63,7 +62,7 @@ func TestFetchRefusalsAuditedOncePerMinute(t *testing.T) {
 		t.Fatalf("3 refusals within a minute made %d audit entries, want 1", len(es))
 	}
 	now = now.Add(fetchRefusalEvery)
-	s.auditFetchRefused(t.Context(), refusal)
+	s.auditFetchRefused(t.Context(), refusal, false)
 	es := entries()
 	if len(es) != 2 {
 		t.Fatalf("a refusal a minute later made %d audit entries in all, want 2", len(es))
@@ -80,38 +79,6 @@ func TestFetchRefusalsAuditedOncePerMinute(t *testing.T) {
 		}
 	}
 	t.Error("no entry counts the refusals left out")
-}
-
-// A hub records its node certificate with the CA that issued it, not the one
-// it serves: after a cutover an old-CA node certificate names the old CA.
-func TestIssuerFingerprintIsTheIssuers(t *testing.T) {
-	ca := newTestCA(t)
-	oldFP := pki.FingerprintHex(ca.Cert())
-	old, err := loadOrIssueNodeCert(t.TempDir(), ca, "n1", epochA, time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	next, err := ca.GenerateNext(time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := ca.TrustNext(next); err != nil {
-		t.Fatal(err)
-	}
-	if err := ca.Cutover(); err != nil {
-		t.Fatal(err)
-	}
-	if fp, err := issuerFingerprint(ca, old.Leaf); err != nil || fp != oldFP {
-		t.Errorf("issuer of the old node certificate = %s, %v; want the old CA %s, not the served %s",
-			fp, err, oldFP, pki.FingerprintHex(ca.Cert()))
-	}
-	renewed, err := loadOrIssueNodeCert(t.TempDir(), ca, "n1", epochA, time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if fp, err := issuerFingerprint(ca, renewed.Leaf); err != nil || fp != pki.FingerprintHex(next) {
-		t.Errorf("issuer of a new-CA node certificate = %s, %v", fp, err)
-	}
 }
 
 // Callers that pick a new node ID for each refusal still get no more than
@@ -135,40 +102,5 @@ func TestFetchRefusalsBoundedOverCallers(t *testing.T) {
 	ok, suppressed := f.admit("forged-again", now.Add(fetchRefusalEvery))
 	if !ok || suppressed != 1000-fetchRefusalBurst {
 		t.Errorf("the next minute: admitted %v, counting %d left out; want true, %d", ok, suppressed, 1000-fetchRefusalBurst)
-	}
-}
-
-// During a rotation the Raft transport refuses an old-CA hub certificate it
-// cannot check against its pin, and still accepts a new-CA one.
-func TestRefuseRevokedFailsClosedInRotation(t *testing.T) {
-	ca := newTestCA(t)
-	st, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "hub.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	oldPeer, err := loadOrIssueNodeCert(t.TempDir(), ca, "peer", epochA, time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	n := &Node{store: st, epoch: epochA, cfg: Config{CA: ca}}
-	n.log = testLogger(t)
-	_ = st.Close() // every read fails from here on
-	if err := n.refuseRevoked(oldPeer.Leaf); err != nil {
-		t.Fatalf("outside a rotation a read error refused the peer: %v", err)
-	}
-	if next, err := ca.GenerateNext(time.Now()); err != nil {
-		t.Fatal(err)
-	} else if err := ca.TrustNext(next); err != nil {
-		t.Fatal(err)
-	}
-	if err := n.refuseRevoked(oldPeer.Leaf); err == nil {
-		t.Error("in a rotation an old-CA peer was accepted without its pin checked")
-	}
-	newPeer, err := loadOrIssueNodeCert(t.TempDir(), ca, "peer", epochA, time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := n.refuseRevoked(newPeer.Leaf); err != nil {
-		t.Errorf("a new-CA peer was refused on a read error: %v", err)
 	}
 }

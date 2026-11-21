@@ -20,9 +20,9 @@ const sealInfo = "hearth kubeconfig seal v1"
 // Sealer encrypts kubeconfigs at rest with AES-256-GCM.
 //
 // Its key is derived (HKDF-SHA256) from the hub CA's private key, so it
-// exists exactly where that key does: in every hub voter's data dir (0600),
+// exists exactly where that key does: in every master's data dir (0600),
 // replicated only over the pinned join channel. Nothing new needs storing
-// or replicating, and the database, the Raft log and snapshots only ever
+// or replicating, and the database, the replication stream and snapshots only ever
 // hold ciphertext.
 //
 // While the hub CA is rotated a hub holds two CA keys: the Sealer is then a

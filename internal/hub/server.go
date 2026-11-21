@@ -134,7 +134,7 @@ type Config struct {
 	ShellMaxDuration time.Duration
 	// Masters, in an AP cluster, are the other masters: agent streams are
 	// routed and requests for them forwarded (forward.go). Set Leadership
-	// to the AP node too. Nil on a single hub and in a Raft cluster.
+	// to the AP node too. Nil on a single hub.
 	Masters Masters
 	// ClusterAdmin, in an AP cluster, promotes, demotes and removes members
 	// (the cluster page of the UI); nil elsewhere.
@@ -168,10 +168,9 @@ func NewHandler(cfg Config) http.Handler {
 	if reg == nil {
 		reg = NewRegistry(RegistryConfig{Store: cfg.Store, Log: cfg.Log})
 	}
-	authority := reg.certAuthority(lead)
 	stream := NewAgentStream(cfg.Log, cfg.HeartbeatInterval, reg)
 	stream.leadership = lead
-	stream.certs, stream.authority, stream.pins, stream.audit = cfg.Store.Certs(), authority, cfg.Store.Certs(), cfg.Store.Audit()
+	stream.certs, stream.pins, stream.audit = cfg.Store.Certs(), cfg.Store.Certs(), cfg.Store.Audit()
 	stream.ca, stream.rotations, stream.renew = cfg.CA, cfg.Store.CARotations(), cfg.Store.Certs()
 	stream.metrics = cfg.Metrics
 	stream.netEdges = cfg.NetEdges
@@ -183,8 +182,8 @@ func NewHandler(cfg Config) http.Handler {
 		stream.agents.SetMasters(cfg.Masters, cfg.Store.DeviceRoutes())
 	}
 	path, h := agentServiceHandler(stream)
-	mux.Handle(path, requireClientCert(cfg.Store.Certs(), cfg.CA, cfg.Log, authority,
-		EndOnStop(cfg.Stopping, reg.endOnStepDown(abortableStream(h)))))
+	mux.Handle(path, requireClientCert(cfg.Store.Certs(), cfg.CA, cfg.Log,
+		EndOnStop(cfg.Stopping, abortableStream(h))))
 	return mux
 }
 
@@ -198,53 +197,6 @@ const maxAgentMessage = 4 << 20
 // maxAgentMessage: the stream ends with ResourceExhausted.
 func agentServiceHandler(stream *AgentStream) (string, http.Handler) {
 	return agentv1connect.NewAgentServiceHandler(stream, connect.WithReadMaxBytes(maxAgentMessage))
-}
-
-// certAuthority returns what a hub that cannot vouch for its own store
-// answers instead of rejecting a client certificate, or nil when it can. A
-// standalone hub always can. A clustered hub can only within a leadership
-// term, which starts after the barrier, so its store holds every committed
-// certificate and revocation. A follower, a hub catching up after a start or a
-// leader taking over may lag the cluster: a certificate it does not know yet,
-// or a revocation it has not seen undone, says nothing about the device. It
-// answers NotLeader (naming the leader) or Unavailable, never Unauthenticated.
-func (r *Registry) certAuthority(lead Leadership) func() error {
-	if !r.replicated {
-		return func() error { return nil }
-	}
-	return func() error {
-		if !lead.IsLeader() {
-			return notLeaderError(lead)
-		}
-		if term := r.currentTerm(); term == nil || term.Err() != nil {
-			return connect.NewError(connect.CodeUnavailable, errors.New("this hub is taking over as the cluster leader; retry shortly"))
-		}
-		return nil
-	}
-}
-
-// errSteppedDown is the cause of an agent stream ended because this hub
-// stopped leading the cluster.
-var errSteppedDown = errors.New("no longer the cluster leader")
-
-type termKey struct{}
-
-// endOnStepDown ties each agent stream on a clustered hub to the leadership
-// term it started in: the stream ends, with cause errSteppedDown, when the
-// term ends. A request outside any term carries none and is refused by
-// AgentStream.Connect. On a standalone hub it returns next unchanged.
-func (r *Registry) endOnStepDown(next http.Handler) http.Handler {
-	if !r.replicated {
-		return next
-	}
-	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		term := r.currentTerm()
-		if term == nil {
-			next.ServeHTTP(w, req)
-			return
-		}
-		endOn(term, errSteppedDown, next).ServeHTTP(w, req.WithContext(context.WithValue(req.Context(), termKey{}, term)))
-	})
 }
 
 // NewTLSHandler serves the agent services exactly as NewHandler does and every
@@ -365,11 +317,8 @@ type certChecker interface {
 // that the hub issued and has not revoked, and puts the device ID it carries
 // and the certificate serial into the request context. The store is consulted
 // on every request so revocations by another process (the CLI) refuse the
-// next connect; AgentStream re-checks open streams on every heartbeat. A
-// certificate the store does not know or has revoked is rejected only when
-// authority returns nil; otherwise its error is the answer (see
-// Registry.certAuthority).
-func requireClientCert(certs certChecker, ca *pki.CA, log *slog.Logger, authority func() error, next http.Handler) http.Handler {
+// next connect; AgentStream re-checks open streams on every heartbeat.
+func requireClientCert(certs certChecker, ca *pki.CA, log *slog.Logger, next http.Handler) http.Handler {
 	errWriter := connect.NewErrorWriter()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -394,14 +343,6 @@ func requireClientCert(certs certChecker, ca *pki.CA, log *slog.Logger, authorit
 		}
 		serial := pki.SerialString(leaf)
 		err = certs.Check(ctx, serial, deviceID)
-		if errors.Is(err, store.ErrCertRevoked) || errors.Is(err, store.ErrNotFound) {
-			if aerr := authority(); aerr != nil {
-				log.DebugContext(ctx, "agent certificate not judged: this hub's store may lag the cluster",
-					"device_id", deviceID, "err", aerr)
-				_ = errWriter.Write(w, r, aerr)
-				return
-			}
-		}
 		switch {
 		case errors.Is(err, store.ErrCertRevoked):
 			log.WarnContext(ctx, "agent rejected: certificate revoked", "device_id", deviceID, "serial", serial)

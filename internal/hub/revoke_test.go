@@ -35,11 +35,8 @@ type revokeFixture struct {
 	chains map[string][]*x509.Certificate
 }
 
-// newRevokeFixture enrolls dev-1 (serial 0a) and dev-2 (serial 0b). A
-// replicated fixture is a clustered leader within its term; authority, if
-// non-nil, replaces the registry's certAuthority (a follower or a hub
-// catching up).
-func newRevokeFixture(t *testing.T, replicated bool, authority func() error) *revokeFixture {
+// newRevokeFixture enrolls dev-1 (serial 0a) and dev-2 (serial 0b).
+func newRevokeFixture(t *testing.T) *revokeFixture {
 	t.Helper()
 	st := newTestStore(t)
 	for id, serial := range map[string]string{"dev-1": "0a", "dev-2": "0b"} {
@@ -49,22 +46,16 @@ func newRevokeFixture(t *testing.T, replicated bool, authority func() error) *re
 		}
 	}
 	log := slog.New(slog.DiscardHandler)
-	reg := NewRegistry(RegistryConfig{Store: st, Log: log, Replicated: replicated})
+	reg := NewRegistry(RegistryConfig{Store: st, Log: log})
 	lead := &fakeLeadership{}
 	lead.leader.Store(true)
-	if replicated {
-		reg.startTerm()
-	}
 	as := NewAgentStream(log, time.Second, reg)
 	as.leadership = lead
-	as.certs, as.authority = st.Certs(), reg.certAuthority(lead)
-	if authority != nil {
-		as.authority = authority
-	}
+	as.certs = st.Certs()
 	_, h := agentv1connect.NewAgentServiceHandler(as)
 	events, unsubscribe := reg.Subscribe()
 	t.Cleanup(unsubscribe)
-	return &revokeFixture{st: st, reg: reg, as: as, h: reg.endOnStepDown(h), events: events}
+	return &revokeFixture{st: st, reg: reg, as: as, h: h, events: events}
 }
 
 // open starts a stream authenticated as deviceID with serial and returns it
@@ -159,31 +150,21 @@ func offlineEvents(events <-chan Event, id string) int {
 }
 
 // A heartbeat on an open stream re-checks the certificate. A revocation
-// written to the store by anyone (the CLI from another process, or Raft on a
-// clustered leader) ends that device's stream at its next heartbeat and marks
-// it offline; another device's stream is untouched. A hub that cannot vouch
-// for its store (a follower, a hub catching up) never kicks.
+// written to the store by anyone (the CLI from another process, or a write
+// merged from another cluster member) ends that device's stream at its next
+// heartbeat and marks it offline; another device's stream is untouched.
 func TestHeartbeatRecheckEndsRevokedStream(t *testing.T) {
 	t.Parallel()
-	notLeader := func() error { return notLeaderError(follower()) }
-	catchingUp := func() error {
-		return connect.NewError(connect.CodeUnavailable, errors.New("this hub is taking over as the cluster leader; retry shortly"))
-	}
 	tests := []struct {
-		name       string
-		replicated bool
-		authority  func() error
-		serial     string // dev-1's certificate on the stream
-		revoke     bool
-		wantEnd    func(error) bool // nil: the stream continues
+		name    string
+		serial  string // dev-1's certificate on the stream
+		revoke  bool
+		wantEnd func(error) bool // nil: the stream continues
 	}{
-		{name: "standalone revoked", serial: "0a", revoke: true, wantEnd: isRevoked},
-		{name: "clustered leader revoked", replicated: true, serial: "0a", revoke: true, wantEnd: isRevoked},
+		{name: "revoked", serial: "0a", revoke: true, wantEnd: isRevoked},
 		{name: "unknown certificate", serial: "ff", wantEnd: func(err error) bool {
 			return connect.CodeOf(err) == connect.CodeUnauthenticated && !isRevoked(err)
 		}},
-		{name: "follower keeps the stream", replicated: true, authority: notLeader, serial: "0a", revoke: true},
-		{name: "catching up keeps the stream", replicated: true, authority: catchingUp, serial: "0a", revoke: true},
 		{name: "not revoked", serial: "0a"},
 	}
 	for _, tt := range tests {
@@ -191,7 +172,7 @@ func TestHeartbeatRecheckEndsRevokedStream(t *testing.T) {
 			t.Parallel()
 			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 			defer cancel()
-			f := newRevokeFixture(t, tt.replicated, tt.authority)
+			f := newRevokeFixture(t)
 			dev1 := f.open(ctx, t, "dev-1", tt.serial)
 			dev2 := f.open(ctx, t, "dev-2", "0b")
 			if tt.revoke {
@@ -232,14 +213,6 @@ func TestHeartbeatRecheckEndsRevokedStream(t *testing.T) {
 				}
 				if n := offlineEvents(f.events, "dev-1"); n != 1 {
 					t.Errorf("device.offline events for dev-1 = %d, want 1", n)
-				}
-				if tt.replicated {
-					f.reg.liveMu.Lock()
-					_, seen := f.reg.seen["dev-1"]
-					f.reg.liveMu.Unlock()
-					if seen {
-						t.Error("dev-1 still in the leader's presence memory")
-					}
 				}
 			}
 			assertStreaming(t, "dev-2", dev2)

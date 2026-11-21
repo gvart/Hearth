@@ -52,7 +52,7 @@ func TestKubeClusters(t *testing.T) {
 	}
 }
 
-// A hub runs on the cluster's schema until `hearth cluster migrate`: before
+// A hub runs on the cluster's schema until every hub of the cluster is upgraded: before
 // schema 8 there are no Kubernetes clusters and none can be added.
 func TestKubeClustersBeforeTheirSchema(t *testing.T) {
 	ctx := t.Context()

@@ -37,16 +37,17 @@ changes.
 ## How it works
 
 - **Stored encrypted.** The kubeconfig is sealed with AES-256-GCM before it reaches the database, so
-  the database, the Raft log and snapshots only ever hold ciphertext. The key is derived (HKDF-SHA256)
-  from the hub CA's private key, which every hub of a cluster already holds in its data dir (0600).
+  the database, the replication between hubs and snapshots only ever hold ciphertext. The key is derived
+  (HKDF-SHA256) from the hub CA's private key, which every master of a cluster already holds in its data
+  dir (0600).
   Rotating the CA ([#84](https://github.com/gvart/hearth/issues/84)) will have to reseal them.
 - **Watch, not poll.** The hub lists each resource once and then watches it. Changes reach the UI over
   the same live event stream as device changes, typically within a fraction of a second. A watch that
   falls too far behind lists again.
-- **Every hub watches.** In a hub cluster each hub watches every Kubernetes cluster itself and serves
-  its own UI from its own cache. Kubernetes state is never written to the hub database: it is a cache
-  of the API server, and replicating it through Raft would flood the log. Adding or removing a cluster
-  is replicated like any other write; the other hubs start or stop their watch within 5 seconds.
+- **Every master watches.** In a hub cluster each master watches every Kubernetes cluster itself and
+  serves its own UI from its own cache. Kubernetes state is never written to the hub database: it is a
+  cache of the API server, and replicating it would flood the cluster. Adding or removing a cluster is
+  replicated like any other write; the other masters start or stop their watch within 5 seconds.
 - **Nodes and devices.** A node is linked to the Hearth device it runs on when one of the node's
   addresses is one of the device's addresses, or failing that, when the node's hostname or name matches
   the device's hostname. A match that is not unique links nothing. Nodes that cannot run a host
@@ -57,9 +58,6 @@ changes.
 Adding and removing a cluster (`kube.cluster.add`, `kube.cluster.remove`, both safe) and reading pod
 logs (`kube.pod.logs`, read: logs may hold secrets) are policy actions, decided and audited like every
 other action. The kubeconfig never appears in the audit log, the hub log or the API.
-
-On a hub cluster upgraded from an older version, run `hearth cluster migrate` before adding a cluster
-(the table arrives with schema 8).
 
 ## Actions
 

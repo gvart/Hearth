@@ -73,7 +73,7 @@ func TestHubCerts(t *testing.T) {
 }
 
 // TestHubCertsBeforeTheirSchema (#95): a newer binary on a cluster database
-// still at schema 5, before `hearth cluster migrate` adds hub_certs. There is
+// still at schema 5, before every hub of the cluster is upgraded and hub_certs exists. There is
 // no deny list yet, so reads see nothing revoked; writes are refused, the
 // same way on every node, until the migrate.
 func TestHubCertsBeforeTheirSchema(t *testing.T) {
@@ -119,7 +119,7 @@ func TestHubCertsBeforeTheirSchema(t *testing.T) {
 		// A domain error: the FSM rolls it back on every node instead of
 		// halting.
 		if !errors.Is(err, ErrSchemaTooOld) || !IsDomainError(err) ||
-			!strings.Contains(err.Error(), "hearth cluster migrate") {
+			!strings.Contains(err.Error(), "upgrade every hub") {
 			t.Errorf("%s before the schema = %v, want ErrSchemaTooOld telling to migrate", name, err)
 		}
 	}

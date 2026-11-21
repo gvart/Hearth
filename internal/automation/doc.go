@@ -9,7 +9,7 @@
 // fires while a run is in progress: single (drop it), queued (run it after)
 // or restart (cancel the current run and start again).
 //
-// The runtime reloads the directory when its files change and runs on the
-// cluster leader only (see RunWhileLeading). Finished runs are recorded in the
-// store's run history.
+// The runtime reloads the directory when its files change. In a cluster it
+// runs on the one master that owns it (see RunWhileLeading). Finished runs
+// are recorded in the store's run history.
 package automation

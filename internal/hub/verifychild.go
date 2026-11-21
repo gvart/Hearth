@@ -43,8 +43,8 @@ const (
 // ChildVerifier verifies each password in a child process, exe run with
 // VerifyChildArg, that drops itself to the lowest CPU priority first. A hub
 // under a hard CPU quota (a container limit) shares that quota with the
-// child, and the kernel then runs the hub's own threads, Raft heartbeats among
-// them, ahead of the hash. The hash and password go over stdin, never argv.
+// child, and the kernel then runs the hub's own threads, cluster heartbeats
+// among them, ahead of the hash. The hash and password go over stdin, never argv.
 // Cancelling ctx kills the child.
 func ChildVerifier(exe string) PasswordVerifier {
 	return func(ctx context.Context, hash, password string) (bool, error) {

@@ -87,16 +87,22 @@ func runBackup(ctx context.Context, opts backupOptions, output, passphrase, vers
 		return err
 	}
 	defer st.Close()
-	// An AP member's database holds only its shards: the running hub
-	// copies the whole cluster store into the backup's staging file.
+	// A member's database holds only its shards: the running hub copies
+	// the whole cluster store into the backup's staging file.
 	var snapshot func(context.Context, string) error
-	if cluster.IsAPMember(opts.dataDir) {
+	clustered := false
+	if cluster.IsMember(opts.dataDir) {
 		cc, err := cluster.DialControl(opts.dataDir)
 		if err != nil {
 			return err
 		}
 		defer cc.Close()
 		snapshot = cc.Snapshot
+		status, err := cc.Status(ctx)
+		if err != nil {
+			return err
+		}
+		clustered = !status.Alone()
 	}
 	var m backup.Manifest
 	created := false
@@ -107,7 +113,7 @@ func runBackup(ctx context.Context, opts backupOptions, output, passphrase, vers
 		m, err = backup.Create(ctx, backup.CreateOptions{
 			DataDir: opts.dataDir, Store: st, Output: output, Passphrase: passphrase,
 			NotifyConfig: opts.notifyConfig, AutomationsDir: opts.automationsDir, RunbooksDir: opts.runbooksDir,
-			HearthVersion: version, Clustered: cluster.IsMember(opts.dataDir), Snapshot: snapshot,
+			HearthVersion: version, Clustered: clustered, Snapshot: snapshot,
 		})
 		created = err == nil
 		return err
@@ -174,8 +180,9 @@ func runRestore(ctx context.Context, dataDir, input, passphrase string, out io.W
 	}
 	next := "Start the hub with `hearth hub --data-dir " + dataDir + "`, under the address its agents know."
 	if m.Clustered {
-		next = "This backup comes from a cluster. Stop the old hubs, then form a new cluster from this one with\n" +
-			"`hearth hub --cluster --data-dir " + dataDir + "`, and join the other hubs to it with empty data dirs."
+		next = "This backup comes from a cluster. Stop the old hubs, then start this one without --join and\n" +
+			"--cluster-seeds: it forms a new cluster of one. Join the other hubs to it with empty data dirs\n" +
+			"(see \"Restoring a cluster\" in docs/backup.md)."
 	}
 	if m.NoCAKey {
 		next = "This backup holds no CA key: the hub cannot start until " + filepath.Join(dataDir, pki.CAKeyFile) + " is there.\n" +

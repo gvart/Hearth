@@ -68,7 +68,10 @@ func startConfigHub(t *testing.T, files map[string]string) *configHub {
 			AutomationsDir: filepath.Join(dir, "automations"), RunbooksDir: runbooksDirOf(opts),
 		},
 	})
-	if _, err := applyHubConfig(t.Context(), opts, st, true, h.w, h.pol, h.n, log); err != nil {
+	if err := h.w.ImportFirst(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := applyHubConfig(t.Context(), opts, st, h.w, h.pol, h.n, log); err != nil {
 		t.Fatal(err)
 	}
 	h.fpStart = h.fingerprint(t)

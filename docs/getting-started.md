@@ -70,7 +70,7 @@ cannot reach your `localhost`.
 Sign in with the admin password, then click **Add device**. The dialog shows a command like:
 
 ```sh
-curl -fsSL http://192.168.1.10:7080/install.sh | HEARTH_TOKEN=hearth1.… sh -s -- --hub https://192.168.1.10:7443
+curl -fsSL http://192.168.1.10:7080/install.sh | HEARTH_TOKEN=hearth2.… sh -s -- --hub https://192.168.1.10:7443
 ```
 
 It holds a single-use enrollment token that expires after 15 minutes. The hub also ends
@@ -107,7 +107,7 @@ VERSION=0.0.1-rc.6
 PLATFORM=linux_arm64     # linux_amd64, linux_armv7, darwin_arm64, darwin_amd64
 curl -fsSLO "https://github.com/gvart/hearth/releases/download/v${VERSION}/hearth_${VERSION}_${PLATFORM}.tar.gz"
 tar -xzf "hearth_${VERSION}_${PLATFORM}.tar.gz" hearth
-HEARTH_TOKEN=hearth1.… ./hearth agent join https://192.168.1.10:7443   # the "Join only" command, with ./
+HEARTH_TOKEN=hearth2.… ./hearth agent join https://192.168.1.10:7443   # the "Join only" command, with ./
 ./hearth agent run
 ```
 
@@ -144,5 +144,5 @@ On the hub, the log says `device enrolled` and then `agent connected` for each d
 - [Concepts](concepts.md): what the hub, agents, policy and the audit log do.
 - [Automations](automations.md): restart a service when a check fails.
 - [Prometheus](prometheus.md) and [Kubernetes](kubernetes.md): bring in what you already run.
-- [Cluster mode](cluster.md): three hubs that survive the loss of one.
+- [Cluster mode](cluster.md): several hubs, no leader, that keep working when one dies.
 - [Security model](security.md): what protects your devices.

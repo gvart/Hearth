@@ -22,5 +22,5 @@
 // manifest.json. Names come from a fixed set (see validName), so a backup can
 // never write outside the data dir.
 //
-// Raft state is never part of a backup: a restored hub has no peers to contact.
+// Cluster state is never part of a backup: a restored hub has no peers to contact.
 package backup

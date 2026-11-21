@@ -157,7 +157,8 @@ automation can hold at a time are dropped.
 `hearth automation runs`, with the hosts in its trigger step, and the audit log has the failure. The
 hosts stay unmarked on the Devices page, and later scans alert as usual.
 
-In a cluster, the automation runs on the leader: give every hub the same `--new-device-alerts`.
+In a cluster, the automation fires on the master that ran the scan: give every master the same
+`--new-device-alerts`.
 
 ## Policy and audit
 
@@ -172,12 +173,9 @@ device that is unknown or not connected is skipped without an entry (see above).
 
 ## In a cluster
 
-Only the leader scans; the results are replicated to every hub through Raft (one log entry per scan).
-Set the discovery flags on every hub, so the new leader keeps scanning after a failover. The scan
-needs schema 12: run `hearth cluster migrate` after upgrading every hub. A scan from a device runs
-only if that device's agent is connected to the leader: an agent connected to another hub is skipped until it
-reconnects to the leader. Hosts show the device that scanned them from
-schema 26.
+One master scans, and the results are replicated to the cluster. Set the discovery flags on every
+master, so that another one takes the scans over when that master goes away. A scan from a device is
+forwarded to the master its agent streams to.
 
 ## In a container
 
@@ -213,5 +211,4 @@ POST /api/v1/network/hosts/{mac}/unmark
 ```
 
 Each one is the action `network.host.mark` (class `safe`, actor `web`), audited with the MAC as
-target and the new state as detail. In a cluster marking needs schema 13: run
-`hearth cluster migrate` after upgrading every hub (until then it answers 409).
+target and the new state as detail.

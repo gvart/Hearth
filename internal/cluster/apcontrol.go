@@ -9,18 +9,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/gvart/hearth/internal/policy"
 )
-
-// IsAP reports whether dataDir belongs to a member of an AP cluster.
-func IsAP(dataDir string) bool {
-	b, err := os.ReadFile(filepath.Join(dataDir, RaftDir, apModeFile))
-	return err == nil && strings.TrimSpace(string(b)) == "ap"
-}
 
 // RoleChangeRequest is a promotion, demotion or removal the CLI on a
 // master's host asks the running hub for (`hearth cluster promote|demote|
@@ -246,6 +237,18 @@ func (n *APNode) serveCAStatus(w http.ResponseWriter, r *http.Request) {
 		reply.Error = toWireError(err)
 	}
 	writeJSON(w, reply)
+}
+
+// CAStatus returns the latest hub CA rotation and each hub's side of it.
+func (c *ControlClient) CAStatus(ctx context.Context) (CAStatus, error) {
+	var reply caStatusReply
+	if err := c.do(ctx, http.MethodGet, "/v1/ca/status", nil, &reply); err != nil {
+		return CAStatus{}, err
+	}
+	if reply.Error != nil {
+		return CAStatus{}, reply.Error.toError()
+	}
+	return reply.Status, nil
 }
 
 // ChangeCA asks the running hub of an AP master for a hub CA rotation step

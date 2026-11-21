@@ -135,7 +135,6 @@ func (s *session) listDevices(ctx context.Context, in listDevicesIn) (any, error
 			return err
 		}
 		for _, d := range devs {
-			d = s.cfg.Live(d)
 			if (in.Status == "" || d.Status == in.Status) && matches(d, in.Query) {
 				out = append(out, view(d))
 			}
@@ -175,7 +174,6 @@ func (s *session) getDevice(ctx context.Context, in deviceIn) (any, error) {
 		if err != nil {
 			return err
 		}
-		d = s.cfg.Live(d)
 		out.deviceView, out.FirstSeen, out.Facts = view(d), d.FirstSeen, d.Facts
 		if !d.BootTime.IsZero() {
 			out.BootTime = &d.BootTime

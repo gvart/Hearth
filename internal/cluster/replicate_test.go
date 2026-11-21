@@ -911,41 +911,6 @@ func TestSingleMemberWorks(t *testing.T) {
 	}
 }
 
-// A data dir runs in one cluster mode only.
-func TestCheckMode(t *testing.T) {
-	raftDir, apDir, fresh := t.TempDir(), t.TempDir(), t.TempDir()
-	for _, f := range []struct{ dir, name, body string }{
-		{raftDir, boltFile, ""},
-		{apDir, apModeFile, "ap\n"},
-	} {
-		if err := os.MkdirAll(filepath.Join(f.dir, RaftDir), 0o700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(f.dir, RaftDir, f.name), []byte(f.body), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	for _, tt := range []struct {
-		dir, mode string
-		ok        bool
-	}{
-		{fresh, "ap", true},
-		{fresh, "raft", true},
-		{apDir, "ap", true},
-		{apDir, "raft", false},
-		{raftDir, "raft", true},
-		{raftDir, "ap", false},
-	} {
-		err := CheckMode(tt.dir, tt.mode)
-		if (err == nil) != tt.ok || (err != nil && !errors.Is(err, ErrModeMismatch)) {
-			t.Errorf("CheckMode(%s, %s) = %v", tt.dir, tt.mode, err)
-		}
-	}
-	if !IsAPMember(apDir) || IsAPMember(raftDir) {
-		t.Error("IsAPMember")
-	}
-}
-
 // TestDeadPooledConnRetried: a pooled connection closed under the
 // replicator (as a hub CA rotation closes the old CA's) costs a new
 // connection, not a write: the member is not taken as down.

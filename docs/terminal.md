@@ -103,5 +103,6 @@ still ends within about five seconds, the audit entry says it was force-closed, 
 that connection. An agent that loses its connection kills its shells, so every other terminal on
 that device ends too.
 
-The terminal is served by the hub the agent is connected to: in a cluster, the leader. The browser
-talks to it over a WebSocket on `/api/v1/devices/{id}/shell`, with the session cookie.
+The terminal is served by the hub the agent is connected to. In a cluster, a master the agent is not
+connected to proxies it to the one that is, which decides it. The browser talks to it over a
+WebSocket on `/api/v1/devices/{id}/shell`, with the session cookie.

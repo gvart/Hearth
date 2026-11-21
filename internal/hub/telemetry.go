@@ -72,7 +72,7 @@ func (a *api) setTelemetry(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "forbidden", "denied by policy")
 	case errors.Is(err, store.ErrSchemaTooOld):
 		writeError(w, http.StatusConflict, "schema_too_old",
-			"the hub cluster's database predates telemetry: run `hearth cluster migrate` first")
+			"the hub cluster's database predates telemetry: upgrade every hub of the cluster first")
 	case errors.Is(err, store.ErrUnavailable):
 		writeUnavailable(w)
 	default:

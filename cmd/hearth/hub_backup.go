@@ -80,16 +80,17 @@ func addBackupFlags(cmd *cobra.Command, o *scheduledBackupOptions) {
 }
 
 // webBackup writes the backup `hearth backup` writes, CA key included, for
-// the web UI's download; on an AP member, snapshot copies the whole cluster
-// store rather than its own shards.
-func webBackup(opts hubOptions, st *store.Store, clustered bool,
+// the web UI's download; snapshot copies the whole cluster store rather than
+// the member's own shards, and clustered says whether the cluster has more
+// than one hub.
+func webBackup(opts hubOptions, st *store.Store, clustered func() bool,
 	snapshot func(context.Context, string) error,
 ) func(ctx context.Context, output, passphrase string) error {
 	return func(ctx context.Context, output, passphrase string) error {
 		_, err := backup.Create(ctx, backup.CreateOptions{
 			DataDir: opts.dataDir, Store: st, Output: output, Passphrase: passphrase,
 			NotifyConfig: opts.notifyConfig, AutomationsDir: opts.automationsDir, RunbooksDir: opts.runbooksDir,
-			HearthVersion: opts.version, Clustered: clustered, Snapshot: snapshot,
+			HearthVersion: opts.version, Clustered: clustered(), Snapshot: snapshot,
 		})
 		return err
 	}
@@ -125,7 +126,7 @@ func (o *scheduledBackupOptions) fromEnv(cmd *cobra.Command) error {
 // backupScheduler returns the scheduler of the hub's backups, or nil when
 // --backup-interval is not set. It reads the passphrase and the secret key,
 // and never logs them.
-func backupScheduler(opts hubOptions, st *store.Store, pol *policy.Engine, n *notify.Notifier, clustered bool,
+func backupScheduler(opts hubOptions, st *store.Store, pol *policy.Engine, n *notify.Notifier, clustered func() bool,
 	snapshot func(context.Context, string) error,
 	log *slog.Logger,
 ) (*backup.Scheduler, error) {
@@ -180,7 +181,7 @@ func backupScheduler(opts hubOptions, st *store.Store, pol *policy.Engine, n *no
 		Backup: backup.CreateOptions{
 			DataDir: opts.dataDir, Store: st, NotifyConfig: opts.notifyConfig,
 			AutomationsDir: opts.automationsDir, RunbooksDir: opts.runbooksDir,
-			HearthVersion: opts.version, Clustered: clustered, WithoutCAKey: !o.includeCA, Snapshot: snapshot,
+			HearthVersion: opts.version, Clustered: clustered(), WithoutCAKey: !o.includeCA, Snapshot: snapshot,
 		},
 		Policy: pol, Notifier: n, Channel: o.notify, Log: log,
 	}), nil

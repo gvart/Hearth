@@ -52,7 +52,7 @@ func (r Panels) requireSchema(ctx context.Context) error {
 		return err
 	}
 	if v < panelsSchema {
-		return fmt.Errorf("%w: it needs %d, the database is at %d; run `hearth cluster migrate` first",
+		return fmt.Errorf("%w: it needs %d, the database is at %d; upgrade every hub of the cluster first",
 			ErrSchemaTooOld, panelsSchema, v)
 	}
 	return nil

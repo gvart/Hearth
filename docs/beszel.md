@@ -79,7 +79,6 @@ and a Beszel system shows in both tables, linked by the **In Hearth** column.
 | `connecting` | the first read has not finished |
 | `ok` | the systems follow |
 | `unavailable` | the last read failed, for example a wrong password; `error` says why, and the systems of the last good read, if any, follow |
-| `standby` | a hub of a [cluster](#in-a-cluster) that does not lead it |
 
 ```json
 {"status": "ok", "read_at": "2026-11-19T07:45:46Z", "systems": [
@@ -96,8 +95,5 @@ denies the `read` class stops reads before the hub contacts Beszel.
 
 ## In a cluster
 
-Only the leader reads Beszel, because only the leader can write the audit entry each read needs.
-What it read stays in the leader's memory: open the leader's UI to see the systems. The other
-hubs answer `standby` and show a note instead. Set the flags and the password on every hub, so
-that a new leader starts reading after a failover. Cluster mode has not been tested with Beszel
-yet.
+Every master reads Beszel on its own, with an audit entry per read. What a master read stays in its
+memory, so its UI shows the systems it read. Set the flags and the password on every master.

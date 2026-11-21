@@ -52,7 +52,7 @@ func TestSchemaGateAcrossVersions(t *testing.T) {
 	if got := b.node.WrittenSchema(); got != next {
 		t.Fatalf("b's written schema = %d, want %d", got, next)
 	}
-	raw, err := os.ReadFile(filepath.Join(b.dir, RaftDir, schemaWrittenFile))
+	raw, err := os.ReadFile(filepath.Join(b.dir, StateDir, schemaWrittenFile))
 	if err != nil || strings.TrimSpace(string(raw)) != strconv.FormatInt(next, 10) {
 		t.Fatalf("b's kept written schema: %q, %v", raw, err)
 	}
@@ -79,7 +79,7 @@ func TestSchemaGateAcrossVersions(t *testing.T) {
 	}
 	srv := NewAPJoinServer(b.node, b.st, b.ca, policy.New(b.st.Audit()), testLogger(t))
 	_, err = srv.Join(ctx, connect.NewRequest(&clusterv1.JoinRequest{
-		TokenSecret: "any", NodeId: "c", Csr: csr, RaftAddress: "c:7946", SchemaVersion: old,
+		TokenSecret: "any", NodeId: "c", Csr: csr, Address: "c:7444", SchemaVersion: old,
 	}))
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "has written") {
 		t.Fatalf("join of an older binary: %v, want failed precondition", err)

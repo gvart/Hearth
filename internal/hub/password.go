@@ -35,8 +35,8 @@ type argonParams struct {
 
 // defaultArgon is RFC 9106's second recommended option, with less memory so
 // small hubs such as a Raspberry Pi cope, and one lane: x/crypto/argon2 runs a
-// goroutine per lane, and on a single-core hub four of them starve Raft's
-// goroutines long enough for a leader to miss its lease (#94). Parallelism does
+// goroutine per lane, and on a single-core hub four of them starve the hub's
+// cluster goroutines long enough for its peers to suspect it (#94). Parallelism does
 // not add to an attacker's cost, and hashing is memory bound, so one lane is
 // barely slower on a multi-core hub. Hashes made with p=4 still verify.
 var defaultArgon = argonParams{time: 3, memory: 64 * 1024, threads: 1}

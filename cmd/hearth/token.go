@@ -11,7 +11,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/gvart/hearth/internal/cluster"
 	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/policy"
 )
@@ -82,11 +81,8 @@ func runTokenCreate(ctx context.Context, opts tokenCreateOptions, out io.Writer)
 		return err
 	}
 
-	enc := tok.Encode()
-	if cluster.IsAPMember(opts.dataDir) {
-		// The token is this master's: it says where to enroll.
-		enc = tok.EncodeHub(opts.hubURL)
-	}
+	// The token is this master's: it says where to enroll.
+	enc := tok.EncodeHub(opts.hubURL)
 	_, err = fmt.Fprintf(out, "Enrollment token (single use, expires %s):\n  %s\n\nJoin a device:\n  HEARTH_TOKEN=%s hearth agent join %s\n",
 		expires.Format(time.RFC3339), enc, enc, opts.hubURL)
 	if err != nil {

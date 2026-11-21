@@ -29,9 +29,6 @@ const (
 	// StateUnavailable is after a read that failed: Nodes are those of the
 	// last read that succeeded, if any.
 	StateUnavailable = "unavailable"
-	// StateStandby is a hub of a cluster that does not lead it: only the
-	// leader reads.
-	StateStandby = "standby"
 )
 
 // Snapshot is what the last reads found.
@@ -63,9 +60,6 @@ type ReaderConfig struct {
 	Interval time.Duration
 	Policy   Policy
 	Log      *slog.Logger
-	// Standby starts the reader in StateStandby, for a hub of a cluster,
-	// which reads only while it leads.
-	Standby bool
 }
 
 // Reader reads the Talos nodes every Interval and keeps what it found in
@@ -88,23 +82,14 @@ func NewReader(cfg ReaderConfig) *Reader {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	state := StateConnecting
-	if cfg.Standby {
-		state = StateStandby
-	}
-	return &Reader{cfg: cfg, log: log, now: time.Now, snap: Snapshot{State: state}}
+	return &Reader{cfg: cfg, log: log, now: time.Now, snap: Snapshot{State: StateConnecting}}
 }
 
 // Run reads at once and then every Interval until ctx is done. A failed
-// read is logged; the next one runs on schedule. A Standby reader is in
-// StateStandby again, with no nodes, once Run returns.
+// read is logged; the next one runs on schedule.
 func (r *Reader) Run(ctx context.Context) error {
 	t := time.NewTicker(r.cfg.Interval)
 	defer t.Stop()
-	if r.cfg.Standby {
-		r.setSnapshot(Snapshot{State: StateConnecting})
-		defer r.setSnapshot(Snapshot{State: StateStandby})
-	}
 	for {
 		if err := r.Read(ctx); err != nil && ctx.Err() == nil {
 			r.log.WarnContext(ctx, "talos read failed", "err", err)

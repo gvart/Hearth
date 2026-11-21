@@ -12,7 +12,7 @@ import (
 
 // runbookRunsSchema is the schema version whose migration (00016) added the
 // runbook_runs table. A newer binary runs on an older cluster database until
-// `hearth cluster migrate`; until then no run can start.
+// every hub of the cluster is upgraded; until then no run can start.
 const runbookRunsSchema = 16
 
 // RunbookRunsKept is how many finished runs each runbook keeps, how many failed
@@ -73,7 +73,7 @@ func (r RunbookRuns) requireSchema(ctx context.Context) error {
 		return err
 	}
 	if v < runbookRunsSchema {
-		return fmt.Errorf("%w: it needs %d, the database is at %d; run `hearth cluster migrate` first",
+		return fmt.Errorf("%w: it needs %d, the database is at %d; upgrade every hub of the cluster first",
 			ErrSchemaTooOld, runbookRunsSchema, v)
 	}
 	return nil

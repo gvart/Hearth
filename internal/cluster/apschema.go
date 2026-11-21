@@ -30,7 +30,7 @@ import (
 // less is refused, on the gossip and at its join, whichever members are
 // live when it comes.
 
-// schemaWrittenFile keeps the member's written schema, in DataDir/raft.
+// schemaWrittenFile keeps the member's written schema, in DataDir/cluster.
 const schemaWrittenFile = "schema-written"
 
 // schemaGate computes this member's write schema and keeps its written
@@ -212,4 +212,61 @@ func HostFlagGroups(members []MemberInfo) [][]string {
 	}
 	slices.SortFunc(out, func(a, b []string) int { return strings.Compare(a[0], b[0]) })
 	return out
+}
+
+// DriftHub is a hub of a DriftReport: Reported is false when it gossips no
+// configuration digest (yet), and Reason says why.
+type DriftHub struct {
+	ID       string `json:"id"`
+	Reported bool   `json:"reported"`
+	Reason   string `json:"reason,omitempty"`
+}
+
+// DriftItem is a per-hub configuration item compared across the hubs: the
+// hubs with the same content in one group each, and those that did not
+// report it.
+type DriftItem struct {
+	Item    string     `json:"item"`
+	Status  string     `json:"status"`
+	Groups  [][]string `json:"groups"`
+	Unknown []string   `json:"unknown"`
+}
+
+// DriftReport compares the hubs' per-host configuration, for the web UI's
+// GET /api/v1/cluster/config-drift: the host flags only, as everything else
+// is in the replicated store. It names hubs and items, never digests.
+type DriftReport struct {
+	Hubs  []DriftHub  `json:"hubs"`
+	Items []DriftItem `json:"items"`
+}
+
+// HostFlagDrift is the DriftReport of the live members of s.
+func (s Status) HostFlagDrift() DriftReport {
+	r := DriftReport{Hubs: []DriftHub{}, Items: []DriftItem{}}
+	unknown := []string{}
+	for _, m := range s.Members {
+		if m.State != MemberAlive && m.State != MemberSuspect {
+			continue
+		}
+		h := DriftHub{ID: m.ID, Reported: m.ConfigDigest != ""}
+		if !h.Reported {
+			h.Reason = "not_reported"
+			unknown = append(unknown, m.ID)
+		}
+		r.Hubs = append(r.Hubs, h)
+	}
+	if len(r.Hubs) < 2 {
+		return r
+	}
+	groups := HostFlagGroups(s.Members)
+	status := "in_sync"
+	switch {
+	case len(groups) > 1:
+		status = "differs"
+	case len(unknown) > 0:
+		status = "unknown"
+	}
+	slices.Sort(unknown)
+	r.Items = append(r.Items, DriftItem{Item: "host_flags", Status: status, Groups: groups, Unknown: unknown})
+	return r
 }

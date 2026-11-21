@@ -24,7 +24,7 @@ var (
 	// already at or past.
 	ErrSchemaNotNewer = errors.New("schema is already at or past the target version")
 	// ErrSchemaTooOld refuses a command that needs a newer schema than the
-	// database is at: run `hearth cluster migrate` first.
+	// database is at: upgrade every hub of the cluster first.
 	ErrSchemaTooOld = errors.New("command needs a newer schema than the database is at")
 )
 
@@ -85,7 +85,7 @@ func checkSchema(cmd Command, v int64) error {
 		return nil
 	}
 	if v < g.minSchema() {
-		return fmt.Errorf("apply %s: %w: it needs %d, the database is at %d; run `hearth cluster migrate` first",
+		return fmt.Errorf("apply %s: %w: it needs %d, the database is at %d; upgrade every hub of the cluster first",
 			cmd.Op(), ErrSchemaTooOld, g.minSchema(), v)
 	}
 	return nil

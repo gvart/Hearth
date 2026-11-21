@@ -99,7 +99,7 @@ func startAPTestNode(t *testing.T, ca *pki.CA, s apSpec, n int, seed string) *ap
 func prepareAPTestNode(t *testing.T, ca *pki.CA, s apSpec) *apTestNode {
 	t.Helper()
 	dir := t.TempDir()
-	raft := filepath.Join(dir, RaftDir)
+	raft := filepath.Join(dir, StateDir)
 	if err := os.MkdirAll(raft, 0o700); err != nil {
 		t.Fatal(err)
 	}

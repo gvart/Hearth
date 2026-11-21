@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pressly/goose/v3"
@@ -53,6 +54,9 @@ type Store struct {
 	// columns caches each table's columns in the local database, by table
 	// name (see knownColumns).
 	columns sync.Map
+	// merged is told the rows each Merge took (ObserveMerges), nil when
+	// no one asked.
+	merged atomic.Pointer[func([]MergedRow)]
 }
 
 // Open opens (creating if needed) the SQLite database at path with WAL,

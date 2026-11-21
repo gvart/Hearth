@@ -80,5 +80,5 @@ stops imports.
 
 ## In a cluster
 
-Only the leader imports, and the result is replicated to every hub. Set the flags and the token
-on every hub, so that a new leader keeps importing after a failover.
+One master imports, and the result is replicated to the cluster. Set the flags and the token on
+every master, so that another one takes the import over when that master goes away.

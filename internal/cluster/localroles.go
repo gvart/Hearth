@@ -12,7 +12,7 @@ import (
 )
 
 // rolesFile keeps an AP member's roles, as promote and demote set them, in
-// DataDir/raft: they survive a restart.
+// DataDir/cluster: they survive a restart.
 const rolesFile = "roles"
 
 // LocalRoles is an AP member's role state: its roles, and the role change
@@ -36,14 +36,14 @@ func LoadLocalRoles(dataDir string, allowed RoleSet, log *slog.Logger) (LocalRol
 		log = slog.New(slog.DiscardHandler)
 	}
 	lr := LocalRoles{Roles: HubRoles}
-	b, err := os.ReadFile(filepath.Join(dataDir, RaftDir, rolesFile))
+	b, err := os.ReadFile(filepath.Join(dataDir, StateDir, rolesFile))
 	switch {
 	case errors.Is(err, os.ErrNotExist):
 	case err != nil:
 		return LocalRoles{}, fmt.Errorf("read roles: %w", err)
 	default:
 		if err := json.Unmarshal(b, &lr); err != nil {
-			return LocalRoles{}, fmt.Errorf("read roles %s: %w", filepath.Join(dataDir, RaftDir, rolesFile), err)
+			return LocalRoles{}, fmt.Errorf("read roles %s: %w", filepath.Join(dataDir, StateDir, rolesFile), err)
 		}
 		if dropped := lr.Roles &^ allowed; dropped != 0 {
 			log.Warn("dropping roles this host no longer allows (--allow-roles)", "roles", dropped.String(),
@@ -67,7 +67,7 @@ func saveLocalRoles(dataDir string, lr LocalRoles) error {
 	if err != nil {
 		return err
 	}
-	dir := filepath.Join(dataDir, RaftDir)
+	dir := filepath.Join(dataDir, StateDir)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("record roles: %w", err)
 	}

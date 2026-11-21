@@ -33,17 +33,16 @@ func TestAllowedRoles(t *testing.T) {
 	}
 }
 
-// TestHubRefusesRolesOutsideAllowRoles: a hub is master and storage, so a
-// host that does not allow both does not start one.
+// TestHubRefusesRolesOutsideAllowRoles: the first hub of a cluster is a
+// master, so a host that does not allow it starts none without --join.
 func TestHubRefusesRolesOutsideAllowRoles(t *testing.T) {
 	for _, tc := range []struct{ allow, wantErr string }{
-		{"storage", "role master not allowed"},
-		{"node", "role storage,master not allowed"},
+		{"storage", "the first hub of a cluster is a master"},
 		{"master,leader", `unknown role "leader"`},
 	} {
 		opts := hubOptions{
 			dataDir: t.TempDir(), listen: "127.0.0.1:0", httpListen: "127.0.0.1:0",
-			cluster: clusterOptions{allowRoles: tc.allow},
+			cluster: clusterOptions{allowRoles: tc.allow, listen: "127.0.0.1:0"},
 		}
 		err := runHub(t.Context(), opts, slog.New(slog.DiscardHandler))
 		if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
@@ -52,28 +51,7 @@ func TestHubRefusesRolesOutsideAllowRoles(t *testing.T) {
 	}
 }
 
-func TestGossipAdvertiseAddr(t *testing.T) {
-	host := hostnameOr("localhost")
-	for _, tc := range []struct {
-		opts clusterOptions
-		want string
-	}{
-		{clusterOptions{raftListen: ":7444", gossipListen: ":7445"}, host + ":7445"},
-		{clusterOptions{raftListen: ":7444", advertise: "hub-b.lan:7444", gossipListen: ":7445"}, "hub-b.lan:7445"},
-		{clusterOptions{raftListen: "10.0.0.5:7444", gossipListen: "0.0.0.0:9000"}, "10.0.0.5:9000"},
-		{clusterOptions{gossipListen: ":7445", gossipAdvertise: "10.0.0.9:7999"}, "10.0.0.9:7999"},
-	} {
-		got, err := tc.opts.gossipAdvertiseAddr()
-		if err != nil || got != tc.want {
-			t.Errorf("%+v: gossipAdvertiseAddr = %q, %v; want %q", tc.opts, got, err, tc.want)
-		}
-	}
-	if _, err := (clusterOptions{gossipAdvertise: "no-port"}).gossipAdvertiseAddr(); err == nil {
-		t.Error("accepted a gossip advertise address without a port")
-	}
-}
-
-// TestClusterStatusListsMembers: a clustered hub gossips, and `hearth
+// TestClusterStatusListsMembers: a hub is a cluster of one, and `hearth
 // cluster status` lists it as a member with its roles.
 func TestClusterStatusListsMembers(t *testing.T) {
 	dataDir := t.TempDir()
@@ -83,7 +61,7 @@ func TestClusterStatusListsMembers(t *testing.T) {
 	go func() {
 		done <- runHub(ctx, hubOptions{
 			dataDir: dataDir, listen: "127.0.0.1:0", httpListen: "127.0.0.1:0", hosts: []string{"127.0.0.1"},
-			cluster: clusterOptions{form: true, nodeID: "h1", raftListen: "127.0.0.1:0", gossipListen: "127.0.0.1:0"},
+			cluster: clusterOptions{nodeID: "h1", listen: "127.0.0.1:0"},
 		}, slog.New(slog.DiscardHandler))
 	}()
 

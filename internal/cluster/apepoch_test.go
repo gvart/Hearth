@@ -26,7 +26,7 @@ const testEpoch = "00112233445566778899aabbccddeeff"
 func startAPTestNodeInEpoch(t *testing.T, ca *pki.CA, s apSpec, n int, seed, epoch string) *apTestNode {
 	t.Helper()
 	dir := t.TempDir()
-	raft := filepath.Join(dir, RaftDir)
+	raft := filepath.Join(dir, StateDir)
 	if err := os.MkdirAll(raft, 0o700); err != nil {
 		t.Fatal(err)
 	}

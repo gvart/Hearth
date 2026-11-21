@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -22,10 +21,10 @@ import (
 	"github.com/gvart/hearth/internal/store"
 )
 
-// ControlSocket is the file name of a clustered hub's local control socket.
-// CLI commands on the hub host use it to read the node's status and to send
-// writes through Raft instead of writing the local database behind the
-// cluster's back. See ControlSocketPath for where it lives.
+// ControlSocket is the file name of a hub's local control socket. CLI
+// commands on the hub host use it to read the member's status and to send
+// writes through the hub's replicator instead of writing the local database
+// behind the cluster's back. See ControlSocketPath for where it lives.
 const ControlSocket = "hearth.sock"
 
 // maxSocketPath stays under the smallest unix socket path limit (104 bytes
@@ -73,184 +72,9 @@ func privateSocketDir(dir string) error {
 
 const maxCommandSize = 1 << 20
 
-// ControlHandler serves the control API: GET /v1/status (with every hub's
-// schema), POST /v1/apply (an encoded store command, proposed through node
-// or forwarded to the leader), and the member operations /v1/remove,
-// /v1/transfer-leadership and /v1/migrate, and /v1/ca/rotate, /v1/ca/finish, /v1/ca/abort and
-// /v1/ca/status of a hub CA rotation.
-func ControlHandler(node *Node, log *slog.Logger) http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /v1/status", func(w http.ResponseWriter, r *http.Request) {
-		st, err := node.StatusWithSchemas(r.Context())
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusServiceUnavailable)
-			return
-		}
-		writeJSON(w, st)
-	})
-	mux.HandleFunc("POST /v1/apply", func(w http.ResponseWriter, r *http.Request) {
-		b, err := io.ReadAll(io.LimitReader(r.Body, maxCommandSize))
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		cmd, err := store.DecodeCommand(b)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		res, err := node.ApplyOrForward(r.Context(), cmd)
-		out := applyReply{Result: res}
-		if err != nil {
-			out.Error = toWireError(err)
-			if out.Error.Kind == "" {
-				log.WarnContext(r.Context(), "control apply failed", "op", cmd.Op(), "err", err)
-			}
-		}
-		writeJSON(w, out)
-	})
-	mux.HandleFunc("POST /v1/remove", func(w http.ResponseWriter, r *http.Request) {
-		var req memberRequest
-		if !readJSON(w, r, &req) {
-			return
-		}
-		n, err := node.RemoveMember(r.Context(), req.NodeID)
-		writeJSON(w, memberReply{Revoked: n, Error: wireErr(err)})
-	})
-	mux.HandleFunc("POST /v1/transfer-leadership", func(w http.ResponseWriter, r *http.Request) {
-		var req memberRequest
-		if !readJSON(w, r, &req) {
-			return
-		}
-		err := node.TransferLeadership(r.Context(), req.NodeID)
-		writeJSON(w, memberReply{Error: wireErr(err)})
-	})
-	mux.HandleFunc("POST /v1/migrate", func(w http.ResponseWriter, r *http.Request) {
-		var req migrateRequest
-		if !readJSON(w, r, &req) {
-			return
-		}
-		from, err := node.MigrateSchema(r.Context(), req.To)
-		writeJSON(w, migrateReply{From: from, Error: wireErr(err)})
-	})
-	mux.HandleFunc("POST /v1/ca/rotate", func(w http.ResponseWriter, r *http.Request) {
-		var req RotateOptions
-		if !readJSON(w, r, &req) {
-			return
-		}
-		plan, err := node.RotateCA(r.Context(), req)
-		writeJSON(w, rotateReply{Plan: plan, Error: wireErr(err)})
-	})
-	mux.HandleFunc("POST /v1/ca/finish", func(w http.ResponseWriter, r *http.Request) {
-		var req FinishOptions
-		if !readJSON(w, r, &req) {
-			return
-		}
-		plan, err := node.FinishCA(r.Context(), req)
-		writeJSON(w, finishReply{Plan: plan, Error: wireErr(err)})
-	})
-	mux.HandleFunc("POST /v1/ca/abort", func(w http.ResponseWriter, r *http.Request) {
-		var req AbortOptions
-		if !readJSON(w, r, &req) {
-			return
-		}
-		plan, err := node.AbortCA(r.Context(), req)
-		writeJSON(w, abortReply{Plan: plan, Error: wireErr(err)})
-	})
-	mux.HandleFunc("GET /v1/ca/status", func(w http.ResponseWriter, r *http.Request) {
-		st, err := node.CAStatus(r.Context())
-		writeJSON(w, caStatusReply{Status: st, Error: wireErr(err)})
-	})
-	return mux
-}
-
-type rotateReply struct {
-	Plan  RotatePlan `json:"plan"`
-	Error *wireError `json:"error,omitempty"`
-}
-
-type finishReply struct {
-	Plan  FinishPlan `json:"plan"`
-	Error *wireError `json:"error,omitempty"`
-}
-
-type abortReply struct {
-	Plan  AbortPlan  `json:"plan"`
-	Error *wireError `json:"error,omitempty"`
-}
-
 type caStatusReply struct {
 	Status CAStatus   `json:"status"`
 	Error  *wireError `json:"error,omitempty"`
-}
-
-type migrateRequest struct {
-	To int64 `json:"to"`
-}
-
-type migrateReply struct {
-	From  int64      `json:"from"`
-	Error *wireError `json:"error,omitempty"`
-}
-
-// memberRequest names a hub for /v1/remove and /v1/transfer-leadership.
-type memberRequest struct {
-	NodeID string `json:"node_id"`
-}
-
-type memberReply struct {
-	Revoked int        `json:"revoked,omitempty"`
-	Error   *wireError `json:"error,omitempty"`
-}
-
-func readJSON(w http.ResponseWriter, r *http.Request, v any) bool {
-	if err := json.NewDecoder(io.LimitReader(r.Body, maxCommandSize)).Decode(v); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return false
-	}
-	return true
-}
-
-func wireErr(err error) *wireError {
-	if err == nil {
-		return nil
-	}
-	return toWireError(err)
-}
-
-// ServeControl serves ControlHandler on the control socket of dataDir (see
-// ControlSocketPath) until ctx is done. A stale socket file from an earlier
-// run is replaced.
-func ServeControl(ctx context.Context, dataDir string, node *Node, log *slog.Logger) error {
-	path, ownDir := controlSocketPath(dataDir)
-	if ownDir {
-		if err := privateSocketDir(filepath.Dir(path)); err != nil {
-			return fmt.Errorf("control socket: %w", err)
-		}
-	}
-	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("control socket: %w", err)
-	}
-	ln, err := listenPrivate(ctx, path)
-	if err != nil {
-		return fmt.Errorf("control socket: %w", err)
-	}
-	defer func() { _ = os.Remove(path) }()
-	srv := &http.Server{Handler: ControlHandler(node, log), ReadHeaderTimeout: 10 * time.Second}
-	errc := make(chan error, 1)
-	go func() { errc <- srv.Serve(ln) }()
-	select {
-	case err := <-errc:
-		return fmt.Errorf("control socket: %w", err)
-	case <-ctx.Done():
-	}
-	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	defer cancel()
-	_ = srv.Shutdown(shutdownCtx)
-	if err := <-errc; err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return fmt.Errorf("control socket: %w", err)
-	}
-	return nil
 }
 
 // listenPrivate listens on the unix socket path with mode 0600. Binding
@@ -292,10 +116,8 @@ type applyReply struct {
 // wireError carries an Apply error across the control socket. Kind names the
 // errors callers test for; anything else travels as its message.
 type wireError struct {
-	Kind       string `json:"kind,omitempty"`
-	Message    string `json:"message"`
-	LeaderID   string `json:"leader_id,omitempty"`
-	LeaderAddr string `json:"leader_addr,omitempty"`
+	Kind    string `json:"kind,omitempty"`
+	Message string `json:"message"`
 	// Owner and What name a master-owned row's owner (kind not_owner).
 	Owner string `json:"owner,omitempty"`
 	What  string `json:"what,omitempty"`
@@ -326,13 +148,10 @@ type kindError struct {
 }
 
 func (e *kindError) Error() string { return e.msg }
+
 func (e *kindError) Unwrap() error { return e.target }
 
 func toWireError(err error) *wireError {
-	var nl *ErrNotLeader
-	if errors.As(err, &nl) {
-		return &wireError{Kind: "not_leader", Message: nl.Error(), LeaderID: nl.LeaderID, LeaderAddr: nl.LeaderAddr}
-	}
 	var no *store.NotOwnerError
 	if errors.As(err, &no) {
 		return &wireError{Kind: "not_owner", Message: err.Error(), Owner: no.Owner, What: no.What}
@@ -346,9 +165,6 @@ func toWireError(err error) *wireError {
 }
 
 func (e *wireError) toError() error {
-	if e.Kind == "not_leader" {
-		return &ErrNotLeader{LeaderID: e.LeaderID, LeaderAddr: e.LeaderAddr}
-	}
 	if e.Kind == "not_owner" {
 		return &store.NotOwnerError{What: e.What, Owner: e.Owner}
 	}
@@ -363,9 +179,9 @@ func writeJSON(w http.ResponseWriter, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// ControlClient talks to a running clustered hub through its control socket.
-// It is a store.Applier, so a CLI command can open the store for reads and
-// send its writes through the hub's Raft node.
+// ControlClient talks to a running hub through its control socket. It is a
+// store.Applier, so a CLI command can open the store for reads and send its
+// writes through the hub's replicator.
 type ControlClient struct {
 	path string
 	http *http.Client
@@ -410,104 +226,6 @@ func (c *ControlClient) Apply(ctx context.Context, cmd store.Command) (store.Res
 		return store.Result{}, reply.Error.toError()
 	}
 	return reply.Result, nil
-}
-
-// RemoveMember removes hub id from the cluster through the hub's node (see
-// Node.RemoveMember) and returns how many certificates were revoked.
-func (c *ControlClient) RemoveMember(ctx context.Context, id string) (int, error) {
-	var reply memberReply
-	if err := c.post(ctx, "/v1/remove", memberRequest{NodeID: id}, &reply); err != nil {
-		return 0, err
-	}
-	if reply.Error != nil {
-		return 0, reply.Error.toError()
-	}
-	return reply.Revoked, nil
-}
-
-// TransferLeadership hands leadership to voter id, or to any voter when id is
-// empty, through the hub's node (see Node.TransferLeadership).
-func (c *ControlClient) TransferLeadership(ctx context.Context, id string) error {
-	var reply memberReply
-	if err := c.post(ctx, "/v1/transfer-leadership", memberRequest{NodeID: id}, &reply); err != nil {
-		return err
-	}
-	if reply.Error != nil {
-		return reply.Error.toError()
-	}
-	return nil
-}
-
-// MigrateSchema migrates the cluster's schema to version to through the
-// hub's node (see Node.MigrateSchema) and returns the version it was at.
-func (c *ControlClient) MigrateSchema(ctx context.Context, to int64) (int64, error) {
-	var reply migrateReply
-	if err := c.post(ctx, "/v1/migrate", migrateRequest{To: to}, &reply); err != nil {
-		return 0, err
-	}
-	if reply.Error != nil {
-		return 0, reply.Error.toError()
-	}
-	return reply.From, nil
-}
-
-// RotateCA starts a hub CA rotation through the hub's node (see
-// Node.RotateCA). The plan comes back with a refusal too.
-func (c *ControlClient) RotateCA(ctx context.Context, opts RotateOptions) (RotatePlan, error) {
-	var reply rotateReply
-	if err := c.post(ctx, "/v1/ca/rotate", opts, &reply); err != nil {
-		return RotatePlan{}, err
-	}
-	if reply.Error != nil {
-		return reply.Plan, reply.Error.toError()
-	}
-	return reply.Plan, nil
-}
-
-// FinishCA finishes the hub CA rotation through the hub's node (see
-// Node.FinishCA), which waits for every hub, so for up to caFinishTimeout.
-// The plan comes back with a refusal too.
-func (c *ControlClient) FinishCA(ctx context.Context, opts FinishOptions) (FinishPlan, error) {
-	ctx, cancel := context.WithTimeout(ctx, caFinishTimeout)
-	defer cancel()
-	long := &http.Client{Transport: c.http.Transport}
-	var reply finishReply
-	if err := c.postWith(ctx, long, "/v1/ca/finish", opts, &reply); err != nil {
-		return FinishPlan{}, err
-	}
-	if reply.Error != nil {
-		return reply.Plan, reply.Error.toError()
-	}
-	return reply.Plan, nil
-}
-
-// AbortCA gives up the hub CA rotation before its cutover through the hub's
-// node (see Node.AbortCA). The plan comes back with a refusal too.
-func (c *ControlClient) AbortCA(ctx context.Context, opts AbortOptions) (AbortPlan, error) {
-	var reply abortReply
-	if err := c.post(ctx, "/v1/ca/abort", opts, &reply); err != nil {
-		return AbortPlan{}, err
-	}
-	if reply.Error != nil {
-		return reply.Plan, reply.Error.toError()
-	}
-	return reply.Plan, nil
-}
-
-// CAStatus returns the hub CA rotation's status (see Node.CAStatus).
-func (c *ControlClient) CAStatus(ctx context.Context) (CAStatus, error) {
-	var reply caStatusReply
-	if err := c.do(ctx, http.MethodGet, "/v1/ca/status", nil, &reply); err != nil {
-		return CAStatus{}, err
-	}
-	if reply.Error != nil {
-		return CAStatus{}, reply.Error.toError()
-	}
-	return reply.Status, nil
-}
-
-func (c *ControlClient) post(ctx context.Context, path string, body, out any) error {
-	return c.postWith(ctx, c.http, path, body, out)
 }
 
 func (c *ControlClient) postWith(ctx context.Context, hc *http.Client, path string, body, out any) error {

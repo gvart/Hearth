@@ -64,9 +64,6 @@ type DeviceLister interface {
 type ScriptDeps struct {
 	// Devices nil fails devices() and device() when a script calls them.
 	Devices DeviceLister
-	// Live overlays what the hub knows of a device beyond the store, such as
-	// hub.Registry.Live; nil means the store's view.
-	Live func(store.Device) store.Device
 }
 
 // Script returns the script action type: a Starlark script run on the hub.
@@ -370,9 +367,6 @@ func (r *scriptRun) read(target string, match func(store.Device) bool, fn func(s
 			return fmt.Errorf("list devices: %w", err)
 		}
 		for _, d := range devs {
-			if r.a.deps.Live != nil {
-				d = r.a.deps.Live(d)
-			}
 			if match(d) {
 				fn(d)
 			}

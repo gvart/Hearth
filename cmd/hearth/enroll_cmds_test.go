@@ -59,7 +59,7 @@ func TestTokenCreate(t *testing.T) {
 
 	var raw string
 	for _, f := range strings.Fields(out) {
-		if strings.HasPrefix(f, "hearth1.") {
+		if strings.HasPrefix(f, "hearth2.") {
 			raw = f
 			break
 		}
@@ -70,6 +70,9 @@ func TestTokenCreate(t *testing.T) {
 	}
 	if tok.CAFingerprint != ca.Fingerprint() {
 		t.Error("token is not pinned to the hub CA")
+	}
+	if tok.HubURL != "https://hub.lan:7443" {
+		t.Errorf("token names hub %q, want https://hub.lan:7443", tok.HubURL)
 	}
 	if want := "HEARTH_TOKEN=" + raw + " hearth agent join https://hub.lan:7443\n"; !strings.Contains(out, want) {
 		t.Errorf("output lacks join one-liner %q:\n%s", want, out)

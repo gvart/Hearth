@@ -119,10 +119,9 @@ stops imports.
 
 ## In a cluster
 
-Only the leader imports. The result is replicated to every hub as one Raft log entry per import.
-Set the flags, and give the password and lease files, on every hub, so that a new leader keeps
-importing after a failover. Imports need schema 14: run `hearth cluster migrate` after you upgrade
-every hub.
+One master imports, and the result is replicated to the cluster. Set the flags, and give the password
+and lease files, on every master, so that another one takes the import over when that master goes
+away.
 
 ## API
 

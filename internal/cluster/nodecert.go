@@ -39,7 +39,7 @@ func ValidNodeID(id string) error {
 // short random suffix. A want that differs from the persisted ID is an error:
 // a data dir belongs to one node for life.
 func NodeID(dataDir, want, hostname string) (string, error) {
-	dir := filepath.Join(dataDir, RaftDir)
+	dir := filepath.Join(dataDir, StateDir)
 	path := filepath.Join(dir, nodeIDFile)
 	b, err := os.ReadFile(path)
 	switch {
@@ -62,7 +62,7 @@ func NodeID(dataDir, want, hostname string) (string, error) {
 		return "", err
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", fmt.Errorf("create raft dir: %w", err)
+		return "", fmt.Errorf("create cluster dir: %w", err)
 	}
 	if err := os.WriteFile(path, []byte(id+"\n"), 0o600); err != nil {
 		return "", fmt.Errorf("write node ID: %w", err)
@@ -137,7 +137,7 @@ func loadOrIssueNodeCert(dir string, ca *pki.CA, nodeID, epoch string, now time.
 // writeNodeCert saves a node certificate (0644) and its key (0600).
 func writeNodeCert(dir string, cert *x509.Certificate, key crypto.Signer) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("create raft dir: %w", err)
+		return fmt.Errorf("create cluster dir: %w", err)
 	}
 	if err := pki.WriteKey(filepath.Join(dir, nodeKeyFile), key); err != nil {
 		return err
