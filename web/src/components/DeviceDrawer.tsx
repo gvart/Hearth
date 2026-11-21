@@ -1,4 +1,5 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
+import { useRevokeDevice } from '../api/admin.ts';
 import type { Device } from '../api/client.ts';
 import { markTerminalLaunch, terminalHttpsDocs, terminalTransportAllowed } from '../api/terminal.ts';
 import { displayName, formatBytes, formatDateTime, osArch, primaryIP, statusLabel } from '../format.ts';
@@ -6,6 +7,7 @@ import { DeviceCharts } from './DeviceCharts.tsx';
 import { DeviceContainers } from './DeviceContainers.tsx';
 import { DeviceLogSources } from './DeviceLogSources.tsx';
 import { DeviceNetEdges } from './DeviceNetEdges.tsx';
+import { ConfirmDialog } from './ConfirmDialog.tsx';
 import { Modal } from './Modal.tsx';
 import { StatusDot } from './StatusDot.tsx';
 
@@ -160,7 +162,68 @@ export function DeviceDrawer({ device, onClose }: { device: Device; onClose: () 
           <p className="muted small">None reported.</p>
         )}
       </Section>
+
+      <Section title="Access">
+        <RevokeDevice device={device} />
+      </Section>
     </Modal>
+  );
+}
+
+/** Revokes the device's certificates, as `hearth device revoke` does. */
+function RevokeDevice({ device }: { device: Device }) {
+  const [open, setOpen] = useState(false);
+  const revoke = useRevokeDevice();
+  return (
+    <>
+      <p className="muted small">
+        Revoking cuts the device off: its agent is disconnected within 10 seconds and cannot connect again
+        until it is enrolled anew.
+      </p>
+      <div>
+        <button
+          className="btn btn-danger btn-small"
+          type="button"
+          onClick={() => {
+            revoke.reset();
+            setOpen(true);
+          }}
+        >
+          Revoke device
+        </button>
+      </div>
+      {open ? (
+        <ConfirmDialog
+          title={`Revoke ${displayName(device)}`}
+          actionClass="dangerous"
+          confirmLabel="Revoke"
+          pendingLabel="Revoking…"
+          pending={revoke.isPending}
+          error={revoke.isError ? revoke.error.message : undefined}
+          done={
+            revoke.isSuccess ? (
+              <>
+                Revoked {revoke.data.revoked} certificate{revoke.data.revoked === 1 ? '' : 's'}. The agent is cut
+                off within 10 seconds; enroll it again with <code>hearth agent join</code> to bring it back.
+              </>
+            ) : undefined
+          }
+          asksPassword
+          onConfirm={() => {
+            revoke.mutate(device.id);
+          }}
+          onClose={() => {
+            setOpen(false);
+          }}
+        >
+          <p>
+            Every certificate of <strong>{displayName(device)}</strong> (<span className="mono">{device.id}</span>) is
+            revoked. Its agent stops and does not reconnect. This cannot be undone: the device has to be enrolled
+            again.
+          </p>
+        </ConfirmDialog>
+      ) : null}
+    </>
   );
 }
 

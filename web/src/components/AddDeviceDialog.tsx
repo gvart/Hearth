@@ -4,6 +4,30 @@ import { useCreateToken } from '../api/hooks.ts';
 import { displayName } from '../format.ts';
 import { Modal } from './Modal.tsx';
 import { QrCode } from './QrCode.tsx';
+import './SettingsPage.css';
+
+const ttls = [
+  { value: '15m', label: '15 minutes' },
+  { value: '1h', label: '1 hour' },
+  { value: '6h', label: '6 hours' },
+  { value: '24h', label: '24 hours' },
+];
+
+interface Label {
+  key: string;
+  value: string;
+}
+
+/** The labels to send: rows with a key, trimmed. */
+function labelsOf(rows: Label[]): Record<string, string> | undefined {
+  const out: Record<string, string> = {};
+  for (const r of rows) {
+    if (r.key.trim() !== '') {
+      out[r.key.trim()] = r.value.trim();
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
 
 interface Props {
   /** The first device that appeared since the dialog opened, if any. */
@@ -25,6 +49,13 @@ export function AddDeviceDialog({ joined, onClose, onShow }: Props) {
   }, [mutate]);
 
   const tok = create.data;
+  const [ttl, setTtl] = useState('15m');
+  const [labels, setLabels] = useState<Label[]>([]);
+  // Stays open across the new token, which remounts it.
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const remint = () => {
+    mutate({ ttl, labels: labelsOf(labels) });
+  };
 
   return (
     <Modal className="dialog" labelledBy="add-title" onClose={onClose}>
@@ -44,9 +75,7 @@ export function AddDeviceDialog({ joined, onClose, onShow }: Props) {
           <button
             className="btn"
             type="button"
-            onClick={() => {
-              mutate({});
-            }}
+            onClick={remint}
           >
             Try again
           </button>
@@ -65,6 +94,85 @@ export function AddDeviceDialog({ joined, onClose, onShow }: Props) {
               <p className="muted small">
                 Single use · expires at {new Date(tok.expires_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </p>
+              <details
+                className="enroll-options"
+                open={optionsOpen}
+                onToggle={(e) => {
+                  setOptionsOpen(e.currentTarget.open);
+                }}
+              >
+                <summary>Expiry and labels</summary>
+                <form
+                  className="form"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    remint();
+                  }}
+                >
+                  <label className="field">
+                    Token expires after
+                    <select
+                      value={ttl}
+                      onChange={(e) => {
+                        setTtl(e.target.value);
+                      }}
+                    >
+                      {ttls.map((t) => (
+                        <option key={t.value} value={t.value}>
+                          {t.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <fieldset className="field label-rows">
+                    <legend>Labels the device gets on enrollment</legend>
+                    {labels.map((l, i) => (
+                      <div key={i} className="label-row">
+                        <input
+                          aria-label="Label key"
+                          placeholder="key, e.g. room"
+                          value={l.key}
+                          onChange={(e) => {
+                            setLabels(labels.map((x, j) => (j === i ? { ...x, key: e.target.value } : x)));
+                          }}
+                        />
+                        <input
+                          aria-label="Label value"
+                          placeholder="value"
+                          value={l.value}
+                          onChange={(e) => {
+                            setLabels(labels.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)));
+                          }}
+                        />
+                        <button
+                          className="btn btn-ghost btn-small"
+                          type="button"
+                          aria-label="Remove label"
+                          onClick={() => {
+                            setLabels(labels.filter((_, j) => j !== i));
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      className="btn btn-small"
+                      type="button"
+                      onClick={() => {
+                        setLabels([...labels, { key: '', value: '' }]);
+                      }}
+                    >
+                      Add label
+                    </button>
+                  </fieldset>
+                  <div className="settings-actions">
+                    <button className="btn btn-primary btn-small" type="submit" disabled={create.isPending}>
+                      New token with these options
+                    </button>
+                  </div>
+                </form>
+              </details>
             </div>
             <figure className="qr-wrap">
               <QrCode value={tok.install_command} label="QR code of the install command" />

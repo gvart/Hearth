@@ -1,4 +1,4 @@
-import { useSetTelemetry, useTelemetry } from '../api/hooks.ts';
+import { useSession, useSetTelemetry, useTelemetry } from '../api/hooks.ts';
 import { telemetryDocsURL, telemetryFields, telemetryView } from '../telemetry.ts';
 
 /** Asks the admin once, after sign-in, whether to share anonymous usage stats. Nothing is sent until yes. */
@@ -62,11 +62,14 @@ export function TelemetryPrompt() {
 export function TelemetryStatus() {
   const view = telemetryView(useTelemetry().data);
   const set = useSetTelemetry();
+  const version = useSession().data?.version;
+  const hub = version ? <>Hearth {version} · </> : null;
   if (view === 'loading' || view === 'ask') {
-    return null;
+    return hub ? <footer className="telemetry-status small muted">Hearth {version}</footer> : null;
   }
   return (
     <footer className="telemetry-status small muted">
+      {hub}
       {view === 'env-off' ? (
         <>Anonymous usage stats are turned off on the hub (HEARTH_TELEMETRY=off).</>
       ) : (

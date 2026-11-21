@@ -68,6 +68,10 @@ export interface Device {
 export interface Session {
   user: string;
   expires_at: string;
+  /** Until when sensitive actions need no password again; absent when they do. */
+  reauth_until?: string;
+  /** The hub's build version. */
+  version?: string;
 }
 
 export interface CreatedToken {
@@ -636,12 +640,15 @@ export interface GuestPanel {
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
+  /** The answer's body, for errors that carry more than a message. */
+  readonly body: unknown;
 
-  constructor(status: number, code: string, message: string) {
+  constructor(status: number, code: string, message: string, body?: unknown) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
+    this.body = body;
   }
 }
 
@@ -661,7 +668,7 @@ export async function request<T>(method: string, path: string, body?: unknown): 
   const data: unknown = await res.json().catch(() => null);
   if (!res.ok) {
     const err = (data ?? {}) as Partial<{ error: string; code: string }>;
-    throw new ApiError(res.status, err.code ?? 'unknown', err.error ?? `request failed with status ${String(res.status)}`);
+    throw new ApiError(res.status, err.code ?? 'unknown', err.error ?? `request failed with status ${String(res.status)}`, data);
   }
   return data as T;
 }

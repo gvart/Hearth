@@ -12,7 +12,9 @@ import { NetworkPage } from './NetworkPage.tsx';
 import { NotificationsPage } from './NotificationsPage.tsx';
 import { PanelsPage } from './PanelsPage.tsx';
 import { ProxmoxPage } from './ProxmoxPage.tsx';
+import { ReauthHost } from './ReauthDialog.tsx';
 import { RunbooksPage } from './RunbooksPage.tsx';
+import { SettingsPage } from './SettingsPage.tsx';
 import { TelemetryPrompt, TelemetryStatus } from './TelemetryPrompt.tsx';
 
 // Loaded when opened: the editor brings a YAML parser no other page needs.
@@ -29,7 +31,8 @@ type Page =
   | 'panels'
   | 'audit'
   | 'approvals'
-  | 'cluster';
+  | 'cluster'
+  | 'settings';
 
 const pages: { id: Page; label: string; hash: string }[] = [
   { id: 'devices', label: 'Devices', hash: '#/' },
@@ -43,6 +46,7 @@ const pages: { id: Page; label: string; hash: string }[] = [
   { id: 'audit', label: 'Audit', hash: '#/audit' },
   { id: 'approvals', label: 'Approvals', hash: '#/approvals' },
   { id: 'cluster', label: 'Cluster', hash: '#/cluster' },
+  { id: 'settings', label: 'Settings', hash: '#/settings' },
 ];
 
 function pageOf(hash: string): Page {
@@ -51,6 +55,9 @@ function pageOf(hash: string): Page {
   }
   if (hash.startsWith('#/cluster')) {
     return 'cluster';
+  }
+  if (hash.startsWith('#/settings')) {
+    return 'settings';
   }
   if (hash.startsWith('#/network')) {
     return 'network';
@@ -181,10 +188,13 @@ export function Shell() {
         <AuditPage />
       ) : page === 'cluster' ? (
         <ClusterPage />
+      ) : page === 'settings' ? (
+        <SettingsPage />
       ) : (
         <DevicesPage />
       )}
       <TelemetryStatus />
+      <ReauthHost />
     </div>
   );
 }

@@ -1,0 +1,201 @@
+/* Settings */
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-width: 60rem;
+}
+
+.settings-kv {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  margin: 0;
+}
+
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.settings .panel-card > .form {
+  max-width: 28rem;
+}
+
+.settings .field select,
+.channel-form .field select,
+.enroll-options .field select {
+  height: 2.5rem;
+  padding: 0 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-weight: 400;
+}
+
+/* A YAML document: the policy, a runbook. */
+.field textarea.doc-yaml {
+  width: 100%;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  line-height: 1.55;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.field textarea.doc-yaml[readonly] {
+  background: var(--surface);
+}
+
+.problem-list {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.problem-list li + li {
+  margin-top: 0.25rem;
+}
+
+/* A write-only field: its value never comes back, only whether it is set. */
+.secret-field input::placeholder {
+  color: var(--muted);
+}
+
+.secret-state {
+  font-weight: 400;
+}
+
+.label-rows {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.label-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.label-row input {
+  min-width: 0;
+  height: 2.25rem;
+  padding: 0 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+.enroll-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 0.25rem 0 0.75rem;
+}
+
+.enroll-options summary {
+  cursor: pointer;
+  font-size: 0.875rem;
+}
+
+.auto-runs {
+  margin-top: 1.25rem;
+}
+
+.auto-runs ol {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.auto-run {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow-wrap: anywhere;
+}
+
+.auto-run-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.auto-run-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.settings .field > .muted,
+.channel-form .field > .muted {
+  font-weight: 400;
+}
+
+/* A YAML document's page: a runbook. */
+.doc-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-width: 56rem;
+}
+
+.doc-editor .page-head {
+  flex-wrap: wrap;
+  margin-bottom: 0;
+}
+
+.doc-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.doc-title h1 {
+  font-size: 1.35rem;
+}
+
+.label-rows legend {
+  margin-bottom: 0.35rem;
+  padding: 0;
+}
+
+.label-rows > .btn {
+  align-self: flex-start;
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 400;
+}
+
+.field .check-row input {
+  height: auto;
+}
+
+.runbooks-new,
+.runbook-actions a.btn {
+  text-decoration: none;
+}

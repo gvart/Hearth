@@ -12,7 +12,8 @@ server it could not reach, as `dial tcp ntfy.lan:443: ...`, like a webhook names
 ## The channels file
 
 `notify.yaml`, imported with `hearth config import` (see
-[guardrails](guardrails.md#configuration-documents)). On its first start a hub imports
+[guardrails](guardrails.md#configuration-documents)), or edited channel by channel on the web UI's
+**Notifications** page (below). On its first start a hub imports
 `<data-dir>/notify.yaml`, or `hearth hub --notify-config FILE` (env `HEARTH_NOTIFY_CONFIG`), once:
 
 ```yaml
@@ -40,6 +41,17 @@ to a group), and read the chat id from `https://api.telegram.org/bot<TOKEN>/getU
 
 In a cluster, every hub holds the same channels, so the leader, whichever hub it is, sends the same
 way.
+
+### Editing channels in the web UI
+
+**New channel**, **Edit** and **Delete** on the Notifications page change `notify.yaml` in the store.
+The fields are write-only: the page shows whether each one is set, never its value, and leaving a
+field empty keeps what is stored (an optional access token has a checkbox to remove it). Changing a
+channel's type starts it afresh. Each change is checked with the rest of the configuration, as an
+import is, then saved as `config.import` by `web` after the admin password is entered again (see
+[security](security.md#sensitive-actions-ask-for-the-password-again)). A channel an automation or
+`approval_notify` still uses cannot be deleted. The editor rewrites the file, so comments in it are
+not kept.
 
 ## Sending from an automation
 

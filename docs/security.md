@@ -41,7 +41,8 @@ mutually authenticated join channel; to the members of a cluster during a hub CA
 cluster's mutual TLS, and only to a member presenting exactly the node certificate pinned when the
 rotation started (the key itself never enters the database, the Raft log or a snapshot); and inside
 a passphrase-encrypted [backup](backup.md) archive:
-one that only an authenticated admin can create, through policy (`hub.backup`) and with an audit entry,
+one that only an authenticated admin can create, through policy (`hub.backup`, from the CLI or the
+web UI, where it also takes the admin password again) and with an audit entry,
 or a scheduled one the hub uploads to a bucket, through policy (`hub.scheduled_backup`) and with an
 audit entry, which holds the CA key only when the operator starts the hub with `--backup-include-ca`.
 Whoever can read a hub's data dir can mint certificates the
@@ -94,8 +95,9 @@ All three are dangerous policy actions for the local admin, audited. What it doe
 - **Kept out of argv**: pass it as `HEARTH_TOKEN=<token>` or on stdin, never as an argument, which
   any local user can read with `ps`. The installer passes it to `hearth agent join` on stdin.
 
-A device can be cut off with `hearth device revoke <device-id>` on the hub host: its certificates are
-revoked, the agent is disconnected within 10 seconds and exits instead of reconnecting.
+A device can be cut off with `hearth device revoke <device-id>` on the hub host, or with **Revoke
+device** in its panel of the web UI: its certificates are revoked, the agent is disconnected within
+10 seconds and exits instead of reconnecting.
 
 ## The web UI
 
@@ -109,6 +111,23 @@ Logins are limited to 5 attempts in a row per client address, then one every 12 
 CPU priority so a login cannot starve the hub (or a cluster leader's heartbeats) of CPU; a login that
 waits more than 10 seconds for its turn is answered `503 busy` with `Retry-After`. Behind a reverse
 proxy every login comes from the proxy's address and shares one limit.
+
+### Sensitive actions ask for the password again
+
+A signed-in session is not enough for the most sensitive actions of the web UI: revoking a device,
+creating or revoking an MCP token, saving the policy, changing a notification channel and downloading
+a backup. Each asks for the admin password again, then goes through policy like any other action.
+
+- An answer is good for **5 minutes**, for that session only, and is held in the hub's memory: a hub
+  restart, a sign-out or a password change forgets it. Signing in counts as entering it.
+- A missing or expired one is refused (`403 reauth_required`) and audited as a denial, before policy
+  can hold the action for approval.
+- A wrong one is refused (`403 reauth_failed`), audited as `admin.reauth` with the result `error: wrong password`, and limited like a
+  login from the same address.
+
+The admin password can be changed in **Settings** while signed in, given the current one; this is
+`admin.set_password` by `web` (dangerous) and signs out every session. A forgotten password is reset
+on the hub host with `hearth admin set-password`, which stays CLI-only.
 
 ## The installer and releases
 
@@ -151,10 +170,13 @@ running it.
 - **Notifications**: channel credentials (ntfy tokens, Telegram bot tokens) are in the `notify.yaml`
   document, sealed with AES-256-GCM (key derived from the hub CA key) before it enters the store, and
   re-sealed by a hub CA rotation. No API returns it; only `hearth config export` on a hub host writes it
-  in clear. Automations, the UI, run history and the audit log name a channel only.
+  in clear. The web editor of channels is write-only: it shows whether each field is set, never its
+  value, and an empty field keeps what is stored. Automations, the UI, run history and the audit log
+  name a channel only.
 - **Configuration documents**: policy, automations and runbooks are documents of the replicated store
   (see [guardrails](guardrails.md#configuration-documents)). Changing them is `config.import`
-  (dangerous, audited), or `automation.apply` from the web editor and MCP. Automation and runbook files
+  (dangerous, audited), from the CLI or from the web editors of the policy, notification channels and
+  runbooks (and deleting an automation), or `automation.apply` from the automation editor and MCP. Automation and runbook files
   are stored as written, not sealed: keep secrets such as webhook tokens out of them where you can.
 - **Webhooks**: errors and the audit log name only a webhook URL's scheme and host, as URLs and
   headers often carry secrets.

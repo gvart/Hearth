@@ -16,6 +16,12 @@ on its first start a hub imports its `<data-dir>/runbooks` directory (or `--runb
 `*.yaml` and `*.yml` file (not in subdirectories) is one runbook. A runbook is read when it is listed,
 planned or started, so an import needs no restart.
 
+The web UI's **Runbooks** page also creates, edits and deletes them: **New runbook**, or **Edit** on a
+runbook, opens the file as YAML. **Check and plan** validates it and shows its plan (each step, and the
+policy decision for those that act) without running anything; **Save…** checks it again and asks before
+saving. A new runbook is saved as `<id>.yaml`. Saving and deleting are `config.import` by `web`,
+decided by policy and audited, like an import.
+
 ## A worked example
 
 This runbook upgrades an app behind a load balancer. It asks for a go-ahead and a reason, takes the

@@ -60,6 +60,17 @@ other. If your `policy.yaml` holds dangerous actions for approval, the command w
 The audit log records the backup before the copy is taken and its outcome afterwards, so a restored hub
 shows that backup as `started`. The outcome is on the hub that took it.
 
+### From the web UI
+
+**Settings → Backup → Download backup…** makes the same archive, CA key included, and hands it to the
+browser to save as `hearth-<time>.hbk`. It asks for a passphrase (twice, at least 12 characters) and
+then for the admin password again (see
+[security](security.md#sensitive-actions-ask-for-the-password-again)). It is `hub.backup` by `web`,
+held for approval like the command when policy says so, and audited. The passphrase travels in the
+request body to the hub over the UI's connection, so prefer HTTPS: it is never logged, stored or
+audited. The hub writes the archive to a temporary directory in its data dir and deletes it once sent.
+Restore it with `hearth restore` on a hub host, as below.
+
 ### The passphrase
 
 A backup holds the CA private key and every credential of the hub, so it is always encrypted. The
