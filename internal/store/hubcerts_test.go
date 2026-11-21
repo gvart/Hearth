@@ -124,7 +124,7 @@ func TestHubCertsBeforeTheirSchema(t *testing.T) {
 		}
 	}
 
-	if _, err := s.ApplyLocal(ctx, MigrateSchema{To: hubCertsSchema}); err != nil {
+	if err := s.migrateTo(ctx, hubCertsSchema); err != nil {
 		t.Fatalf("migrate to %d: %v", hubCertsSchema, err)
 	}
 	if err := hubs.RequireCerts(ctx); err != nil {

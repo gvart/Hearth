@@ -213,7 +213,7 @@ func TestAuditOpMigrationBackfills(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := s.ApplyLocal(ctx, MigrateSchema{To: auditOpSchemaForTest}); err != nil {
+	if err := s.migrateTo(ctx, auditOpSchemaForTest); err != nil {
 		t.Fatal(err)
 	}
 	cols := auditOpColumns(ctx, t, s.db)
@@ -277,7 +277,7 @@ func TestAuditBeforeTheOpColumns(t *testing.T) {
 	}
 
 	// Migrating then backfills what was written meanwhile.
-	if _, err := s.ApplyLocal(ctx, MigrateSchema{To: auditOpSchemaForTest}); err != nil {
+	if err := s.migrateTo(ctx, auditOpSchemaForTest); err != nil {
 		t.Fatal(err)
 	}
 	after, err := s.Audit().query(ctx, AuditFilter{}, 10000, auditByColumn)

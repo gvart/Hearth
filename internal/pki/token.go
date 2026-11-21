@@ -63,8 +63,7 @@ func (t Token) EncodeJoin() string { return t.encode(joinTokenPrefix) }
 
 // EncodeHub returns the token string naming hubURL, the agent-facing URL of
 // the AP cluster master that owns it: hearth2.<secret>.<ca-fingerprint>.<url>,
-// all base64url. Only a master of an AP cluster issues these; a single hub
-// and a Raft cluster keep issuing Encode's.
+// all base64url. A cluster master issues these.
 func (t Token) EncodeHub(hubURL string) string {
 	return t.encode(hubTokenPrefix) + "." + b64.EncodeToString([]byte(hubURL))
 }

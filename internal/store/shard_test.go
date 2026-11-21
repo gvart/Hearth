@@ -36,9 +36,6 @@ func openTestWith(t *testing.T, opts ...Option) *Store {
 // Every command has a route in a sharded cluster, or is refused there on
 // purpose.
 func TestRouteOfEveryCommand(t *testing.T) {
-	refused := map[string]bool{
-		MigrateSchema{}.Op(): true, // the schema moves on each member (docs/design/ap-cluster.md §8)
-	}
 	configCmds := []Command{PutConfigDocs{By: "x"}, DeleteConfigDoc{Kind: ConfigRunbook, Name: "r.yaml"}}
 	for _, cmd := range configCmds {
 		if r, err := RouteOf(cmd); err != nil || r.Kind != RouteGlobal || !r.Critical {
@@ -47,12 +44,6 @@ func TestRouteOfEveryCommand(t *testing.T) {
 	}
 	for _, cmd := range append(allCommands(), configCmds...) {
 		r, err := RouteOf(cmd)
-		if refused[cmd.Op()] {
-			if !errors.Is(err, ErrNoRoute) {
-				t.Errorf("%s: err = %v, want ErrNoRoute", cmd.Op(), err)
-			}
-			continue
-		}
 		if err != nil {
 			t.Errorf("%s: %v", cmd.Op(), err)
 			continue
@@ -75,9 +66,6 @@ func TestRouteOfEveryCommand(t *testing.T) {
 	run := ResealSecrets{Secrets: []SealedSecret{{Table: SealedRunbookRuns, ID: "r1", Key: "rb"}}}
 	if r, err := RouteOf(run); err != nil || r.Kind != RouteKey || r.Key != "rb" || !r.Critical {
 		t.Errorf("reseal_secrets of a run: %+v, %v; want critical on its runbook", r, err)
-	}
-	if _, err := RouteOf(MigrateSchema{To: 99}); !errors.Is(err, ErrNoRoute) {
-		t.Errorf("migrate_schema: err = %v, want ErrNoRoute", err)
 	}
 }
 
@@ -108,7 +96,7 @@ func TestRouteKeyIsRowPartition(t *testing.T) {
 }
 
 func TestSplitAndMergeResults(t *testing.T) {
-	cmd := MarkSeenBatch{Seen: []Seen{{ID: "a", LastSeen: 1}, {ID: "b", LastSeen: 2}, {ID: "c", LastSeen: 3}}}
+	cmd := MarkDevicesOffline{IDs: []string{"a", "b", "c"}, Cutoff: 7}
 	parts, err := SplitCommand(cmd, func(k string) string {
 		if k == "b" {
 			return "m2"
@@ -118,7 +106,7 @@ func TestSplitAndMergeResults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := parts["m1"].(MarkSeenBatch).Seen; len(got) != 2 || got[0].ID != "a" || got[1].ID != "c" {
+	if got := parts["m1"].(MarkDevicesOffline); len(got.IDs) != 2 || got.IDs[0] != "a" || got.IDs[1] != "c" || got.Cutoff != 7 {
 		t.Errorf("m1 = %+v", got)
 	}
 	if got := MergeResults(cmd, []Result{{Count: 2}, {Count: 1}}); got.Count != 3 {

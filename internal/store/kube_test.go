@@ -83,7 +83,7 @@ func TestKubeClustersBeforeTheirSchema(t *testing.T) {
 	if err := kc.Add(ctx, c); !errors.Is(err, ErrSchemaTooOld) || !IsDomainError(err) {
 		t.Errorf("Add before the schema = %v, want ErrSchemaTooOld", err)
 	}
-	if _, err := s.ApplyLocal(ctx, MigrateSchema{To: kubeClustersSchema}); err != nil {
+	if err := s.migrateTo(ctx, kubeClustersSchema); err != nil {
 		t.Fatal(err)
 	}
 	if err := kc.Add(ctx, c); err != nil {

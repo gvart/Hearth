@@ -13,10 +13,9 @@ import (
 )
 
 // Command is a typed, serializable description of one store write. It carries
-// every non-deterministic input (timestamps, hashes, encoded JSON, and the
-// Stamp that versions its rows), so applying the same sequence of commands to
-// the same starting state yields the same rows on every node. Commands are
-// built by the repository methods; the set is closed to this package.
+// its inputs (timestamps, hashes, encoded JSON, and the Stamp that versions
+// its rows), so a member can forward it to the replica that runs it. Commands
+// are built by the repository methods; the set is closed to this package.
 //
 // Timestamps are unix milliseconds (UTC), matching the schema. JSON documents
 // (facts, labels, detail) are carried as strings so they are stored byte for
@@ -47,8 +46,7 @@ type Result struct {
 	// ID is the audit_log ID assigned by AppendAudit.
 	ID int64
 	// Count is the number of certificates revoked by RevokeDevice or
-	// RevokeHubCerts, of devices updated by MarkSeenBatch, or of hosts
-	// recorded by RecordNetworkScan.
+	// RevokeHubCerts, or of hosts recorded by RecordNetworkScan.
 	Count int
 	// NewHosts and ReturnedHosts are the hosts RecordNetworkScan found for
 	// the first time, and back after an absence.
@@ -212,50 +210,10 @@ func markOffline(ctx context.Context, w *writer, rows []row) (Result, error) {
 	return Result{Devices: out}, nil
 }
 
-// Seen is one device's last heartbeat in a MarkSeenBatch.
-type Seen struct {
-	ID       string `json:"id"`
-	LastSeen int64  `json:"last_seen"`
-}
-
-// MarkSeenBatch records the last heartbeat of many devices at once. A
-// clustered hub coalesces heartbeats in memory and flushes them with this
-// command, so last_seen does not cost a Raft round per heartbeat. It only
-// moves last_seen forward and never changes a status: presence transitions
-// go through MarkSeen and MarkDevicesOffline. Unknown devices are skipped.
-// Result: Count, the number of rows changed.
-type MarkSeenBatch struct {
-	Stamp
-	Seen []Seen `json:"seen"`
-}
-
-// Op implements Command.
-func (MarkSeenBatch) Op() string { return "mark_seen_batch" }
-
-func (c MarkSeenBatch) apply(ctx context.Context, w *writer) (Result, error) {
-	n := 0
-	for _, s := range c.Seen {
-		r, err := w.get(ctx, "devices", s.ID)
-		if err != nil {
-			return Result{}, err
-		}
-		if r == nil || r.int("last_seen") >= s.LastSeen {
-			continue
-		}
-		r["last_seen"] = s.LastSeen
-		if err := w.put(ctx, "devices", r); err != nil {
-			return Result{}, err
-		}
-		n++
-	}
-	return Result{Count: n}, nil
-}
-
-// MarkDevicesOffline marks the listed devices offline if they are online. A
-// clustered leader decides who is silent from its in-memory view of
-// heartbeats (see MarkSeenBatch) and names them, rather than comparing the
-// stored last_seen with a cutoff as MarkOffline does. Result: Devices, the
-// rows changed, ordered by ID.
+// MarkDevicesOffline marks the listed devices offline if they are online: a
+// master names the devices whose presence it owns, rather than comparing
+// every stored last_seen with a cutoff as MarkOffline does. Result: Devices,
+// the rows changed, ordered by ID.
 type MarkDevicesOffline struct {
 	Stamp
 	IDs []string `json:"ids"`
@@ -316,7 +274,7 @@ func (c SetHubURL) apply(ctx context.Context, w *writer) (Result, error) {
 // From CertPinsSchema it also records the certificate's Fingerprint and the
 // fingerprint of the CA that issued it (CAFP), and fills them in for a known
 // serial of the same node recorded without them. Below that schema they are
-// dropped, the same way on every node.
+// dropped.
 type RecordHubCert struct {
 	Stamp
 	Serial      string `json:"serial"`
@@ -557,9 +515,9 @@ func (c RevokeDevice) apply(ctx context.Context, w *writer) (Result, error) {
 	return Result{Count: n}, nil
 }
 
-// AppendAudit appends one audit log entry. IDs are assigned in apply order,
-// so every node that applies the same commands holds identical rows.
-// Result: ID.
+// AppendAudit appends one audit log entry. Result: ID, its row id in this
+// member's database; across the cluster an entry is known by its version
+// (_hlc, _origin, _seq).
 type AppendAudit struct {
 	Stamp
 	TS        int64  `json:"ts"`
@@ -741,8 +699,6 @@ func DecodeCommand(b []byte) (Command, error) {
 		cmd, err = decodeAs[SetBootTime](env.Cmd)
 	case MarkOffline{}.Op():
 		cmd, err = decodeAs[MarkOffline](env.Cmd)
-	case MarkSeenBatch{}.Op():
-		cmd, err = decodeAs[MarkSeenBatch](env.Cmd)
 	case MarkDevicesOffline{}.Op():
 		cmd, err = decodeAs[MarkDevicesOffline](env.Cmd)
 	case SetHubURL{}.Op():
@@ -783,8 +739,6 @@ func DecodeCommand(b []byte) (Command, error) {
 		cmd, err = decodeAs[CreateSession](env.Cmd)
 	case DeleteSession{}.Op():
 		cmd, err = decodeAs[DeleteSession](env.Cmd)
-	case MigrateSchema{}.Op():
-		cmd, err = decodeAs[MigrateSchema](env.Cmd)
 	case RecordAutomationRun{}.Op():
 		cmd, err = decodeAs[RecordAutomationRun](env.Cmd)
 	case AddKubeCluster{}.Op():

@@ -9,66 +9,18 @@ import (
 	"fmt"
 )
 
-// Schema changes in a Raft cluster.
+// Schema changes in a cluster.
 //
-// A cluster member never migrates its database on its own (WithoutUpgrade):
-// the schema is part of the replicated state and moves only by a
-// MigrateSchema command in the log, which every node applies at the same
-// point. Until then a member whose binary is newer runs at the older schema,
-// so a command that needs a newer schema must not be applied before the
-// migrate: such a command implements schemaGated, and ApplyLocal refuses it
-// with ErrSchemaTooOld below that version, the same way on every node.
+// A member migrates its own database when it opens, to the newest schema its
+// binary supports. A table or column a migration added is written only once
+// every live member supports it: writes use the cluster's write schema
+// (WithWriteSchema), the oldest schema a live member supports. A command that
+// needs a newer schema than that implements schemaGated, and ApplyLocal
+// refuses it with ErrSchemaTooOld.
 
-var (
-	// ErrSchemaNotNewer refuses a MigrateSchema to a version the database is
-	// already at or past.
-	ErrSchemaNotNewer = errors.New("schema is already at or past the target version")
-	// ErrSchemaTooOld refuses a command that needs a newer schema than the
-	// database is at: upgrade every hub of the cluster first.
-	ErrSchemaTooOld = errors.New("command needs a newer schema than the database is at")
-)
-
-// MigrateSchema runs every pending migration up to and including schema
-// version To. A cluster leader proposes it once every hub's binary supports
-// To; each node's state machine then migrates its own database in log order.
-// It fails with ErrSchemaNotNewer, a domain error, when the database is
-// already at To or past it, and with ErrSchemaMismatch, a failure of this
-// node, when To is newer than this binary supports.
-type MigrateSchema struct {
-	To int64 `json:"to"`
-}
-
-// Op implements Command.
-func (MigrateSchema) Op() string { return "migrate_schema" }
-
-// apply is never called: ApplyLocal runs MigrateSchema through goose, which
-// runs each migration in a transaction of its own.
-func (MigrateSchema) apply(context.Context, *writer) (Result, error) {
-	return Result{}, errors.New("migrate_schema runs outside a command transaction")
-}
-
-func (s *Store) migrateTo(ctx context.Context, to int64) error {
-	p, err := s.newMigrator()
-	if err != nil {
-		return fmt.Errorf("migrate schema to %d: %w", to, err)
-	}
-	cur, err := p.GetDBVersion(ctx)
-	if err != nil {
-		return fmt.Errorf("migrate schema to %d: %w", to, err)
-	}
-	if to <= cur {
-		return fmt.Errorf("migrate schema to %d: %w: the database is at %d", to, ErrSchemaNotNewer, cur)
-	}
-	if to > s.maxSchema {
-		return fmt.Errorf("migrate schema to %d: %w: it supports up to %d; upgrade this hub's hearth",
-			to, ErrSchemaMismatch, s.maxSchema)
-	}
-	defer s.columns.Clear()
-	if _, err := p.UpTo(ctx, to); err != nil {
-		return fmt.Errorf("migrate schema to %d: %w", to, err)
-	}
-	return nil
-}
+// ErrSchemaTooOld refuses a command that needs a newer schema than the
+// store's writes use: upgrade every hub of the cluster first.
+var ErrSchemaTooOld = errors.New("command needs a newer schema than the database is at")
 
 // schemaGated is implemented by a command that needs at least schema
 // version minSchema: one that writes a table or column a migration added.
@@ -77,8 +29,7 @@ type schemaGated interface {
 }
 
 // checkSchema refuses cmd with ErrSchemaTooOld if it needs a newer schema
-// than v, the version the database is at. Every node is at the same schema at the same log
-// position, so the refusal is the same everywhere.
+// than v, the schema writes use.
 func checkSchema(cmd Command, v int64) error {
 	g, ok := cmd.(schemaGated)
 	if !ok {

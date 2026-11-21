@@ -18,9 +18,10 @@ import (
 // Applier executes store writes. Every repository write builds a Command and
 // hands it to the store's Applier; reads go straight to the local database.
 //
-// The default Applier is the store's own ApplyLocal. A replicated Applier
-// (Raft) proposes the encoded command to its log, and every node's state
-// machine decodes it and calls ApplyLocal on its own Store, in log order.
+// The default Applier is the store's own ApplyLocal. A cluster member's
+// Applier (cluster.Replicator) runs the command with ApplyLocalMutations on
+// a replica of the rows it writes and copies the rows it wrote to the other
+// replicas.
 type Applier interface {
 	Apply(ctx context.Context, cmd Command) (Result, error)
 }
@@ -80,11 +81,10 @@ func WithApplier(newApplier func(s *Store) Applier) Option {
 
 // WithoutUpgrade stops Open from migrating an existing database: it stays at
 // its schema version, which must be one this binary supports (at most
-// MaxSchemaVersion), or Open fails with ErrSchemaMismatch. A new, empty
-// database is still initialized to the newest schema. A Raft cluster member
-// opens its store this way, because the schema is part of the replicated
-// state: it moves only by a MigrateSchema command in the log, on every node
-// at the same point.
+// SchemaVersion), or Open fails with ErrSchemaMismatch. A new, empty
+// database is still initialized to the newest schema. A CLI command opens a
+// hub's database this way: a newer binary must not upgrade the database of
+// a running older hub, which migrates it itself when it restarts.
 func WithoutUpgrade() Option {
 	return func(c *openConfig) { c.noUpgrade = true }
 }
@@ -105,15 +105,14 @@ func WithExtraMigration(version int64, up string) Option {
 }
 
 // IsDomainError reports whether err, returned by ApplyLocal, is an outcome of
-// the command itself rather than a failure of this node: an unknown row, a
-// used or expired token, a closed approval, a runbook run that moved on, or a constraint violation. Such errors are
-// deterministic, so every node applying the same command to the same state
-// gets the same one and the transaction rolls back everywhere. Any other error
-// (I/O, a full disk, a closed database) means this node failed to apply a
-// write the others applied.
+// the command itself rather than a failure of this member: an unknown row, a
+// used or expired token, a closed approval, a runbook run that moved on, or a
+// constraint violation. Such an error is the command's answer, and the
+// transaction rolls back. Any other error (I/O, a full disk, a closed
+// database) means this member failed to apply the write.
 func IsDomainError(err error) bool {
 	if errors.Is(err, ErrNotFound) || errors.Is(err, ErrTokenUsed) || errors.Is(err, ErrTokenExpired) ||
-		errors.Is(err, ErrSchemaNotNewer) || errors.Is(err, ErrSchemaTooOld) || errors.Is(err, ErrApprovalClosed) ||
+		errors.Is(err, ErrSchemaTooOld) || errors.Is(err, ErrApprovalClosed) ||
 		errors.Is(err, ErrRunbookRunConflict) || errors.Is(err, ErrRunbookRunsUnresolved) ||
 		errors.Is(err, ErrCARotationActive) || errors.Is(err, ErrCARotationConflict) || errors.Is(err, ErrExists) ||
 		errors.Is(err, ErrConfigDoc) {
@@ -123,10 +122,10 @@ func IsDomainError(err error) bool {
 	return errors.As(err, &se) && se.Code()&0xff == sqlite3.SQLITE_CONSTRAINT
 }
 
-// ApplyLocal applies cmd to the local database in one transaction. It is the
-// state machine step: a replicated Applier calls it on every node, in log
-// order. Other callers go through the repositories instead, so their writes
-// reach the configured Applier.
+// ApplyLocal applies cmd to the local database in one transaction. The
+// store's Applier calls it (or ApplyLocalMutations); other callers go
+// through the repositories instead, so their writes reach the configured
+// Applier.
 func (s *Store) ApplyLocal(ctx context.Context, cmd Command) (Result, error) {
 	res, _, err := s.ApplyLocalMutations(ctx, cmd)
 	return res, err
@@ -135,10 +134,6 @@ func (s *Store) ApplyLocal(ctx context.Context, cmd Command) (Result, error) {
 // ApplyLocalMutations is ApplyLocal, also returning the mutations the
 // command merged, in order: none below VersionedSchema.
 func (s *Store) ApplyLocalMutations(ctx context.Context, cmd Command) (res Result, muts []Mutation, err error) {
-	if m, ok := cmd.(MigrateSchema); ok {
-		// goose runs each migration in a transaction of its own.
-		return Result{}, nil, s.migrateTo(ctx, m.To)
-	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return Result{}, nil, fmt.Errorf("apply %s: %w", cmd.Op(), err)

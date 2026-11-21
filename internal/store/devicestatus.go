@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
-	"strings"
 	"time"
 )
 
@@ -65,23 +64,6 @@ func (r Devices) SetBootTime(ctx context.Context, id string, bootTime time.Time)
 		return Device{}, fmt.Errorf("set boot time of device %s: %w", id, err)
 	}
 	return res.Device, nil
-}
-
-// MarkSeenBatch moves last_seen of each device in seen forward to the given
-// time, in one write, without touching statuses. Unknown devices are skipped.
-// It returns the number of devices updated.
-func (r Devices) MarkSeenBatch(ctx context.Context, seen map[string]time.Time) (int, error) {
-	cmd := MarkSeenBatch{Seen: make([]Seen, 0, len(seen))}
-	for id, t := range seen {
-		cmd.Seen = append(cmd.Seen, Seen{ID: id, LastSeen: toMillis(t)})
-	}
-	// A fixed order keeps the command, and so the log, deterministic.
-	slices.SortFunc(cmd.Seen, func(a, b Seen) int { return strings.Compare(a.ID, b.ID) })
-	res, err := r.s.apply(ctx, cmd)
-	if err != nil {
-		return 0, fmt.Errorf("mark %d devices seen: %w", len(seen), err)
-	}
-	return res.Count, nil
 }
 
 // MarkDevicesOffline marks the given devices offline if they are online and

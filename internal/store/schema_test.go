@@ -3,14 +3,10 @@
 package store
 
 import (
-	"bytes"
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"path/filepath"
-	"reflect"
-	"slices"
 	"testing"
 	"time"
 )
@@ -28,8 +24,8 @@ BEGIN
 END;`
 
 // openNewerBinary returns a store whose binary supports nextSchema, opened
-// as a cluster member on a database at SchemaVersion: a newer binary
-// running at the older schema until the cluster migrates.
+// without upgrade on a database at SchemaVersion: a newer binary running at
+// the older schema until it migrates (migrateTo).
 func openNewerBinary(t *testing.T) *Store {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "hearth.db")
@@ -76,8 +72,8 @@ func TestWithoutUpgrade(t *testing.T) {
 		t.Fatalf("Open current: %v", err)
 	}
 
-	// One behind opens and stays behind: the binary supports it, and only
-	// the cluster may migrate it.
+	// One behind opens and stays behind: the binary supports it, and the
+	// hub whose database it is migrates it.
 	p, err := s.newMigrator()
 	if err != nil {
 		t.Fatal(err)
@@ -95,7 +91,7 @@ func TestWithoutUpgrade(t *testing.T) {
 	}
 	_ = s.Close()
 
-	// A standalone hub (no option) migrates on open, as it always did.
+	// A hub (no option) migrates on open.
 	s, err = Open(ctx, path)
 	if err != nil {
 		t.Fatalf("Open with upgrade: %v", err)
@@ -118,167 +114,44 @@ func TestWithoutUpgrade(t *testing.T) {
 	t.Logf("refusal: %v", err)
 }
 
-func TestRestoreAcrossSchemas(t *testing.T) {
+// A snapshot of an older schema is accepted and opens in a newer binary, which
+// migrates it; one of a newer schema is refused by an older binary.
+func TestSnapshotAcrossSchemas(t *testing.T) {
 	ctx := t.Context()
-
-	// An older snapshot restores into a newer binary's store, at its schema.
 	older := openTest(t)
 	if err := older.Devices().Upsert(ctx, Device{ID: "pi", FirstSeen: time.Now(), LastSeen: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
-	var snap bytes.Buffer
-	if err := older.Snapshot(ctx, &snap); err != nil {
-		t.Fatal(err)
+	path := writeSnapshot(t, older)
+	if err := CheckSnapshotFile(ctx, path); err != nil {
+		t.Fatalf("check an older snapshot: %v", err)
 	}
-	newer, err := Open(ctx, filepath.Join(t.TempDir(), "hearth.db"), WithExtraMigration(nextSchema, testMigration))
+	newer, err := Open(ctx, path, WithExtraMigration(nextSchema, testMigration))
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("open an older snapshot: %v", err)
 	}
 	t.Cleanup(func() { _ = newer.Close() })
-	if err := newer.Restore(ctx, &snap); err != nil {
-		t.Fatalf("restore an older snapshot: %v", err)
-	}
-	if v := gooseVersion(t, newer.db); v != SchemaVersion() {
-		t.Fatalf("restored at %d, want %d", v, SchemaVersion())
+	if v := gooseVersion(t, newer.db); v != nextSchema {
+		t.Fatalf("opened at %d, want %d", v, nextSchema)
 	}
 	if _, err := newer.Devices().Get(ctx, "pi"); err != nil {
-		t.Fatalf("restored data: %v", err)
+		t.Fatalf("snapshot data: %v", err)
 	}
-	if slices.Contains(tableNames(ctx, t, newer.db), "rolling_test") {
-		t.Fatal("the newer binary's table survived restoring an older snapshot")
-	}
-
-	// It migrates later, and its snapshot is refused by the older binary.
-	if _, err := newer.ApplyLocal(ctx, MigrateSchema{To: nextSchema}); err != nil {
-		t.Fatal(err)
-	}
-	snap.Reset()
-	if err := newer.Snapshot(ctx, &snap); err != nil {
-		t.Fatal(err)
-	}
-	if err := older.Restore(ctx, &snap); !errors.Is(err, ErrSchemaMismatch) {
-		t.Fatalf("restore a newer snapshot: err = %v, want ErrSchemaMismatch", err)
-	}
-	if v := gooseVersion(t, older.db); v != SchemaVersion() {
-		t.Fatalf("rejected restore changed the schema to %d", v)
-	}
-	if _, err := older.Devices().Get(ctx, "pi"); err != nil {
-		t.Fatalf("rejected restore changed the data: %v", err)
+	if err := CheckSnapshotFile(ctx, writeSnapshot(t, newer)); !errors.Is(err, ErrSchemaMismatch) {
+		t.Fatalf("check a newer snapshot: err = %v, want ErrSchemaMismatch", err)
 	}
 }
 
-func TestMigrateSchema(t *testing.T) {
-	ctx := t.Context()
-	s := openNewerBinary(t)
-	if s.MaxSchemaVersion() != nextSchema {
-		t.Fatalf("MaxSchemaVersion = %d, want %d", s.MaxSchemaVersion(), nextSchema)
-	}
-	// Not past the current version: a domain error, the same on every node.
-	for _, to := range []int64{SchemaVersion() - 1, SchemaVersion()} {
-		_, err := s.ApplyLocal(ctx, MigrateSchema{To: to})
-		if !errors.Is(err, ErrSchemaNotNewer) || !IsDomainError(err) {
-			t.Fatalf("migrate to %d: err = %v, want domain error ErrSchemaNotNewer", to, err)
-		}
-	}
-	// Past what this binary supports: a failure of this node.
-	_, err := s.ApplyLocal(ctx, MigrateSchema{To: nextSchema + 1})
-	if !errors.Is(err, ErrSchemaMismatch) || IsDomainError(err) {
-		t.Fatalf("migrate past the binary: err = %v, want non-domain ErrSchemaMismatch", err)
-	}
-	if v := gooseVersion(t, s.db); v != SchemaVersion() {
-		t.Fatalf("refused migrations moved the schema to %d", v)
-	}
-
-	if _, err := s.ApplyLocal(ctx, MigrateSchema{To: nextSchema}); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	if v, err := s.SchemaVersion(ctx); err != nil || v != nextSchema {
-		t.Fatalf("after migrate: schema %d, %v", v, err)
-	}
-	if !slices.Contains(tableNames(ctx, t, s.db), "rolling_test") {
-		t.Fatal("migration did not run")
-	}
-	if _, err := s.ApplyLocal(ctx, MigrateSchema{To: nextSchema}); !errors.Is(err, ErrSchemaNotNewer) {
-		t.Fatalf("migrate again: err = %v, want ErrSchemaNotNewer", err)
-	}
-}
-
-// TestReplayWithMigrateIsDeterministic: replaying a log that migrates the
-// schema halfway yields the same tables, rows and schema on every node.
-func TestReplayWithMigrateIsDeterministic(t *testing.T) {
-	now := int64(1_700_000_000_000)
-	device := func(id string) Command {
-		return UpsertDevice{ID: id, Name: id, Facts: "{}", Labels: "{}", FirstSeen: now, LastSeen: now, Status: StatusUnknown}
-	}
-	cmds := []Command{
-		device("before"),
-		MigrateSchema{To: nextSchema},
-		device("after"),
-		MigrateSchema{To: nextSchema}, // a duplicate: refused alike everywhere
-		AppendAudit{TS: now, ActorKind: "admin", ActorID: "op", Action: "cluster.migrate", Decision: "allow", Result: "ok", Detail: "{}"},
-		device("later"),
-	}
-	var log [][]byte
-	for _, c := range cmds {
-		b, err := EncodeCommand(c)
-		if err != nil {
-			t.Fatal(err)
-		}
-		log = append(log, b)
-	}
-	replay := func() (*Store, []string) {
-		s := openNewerBinary(t)
-		var errs []string
-		for _, b := range log {
-			cmd, err := DecodeCommand(b)
-			if err != nil {
-				t.Fatal(err)
-			}
-			_, err = s.ApplyLocal(t.Context(), cmd)
-			errs = append(errs, fmt.Sprint(err))
-		}
-		return s, errs
-	}
-	a, aErrs := replay()
-	b, bErrs := replay()
-	if !reflect.DeepEqual(aErrs, bErrs) || aErrs[3] == "<nil>" {
-		t.Fatalf("outcomes differ or the duplicate migrate was applied:\n%v\n%v", aErrs, bErrs)
-	}
-	if got, want := dumpTables(t, b.db), dumpTables(t, a.db); !reflect.DeepEqual(got, want) {
-		t.Fatalf("replayed tables differ\n got: %v\nwant: %v", got, want)
-	}
-	if got, want := schemaSQL(t, b.db), schemaSQL(t, a.db); !reflect.DeepEqual(got, want) {
-		t.Fatalf("replayed schemas differ\n got: %v\nwant: %v", got, want)
-	}
-	if got := gooseVersion(t, a.db); got != nextSchema {
-		t.Fatalf("replayed schema at %d, want %d", got, nextSchema)
-	}
-	// Only devices inserted after the migrate reached the new table.
-	if got := dumpTables(t, a.db)["rolling_test"]; !reflect.DeepEqual(got, [][]any{{"after"}, {"later"}}) {
-		t.Fatalf("rolling_test = %v", got)
-	}
-}
-
-// schemaSQL returns the SQL of every schema object, by name.
-func schemaSQL(t *testing.T, db *sql.DB) map[string]string {
-	t.Helper()
-	rows, err := db.QueryContext(t.Context(), `SELECT name, COALESCE(sql, '') FROM sqlite_master`)
+// migrateTo runs s's migrations up to schema to, as the newer binary that
+// opens s migrates it.
+func (s *Store) migrateTo(ctx context.Context, to int64) error {
+	p, err := s.newMigrator()
 	if err != nil {
-		t.Fatal(err)
+		return err
 	}
-	defer rows.Close()
-	out := map[string]string{}
-	for rows.Next() {
-		var name, s string
-		if err := rows.Scan(&name, &s); err != nil {
-			t.Fatal(err)
-		}
-		out[name] = s
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatal(err)
-	}
-	return out
+	defer s.columns.Clear()
+	_, err = p.UpTo(ctx, to)
+	return err
 }
 
 // gatedInsert is a command of a newer release: it writes testMigration's table.
@@ -298,7 +171,7 @@ func TestSchemaGatedCommand(t *testing.T) {
 	if !errors.Is(err, ErrSchemaTooOld) || !IsDomainError(err) {
 		t.Fatalf("before the migrate: err = %v, want domain error ErrSchemaTooOld", err)
 	}
-	if _, err := s.ApplyLocal(ctx, MigrateSchema{To: nextSchema}); err != nil {
+	if err := s.migrateTo(ctx, nextSchema); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.ApplyLocal(ctx, gatedInsert{ID: "pi"}); err != nil {
@@ -326,7 +199,7 @@ func TestIsDomainError(t *testing.T) {
 	if err := s.JoinTokens().Create(ctx, "j", now.Add(time.Hour)); !IsDomainError(err) {
 		t.Errorf("duplicate token %v: not a domain error", err)
 	}
-	for _, err := range []error{ErrNotFound, ErrTokenUsed, fmt.Errorf("x: %w", ErrTokenExpired), ErrSchemaNotNewer, ErrSchemaTooOld} {
+	for _, err := range []error{ErrNotFound, ErrTokenUsed, fmt.Errorf("x: %w", ErrTokenExpired), ErrSchemaTooOld} {
 		if !IsDomainError(err) {
 			t.Errorf("%v: not a domain error", err)
 		}

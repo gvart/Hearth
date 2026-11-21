@@ -800,7 +800,7 @@ func TestRemoveThenAddKeepsNoName(t *testing.T) {
 	if err := kc.Add(ctx, KubeCluster{ID: "random01", Name: "lab", Sealed: []byte("secret"), CreatedAt: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.ApplyLocal(ctx, MigrateSchema{To: VersionedSchema}); err != nil {
+	if err := s.migrateTo(ctx, VersionedSchema); err != nil {
 		t.Fatal(err)
 	}
 	if err := kc.Remove(ctx, "random01"); err != nil {
