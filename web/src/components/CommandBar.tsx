@@ -1,10 +1,16 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { useDevices } from '../api/hooks.ts';
+import { useRunbookFiles } from '../api/admin.ts';
+import { useDevices, useKubeClusters, useRunbooks } from '../api/hooks.ts';
+import { useProxmoxServers } from '../api/proxmox.ts';
 import { findCommands, type Command } from '../nav.ts';
+import { kindLabel, platformCards } from '../platforms.ts';
+import { chooseTheme, useTheme } from '../theme.ts';
 
 /**
- * Finds a page or a device by name and opens it. "/" focuses it from anywhere,
- * the arrow keys move through the results, Enter opens one and Escape clears.
+ * Finds a page, a device, a platform or a runbook by name and opens it, and
+ * runs what the UI itself can do (add a device, switch the theme). "/" focuses
+ * it from anywhere, the arrow keys move through the results, Enter takes one
+ * and Escape clears. It never acts on a device: a runbook opens at its plan.
  */
 export function CommandBar({ cluster, className }: { cluster: boolean; className?: string }) {
   const devices = useDevices().data ?? [];
@@ -12,8 +18,25 @@ export function CommandBar({ cluster, className }: { cluster: boolean; className
   const [active, setActive] = useState(0);
   const input = useRef<HTMLInputElement>(null);
   const listId = useId();
-  const results = findCommands(query, devices, { cluster });
   const typed = query.trim() !== '';
+  // Read only once something is typed: the bar is on every page, and these lists are not.
+  const clusters = useKubeClusters(typed);
+  const servers = useProxmoxServers(typed);
+  const runbooks = useRunbooks(typed);
+  const files = useRunbookFiles(typed);
+  const theme = useTheme();
+  const results = findCommands(query, {
+    devices,
+    platforms: platformCards(clusters.data ?? [], servers.data ?? []).map((p) => ({
+      name: p.name,
+      kind: kindLabel[p.kind],
+      hash: p.hash,
+    })),
+    runbooks: runbooks.data?.runbooks,
+    cluster,
+    theme,
+    editable: files.isSuccess,
+  });
   const current = Math.min(active, results.length - 1);
 
   useEffect(() => {
@@ -40,7 +63,12 @@ export function CommandBar({ cluster, className }: { cluster: boolean; className
   }, []);
 
   const open = (cmd: Command) => {
-    window.location.hash = cmd.hash;
+    if (cmd.theme) {
+      chooseTheme(cmd.theme);
+    }
+    if (cmd.hash !== undefined) {
+      window.location.hash = cmd.hash;
+    }
     setQuery('');
     setActive(0);
     input.current?.blur();
@@ -54,12 +82,12 @@ export function CommandBar({ cluster, className }: { cluster: boolean; className
           ref={input}
           type="text"
           role="combobox"
-          aria-label="Find a page or a device"
+          aria-label="Find a page, a device or something to run"
           aria-expanded={results.length > 0}
           aria-controls={listId}
           aria-autocomplete="list"
           aria-activedescendant={results.length > 0 ? `${listId}-${String(current)}` : undefined}
-          placeholder="a page or a device"
+          placeholder="a page, a device, a runbook"
           autoComplete="off"
           spellCheck={false}
           value={query}
@@ -92,7 +120,7 @@ export function CommandBar({ cluster, className }: { cluster: boolean; className
         <ul id={listId} role="listbox" aria-label="Results" className="cmd-results">
           {results.map((r, i) => (
             <li
-              key={r.hash}
+              key={`${r.kind}:${r.label}`}
               id={`${listId}-${String(i)}`}
               role="option"
               aria-selected={i === current}

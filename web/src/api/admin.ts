@@ -245,8 +245,8 @@ export function useDeleteNotifyChannel() {
   });
 }
 
-export function useRunbookFiles() {
-  return useQuery({ queryKey: keys.runbookFiles, queryFn: adminApi.runbookFiles });
+export function useRunbookFiles(enabled = true) {
+  return useQuery({ queryKey: keys.runbookFiles, queryFn: adminApi.runbookFiles, enabled });
 }
 
 /** A runbook file as stored. An open editor keeps its own copy. */

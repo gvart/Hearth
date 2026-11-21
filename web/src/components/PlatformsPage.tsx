@@ -1,12 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { KubeCluster } from '../api/client.ts';
 import { useKubeClusters } from '../api/hooks.ts';
 import { useProxmoxServers, type ProxmoxServer } from '../api/proxmox.ts';
+import { connectPlatformHash } from '../nav.ts';
 import {
   kindLabel,
   platformCards,
   platformHash,
   platformSummary,
+  platformsHash,
   stateLabel,
   type PlatformCard,
   type PlatformKind,
@@ -47,15 +49,20 @@ const mark: Record<PlatformKind, string> = { kubernetes: 'K8S', proxmox: 'PVE' }
 export function PlatformsPage() {
   const clusters = useKubeClusters();
   const servers = useProxmoxServers();
-  const [connecting, setConnecting] = useState<'choose' | PlatformKind | null>(null);
+  // The chooser is open while the URL says so (#/platforms/connect), so a link can open it.
+  const choosing = useChoosing();
+  const [kind, setKind] = useState<PlatformKind | null>(null);
   const cards = platformCards(clusters.data ?? [], servers.data ?? []);
   const loading = clusters.isPending || servers.isPending;
   const close = () => {
-    setConnecting(null);
+    setKind(null);
+    if (window.location.hash === connectPlatformHash) {
+      window.location.hash = platformsHash;
+    }
   };
-  const opened = (kind: PlatformKind) => (p: KubeCluster | ProxmoxServer) => {
-    setConnecting(null);
-    window.location.hash = platformHash(kind, p.id);
+  const opened = (k: PlatformKind) => (p: KubeCluster | ProxmoxServer) => {
+    setKind(null);
+    window.location.hash = platformHash(k, p.id);
   };
 
   return (
@@ -65,15 +72,9 @@ export function PlatformsPage() {
           <h1>Platforms</h1>
           {loading ? null : <p className="muted">{platformSummary(cards)}</p>}
         </div>
-        <button
-          className="btn btn-primary"
-          type="button"
-          onClick={() => {
-            setConnecting('choose');
-          }}
-        >
+        <a className="btn btn-primary" href={connectPlatformHash}>
           <span aria-hidden="true">＋</span> Connect platform
-        </button>
+        </a>
       </div>
 
       {clusters.isError ? (
@@ -102,19 +103,17 @@ export function PlatformsPage() {
             Connect a Kubernetes cluster or a Proxmox server to see it next to your devices. Hearth only changes something
             when you ask it to, and installs nothing there.
           </p>
-          <button
-            className="btn btn-primary"
-            type="button"
-            onClick={() => {
-              setConnecting('choose');
-            }}
-          >
+          <a className="btn btn-primary" href={connectPlatformHash}>
             Connect platform
-          </button>
+          </a>
         </div>
       )}
 
-      {connecting === 'choose' ? (
+      {kind === 'kubernetes' ? (
+        <AddClusterDialog onClose={close} onAdded={opened('kubernetes')} />
+      ) : kind === 'proxmox' ? (
+        <AddProxmoxDialog onClose={close} onAdded={opened('proxmox')} />
+      ) : choosing ? (
         <Modal className="dialog" labelledBy="connect-title" onClose={close}>
           <header className="dialog-head">
             <h2 id="connect-title">Connect a platform</h2>
@@ -129,7 +128,7 @@ export function PlatformsPage() {
                 type="button"
                 className="platform-kind"
                 onClick={() => {
-                  setConnecting(k.kind);
+                  setKind(k.kind);
                 }}
               >
                 <span className="platform-mark" aria-hidden="true">
@@ -143,13 +142,23 @@ export function PlatformsPage() {
             ))}
           </div>
         </Modal>
-      ) : connecting === 'kubernetes' ? (
-        <AddClusterDialog onClose={close} onAdded={opened('kubernetes')} />
-      ) : connecting === 'proxmox' ? (
-        <AddProxmoxDialog onClose={close} onAdded={opened('proxmox')} />
       ) : null}
     </main>
   );
+}
+
+function useChoosing(): boolean {
+  const [choosing, setChoosing] = useState(() => window.location.hash === connectPlatformHash);
+  useEffect(() => {
+    const onHash = () => {
+      setChoosing(window.location.hash === connectPlatformHash);
+    };
+    window.addEventListener('hashchange', onHash);
+    return () => {
+      window.removeEventListener('hashchange', onHash);
+    };
+  }, []);
+  return choosing;
 }
 
 function PlatformLink({ card }: { card: PlatformCard }) {

@@ -1,4 +1,4 @@
-import { useEffect, useState, type SyntheticEvent } from 'react';
+import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
 import { api, type Runbook, type RunbookPlanStep, type RunbookRun, type RunbookStep } from '../api/client.ts';
 import {
   useRunbookPlan,
@@ -10,6 +10,7 @@ import {
 } from '../api/hooks.ts';
 import { useRunbookFiles } from '../api/admin.ts';
 import { formatDateTime, relativeTime, timeLeft } from '../format.ts';
+import { planOfHash } from '../nav.ts';
 import { RunbookEditor } from './RunbookEditor.tsx';
 import './RunbooksPage.css';
 
@@ -105,6 +106,8 @@ function ListPage() {
   const runs = useRunbookRuns();
   const list = runbooks.data?.runbooks ?? [];
   const now = useNow();
+  // A plan link (#/runbooks/plan/<id>) opens that runbook's plan.
+  const planned = planOfHash(useHash());
   // Absent on a hub that keeps its configuration in files.
   const files = useRunbookFiles();
   const fileOf = (id: string) => files.data?.find((f) => f.id === id)?.file;
@@ -145,7 +148,13 @@ function ListPage() {
       ) : (
         <ul className="runbook-list">
           {list.map((r) => (
-            <RunbookCard key={r.id} runbook={r} file={fileOf(r.id)} />
+            <RunbookCard
+              // Remounted when a link asks for its plan, so the plan opens.
+              key={r.id === planned ? `${r.id}:plan` : r.id}
+              runbook={r}
+              file={fileOf(r.id)}
+              planned={r.id === planned}
+            />
           ))}
         </ul>
       )}
@@ -178,11 +187,18 @@ function ListPage() {
   );
 }
 
-function RunbookCard({ runbook, file }: { runbook: Runbook; file?: string }) {
-  const [planning, setPlanning] = useState(false);
+function RunbookCard({ runbook, file, planned }: { runbook: Runbook; file?: string; planned: boolean }) {
+  const [planning, setPlanning] = useState(planned);
   const start = useStartRunbook();
+  const card = useRef<HTMLLIElement>(null);
+  // A link to this runbook's plan (the command bar makes them) brings the card into view.
+  useEffect(() => {
+    if (planned) {
+      card.current?.scrollIntoView({ block: 'center' });
+    }
+  }, [planned]);
   return (
-    <li className="runbook-card">
+    <li ref={card} className={planned ? 'runbook-card runbook-card-planned' : 'runbook-card'}>
       <div className="runbook-row">
         <strong className="mono">{runbook.id}</strong>
         <span className="muted small">

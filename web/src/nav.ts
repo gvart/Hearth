@@ -124,13 +124,44 @@ export function deviceOfHash(hash: string): string | undefined {
   }
 }
 
-/** Something the command bar can open. */
+/** Links that open a page with something already under way. */
+export const addDeviceHash = '#/add-device';
+export const connectPlatformHash = '#/platforms/connect';
+const planPrefix = '#/runbooks/plan/';
+
+/** The link that opens the Runbooks page at one runbook, its plan shown and Start run a press away. */
+export function planHash(id: string): string {
+  return planPrefix + encodeURIComponent(id);
+}
+
+/** The runbook a hash asks the plan of, if it is such a link. */
+export function planOfHash(hash: string): string | undefined {
+  if (!hash.startsWith(planPrefix) || hash.length === planPrefix.length) {
+    return undefined;
+  }
+  try {
+    return decodeURIComponent(hash.slice(planPrefix.length));
+  } catch {
+    return undefined;
+  }
+}
+
+export type CommandKind = 'Go to' | 'Device' | 'Platform' | 'Runbook' | 'Run';
+
+/**
+ * Something the command bar can do: open a page, a device, a platform or a
+ * runbook's plan, or run something of the UI itself. A Run command never acts
+ * on a device: what changes the lab still asks on its own page.
+ */
 export interface Command {
-  kind: 'Go to' | 'Device';
+  kind: CommandKind;
   label: string;
   /** A second line: the sheet of a page, the state of a device. */
   hint: string;
-  hash: string;
+  /** Where the command leads. */
+  hash?: string;
+  /** The theme the command switches to, instead of leading anywhere. */
+  theme?: 'blueprint' | 'paper';
 }
 
 export interface CommandDevice {
@@ -140,13 +171,28 @@ export interface CommandDevice {
   status: string;
 }
 
+/** What the command bar searches besides the pages. */
+export interface CommandSources {
+  devices: CommandDevice[];
+  /** Connected clusters and servers, each with its link. */
+  platforms?: { name: string; kind: string; hash: string }[];
+  runbooks?: { id: string; description?: string }[];
+  /** Whether this hub is a cluster member: the Cluster page is offered on one only. */
+  cluster: boolean;
+  /** The theme in use: the other one is offered. */
+  theme?: 'blueprint' | 'paper';
+  /** Whether runbooks can be written in the UI (the hub keeps its configuration in the store). */
+  editable?: boolean;
+}
+
 const maxResults = 8;
 
 /**
- * What a query finds: pages first, then devices. Every word of the query must
- * appear in the page's or device's name; an empty query finds nothing.
+ * What a query finds, in this order: pages, devices, platforms, runbooks, then
+ * what the UI can run. Every word of the query must appear in the name; an
+ * empty query finds nothing.
  */
-export function findCommands(query: string, devices: CommandDevice[], opts: { cluster: boolean }): Command[] {
+export function findCommands(query: string, src: CommandSources): Command[] {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   if (words.length === 0) {
     return [];
@@ -155,15 +201,43 @@ export function findCommands(query: string, devices: CommandDevice[], opts: { cl
   const out: Command[] = [];
   for (const sheet of sheets) {
     for (const p of sheet.pages) {
-      if ((p.id !== 'cluster' || opts.cluster) && matches(`${p.label} ${sheet.label}`)) {
+      if ((p.id !== 'cluster' || src.cluster) && matches(`${p.label} ${sheet.label}`)) {
         out.push({ kind: 'Go to', label: p.label, hint: `${sheet.no} ${sheet.label}`, hash: p.hash });
       }
     }
   }
-  for (const d of devices) {
+  for (const d of src.devices) {
     if (matches(`${d.name} ${d.hostname}`)) {
       out.push({ kind: 'Device', label: d.name || d.hostname || d.id, hint: d.status, hash: deviceHash(d.id) });
     }
   }
+  for (const p of src.platforms ?? []) {
+    if (matches(`${p.name} ${p.kind}`)) {
+      out.push({ kind: 'Platform', label: p.name, hint: p.kind, hash: p.hash });
+    }
+  }
+  for (const r of src.runbooks ?? []) {
+    if (matches(`${r.id} runbook plan`)) {
+      out.push({ kind: 'Runbook', label: r.id, hint: r.description ?? 'Plan and start', hash: planHash(r.id) });
+    }
+  }
+  const runs: Command[] = [
+    { kind: 'Run', label: 'Add a device', hint: 'Enrollment command', hash: addDeviceHash },
+    { kind: 'Run', label: 'Connect a platform', hint: 'Kubernetes or Proxmox', hash: connectPlatformHash },
+    { kind: 'Run', label: 'New automation', hint: 'Editor', hash: '#/automations/new' },
+  ];
+  if (src.editable) {
+    runs.push({ kind: 'Run', label: 'New runbook', hint: 'Workbench', hash: '#/runbooks/new' });
+  }
+  if (src.theme) {
+    const other = src.theme === 'paper' ? 'blueprint' : 'paper';
+    runs.push({
+      kind: 'Run',
+      label: `Switch theme to ${other === 'paper' ? 'Paper' : 'Blueprint'}`,
+      hint: 'This browser',
+      theme: other,
+    });
+  }
+  out.push(...runs.filter((r) => matches(r.label)));
   return out.slice(0, maxResults);
 }
