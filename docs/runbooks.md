@@ -138,7 +138,7 @@ only reachable from inside the device's network or on its localhost:
 ### A Kubernetes node is Ready
 
 A `kube_node` check passes when the Node is Ready, read by the hub from a cluster it has
-[adopted](kubernetes.md), named as on the Kubernetes page:
+[adopted](kubernetes.md), named as on the Platforms page:
 
 ```yaml
   - id: node-ready

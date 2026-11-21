@@ -63,7 +63,7 @@ unrelated things:
    hostname or name.
 
 Loopback and link-local addresses never match. The **In Hearth** column shows the device, which
-opens its drawer, or *On your network*. A system that matches nothing is still listed.
+opens its page, or *On your network*. A system that matches nothing is still listed.
 
 Systems are linked, not merged: Beszel knows no MAC address, which is what network hosts are keyed
 by, so a system never becomes a network host of its own, and a machine that is both a network host

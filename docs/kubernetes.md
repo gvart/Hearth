@@ -10,7 +10,8 @@ DaemonSets), pods with their status, events, and pod logs, and writes only when 
 
 ## Adding a cluster
 
-In the UI, open **Kubernetes** and **Add cluster**, then paste a kubeconfig or load the file:
+In the UI, open **Platforms**, press **Connect platform** and pick **Kubernetes cluster**, then paste a
+kubeconfig or load the file:
 
 | Distribution | Kubeconfig                                                   |
 | ------------ | ------------------------------------------------------------ |
@@ -62,7 +63,7 @@ other action. The kubeconfig never appears in the audit log, the hub log or the 
 ## Actions
 
 Deploys stay with your GitOps tool (Argo CD, Flux); Hearth has the few day-two actions a homelab needs.
-They are buttons on the Kubernetes page, `POST /api/v1/kube/clusters/{id}/actions`, and the
+They are buttons on the cluster's page (open it from **Platforms**), `POST /api/v1/kube/clusters/{id}/actions`, and the
 `kube_*` [automation actions](automations.md#kubernetes-actions):
 
 | Action                                    | Policy action           | Class     | What it does                                                                |
@@ -76,7 +77,7 @@ They are buttons on the Kubernetes page, `POST /api/v1/kube/clusters/{id}/action
 Automations and runbooks also have `kube_node_delete` (`kube.node.delete`, dangerous), which deletes a
 Node object, and runbooks a `kube_node` check (`kube.node.ready`, read) that passes when a node is Ready:
 see [automations](automations.md#kubernetes-actions) and [runbooks](runbooks.md#steps). Neither is a
-button on the Kubernetes page.
+button on the cluster's page.
 
 - **Dry run first.** Every action can be planned with `"dry_run": true`: Hearth reads the objects
   involved and says what the action would do, with warnings (a pod no controller recreates, a

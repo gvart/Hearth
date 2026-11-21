@@ -82,12 +82,12 @@ The file: [`docs/recipes/runbooks/add-talos-node.yaml`](recipes/runbooks/add-tal
 #     and the new node's address is among the nodes it reads: add it to
 #     --talos-nodes (or to the talosconfig context's nodes) and restart the hub
 #     before the run. Otherwise the check that waits for the new node never passes.
-#   - The cluster is adopted on the hub's Kubernetes page, so the hub can check
+#   - The cluster is adopted on the hub's Platforms page, so the hub can check
 #     that the node is Ready.
 #   - Edit the vars below: the device with talosctl, the new node's address,
 #     the name it registers with (its hostname, as the machine config sets it),
 #     its role, the machine config's path, a control-plane address to run the
-#     health checks from, and the cluster's name on the Kubernetes page.
+#     health checks from, and the cluster's name on the Platforms page.
 #
 # apply-config --insecure trusts on first use: talosctl cannot verify the node
 # it talks to, so the machine config, with the cluster's secrets in it, goes to
@@ -295,11 +295,11 @@ The file: [`docs/recipes/runbooks/upgrade-talos-node.yaml`](recipes/runbooks/upg
 #     the talos_node checks read the node's version and services through it. The
 #     node-ip var must be one of the nodes the hub reads: a node of the
 #     talosconfig context, or of --talos-nodes. An os:reader talosconfig is enough.
-#   - The cluster is adopted on the hub's Kubernetes page, so the hub can check
+#   - The cluster is adopted on the hub's Platforms page, so the hub can check
 #     that the node is Ready.
 #   - Edit the vars below: the device with talosctl, the node's name and address,
 #     a control-plane address to run the health checks from, the installer image
-#     and the version it installs, and the cluster's name on the Kubernetes page.
+#     and the version it installs, and the cluster's name on the Platforms page.
 #   - Upgrade one node at a time: workers first, then control planes, one by one.
 #   - The upgrade step waits for talosctl to finish, at most 9 minutes (exec
 #     actions run for 10 at most). A slower upgrade ends the step as unknown:
@@ -516,11 +516,11 @@ The file: [`docs/recipes/runbooks/add-k3s-node.yaml`](recipes/runbooks/add-k3s-n
 #     no prompt, step or audit entry.
 #   - curl and sha256sum are on the machine, and it can reach GitHub.
 #   - The server answers on port 6443 and the machine can reach it.
-#   - The cluster is adopted on the hub's Kubernetes page, so the hub can check
+#   - The cluster is adopted on the hub's Platforms page, so the hub can check
 #     the node and delete its Node object on a rollback.
 #   - Edit the vars below: the new device, the k3s server's address, the name
 #     the node registers with (its hostname, by default), the cluster's name on
-#     the Kubernetes page, the k3s version (use the server's) and the sha256 of
+#     the Platforms page, the k3s version (use the server's) and the sha256 of
 #     install.sh at that version. The two go together: when you change the
 #     version, download install.sh from the same tag and put its sha256 here:
 #       curl -sfL https://raw.githubusercontent.com/k3s-io/k3s/<version>/install.sh | sha256sum

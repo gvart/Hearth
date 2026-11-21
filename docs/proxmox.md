@@ -41,8 +41,8 @@ not appear at all.
 
 ## Add the server
 
-In the UI, open **Proxmox** and **Add server**, then enter a name, the address
-(`https://pve.lan:8006`; the port defaults to 8006), the token, and how to verify the server's
+In the UI, open **Platforms**, press **Connect platform** and pick **Proxmox server**, then enter a
+name, the address (`https://pve.lan:8006`; the port defaults to 8006), the token, and how to verify the server's
 certificate. TLS verification is always on, and there is no option to turn it off. Plain `http://` is
 refused, because the token would travel in the clear. Proxmox VE usually has a self-signed certificate,
 so choose one of:
@@ -64,7 +64,7 @@ each node has its own certificate: pin the node whose address you entered.
 
 ## What you see
 
-The **Proxmox** page has three tabs, refreshed every few seconds. The hub reads each server every 15
+A server's page (open it from **Platforms**) has three tabs, refreshed every few seconds. The hub reads each server every 15
 seconds, and right after an action.
 
 - **VMs and LXCs**: every guest with its status, node, CPU, memory and uptime. Templates are left out,

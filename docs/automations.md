@@ -351,7 +351,7 @@ triggers:
 actions:
   - id: restart-web
     type: kube_restart
-    cluster: homelab             # the cluster's name on the Kubernetes page
+    cluster: homelab             # the cluster's name on the Platforms page
     kind: Deployment             # Deployment, StatefulSet or DaemonSet (scale: not DaemonSet)
     namespace: default
     name: web

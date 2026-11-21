@@ -3,7 +3,7 @@ title: Web terminal
 description: A shell on any device from the browser, behind policy, the agent's ceiling and the audit log.
 ---
 
-The device drawer's **Terminal** button opens a shell on the device in a new browser tab
+The **Terminal** button on a device's page opens a shell on the device in a new browser tab
 (`#/terminal/<device id>`), on a real pseudo-terminal, through the device's agent. Linux and macOS
 agents support it; Windows agents refuse it.
 
