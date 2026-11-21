@@ -1,0 +1,63 @@
+internal/store/partition.go
+  s_87f1c7baee7d5a::t_ea673e6316c953 293-306
+internal/store/carotation.go
+  s_87f1c7baee7d5a::t_17aba00cbb5d47 377
+  s_87f1c7baee7d5a::t_ea673e6316c953 552-558,564-566,602-611,635-642,653-663
+  s_87f1c7baee7d5a::t_12752a1fbeaab5 112-118,643-652
+  s_87f1c7baee7d5a::t_5af45be238ea37 7,16-17,210,220-221,223,226-229,231-234,242-244,247,251,257,261-314,316-319,321,323-324,356-360,365-367,369-376,378-407,410-412,430-431,434-441,448
+  s_87f1c7baee7d5a::t_b1e13a570382bd 61-64,78-86,93,148
+internal/pki/pin.go
+  s_87f1c7baee7d5a::t_c7549bcbd7af77 32-52
+internal/store/command_test.go
+  s_87f1c7baee7d5a::t_12752a1fbeaab5 378,381
+  s_87f1c7baee7d5a::t_a8839f3139c47d 379-380
+  s_87f1c7baee7d5a::t_8a09ea0c9b2f92 45
+  s_87f1c7baee7d5a::t_0236127b810c1b 377
+internal/cluster/promote.go
+  s_87f1c7baee7d5a::t_9f65a700d683b3 64-67,82,221-222
+internal/pki/rotate.go
+  s_87f1c7baee7d5a::t_c7549bcbd7af77 314-315,319,338-340,344,352-367
+  s_87f1c7baee7d5a::t_e98794a56dbb84 368
+internal/cluster/membership.go
+  s_87f1c7baee7d5a::t_d054e4c81740e2 612
+  s_87f1c7baee7d5a::t_651125c7d550ed 146-147,337-350,386,558-559,567,659-697
+  s_87f1c7baee7d5a::t_def81f6d8fdc47 698
+internal/cluster/apcontrol.go
+  s_87f1c7baee7d5a::t_19667795f61966 112-271
+internal/cluster/carotation.go
+  s_87f1c7baee7d5a::t_46b8a19f8b9275 1064-1069,1074,1078,1081,1094-1105,1108,1112-1113,1115-1116,1120,1122,1127-1138,1141,1143,1145-1150
+internal/cluster/apcakey.go
+  s_87f1c7baee7d5a::t_88e1d2f3f95e6b 8,72,91-93,96,138-143,146,151,154,157,159,162,164,168-170,172
+internal/cluster/apcarotation.go
+  s_87f1c7baee7d5a::t_2d82fb178a0b3e 1-273,275-277,287-641,643-686,691,693-1011
+  s_87f1c7baee7d5a::t_2cb71d749dffc1 274,278-286,642
+  s_87f1c7baee7d5a::t_5a89ae3e201d0b 687-690,692
+internal/cluster/apnode.go
+  s_87f1c7baee7d5a::t_88e1d2f3f95e6b 104-106,113-117,147-162,185-188,193-196,209-211,213-214,216-220,278-280,287,462-463,465-467,557,564-565,568,734-738,782-784
+  s_87f1c7baee7d5a::t_19667795f61966 604-605,617-619
+  s_87f1c7baee7d5a::t_8a2d1f2e330b9f 620-621
+cmd/hearth/cluster_ca.go
+  s_87f1c7baee7d5a::t_0e7cabd1dba246 64-71,83-84,97-117,121-159,186-193,204-205,221-235,265-272,283-284,297-309
+internal/store/command.go
+  s_87f1c7baee7d5a::t_ea673e6316c953 762-763
+internal/store/shard_test.go
+  s_87f1c7baee7d5a::t_8a09ea0c9b2f92 69-78
+cmd/hearth/hub.go
+  s_87f1c7baee7d5a::t_d6ccc59a7e3066 395-397,935-937
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0419e48749487a35aa616053dd9dc9d5bfd1fbf9",
+  "prompts": {},
+  "sessions": {
+    "s_87f1c7baee7d5a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "45cc2cdf-3130-4caa-8cb4-8cb365d2150d",
+        "model": "unknown"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
