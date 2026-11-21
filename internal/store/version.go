@@ -332,6 +332,9 @@ type writer struct {
 // get returns the live row of table with primary key pk (in the order of
 // the table's pk columns), or nil if there is none or it is a tombstone.
 func (w *writer) get(ctx context.Context, table string, pk ...any) (row, error) {
+	if w.s.readHook != nil {
+		w.s.readHook(table)
+	}
 	r, err := w.getAny(ctx, table, pk...)
 	if err != nil || r == nil || r.deleted() {
 		return nil, err
@@ -365,6 +368,9 @@ func (w *writer) getAny(ctx context.Context, table string, pk ...any) (row, erro
 // query returns the live rows of table matching where (a condition on its
 // columns, with args), ordered by orderBy.
 func (w *writer) query(ctx context.Context, table, where, orderBy string, args ...any) ([]row, error) {
+	if w.s.readHook != nil {
+		w.s.readHook(table)
+	}
 	if w.versioned && tables[table].deletable {
 		where = `(` + where + `) AND _deleted = 0`
 	}

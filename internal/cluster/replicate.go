@@ -514,6 +514,7 @@ func (r *Replicator) applyHere(ctx context.Context, cmd store.Command, route sto
 				cmd.Op(), len(live), n, w, store.ErrUnavailable)
 		}
 	}
+	r.refresh(ctx, st, cmd, route, v)
 	res, muts, err := st.ApplyLocalMutations(ctx, cmd)
 	if err != nil {
 		return store.Result{}, err
@@ -525,6 +526,74 @@ func (r *Replicator) applyHere(ctx context.Context, cmd store.Command, route sto
 		return store.Result{}, fmt.Errorf("apply %s: %w", cmd.Op(), err)
 	}
 	return res, nil
+}
+
+// refresh merges here the newest copy, on the other live members that may
+// hold them, of the rows cmd reads (store.ReadsOf), so a command this member
+// applies decides on them and not on a copy it missed a write of. It is
+// best effort: a member that does not answer within QuickTimeout is
+// skipped, and its rows reach this one by hints and anti-entropy.
+func (r *Replicator) refresh(ctx context.Context, st *store.Store, cmd store.Command, route store.Route, v view) {
+	reads := store.ReadsOf(cmd)
+	if len(reads) == 0 {
+		return
+	}
+	var peers []string
+	if route.Kind == store.RouteKey {
+		peers = v.readOrder(store.BucketOf(store.Token(route.Key)))
+	} else {
+		peers, _ = v.globals()
+	}
+	peers = slices.DeleteFunc(slices.Clone(peers), func(m string) bool { return m == v.self })
+	if len(peers) == 0 {
+		return
+	}
+	got := make([][]store.Mutation, len(peers))
+	var wg sync.WaitGroup
+	for i, m := range peers {
+		wg.Go(func() {
+			qctx, cancel := context.WithTimeout(ctx, r.cfg.QuickTimeout)
+			defer cancel()
+			ms, err := r.fetchReads(qctx, m, reads)
+			if err != nil {
+				r.log.DebugContext(ctx, "fetch the rows a write reads", "op", cmd.Op(), "member", m, "err", err)
+				return
+			}
+			got[i] = ms
+		})
+	}
+	wg.Wait()
+	for i, ms := range got {
+		if len(ms) == 0 {
+			continue
+		}
+		store.SortMutations(ms)
+		if err := st.Merge(ctx, ms); err != nil {
+			r.log.WarnContext(ctx, "merge the rows a write reads", "op", cmd.Op(), "member", peers[i], "err", err)
+		}
+	}
+}
+
+// fetchReads reads on member m the rows reads name.
+func (r *Replicator) fetchReads(ctx context.Context, m string, reads []store.Read) ([]store.Mutation, error) {
+	var refs []store.RowRef
+	for _, rd := range reads {
+		if ref, ok := rd.Ref(); ok {
+			refs = append(refs, ref)
+			continue
+		}
+		rows, err := r.readOn(ctx, m, rd.KeysQuery(), rd.Args)
+		if err != nil {
+			return nil, err
+		}
+		for _, key := range rows.Vals {
+			refs = append(refs, store.RowRef{Table: rd.Table, Key: key})
+		}
+	}
+	if len(refs) == 0 {
+		return nil, nil
+	}
+	return r.fetch(ctx, m, refs)
 }
 
 // replicate sends muts, written here, to the other members that take them.
