@@ -63,8 +63,8 @@ func TestEngineDo(t *testing.T) {
 			wantResult:   "ok",
 		},
 		{
-			name:         "web client cannot set the admin password",
-			req:          Request{ActorKind: ActorWeb, ActorID: "192.0.2.1", Action: AdminSetPassword},
+			name:         "MCP client cannot set the admin password",
+			req:          Request{ActorKind: ActorMCP, ActorID: "claude", Action: AdminSetPassword},
 			wantErr:      ErrDenied,
 			wantDecision: Deny,
 			wantResult:   "actor kind not allowed",

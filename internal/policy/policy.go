@@ -31,6 +31,9 @@ const (
 	AdminSetPassword Action = "admin.set_password"
 	// AdminLogin is a login attempt on the hub's web API.
 	AdminLogin Action = "admin.login"
+	// AdminReauth is a signed-in admin entering the password again, before a
+	// sensitive action of the web UI.
+	AdminReauth Action = "admin.reauth"
 	// ClusterTokenCreate creates a token that lets a new hub join the cluster
 	// and receive the CA key.
 	ClusterTokenCreate Action = "cluster.token.create"
@@ -344,13 +347,19 @@ var rules = map[Action]rule{
 	// The web UI's "Add device" creates tokens behind an admin session.
 	TokenCreate:  {class: Safe, actors: []string{ActorAdmin, ActorWeb}},
 	DeviceEnroll: {class: Safe, actors: []string{ActorToken}, fixed: true},
-	DeviceRevoke: {class: Dangerous, actors: []string{ActorAdmin}},
-	// Changing the credential that guards everything else is dangerous. It
-	// is also how a hub gets its first password, and the way back in when
-	// it is lost, so it is never held for approval.
-	AdminSetPassword: {class: Dangerous, actors: []string{ActorAdmin}, fixed: true},
+	// The web UI revokes behind an admin session and the password again.
+	DeviceRevoke: {class: Dangerous, actors: []string{ActorAdmin, ActorWeb}},
+	// Changing the credential that guards everything else is dangerous. On
+	// the hub host it is also how a hub gets its first password, and the way
+	// back in when it is lost, so it is never held for approval there. A
+	// signed-in admin changing it in the web UI, with the current password,
+	// follows the modes.
+	AdminSetPassword: {class: Dangerous, actors: []string{ActorAdmin, ActorWeb}, fixedFor: []string{ActorAdmin}},
 	// Anyone on the network may try to log in; the password decides.
 	AdminLogin: {class: Safe, actors: []string{ActorWeb}, fixed: true},
+	// Entering the password again only proves who is at the session; the
+	// password decides, as at login.
+	AdminReauth: {class: Safe, actors: []string{ActorWeb}, fixed: true},
 	// Joining hands out the CA key: every step of it is dangerous.
 	ClusterTokenCreate: {class: Dangerous, actors: []string{ActorAdmin}},
 	ClusterJoin:        {class: Dangerous, actors: []string{ActorJoinToken}, fixed: true},
@@ -461,8 +470,8 @@ var rules = map[Action]rule{
 	AutomationApply: {class: Dangerous, actors: []string{ActorMCP, ActorWeb}},
 	// A token may carry the dangerous scope; revoking one only takes access
 	// away.
-	MCPTokenCreate: {class: Dangerous, actors: []string{ActorAdmin}},
-	MCPTokenRevoke: {class: Safe, actors: []string{ActorAdmin}},
+	MCPTokenCreate: {class: Dangerous, actors: []string{ActorAdmin, ActorWeb}},
+	MCPTokenRevoke: {class: Safe, actors: []string{ActorAdmin, ActorWeb}},
 	// A scan only asks who is there (one datagram per address, one mDNS
 	// query) and changes nothing on any host, whether the hub or a device's
 	// agent sends it; an agent scans only subnets its ceiling allows.
@@ -503,7 +512,8 @@ var rules = map[Action]rule{
 	// A check reads a service and changes nothing.
 	RunbookCheck: {class: Read, actors: []string{ActorAutomation}},
 	// A backup carries the CA key out of the data dir, encrypted.
-	HubBackup: {class: Dangerous, actors: []string{ActorAdmin}},
+	// The web UI streams it to the browser behind the password again.
+	HubBackup: {class: Dangerous, actors: []string{ActorAdmin, ActorWeb}},
 	// A restore brings back a CA and every credential. It is the way back
 	// after losing the hub, when no one is left to approve it.
 	HubRestore: {class: Dangerous, actors: []string{ActorAdmin}, fixed: true},
@@ -513,8 +523,10 @@ var rules = map[Action]rule{
 	HubScheduledBackup: {class: Dangerous, actors: []string{ActorHub}, fixed: true},
 	// A config import replaces the policy itself, notification credentials
 	// and what automations and runbooks do, on every hub: only the operator
-	// on a hub host, and never fixed, so a policy may hold it for approval.
-	ConfigImport: {class: Dangerous, actors: []string{ActorAdmin}},
+	// on a hub host, or a signed-in admin in the web UI's editors (policy,
+	// notification channels, runbooks, deleting an automation), and never
+	// fixed, so a policy may hold it for approval.
+	ConfigImport: {class: Dangerous, actors: []string{ActorAdmin, ActorWeb}},
 	// The first import records the files a hub already runs with: nothing
 	// changes, and the hub is starting, with no one to approve it.
 	ConfigImportFirst: {class: Dangerous, actors: []string{ActorHub}, fixed: true},
