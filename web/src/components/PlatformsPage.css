@@ -1,0 +1,70 @@
+/* Platforms: one card per connected cluster or server, and the dialog that offers the kinds */
+.platform-card {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.platform-card:hover {
+  background: var(--surface-2);
+}
+
+.platform-card:focus-visible {
+  outline: var(--line-2) solid var(--accent);
+}
+
+.platform-head,
+.platform-kind {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* The kind, lettered in a box like a part number on a drawing */
+.platform-mark {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-lg);
+  height: var(--control-lg);
+  border: var(--line-1) solid var(--online);
+  color: var(--online);
+  font-size: var(--type-11);
+  letter-spacing: var(--tracking-label);
+}
+
+.platform-kind-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-05);
+  min-width: 0;
+}
+
+.platform-kind-text .status-line {
+  margin-top: 0;
+}
+
+.platform-address {
+  overflow-wrap: anywhere;
+}
+
+.platform-kinds {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.platform-kind {
+  padding: var(--space-3);
+  border: var(--line-1) solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.platform-kind:hover {
+  background: var(--surface-2);
+}
