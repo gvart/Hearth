@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { latest, rememberView, storedView, type DevicesView } from '../devices.ts';
-import { deviceHash } from '../nav.ts';
+import { addDeviceHash, deviceHash } from '../nav.ts';
 import type { Device } from '../api/client.ts';
 import { useDevices, useMetricsSparklines } from '../api/hooks.ts';
 import { displayName, formatUptime, osArch, primaryIP, relativeTime, statusLabel } from '../format.ts';
@@ -54,7 +54,8 @@ export function DevicesPage() {
   const devices = useDevices();
   const sparklines = useMetricsSparklines();
   const now = useNow(1_000); // uptime ticks in seconds
-  const [adding, setAdding] = useState(false);
+  // An add-device link (#/add-device, as the command bar makes) opens the dialog.
+  const [adding, setAdding] = useState(() => window.location.hash === addDeviceHash);
   const [view, setView] = useState<DevicesView>(storedView);
   // Device IDs present when "Add device" was last opened; rows not in it are new.
   const [baseline, setBaseline] = useState<Set<string>>();
@@ -68,6 +69,28 @@ export function DevicesPage() {
     setBaseline(new Set(list.map((d) => d.id)));
     setAdding(true);
   };
+  const closeAdd = () => {
+    setAdding(false);
+    if (window.location.hash === addDeviceHash) {
+      window.location.hash = '#/';
+    }
+  };
+  useEffect(() => {
+    const onHash = () => {
+      if (window.location.hash === addDeviceHash) {
+        setBaseline(undefined);
+        setAdding(true);
+      }
+    };
+    window.addEventListener('hashchange', onHash);
+    return () => {
+      window.removeEventListener('hashchange', onHash);
+    };
+  }, []);
+  // Opened by a link: the devices present are noted once they are known, so one that joins shows as new.
+  if (adding && baseline === undefined && devices.data) {
+    setBaseline(new Set(devices.data.map((d) => d.id)));
+  }
 
   return (
     <>
@@ -224,9 +247,7 @@ export function DevicesPage() {
       {adding ? (
         <AddDeviceDialog
           joined={joined}
-          onClose={() => {
-            setAdding(false);
-          }}
+          onClose={closeAdd}
           onShow={(d) => {
             setAdding(false);
             open(d.id);

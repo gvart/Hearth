@@ -99,3 +99,8 @@
   flex: 1 1 14rem;
   min-width: 0;
 }
+
+/* The runbook a plan link opened: marked, so the eye finds it in the list */
+.runbook-list .runbook-card-planned {
+  border-color: var(--accent);
+}

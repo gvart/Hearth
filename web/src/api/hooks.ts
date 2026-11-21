@@ -258,8 +258,8 @@ export function useDeviceEvents(onEvent?: (ev: DeviceEvent) => void) {
 }
 
 /** The adopted Kubernetes clusters, kept current by the event stream. */
-export function useKubeClusters() {
-  return useQuery({ queryKey: keys.kubeClusters, queryFn: api.kubeClusters, staleTime: Infinity });
+export function useKubeClusters(enabled = true) {
+  return useQuery({ queryKey: keys.kubeClusters, queryFn: api.kubeClusters, staleTime: Infinity, enabled });
 }
 
 /** One cluster's nodes, workloads, pods and events, kept current by the event stream. */
@@ -366,8 +366,8 @@ export function useDenyApprovalLink(token: string) {
   return useMutation({ mutationFn: () => api.denyApprovalLink(token) });
 }
 
-export function useRunbooks() {
-  return useQuery({ queryKey: keys.runbooks, queryFn: api.runbooks });
+export function useRunbooks(enabled = true) {
+  return useQuery({ queryKey: keys.runbooks, queryFn: api.runbooks, enabled });
 }
 
 /** The plan of a runbook, fetched anew each time it is opened. */

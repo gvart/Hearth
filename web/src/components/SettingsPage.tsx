@@ -11,7 +11,7 @@ import {
 } from '../api/admin.ts';
 import { ApiError } from '../api/client.ts';
 import { useSession } from '../api/hooks.ts';
-import { chooseTheme, storedTheme, themes, type Theme } from '../theme.ts';
+import { chooseTheme, themes, useTheme } from '../theme.ts';
 import { McpTokens } from './McpTokens.tsx';
 import { Modal } from './Modal.tsx';
 import './PanelsPage.css';
@@ -43,7 +43,7 @@ export function SettingsPage() {
 
 /** Picks the theme, for this browser. */
 function AppearanceCard() {
-  const [theme, setTheme] = useState<Theme>(storedTheme);
+  const theme = useTheme();
   return (
     <section className="panel-card" aria-labelledby="appearance-title">
       <div className="panel-card-head">
@@ -57,7 +57,6 @@ function AppearanceCard() {
               aria-pressed={theme === t.id}
               onClick={() => {
                 chooseTheme(t.id);
-                setTheme(t.id);
               }}
             >
               {t.label}
