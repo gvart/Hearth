@@ -1,0 +1,320 @@
+cmd/hearth/webbackup_test.go
+  s_87f1c7baee7d5a::t_54150dd51277ba 1-43,45-62
+  s_87f1c7baee7d5a::t_96101088f84374 44
+internal/backup/crypt.go
+  s_87f1c7baee7d5a::t_d222c578bee58b 63
+internal/cluster/localroles.go
+  s_87f1c7baee7d5a::t_4b47151c151300 39,46,70
+  s_87f1c7baee7d5a::t_004c3ab6caa0a0 15
+internal/cluster/apschema_test.go
+  s_87f1c7baee7d5a::t_4b47151c151300 55
+  s_87f1c7baee7d5a::t_a157487cc31fe2 82
+web/src/components/SettingsPage.tsx
+  s_87f1c7baee7d5a::t_ebf3154d762b8e 84
+internal/hub/talos.go
+  s_87f1c7baee7d5a::t_6eb13e3221d55f 30
+.github/workflows/ci.yml
+  s_87f1c7baee7d5a::t_792227f08874bd 207-208
+internal/store/automationruns.go
+  s_87f1c7baee7d5a::t_ebf3154d762b8e 15
+internal/store/proxmox.go
+  s_87f1c7baee7d5a::t_ebf3154d762b8e 14,78
+internal/hub/kube.go
+  s_87f1c7baee7d5a::t_ebf3154d762b8e 136
+internal/cluster/masters.go
+  s_87f1c7baee7d5a::t_004c3ab6caa0a0 16-18
+internal/hub/dashboard.go
+  s_87f1c7baee7d5a::t_ebf3154d762b8e 223
+internal/cluster/carotation_unit_test.go
+  s_87f1c7baee7d5a::t_d1398f6809efd2 48,51,65
+internal/cluster/promote.go
+  s_87f1c7baee7d5a::t_53d3f6486f4bb7 51
+internal/cluster/nodecert.go
+  s_87f1c7baee7d5a::t_004c3ab6caa0a0 65,140
+  s_87f1c7baee7d5a::t_4b47151c151300 42
+cmd/hearth/cluster_test.go
+  s_87f1c7baee7d5a::t_eae72757e56d56 8,16,18-29,37,42-45,48,53,58-63,67-71
+internal/cluster/apnodecert.go
+  s_87f1c7baee7d5a::t_4b47151c151300 113
+internal/cluster/carotation.go
+  s_87f1c7baee7d5a::t_004c3ab6caa0a0 22,201,223
+internal/hub/agentstream.go
+  s_87f1c7baee7d5a::t_7fcd1cdf290310 41-42,73,221-223,257-259,299
+internal/cluster/helpers_test.go
+  s_87f1c7baee7d5a::t_86726e4cdd09b8 47,49,53,57,69,71-75,78,80,84,88-90,92
+  s_87f1c7baee7d5a::t_fe46273377d310 6,19,22,28-30,32,36-44
+internal/cluster/join.go
+  s_87f1c7baee7d5a::t_7ec56965c63882 42-43,49-52,64-65,92,97-104,106
+  s_87f1c7baee7d5a::t_004c3ab6caa0a0 30
+  s_87f1c7baee7d5a::t_4b47151c151300 74
+internal/hub/api.go
+  s_87f1c7baee7d5a::t_56dd272c8c88a8 521,537
+  s_87f1c7baee7d5a::t_5ed305b4f78e21 559
+  s_87f1c7baee7d5a::t_686f2e09ba30d4 227
+internal/store/kube_test.go
+  s_87f1c7baee7d5a::t_ebf3154d762b8e 55
+test/e2e/cluster_test.go
+  s_87f1c7baee7d5a::t_cf7b2f3de35012 464
+  s_87f1c7baee7d5a::t_0534a9435ada51 23-24
+  s_87f1c7baee7d5a::t_74d1f942c16b48 12,14-15,31,34-36,39-40,46-50,55,71-75,77,79,82-96,98-101,103-107,109-110,113-114,116-121,123-126,129-136,139,141-146,148-152,154-158,160-176,178-179,181-190,192,194-198,201,203-204,207,209-213,217-222,224,226-227,229,231-236,238-250,252-258,263-268,273,277-278,284-287,293,296,298-299,302,304-307,309-311,314-322,327-414
+  s_87f1c7baee7d5a::t_0541682a135bc1 27-28,30,32-33,37-38,41,52,63-64,76,81,108,115,122,127,140,153,159,177,180,199-200,202,205-206,215-216,261-262,271-272,276,279,282,289,292,294,303,312-313
+  s_87f1c7baee7d5a::t_7b94ba5088b651 445-463
+internal/store/runbookruns.go
+  s_87f1c7baee7d5a::t_7fcd1cdf290310 15
+  s_87f1c7baee7d5a::t_ebf3154d762b8e 76
+internal/hub/server.go
+  s_87f1c7baee7d5a::t_686f2e09ba30d4 137,173,185-186,320-321
+internal/hub/runbooks.go
+  s_87f1c7baee7d5a::t_ebf3154d762b8e 205
+internal/cluster/apdial.go
+  s_87f1c7baee7d5a::t_99634e5ec411da 45
+internal/integrations/beszel/reader.go
+  s_87f1c7baee7d5a::t_6eb13e3221d55f 86,90
+internal/cluster/masters_test.go
+  s_87f1c7baee7d5a::t_5e8ea103bd1ab9 302
+cmd/hearth/hub_backup_test.go
+  s_87f1c7baee7d5a::t_96101088f84374 91
+cmd/hearth/hub_cluster.go
+  s_87f1c7baee7d5a::t_c5cf061386cfe5 11,16,26-27,29-35,38-39,43-45,56-67,73-90,105-110,112,114,116,148-154,157,161,165-174,183-184,188-191,193,202-209,212,215-221,223,225,228-229,233,237-246,248,251-287,289
+  s_87f1c7baee7d5a::t_7972427221e844 124-127,130-134,137-143,145
+  s_87f1c7baee7d5a::t_7a15929b22ee36 36-37,197-201
+  s_87f1c7baee7d5a::t_8f9087def1da29 118-119,128-129
+internal/policy/approvallink_test.go
+  s_87f1c7baee7d5a::t_b2cbfadb0ea767 39
+internal/hub/loginlimit.go
+  s_87f1c7baee7d5a::t_686f2e09ba30d4 29
+internal/store/store.go
+  s_87f1c7baee7d5a::t_26c566971afa46 14
+  s_87f1c7baee7d5a::t_c94195d2ef7777 57-59
+internal/hub/automation_test.go
+  s_87f1c7baee7d5a::t_bda57ecc4ca91b 57-59,79-93,95
+  s_87f1c7baee7d5a::t_d2a02b41f8922c 94,96
+internal/hub/password.go
+  s_87f1c7baee7d5a::t_d222c578bee58b 38-39
+internal/cluster/apmerged_test.go
+  s_87f1c7baee7d5a::t_1a06dca3f457b4 1-59
+internal/cluster/transport.go
+  s_87f1c7baee7d5a::t_ad10bc87214fe5 19-21,71,75,79
+  s_87f1c7baee7d5a::t_004c3ab6caa0a0 44,65
+  s_87f1c7baee7d5a::t_bc5652977d921f 188-191
+internal/integrations/talos/reader.go
+  s_87f1c7baee7d5a::t_6eb13e3221d55f 85,89
+internal/store/dashboardtokens.go
+  s_87f1c7baee7d5a::t_ebf3154d762b8e 48
+cmd/hearth/token.go
+  s_87f1c7baee7d5a::t_82df0791ee105b 84-85
+internal/store/kube.go
+  s_87f1c7baee7d5a::t_ebf3154d762b8e 14
+cmd/hearth/backup.go
+  s_87f1c7baee7d5a::t_06c4a3a7c7a525 93,101-105,116,183-185
+  s_87f1c7baee7d5a::t_82df0791ee105b 90-91,94
+web/src/components/BeszelSystems.tsx
+  s_87f1c7baee7d5a::t_c4130f31a27753 54
+internal/store/schema.go
+  s_87f1c7baee7d5a::t_ebf3154d762b8e 27,88
+web/src/components/TalosNodes.tsx
+  s_87f1c7baee7d5a::t_c4130f31a27753 68
+cmd/hearth/cluster.go
+  s_87f1c7baee7d5a::t_83afe8eab6c4dd 58-59,61,63,163
+  s_87f1c7baee7d5a::t_15921b76ad23c7 25-26,38-40,55,105,132-134,149-151,177,199-200,206
+internal/policy/policy.go
+  s_87f1c7baee7d5a::t_b2cbfadb0ea767 41,43-44,46,50,362-364
+internal/hub/automations.go
+  s_87f1c7baee7d5a::t_ebf3154d762b8e 85
+cmd/hearth/config.go
+  s_87f1c7baee7d5a::t_ebf3154d762b8e 107-108
+cmd/hearth/hub_ap_loops.go
+  s_87f1c7baee7d5a::t_e568253971ec4c 58
+  s_87f1c7baee7d5a::t_53d3f6486f4bb7 23
+cmd/hearth/admin_test.go
+  s_87f1c7baee7d5a::t_aafbc04ad612ce 164
+  s_87f1c7baee7d5a::t_ed6115828246b2 178-181
+internal/hub/beszel.go
+  s_87f1c7baee7d5a::t_6eb13e3221d55f 36
+internal/cluster/cluster.go
+  s_87f1c7baee7d5a::t_7f972c8e53466b 1-5,8-10,20,47
+  s_87f1c7baee7d5a::t_e4190b29711db1 12,19
+  s_87f1c7baee7d5a::t_78fd6a5c5ade78 48-58
+  s_87f1c7baee7d5a::t_4b86099b48e1fe 6-7,11,13-18,21-46
+internal/cluster/control.go
+  s_87f1c7baee7d5a::t_004c3ab6caa0a0 24-27,182-184
+  s_87f1c7baee7d5a::t_9a3aea0fa4f8c2 119-120
+  s_87f1c7baee7d5a::t_fdcc4701955b84 151
+internal/cluster/apepoch_test.go
+  s_87f1c7baee7d5a::t_4b47151c151300 29
+internal/hub/telemetry.go
+  s_87f1c7baee7d5a::t_ebf3154d762b8e 75
+cmd/hearth/hub_gossip_test.go
+  s_87f1c7baee7d5a::t_0ec0034fd48a6e 36-37,40,45,54,64
+internal/hub/carotation_test.go
+  s_87f1c7baee7d5a::t_e479dcd93af2fa 75-76,125
+internal/cluster/configdigest.go
+  s_87f1c7baee7d5a::t_9da3e9ef56974d 11-17
+test/e2e/cluster.compose.yaml
+  s_87f1c7baee7d5a::t_74d1f942c16b48 1-6,10,18,20,30,34,41-42,49-50,57-58
+internal/metrics/store.go
+  s_87f1c7baee7d5a::t_53d3f6486f4bb7 6-8
+internal/hub/certpin_test.go
+  s_87f1c7baee7d5a::t_0c64440ecf3917 144-157,163-165,174,176
+internal/hub/proxmox.go
+  s_87f1c7baee7d5a::t_ebf3154d762b8e 110
+internal/integrations/kubernetes/manager.go
+  s_87f1c7baee7d5a::t_d222c578bee58b 85,119,343
+internal/cluster/apnode.go
+  s_87f1c7baee7d5a::t_4b47151c151300 153,257,492,504
+  s_87f1c7baee7d5a::t_7377aa9de8b26d 786
+  s_87f1c7baee7d5a::t_004c3ab6caa0a0 33-34,684-687
+  s_87f1c7baee7d5a::t_9a3aea0fa4f8c2 38,594
+  s_87f1c7baee7d5a::t_99634e5ec411da 733
+internal/store/hubs.go
+  s_87f1c7baee7d5a::t_ebf3154d762b8e 78,90
+  s_87f1c7baee7d5a::t_d222c578bee58b 19
+internal/backup/backup.go
+  s_87f1c7baee7d5a::t_78fd6a5c5ade78 61-64
+internal/hub/registry.go
+  s_87f1c7baee7d5a::t_5ed305b4f78e21 61-63,91-119,228
+  s_87f1c7baee7d5a::t_3cd39750b6624f 156-157,189
+  s_87f1c7baee7d5a::t_7135f928e5e3c5 222-226
+cmd/hearth/enroll_cmds_test.go
+  s_87f1c7baee7d5a::t_b61214c4440691 74-76
+  s_87f1c7baee7d5a::t_aafbc04ad612ce 62
+internal/store/auditop_test.go
+  s_87f1c7baee7d5a::t_ebf3154d762b8e 256
+internal/hub/panels.go
+  s_87f1c7baee7d5a::t_ebf3154d762b8e 461
+internal/hub/guest.go
+  s_87f1c7baee7d5a::t_5ed305b4f78e21 464
+internal/store/mergeobserve_test.go
+  s_87f1c7baee7d5a::t_5920c32ae1a4d9 1-53
+internal/cluster/membership.go
+  s_87f1c7baee7d5a::t_004c3ab6caa0a0 77
+  s_87f1c7baee7d5a::t_666a44a006ec7f 917
+  s_87f1c7baee7d5a::t_99cc2c256d106c 910
+  s_87f1c7baee7d5a::t_53d3f6486f4bb7 51
+  s_87f1c7baee7d5a::t_9a3aea0fa4f8c2 911-916
+internal/store/panels.go
+  s_87f1c7baee7d5a::t_ebf3154d762b8e 55
+internal/cluster/apcakey.go
+  s_87f1c7baee7d5a::t_9a3aea0fa4f8c2 213-264
+  s_87f1c7baee7d5a::t_7ec56965c63882 14
+cmd/hearth/hub_approvals_test.go
+  s_87f1c7baee7d5a::t_96f2e4499a2da2 37-40
+internal/hub/revoke_test.go
+  s_87f1c7baee7d5a::t_0c64440ecf3917 38-39,49,54,58,153-155,159-162,164,175
+internal/hub/merged_test.go
+  s_87f1c7baee7d5a::t_aee779a9582ec8 1-94,98-115,119
+  s_87f1c7baee7d5a::t_49e9261d557384 116-118
+  s_87f1c7baee7d5a::t_f6e3ab87b30d6a 95-97
+cmd/hearth/hub.go
+  s_87f1c7baee7d5a::t_96c88f2fa4651a 281,284-287,330-331,333,339,347,357,388-392,413,415,432,434-437,473-480,482,498,510,515-517,528-534,541,546-549,590,612-614,651-655,668-673,675-679,681-686,696,703-708
+  s_87f1c7baee7d5a::t_dd1e71f99e0cb7 138-139,152,692
+  s_87f1c7baee7d5a::t_78fd6a5c5ade78 416
+  s_87f1c7baee7d5a::t_47833b6f3628aa 481
+  s_87f1c7baee7d5a::t_7fb979e425e367 417
+  s_87f1c7baee7d5a::t_96f2e4499a2da2 366,833-835
+  s_87f1c7baee7d5a::t_fe7094ccde0fc4 691,695,832,849
+internal/cluster/apcarotation_test.go
+  s_87f1c7baee7d5a::t_4b47151c151300 149
+internal/hub/webadmin.go
+  s_87f1c7baee7d5a::t_ebf3154d762b8e 101,168
+internal/integrations/proxmox/manager.go
+  s_87f1c7baee7d5a::t_d222c578bee58b 51,190
+internal/cluster/apnodecert_test.go
+  s_87f1c7baee7d5a::t_4b47151c151300 31
+internal/cluster/configdigest_test.go
+  s_87f1c7baee7d5a::t_9da3e9ef56974d 5
+internal/store/configdocs.go
+  s_87f1c7baee7d5a::t_ebf3154d762b8e 76
+internal/integrations/kubernetes/seal.go
+  s_87f1c7baee7d5a::t_d222c578bee58b 23,25
+cmd/hearth/common.go
+  s_87f1c7baee7d5a::t_53d3f6486f4bb7 149-152
+internal/cluster/promote_test.go
+  s_87f1c7baee7d5a::t_4b47151c151300 102
+internal/cluster/gossiptransport.go
+  s_87f1c7baee7d5a::t_99634e5ec411da 250,283,452
+  s_87f1c7baee7d5a::t_53d3f6486f4bb7 171
+  s_87f1c7baee7d5a::t_004c3ab6caa0a0 62-63,113
+internal/hub/network.go
+  s_87f1c7baee7d5a::t_ebf3154d762b8e 137
+  s_87f1c7baee7d5a::t_7135f928e5e3c5 59
+internal/backup/doc.go
+  s_87f1c7baee7d5a::t_d222c578bee58b 25
+cmd/hearth/backup_cluster_test.go
+  s_87f1c7baee7d5a::t_aafbc04ad612ce 132
+web/src/api/client.ts
+  s_87f1c7baee7d5a::t_c4130f31a27753 238,245
+internal/cluster/control_test.go
+  s_87f1c7baee7d5a::t_39c0f4f6b2253b 37,49,80,91
+cmd/hearth/cluster_ca.go
+  s_87f1c7baee7d5a::t_1f319b97619131 62-64,67,156-158,161,205-207,210
+  s_87f1c7baee7d5a::t_0675b409495dc4 41,91,139,143,191,193
+  s_87f1c7baee7d5a::t_e8f80527a197fe 47-48
+  s_87f1c7baee7d5a::t_83afe8eab6c4dd 98,241
+internal/cluster/apschema.go
+  s_87f1c7baee7d5a::t_535a72c7c8d86d 216-272
+  s_87f1c7baee7d5a::t_004c3ab6caa0a0 33
+internal/cluster/doc.go
+  s_87f1c7baee7d5a::t_66f4dddf971469 3-4,6-13,15-17
+cmd/hearth/backup_test.go
+  s_87f1c7baee7d5a::t_aa48e330065b7f 16,46,53,57-58,61-63,110,318-321,326,337-346,348,360,362,364,366,381,385,391,393,395-396
+internal/mcpserver/server.go
+  s_87f1c7baee7d5a::t_c4130f31a27753 62-64
+internal/cluster/apcontrol.go
+  s_87f1c7baee7d5a::t_d5039ab3d1e259 242-253
+internal/policy/guardrails_test.go
+  s_87f1c7baee7d5a::t_b2cbfadb0ea767 126-214
+internal/policy/engine.go
+  s_87f1c7baee7d5a::t_d222c578bee58b 90
+internal/cluster/apcarotation.go
+  s_87f1c7baee7d5a::t_4b47151c151300 127,311,375,515,549,575
+  s_87f1c7baee7d5a::t_004c3ab6caa0a0 48
+cmd/hearth/hub_backup.go
+  s_87f1c7baee7d5a::t_7fb979e425e367 83-86,93,129,184
+cmd/hearth/config_test.go
+  s_87f1c7baee7d5a::t_96f2e4499a2da2 71-74
+internal/automation/doc.go
+  s_87f1c7baee7d5a::t_8438fb9ba4312c 12-14
+cmd/hearth/cluster_roles.go
+  s_87f1c7baee7d5a::t_83afe8eab6c4dd 60
+  s_87f1c7baee7d5a::t_e8f80527a197fe 54
+  s_87f1c7baee7d5a::t_0675b409495dc4 17-18,22,26-27
+internal/store/hubcerts_test.go
+  s_87f1c7baee7d5a::t_ebf3154d762b8e 76,122
+internal/cluster/epoch.go
+  s_87f1c7baee7d5a::t_004c3ab6caa0a0 27-29
+cmd/hearth/hub_master.go
+  s_87f1c7baee7d5a::t_012e220f0107fb 20-21,34
+  s_87f1c7baee7d5a::t_82addb094782d0 1-19,22-33,35-162
+internal/store/telemetry.go
+  s_87f1c7baee7d5a::t_ebf3154d762b8e 15,93
+internal/store/merge.go
+  s_87f1c7baee7d5a::t_b352149b79fe78 106
+  s_87f1c7baee7d5a::t_c94195d2ef7777 54,67-70,81-83,87-105
+cmd/hearth/mcp.go
+  s_87f1c7baee7d5a::t_ebf3154d762b8e 157
+internal/hub/verifychild.go
+  s_87f1c7baee7d5a::t_d222c578bee58b 46-47
+internal/store/masters.go
+  s_87f1c7baee7d5a::t_d222c578bee58b 52-53
+internal/hub/netedgestore.go
+  s_87f1c7baee7d5a::t_686f2e09ba30d4 56
+Taskfile.yml
+  s_87f1c7baee7d5a::t_792227f08874bd 63,65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f99035a52ac05c9f7a5b823e4b67fcca054a0364",
+  "prompts": {},
+  "sessions": {
+    "s_87f1c7baee7d5a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "45cc2cdf-3130-4caa-8cb4-8cb365d2150d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
