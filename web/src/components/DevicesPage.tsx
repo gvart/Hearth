@@ -2,13 +2,14 @@ import { useEffect, useState } from 'react';
 import { latest, rememberView, storedView, type DevicesView } from '../devices.ts';
 import { addDeviceHash, deviceHash } from '../nav.ts';
 import type { Device } from '../api/client.ts';
-import { useDevices, useMetricsSparklines } from '../api/hooks.ts';
+import { useDevices, useMetricsSparklines, useNetworkScan } from '../api/hooks.ts';
 import { displayName, formatUptime, osArch, primaryIP, relativeTime, statusLabel } from '../format.ts';
 import { AddDeviceDialog } from './AddDeviceDialog.tsx';
 import { BeszelSystems } from './BeszelSystems.tsx';
 import { TalosNodes } from './TalosNodes.tsx';
 import { DeviceSparklines } from './DeviceSparklines.tsx';
 import { Meter } from './Meter.tsx';
+import { NetworkScanButton, NetworkScanResult } from './NetworkScan.tsx';
 import { PluginDevices } from './PluginDevices.tsx';
 import { StatusDot } from './StatusDot.tsx';
 import { UnmanagedHosts } from './UnmanagedHosts.tsx';
@@ -54,6 +55,7 @@ function useNow(intervalMs: number) {
 export function DevicesPage() {
   const devices = useDevices();
   const sparklines = useMetricsSparklines();
+  const scan = useNetworkScan();
   const now = useNow(1_000); // uptime ticks in seconds
   // An add-device link (#/add-device, as the command bar makes) opens the dialog.
   const [adding, setAdding] = useState(() => window.location.hash === addDeviceHash);
@@ -108,6 +110,7 @@ export function DevicesPage() {
                   : `${String(online)} of ${String(list.length)} online`}
               </p>
             ) : null}
+            {list.length > 0 ? <NetworkScanResult scan={scan} /> : null}
           </div>
           <div className="devices-tools">
             <div className="range-picker" role="group" aria-label="View">
@@ -126,6 +129,7 @@ export function DevicesPage() {
                 </button>
               ))}
             </div>
+            <NetworkScanButton scan={scan} />
             <button className="btn btn-primary" type="button" onClick={openAdd}>
               <span aria-hidden="true">＋</span> Add device
             </button>
@@ -142,9 +146,14 @@ export function DevicesPage() {
           <div className="empty">
             <h2>Bring your first device home</h2>
             <p className="muted">Add a Raspberry Pi, a NAS, a laptop or a cluster node. It shows up here within seconds.</p>
-            <button className="btn btn-primary" type="button" onClick={openAdd}>
-              Add device
-            </button>
+            <div className="devices-tools">
+              <button className="btn btn-primary" type="button" onClick={openAdd}>
+                Add device
+              </button>
+              <NetworkScanButton scan={scan} />
+            </div>
+            <p className="muted">Or scan your network to see what is already on it.</p>
+            <NetworkScanResult scan={scan} />
           </div>
         ) : view === 'blocks' ? (
           <div className="dev-block-grid">

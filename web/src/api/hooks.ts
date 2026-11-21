@@ -22,12 +22,14 @@ import {
   type LogLine,
   type MetricsRange,
   type NetworkHostState,
+  type NetworkScanDone,
 } from './client.ts';
 
 export const keys = {
   session: ['session'] as const,
   devices: ['devices'] as const,
   networkHosts: ['network', 'hosts'] as const,
+  networkScan: ['network', 'scan'] as const,
   beszelSystems: ['beszel', 'systems'] as const,
   talosNodes: ['talos', 'nodes'] as const,
   tls: ['tls'] as const,
@@ -140,6 +142,41 @@ export function useMarkNetworkHost() {
   });
 }
 
+/** A network scan asked for from this UI: running, and how the last one ended. */
+export interface NetworkScanState {
+  running: boolean;
+  done?: NetworkScanDone;
+}
+
+const idleScan: NetworkScanState = { running: false };
+
+/**
+ * The state of the network scan asked for from this UI, kept in the query
+ * cache: starting a scan sets it running, and the network.scan.done event
+ * (useDeviceEvents) sets how it ended.
+ */
+export function useNetworkScan() {
+  const qc = useQueryClient();
+  const state = useQuery<NetworkScanState>({
+    queryKey: keys.networkScan,
+    queryFn: () => qc.getQueryData<NetworkScanState>(keys.networkScan) ?? idleScan,
+    staleTime: Infinity,
+  });
+  const start = useMutation({
+    mutationFn: api.scanNetwork,
+    onSuccess: () => {
+      qc.setQueryData<NetworkScanState>(keys.networkScan, { running: true });
+    },
+    onError: (err) => {
+      // A scan already running ends with the event all the same.
+      if (err instanceof ApiError && err.code === 'scan_running') {
+        qc.setQueryData<NetworkScanState>(keys.networkScan, { running: true });
+      }
+    },
+  });
+  return { state: state.data ?? idleScan, start };
+}
+
 /** The admin's answer to the telemetry prompt. */
 export function useTelemetry() {
   return useQuery({ queryKey: keys.telemetry, queryFn: api.telemetry, staleTime: Infinity });
@@ -231,6 +268,10 @@ export function useDeviceEvents(onEvent?: (ev: DeviceEvent) => void) {
           void qc.invalidateQueries({ queryKey: keys.networkHosts });
         },
         onNetworkHost: () => {
+          void qc.invalidateQueries({ queryKey: keys.networkHosts });
+        },
+        onNetworkScanDone: (done) => {
+          qc.setQueryData<NetworkScanState>(keys.networkScan, { running: false, done });
           void qc.invalidateQueries({ queryKey: keys.networkHosts });
         },
         onKubeCluster: (c) => {

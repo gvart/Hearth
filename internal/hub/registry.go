@@ -32,6 +32,8 @@ type Event struct {
 	Type   string
 	Device store.Device
 	Hosts  []store.NetworkHost
+	// Scan is the end of a scan asked for over the API (EventNetworkScanDone).
+	Scan *NetworkScanJSON
 }
 
 // RegistryConfig holds the registry's dependencies. Zero values of the

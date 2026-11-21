@@ -439,6 +439,14 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	// The scanner scans when an admin asks (POST /api/v1/network/scan) on
+	// any hub, and on its schedule only with --discover-subnet.
+	scanner := discovery.New(discovery.Config{
+		Subnets: subnets, Auto: autoSubnets, From: scanFrom, Agents: agents, Interval: opts.discoverInterval,
+		Hosts: st.NetworkHosts(), Policy: pol, Events: reg, Log: log.With("component", "discovery"),
+	})
+	scheduledScans := len(subnets) > 0 || autoSubnets || len(scanFrom) > 0
+	networkScans := hub.NewNetworkScans(scanner, reg, log.With("component", "discovery"))
 	cfg := hub.Config{
 		Store:             st,
 		CA:                ca,
@@ -459,6 +467,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		Proxmox:           pve,
 		Plugins:           pluginMgr,
 		Notify:            notifier,
+		NetworkScans:      networkScans,
 		Version:           opts.version,
 		Runbooks:          runbooks,
 		TelemetryOff:      telemetryOff,
@@ -626,13 +635,6 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		Owned:   ringChanged,
 	})
 
-	var scanner *discovery.Scanner
-	if len(subnets) > 0 || autoSubnets || len(scanFrom) > 0 {
-		scanner = discovery.New(discovery.Config{
-			Subnets: subnets, Auto: autoSubnets, From: scanFrom, Agents: agents, Interval: opts.discoverInterval,
-			Hosts: st.NetworkHosts(), Policy: pol, Events: reg, Log: log.With("component", "discovery"),
-		})
-	}
 	var importer *discovery.Importer
 	if len(importSources) > 0 {
 		importer = discovery.NewImporter(discovery.ImportConfig{
@@ -651,9 +653,11 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	g, gctx := errgroup.WithContext(ctx)
 	runAPLoops(gctx, g, node, apLoops{
 		agents: agents, reg: reg, st: st, pol: pol, automations: automations, runbooks: runbooks,
-		scanner: scanner, importer: importer, beszel: beszelReader, talos: talosReader, backups: backups,
+		scanner: scanner, scheduledScans: scheduledScans, importer: importer, beszel: beszelReader, talos: talosReader, backups: backups,
 		ready: ready, log: log,
 	})
+	// Every master runs the scans asked for of it.
+	g.Go(func() error { return networkScans.Run(gctx) })
 	// Every hub of a cluster watches the Kubernetes clusters itself.
 	g.Go(func() error { return kube.Run(gctx) })
 	// And reads the Proxmox servers itself.

@@ -35,6 +35,9 @@ type apLoops struct {
 	backups     *backup.Scheduler
 	ready       <-chan struct{}
 	log         *slog.Logger
+
+	// scheduledScans runs scanner on its schedule (--discover-subnet).
+	scheduledScans bool
 }
 
 // runAPLoops runs those loops on a master of an AP cluster
@@ -64,7 +67,7 @@ func runAPLoops(ctx context.Context, g *errgroup.Group, node *cluster.APNode, l 
 				l.log.With("component", key), run)
 		})
 	}
-	if l.scanner != nil {
+	if l.scheduledScans {
 		singleton("discovery", l.scanner.Run)
 	}
 	if l.importer != nil {

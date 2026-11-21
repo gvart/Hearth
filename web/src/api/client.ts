@@ -154,6 +154,16 @@ export interface DeviceEvent {
 
 export type NetworkHostSource = 'scan' | 'pihole' | 'dhcp' | 'netalertx';
 
+/** How a network scan asked for with POST /api/v1/network/scan ended (event network.scan.done). */
+export interface NetworkScanDone {
+  hosts: number;
+  new: number;
+  returned: number;
+  duration_ms: number;
+  /** Why the scan failed; absent when it did not. */
+  error?: string;
+}
+
 /** A host network discovery found on the LAN; see /api/v1/network/hosts. */
 export interface NetworkHost {
   /** Lower-case, colon-separated; the host's identity across IP changes. */
@@ -722,6 +732,8 @@ export const api = {
   },
   kubeAction: (cluster: string, req: KubeActionRequest) =>
     request<KubeActionResult>('POST', `/kube/clusters/${encodeURIComponent(cluster)}/actions`, req),
+  /** Starts a scan of the hub's network; it ends with a network.scan.done event. 409 while one runs. */
+  scanNetwork: () => request<{ status: string }>('POST', '/network/scan'),
   /** Marks a host known or ignored, or neither again (''). */
   markNetworkHost: (mac: string, state: NetworkHostState) =>
     request<undefined>(
@@ -807,6 +819,8 @@ export interface EventHandlers {
   onKubeChange: (c: KubeChange) => void;
   /** Network discovery found a new host, or one came back. */
   onNetworkHost: () => void;
+  /** A network scan asked for from the UI or CLI ended. */
+  onNetworkScanDone: (done: NetworkScanDone) => void;
   /** The stream broke; the caller decides when to reconnect. */
   onError: () => void;
 }
@@ -845,6 +859,13 @@ export function subscribeEvents(h: EventHandlers): () => void {
       h.onNetworkHost();
     });
   }
+  es.addEventListener('network.scan.done', (msg: MessageEvent<string>) => {
+    try {
+      h.onNetworkScanDone(JSON.parse(msg.data) as NetworkScanDone);
+    } catch {
+      // As above.
+    }
+  });
   es.addEventListener('kube.object', (msg: MessageEvent<string>) => {
     try {
       h.onKubeChange(JSON.parse(msg.data) as KubeChange);

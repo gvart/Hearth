@@ -8,9 +8,28 @@ phone) and lists them under **On your network** on the Devices page, with their 
 vendor and name. Each one has an **Add device** button that opens the usual
 [install-and-join flow](getting-started.md).
 
-Discovery is off until you turn it on. Nothing it learns leaves your LAN.
+The hub scans only when you ask it to, with **Scan my network** (see [Scan now](#scan-now)), or on a
+schedule once you turn that on. Nothing it learns leaves your LAN.
 
-## Turn it on
+## Scan now
+
+**Scan my network**, in the head of the Devices page and in its empty state, scans once: the subnets
+of `--discover-subnet` or, when there are none, the hub's own LANs (each private IPv4 subnet,
+narrowed to its /24, as `auto` does). The button reads **Scanning…** until the scan ends, then the
+page says what it found ("Found 14 hosts, 3 new") and **On your network** lists the hosts. The same
+from a terminal, with the admin password from `HEARTH_ADMIN_PASSWORD` or asked for:
+
+```sh
+hearth network scan [--hub-url http://hub.lan:8080]
+# Scanning the network…
+# Found 14 hosts: 3 new, 0 back (5.1s)
+```
+
+One scan by a hub runs at a time, scheduled or asked for: asking while one runs is refused (409).
+In a cluster, the scan runs on the master that served the request. It sweeps from the hub only: the
+subnets configured for a device (`CIDR@device`) are left to the schedule.
+
+## Scan on a schedule
 
 ```sh
 hearth hub --discover-subnet 192.168.1.0/24
@@ -22,7 +41,7 @@ HEARTH_DISCOVER_SUBNETS=192.168.1.0/24,192.168.20.0/24 hearth hub
 
 | Flag | Env | Default | |
 | --- | --- | --- | --- |
-| `--discover-subnet` | `HEARTH_DISCOVER_SUBNETS` (comma-separated) | off | IPv4 CIDR, or `auto`; repeatable |
+| `--discover-subnet` | `HEARTH_DISCOVER_SUBNETS` (comma-separated) | off | IPv4 CIDR, or `auto`; repeatable. Turns on scheduled scans |
 | `--discover-interval` | `HEARTH_DISCOVER_INTERVAL` | `5m` | Time between scans |
 
 The hub scans once at start and then every interval. A scan of a /24 takes about 5 seconds. Subnets
@@ -105,6 +124,10 @@ Each scan publishes, on the hub's event stream (`/api/v1/events`):
 - `network.device.new` for a host no scan had found before;
 - `network.device.returned` for a known host that no scan had found for an hour or more.
 
+A scan asked for with **Scan my network** or `hearth network scan` also ends with
+`network.scan.done`: `{"type": "network.scan.done", "hosts": 14, "new": 3, "returned": 0,
+"duration_ms": 5120}`, or `{"type": "network.scan.done", ..., "error": "..."}` if it failed.
+
 Each configured subnet has its own baseline: until a scan has found a host in it, the hosts found
 there are recorded and nothing is published, so turning discovery on, or adding a subnet next to
 known ones, does not report the whole new subnet as new.
@@ -162,9 +185,11 @@ In a cluster, the automation fires on the master that ran the scan: give every m
 
 ## Policy and audit
 
-A scan is the hub action `network.scan` (class `read`, actor `hub/discovery`). Each scan is one
+A scan is the hub action `network.scan` (class `read`), with the actor `hub/discovery` on the
+schedule and `web/<client address>` when asked for from the web UI or the CLI. Each scan is one
 audit entry whatever the number of hosts, with the subnets as target and the counts (hosts, new,
-returned, duration) in its detail. A policy that denies the `read` class stops scanning.
+returned, duration) in its detail. A policy that denies the `read` class stops scanning; one that
+denies it to the `web` actor only refuses **Scan my network** (403), and audits the denial.
 
 Each device's scan is a scan of its own, with `from` (the device as configured) and `device_id` in
 its detail. A scan its ceiling does not allow is a `deny` entry naming the subnet beyond it; one its
@@ -212,3 +237,10 @@ POST /api/v1/network/hosts/{mac}/unmark
 
 Each one is the action `network.host.mark` (class `safe`, actor `web`), audited with the MAC as
 target and the new state as detail.
+
+```
+POST /api/v1/network/scan    202 {"status": "started"}; 409 scan_running, or no_subnet; 403 denied by policy
+```
+
+It starts one scan (see [Scan now](#scan-now)) and answers once policy has allowed it; the scan ends
+with a `network.scan.done` event.
