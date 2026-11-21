@@ -488,7 +488,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	maps.Copy(kinds.Triggers, automation.Triggers(automation.TriggerDeps{
 		Devices: hub.AutomationDevices(reg),
 		Network: hub.AutomationNetwork(reg),
-		Metrics: hub.AutomationMetrics(st, prom, ms),
+		Metrics: hub.AutomationMetrics(st, prom, ms, agents),
 		Probers: agents,
 		Policy:  pol,
 		Log:     log,
@@ -529,7 +529,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	// Other masters forward calls for the agents streaming here, and
 	// proxy the log streams and terminals of their devices.
 	mm := http.NewServeMux()
-	mm.Handle("/agents/", hub.AgentsHandler(agents, log))
+	mm.Handle("/agents/", hub.AgentsHandler(agents, ms, log))
 	mm.Handle("/api/", hub.ProxiedHandler(uiMux))
 	node.SetMasterHandler(mm)
 	defer node.SetMasterHandler(nil)
@@ -540,7 +540,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	}
 	uiMux.Handle(mcpserver.Path, hub.EndOnStop(stopping, mcpserver.Handler(mcpserver.Config{
 		Devices: st.Devices(), Tokens: st.MCPTokens(), Policy: pol, Agents: agents, Kube: kube, Plugins: mcpPlugins,
-		Metrics: hub.AutomationMetrics(st, prom, ms), AutomationsDir: automationsDir, AutomationDocs: automationDocs, AutomationKinds: kinds, AutomationsLock: &automationsMu,
+		Metrics: hub.AutomationMetrics(st, prom, ms, agents), AutomationsDir: automationsDir, AutomationDocs: automationDocs, AutomationKinds: kinds, AutomationsLock: &automationsMu,
 		Version: opts.version, Log: log,
 	})))
 	tlsCfg := hub.TLSConfigFunc(ca, serverCert.Load)

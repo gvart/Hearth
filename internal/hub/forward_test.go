@@ -75,7 +75,7 @@ func TestForwardedExecReachesTheOwningMaster(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	srv := httptest.NewServer(AgentsHandler(onA, slog.New(slog.DiscardHandler)))
+	srv := httptest.NewServer(AgentsHandler(onA, nil, slog.New(slog.DiscardHandler)))
 	t.Cleanup(srv.Close)
 	u, _ := url.Parse(srv.URL)
 	routes := st.DeviceRoutes()

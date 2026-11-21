@@ -105,13 +105,15 @@ func (e registryEvents) watchNetwork(ctx context.Context, ch <-chan Event, fn fu
 
 // AutomationMetrics reads the metric trigger's values from Prometheus, or,
 // when none is configured, a device's values from the hub's own metrics ms
-// (which answer no PromQL). It is nil when there is neither.
-func AutomationMetrics(st *store.Store, prom *prometheus.Reader, ms *metrics.Store) automation.Metrics {
+// (which answer no PromQL). It is nil when there is neither. agents, if not
+// nil, reads the built-in metrics of a device whose agent streams to another
+// master from that master.
+func AutomationMetrics(st *store.Store, prom *prometheus.Reader, ms *metrics.Store, agents *Agents) automation.Metrics {
 	switch {
 	case prom != nil:
 		return promMetrics{devices: st.Devices(), prom: prom}
 	case ms != nil:
-		return builtinMetrics{devices: st.Devices(), metrics: ms}
+		return builtinMetrics{devices: st.Devices(), metrics: ms, agents: agents}
 	}
 	return nil
 }

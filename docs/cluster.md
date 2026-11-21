@@ -131,12 +131,12 @@ dir and join it again.
 - **Every master serves agents.** An agent streams to any master. It gets the list of masters when it
   enrolls and on every connect, keeps it in `hubs` in its data dir, and moves to another master, with
   the usual backoff, when its master goes away. The master holding a device's stream records it (a
-  `device → master` route); an exec, probe, Docker call, scan, log stream or terminal for that device
-  on another master is forwarded to it over the members' mutual TLS. For an exec, probe, Docker call
-  or scan, the decision and the audit entry stay on the master that got the request; a log stream or
-  terminal is proxied whole and decided on the holder. If the holder cannot be reached, the call fails
-  with "agent not connected" until the agent has moved; one lost after it was sent has an unknown
-  outcome.
+  `device → master` route); an exec, probe, Docker call, scan, built-in metric read, log stream or
+  terminal for that device on another master is forwarded to it over the members' mutual TLS. For an
+  exec, probe, Docker call or scan, the decision and the audit entry stay on the master that got the
+  request; a log stream or terminal is proxied whole and decided on the holder. If the holder cannot
+  be reached, the call fails with "agent not connected" until the agent has moved; one lost after it
+  was sent has an unknown outcome.
 - **Presence.** The master holding a device's stream marks it online and offline. A device with no
   live stream is marked offline by the master that owns it on a hash ring over the live masters, once
   that master has owned it for 30 seconds.
@@ -145,7 +145,11 @@ dir and join it again.
   dies, its share moves to the others. Device and network-discovery triggers fire on the master where
   the event happens (the one holding the device's stream, or running the scan), and a manual run on
   the master it is asked of: each event happens on one master, so an automation fires once. Rows
-  copied from other members raise no automation events. Network discovery, the DHCP/Pi-hole import,
+  copied from other members raise no automation events. Each master keeps the
+  [built-in metrics](prometheus.md#built-in-metrics) of the agents streaming to it, so without
+  Prometheus a device metric trigger reads the device's value from the master holding its stream,
+  over the masters' link; while that master is down there is no value, and the trigger does not fire.
+  Network discovery, the DHCP/Pi-hole import,
   scheduled backups and telemetry run on one master each; Beszel and Talos reads on every master.
   During a split both sides may run one: accepted.
 - **Tokens and approvals have an owner.** An enrollment token, a join token, an approval and an
@@ -506,10 +510,6 @@ the time it was made and lands only once. If a spooled entry cannot be read back
   data dir can still mint certificates the cluster trusts until you [rotate the hub CA](#rotating-the-hub-ca).
   Wipe the data dir of every removed master. Storage-only members never hold the key.
 - **One way schema upgrades:** no downgrade once the cluster has written a newer schema.
-- **Metric triggers without Prometheus** read agent metrics from the owning master's memory, which
-  holds only the agents streaming to it, so devices on other masters are not evaluated
-  ([#261](https://github.com/gvart/Hearth/issues/261)). Prometheus-backed metric triggers are
-  unaffected.
 - `hearth` commands run on a member's host (`hearth token create`, `hearth cluster token create`) are
   not refused when that master is cut off: the 60-second fail-closed rule covers the hub's API, agents,
   MCP and automations.

@@ -186,7 +186,7 @@ func TestAutomationMetricsBuiltin(t *testing.T) {
 	if err := ms.Write(t.Context(), "d1", time.Now(), []metrics.Sample{{Name: "cpu", Value: 93.5}}); err != nil {
 		t.Fatal(err)
 	}
-	m := AutomationMetrics(st, nil, ms)
+	m := AutomationMetrics(st, nil, ms, nil)
 	for _, ref := range []string{"d1", "RaspberryPi"} {
 		if v, err := m.DeviceMetric(t.Context(), ref, "cpu"); err != nil || v != 93.5 {
 			t.Errorf("DeviceMetric(%s, cpu) = %v, %v; want 93.5", ref, v, err)
