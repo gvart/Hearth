@@ -132,7 +132,7 @@ export function DevicesPage() {
             </button>
           </div>
         ) : view === 'blocks' ? (
-          <div className="block-grid">
+          <div className="dev-block-grid">
             {list.map((d, i) => {
               const charts = sparklines.data?.devices[d.id];
               const on = d.status === 'online';
@@ -140,20 +140,20 @@ export function DevicesPage() {
                 <button
                   key={d.id}
                   type="button"
-                  className={on ? 'block' : 'block block-off'}
+                  className={on ? 'dev-block' : 'dev-block dev-block-off'}
                   aria-label={`${displayName(d)}, ${statusLabel(d.status)}`}
                   onClick={() => {
                     setSelectedId(d.id);
                   }}
                 >
-                  <span className="block-head">
+                  <span className="dev-block-head">
                     <span>D{i + 1}</span>
-                    <span className="block-state">
+                    <span className="dev-block-state">
                       <StatusDot status={d.status} />
                       {statusLabel(d.status)}
                     </span>
                   </span>
-                  <span className="block-name">
+                  <span className="dev-block-name">
                     {displayName(d)}
                     {isNew(d) ? <span className="badge">New</span> : null}
                   </span>
