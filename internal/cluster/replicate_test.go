@@ -335,6 +335,25 @@ func TestWritesReachReplicasAndReadsRoute(t *testing.T) {
 	}
 }
 
+// A device route recorded by a master that is no replica of the device is
+// forwarded, decoded and stored by the replicas (#282).
+func TestForwardedDeviceRouteIsStored(t *testing.T) {
+	ctx := t.Context()
+	ids := []string{"a", "b", "c"}
+	an := newAPNet(t, 2, ids...)
+	id := keyOwnedBy(t, ids, 2, "dev", "b", "c")
+	at := time.UnixMilli(1_700_000_000_000).UTC()
+	if err := an.m("a").st.DeviceRoutes().Set(ctx, id, "a", at); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	for _, m := range ids {
+		r, err := an.m(m).st.DeviceRoutes().Get(ctx, id)
+		if err != nil || r.Master != "a" || !r.At.Equal(at) {
+			t.Fatalf("%s: Get = %+v, %v", m, r, err)
+		}
+	}
+}
+
 func TestCriticalWriteFailsFast(t *testing.T) {
 	ctx := t.Context()
 	ids := []string{"a", "b", "c"}

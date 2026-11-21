@@ -8,9 +8,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -96,6 +100,17 @@ func allCommands() []Command {
 			},
 			{MAC: "aa:bb:cc:dd:ee:01", IP: "192.168.20.5", Sources: []string{SourceDHCP}},
 		}},
+		PutConfigDocs{
+			Docs:   []ConfigDocWrite{{Kind: ConfigRunbook, Name: "r.yaml", Content: []byte("steps: []"), Digest: "d0"}},
+			IfNone: true, By: "admin/root", Now: 33,
+		},
+		DeleteConfigDoc{Kind: ConfigRunbook, Name: "r.yaml"},
+		SetDeviceRoute{DeviceID: "pi", Master: "hub-a", At: 34},
+		CreateRunbookRun{
+			ID: "rr1", RunbookID: "rb", Status: "running", StartedBy: "admin/root", StartedAt: 35,
+			Source: []byte("steps: []"), State: `{"step":0}`, Keep: 100,
+		},
+		SaveRunbookRun{ID: "rr1", Version: 1, Status: "succeeded", UpdatedAt: 36, FinishedAt: 36, State: `{"step":1}`, RunbookID: "rb"},
 	}
 }
 
@@ -119,6 +134,48 @@ func TestCommandEncodeDecodeRoundTrip(t *testing.T) {
 				t.Fatalf("round trip = %#v, want %#v", got, cmd)
 			}
 		})
+	}
+}
+
+// allCommands lists every type of the package that implements Command, so
+// the round trip above proves each one decodes: a command added without a
+// DecodeCommand case fails here, not when a member forwards it.
+func TestAllCommandsListsEveryCommand(t *testing.T) {
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fset := token.NewFileSet()
+	var declared []string
+	for _, name := range files {
+		if strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		f, err := parser.ParseFile(fset, name, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, d := range f.Decls {
+			fn, ok := d.(*ast.FuncDecl)
+			if !ok || fn.Name.Name != "apply" || fn.Recv == nil || len(fn.Recv.List) != 1 {
+				continue
+			}
+			if id, ok := fn.Recv.List[0].Type.(*ast.Ident); ok {
+				declared = append(declared, id.Name)
+			}
+		}
+	}
+	listed := map[string]bool{}
+	for _, cmd := range allCommands() {
+		listed[reflect.TypeOf(cmd).Name()] = true
+	}
+	if len(declared) < 50 {
+		t.Fatalf("found only %d command types in the sources: %v", len(declared), declared)
+	}
+	for _, name := range declared {
+		if !listed[name] {
+			t.Errorf("command %s is missing from allCommands", name)
+		}
 	}
 }
 
@@ -423,6 +480,26 @@ func runScenario(t *testing.T, s *Store) {
 	must(s.DashboardTokens().Create(ctx, DashboardToken{ID: "d2", Name: "wall", CreatedAt: at(11 * time.Hour), ExpiresAt: at(12 * time.Hour)}, "dash-secret-2"))
 	must(s.DashboardTokens().Revoke(ctx, "d1", at(11*time.Hour+time.Minute)))
 	wantErr(s.DashboardTokens().Revoke(ctx, "d1", at(11*time.Hour+2*time.Minute)), ErrNotFound)
+	// Config documents imported once, a second import refused, a runbook deleted.
+	runbook := ConfigDoc{Kind: ConfigRunbook, Name: "r.yaml", Content: []byte("steps: []")}
+	must(s.ConfigDocs().ImportFirst(ctx, "admin/root", []ConfigDoc{runbook}, at(13*time.Hour)))
+	wantErr(s.ConfigDocs().ImportFirst(ctx, "admin/root", []ConfigDoc{runbook}, at(13*time.Hour)), ErrExists)
+	must(s.ConfigDocs().Put(ctx, "admin/root", []ConfigDoc{{Kind: ConfigAutomation, Name: "a.yaml", Content: []byte("id: a")}}, at(13*time.Hour)))
+	must(s.ConfigDocs().Delete(ctx, ConfigRunbook, "r.yaml"))
+	// A runbook run started, saved once, and a save from its old version refused.
+	run := RunbookRun{
+		ID: "rr1", RunbookID: "rb", Status: "running", StartedBy: "admin/root",
+		StartedAt: at(14 * time.Hour), Source: []byte("steps: []"), State: json.RawMessage(`{"step":0}`),
+	}
+	must(s.RunbookRuns().Create(ctx, run))
+	run.Version, run.Status, run.UpdatedAt = 1, "succeeded", at(14*time.Hour)
+	_, err = s.RunbookRuns().Save(ctx, run)
+	must(err)
+	_, err = s.RunbookRuns().Save(ctx, run)
+	wantErr(err, ErrRunbookRunConflict)
+	// The master holding pi's stream, recorded twice.
+	must(s.DeviceRoutes().Set(ctx, "pi", "hub-a", at(14*time.Hour)))
+	must(s.DeviceRoutes().Set(ctx, "pi", "hub-b", at(14*time.Hour+time.Minute)))
 }
 
 // dumpTables returns every row of every table (sqlite_sequence included,
@@ -511,7 +588,7 @@ func TestReplayIsDeterministic(t *testing.T) {
 		}
 	}
 	want, got := dumpTables(t, src.db), dumpTables(t, dst.db)
-	for _, table := range []string{"admin", "audit_log", "automation_runs", "certs", "cluster_hubs", "devices", "join_tokens", "mcp_tokens", "network_hosts", "sessions", "sqlite_sequence", "tokens"} {
+	for _, table := range []string{"admin", "audit_log", "automation_runs", "certs", "cluster_hubs", "config_docs", "device_routes", "devices", "join_tokens", "mcp_tokens", "network_hosts", "runbook_runs", "sessions", "sqlite_sequence", "tokens"} {
 		if len(want[table]) == 0 {
 			t.Errorf("scenario left %s empty; the comparison would prove nothing", table)
 		}
