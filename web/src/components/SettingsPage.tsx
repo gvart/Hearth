@@ -11,6 +11,7 @@ import {
 } from '../api/admin.ts';
 import { ApiError } from '../api/client.ts';
 import { useSession } from '../api/hooks.ts';
+import { chooseTheme, storedTheme, themes, type Theme } from '../theme.ts';
 import { McpTokens } from './McpTokens.tsx';
 import { Modal } from './Modal.tsx';
 import './PanelsPage.css';
@@ -30,12 +31,42 @@ export function SettingsPage() {
         </div>
       </div>
       <div className="settings">
+        <AppearanceCard />
         <PolicyCard />
         <McpTokens />
         <BackupCard />
         <PasswordCard />
       </div>
     </main>
+  );
+}
+
+/** Picks the theme, for this browser. */
+function AppearanceCard() {
+  const [theme, setTheme] = useState<Theme>(storedTheme);
+  return (
+    <section className="panel-card" aria-labelledby="appearance-title">
+      <div className="panel-card-head">
+        <h2 id="appearance-title">Appearance</h2>
+        <div className="range-picker theme-picker" role="group" aria-label="Theme">
+          {themes.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              className="range-option"
+              aria-pressed={theme === t.id}
+              onClick={() => {
+                chooseTheme(t.id);
+                setTheme(t.id);
+              }}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <p className="muted small">{themes.find((t) => t.id === theme)?.hint} Remembered in this browser.</p>
+    </section>
   );
 }
 

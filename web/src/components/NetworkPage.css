@@ -3,33 +3,33 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem 1.25rem;
-  margin-bottom: 0.75rem;
+  gap: var(--space-2) var(--space-5);
+  margin-bottom: var(--space-3);
 }
 
 .topo-bar label {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: var(--space-1);
   cursor: pointer;
 }
 
 .topo-legend {
   display: inline-flex;
   flex-wrap: wrap;
-  gap: 0.25rem 0.9rem;
+  gap: var(--space-1) var(--space-3);
   margin-left: auto;
 }
 
 .topo-legend > span {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
+  gap: var(--space-1);
 }
 
 .topo-wrap {
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: var(--line-1) solid var(--border);
   border-radius: var(--radius);
   overflow-x: auto;
 }
@@ -48,28 +48,28 @@
 }
 
 .topo-link.connection {
-  stroke: color-mix(in srgb, var(--accent) 70%, var(--muted));
+  stroke: var(--accent);
   stroke-width: 1.75;
 }
 
 .topo-link.neighbor {
-  stroke: color-mix(in srgb, var(--muted) 45%, transparent);
+  stroke: var(--border);
   stroke-width: 1.25;
   stroke-dasharray: 4 4;
 }
 
 .topo-arrow {
-  fill: color-mix(in srgb, var(--accent) 70%, var(--muted));
+  fill: var(--accent);
 }
 
 .topo-port {
-  font-family: var(--mono);
-  font-size: 11px;
+  font-family: var(--font-mono);
+  font-size: var(--type-11);
   fill: var(--text);
   text-anchor: middle;
   paint-order: stroke;
   stroke: var(--surface);
-  stroke-width: 4px;
+  stroke-width: var(--space-1);
   stroke-linejoin: round;
 }
 
@@ -88,7 +88,7 @@
 }
 
 .topo-node.device.reports {
-  fill: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  fill: var(--accent-soft);
   stroke: var(--accent);
 }
 
@@ -105,34 +105,34 @@
 }
 
 .topo-label {
-  font-size: 13px;
+  font-size: var(--type-12);
   fill: var(--text);
   text-anchor: middle;
   paint-order: stroke;
   stroke: var(--surface);
-  stroke-width: 4px;
+  stroke-width: var(--space-1);
   stroke-linejoin: round;
 }
 
 .topo-label.device,
 .topo-label.hub {
-  font-weight: 600;
+  font-weight: var(--weight-bold);
 }
 
 .topo-label.unknown {
-  font-family: var(--mono);
-  font-size: 11px;
+  font-family: var(--font-mono);
+  font-size: var(--type-11);
   fill: var(--muted);
 }
 
 .topo-addr {
-  font-family: var(--mono);
-  font-size: 10.5px;
+  font-family: var(--font-mono);
+  font-size: var(--type-11);
   fill: var(--muted);
   text-anchor: middle;
   paint-order: stroke;
   stroke: var(--surface);
-  stroke-width: 4px;
+  stroke-width: var(--space-1);
   stroke-linejoin: round;
 }
 
@@ -149,9 +149,9 @@
 }
 
 .topo .dim {
-  opacity: 0.2;
+  opacity: var(--opacity-dim);
 }
 
 .topo g {
-  transition: opacity 120ms ease;
+  transition: opacity var(--duration-fast) ease;
 }

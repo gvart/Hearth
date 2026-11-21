@@ -3,7 +3,7 @@
 .runbook-steps {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: var(--space-3);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -15,23 +15,23 @@
 .runbook-prompt {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--space-2);
   min-width: 0;
-  padding: 0.85rem 1rem;
+  padding: var(--space-3) var(--space-4);
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: var(--line-1) solid var(--border);
   border-radius: var(--radius);
   overflow-wrap: anywhere;
 }
 
 .runbook-stopped {
-  margin-bottom: 0.75rem;
-  border-left: 3px solid var(--danger);
+  margin-bottom: var(--space-3);
+  border-left: var(--line-2) solid var(--danger);
 }
 
 .runbook-prompt {
-  margin-bottom: 0.75rem;
-  border-left: 3px solid var(--warn);
+  margin-bottom: var(--space-3);
+  border-left: var(--line-2) solid var(--warn);
 }
 
 .runbook-row {
@@ -39,52 +39,52 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .runbook-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .runbook-step-error {
   margin: 0;
-  padding: 0.4rem 0.6rem;
-  border-radius: 6px;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius);
   background: var(--danger-soft);
   color: var(--danger);
-  font-family: var(--mono);
-  font-size: 0.8rem;
+  font-family: var(--font-mono);
+  font-size: var(--type-12);
   white-space: pre-wrap;
 }
 
 .runbook-back {
-  margin-bottom: 0.75rem;
+  margin-bottom: var(--space-3);
 }
 
 .runbook-sub {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  padding-left: 0.75rem;
-  border-left: 2px solid var(--border);
-  font-size: 0.875rem;
+  gap: var(--space-1);
+  padding-left: var(--space-3);
+  border-left: var(--line-2) solid var(--border);
+  font-size: var(--type-12);
 }
 
 .runbook-log {
   margin: 0;
-  padding: 0.6rem 0.75rem;
+  padding: var(--space-2) var(--space-3);
   list-style: none;
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: var(--line-1) solid var(--border);
   border-radius: var(--radius);
-  font-family: var(--mono);
-  font-size: 0.8rem;
+  font-family: var(--font-mono);
+  font-size: var(--type-12);
 }
 
 .runbook-log li {
-  padding: 0.15rem 0;
+  padding: var(--space-05) 0;
   overflow-wrap: anywhere;
 }
 
@@ -92,7 +92,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .runbook-answer .field {

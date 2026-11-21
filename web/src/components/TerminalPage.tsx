@@ -16,6 +16,7 @@ import {
 } from '../api/terminal.ts';
 import { displayName } from '../format.ts';
 import { Logo } from './Logo.tsx';
+import { token } from '../theme.ts';
 import './TerminalPage.css';
 
 type Status =
@@ -76,8 +77,13 @@ export default function TerminalPage({ deviceId }: { deviceId: string }) {
     const term = new Terminal({
       cursorBlink: true,
       fontSize: 13,
-      fontFamily: "ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace",
-      theme: { background: '#151413', foreground: '#edebe8', cursor: '#f76707', selectionBackground: '#4a3a30' },
+      fontFamily: token('font-mono'),
+      theme: {
+        background: token('bg'),
+        foreground: token('text'),
+        cursor: token('accent'),
+        selectionBackground: token('border'),
+      },
       scrollback: 5000,
     });
     const fit = new FitAddon();
