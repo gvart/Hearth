@@ -1,0 +1,25 @@
+internal/cluster/apnode.go
+  s_87f1c7baee7d5a::t_017d47355b3b82 313
+  s_87f1c7baee7d5a::t_c1fab7692b0ad1 314-317
+internal/cluster/apschema_test.go
+  s_87f1c7baee7d5a::t_c1fab7692b0ad1 91-92
+  s_87f1c7baee7d5a::t_c365df893f2516 93
+internal/cluster/apschema.go
+  s_87f1c7baee7d5a::t_c1fab7692b0ad1 140,142
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fb076d47fa7d7ae76546c3cd8b44f1cb8fe2fe33",
+  "prompts": {},
+  "sessions": {
+    "s_87f1c7baee7d5a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "45cc2cdf-3130-4caa-8cb4-8cb365d2150d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": null
+    }
+  }
+}
