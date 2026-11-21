@@ -86,9 +86,9 @@ export function AddHubDialog({ onClose }: { onClose: () => void }) {
               ))}
             </select>
           </label>
-          <fieldset className="field">
+          <fieldset className="field join-roles">
             <legend>Roles the new hub may take (its --allow-roles)</legend>
-            <div className="join-roles">
+            <div className="join-roles-options">
               {allRoles.map(({ role, label }) => (
                 <label key={role}>
                   <input

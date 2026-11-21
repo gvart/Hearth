@@ -35,7 +35,7 @@ type fakeClusterCA struct {
 func (f *fakeClusterCA) CAStatus(context.Context) (ClusterCAJSON, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	st := ClusterCAJSON{NodeID: "hub-a", Hubs: []HubCAJSON{{ID: "hub-a", Master: true, Serving: "aaaa"}}}
+	st := ClusterCAJSON{NodeID: "hub-a", Hubs: []MemberCAJSON{{ID: "hub-a", Master: true, Serving: "aaaa"}}}
 	if len(f.steps) > 0 {
 		st.Rotation = &CARotationJSON{NewCAFP: "bbbb", Stage: "started", Active: true, Owner: "hub-a", OwnerAlive: true}
 	}

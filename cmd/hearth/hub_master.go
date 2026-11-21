@@ -150,7 +150,7 @@ func (a apClusterCA) CAStatus(ctx context.Context) (hub.ClusterCAJSON, error) {
 		return hub.ClusterCAJSON{}, err
 	}
 	status := a.node.Status()
-	out := hub.ClusterCAJSON{NodeID: status.NodeID, Hubs: []hub.HubCAJSON{}, OldDevices: st.OldDevices}
+	out := hub.ClusterCAJSON{NodeID: status.NodeID, Hubs: []hub.MemberCAJSON{}, OldDevices: st.OldDevices}
 	if rot := st.Rotation; rot != nil {
 		out.Rotation = &hub.CARotationJSON{
 			NewCAFP: rot.NewCAFP, OldCAFP: rot.OldCAFP, Stage: rot.Stage, Active: rot.Active(),
@@ -166,7 +166,7 @@ func (a apClusterCA) CAStatus(ctx context.Context) (hub.ClusterCAJSON, error) {
 		master[m.ID] = m.Roles.Has(cluster.RoleMaster)
 	}
 	for _, h := range st.Hubs {
-		out.Hubs = append(out.Hubs, hub.HubCAJSON{
+		out.Hubs = append(out.Hubs, hub.MemberCAJSON{
 			ID: h.ID, Master: master[h.ID], Serving: h.Info.ServingFP, Next: h.Info.NextFP,
 			HasNextKey: h.Info.HasNextKey, HasNextCert: h.Info.HasNextCert, CutOver: h.Info.CutOver, Error: h.Error,
 		})

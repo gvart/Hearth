@@ -40,7 +40,7 @@ type ClusterCAJSON struct {
 	NodeID string `json:"node_id"`
 	// Rotation is the latest rotation; none if there has been none.
 	Rotation *CARotationJSON `json:"rotation,omitempty"`
-	Hubs     []HubCAJSON     `json:"hubs"`
+	Hubs     []MemberCAJSON  `json:"hubs"`
 	// OldDevices still hold only an old-CA certificate during a rotation:
 	// a finish refuses while there are any.
 	OldDevices []string `json:"old_devices,omitempty"`
@@ -62,9 +62,9 @@ type CARotationJSON struct {
 	OwnerURL   string `json:"owner_url,omitempty"`
 }
 
-// HubCAJSON is one member's side of a hub CA rotation, as it says on the
+// MemberCAJSON is one member's side of a hub CA rotation, as it says on the
 // gossip. The fingerprints are the gossip's short form.
-type HubCAJSON struct {
+type MemberCAJSON struct {
 	ID     string `json:"id"`
 	Master bool   `json:"master"`
 	// Serving is the CA it presents; Next the new CA it trusts.

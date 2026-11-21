@@ -147,7 +147,7 @@ function RotationProgress({ st }: { st: ClusterCA }) {
           </tbody>
         </table>
       </div>
-      <p className={`small ${waiting.length > 0 ? 'ca-waiting' : 'muted'}`} role="status">
+      <p className={`small ca-status ${waiting.length > 0 ? 'ca-waiting' : 'muted'}`} role="status">
         {waiting.length > 0
           ? `A finish waits for: ${waiting.join(', ')}.`
           : 'Every member is ready for the finish.'}

@@ -55,13 +55,26 @@
   flex: 1 1 18rem;
 }
 
+.ca-status {
+  margin: 0.6rem 0 0;
+}
+
 .join-roles {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem 1.25rem;
-  border: 0;
+  min-width: 0;
   margin: 0;
   padding: 0;
+  border: 0;
+}
+
+.join-roles legend {
+  margin-bottom: 0.35rem;
+  padding: 0;
+}
+
+.join-roles-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.25rem;
 }
 
 .join-roles label {
@@ -69,6 +82,11 @@
   align-items: center;
   gap: 0.4rem;
   font-weight: 400;
+}
+
+.join-roles input[type='checkbox'] {
+  height: auto;
+  margin: 0;
 }
 
 @media (max-width: 640px) {
