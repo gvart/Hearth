@@ -19,6 +19,7 @@ import {
 } from '../format.ts';
 import { DeviceCharts } from './DeviceCharts.tsx';
 import { DeviceContainers } from './DeviceContainers.tsx';
+import { DeviceHubSection } from './DeviceHub.tsx';
 import { DeviceLogSources } from './DeviceLogSources.tsx';
 import { DeviceNetEdges } from './DeviceNetEdges.tsx';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
@@ -250,6 +251,8 @@ export function DevicePage({ id }: { id: string }) {
             ))}
           </Section>
         ) : null}
+
+        <DeviceHubSection device={device} />
 
         <Section title="Access">
           <RevokeDevice device={device} />

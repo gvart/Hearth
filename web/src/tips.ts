@@ -13,7 +13,8 @@ export type TipId =
   | 'approvals'
   | 'audit'
   | 'policy'
-  | 'cluster';
+  | 'cluster'
+  | 'devicehub';
 
 export interface TipText {
   /** What the "?" is about, for a screen reader: "About runbooks". */
@@ -101,6 +102,14 @@ export const tips: Record<TipId, TipText> = {
       'Every hub is a member of a cluster with no leader. A storage member holds a replica of a share of the rows; a master serves the UI, the API and the agents and holds the hub CA key.',
       'A Linux device added with "may become a hub" ticked becomes one: a master up to 3, then storage only up to 5. Promote and demote by hand.',
       'Started on a laptop? Add two such devices, then stop it once its "safe to stop" line is green.',
+    ],
+    docs: 'cluster.md',
+  },
+  devicehub: {
+    about: 'this device as a hub',
+    lines: [
+      'A device can run a hub next to its agent: it keeps a copy of the data and, as a master, serves this UI, so the cluster carries on when another hub stops.',
+      'Make this device a hub gives a command to run on it; a Mac becomes a hub only this way. Make agent-only removes it from the cluster and gives the command that stops its hub service.',
     ],
     docs: 'cluster.md',
   },

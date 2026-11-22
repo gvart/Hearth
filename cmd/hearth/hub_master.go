@@ -195,7 +195,7 @@ type apDryRun struct {
 func apRoleChanges(pol *policy.Engine, admin hub.ClusterAdmin) cluster.RoleChangeFunc {
 	return func(ctx context.Context, req cluster.RoleChangeRequest) (any, error) {
 		c := hub.ClusterChange{Op: req.Op, Member: req.Member, Role: req.Role}
-		out, err := hub.DoClusterChange(ctx, pol, admin, policy.ActorAdmin, req.Actor, c, req.DryRun, nil)
+		out, err := hub.DoClusterChange(ctx, pol, admin, policy.ActorAdmin, req.Actor, c, req.DryRun, nil, nil)
 		if err != nil || !req.DryRun {
 			return out, err
 		}

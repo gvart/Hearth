@@ -121,6 +121,8 @@ func newAPI(cfg Config) *api {
 	if a.dashboardAudit == nil {
 		a.dashboardAudit = NewDashboardAudit(cfg.Policy, cfg.Log)
 	}
+	a.hubs, _ = cfg.Masters.(hubCounter)
+	a.members, _ = cfg.Masters.(memberLister)
 	return a
 }
 
@@ -144,6 +146,8 @@ func (a *api) routes() http.Handler {
 	mux.Handle("GET /api/v1/devices", a.auth(a.listDevices))
 	mux.Handle("GET /api/v1/devices/{id}", a.auth(a.getDevice))
 	mux.Handle("GET /api/v1/devices/{id}/metrics", a.auth(a.deviceMetrics))
+	mux.Handle("GET /api/v1/devices/{id}/hub", a.auth(a.deviceHub))
+	mux.Handle("POST /api/v1/devices/{id}/hub", a.auth(a.makeDeviceHub))
 	mux.Handle("GET /api/v1/metrics/sparklines", a.auth(a.metricsSparklines))
 	mux.Handle("GET /api/v1/network/hosts", a.auth(a.listNetworkHosts))
 	mux.Handle("GET /api/v1/beszel/systems", a.auth(a.listBeszelSystems))
@@ -267,6 +271,12 @@ type api struct {
 	clusterCA ClusterCA
 	// masters is Config.Masters; nil outside an AP cluster.
 	masters Masters
+	// hubs and members are masters, when it counts and lists the members:
+	// a device's hub (devicehub.go). hubMintMu serializes counting and
+	// minting a device's join token.
+	hubs      hubCounter
+	members   memberLister
+	hubMintMu sync.Mutex
 	// automations are the files the automation editor reads and writes.
 	automations automation.Files
 	// automationsMu makes each save's check and write one step.

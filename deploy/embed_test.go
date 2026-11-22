@@ -17,6 +17,7 @@ func TestInstallScriptHeredocsMatchServiceFiles(t *testing.T) {
 		{"systemd/hearth-agent.service", "HEARTH_SYSTEMD_UNIT"},
 		{"launchd/dev.hearth.agent.plist", "HEARTH_LAUNCHD_PLIST"},
 		{"systemd/hearth-hub.service", "HEARTH_HUB_UNIT"},
+		{"launchd/dev.hearth.hub.plist", "HEARTH_LAUNCHD_HUB_PLIST"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.file, func(t *testing.T) {

@@ -206,11 +206,28 @@ const installScriptURL = "https://raw.githubusercontent.com/gvart/Hearth/"
 // its tag, hence --version. A dev hub serves its own install.sh, from the
 // HTTP listener at httpHost, and the installer picks the newest release.
 func (a *api) installCommand(httpHost, token string) string {
-	if a.installVersion == "" {
-		return "curl -fsSL http://" + httpHost + "/install.sh | HEARTH_TOKEN=" + token + " sh"
+	return a.installCommandWith(httpHost, "HEARTH_TOKEN="+token)
+}
+
+// installCommandWith is installCommand with env (VAR=value, or "") in the
+// script's environment and args after it, such as the re-runs that make an
+// enrolled device a hub or agent-only (devicehub.go). Every part must be
+// safe to paste into a shell.
+func (a *api) installCommandWith(httpHost, env string, args ...string) string {
+	script := "http://" + httpHost + "/install.sh"
+	if a.installVersion != "" {
+		script = installScriptURL + a.installVersion + "/deploy/install.sh"
+		args = append(args, "--version", a.installVersion)
 	}
-	return "curl -fsSL " + installScriptURL + a.installVersion + "/deploy/install.sh | HEARTH_TOKEN=" + token +
-		" sh -s -- --version " + a.installVersion
+	cmd := "curl -fsSL " + script + " | "
+	if env != "" {
+		cmd += env + " "
+	}
+	cmd += "sh"
+	if len(args) > 0 {
+		cmd += " -s -- " + strings.Join(args, " ")
+	}
+	return cmd
 }
 
 // releaseTag matches the release tags goreleaser builds from: vX.Y.Z with an

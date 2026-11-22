@@ -21,7 +21,7 @@ import (
 
 func newAgentCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "agent", Short: "Run or manage the Hearth agent on this device"}
-	cmd.AddCommand(newAgentJoinCmd(), newAgentRunCmd())
+	cmd.AddCommand(newAgentJoinCmd(), newAgentRunCmd(), newAgentMakeHubCmd())
 	return cmd
 }
 

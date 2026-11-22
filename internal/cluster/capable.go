@@ -111,11 +111,21 @@ type HubOffer struct {
 // own, or nil when it can: 64-bit Linux (amd64 or arm64), MinHubMemory of
 // memory and MinHubDiskFree free for the hub's data. The agent checks it
 // before offering a hub, the hub again before minting a join token. macOS
-// never qualifies on its own (a later per-device choice, #332).
+// never qualifies on its own: HubChosen does, for a device an admin makes a
+// hub on its page (#332).
 func HubCapable(o HubOffer) error {
-	switch {
-	case o.OS != "linux":
+	if o.OS != "linux" {
 		return fmt.Errorf("%s is not Linux", o.OS)
+	}
+	return HubChosen(o)
+}
+
+// HubChosen is HubCapable for a device an admin chose to make a hub (#332):
+// macOS qualifies too.
+func HubChosen(o HubOffer) error {
+	switch {
+	case o.OS != "linux" && o.OS != "darwin":
+		return fmt.Errorf("%s is not Linux or macOS", o.OS)
 	case o.Arch != "amd64" && o.Arch != "arm64":
 		return fmt.Errorf("%s is not a 64-bit amd64 or arm64 CPU", o.Arch)
 	case o.MemTotal < MinHubMemory:

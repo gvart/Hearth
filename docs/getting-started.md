@@ -190,6 +190,12 @@ agents and holds the CA key. Up to five hubs keep copies of the data (storage); 
 that stays an agent. A hub down for 24 hours is removed, and if it was a master another of these hubs
 becomes one, so the cluster keeps 3 masters ([Keeping 3 masters](cluster.md#keeping-3-masters)). With two devices besides the laptop, either can die and nothing is lost.
 
+A Mac, or a device you added without the box ticked, stays an agent. To make it a hub, open its page
+and click **Make this device a hub** in its **Hub** card: after your admin password it shows a command
+to run on the device, which keeps the agent and installs the hub service next to it. **Make
+agent-only** on the same card takes a hub out again. See
+[A device's page](cluster.md#a-devices-page-make-it-a-hub-or-agent-only).
+
 Before you stop the laptop's hub, open its **Cluster** page, or run `hearth cluster status` on it:
 
 ```text

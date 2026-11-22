@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/policy"
 	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
+	"github.com/gvart/hearth/internal/store"
 )
 
 // hubCounter counts an AP cluster's members for the caps on the hubs
@@ -84,23 +86,9 @@ func (e *Enroller) mintHubJoin(ctx context.Context, deviceID, handle, hubRoles s
 	e.mintMu.Lock()
 	defer e.mintMu.Unlock()
 	now := e.now()
-	masters, storage, err := e.hubs.HubCounts(ctx, "")
-	if err != nil {
-		e.log.ErrorContext(ctx, "count the hubs", "err", err)
-		return refuse("this hub could not count the cluster's hubs")
-	}
-	pending, pendingMasters, err := e.store.JoinTokens().PendingMinted(ctx, now)
-	if err != nil {
-		e.log.ErrorContext(ctx, "count the hubs to come", "err", err)
-		return refuse("this hub could not count the cluster's hubs")
-	}
-	if storage+pending >= cluster.MaxAutoStorage {
-		return refuse(fmt.Sprintf("the cluster has %d storage members already, the most devices become on their own",
-			cluster.MaxAutoStorage))
-	}
-	roles := cluster.RolesOf(cluster.RoleStorage)
-	if masters+pendingMasters < cluster.MaxAutoMasters && allowed.Has(cluster.RoleMaster) {
-		roles = cluster.RolesOf(cluster.RoleStorage, cluster.RoleMaster)
+	roles, why := hubJoinRoles(ctx, e.hubs, e.store, now, allowed, e.log)
+	if why != "" {
+		return refuse(why)
 	}
 	tok, err := pki.NewToken(e.ca.Cert())
 	if err != nil {
@@ -124,4 +112,34 @@ func (e *Enroller) mintHubJoin(ctx context.Context, deviceID, handle, hubRoles s
 	}
 	e.log.InfoContext(ctx, "device may become a hub", "device_id", deviceID, "roles", roles.String())
 	return &agentv1.HubJoin{Url: url, Token: tok.EncodeJoin(), Roles: roles.Strings()}
+}
+
+// hubJoinRoles is the roles of a join token minted now for a device, of at
+// most allowed: storage while fewer than cluster.MaxAutoStorage storage
+// members are counted, and master too while fewer than
+// cluster.MaxAutoMasters masters are, counting the members that have not
+// left and the minted join tokens not yet spent. Past the storage cap it
+// says why the device gets none. The caller serializes counting and minting.
+func hubJoinRoles(ctx context.Context, hubs hubCounter, st *store.Store, now time.Time, allowed cluster.RoleSet,
+	log *slog.Logger,
+) (cluster.RoleSet, string) {
+	masters, storage, err := hubs.HubCounts(ctx, "")
+	if err != nil {
+		log.ErrorContext(ctx, "count the hubs", "err", err)
+		return 0, "this hub could not count the cluster's hubs"
+	}
+	pending, pendingMasters, err := st.JoinTokens().PendingMinted(ctx, now)
+	if err != nil {
+		log.ErrorContext(ctx, "count the hubs to come", "err", err)
+		return 0, "this hub could not count the cluster's hubs"
+	}
+	if storage+pending >= cluster.MaxAutoStorage {
+		return 0, fmt.Sprintf("the cluster has %d storage members already, the most devices become on their own",
+			cluster.MaxAutoStorage)
+	}
+	roles := cluster.RolesOf(cluster.RoleStorage)
+	if masters+pendingMasters < cluster.MaxAutoMasters && allowed.Has(cluster.RoleMaster) {
+		roles = cluster.RolesOf(cluster.RoleStorage, cluster.RoleMaster)
+	}
+	return roles, ""
 }

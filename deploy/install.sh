@@ -27,6 +27,12 @@
 # to pass for that; --agent-only (or HEARTH_AGENT_ONLY=1) keeps the device an
 # agent.
 #
+# An enrolled device, a Mac too, becomes a hub later from its page in the web
+# UI ("Make this device a hub"): the page shows a re-run with --make-hub
+# <master URL> and HEARTH_JOIN_TOKEN, which writes the join and installs the
+# hub service (hearth-hub.service, or dev.hearth.hub on macOS) next to the
+# agent. A re-run with --agent-only stops and removes that service.
+#
 # Re-running upgrades the binary and keeps the device identity (no token
 # needed). --uninstall removes the services and binary; --purge also deletes
 # the agent's and the hub's data dirs.
@@ -52,6 +58,7 @@ COSIGN_IDENTITY_REGEXP='^https://github\.com/gvart/Hearth/\.github/workflows/rel
 COSIGN_OIDC_ISSUER=https://token.actions.githubusercontent.com
 COSIGN_INSTALL_URL=https://docs.sigstore.dev/cosign/system_config/installation/
 LAUNCHD_LABEL=dev.hearth.agent
+LAUNCHD_HUB_LABEL=dev.hearth.hub
 
 PREFIX=${HEARTH_INSTALL_PREFIX:-}
 RELEASE_BASE_URL=${HEARTH_RELEASE_BASE_URL:-https://github.com/$REPO/releases/download}
@@ -66,6 +73,7 @@ HUB_DATA_DIR=$PREFIX/var/lib/hearth/hub
 UNIT_PATH=$PREFIX/etc/systemd/system/hearth-agent.service
 HUB_UNIT_PATH=$PREFIX/etc/systemd/system/hearth-hub.service
 PLIST_PATH=$PREFIX/Library/LaunchDaemons/$LAUNCHD_LABEL.plist
+HUB_PLIST_PATH=$PREFIX/Library/LaunchDaemons/$LAUNCHD_HUB_LABEL.plist
 
 say() { printf 'hearth: %s\n' "$*"; }
 warn() { printf 'hearth: warning: %s\n' "$*" >&2; }
@@ -81,11 +89,14 @@ Install the Hearth agent and enroll this device with a hub.
 Usage:
   HEARTH_TOKEN=<token> install.sh [--hub https://<hub>:7443]   install and enroll
   install.sh [--version vX.Y.Z]                                 upgrade an enrolled agent
+  HEARTH_JOIN_TOKEN=<token> install.sh --make-hub https://<master>:7443
+                                                                make this device a hub too
   install.sh --uninstall [--purge]                              remove the agent
 
 Environment:
   HEARTH_TOKEN       enrollment token from the hub (first install only)
   HEARTH_AGENT_ONLY  1: as --agent-only
+  HEARTH_JOIN_TOKEN  with --make-hub: the cluster join token from the device's page
 
 Options:
   --hub URL          hub URL for enrollment (https://<hub>:7443); the token names
@@ -100,6 +111,11 @@ Options:
   --agent-only       never make this device a hub, even when it is capable and
                      the token allows it; on a hub, stop and remove its service
                      (its data dir is kept)
+  --make-hub URL     make this device a hub of the cluster too, through the
+                     master at URL (https://<master>:7443), with the join token
+                     in HEARTH_JOIN_TOKEN: the device's page in the web UI shows
+                     this command. A Mac qualifies; every device needs a 64-bit
+                     CPU, 1.5 GiB of memory and 2 GiB free.
   --uninstall        stop and remove the service and binary; keep the data dir
   --purge            with --uninstall: also delete the data dir (device identity)
   -h, --help         show this help
@@ -113,6 +129,7 @@ VERSION=
 UNINSTALL=0
 PURGE=0
 AGENT_ONLY=${HEARTH_AGENT_ONLY:-0}
+MAKE_HUB=
 
 need_arg() {
 	[ "$2" -ge 2 ] || die "$1 needs a value (see --help)"
@@ -155,6 +172,15 @@ while [ $# -gt 0 ]; do
 		AGENT_ONLY=1
 		shift
 		;;
+	--make-hub)
+		need_arg "$1" $#
+		MAKE_HUB=$2
+		shift 2
+		;;
+	--make-hub=*)
+		MAKE_HUB=${1#*=}
+		shift
+		;;
 	--uninstall)
 		UNINSTALL=1
 		shift
@@ -185,6 +211,9 @@ else
 	TOKEN=${HEARTH_TOKEN:-}
 fi
 unset HEARTH_TOKEN
+# The join token of --make-hub, likewise: never exported, given on stdin.
+JOIN_TOKEN=${HEARTH_JOIN_TOKEN:-}
+unset HEARTH_JOIN_TOKEN
 
 detect_platform() {
 	case $(uname -s) in
@@ -478,6 +507,49 @@ write_launchd_plist() {
 HEARTH_LAUNCHD_PLIST
 }
 
+write_launchd_hub_plist() {
+	cat >"$1" <<'HEARTH_LAUNCHD_HUB_PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- Installed by deploy/install.sh, which embeds a copy; keep the two identical. -->
+<!-- The hub of a Mac made a hub on its page in the web UI (docs/cluster.md), as -->
+<!-- deploy/systemd/hearth-hub.service on Linux: it joins with the join file, -->
+<!-- never creating a cluster of its own, then runs as a member. A join refused -->
+<!-- for good, or no join to make, exits 0 and is not restarted. -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>dev.hearth.hub</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/usr/local/bin/hearth</string>
+		<string>hub</string>
+		<string>--data-dir</string>
+		<string>/var/lib/hearth/hub</string>
+		<string>--join-file</string>
+		<string>/var/lib/hearth/hub/join</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+	</dict>
+	<key>ThrottleInterval</key>
+	<integer>10</integer>
+	<key>Umask</key>
+	<integer>63</integer>
+	<key>StandardOutPath</key>
+	<string>/var/log/hearth-hub.log</string>
+	<key>StandardErrorPath</key>
+	<string>/var/log/hearth-hub.log</string>
+</dict>
+</plist>
+HEARTH_LAUNCHD_HUB_PLIST
+}
+
 skip_service() {
 	[ "$SKIP_SERVICE" = 1 ]
 }
@@ -489,14 +561,28 @@ systemd_running() {
 # is_hub reports whether this device has a hub to run: a join the enrollment
 # wrote, or a hub that joined already; never with --agent-only.
 is_hub() {
-	[ "$AGENT_ONLY" != 1 ] && [ "$OS" = linux ] &&
+	[ "$AGENT_ONLY" != 1 ] &&
 		{ as_root test -f "$HUB_DATA_DIR/join" || as_root test -f "$HUB_DATA_DIR/cluster/node.crt"; }
 }
 
-# remove_hub_service stops, disables and removes the hub's unit, if there is
-# one; it keeps the hub's data dir.
+# hub_service_file is the hub's systemd unit or launchd plist.
+hub_service_file() {
+	if [ "$OS" = linux ]; then
+		printf '%s\n' "$HUB_UNIT_PATH"
+	else
+		printf '%s\n' "$HUB_PLIST_PATH"
+	fi
+}
+
+# remove_hub_service stops, disables and removes the hub's unit or plist, if
+# there is one; it keeps the hub's data dir.
 remove_hub_service() {
-	[ "$OS" = linux ] && as_root test -f "$HUB_UNIT_PATH" || return 0
+	as_root test -f "$(hub_service_file)" || return 0
+	if [ "$OS" = darwin ]; then
+		skip_service || as_root launchctl bootout "system/$LAUNCHD_HUB_LABEL" >/dev/null 2>&1 || true
+		as_root rm -f "$HUB_PLIST_PATH"
+		return
+	fi
 	if ! skip_service && systemd_running; then
 		as_root systemctl disable --now hearth-hub.service >/dev/null 2>&1 || true
 	fi
@@ -510,38 +596,54 @@ remove_hub_service() {
 # up to 60 s for it to answer `hearth cluster status` (a member that is no
 # master serves no web port). A hub that fails leaves a working agent.
 install_hub_service() {
-	write_hub_unit "$TMP/hearth-hub.service"
-	as_root mkdir -p "${HUB_UNIT_PATH%/*}"
-	as_root cp "$TMP/hearth-hub.service" "$HUB_UNIT_PATH"
-	as_root chmod 0644 "$HUB_UNIT_PATH"
-	if skip_service; then
-		say "wrote $HUB_UNIT_PATH (HEARTH_SKIP_SERVICE=1: not starting it)"
-		return
+	if [ "$OS" = darwin ]; then
+		write_launchd_hub_plist "$TMP/$LAUNCHD_HUB_LABEL.plist"
+		as_root mkdir -p "${HUB_PLIST_PATH%/*}"
+		as_root cp "$TMP/$LAUNCHD_HUB_LABEL.plist" "$HUB_PLIST_PATH"
+		as_root chmod 0644 "$HUB_PLIST_PATH"
+		if skip_service; then
+			say "wrote $HUB_PLIST_PATH (HEARTH_SKIP_SERVICE=1: not loading it)"
+			return
+		fi
+		as_root launchctl bootout "system/$LAUNCHD_HUB_LABEL" >/dev/null 2>&1 || true
+		as_root launchctl enable "system/$LAUNCHD_HUB_LABEL"
+		as_root launchctl bootstrap system "$HUB_PLIST_PATH"
+		hub_logs=/var/log/hearth-hub.log
+	else
+		write_hub_unit "$TMP/hearth-hub.service"
+		as_root mkdir -p "${HUB_UNIT_PATH%/*}"
+		as_root cp "$TMP/hearth-hub.service" "$HUB_UNIT_PATH"
+		as_root chmod 0644 "$HUB_UNIT_PATH"
+		if skip_service; then
+			say "wrote $HUB_UNIT_PATH (HEARTH_SKIP_SERVICE=1: not starting it)"
+			return
+		fi
+		if ! systemd_running; then
+			warn "systemd is not running here; start the hub yourself: $BIN_PATH hub --data-dir $HUB_DATA_DIR --join-file $HUB_DATA_DIR/join"
+			return
+		fi
+		as_root systemctl daemon-reload
+		as_root systemctl enable hearth-hub.service >/dev/null 2>&1
+		as_root systemctl restart hearth-hub.service
+		hub_logs="journalctl -u hearth-hub -f"
 	fi
-	if ! systemd_running; then
-		warn "systemd is not running here; start the hub yourself: $BIN_PATH hub --data-dir $HUB_DATA_DIR --join-file $HUB_DATA_DIR/join"
-		return
-	fi
-	as_root systemctl daemon-reload
-	as_root systemctl enable hearth-hub.service >/dev/null 2>&1
-	as_root systemctl restart hearth-hub.service
 	say "starting the hub: this device joins the cluster as a hub"
 	i=0
 	while [ $i -lt 60 ]; do
 		if as_root "$BIN_PATH" cluster status --data-dir "$HUB_DATA_DIR" >/dev/null 2>&1; then
-			say "service hearth-hub is running (logs: journalctl -u hearth-hub -f)"
+			say "the hub is running (logs: $hub_logs)"
 			return
 		fi
 		i=$((i + 1))
 		sleep 1
 	done
-	warn "the hub did not answer within 60 s; the agent runs anyway (see journalctl -u hearth-hub)"
+	warn "the hub did not answer within 60 s; the agent runs anyway (logs: $hub_logs)"
 }
 
 install_service() {
 	if is_hub; then
 		install_hub_service
-	elif [ "$AGENT_ONLY" = 1 ] && [ "$OS" = linux ] && as_root test -f "$HUB_UNIT_PATH"; then
+	elif [ "$AGENT_ONLY" = 1 ] && as_root test -f "$(hub_service_file)"; then
 		remove_hub_service
 		say "--agent-only: stopped and removed the hub service (kept $HUB_DATA_DIR; --purge deletes it)"
 	fi
@@ -589,6 +691,7 @@ remove_service() {
 			as_root systemctl daemon-reload
 		fi
 	else
+		remove_hub_service
 		if ! skip_service; then
 			as_root launchctl bootout "system/$LAUNCHD_LABEL" >/dev/null 2>&1 || true
 		fi
@@ -620,6 +723,15 @@ main() {
 	if [ "$UNINSTALL" = 1 ]; then
 		uninstall
 		return
+	fi
+
+	if [ -n "$MAKE_HUB" ]; then
+		case $MAKE_HUB in
+		https://*) ;;
+		*) die "--make-hub must be an https:// URL (the master's agent port, usually 7443)" ;;
+		esac
+		[ "$AGENT_ONLY" != 1 ] || die "--make-hub and --agent-only contradict each other"
+		[ -n "$JOIN_TOKEN" ] || die "--make-hub needs the join token in HEARTH_JOIN_TOKEN (the device's page in the web UI shows the command)"
 	fi
 
 	if enrolled; then
@@ -672,6 +784,13 @@ main() {
 			printf '%s\n' "$TOKEN" | as_root "$BIN_PATH" agent join --data-dir "$DATA_DIR" "$@" - ||
 				die "enrollment failed (is the token valid and unused, and the hub it names reachable? --hub https://<hub>:7443 gives another address)"
 		fi
+	fi
+
+	if [ -n "$MAKE_HUB" ]; then
+		# The join token goes in on stdin, as the enrollment token does. A
+		# device that cannot become a hub still gets its agent (re)started.
+		printf '%s\n' "$JOIN_TOKEN" | as_root "$BIN_PATH" agent make-hub --hub-data-dir "$HUB_DATA_DIR" "$MAKE_HUB" - ||
+			warn "this device stays an agent: it did not become a hub (see above)"
 	fi
 
 	install_service

@@ -162,3 +162,25 @@ func (r JoinTokens) HubEligible(ctx context.Context) (map[string]time.Time, erro
 	}
 	return out, nil
 }
+
+// HubOf returns the hub the device deviceID became (#332): the node that
+// joined last with a token minted for it, at its enrollment or on its page,
+// while that hub holds an unrevoked hub certificate; "" for none (an agent
+// only, a hub removed, or a hub that joined with an admin's token). Below
+// schema 34 there is none.
+func (r JoinTokens) HubOf(ctx context.Context, deviceID string) (string, error) {
+	if ok, err := atSchema(ctx, r.s.db, hubTokenSchema); err != nil || !ok || deviceID == "" {
+		return "", err
+	}
+	rows, err := listCol[string](ctx, r.s, "join_tokens", `SELECT printf('%020d', used_at) || ' ' || joined_node`,
+		` FROM join_tokens WHERE device_id = ? AND joined_node != '' AND used_at IS NOT NULL AND _deleted = 0`+
+			` AND joined_node IN (SELECT node_id FROM hub_certs WHERE revoked_at IS NULL)`, deviceID)
+	if err != nil {
+		return "", fmt.Errorf("find the hub of device %s: %w", deviceID, err)
+	}
+	if len(rows) == 0 {
+		return "", nil
+	}
+	_, node, _ := strings.Cut(slices.Max(rows), " ")
+	return node, nil
+}
