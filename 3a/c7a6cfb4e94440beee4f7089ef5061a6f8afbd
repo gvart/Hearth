@@ -1,0 +1,27 @@
+internal/store/command.go
+  s_18b57982fdff93::t_7cf0266fecb1be 62-66,374-376,385-387,399-401,431,464-466,474-479,482-486,510
+internal/store/tokens_test.go
+  s_18b57982fdff93::t_0c922136403684 28-98
+internal/store/jointokens.go
+  s_18b57982fdff93::t_8d0ab777446b72 9-10,28-34,42,52-66,70-92,94
+internal/store/tokens.go
+  s_18b57982fdff93::t_7cf0266fecb1be 23-26,40-42,54-60,69,85
+internal/store/migrations/00035_auto_hub.sql
+  s_18b57982fdff93::t_d97adfb6ce24f3 1-13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3ac7a6cfb4e94440beee4f7089ef5061a6f8afbd",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
