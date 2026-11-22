@@ -11,6 +11,7 @@ web/src/tips.ts
   s_18b57982fdff93::t_db7eff94e51256 113-115
 internal/store/tokens_test.go
   s_18b57982fdff93::t_e20b0499a5631f 127,168-217
+  s_18b57982fdff93::t_ae5eb85fd3695c 167
 internal/hub/autohub.go
   s_18b57982fdff93::t_2f86a4abd9358a 9,17
   s_18b57982fdff93::t_6f404063bb2185 89-91
@@ -81,6 +82,7 @@ internal/hub/devicehub_test.go
   s_18b57982fdff93::t_8fa16e564ddf19 36-39
 internal/store/jointokens.go
   s_18b57982fdff93::t_5d52cf68af786e 121,166-186
+  s_18b57982fdff93::t_792c19b7791214 165
 cmd/hearth/agent_makehub.go
   s_18b57982fdff93::t_83cc12a51e3526 21
   s_18b57982fdff93::t_ab614481229cc4 1-20,22-85
