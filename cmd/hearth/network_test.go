@@ -12,7 +12,8 @@ import (
 )
 
 // fakeScanHub answers POST /api/v1/network/scan with status and, when it
-// is 202, sends done on the event stream the command opened first.
+// is 202, sends on the event stream the command opened first the end of
+// another admin's scan, then done.
 func fakeScanHub(t *testing.T, status int, body, done string) *httptest.Server {
 	t.Helper()
 	started := make(chan struct{}, 1)
@@ -34,6 +35,7 @@ func fakeScanHub(t *testing.T, status int, body, done string) *httptest.Server {
 			return
 		}
 		_, _ = fmt.Fprint(w, "event: device.updated\ndata: {}\n\n")
+		_, _ = fmt.Fprint(w, "event: network.scan.done\ndata: {\"type\":\"network.scan.done\",\"id\":\"other\",\"error\":\"not mine\"}\n\n")
 		_, _ = fmt.Fprintf(w, "event: network.scan.done\ndata: %s\n\n", done)
 	})
 	mux.HandleFunc("POST /api/v1/network/scan", func(w http.ResponseWriter, r *http.Request) {
@@ -61,13 +63,13 @@ func TestNetworkScanCommand(t *testing.T) {
 		wantErr    string
 	}{
 		{
-			name: "prints the result", status: http.StatusAccepted, body: `{"status":"started"}`,
-			done: `{"type":"network.scan.done","hosts":14,"new":3,"returned":1,"duration_ms":2300}`,
+			name: "prints the result", status: http.StatusAccepted, body: `{"id":"s1"}`,
+			done: `{"type":"network.scan.done","id":"s1","hosts":14,"new":3,"returned":1,"duration_ms":2300}`,
 			want: "Found 14 hosts: 3 new, 1 back (2.3s)",
 		},
 		{
-			name: "a failed scan is an error", status: http.StatusAccepted, body: `{"status":"started"}`,
-			done: `{"type":"network.scan.done","error":"sweep: boom"}`, wantErr: "the scan failed: sweep: boom",
+			name: "a failed scan is an error", status: http.StatusAccepted, body: `{"id":"s1"}`,
+			done: `{"type":"network.scan.done","id":"s1","error":"sweep: boom"}`, wantErr: "the scan failed: sweep: boom",
 		},
 		{
 			name: "a running scan is an error", status: http.StatusConflict,

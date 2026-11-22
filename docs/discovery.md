@@ -125,8 +125,8 @@ Each scan publishes, on the hub's event stream (`/api/v1/events`):
 - `network.device.returned` for a known host that no scan had found for an hour or more.
 
 A scan asked for with **Scan my network** or `hearth network scan` also ends with
-`network.scan.done`: `{"type": "network.scan.done", "hosts": 14, "new": 3, "returned": 0,
-"duration_ms": 5120}`, or `{"type": "network.scan.done", ..., "error": "..."}` if it failed.
+`network.scan.done`, with the id the scan was started with: `{"type": "network.scan.done",
+"id": "…", "hosts": 14, "new": 3, "returned": 0, "duration_ms": 5120}`, or `{"type": "network.scan.done", ..., "error": "..."}` if it failed.
 
 Each configured subnet has its own baseline: until a scan has found a host in it, the hosts found
 there are recorded and nothing is published, so turning discovery on, or adding a subnet next to
@@ -239,8 +239,8 @@ Each one is the action `network.host.mark` (class `safe`, actor `web`), audited 
 target and the new state as detail.
 
 ```
-POST /api/v1/network/scan    202 {"status": "started"}; 409 scan_running, or no_subnet; 403 denied by policy
+POST /api/v1/network/scan    202 {"id": "…"}; 409 scan_running, or no_subnet; 403 denied by policy
 ```
 
 It starts one scan (see [Scan now](#scan-now)) and answers once policy has allowed it; the scan ends
-with a `network.scan.done` event.
+with a `network.scan.done` event carrying the same `id`.

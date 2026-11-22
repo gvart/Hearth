@@ -126,8 +126,14 @@ func TestAPINetworkScan(t *testing.T) {
 			if tt.wantDone == nil {
 				return
 			}
-			if got := scanDone(t, events); got != *tt.wantDone {
-				t.Errorf("done = %+v, want %+v", got, *tt.wantDone)
+			started := decode[NetworkScanStartedJSON](t, resp)
+			if started.ID == "" {
+				t.Fatalf("202 without a scan id: %s", resp.body)
+			}
+			want := *tt.wantDone
+			want.ID = started.ID
+			if got := scanDone(t, events); got != want {
+				t.Errorf("done = %+v, want %+v", got, want)
 			}
 			if !strings.HasPrefix(sc.actor, policy.ActorWeb+"/") {
 				t.Errorf("scan actor = %q, want web", sc.actor)
@@ -144,20 +150,35 @@ func TestAPINetworkScanNeedsASession(t *testing.T) {
 }
 
 // A scan asked for while one runs is refused with 409, and the running one
-// still ends with its event.
+// still ends with its event and id; each scan has its own id.
 func TestAPINetworkScanOneAtATime(t *testing.T) {
 	sc := &fakeScanner{release: make(chan struct{}), sum: discovery.ScanSummary{Hosts: 2}}
 	f, cookie, events := scanFixture(t, sc)
-	if resp := f.do(t, http.MethodPost, "/api/v1/network/scan", "", cookie); resp.StatusCode != http.StatusAccepted {
-		t.Fatalf("first scan: %d (%s)", resp.StatusCode, resp.body)
+	first := f.do(t, http.MethodPost, "/api/v1/network/scan", "", cookie)
+	if first.StatusCode != http.StatusAccepted {
+		t.Fatalf("first scan: %d (%s)", first.StatusCode, first.body)
 	}
+	id := decode[NetworkScanStartedJSON](t, first).ID
 	resp := f.do(t, http.MethodPost, "/api/v1/network/scan", "", cookie)
 	if resp.StatusCode != http.StatusConflict || decode[ErrorJSON](t, resp).Code != "scan_running" {
 		t.Fatalf("second scan: %d (%s), want 409 scan_running", resp.StatusCode, resp.body)
 	}
 	close(sc.release)
-	if got := scanDone(t, events); got.Hosts != 2 || got.Error != "" {
-		t.Errorf("done = %+v", got)
+	if got := scanDone(t, events); got.ID != id || got.Hosts != 2 || got.Error != "" {
+		t.Errorf("done = %+v, want id %q", got, id)
+	}
+	sc.release = make(chan struct{})
+	close(sc.release)
+	again := f.do(t, http.MethodPost, "/api/v1/network/scan", "", cookie)
+	if again.StatusCode != http.StatusAccepted {
+		t.Fatalf("next scan: %d (%s)", again.StatusCode, again.body)
+	}
+	next := decode[NetworkScanStartedJSON](t, again).ID
+	if next == id {
+		t.Errorf("two scans share the id %q", id)
+	}
+	if got := scanDone(t, events); got.ID != next {
+		t.Errorf("done = %+v, want id %q", got, next)
 	}
 }
 
@@ -232,7 +253,7 @@ func TestAPINetworkScanDoneEvent(t *testing.T) {
 	if !sc.Scan() || sc.Text() != ": subscribed" {
 		t.Fatalf("first line %q", sc.Text())
 	}
-	f.api.registry.ScanDone(NetworkScanJSON{Type: EventNetworkScanDone, Hosts: 5, New: 2, DurationMS: 900})
+	f.api.registry.ScanDone(NetworkScanJSON{Type: EventNetworkScanDone, ID: "s1", Hosts: 5, New: 2, DurationMS: 900})
 	var name string
 	for sc.Scan() {
 		line := sc.Text()
@@ -247,7 +268,7 @@ func TestAPINetworkScanDoneEvent(t *testing.T) {
 			if err := json.Unmarshal([]byte(v), &got); err != nil {
 				t.Fatal(err)
 			}
-			if got["hosts"] != float64(5) || got["new"] != float64(2) || got["returned"] != float64(0) ||
+			if got["id"] != "s1" || got["hosts"] != float64(5) || got["new"] != float64(2) || got["returned"] != float64(0) ||
 				got["duration_ms"] != float64(900) || got["error"] != nil {
 				t.Errorf("data = %s", v)
 			}
