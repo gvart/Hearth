@@ -1,7 +1,7 @@
 // What the Devices page shows of a device's metrics and disks. Kept apart from
 // the components so node --test can check it (web/test/devices.test.mjs).
 
-import type { Ceiling, Disk, MetricChart } from './api/client.ts';
+import type { Ceiling, Disk, MetricChart, NetworkHost } from './api/client.ts';
 
 export type MeterTone = 'ok' | 'warn' | 'bad';
 
@@ -76,4 +76,18 @@ export function rememberView(view: DevicesView): void {
   } catch {
     // Private mode: the choice lasts for this page only.
   }
+}
+
+/**
+ * The device name suggested for a discovered host: its hostname without
+ * .local, reduced to what the hub accepts (1 to 63 letters, digits, ., - or _,
+ * starting with a letter or digit). Empty when it has no hostname: the device
+ * then takes its own.
+ */
+export function suggestedName(h: Pick<NetworkHost, 'hostname'>): string {
+  return h.hostname
+    .replace(/\.local\.?$/i, '')
+    .replace(/[^A-Za-z0-9._-]+/g, '-')
+    .replace(/^[^A-Za-z0-9]+/, '')
+    .slice(0, 63);
 }

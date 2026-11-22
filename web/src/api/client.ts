@@ -716,7 +716,8 @@ export const api = {
   metricsSparklines: () => request<MetricsSparklines>('GET', '/metrics/sparklines'),
   tlsInfo: () => request<TlsInfo>('GET', '/tls'),
   configDrift: () => request<ConfigDrift>('GET', '/cluster/config-drift'),
-  createToken: (opts: { ttl?: string; labels?: Record<string, string> } = {}) =>
+  /** `name` names the device that enrolls with the token; without it, the device takes its hostname. */
+  createToken: (opts: { ttl?: string; labels?: Record<string, string>; name?: string } = {}) =>
     request<CreatedToken>('POST', '/tokens', opts),
   audit: (filter: AuditFilter, before?: number | string) => {
     const q = new URLSearchParams();

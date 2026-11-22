@@ -6,7 +6,9 @@ description: See every host on the LAN, not only the devices with an agent.
 Network discovery finds the hosts on your LAN that have no agent (the router, a printer, a TV, a
 phone) and lists them under **On your network** on the Devices page, with their IP, MAC address,
 vendor and name. Each one has an **Add device** button that opens the usual
-[install-and-join flow](getting-started.md).
+[install-and-join flow](getting-started.md) for that host: the device name is prefilled from its
+hostname (without `.local`), and the device joins under that name. Change it under
+**Name, expiry and labels**, then click **New token with these options**.
 
 The hub scans only when you ask it to, with **Scan my network** (see [Scan now](#scan-now)), or on a
 schedule once you turn that on. Nothing it learns leaves your LAN.

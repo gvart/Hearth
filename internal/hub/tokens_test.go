@@ -99,9 +99,9 @@ func TestAPICreateToken(t *testing.T) {
 	}
 
 	// The token is stored, single use, and carries the labels.
-	labels, err := f.st.Tokens().Consume(t.Context(), tok.Secret, time.Now())
-	if err != nil || labels["room"] != "attic" {
-		t.Fatalf("consume = %v, %v", labels, err)
+	consumed, err := f.st.Tokens().Consume(t.Context(), tok.Secret, time.Now())
+	if err != nil || consumed.Labels["room"] != "attic" || consumed.Name != "" {
+		t.Fatalf("consume = %+v, %v", consumed, err)
 	}
 	if _, err := f.st.Tokens().Consume(t.Context(), tok.Secret, time.Now()); err == nil {
 		t.Error("token consumed twice")
@@ -133,6 +133,60 @@ func TestAPICreateToken(t *testing.T) {
 	}
 	if logs := f.logs.String(); strings.Contains(logs, tok.Secret) {
 		t.Errorf("token secret in logs:\n%s", logs)
+	}
+}
+
+// A name, trimmed, is stored with the token and audited.
+func TestAPICreateNamedToken(t *testing.T) {
+	f := newAPIFixture(t, true)
+	c := sessionCookie(t, f.login(t, testPassword))
+	resp := f.do(t, http.MethodPost, "/api/v1/tokens", `{"name":"  garage-pi "}`, c)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, body %s", resp.StatusCode, resp.body)
+	}
+	tok, err := pki.ParseToken(decode[TokenJSON](t, resp).Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := f.st.Tokens().Consume(t.Context(), tok.Secret, time.Now())
+	if err != nil || got.Name != "garage-pi" {
+		t.Fatalf("consume = %+v, %v; want the name garage-pi", got, err)
+	}
+	entries, err := f.st.Audit().List(t.Context(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if e.Action == string(policy.TokenCreate) && !strings.Contains(string(e.Detail), `"name":"garage-pi"`) {
+			t.Errorf("audit detail %s lacks the name", e.Detail)
+		}
+	}
+}
+
+func TestDeviceName(t *testing.T) {
+	tests := []struct {
+		in, want string
+		ok       bool
+	}{
+		{"", "", true},
+		{"garage-pi", "garage-pi", true},
+		{" Pi4.lan ", "Pi4.lan", true},
+		{"nas_01", "nas_01", true},
+		{strings.Repeat("a", 63), strings.Repeat("a", 63), true},
+		{strings.Repeat("a", 64), "", false},
+		{"   ", "", false},
+		{"-pi", "", false},
+		{".pi", "", false},
+		{"garage pi", "", false},
+		{"pi;rm -rf", "", false},
+		{"pi$(id)", "", false},
+		{"pï", "", false},
+	}
+	for _, tt := range tests {
+		got, err := DeviceName(tt.in)
+		if (err == nil) != tt.ok || got != tt.want {
+			t.Errorf("DeviceName(%q) = %q, %v; want %q, ok %v", tt.in, got, err, tt.want, tt.ok)
+		}
 	}
 }
 
@@ -177,6 +231,11 @@ func TestAPICreateTokenRejects(t *testing.T) {
 		{"empty label key", "application/json", `{"labels":{"":"x"}}`, http.StatusBadRequest},
 		{"label value too long", "application/json", `{"labels":{"k":"` + strings.Repeat("v", 129) + `"}}`, http.StatusBadRequest},
 		{"too many labels", "application/json", string(tooMany), http.StatusBadRequest},
+		{"name blank", "application/json", `{"name":"  "}`, http.StatusBadRequest},
+		{"name too long", "application/json", `{"name":"` + strings.Repeat("a", 64) + `"}`, http.StatusBadRequest},
+		{"name with a space", "application/json", `{"name":"garage pi"}`, http.StatusBadRequest},
+		{"name with shell characters", "application/json", `{"name":"pi;reboot"}`, http.StatusBadRequest},
+		{"name not a string", "application/json", `{"name":7}`, http.StatusBadRequest},
 		{"body too large", "application/json", `{"ttl":"` + strings.Repeat(" ", maxTokenBody) + `"}`, http.StatusBadRequest},
 	}
 	for _, tt := range tests {

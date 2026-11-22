@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { latest, rememberView, storedView, type DevicesView } from '../devices.ts';
 import { addDeviceHash, deviceHash } from '../nav.ts';
-import type { Device } from '../api/client.ts';
+import type { Device, NetworkHost } from '../api/client.ts';
 import { useDevices, useMetricsSparklines, useNetworkScan } from '../api/hooks.ts';
 import { displayName, formatUptime, osArch, primaryIP, relativeTime, statusLabel } from '../format.ts';
 import { AddDeviceDialog } from './AddDeviceDialog.tsx';
@@ -68,9 +68,15 @@ export function DevicesPage() {
   const joined = adding ? list.find(isNew) : undefined;
   const online = list.filter((d) => d.status === 'online').length;
 
-  const openAdd = () => {
+  // The discovered host "Add device" was opened for, if any.
+  const [prefill, setPrefill] = useState<NetworkHost>();
+  const addDevice = (host?: NetworkHost) => {
     setBaseline(new Set(list.map((d) => d.id)));
+    setPrefill(host);
     setAdding(true);
+  };
+  const openAdd = () => {
+    addDevice();
   };
   const closeAdd = () => {
     setAdding(false);
@@ -82,6 +88,7 @@ export function DevicesPage() {
     const onHash = () => {
       if (window.location.hash === addDeviceHash) {
         setBaseline(undefined);
+        setPrefill(undefined);
         setAdding(true);
       }
     };
@@ -251,7 +258,7 @@ export function DevicesPage() {
             </table>
           </div>
         )}
-        <UnmanagedHosts now={now} onAdd={openAdd} />
+        <UnmanagedHosts now={now} onAdd={addDevice} />
         <TalosNodes now={now} onSelect={open} />
         <BeszelSystems now={now} onSelect={open} />
         <PluginDevices />
@@ -259,6 +266,7 @@ export function DevicesPage() {
 
       {adding ? (
         <AddDeviceDialog
+          host={prefill}
           joined={joined}
           onClose={closeAdd}
           onShow={(d) => {

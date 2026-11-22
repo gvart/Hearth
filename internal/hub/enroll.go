@@ -76,13 +76,18 @@ func (e *Enroller) Enroll(ctx context.Context, req *connect.Request[agentv1.Enro
 		if err != nil {
 			return errBadCSR{err}
 		}
-		labels, err := e.store.Tokens().Consume(ctx, msg.GetTokenSecret(), now)
+		tok, err := e.store.Tokens().Consume(ctx, msg.GetTokenSecret(), now)
 		if err != nil {
 			return err
 		}
+		// A named token names the device; otherwise it is its hostname.
+		name := tok.Name
+		if name == "" {
+			name = msg.GetHostname()
+		}
 		if err := e.store.Devices().Upsert(ctx, store.Device{
-			ID: deviceID, Name: msg.GetHostname(), Hostname: msg.GetHostname(),
-			Labels: labels, FirstSeen: now, LastSeen: now, Status: "unknown",
+			ID: deviceID, Name: name, Hostname: msg.GetHostname(),
+			Labels: tok.Labels, FirstSeen: now, LastSeen: now, Status: "unknown",
 		}); err != nil {
 			return err
 		}

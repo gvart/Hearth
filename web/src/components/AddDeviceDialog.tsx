@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Device } from '../api/client.ts';
+import type { Device, NetworkHost } from '../api/client.ts';
 import { useCreateToken } from '../api/hooks.ts';
+import { suggestedName } from '../devices.ts';
 import { displayName } from '../format.ts';
 import { Modal } from './Modal.tsx';
 import { QrCode } from './QrCode.tsx';
@@ -30,31 +31,37 @@ function labelsOf(rows: Label[]): Record<string, string> | undefined {
 }
 
 interface Props {
+  /** The discovered host the device is added for, if any: the dialog is prefilled for it. */
+  host?: NetworkHost;
   /** The first device that appeared since the dialog opened, if any. */
   joined: Device | undefined;
   onClose: () => void;
   onShow: (d: Device) => void;
 }
 
-export function AddDeviceDialog({ joined, onClose, onShow }: Props) {
+export function AddDeviceDialog({ host, joined, onClose, onShow }: Props) {
   const create = useCreateToken();
   const { mutate } = create;
+  const [name, setName] = useState(() => (host ? suggestedName(host) : ''));
   // Guards against StrictMode's double effect minting two tokens.
   const requested = useRef(false);
   useEffect(() => {
     if (!requested.current) {
       requested.current = true;
-      mutate({});
+      mutate(name === '' ? {} : { name });
     }
-  }, [mutate]);
+  }, [mutate, name]);
 
   const tok = create.data;
+  /** The name the shown token gives, which edits to the field change only on a new token. */
+  const tokenName = create.variables?.name;
   const [ttl, setTtl] = useState('15m');
   const [labels, setLabels] = useState<Label[]>([]);
   // Stays open across the new token, which remounts it.
-  const [optionsOpen, setOptionsOpen] = useState(false);
+  // Open for a discovered host, so its prefilled name shows.
+  const [optionsOpen, setOptionsOpen] = useState(host !== undefined);
   const remint = () => {
-    mutate({ ttl, labels: labelsOf(labels) });
+    mutate({ ttl, labels: labelsOf(labels), name: name.trim() === '' ? undefined : name.trim() });
   };
 
   return (
@@ -66,7 +73,8 @@ export function AddDeviceDialog({ joined, onClose, onShow }: Props) {
         </button>
       </header>
       <p className="muted">
-        Run this on the device (Linux or macOS). It installs the agent, enrolls it with this hub and starts it.
+        Run this on {host ? <>the device at {host.ip}</> : 'the device'} (Linux or macOS). It installs the agent,
+        enrolls it with this hub and starts it.
       </p>
 
       {create.isError ? (
@@ -92,7 +100,8 @@ export function AddDeviceDialog({ joined, onClose, onShow }: Props) {
                 <Command label="Join only" value={tok.join_command} />
               </details>
               <p className="muted small">
-                Single use · expires at {new Date(tok.expires_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                Single use · {tokenName ? <>joins as <strong>{tokenName}</strong> · </> : null}expires at{' '}
+                {new Date(tok.expires_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </p>
               <details
                 className="enroll-options"
@@ -101,7 +110,7 @@ export function AddDeviceDialog({ joined, onClose, onShow }: Props) {
                   setOptionsOpen(e.currentTarget.open);
                 }}
               >
-                <summary>Expiry and labels</summary>
+                <summary>Name, expiry and labels</summary>
                 <form
                   className="form"
                   onSubmit={(e) => {
@@ -109,6 +118,19 @@ export function AddDeviceDialog({ joined, onClose, onShow }: Props) {
                     remint();
                   }}
                 >
+                  <label className="field">
+                    Device name
+                    <input
+                      value={name}
+                      maxLength={63}
+                      pattern="\s*[A-Za-z0-9][A-Za-z0-9._\-]*\s*"
+                      title="Letters, digits, ., - or _, starting with a letter or digit"
+                      placeholder="its hostname"
+                      onChange={(e) => {
+                        setName(e.target.value);
+                      }}
+                    />
+                  </label>
                   <label className="field">
                     Token expires after
                     <select
