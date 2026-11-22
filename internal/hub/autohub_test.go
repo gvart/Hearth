@@ -109,6 +109,22 @@ func (f *autoHubFixture) enrollHub(t *testing.T, id string) string {
 	return ""
 }
 
+// enrollDetail is the device.enroll entry's detail for device id.
+func enrollDetail(t *testing.T, f *autoHubFixture, id string) string {
+	t.Helper()
+	entries, err := f.st.Audit().List(t.Context(), 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if e.Action == string(policy.DeviceEnroll) && e.Target == id {
+			return string(e.Detail)
+		}
+	}
+	t.Fatalf("no device.enroll entry for %s", id)
+	return ""
+}
+
 func capableOffer() *agentv1.HubOffer {
 	return &agentv1.HubOffer{Os: "linux", Arch: "arm64", MemTotal: 8 << 30, DiskFree: 20 << 30}
 }
@@ -125,8 +141,11 @@ func TestAutoHubMints(t *testing.T) {
 		!slices.Equal(hj.GetRoles(), []string{"storage", "master"}) {
 		t.Fatalf("hub join = %+v, want a storage,master token through hub-a", hj)
 	}
-	if got := f.enrollHub(t, msg.GetDeviceId()); got != hubOffered {
-		t.Fatalf("device.enroll hub = %q, want offered", got)
+	if got := f.enrollHub(t, msg.GetDeviceId()); got != hubMinted {
+		t.Fatalf("device.enroll hub = %q, want minted", got)
+	}
+	if d := enrollDetail(t, f, msg.GetDeviceId()); !strings.Contains(d, `"hub_roles":"storage,master"`) {
+		t.Fatalf("device.enroll detail = %s, want the minted roles", d)
 	}
 	jt, err := pki.ParseJoinToken(hj.GetToken())
 	if err != nil || jt.CAFingerprint != pki.Fingerprint(f.ca.Cert()) {
@@ -175,9 +194,19 @@ func TestAutoHubCaps(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newAutoHubFixture(t, tc.masters, tc.storage)
 			for i, want := range tc.want {
-				got := roles(f.enroll(t, f.token(t, true), capableOffer()).GetHubJoin())
+				msg := f.enroll(t, f.token(t, true), capableOffer())
+				got := roles(msg.GetHubJoin())
 				if !strings.HasPrefix(got, want) {
 					t.Fatalf("enrollment %d: %q, want %q", i+1, got, want)
+				}
+				// A refusal by the caps is audited in the enrollment's entry.
+				wantHub, wantDetail := hubMinted, `"hub_roles":"`+got+`"`
+				if strings.HasPrefix(want, "refused") {
+					wantHub, wantDetail = hubRefused, `"hub_refused":"the cluster has 5 storage members`
+				}
+				if h, d := f.enrollHub(t, msg.GetDeviceId()), enrollDetail(t, f, msg.GetDeviceId()); h != wantHub ||
+					!strings.Contains(d, wantDetail) {
+					t.Fatalf("enrollment %d: device.enroll hub %q, detail %s; want %q with %s", i+1, h, d, wantHub, wantDetail)
 				}
 			}
 		})
@@ -236,6 +265,10 @@ func TestAutoHubMintWhileIsolated(t *testing.T) {
 	}
 	if msg.GetDeviceId() == "" {
 		t.Fatal("the device was not enrolled")
+	}
+	if h, d := f.enrollHub(t, msg.GetDeviceId()), enrollDetail(t, f, msg.GetDeviceId()); h != hubRefused ||
+		!strings.Contains(d, "cut off") {
+		t.Fatalf("device.enroll hub %q, detail %s; want refused as cut off", h, d)
 	}
 	entries := auditEntries(t, f.st, policy.ClusterTokenCreate)
 	if len(entries) != 1 || entries[0].Decision != policy.Deny || !strings.Contains(entries[0].Result, policy.ErrIsolated) {

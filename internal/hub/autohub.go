@@ -28,13 +28,16 @@ type hubCounter interface {
 // the installer starts the hub right after the agent enrolls.
 const autoHubJoinTTL = 15 * time.Minute
 
-// Why an enrolling device is not offered a hub, as the device.enroll entry
-// records it.
+// Whether an enrolling device may become a hub, as the device.enroll entry
+// records it: why not, or, for a capable device (hubOffered), whether its
+// join token was minted (hub_roles) or refused (hub_refused says why).
 const (
 	hubNotEligible = "not eligible"
 	hubNotOffered  = "not offered"
 	hubNotCapable  = "not capable"
 	hubOffered     = "offered"
+	hubMinted      = "minted"
+	hubRefused     = "refused"
 )
 
 // hubOutcome is whether a device enrolling with a token of hubRoles and offer

@@ -68,10 +68,10 @@ func (e *Enroller) Enroll(ctx context.Context, req *connect.Request[agentv1.Enro
 	}
 
 	var (
-		cert     *x509.Certificate
-		hubRoles string
-		outcome  string
-		why      string
+		cert    *x509.Certificate
+		outcome string
+		why     string
+		hubJoin *agentv1.HubJoin
 	)
 	handle := tokenActorID(msg.GetTokenSecret())
 	// The outcome entry says whether the device may become a hub: fn adds
@@ -94,7 +94,6 @@ func (e *Enroller) Enroll(ctx context.Context, req *connect.Request[agentv1.Enro
 		if err != nil {
 			return err
 		}
-		hubRoles = tok.HubRoles
 		outcome, why = hubOutcome(tok.HubRoles, msg.GetHubOffer())
 		detail["hub"] = outcome
 		// A named token names the device; otherwise it is its hostname.
@@ -115,6 +114,17 @@ func (e *Enroller) Enroll(ctx context.Context, req *connect.Request[agentv1.Enro
 			return err
 		}
 		cert = c
+		if outcome == hubOffered {
+			// The mint's outcome is this entry's too, a refusal by the
+			// caps included (the mint is its own decision only when it
+			// gets that far). Never the token.
+			hubJoin = e.mintHubJoin(ctx, deviceID, handle, tok.HubRoles)
+			if hubJoin.GetRefused() != "" {
+				detail["hub"], detail["hub_refused"] = hubRefused, hubJoin.GetRefused()
+			} else {
+				detail["hub"], detail["hub_roles"] = hubMinted, strings.Join(hubJoin.GetRoles(), ",")
+			}
+		}
 		return nil
 	})
 	if err != nil {
@@ -132,8 +142,8 @@ func (e *Enroller) Enroll(ctx context.Context, req *connect.Request[agentv1.Enro
 		resp.Hubs = e.leadership.AgentURLs()
 	}
 	switch {
-	case outcome == hubOffered:
-		resp.HubJoin = e.mintHubJoin(ctx, deviceID, handle, hubRoles)
+	case hubJoin != nil:
+		resp.HubJoin = hubJoin
 	case msg.GetHubOffer() != nil:
 		resp.HubJoin = &agentv1.HubJoin{Refused: why}
 	}
