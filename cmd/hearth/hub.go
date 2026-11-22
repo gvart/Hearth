@@ -178,7 +178,7 @@ func newHubCmd() *cobra.Command {
 		"address to serve the web UI, API, installer and CA certificate on (plain HTTP)")
 	cmd.Flags().StringSliceVar(&opts.hosts, "host", nil,
 		"DNS name or IP agents and browsers use to reach the hub (its TLS certificate names); repeatable "+
-			"(default: this hostname, localhost, 127.0.0.1, ::1)")
+			"(default: this hostname, the hub's private LAN IPv4 addresses, localhost, 127.0.0.1, ::1)")
 	cmd.Flags().StringVar(&opts.assetsDir, "assets-dir", "",
 		"directory of release archives and checksums.txt to serve at /download/ for `install.sh --from-hub`")
 	cmd.Flags().StringVar(&opts.prometheusURL, "prometheus-url", os.Getenv("HEARTH_PROMETHEUS_URL"),
@@ -319,10 +319,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		}
 		manifests = append(manifests, m)
 	}
-	hosts := opts.hosts
-	if len(hosts) == 0 {
-		hosts = []string{hostnameOr("localhost"), "localhost", "127.0.0.1", "::1"}
-	}
+	hosts := hubHosts(ctx, opts.hosts, log)
 	var agentPort string
 	if _, port, err := net.SplitHostPort(opts.listen); err == nil && port != "0" {
 		agentPort = port
@@ -911,4 +908,38 @@ func loadNotifier(opts hubOptions, log *slog.Logger) (*notify.Notifier, error) {
 	}
 	log.Info("notification channels loaded", "path", path, "channels", names)
 	return n, nil
+}
+
+// hubHosts are the names of the hub certificate: the --host values when
+// given, as given; else defaultHubHosts with the hub's LAN addresses now,
+// so a restart after an address change (DHCP) issues a certificate for the
+// new ones.
+func hubHosts(ctx context.Context, flagHosts []string, log *slog.Logger) []string {
+	if len(flagHosts) > 0 {
+		return flagHosts
+	}
+	lan, err := discovery.LANAddrs()
+	if err != nil {
+		log.WarnContext(ctx, "list the LAN addresses for the hub certificate", "err", err)
+	}
+	return defaultHubHosts(hostnameOr("localhost"), lan)
+}
+
+// defaultHubHosts are the hub certificate's names without --host: the
+// hostname, the LAN addresses lan and the loopback names. The first name
+// that is not loopback is the one install commands and notification links
+// name, so a hostname other devices are unlikely to resolve (a single label
+// or a .local name: hub.BareHostname) goes after the LAN addresses.
+func defaultHubHosts(hostname string, lan []netip.Addr) []string {
+	var hosts []string
+	if !hub.BareHostname(hostname) {
+		hosts = append(hosts, hostname)
+	}
+	for _, a := range lan {
+		hosts = append(hosts, a.String())
+	}
+	if hub.BareHostname(hostname) {
+		hosts = append(hosts, hostname)
+	}
+	return append(hosts, "localhost", "127.0.0.1", "::1")
 }

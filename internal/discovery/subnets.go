@@ -167,3 +167,31 @@ func autoSubnets(nets []localNet) []netip.Prefix {
 	}
 	return out
 }
+
+// LANAddrs returns this host's private (RFC 1918) IPv4 addresses on up,
+// non-loopback interfaces, other than container, VM and VPN interfaces:
+// the addresses other devices on the LAN reach the host by.
+func LANAddrs() ([]netip.Addr, error) {
+	nets, err := localNets()
+	if err != nil {
+		return nil, err
+	}
+	return lanAddrs(nets), nil
+}
+
+// lanAddrs is what LANAddrs returns on a host with nets. Interfaces whose
+// name starts with one of virtualIfaces are skipped: Docker, libvirt,
+// VirtualBox, VMware and macOS VM bridges, veth pairs, CNI and macOS VPN
+// tunnels. Their addresses mean nothing on the LAN.
+func lanAddrs(nets []localNet) []netip.Addr {
+	virtualIfaces := []string{"docker", "br-", "veth", "virbr", "vboxnet", "vmnet", "bridge", "utun", "cni", "flannel", "cali"}
+	var out []netip.Addr
+	for _, n := range nets {
+		if !n.addr.Is4() || !n.addr.IsPrivate() || slices.Contains(out, n.addr) ||
+			slices.ContainsFunc(virtualIfaces, func(p string) bool { return strings.HasPrefix(n.iface.Name, p) }) {
+			continue
+		}
+		out = append(out, n.addr)
+	}
+	return out
+}

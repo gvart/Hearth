@@ -42,7 +42,9 @@ fewer than 2 storage members, or keeps fewer than 2 copies of each row.
 
 Every member must reach every other one on the cluster port; agents and browsers reach masters on the
 TLS port. Give each hub its name with `--host`: the **first** `--host` is the name agents and the other
-hubs use to reach that hub's TLS port, so it must resolve from your devices. `--cluster-advertise
+hubs use to reach that hub's TLS port, so it must resolve from your devices. Without `--host`, each
+hub's certificate names its own hostname and private LAN IPv4 addresses, and the first LAN IP is
+that name (a hostname with a dot, other than `.local`, comes first instead). `--cluster-advertise
 host:port` is the address the other members dial for the cluster port (default: the first `--host`
 name and the `--cluster-listen` port). Every member listens on the same cluster port: a hub finds the
 one it joins at that hub's host on its own cluster port.

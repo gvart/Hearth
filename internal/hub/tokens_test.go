@@ -4,6 +4,7 @@ package hub
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
 	"strings"
 	"testing"
@@ -338,6 +339,51 @@ func TestCommandHosts(t *testing.T) {
 					tt.reqHost, tt.overTLS, httpHost, agentHost, ok, tt.wantHTTP, tt.wantAgent, tt.ok)
 			}
 		})
+	}
+}
+
+// TestCommandHostsLANAddress: with a bare hub's certificate (LAN addresses
+// before a bare hostname) the commands name a LAN address, unless the
+// browser came by a name other devices resolve or by another certificate
+// address. An explicit --host list keeps its order.
+func TestCommandHostsLANAddress(t *testing.T) {
+	bare := []string{"192.168.2.124", "10.0.5.2", "DNP6J4RC7Q", "localhost", "127.0.0.1", "::1"}
+	for _, tc := range []struct {
+		hosts              []string
+		reqHost, wantAgent string
+	}{
+		{bare, "localhost:7080", "192.168.2.124"},
+		{bare, "127.0.0.1:7080", "192.168.2.124"},
+		{bare, "DNP6J4RC7Q:7080", "192.168.2.124"},
+		{bare, "dnp6j4rc7q:7080", "192.168.2.124"},
+		{bare, "10.0.5.2:7080", "10.0.5.2"},
+		{bare, "192.168.2.124:7080", "192.168.2.124"},
+		{bare, "192.168.9.9:7080", "192.168.2.124"},
+		{[]string{"192.168.2.124", "mac.local", "localhost"}, "mac.local:7080", "192.168.2.124"},
+		{[]string{"hub.home.arpa", "192.168.2.124", "localhost"}, "localhost:7080", "hub.home.arpa"},
+		{[]string{"hub.home.arpa", "192.168.2.124", "localhost"}, "hub.home.arpa:7080", "hub.home.arpa"},
+		// --host hub (the e2e compose): a bare name first stays first.
+		{[]string{"hub"}, "localhost:7080", "hub"},
+		{[]string{"hub"}, "hub:7080", "hub"},
+		{[]string{"pi", "192.168.2.131"}, "pi:7080", "pi"},
+		{[]string{"pi", "192.168.2.131"}, "localhost:7080", "pi"},
+	} {
+		a := &api{agentHosts: tc.hosts, httpPort: "7080"}
+		httpHost, agentHost, ok := a.commandHosts(tc.reqHost, false)
+		if !ok || agentHost != tc.wantAgent || httpHost != net.JoinHostPort(tc.wantAgent, "7080") {
+			t.Errorf("hosts %v: commandHosts(%q) = %q, %q, %v; want agent host %q", tc.hosts, tc.reqHost, httpHost, agentHost, ok, tc.wantAgent)
+		}
+	}
+}
+
+func TestBareHostname(t *testing.T) {
+	for h, want := range map[string]bool{
+		"DNP6J4RC7Q": true, "pi": true, "pi.": true, "mac.local": true, "MAC.LOCAL.": true,
+		"hub.lan": false, "hub.home.arpa": false, "192.168.2.124": false, "fd00::10": false, "": false,
+	} {
+		if got := BareHostname(h); got != want {
+			t.Errorf("BareHostname(%q) = %v, want %v", h, got, want)
+		}
 	}
 }
 

@@ -29,7 +29,7 @@ between Hearth processes is mutually authenticated TLS.
 
 | Who            | Proves itself with                                                                 |
 | -------------- | ---------------------------------------------------------------------------------- |
-| Hub            | a server certificate from its own CA, issued at every start for its `--host` names |
+| Hub            | a server certificate from its own CA, issued at every start for its `--host` names (default: its hostname, private LAN IPv4 addresses and loopback names) |
 | Agent          | a client certificate (one year) the hub CA signed at enrollment; the key never leaves the device |
 | Another hub    | a hub node certificate from the same CA, issued when it joined the cluster          |
 | Admin (web)    | the admin password (argon2id hash), then a session cookie that lasts 7 days         |

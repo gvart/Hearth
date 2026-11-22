@@ -195,8 +195,9 @@ func releaseVersion(version string) string {
 // commandHosts derives the hosts for the install and join commands from the
 // Host the browser used. Agents verify the hub certificate by name, so the
 // agent host is the browser's host only if the certificate covers it and it
-// is not a loopback address, which means nothing on another device; else it
-// is the first certificate name that is not loopback. With no such name it
+// is not a loopback address, which means nothing on another device, nor a
+// bare hostname (BareHostname) when the first certificate name that is not
+// loopback is an IP; else it is that first name. With no such name it
 // stays the browser's host: no choice works then. The install script
 // comes from the HTTP listener at the browser's address when the agent host
 // is the browser's host and the page came over plain HTTP; otherwise from the
@@ -211,9 +212,11 @@ func (a *api) commandHosts(reqHost string, overTLS bool) (httpHost, agentHost st
 		return "", "", false
 	}
 	agentHost = host
-	if len(a.agentHosts) > 0 && (isLoopback(host) || !slices.ContainsFunc(a.agentHosts, func(h string) bool { return strings.EqualFold(h, host) })) {
-		if i := slices.IndexFunc(a.agentHosts, func(h string) bool { return !isLoopback(h) }); i >= 0 {
-			agentHost = a.agentHosts[i]
+	if i := slices.IndexFunc(a.agentHosts, func(h string) bool { return !isLoopback(h) }); i >= 0 {
+		first := a.agentHosts[i]
+		inCert := slices.ContainsFunc(a.agentHosts, func(h string) bool { return strings.EqualFold(h, host) })
+		if isLoopback(host) || !inCert || (BareHostname(host) && net.ParseIP(first) != nil) {
+			agentHost = first
 		}
 	}
 	if overTLS || agentHost != host {
@@ -226,6 +229,17 @@ func (a *api) commandHosts(reqHost string, overTLS bool) (httpHost, agentHost st
 		httpHost = "[" + agentHost + "]"
 	}
 	return httpHost, agentHost, true
+}
+
+// BareHostname reports whether host is a name other devices are unlikely to
+// resolve: a single label, such as an OS hostname, or an mDNS .local name,
+// which devices without an mDNS resolver cannot look up.
+func BareHostname(host string) bool {
+	h := strings.ToLower(strings.TrimSuffix(host, "."))
+	if h == "" || net.ParseIP(h) != nil {
+		return false
+	}
+	return !strings.Contains(h, ".") || strings.HasSuffix(h, ".local")
 }
 
 // isLoopback reports whether host names this machine only: localhost (and

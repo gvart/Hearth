@@ -123,6 +123,43 @@ func TestAutoSubnets(t *testing.T) {
 	}
 }
 
+func TestLANAddrs(t *testing.T) {
+	ln := func(iface, addr string) localNet {
+		return localNet{iface: net.Interface{Name: iface}, addr: netip.MustParseAddr(addr)}
+	}
+	tests := []struct {
+		name string
+		nets []localNet
+		want []string
+	}{
+		{"private LAN addresses in interface order", []localNet{
+			ln("en0", "192.168.2.124"), ln("eth1", "10.0.5.2"), ln("wlan0", "172.16.3.4"),
+		}, []string{"192.168.2.124", "10.0.5.2", "172.16.3.4"}},
+		{"a duplicate address once", []localNet{ln("en0", "192.168.2.124"), ln("en1", "192.168.2.124")}, []string{"192.168.2.124"}},
+		{"link-local, loopback, public and CGNAT excluded", []localNet{
+			ln("en0", "169.254.10.20"), ln("en1", "127.0.0.1"), ln("eth0", "203.0.113.7"),
+			ln("tailscale0", "100.101.102.103"), ln("eth2", "8.8.8.8"),
+		}, nil},
+		{"container, VM and VPN interfaces skipped", []localNet{
+			ln("docker0", "172.17.0.1"), ln("br-3f2a", "172.18.0.1"), ln("veth12ab", "10.1.0.1"),
+			ln("virbr0", "192.168.122.1"), ln("bridge100", "192.168.64.1"), ln("utun4", "10.8.0.2"),
+			ln("cni0", "10.244.0.1"), ln("vmnet8", "192.168.56.1"), ln("eth0", "192.168.1.5"),
+		}, []string{"192.168.1.5"}},
+		{"IPv6 ignored", []localNet{ln("en0", "fd00::10"), ln("en0", "fe80::1")}, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got []string
+			for _, a := range lanAddrs(tt.nets) {
+				got = append(got, a.String())
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Fatalf("lanAddrs = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestReverseName(t *testing.T) {
 	ip := netip.MustParseAddr("192.168.2.171")
 	n := reverseName(ip)

@@ -10,7 +10,7 @@ a laptop) showing up in its web UI. You need:
 - **a device to add**: Linux (amd64, arm64, armv7) or macOS, on the same network, with `curl`.
 - the hub's address as the device sees it: its LAN IP or a DNS name. Below it is `192.168.1.10`;
   use yours everywhere you see it. To find it: `ipconfig getifaddr en0` on macOS, `hostname -I` on
-  Linux.
+  Linux. The hub finds its LAN IP itself; you need it only to open the UI from another machine.
 
 Hearth is pre-alpha: every release so far is a pre-release, `v0.0.1-rc.N`. The commands below use
 `0.0.1-rc.8`; take the newest from the
@@ -36,12 +36,16 @@ If you would rather run the hub in Docker, skip this step and use the image
 ## 2. Start the hub
 
 ```sh
-HEARTH_ADMIN_PASSWORD='choose-a-password' ./hearth hub --host 192.168.1.10
+HEARTH_ADMIN_PASSWORD='choose-a-password' ./hearth hub
 ```
 
-- `--host` is the name or IP your devices use to reach the hub. The hub's TLS certificate is issued
-  for exactly these names, and devices refuse any other, so get it right. Repeat it to add more
-  (`--host nas.lan --host 192.168.1.10`).
+- The hub's TLS certificate names this machine's hostname, its private LAN IPv4 addresses
+  (`192.168.x.x`, `10.x.x.x`, `172.16–31.x.x`) and `localhost`. Devices refuse any other name, and
+  the install command names the LAN IP, so on one LAN nothing more is needed. A new certificate is
+  issued at every start: after the hub gets a new IP, restart it.
+- `--host` replaces that list with the names and IPs you give, for a DNS name (`--host nas.lan`), a
+  tailnet or VPN address, or an address behind a port forward. Repeat it to add more
+  (`--host nas.lan --host 192.168.1.10`). The first one is the address install commands name.
 - `HEARTH_ADMIN_PASSWORD` sets the password of the web UI on the first start. Later starts ignore it;
   change the password with `hearth admin set-password`.
 - The hub keeps its database and certificate authority in `~/.local/share/hearth/hub`
@@ -57,6 +61,9 @@ docker run -d --name hearth -p 7443:7443 -p 7080:7080 -v hearth:/var/lib/hearth 
   ghcr.io/gvart/hearth:v0.0.1-rc.8 hub --host 192.168.1.10
 ```
 
+In a container the hub sees only the container's own network, so pass `--host` with the host
+machine's LAN IP there.
+
 **Firewall.** Devices must reach the hub on TCP ports 7443 and 7080. On macOS with the firewall on,
 answer **Allow** when macOS asks whether `hearth` may accept incoming connections. On Linux, open
 both ports if you run a firewall (`sudo ufw allow 7443,7080/tcp`).
@@ -64,8 +71,9 @@ both ports if you run a firewall (`sudo ufw allow 7443,7080/tcp`).
 ## 3. Open the web UI and add a device
 
 Open **`http://192.168.1.10:7080`** (or `http://localhost:7080` on the hub machine). The "Add
-device" dialog builds its command for an address the device can reach: the one in your browser if it
-is one of the `--host` names, else the first `--host` name that is not `localhost` or a loopback IP.
+device" dialog builds its command for an address the device can reach: the one in your browser if
+the certificate names it and it is not `localhost`, a loopback IP or a bare hostname, else the hub's
+first certificate name that is not loopback (its LAN IP, or your first `--host`).
 
 Sign in with the admin password, then click **Add device**. The dialog shows a command like:
 
@@ -156,8 +164,8 @@ In Docker, the hub sees your LAN only with host networking (see
 | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | `curl: (7) Failed to connect ... port 7080`             | A hub you built yourself serves the installer: wrong address, hub not running, or a firewall (step 2). |
 | `enrollment token already used` or `expired`            | Tokens are single use and expire after 15 minutes. Click **Add device** again for a new one.      |
-| `verify hub certificate: x509: certificate is not valid for ...` | The hub address in the token (or in `--hub`) is not one of the hub's `--host` names. Restart the hub with it added. |
-| `enroll with ...: dial tcp ...` or `no such host`       | The device cannot reach the hub at the address in the token. Re-run with `--hub https://<address>:7443` at the end (after `sh -s --`), an address in the hub's `--host` list. |
+| `verify hub certificate: x509: certificate is not valid for ...` | The hub address in the token (or in `--hub`) is not one of the hub's certificate names (its LAN IPs, or its `--host` list). Restart the hub with `--host` naming it. |
+| `enroll with ...: dial tcp ...` or `no such host`       | The device cannot reach the hub at the address in the token (another subnet, a VPN). Re-run with `--hub https://<address>:7443` at the end (after `sh -s --`), an address in the hub's certificate, or restart the hub with `--host` naming one the device reaches. |
 | joined, but stays offline                               | The agent is not running (no systemd: start it yourself), or port 7443 is blocked.                |
 
 On the hub, the log says `device enrolled` and then `agent connected` for each device.
