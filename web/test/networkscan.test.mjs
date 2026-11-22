@@ -2,7 +2,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { applyScanDone, scanInterrupted, scanSummary } from '../src/networkscan.ts';
+import { applyScanDone, scanInterrupted, scanStarted, scanSummary } from '../src/networkscan.ts';
 
 test('scanSummary counts the hosts, and names only the new and returned ones there are', () => {
   const cases = [
@@ -29,6 +29,16 @@ test('applyScanDone ends only the scan this UI started, by its id', () => {
   for (const [name, state, ev, want] of cases) {
     assert.deepEqual(applyScanDone(state, ev), want, name);
   }
+});
+
+test('scanStarted runs the scan, unless its done event beat the answer', () => {
+  const done = { id: 'a', hosts: 0, new: 0, returned: 0, duration_ms: 0, error: 'boom' };
+  // Before the answer the state is { running: true }; an early done ends it.
+  const early = applyScanDone({ running: true }, done);
+  assert.deepEqual(scanStarted(early, 'a'), { running: false, id: 'a', done });
+  assert.deepEqual(scanStarted({ running: true }, 'a'), { running: true, id: 'a' });
+  const previous = { running: false, id: 'z', done: { ...done, id: 'z' } };
+  assert.deepEqual(scanStarted(previous, 'a'), { running: true, id: 'a' });
 });
 
 test('scanInterrupted stops a running scan and keeps its id', () => {

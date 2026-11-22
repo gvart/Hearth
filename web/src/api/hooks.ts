@@ -23,7 +23,7 @@ import {
   type MetricsRange,
   type NetworkHostState,
 } from './client.ts';
-import { applyScanDone, scanInterrupted, scanTimeoutMs, type NetworkScanState } from '../networkscan.ts';
+import { applyScanDone, scanInterrupted, scanStarted, scanTimeoutMs, type NetworkScanState } from '../networkscan.ts';
 
 export const keys = {
   session: ['session'] as const,
@@ -172,13 +172,19 @@ export function useNetworkScan() {
   }, [qc, running]);
   const start = useMutation({
     mutationFn: api.scanNetwork,
+    onMutate: () => {
+      // Running before the answer, so a done event that beats it still ends the scan.
+      qc.setQueryData<NetworkScanState>(keys.networkScan, { running: true });
+    },
     onSuccess: ({ id }) => {
-      qc.setQueryData<NetworkScanState>(keys.networkScan, { running: true, id });
+      qc.setQueryData<NetworkScanState>(keys.networkScan, (old) => scanStarted(old ?? idleScan, id));
     },
     onError: (err) => {
       // A scan already running ends with the event all the same.
       if (err instanceof ApiError && err.code === 'scan_running') {
         qc.setQueryData<NetworkScanState>(keys.networkScan, { running: true });
+      } else {
+        qc.setQueryData<NetworkScanState>(keys.networkScan, idleScan);
       }
     },
   });

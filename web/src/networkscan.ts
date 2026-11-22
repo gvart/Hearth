@@ -41,6 +41,14 @@ export function applyScanDone(state: NetworkScanState, done: NetworkScanDone): N
 }
 
 /**
+ * The state once POST /api/v1/network/scan answered with the scan's id: it
+ * runs, unless its done event came first (a scan that failed at once).
+ */
+export function scanStarted(state: NetworkScanState, id: string): NetworkScanState {
+  return state.done?.id === id ? { ...state, id } : { running: true, id };
+}
+
+/**
  * The state once the done event may have been missed (the event stream
  * reopened, or it did not come in time): not running any more. A done event
  * with its id that comes later still applies.
