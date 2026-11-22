@@ -1,6 +1,7 @@
 import type { NetworkHost, NetworkHostSource } from '../api/client.ts';
 import { useDevices, useMarkNetworkHost, useNetworkHosts } from '../api/hooks.ts';
 import { relativeTime } from '../format.ts';
+import { hostKinds, hostKindTitle } from '../hostkinds.ts';
 
 /** A MAC whose locally administered bit is set: a randomized ("private") address. */
 function isRandomized(mac: string) {
@@ -81,6 +82,12 @@ export function UnmanagedHosts({ now, onAdd }: { now: number; onAdd: () => void 
                     <span className="name">{hostName(h)}</span>
                     {h.state === 'known' ? <span className="badge badge-quiet">Known</span> : null}
                     {h.state === 'ignored' ? <span className="badge badge-quiet">Ignored</span> : null}
+                  </span>
+                  <span className="host-kind muted" title={hostKindTitle(h)}>
+                    <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
+                      <path d={hostKinds[h.kind].path} />
+                    </svg>
+                    {hostKinds[h.kind].label}
                   </span>
                 </td>
                 <td className="muted" title={vendorLabel(h)}>

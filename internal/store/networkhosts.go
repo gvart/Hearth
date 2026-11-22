@@ -5,6 +5,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/netip"
@@ -32,6 +33,11 @@ const networkHostSourcesSchema = 14
 // added network_hosts.scanned_by. Before it every host reads as found by the
 // hub, and a scan from a device records no scanner.
 const networkHostScannedBySchema = 26
+
+// networkHostServicesSchema is the schema version whose migration (00031)
+// added network_hosts.services and gateway. Before it no host lists a
+// service or is the gateway, and scans record neither.
+const networkHostServicesSchema = 31
 
 // What the operator said about a host (NetworkHost.State). Known and ignored
 // hosts never fire new-device alerts.
@@ -80,6 +86,12 @@ type NetworkHost struct {
 	// ScannedBy is the id of the device whose agent last found the host in
 	// a scan; "" when the hub did, or no scan found it.
 	ScannedBy string
+	// Services are the mDNS service types the host answers for, as
+	// "_ipp._tcp", sorted; none before schema 31.
+	Services []string
+	// Gateway is whether the host is a default gateway of the scanner that
+	// found it; false before schema 31.
+	Gateway bool
 }
 
 // NetworkHosts is the repository for hosts found by network discovery.
@@ -137,7 +149,9 @@ func (r NetworkHosts) RecordScanFrom(ctx context.Context, at time.Time, absentAf
 		if h.MAC == "" || h.IP == "" {
 			return ScanResult{}, errors.New("record network scan: every host needs a MAC and an IP")
 		}
-		cmd.Hosts = append(cmd.Hosts, ScannedHost{MAC: h.MAC, IP: h.IP, Hostname: h.Hostname, Vendor: h.Vendor})
+		cmd.Hosts = append(cmd.Hosts, ScannedHost{
+			MAC: h.MAC, IP: h.IP, Hostname: h.Hostname, Vendor: h.Vendor, Services: h.Services, Gateway: h.Gateway,
+		})
 	}
 	res, err := r.s.apply(ctx, cmd)
 	if err != nil {
@@ -178,31 +192,47 @@ func (r NetworkHosts) List(ctx context.Context) ([]NetworkHost, error) {
 // networkHostSelect is the SELECT list of a host at schema v, for
 // scanNetworkHost: before schema 13 there is no state, and every host reads
 // as unreviewed; before schema 14 no host has a source; before schema 26
-// every host reads as found by the hub.
+// every host reads as found by the hub; before schema 31 no host has a
+// service or is the gateway.
 func networkHostSelect(v int64) string {
 	switch {
 	case v < networkHostStateSchema:
-		return `SELECT mac, ip, hostname, vendor, first_seen, last_seen, '', '', '', ''`
+		return `SELECT mac, ip, hostname, vendor, first_seen, last_seen, '', '', '', '', '', 0`
 	case v < networkHostSourcesSchema:
-		return `SELECT mac, ip, hostname, vendor, first_seen, last_seen, state, '', '', ''`
+		return `SELECT mac, ip, hostname, vendor, first_seen, last_seen, state, '', '', '', '', 0`
 	case v < networkHostScannedBySchema:
-		return `SELECT mac, ip, hostname, vendor, first_seen, last_seen, state, sources, hostname_source, ''`
+		return `SELECT mac, ip, hostname, vendor, first_seen, last_seen, state, sources, hostname_source, '', '', 0`
+	case v < networkHostServicesSchema:
+		return `SELECT mac, ip, hostname, vendor, first_seen, last_seen, state, sources, hostname_source, scanned_by, '', 0`
 	}
-	return `SELECT mac, ip, hostname, vendor, first_seen, last_seen, state, sources, hostname_source, scanned_by`
+	return `SELECT mac, ip, hostname, vendor, first_seen, last_seen, state, sources, hostname_source, scanned_by, services, gateway`
 }
 
 func scanNetworkHost(row interface{ Scan(...any) error }) (NetworkHost, error) {
 	var (
-		h           NetworkHost
-		first, last int64
-		sources     string
+		h                    NetworkHost
+		first, last, gateway int64
+		sources, services    string
 	)
-	if err := row.Scan(&h.MAC, &h.IP, &h.Hostname, &h.Vendor, &first, &last, &h.State, &sources, &h.HostnameSource, &h.ScannedBy); err != nil {
+	if err := row.Scan(&h.MAC, &h.IP, &h.Hostname, &h.Vendor, &first, &last, &h.State, &sources, &h.HostnameSource,
+		&h.ScannedBy, &services, &gateway); err != nil {
 		return NetworkHost{}, err
 	}
 	h.FirstSeen, h.LastSeen = fromMillis(first), fromMillis(last)
 	h.Sources = splitSources(sources)
+	h.Services = decodeServices(services)
+	h.Gateway = gateway != 0
 	return h, nil
+}
+
+// decodeServices decodes the services column: a JSON array, or "" for
+// none. A value that does not decode reads as none.
+func decodeServices(s string) []string {
+	var out []string
+	if s != "" && json.Unmarshal([]byte(s), &out) != nil {
+		return nil
+	}
+	return out
 }
 
 func splitSources(s string) []string {
@@ -231,6 +261,12 @@ type ScannedHost struct {
 	IP       string `json:"ip"`
 	Hostname string `json:"hostname,omitempty"`
 	Vendor   string `json:"vendor,omitempty"`
+	// Services are the mDNS service types it answers for; none keeps the
+	// stored ones. Recorded from schema 31.
+	Services []string `json:"services,omitempty"`
+	// Gateway is whether it is a default gateway of the scanner. Recorded
+	// from schema 31.
+	Gateway bool `json:"gateway,omitempty"`
 }
 
 // RecordNetworkScan upserts the hosts of one scan, keyed by MAC. Its result
@@ -271,6 +307,12 @@ func (c RecordNetworkScan) apply(ctx context.Context, w *writer) (Result, error)
 	inBaseline, err := c.baseline(ctx, w.tx, knownIPs, subnets)
 	if err != nil {
 		return Result{}, err
+	}
+	withServices := w.schema >= networkHostServicesSchema
+	if withServices {
+		if err := c.clearOldGateways(ctx, w, subnets); err != nil {
+			return Result{}, err
+		}
 	}
 	var res Result
 	for _, h := range c.Hosts {
@@ -316,6 +358,20 @@ func (c RecordNetworkScan) apply(ctx context.Context, w *writer) (Result, error)
 		if withScanner {
 			r["scanned_by"] = c.ScannedBy
 		}
+		if withServices {
+			// Like a name, services a scan does not hear keep those an
+			// earlier one did: mDNS answers are lossy.
+			if len(h.Services) > 0 {
+				b, err := json.Marshal(h.Services)
+				if err != nil {
+					return Result{}, err
+				}
+				r["services"] = string(b)
+			}
+			if h.Gateway {
+				r["gateway"] = int64(1)
+			}
+		}
 		if err := w.put(ctx, "network_hosts", r); err != nil {
 			return Result{}, err
 		}
@@ -344,7 +400,42 @@ func newNetworkHostRow(v int64, mac string, at int64) row {
 	if v >= networkHostScannedBySchema {
 		r["scanned_by"] = ""
 	}
+	if v >= networkHostServicesSchema {
+		r["services"], r["gateway"] = "", int64(0)
+	}
 	return r
+}
+
+// clearOldGateways unflags the hosts flagged as the gateway that this scan
+// does not flag, in its subnets (or anywhere, for a scan without them), if
+// it flags any: the scanner read its gateway, so a host it no longer names
+// is not one. A scan that flags none (its scanner could not read its
+// gateway, or it is a device's: agents do not report it) leaves the flags
+// alone.
+func (c RecordNetworkScan) clearOldGateways(ctx context.Context, w *writer, subnets []netip.Prefix) error {
+	var flagged []string
+	for _, h := range c.Hosts {
+		if h.Gateway {
+			flagged = append(flagged, h.MAC)
+		}
+	}
+	if len(flagged) == 0 {
+		return nil
+	}
+	rows, err := w.query(ctx, "network_hosts", `gateway != 0`, "")
+	if err != nil {
+		return err
+	}
+	for _, r := range rows {
+		if slices.Contains(flagged, r.str("mac")) || (len(subnets) > 0 && !within(subnets, r.str("ip"))) {
+			continue
+		}
+		r["gateway"] = int64(0)
+		if err := w.put(ctx, "network_hosts", r); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // networkHostOf decodes a network_hosts row, as scanNetworkHost does the
@@ -354,7 +445,7 @@ func networkHostOf(r row) NetworkHost {
 		MAC: r.str("mac"), IP: r.str("ip"), Hostname: r.str("hostname"), Vendor: r.str("vendor"),
 		FirstSeen: fromMillis(r.int("first_seen")), LastSeen: fromMillis(r.int("last_seen")),
 		State: r.str("state"), Sources: splitSources(r.str("sources")), HostnameSource: r.str("hostname_source"),
-		ScannedBy: r.str("scanned_by"),
+		ScannedBy: r.str("scanned_by"), Services: decodeServices(r.str("services")), Gateway: r.int("gateway") != 0,
 	}
 }
 

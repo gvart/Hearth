@@ -26,8 +26,9 @@ func TestAPINetworkHosts(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := f.st.NetworkHosts().RecordScan(ctx, now, time.Hour, []store.NetworkHost{
-		{MAC: "2c:cf:67:00:00:01", IP: "192.168.2.171", Hostname: "pi5.local", Vendor: "Raspberry Pi"},
+		{MAC: "2c:cf:67:00:00:01", IP: "192.168.2.171", Hostname: "pi5.local", Vendor: "Raspberry Pi", Services: []string{"_ssh._tcp"}},
 		{MAC: "00:11:32:00:00:02", IP: "192.168.2.20", Vendor: "Synology"},
+		{MAC: "00:11:32:00:00:05", IP: "192.168.2.1", Gateway: true},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -56,8 +57,11 @@ func TestAPINetworkHosts(t *testing.T) {
 	got := decode[struct {
 		Hosts []NetworkHostJSON `json:"hosts"`
 	}](t, resp).Hosts
-	if len(got) != 4 {
+	if len(got) != 5 {
 		t.Fatalf("hosts = %+v", got)
+	}
+	if !strings.Contains(string(resp.body), `"services":[]`) || strings.Contains(string(resp.body), `"services":null`) {
+		t.Errorf("a host without services lists null, not []: %s", resp.body)
 	}
 	byMAC := map[string]NetworkHostJSON{}
 	for _, h := range got {
@@ -76,6 +80,24 @@ func TestAPINetworkHosts(t *testing.T) {
 	}
 	if h := byMAC["00:11:32:00:00:04"]; h.ScannedBy != "pi" || byMAC["00:11:32:00:00:02"].ScannedBy != "" {
 		t.Errorf("camera = %+v; want it scanned by pi, the NAS by the hub", h)
+	}
+	kinds := map[string]struct {
+		kind  discovery.Kind
+		agent bool
+	}{
+		"2c:cf:67:00:00:01": {discovery.KindComputer, true},
+		"00:11:32:00:00:02": {discovery.KindNAS, false},
+		"aa:bb:cc:00:00:03": {discovery.KindMedia, false},
+		"00:11:32:00:00:04": {discovery.KindUnknown, false},
+		"00:11:32:00:00:05": {discovery.KindRouter, false},
+	}
+	for mac, want := range kinds {
+		if h := byMAC[mac]; h.Kind != want.kind || h.AgentCapable != want.agent {
+			t.Errorf("%s (%s) is %s, agent capable %v; want %s, %v", mac, h.Hostname, h.Kind, h.AgentCapable, want.kind, want.agent)
+		}
+	}
+	if s := byMAC["2c:cf:67:00:00:01"].Services; strings.Join(s, ",") != "_ssh._tcp" {
+		t.Errorf("Pi services = %v; want its mDNS services", s)
 	}
 }
 
