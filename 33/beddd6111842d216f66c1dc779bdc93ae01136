@@ -1,0 +1,37 @@
+internal/cluster/join.go
+  s_18b57982fdff93::t_d9638b819d487b 12,158-171
+  s_18b57982fdff93::t_16a1a57aef1ca4 137-141
+  s_18b57982fdff93::t_168af1ce4b45c6 172
+internal/hub/server.go
+  s_18b57982fdff93::t_37d8a1f2915238 176-178
+internal/cluster/autohub_join_test.go
+  s_18b57982fdff93::t_ac827783df09cc 1-141
+internal/cluster/apnode.go
+  s_18b57982fdff93::t_f074e38e1fad20 821
+  s_18b57982fdff93::t_14d88d8df37b48 729-730,737,803,807,809-813
+  s_18b57982fdff93::t_3d03b8ae97a6e5 814-820,822-824,859,863-889
+internal/hub/autohub.go
+  s_18b57982fdff93::t_37d8a1f2915238 89
+  s_18b57982fdff93::t_3f49156c93891b 1-88,90-119
+internal/hub/enroll.go
+  s_18b57982fdff93::t_37d8a1f2915238 14,38-42,70-79,82,85,97-99,134-138
+  s_18b57982fdff93::t_bd3bbb20ccf711 139
+internal/hub/autohub_test.go
+  s_18b57982fdff93::t_ab716d57402d18 1-269
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "33beddd6111842d216f66c1dc779bdc93ae01136",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
