@@ -156,6 +156,8 @@ export type NetworkHostSource = 'scan' | 'pihole' | 'dhcp' | 'netalertx';
 
 /** How a network scan asked for with POST /api/v1/network/scan ended (event network.scan.done). */
 export interface NetworkScanDone {
+  /** The scan's id, as POST /api/v1/network/scan answered it. */
+  id: string;
   hosts: number;
   new: number;
   returned: number;
@@ -740,8 +742,8 @@ export const api = {
   },
   kubeAction: (cluster: string, req: KubeActionRequest) =>
     request<KubeActionResult>('POST', `/kube/clusters/${encodeURIComponent(cluster)}/actions`, req),
-  /** Starts a scan of the hub's network; it ends with a network.scan.done event. 409 while one runs. */
-  scanNetwork: () => request<{ status: string }>('POST', '/network/scan'),
+  /** Starts a scan of the hub's network; it ends with a network.scan.done event with its id. 409 while one runs. */
+  scanNetwork: () => request<{ id: string }>('POST', '/network/scan'),
   /** Marks a host known or ignored, or neither again (''). */
   markNetworkHost: (mac: string, state: NetworkHostState) =>
     request<undefined>(

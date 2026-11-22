@@ -50,8 +50,9 @@ func newNetworkCmd() *cobra.Command {
 	return cmd
 }
 
-// scanNetwork starts a scan and prints how it ended. It listens to the hub's
-// events before starting it, so that the end cannot be missed.
+// scanNetwork starts a scan and prints how it ended, from the done event
+// with the scan's id. It listens to the hub's events before starting it, so
+// that the end cannot be missed.
 func (c *runbookClient) scanNetwork(ctx context.Context, out io.Writer) error {
 	ctx, cancel := context.WithTimeout(ctx, networkScanWait)
 	defer cancel()
@@ -69,7 +70,13 @@ func (c *runbookClient) scanNetwork(ctx context.Context, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	var started hub.NetworkScanStartedJSON
 	err = apiError(resp)
+	if err == nil {
+		if err = json.NewDecoder(resp.Body).Decode(&started); err != nil {
+			err = fmt.Errorf("read the hub's answer: %w", err)
+		}
+	}
 	_ = resp.Body.Close()
 	if err != nil {
 		return err
@@ -90,6 +97,9 @@ func (c *runbookClient) scanNetwork(ctx context.Context, out io.Writer) error {
 		var done hub.NetworkScanJSON
 		if err := json.Unmarshal([]byte(v), &done); err != nil {
 			return fmt.Errorf("read the hub's answer: %w", err)
+		}
+		if done.ID != started.ID {
+			continue // another admin's scan
 		}
 		if done.Error != "" {
 			return fmt.Errorf("the scan failed: %s", done.Error)

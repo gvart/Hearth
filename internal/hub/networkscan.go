@@ -4,9 +4,11 @@ package hub
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/gvart/hearth/internal/discovery"
@@ -24,15 +26,22 @@ type NetworkScanner interface {
 	ScanAs(ctx context.Context, actorKind, actorID string, accepted func()) (discovery.ScanSummary, error)
 }
 
-// NetworkScanJSON is the data of a network.scan.done event: the counts of
-// the scan, or why it failed.
+// NetworkScanJSON is the data of a network.scan.done event: the scan's id,
+// as POST /api/v1/network/scan answered it, and its counts, or why it failed.
 type NetworkScanJSON struct {
 	Type       string `json:"type"`
+	ID         string `json:"id"`
 	Hosts      int    `json:"hosts"`
 	New        int    `json:"new"`
 	Returned   int    `json:"returned"`
 	DurationMS int64  `json:"duration_ms"`
 	Error      string `json:"error,omitempty"`
+}
+
+// NetworkScanStartedJSON is the answer of POST /api/v1/network/scan: the id
+// the scan's network.scan.done event carries.
+type NetworkScanStartedJSON struct {
+	ID string `json:"id"`
 }
 
 // NetworkScans runs the scans admins ask for, in the background of the hub:
@@ -45,7 +54,7 @@ type NetworkScans struct {
 }
 
 type scanRequest struct {
-	actorKind, actorID string
+	id, actorKind, actorID string
 	// decided gets nil once policy allowed the scan, or the error it ended
 	// with before.
 	decided chan error
@@ -75,21 +84,27 @@ func (n *NetworkScans) Run(ctx context.Context) error {
 	}
 }
 
-// Start asks for a scan, and returns once policy has allowed it (nil) or it
-// has failed before running: denied, already running (discovery
-// ErrScanRunning) or otherwise. The scan itself runs on in Run.
-func (n *NetworkScans) Start(ctx context.Context, actorKind, actorID string) error {
-	req := scanRequest{actorKind: actorKind, actorID: actorID, decided: make(chan error, 1)}
+// Start asks for a scan, and returns its id once policy has allowed it, or
+// the error it failed with before running: denied, already running
+// (discovery ErrScanRunning) or otherwise. The scan itself runs on in Run,
+// and its network.scan.done event carries the id.
+func (n *NetworkScans) Start(ctx context.Context, actorKind, actorID string) (string, error) {
+	req := scanRequest{
+		id: strings.ToLower(rand.Text()), actorKind: actorKind, actorID: actorID, decided: make(chan error, 1),
+	}
 	select {
 	case n.reqs <- req:
 	case <-ctx.Done():
-		return ctx.Err()
+		return "", ctx.Err()
 	}
 	select {
 	case err := <-req.decided:
-		return err
+		if err != nil {
+			return "", err
+		}
+		return req.id, nil
 	case <-ctx.Done():
-		return ctx.Err()
+		return "", ctx.Err()
 	}
 }
 
@@ -104,14 +119,14 @@ func (n *NetworkScans) scan(ctx context.Context, req scanRequest) {
 		return
 	}
 	ev := NetworkScanJSON{
-		Type: EventNetworkScanDone, Hosts: sum.Hosts, New: sum.New, Returned: sum.Returned,
+		Type: EventNetworkScanDone, ID: req.id, Hosts: sum.Hosts, New: sum.New, Returned: sum.Returned,
 		DurationMS: sum.Duration.Milliseconds(),
 	}
 	if err != nil {
 		if ctx.Err() == nil {
 			n.log.WarnContext(ctx, "network scan failed", "actor", req.actorKind+"/"+req.actorID, "err", err)
 		}
-		ev = NetworkScanJSON{Type: EventNetworkScanDone, Error: err.Error()}
+		ev = NetworkScanJSON{Type: EventNetworkScanDone, ID: req.id, Error: err.Error()}
 	}
 	n.reg.ScanDone(ev)
 }
@@ -124,20 +139,19 @@ func (r *Registry) ScanDone(ev NetworkScanJSON) {
 
 // scanNetwork serves POST /api/v1/network/scan: it starts one scan of the
 // configured subnets or, when there are none, of the hub's own LANs, through
-// policy (network.scan, actor web), and answers 202 once policy has allowed
-// it. The scan runs on this hub; its end is published on /api/v1/events as
-// network.scan.done. A scan already running answers 409.
+// policy (network.scan, actor web), and answers 202 with the scan's id once
+// policy has allowed it. The scan runs on this hub; its end is published on
+// /api/v1/events as network.scan.done, with the same id. A scan already
+// running answers 409.
 func (a *api) scanNetwork(w http.ResponseWriter, r *http.Request) {
 	if a.scans == nil {
 		writeError(w, http.StatusServiceUnavailable, "not_configured", "this hub runs no network scans")
 		return
 	}
-	err := a.scans.Start(r.Context(), policy.ActorWeb, remoteHost(r))
+	id, err := a.scans.Start(r.Context(), policy.ActorWeb, remoteHost(r))
 	switch {
 	case err == nil:
-		writeJSON(w, http.StatusAccepted, struct {
-			Status string `json:"status"`
-		}{"started"})
+		writeJSON(w, http.StatusAccepted, NetworkScanStartedJSON{ID: id})
 	case errors.Is(err, discovery.ErrScanRunning):
 		writeError(w, http.StatusConflict, "scan_running", "a network scan is already running")
 	case errors.Is(err, discovery.ErrNoSubnet):

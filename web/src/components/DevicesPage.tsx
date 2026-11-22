@@ -129,7 +129,8 @@ export function DevicesPage() {
                 </button>
               ))}
             </div>
-            <NetworkScanButton scan={scan} />
+            {/* The empty state below has its own. */}
+            {devices.isSuccess && list.length === 0 ? null : <NetworkScanButton scan={scan} />}
             <button className="btn btn-primary" type="button" onClick={openAdd}>
               <span aria-hidden="true">＋</span> Add device
             </button>
