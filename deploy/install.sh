@@ -98,7 +98,8 @@ Options:
   --version vX.Y.Z   release to install (default: the latest release, or the
                      newest pre-release while there is no stable one)
   --agent-only       never make this device a hub, even when it is capable and
-                     the token allows it
+                     the token allows it; on a hub, stop and remove its service
+                     (its data dir is kept)
   --uninstall        stop and remove the service and binary; keep the data dir
   --purge            with --uninstall: also delete the data dir (device identity)
   -h, --help         show this help
@@ -486,9 +487,23 @@ systemd_running() {
 }
 
 # is_hub reports whether this device has a hub to run: a join the enrollment
-# wrote, or a hub that joined already.
+# wrote, or a hub that joined already; never with --agent-only.
 is_hub() {
-	[ "$OS" = linux ] && { as_root test -f "$HUB_DATA_DIR/join" || as_root test -f "$HUB_DATA_DIR/cluster/node.crt"; }
+	[ "$AGENT_ONLY" != 1 ] && [ "$OS" = linux ] &&
+		{ as_root test -f "$HUB_DATA_DIR/join" || as_root test -f "$HUB_DATA_DIR/cluster/node.crt"; }
+}
+
+# remove_hub_service stops, disables and removes the hub's unit, if there is
+# one; it keeps the hub's data dir.
+remove_hub_service() {
+	[ "$OS" = linux ] && as_root test -f "$HUB_UNIT_PATH" || return 0
+	if ! skip_service && systemd_running; then
+		as_root systemctl disable --now hearth-hub.service >/dev/null 2>&1 || true
+	fi
+	as_root rm -f "$HUB_UNIT_PATH"
+	if ! skip_service && systemd_running; then
+		as_root systemctl daemon-reload
+	fi
 }
 
 # install_hub_service installs and starts the hub before the agent, and waits
@@ -526,6 +541,9 @@ install_hub_service() {
 install_service() {
 	if is_hub; then
 		install_hub_service
+	elif [ "$AGENT_ONLY" = 1 ] && [ "$OS" = linux ] && as_root test -f "$HUB_UNIT_PATH"; then
+		remove_hub_service
+		say "--agent-only: stopped and removed the hub service (kept $HUB_DATA_DIR; --purge deletes it)"
 	fi
 	if [ "$OS" = linux ]; then
 		write_systemd_unit "$TMP/hearth-agent.service"
@@ -562,11 +580,11 @@ install_service() {
 
 remove_service() {
 	if [ "$OS" = linux ]; then
+		remove_hub_service
 		if ! skip_service && command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
 			as_root systemctl disable --now hearth-agent.service >/dev/null 2>&1 || true
-			as_root systemctl disable --now hearth-hub.service >/dev/null 2>&1 || true
 		fi
-		as_root rm -f "$UNIT_PATH" "$HUB_UNIT_PATH"
+		as_root rm -f "$UNIT_PATH"
 		if ! skip_service && command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
 			as_root systemctl daemon-reload
 		fi

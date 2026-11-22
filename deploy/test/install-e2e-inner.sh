@@ -296,10 +296,16 @@ grep -q "This device becomes a hub (.*master.*)" /tmp/install4.log || fail "a ca
 ! grep -qF -- "$TOKEN" "$HUB_DATA/join" || fail "the join file holds the enrollment token"
 cmp "$HUB_UNIT" /deploy/systemd/hearth-hub.service || fail "hub unit differs from deploy/systemd"
 [ -f "$UNIT" ] || fail "no agent unit next to the hub's"
+# A re-run with --agent-only takes the hub's service away, not its data.
+sh /deploy/install.sh --agent-only 2>&1 | tee /tmp/install4b.log
+grep -q "agent-only: stopped and removed the hub service" /tmp/install4b.log || fail "--agent-only re-run kept the hub"
+[ ! -e "$HUB_UNIT" ] || fail "--agent-only re-run: the hub unit is still there"
+[ -f "$HUB_DATA/join" ] || fail "--agent-only re-run deleted the hub's data"
+[ -f "$UNIT" ] || fail "--agent-only re-run: no agent unit"
 sh /deploy/install.sh --purge
 [ ! -e "$HUB_DATA" ] || fail "--purge kept $HUB_DATA"
 [ ! -e "$HUB_UNIT" ] || fail "--purge kept the hub unit"
-pass "join file 0600, hub unit as in deploy/systemd, both gone after --purge"
+pass "join file 0600, hub unit as in deploy/systemd; --agent-only re-run removes the unit, keeps the data; --purge both"
 
 TOKEN=$(hub_token)
 HEARTH_TOKEN=$TOKEN sh /deploy/install.sh --agent-only 2>&1 | tee /tmp/install5.log
