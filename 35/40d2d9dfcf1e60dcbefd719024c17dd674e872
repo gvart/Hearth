@@ -1,0 +1,24 @@
+internal/hub/enroll.go
+  s_18b57982fdff93::t_78afe4a5ef4d4f 71-74,117-127,145-146
+internal/hub/autohub_test.go
+  s_18b57982fdff93::t_5248ffbf970a6d 269-272
+  s_18b57982fdff93::t_78afe4a5ef4d4f 112-127,144-148,197-198,202-210
+internal/hub/autohub.go
+  s_18b57982fdff93::t_78afe4a5ef4d4f 31-33,39-40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3540d2d9dfcf1e60dcbefd719024c17dd674e872",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
