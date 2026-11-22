@@ -279,4 +279,35 @@ sh /deploy/install.sh --purge
 [ ! -e "$DATA" ] || fail "--purge kept $DATA"
 pass "$DATA removed"
 
+log "a hub-eligible token makes this capable device a hub; --agent-only keeps it an agent"
+# The login above entered the password, so the hub token needs no re-auth now.
+hub_token() {
+  curl -fsS -b /tmp/cookies -H 'Content-Type: application/json' -d '{"hub":true}' "$WEB/api/v1/tokens" |
+    sed -n 's/.*"token":"\([^"]*\)".*/\1/p'
+}
+HUB_DATA=/var/lib/hearth/hub
+HUB_UNIT=/etc/systemd/system/hearth-hub.service
+TOKEN=$(hub_token)
+[ -n "$TOKEN" ] || fail "no hub token"
+HEARTH_TOKEN=$TOKEN sh /deploy/install.sh 2>&1 | tee /tmp/install4.log
+! grep -qF -- "$TOKEN" /tmp/install4.log || fail "installer echoed the token"
+grep -q "This device becomes a hub (.*master.*)" /tmp/install4.log || fail "a capable device did not become a hub"
+[ "$(stat -c %a "$HUB_DATA/join")" = 600 ] || fail "join file mode is $(stat -c %a "$HUB_DATA/join" 2>&1), want 600"
+! grep -qF -- "$TOKEN" "$HUB_DATA/join" || fail "the join file holds the enrollment token"
+cmp "$HUB_UNIT" /deploy/systemd/hearth-hub.service || fail "hub unit differs from deploy/systemd"
+[ -f "$UNIT" ] || fail "no agent unit next to the hub's"
+sh /deploy/install.sh --purge
+[ ! -e "$HUB_DATA" ] || fail "--purge kept $HUB_DATA"
+[ ! -e "$HUB_UNIT" ] || fail "--purge kept the hub unit"
+pass "join file 0600, hub unit as in deploy/systemd, both gone after --purge"
+
+TOKEN=$(hub_token)
+HEARTH_TOKEN=$TOKEN sh /deploy/install.sh --agent-only 2>&1 | tee /tmp/install5.log
+! grep -q "becomes a hub" /tmp/install5.log || fail "--agent-only: became a hub"
+[ ! -e "$HUB_DATA/join" ] || fail "--agent-only: a join file"
+[ ! -e "$HUB_UNIT" ] || fail "--agent-only: a hub unit"
+[ -f "$DATA/agent.crt" ] || fail "--agent-only: not enrolled"
+sh /deploy/install.sh --purge
+pass "--agent-only enrolls an agent and nothing more"
+
 printf '\nALL PASSED in %d ms\n' "$(($(ms) - t_start))"
