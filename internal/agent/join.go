@@ -39,35 +39,63 @@ var ErrAlreadyEnrolled = errors.New("agent is already enrolled")
 // the leader instead (once) and also stores the hubs it learned in HubsFile;
 // hub_url stays hubURL. It returns the device ID assigned by the hub.
 func Join(ctx context.Context, hubURL, token, dataDir, hostname string) (string, error) {
-	tok, err := pki.ParseToken(token)
+	r, err := JoinWith(ctx, JoinOptions{HubURL: hubURL, Token: token, DataDir: dataDir, Hostname: hostname})
+	return r.DeviceID, err
+}
+
+// JoinOptions are Join's arguments, and the hub offer only the installer
+// makes.
+type JoinOptions struct {
+	HubURL, Token, DataDir, Hostname string
+	// HubOffer, if set, offers this device as a hub (#328).
+	HubOffer *agentv1.HubOffer
+}
+
+// JoinResult is what an enrollment gave.
+type JoinResult struct {
+	DeviceID string
+	// HubJoin answers the hub offer: a cluster join token for this device,
+	// or why it stays an agent. Nil without an offer.
+	HubJoin *agentv1.HubJoin
+}
+
+// JoinWith is Join, with a hub offer.
+func JoinWith(ctx context.Context, o JoinOptions) (JoinResult, error) {
+	id, hj, err := join(ctx, o)
+	return JoinResult{DeviceID: id, HubJoin: hj}, err
+}
+
+func join(ctx context.Context, o JoinOptions) (string, *agentv1.HubJoin, error) {
+	hubURL, dataDir, hostname := o.HubURL, o.DataDir, o.Hostname
+	tok, err := pki.ParseToken(o.Token)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if hubURL == "" {
 		if tok.HubURL == "" {
-			return "", errors.New("the token names no hub: pass the hub URL (https://<hub>:7443)")
+			return "", nil, errors.New("the token names no hub: pass the hub URL (https://<hub>:7443)")
 		}
 		hubURL = tok.HubURL
 	}
 	u, err := parseHubURL(hubURL)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	certPath := filepath.Join(dataDir, CertFile)
 	if _, err := os.Stat(certPath); err == nil {
-		return "", fmt.Errorf("%w: %s exists", ErrAlreadyEnrolled, certPath)
+		return "", nil, fmt.Errorf("%w: %s exists", ErrAlreadyEnrolled, certPath)
 	}
 
 	key, err := pki.NewKey()
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	csr, err := pki.NewCSR(key, hostname)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 
-	req := &agentv1.EnrollRequest{TokenSecret: tok.Secret, Csr: csr, Hostname: hostname}
+	req := &agentv1.EnrollRequest{TokenSecret: tok.Secret, Csr: csr, Hostname: hostname, HubOffer: o.HubOffer}
 	enrolledWith := u
 	var (
 		resp *connect.Response[agentv1.EnrollResponse]
@@ -93,7 +121,7 @@ func Join(ctx context.Context, hubURL, token, dataDir, hostname string) (string,
 		}
 	}
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if listed := resp.Msg.GetHubs(); len(listed) > 0 {
 		hubs = mergeHubs([]string{enrolledWith.String()}, listed, hubs, []string{u.String()})
@@ -101,37 +129,43 @@ func Join(ctx context.Context, hubURL, token, dataDir, hostname string) (string,
 
 	ca, cert, err := checkResponse(resp.Msg, tok.CAFingerprint, key.Public())
 	if err != nil {
-		return "", fmt.Errorf("enroll with %s: %w", enrolledWith.Host, err)
+		return "", nil, fmt.Errorf("enroll with %s: %w", enrolledWith.Host, err)
 	}
 
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {
-		return "", fmt.Errorf("create data dir: %w", err)
+		return "", nil, fmt.Errorf("create data dir: %w", err)
 	}
 	// The certificate is written last: its presence marks the agent as enrolled,
 	// so leftovers from an interrupted join are safe to replace.
 	for _, f := range []string{KeyFile, CAFile, HubURLFile, HubsFile} {
 		if err := os.Remove(filepath.Join(dataDir, f)); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return "", fmt.Errorf("remove stale %s: %w", f, err)
+			return "", nil, fmt.Errorf("remove stale %s: %w", f, err)
 		}
 	}
 	if err := pki.WriteKey(filepath.Join(dataDir, KeyFile), key); err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if err := pki.WriteCertFile(filepath.Join(dataDir, CAFile), ca); err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if err := writeHubURL(dataDir, u); err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if len(hubs) > 0 {
 		if err := writeHubs(dataDir, hubs); err != nil {
-			return "", err
+			return "", nil, err
 		}
 	}
 	if err := pki.WriteCertFile(certPath, cert); err != nil {
-		return "", err
+		return "", nil, err
 	}
-	return resp.Msg.GetDeviceId(), nil
+	hj := resp.Msg.GetHubJoin()
+	if hj.GetToken() != "" {
+		// The join token is the enrolling master's: join through the URL
+		// that just reached it, under a name its certificate covers.
+		hj.Url = enrolledWith.String()
+	}
+	return resp.Msg.GetDeviceId(), hj, nil
 }
 
 // refusal reports whether err, from enroll, is the hub refusing the token or

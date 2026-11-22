@@ -4,6 +4,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -14,6 +15,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/gvart/hearth/internal/agent"
+	"github.com/gvart/hearth/internal/cluster"
+	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
 )
 
 func newAgentCmd() *cobra.Command {
@@ -115,8 +118,8 @@ func newAgentRunCmd() *cobra.Command {
 
 func newAgentJoinCmd() *cobra.Command {
 	var (
-		dataDir, tokenFile string
-		ifNotEnrolled      bool
+		dataDir, tokenFile, hubDataDir string
+		ifNotEnrolled                  bool
 	)
 	cmd := &cobra.Command{
 		Use:   "join [<hub-url>] [<token> | -]",
@@ -130,7 +133,10 @@ func newAgentJoinCmd() *cobra.Command {
 			"with ps; a token argument still works but warns for that reason. --token-file reads it from\n" +
 			"the first line of a file instead, such as a Kubernetes Secret mounted in the agent's pod.\n\n" +
 			"--if-not-enrolled makes a join of a device that is already enrolled a success that does\n" +
-			"nothing, so a container can run it before every start (see docs/talos.md).",
+			"nothing, so a container can run it before every start (see docs/talos.md).\n\n" +
+			"--hub-data-dir offers this device as a hub (the installer passes it): a capable Linux device\n" +
+			"(64-bit, 1.5 GiB of memory, 2 GiB free there) enrolled with a token that allows it gets a\n" +
+			"cluster join token, written to <dir>/join for `hearth hub --join-file` (docs/cluster.md).",
 		Example: "  " + tokenEnv + "=<token> hearth agent join\n" +
 			"  " + tokenEnv + "=<token> hearth agent join https://hub.lan:7443",
 		Args: cobra.MaximumNArgs(2),
@@ -165,12 +171,19 @@ func newAgentJoinCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			id, err := agent.Join(cmd.Context(), hubURL, token, dataDir, hostnameOr(""))
+			out := cmd.OutOrStdout()
+			offer := hubOffer(cmd.Context(), hubDataDir, out)
+			res, err := agent.JoinWith(cmd.Context(), agent.JoinOptions{
+				HubURL: hubURL, Token: token, DataDir: dataDir, Hostname: hostnameOr(""), HubOffer: offer,
+			})
 			if err != nil {
 				return err
 			}
-			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Enrolled as device %s; identity stored in %s.\n", id, dataDir); err != nil {
+			if _, err := fmt.Fprintf(out, "Enrolled as device %s; identity stored in %s.\n", res.DeviceID, dataDir); err != nil {
 				return fmt.Errorf("write result: %w", err)
+			}
+			if offer != nil {
+				return writeHubJoin(hubDataDir, res.HubJoin, out)
 			}
 			return nil
 		},
@@ -179,7 +192,46 @@ func newAgentJoinCmd() *cobra.Command {
 	cmd.Flags().StringVar(&tokenFile, "token-file", "", "file whose first line is the enrollment token")
 	cmd.Flags().BoolVar(&ifNotEnrolled, "if-not-enrolled", false,
 		"do nothing, successfully, if this device is already enrolled")
+	cmd.Flags().StringVar(&hubDataDir, "hub-data-dir", "",
+		"offer this device as a hub whose data dir this is, if capable and the token allows it (the installer sets it)")
 	return cmd
+}
+
+// hubOffer is the hub offer of this device for a hub at hubDataDir: nil
+// without one, or when the device is not capable, which it says.
+func hubOffer(ctx context.Context, hubDataDir string, out io.Writer) *agentv1.HubOffer {
+	if hubDataDir == "" {
+		return nil
+	}
+	o, err := cluster.LocalHubOffer(ctx, hubDataDir)
+	if err == nil {
+		err = cluster.HubCapable(o)
+	}
+	if err != nil {
+		_, _ = fmt.Fprintf(out, "This device stays an agent, not a hub: %v.\n", err)
+		return nil
+	}
+	return &agentv1.HubOffer{Os: o.OS, Arch: o.Arch, MemTotal: o.MemTotal, DiskFree: o.DiskFree}
+}
+
+// writeHubJoin writes the join the hub minted for this device into
+// hubDataDir, for `hearth hub --join-file`, or says why there is none.
+func writeHubJoin(hubDataDir string, hj *agentv1.HubJoin, out io.Writer) error {
+	if hj.GetToken() == "" {
+		reason := hj.GetRefused()
+		if reason == "" {
+			reason = "the hub made no offer (an older hub)"
+		}
+		_, err := fmt.Fprintf(out, "This device stays an agent, not a hub: %s.\n", reason)
+		return err
+	}
+	if err := cluster.WriteJoinFile(filepath.Join(hubDataDir, cluster.JoinFileName),
+		cluster.JoinFile{URL: hj.GetUrl(), Token: hj.GetToken()}); err != nil {
+		return err
+	}
+	_, err := fmt.Fprintf(out, "This device becomes a hub (%s): `hearth hub --join-file %s` joins the cluster.\n",
+		strings.Join(hj.GetRoles(), ", "), filepath.Join(hubDataDir, cluster.JoinFileName))
+	return err
 }
 
 // readTokenFile reads an enrollment token from the first line of a file.
