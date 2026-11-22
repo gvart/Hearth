@@ -11,11 +11,26 @@ import (
 	"github.com/gvart/hearth/internal/policy"
 )
 
+// Without plugins the list answers none (the Devices page polls it, so no
+// 404 every few seconds) and there is no command route.
 func TestAPIPluginsNotConfigured(t *testing.T) {
 	f := newAPIFixture(t, true)
 	cookie := sessionCookie(t, f.login(t, testPassword))
-	if resp := f.do(t, http.MethodGet, "/api/v1/plugins", "", cookie); resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("status %d, want 404", resp.StatusCode)
+	resp := f.do(t, http.MethodGet, "/api/v1/plugins", "", cookie)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("list: status %d, want 200", resp.StatusCode)
+	}
+	got := decode[struct {
+		Plugins []plugins.Status `json:"plugins"`
+	}](t, resp)
+	if got.Plugins == nil || len(got.Plugins) != 0 {
+		t.Fatalf("plugins %v, want an empty list", got.Plugins)
+	}
+	if resp := f.do(t, http.MethodGet, "/api/v1/plugins", "", nil); resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("list without session: status %d, want 401", resp.StatusCode)
+	}
+	if resp := f.do(t, http.MethodPost, "/api/v1/plugins/lamp/commands", `{"command":"turn_on"}`, cookie); resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("command: status %d, want 404", resp.StatusCode)
 	}
 }
 
