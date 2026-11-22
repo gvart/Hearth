@@ -94,7 +94,7 @@ export function AddDeviceDialog({ host, joined, onClose, onShow }: Props) {
         <span>
           <strong>This device may become a hub</strong>
           <span className="muted small">
-            A capable Linux device (64-bit, 2 GB of memory or more) also stores a copy of the data and, while the
+            A capable Linux device (64-bit, 1.5 GB of memory and 2 GB of free disk or more) also stores a copy of the data and, while the
             cluster has fewer than 3 masters, becomes a master and holds the CA key. Needs your password again.
           </span>
         </span>
