@@ -1,0 +1,64 @@
+internal/cluster/apnode.go
+  s_18b57982fdff93::t_b46ab70c768381 80-85,148-150,204-211,584-591,624-630
+cmd/hearth/hub_cluster.go
+  s_18b57982fdff93::t_b6c3b147ef101a 46-50,85-95,100-105,232
+internal/cluster/promote_test.go
+  s_18b57982fdff93::t_6868fe13e011fc 48-50,161
+  s_18b57982fdff93::t_f30f424e16b336 11,51-52,159
+cmd/hearth/cluster_test.go
+  s_18b57982fdff93::t_4d93ad5e78f209 74-101
+web/src/components/ClusterPage.tsx
+  s_18b57982fdff93::t_0114b3d29bdc90 6,167
+  s_18b57982fdff93::t_7742ebaa93408b 105,142,147-148,152
+internal/policy/policy.go
+  s_18b57982fdff93::t_f239cf542e2b05 375-378
+web/test/cluster.test.mjs
+  s_18b57982fdff93::t_0114b3d29bdc90 7,60-66
+  s_18b57982fdff93::t_b5ebff2544f603 67-68
+docs/cluster.md
+  s_18b57982fdff93::t_9117bf2b425106 301-302,341
+  s_18b57982fdff93::t_94a611c85271cd 239-240,254-255,310-337
+  s_18b57982fdff93::t_63b6aeab37056b 338
+internal/policy/guardrails_test.go
+  s_18b57982fdff93::t_f239cf542e2b05 136
+cmd/hearth/hub_ap_loops.go
+  s_18b57982fdff93::t_b6c3b147ef101a 47-50,88-91
+  s_18b57982fdff93::t_3ade854bb0521e 92
+internal/cluster/deadmembers.go
+  s_18b57982fdff93::t_ca2781be86656b 315-318
+  s_18b57982fdff93::t_b46ab70c768381 263
+  s_18b57982fdff93::t_efd2140d1b0623 1-262,264-314,319-410
+web/src/cluster.ts
+  s_18b57982fdff93::t_0114b3d29bdc90 21-22,136-153
+  s_18b57982fdff93::t_a0365b4bf9bcb9 154-155
+internal/cluster/membership.go
+  s_18b57982fdff93::t_d8004402143440 162-164,456,460-466
+  s_18b57982fdff93::t_b46ab70c768381 528-530
+  s_18b57982fdff93::t_fd895baf63d518 467
+internal/policy/policy_test.go
+  s_18b57982fdff93::t_f239cf542e2b05 157,159-161
+internal/cluster/deadmembers_test.go
+  s_18b57982fdff93::t_52a0ab1a097e9b 1-95,98-335,337-417,419,425-437
+  s_18b57982fdff93::t_30cb0c43039cd5 336
+  s_18b57982fdff93::t_698c5788bb3dc2 418,420-424
+  s_18b57982fdff93::t_ca2781be86656b 96-97
+cmd/hearth/cluster.go
+  s_18b57982fdff93::t_7f57a7a2ba6305 163-164,208-210,215-226
+  s_18b57982fdff93::t_192a6e750628a7 227-228
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "90777518e4aeffa29b18a7802c5ed154da01d14c",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
