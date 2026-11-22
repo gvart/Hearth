@@ -3,6 +3,7 @@ import { useClusterCA, useClusterChange, useClusterMembers, type Removal, type R
 import { ApiError } from '../api/client.ts';
 import {
   actionEffect,
+  autoRemoval,
   masterCount,
   memberActions,
   memberState,
@@ -104,6 +105,7 @@ export function ClusterPage() {
                 key={m.id}
                 member={m}
                 self={data?.node_id ?? ''}
+                now={status.dataUpdatedAt}
                 onAction={(action) => {
                   setPending({ member: m, action });
                 }}
@@ -165,13 +167,17 @@ function SafeToStopLine({ status }: { status: ClusterStatus }) {
 function MemberCard({
   member: m,
   self,
+  now,
   onAction,
 }: {
   member: ClusterMember;
   self: string;
+  /** When the members were read: the time auto_remove_at is counted from. */
+  now: number;
   onAction: (a: ClusterAction) => void;
 }) {
   const state = memberState(m);
+  const removal = autoRemoval(m, now);
   const remove = memberActions(m, self).find((a) => a.op === 'remove');
   return (
     <section className="panel-card member-card" aria-label={m.id}>
@@ -186,6 +192,7 @@ function MemberCard({
         </span>
       </div>
       {m.draining ? <Meter label="Drain" percent={m.progress ?? 0} plain /> : null}
+      {removal ? <p className="muted small">{removal}</p> : null}
       <div className="role-slots">
         {roleSlots(m).map((slot) => {
           const action = slot.action;

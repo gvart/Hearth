@@ -77,6 +77,12 @@ type APConfig struct {
 	// CAReconcileEvery is how often the member brings its CA to the hub CA
 	// rotation's stage (apcarotation.go); zero means 10 s.
 	CAReconcileEvery time.Duration
+	// MemberDeadAfter is how long a member stays down before a master
+	// removes it (deadmembers.go); zero never removes one.
+	MemberDeadAfter time.Duration
+	// deadEvery, in tests, is how often the members down are looked at;
+	// zero means a minute.
+	deadEvery time.Duration
 	// tuneGossip, in tests, speeds the membership up.
 	tuneGossip func(*MembershipConfig)
 }
@@ -139,6 +145,9 @@ type APNode struct {
 	// closed; halted is set once a rotation finished without this member.
 	unpinnedClosed atomic.Pointer[string]
 	halted         atomic.Bool
+	// down records the members down, to remove those down for
+	// MemberDeadAfter (deadmembers.go); nil when none is removed.
+	down *downTracker
 }
 
 // NewAPNode prepares this hub's AP membership: its node certificate
@@ -191,6 +200,14 @@ func NewAPNode(ctx context.Context, cfg APConfig) (*APNode, error) {
 	n := &APNode{
 		cfg: cfg, log: cfg.Log.With("component", "ap-cluster"), epoch: pki.HubEpoch(cert.Leaf), hints: hints,
 		local: local, rolesKick: make(chan struct{}, 1), caKick: make(chan struct{}, 1),
+	}
+	if cfg.MemberDeadAfter > 0 {
+		if n.down, err = loadDownTracker(dir, cfg.NodeID, time.Now()); err != nil && n.down == nil {
+			_ = hints.Close()
+			return nil, fmt.Errorf("ap node: %w", err)
+		} else if err != nil {
+			n.log.WarnContext(ctx, "the record of the members down is unreadable", "err", err)
+		}
 	}
 	n.cert.Store(&cert)
 	if nextCert != nil {
@@ -564,6 +581,14 @@ func (n *APNode) Run(ctx context.Context) error {
 	})
 	g.Go(func() error { n.runRoles(gctx); return nil })
 	g.Go(func() error { n.runCA(gctx); return nil })
+	if n.down != nil {
+		g.Go(func() error {
+			changes, stop := n.membership.Changes()
+			defer stop()
+			n.runDownTracker(gctx, changes)
+			return nil
+		})
+	}
 	g.Go(func() error {
 		changes, stop := n.membership.Changes()
 		defer stop()
@@ -595,6 +620,13 @@ func (n *APNode) Status() Status {
 	st := Status{NodeID: n.cfg.NodeID}
 	if n.membership != nil {
 		st.Members = n.membership.Members()
+	}
+	for id, at := range n.autoRemoveAt(st.Members) {
+		for i := range st.Members {
+			if st.Members[i].ID == id {
+				st.Members[i].AutoRemoveAt = &at
+			}
+		}
 	}
 	storage := 0
 	for _, m := range st.Members {

@@ -44,9 +44,10 @@ type apLoops struct {
 // (docs/design/ap-cluster.md §6). Presence: each master sweeps the devices
 // it owns (hub.PresenceOwner). Automations, runbook runs and the approval
 // sweep run on every master, each on the items it owns on the ring of
-// masters. Network discovery, the network import and scheduled backups run
-// on the one master owning their key; during a partition, one may run on
-// both sides.
+// masters. Network discovery, the network import, scheduled backups and the
+// removal of members down for good run on the one master owning their key;
+// during a partition, one may run on both sides (the removal guards itself:
+// only a side that sees a majority removes).
 func runAPLoops(ctx context.Context, g *errgroup.Group, node *cluster.APNode, l apLoops) {
 	ring := node.Masters()
 	g.Go(func() error {
@@ -83,5 +84,10 @@ func runAPLoops(ctx context.Context, g *errgroup.Group, node *cluster.APNode, l 
 	}
 	if l.backups != nil {
 		singleton("backup", l.backups.Run)
+	}
+	// One master removes the members down for --member-dead-after; each
+	// member keeps its own record of who is down (deadmembers.go).
+	if node.MemberDeadAfter() > 0 {
+		singleton("dead-members", func(ctx context.Context) error { return node.RunDeadMemberRemoval(ctx, l.pol) })
 	}
 }

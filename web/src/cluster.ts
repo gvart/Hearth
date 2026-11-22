@@ -18,6 +18,8 @@ export interface ClusterMember {
   /** Being demoted from storage, handing its rows off; progress in percent. */
   draining?: boolean;
   progress?: number;
+  /** When a member down is removed automatically (--member-dead-after), if it stays down. */
+  auto_remove_at?: string;
 }
 
 /** GET /api/v1/cluster/members: this hub's view of its AP cluster. */
@@ -164,6 +166,26 @@ export function memberState(m: ClusterMember): { label: string; tone: 'ok' | 'wa
     return m.state === 'alive' ? { label: 'alive', tone: 'ok' } : { label: 'suspect', tone: 'warn' };
   }
   return m.state === 'left' ? { label: 'left', tone: 'muted' } : { label: m.state, tone: 'bad' };
+}
+
+/** When a member down is removed automatically, roughly, from now; undefined if it is not. */
+export function autoRemoval(m: ClusterMember, now: number): string | undefined {
+  if (!m.auto_remove_at) {
+    return undefined;
+  }
+  const ms = Date.parse(m.auto_remove_at) - now;
+  const hour = 3_600_000;
+  const minute = 60_000;
+  if (ms <= 0) {
+    return 'Removed automatically soon';
+  }
+  if (ms >= hour) {
+    return `Removed automatically in ~${String(Math.round(ms / hour))}h`;
+  }
+  if (ms >= minute) {
+    return `Removed automatically in ~${String(Math.round(ms / minute))}m`;
+  }
+  return 'Removed automatically in <1m';
 }
 
 /** A member's side of a hub CA rotation (GET /api/v1/cluster/ca). Fingerprints are short. */

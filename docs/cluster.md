@@ -236,6 +236,8 @@ hearth cluster remove hub-c          # a member gone for good
   every member drops it from its listing, and the others re-replicate the rows it held. A hub does not
   remove itself, nor the last master or storage member. To come back, it joins again with a new token
   and an empty data dir.
+- **Removed automatically.** A member down for `--member-dead-after` is removed the same way, by a
+  master on its own (see [A hub that stays down](#a-hub-that-stays-down)).
 
 ## Checking on it
 
@@ -249,7 +251,8 @@ then the `MEMBER` table: every member with its address, roles, allowed roles, st
 schema its Hearth supports. A member is `alive`, `suspect` (gossip holds it alive but this hub has
 heard nothing from it directly for about two probe rounds), `dead` (failed) or `left` (stopped
 cleanly), with `syncing` or `draining` and its progress while its roles change. `dead` and `left`
-members stay listed until this hub restarts. A line under the table names the members whose host flags
+members stay listed until this hub restarts; a member down shows when it is removed automatically
+(`dead, removed automatically in ~5h`, and on the Cluster page). A line under the table names the members whose host flags
 differ (see [Host flag drift](#host-flag-drift)). In the hub log, `caught up with the cluster` marks
 a member that is ready after a start. A line above the table says whether this hub is
 [safe to stop](#is-it-safe-to-stop-this-hub).
@@ -336,6 +339,8 @@ it to `dangerous_automations` in `policy.yaml` and import that.
 - **The network splits.** Both sides keep working with the replicas they reach, and converge when the
   split heals. A master that reaches no other member fails closed for dangerous actions after 60
   seconds.
+- **A hub stays down.** After `--member-dead-after` (24 h) a master removes it, if it sees a majority of
+  the members (see [A hub that stays down](#a-hub-that-stays-down)).
 - **A hub restarts.** Until it has caught up with the cluster, its API waits up to 5 seconds per request
   and then answers 503 `catching_up`; the UI shows the error and works again once the hub is ready.
 
@@ -343,9 +348,38 @@ CI holds the cluster to these: an end-to-end test (`task e2e:cluster`) runs hubs
 Docker Compose, kills a master and a storage member, splits the cluster and heals it, and fails if any
 step takes longer than its stated bound.
 
+## A hub that stays down
+
+A member down (dead or left) for `--member-dead-after` (env `HEARTH_MEMBER_DEAD_AFTER`, default `24h`) is
+removed automatically, exactly as `hearth cluster remove` does: its hub certificates are revoked, every
+member drops it, and the others re-copy the rows it held. One master does it (the owner of the
+`dead-members` loop on the ring of masters), as the `cluster.remove` policy action by the hub (actor
+`hub`, its node ID), audited with the reason (`down for 24h`) and when the member went down. It follows the
+policy's modes for dangerous actions: `classes: {dangerous: confirm}` holds each removal for approval,
+`deny` refuses it (refused removals are tried again an hour later). `--member-dead-after 0` turns it off.
+
+- **Only a majority removes.** A master removes only while it sees a strict majority of the members it
+  knows alive, the down ones counted. The minority side of a split never removes, and neither does a
+  cluster of two whose other member is down: remove that one by hand. A side that keeps the majority
+  through a split longer than `--member-dead-after` removes the others; they rejoin as below.
+- **Never the last master or storage member.** A member down whose removal would leave no live master,
+  or no live storage member, stays, and the master logs once why.
+- **A member that comes back starts over.** Every member records since when each other member is down
+  (`cluster/down-members` in its data dir), so a restart of the master does not reset the timers; a member
+  seen alive again is dropped from the record. Time a hub itself was stopped for longer than 10 minutes is
+  not counted: its timers start again when it is back.
+- **A removed hub that comes back is refused.** Its certificates are revoked, so no member accepts it,
+  and it logs once: `the cluster's members refuse this hub's certificate: it was most likely removed`.
+  Stop it, wipe its data dir and join it again with a new join token, as in
+  [Replacing a dead hub](#replacing-a-dead-hub).
+
+`hearth cluster status` and the Cluster page show, for a member down, roughly when it is removed. A
+master that is due to remove one but may not (no majority, the last master or storage member) logs
+`a member is down for longer than --member-dead-after but is not removed`, with the reason.
+
 ## Replacing a dead hub
 
-Remove it, then join a new one:
+Remove it (or let the cluster do it after `--member-dead-after`), then join a new one:
 
 ```sh
 # on a surviving master's host

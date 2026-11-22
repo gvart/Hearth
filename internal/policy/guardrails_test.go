@@ -133,7 +133,7 @@ var expected = map[Action]struct {
 	ClusterJoin:            {Dangerous, []string{ActorJoinToken}, true},
 	ClusterPromote:         {Dangerous, []string{ActorAdmin, ActorWeb}, false},
 	ClusterDemote:          {Dangerous, []string{ActorAdmin, ActorWeb}, false},
-	ClusterRemove:          {Dangerous, []string{ActorAdmin, ActorWeb}, false},
+	ClusterRemove:          {Dangerous, []string{ActorAdmin, ActorWeb, ActorHub}, false},
 	ClusterCARotate:        {Dangerous, []string{ActorAdmin, ActorWeb}, false},
 	ClusterCAFinish:        {Dangerous, []string{ActorAdmin, ActorWeb}, false},
 	ClusterCAAbort:         {Dangerous, []string{ActorAdmin, ActorWeb}, false},

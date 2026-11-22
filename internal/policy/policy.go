@@ -372,8 +372,10 @@ var rules = map[Action]rule{
 	// A demotion takes a master's CA key and tokens away, or moves a
 	// storage member's rows; the last master or storage member stays.
 	ClusterDemote: {class: Dangerous, actors: []string{ActorAdmin, ActorWeb}},
-	// Removal changes the quorum and locks a hub out for good.
-	ClusterRemove: {class: Dangerous, actors: []string{ActorAdmin, ActorWeb}},
+	// Removal changes the quorum and locks a hub out for good. A master
+	// removes a member down for --member-dead-after as the hub, following
+	// the modes: a policy may hold it for approval or deny it.
+	ClusterRemove: {class: Dangerous, actors: []string{ActorAdmin, ActorWeb, ActorHub}},
 	// A rotation hands out a new CA key and, once finished, cuts off whatever
 	// still holds an old-CA certificate. The web UI asks behind an admin
 	// session and the password again.

@@ -159,6 +159,9 @@ type Membership struct {
 	// schemaRefused are the peers already logged as refused for their
 	// schema.
 	schemaRefused sync.Map
+	// refusedLogged is set once the refusal of this member's certificate
+	// is logged, until a join succeeds again.
+	refusedLogged atomic.Bool
 }
 
 // NewMembership checks cfg and returns a Membership; Run starts it.
@@ -450,8 +453,17 @@ func (m *Membership) joinSeeds(ctx context.Context) {
 	}
 	n, err := ml.Join(todo)
 	if n > 0 {
+		m.refusedLogged.Store(false)
 		m.log.DebugContext(ctx, "joined gossip peers", "contacted", n)
 		return
+	}
+	// A peer refuses this member's certificate in the handshake, which is
+	// all a member removed while it was down hears of it.
+	if err != nil && strings.Contains(err.Error(), "tls: bad certificate") && !m.refusedLogged.Swap(true) {
+		m.log.ErrorContext(ctx, "the cluster's members refuse this hub's certificate: it was most likely removed "+
+			"from the cluster (`hearth cluster remove`, or automatically after --member-dead-after). To bring it "+
+			"back, stop it, wipe its data dir and join again with a new join token "+
+			"(`hearth cluster token create` on a master, then `hearth hub --join`)", "seeds", todo)
 	}
 	m.log.DebugContext(ctx, "no gossip peer reachable yet", "seeds", todo, "err", err)
 }
@@ -513,6 +525,9 @@ type MemberInfo struct {
 	Progress int  `json:"progress,omitempty"`
 	// CA is the member's side of a hub CA rotation; nil if it says none.
 	CA *CAMeta `json:"ca,omitempty"`
+	// AutoRemoveAt is when a member down is removed automatically
+	// (--member-dead-after), if it stays down; set by APNode.Status.
+	AutoRemoveAt *time.Time `json:"auto_remove_at,omitempty"`
 }
 
 func memberInfo(n *memberlist.Node, state string) MemberInfo {
