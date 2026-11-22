@@ -144,7 +144,7 @@ var hostnameHints = []hostnameHint{
 	{KindComputer, []string{
 		"macbook", "imac", "macmini", "mac-mini", "macpro", "mac-pro", "macstudio", "mac-studio", "thinkpad",
 		"desktop", "laptop", "workstation", "raspberrypi", "ubuntu", "debian", "fedora", "proxmox",
-	}, []string{"pc", "nuc", "pve", "server"}},
+	}, []string{"mac", "pc", "nuc", "pve", "server"}},
 	{
 		KindIoT,
 		[]string{"esphome", "esp32", "esp8266", "shelly", "tasmota", "sonoff", "tuya", "wled", "doorbell", "thermostat"},

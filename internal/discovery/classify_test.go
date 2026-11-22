@@ -69,6 +69,7 @@ func TestClassify(t *testing.T) {
 		{"virtual machine", in{nil, "Proxmox Server", "", false}, KindComputer, true},
 		{"intel, more words", in{nil, "Intel Corporate", "", false}, KindComputer, true},
 		{"pc by word", in{nil, "", "gaming-pc", false}, KindComputer, true},
+		{"mac by word", in{nil, "", "Mac.lan", false}, KindComputer, true},
 		{"a word inside another word does not count", in{nil, "", "pixelbook", false}, KindUnknown, false},
 
 		// iot

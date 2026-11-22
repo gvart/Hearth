@@ -106,7 +106,7 @@ The first rule that matches decides:
    order: `printer` (`printer`, `laserjet`), `nas` (`synology`, `truenas`, `nas`), `media`
    (`appletv`, `chromecast`, `playstation`, `nintendo`, `ps4`, `tv`), `router` (`router`,
    `openwrt`, `fritz`, `unifi`), `phone` (`iphone`, `ipad`, `android`, `pixel`, `galaxy`),
-   `computer` (`macbook`, `imac`, `thinkpad`, `desktop`, `raspberrypi`, `pc`, `server`), `iot`
+   `computer` (`macbook`, `imac`, `thinkpad`, `desktop`, `raspberrypi`, `mac`, `pc`, `server`), `iot`
    (`esphome`, `shelly`, `tasmota`, `cam`, `plug`). Short words count only as a whole word of the
    name, so `pixelbook` is not a phone.
 4. **A vendor that makes one sort of thing**, in whole words (Intel, not Intelbras): Brother, Epson
