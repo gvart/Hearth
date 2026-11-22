@@ -251,9 +251,9 @@ func revoked(err error) bool {
 	return false
 }
 
-// learnHubs makes the hubs a Welcome from hub listed the new hub list: hub
-// first, so a reconnect tries it first, then the listed hubs, then the join
-// URL, which is always kept. An empty list (a hub that does not know its
+// learnHubs makes the hubs a Welcome or Hubs message from hub listed the
+// new hub list: hub first, so a reconnect tries it first, then the listed
+// hubs, then the join URL, which is always kept. An empty list (a hub that does not know its
 // URL) changes nothing. A changed list is saved to HubsFile.
 func (r *runner) learnHubs(ctx context.Context, hub string, listed []string) {
 	if len(listed) == 0 {
@@ -343,7 +343,7 @@ func (r *runner) session(ctx context.Context, hub string) (welcomed bool, err er
 		var execs sync.WaitGroup
 		defer execs.Wait()
 		defer cancel()
-		return r.receive(rctx, stream, &execs, &logs, results)
+		return r.receive(rctx, hub, stream, &execs, &logs, results)
 	})
 	g.Go(func() error {
 		err := r.sendLoop(gctx, stream, interval, results)
@@ -379,10 +379,12 @@ func (r *runner) hello(ctx context.Context) *agentv1.Hello {
 	return h
 }
 
-// receive consumes hub messages until the stream fails. Each exec or probe
-// request runs on its own goroutine in execs, within the capability
-// ceiling, and its result goes to results for sendLoop to send.
-func (r *runner) receive(ctx context.Context, stream *connect.BidiStreamForClient[agentv1.AgentMessage, agentv1.HubMessage],
+// receive consumes hub messages from hub until the stream fails. Each exec
+// or probe request runs on its own goroutine in execs, within the
+// capability ceiling, and its result goes to results for sendLoop to send.
+// A Hubs list is learned here, inline: Run reads the hub list only once the
+// session is over.
+func (r *runner) receive(ctx context.Context, hub string, stream *connect.BidiStreamForClient[agentv1.AgentMessage, agentv1.HubMessage],
 	execs *sync.WaitGroup, logs **logStreams, results chan<- *agentv1.AgentMessage,
 ) error {
 	// Once the stream failed nothing can be sent: replies are dropped, so
@@ -440,6 +442,9 @@ func (r *runner) receive(ctx context.Context, stream *connect.BidiStreamForClien
 			}
 		case *agentv1.HubMessage_ShellRequest:
 			shells.handle(ctx, p.ShellRequest)
+		case *agentv1.HubMessage_Hubs:
+			// The masters changed since the Welcome.
+			r.learnHubs(ctx, hub, p.Hubs.GetUrls())
 		case *agentv1.HubMessage_ScanRequest:
 			req := p.ScanRequest
 			execs.Go(func() {
