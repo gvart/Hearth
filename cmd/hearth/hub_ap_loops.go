@@ -69,15 +69,14 @@ func runAPLoops(ctx context.Context, g *errgroup.Group, node *cluster.APNode, l 
 	g.Go(func() error { return l.automations.Run(ctx) })
 	g.Go(func() error { return l.runbooks.Run(ctx) })
 	g.Go(func() error { return l.pol.RunApprovalSweep(ctx, l.log) })
-	singletonWith := func(key string, ready <-chan struct{}, run func(context.Context) error) {
+	singleton := func(key string, run func(context.Context) error) {
 		changed, unsubscribe := ring.Subscribe()
 		g.Go(func() error {
 			defer unsubscribe()
-			return automation.RunWhileLeading(ctx, ring.Singleton("loop/"+key, ready), changed,
+			return automation.RunWhileLeading(ctx, ring.Singleton("loop/"+key, l.ready), changed,
 				l.log.With("component", key), run)
 		})
 	}
-	singleton := func(key string, run func(context.Context) error) { singletonWith(key, l.ready, run) }
 	if l.scheduledScans {
 		singleton("discovery", l.scanner.Run)
 	}
@@ -101,12 +100,7 @@ func runAPLoops(ctx context.Context, g *errgroup.Group, node *cluster.APNode, l 
 		singleton("dead-members", func(ctx context.Context) error { return node.RunDeadMemberRemoval(ctx, l.pol) })
 	}
 	if l.lanName {
-		// Not held until the master has caught up: the name needs no rows,
-		// and a joining master that owns it would leave it unanswered
-		// meanwhile.
-		now := make(chan struct{})
-		close(now)
 		a := &discovery.Announcer{Name: discovery.LANName, Log: l.log.With("component", "lan-name")}
-		singletonWith("lan-name", now, a.Run)
+		singleton("lan-name", a.Run)
 	}
 }

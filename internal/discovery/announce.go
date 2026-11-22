@@ -50,15 +50,21 @@ type Announcer struct {
 
 // Run announces Name until ctx is done, then says goodbye (a record of TTL
 // 0) so clients drop it at once. It retries every announceRetry while it
-// cannot listen (no LAN interface yet at boot), and returns nil when ctx is
-// done: a hub without mDNS keeps running.
+// cannot listen (no LAN interface yet at boot), warning once per error, and
+// returns nil when ctx is done: a hub without mDNS keeps running.
 func (a *Announcer) Run(ctx context.Context) error {
+	last := ""
 	for {
 		err := a.serve(ctx)
 		if ctx.Err() != nil {
 			return nil
 		}
-		a.Log.WarnContext(ctx, "mDNS: not announcing "+a.Name+", retrying", "err", err, "in", announceRetry)
+		level := slog.LevelWarn
+		if err.Error() == last {
+			level = slog.LevelDebug
+		}
+		last = err.Error()
+		a.Log.Log(ctx, level, "mDNS: not announcing "+a.Name+", retrying", "err", err, "every", announceRetry)
 		select {
 		case <-ctx.Done():
 			return nil
@@ -95,9 +101,10 @@ func (a *Announcer) serve(ctx context.Context) error {
 	// On, so the responder of this very host hears the answers too.
 	_ = pc.SetMulticastLoopback(true)
 	_ = pc.SetMulticastTTL(255)
-	if err := pc.SetControlMessage(ipv4.FlagInterface, true); err != nil {
-		return fmt.Errorf("mdns: %w", err)
-	}
+	// Where the OS tells which interface a query came in on (not on
+	// Windows), it is answered there with that interface's addresses; else
+	// on every LAN interface, each with its own.
+	perIface := pc.SetControlMessage(ipv4.FlagInterface, true) == nil
 	s := &mdnsSender{pc: pc, group: group}
 	addrs := map[string][]netip.Addr{}
 	for _, ifc := range ifaces {
@@ -147,21 +154,40 @@ func (a *Announcer) serve(ctx context.Context) error {
 			return fmt.Errorf("read mDNS: %w", err)
 		}
 		from, ok := src.(*net.UDPAddr)
-		if !ok || cm == nil {
-			continue
-		}
-		ifc, ok := byIndex[cm.IfIndex]
 		if !ok {
 			continue
 		}
-		legacy := from.Port != mdnsPort
-		reply, err := lanNameReply(buf[:n], name, ifaceLANAddrs(ifc), legacy)
-		if err != nil || reply == nil {
+		on := ifaces
+		if perIface {
+			if cm == nil {
+				continue
+			}
+			ifc, ok := byIndex[cm.IfIndex]
+			if !ok {
+				continue
+			}
+			on = []net.Interface{ifc}
+		}
+		msg := buf[:n]
+		if from.Port != mdnsPort {
+			// Legacy unicast: one answer, to the sender.
+			addrs := func() []netip.Addr {
+				var out []netip.Addr
+				for _, ifc := range on {
+					out = append(out, ifaceLANAddrs(ifc)...)
+				}
+				return out
+			}
+			if reply, err := lanNameReply(msg, name, addrs, true); err == nil && reply != nil {
+				s.unicast(reply, from)
+			}
 			continue
 		}
-		if legacy {
-			s.unicast(reply, from)
-		} else {
+		for _, ifc := range on {
+			reply, err := lanNameReply(msg, name, func() []netip.Addr { return ifaceLANAddrs(ifc) }, false)
+			if err != nil || reply == nil {
+				continue
+			}
 			s.multicast(&ifc, reply)
 		}
 	}
@@ -224,16 +250,14 @@ func ifaceLANAddrs(ifc net.Interface) []netip.Addr {
 }
 
 // lanNameReply is the answer to the mDNS message msg if it asks for name's
-// A record (or any record of name), with addrs; nil if it asks nothing of
-// name, is a response, or addrs is empty. A query from a port other than
+// A record (or any record of name), with the addresses addrsOf returns, asked
+// only then; nil if it asks nothing of name, is a response, or there is no
+// address. A query from a port other than
 // 5353 (legacy, RFC 6762 §6.7) gets a unicast-style answer: its ID and
 // questions, no cache-flush bit. A question for another type of name (AAAA)
 // gets an NSEC record saying name has only A records, so the client does
 // not wait for one.
-func lanNameReply(msg []byte, name dnsmessage.Name, addrs []netip.Addr, legacy bool) ([]byte, error) {
-	if len(addrs) == 0 {
-		return nil, nil
-	}
+func lanNameReply(msg []byte, name dnsmessage.Name, addrsOf func() []netip.Addr, legacy bool) ([]byte, error) {
 	var p dnsmessage.Parser
 	h, err := p.Start(msg)
 	if err != nil {
@@ -261,6 +285,10 @@ func lanNameReply(msg []byte, name dnsmessage.Name, addrs []netip.Addr, legacy b
 		}
 	}
 	if len(asked) == 0 {
+		return nil, nil
+	}
+	addrs := addrsOf()
+	if len(addrs) == 0 {
 		return nil, nil
 	}
 	rh := dnsmessage.Header{Response: true, Authoritative: true}

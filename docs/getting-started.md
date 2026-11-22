@@ -50,7 +50,7 @@ HEARTH_ADMIN_PASSWORD='choose-a-password' ./hearth hub
 - The hub also answers at **`hearth.local`** on the LAN: it announces that name over mDNS (next to
   the OS's own responder, Bonjour or avahi) and its certificate names it too. It is for your
   browser only; install commands never name it. `--no-lan-name` turns it off, for instance when two
-  separate Hearth setups share a LAN.
+  separate Hearth setups share a LAN (in a cluster, set it on every master or on none).
 - `HEARTH_ADMIN_PASSWORD` sets the password of the web UI on the first start. Later starts ignore it;
   change the password with `hearth admin set-password`.
 - The hub keeps its database and certificate authority in `~/.local/share/hearth/hub`

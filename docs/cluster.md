@@ -411,8 +411,11 @@ failover: reload the page.
   it dies, within about 10 seconds (the time the others take to find it dead). Records carry a
   10-second TTL and every new announcement flushes the old address from caches, so a browser
   reaches the new master within about 20 seconds at worst.
-- **Joining.** A master that has just joined may announce the name before it has caught up, so for a
-  moment two masters may answer; both serve the UI.
+- **Joining.** A master that joins may take the name over; it answers once it has caught up with the
+  cluster (usually within a second), and until then nobody may.
+- **Every master or none.** Whichever master owns the name announces it, so set `--no-lan-name` on all
+  masters or on none. A master that cannot announce on the LAN (in Docker's default bridge network,
+  say) leaves the name unanswered while it owns it: run it with `--no-lan-name` or `--network host`.
 - **Split network.** During a partition each side may have a master announcing the name; a browser
   gets whichever answers it, and both work. It converges when the split heals.
 - **Where it works.** mDNS stays on one LAN segment: browsers on another VLAN or over a VPN, and

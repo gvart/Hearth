@@ -87,7 +87,7 @@ func TestLANNameReply(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			reply, _ := lanNameReply(tt.msg, name, tt.addrs, tt.legacy)
+			reply, _ := lanNameReply(tt.msg, name, func() []netip.Addr { return tt.addrs }, tt.legacy)
 			if tt.noAnswer {
 				if reply != nil {
 					t.Fatalf("got a reply, want none")
@@ -143,7 +143,7 @@ func TestLANNameReply(t *testing.T) {
 func TestLANNameNSEC(t *testing.T) {
 	name := dnsmessage.MustNewName("hearth.local.")
 	reply, err := lanNameReply(query(t, 0, false, q("hearth.local.", dnsmessage.TypeAAAA, dnsmessage.ClassINET)), name,
-		[]netip.Addr{netip.MustParseAddr("192.168.2.124")}, false)
+		func() []netip.Addr { return []netip.Addr{netip.MustParseAddr("192.168.2.124")} }, false)
 	if err != nil {
 		t.Fatal(err)
 	}
