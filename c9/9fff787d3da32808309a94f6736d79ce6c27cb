@@ -6,6 +6,7 @@ cmd/hearth/hub_ap_loops.go
   s_18b57982fdff93::t_6946bd538cefdf 41-42,103,109
   s_18b57982fdff93::t_7abeb906ecbd0a 72,76,80,104-108,110
   s_18b57982fdff93::t_30794d578c5ddc 111
+  s_18b57982fdff93::t_1db0d4747fce61 49-53
 cmd/hearth/hub_master.go
   s_18b57982fdff93::t_6946bd538cefdf 40
 internal/discovery/announce_test.go
