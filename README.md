@@ -40,7 +40,7 @@ both through the API and fails if either is not online within `DeviceVisibleWith
 
 - [ ] Single binary hub + agent, mTLS enrollment, one-line installer
 - [ ] Live device list, metrics, logs, web terminal
-- [ ] Network discovery (ARP, mDNS, Pi-hole/DHCP leases)
+- [x] Network discovery (ARP, mDNS, Pi-hole/DHCP leases): scan, classify, then add an agent or adopt the host
 - [ ] Kubernetes integration (read + safe actions)
 - [ ] Automations (YAML in git) + guardrails + audit log
 - [ ] MCP server, built-in Tailscale (tsnet), installable PWA

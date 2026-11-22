@@ -13,7 +13,7 @@ a laptop) showing up in its web UI. You need:
   Linux.
 
 Hearth is pre-alpha: every release so far is a pre-release, `v0.0.1-rc.N`. The commands below use
-`0.0.1-rc.6`; take the newest from the
+`0.0.1-rc.7`; take the newest from the
 [releases page](https://github.com/gvart/hearth/releases).
 
 ## 1. Download Hearth on the hub machine
@@ -23,7 +23,7 @@ Hub and agent are the same single binary. Pick the archive for the hub machine
 `linux_armv7`):
 
 ```sh
-VERSION=0.0.1-rc.6
+VERSION=0.0.1-rc.7
 PLATFORM=darwin_arm64
 curl -fsSLO "https://github.com/gvart/hearth/releases/download/v${VERSION}/hearth_${VERSION}_${PLATFORM}.tar.gz"
 tar -xzf "hearth_${VERSION}_${PLATFORM}.tar.gz" hearth
@@ -31,7 +31,7 @@ tar -xzf "hearth_${VERSION}_${PLATFORM}.tar.gz" hearth
 ```
 
 If you would rather run the hub in Docker, skip this step and use the image
-(`ghcr.io/gvart/hearth:v0.0.1-rc.6`) in the next one.
+(`ghcr.io/gvart/hearth:v0.0.1-rc.7`) in the next one.
 
 ## 2. Start the hub
 
@@ -54,7 +54,7 @@ In Docker instead:
 ```sh
 docker run -d --name hearth -p 7443:7443 -p 7080:7080 -v hearth:/var/lib/hearth \
   -e HEARTH_ADMIN_PASSWORD='choose-a-password' \
-  ghcr.io/gvart/hearth:v0.0.1-rc.6 hub --host 192.168.1.10
+  ghcr.io/gvart/hearth:v0.0.1-rc.7 hub --host 192.168.1.10
 ```
 
 **Firewall.** Devices must reach the hub on TCP ports 7443 and 7080. On macOS with the firewall on,
@@ -105,7 +105,7 @@ No `sudo` on the device? Run the agent as your own user instead. In the "Add dev
 **Hearth already installed?** and copy the **Join only** command. Then on the device:
 
 ```sh
-VERSION=0.0.1-rc.6
+VERSION=0.0.1-rc.7
 PLATFORM=linux_arm64     # linux_amd64, linux_armv7, darwin_arm64, darwin_amd64
 curl -fsSLO "https://github.com/gvart/hearth/releases/download/v${VERSION}/hearth_${VERSION}_${PLATFORM}.tar.gz"
 tar -xzf "hearth_${VERSION}_${PLATFORM}.tar.gz" hearth
@@ -131,6 +131,20 @@ Add `--name garage-pi` to have the device join under that name instead of its ho
 
 The device is in the **Devices** list, online, with its OS, architecture and IP. Click it for its
 facts. Stop the agent and it turns offline after 30 seconds; start it again and it is back at once.
+
+## 6. Find the rest of your network
+
+On the **Devices** page, click **Scan my network** (or run `hearth network scan` on the hub
+machine). A few seconds later **On your network** lists the hosts the hub found on its LAN, each
+with a [kind](discovery.md#kinds): router, printer, media, phone, computer, NAS, IoT or unknown.
+
+- On a computer-like host, **Add device** opens the same dialog as in step 3, with the device name
+  prefilled from the host's name: copy the one-liner and run it there.
+- A printer, TV or router cannot run an agent: **Adopt** keeps it as a network device, seen by
+  every scan but not controlled. See [Adopting a host](discovery.md#adopting-a-host).
+
+In Docker, the hub sees your LAN only with host networking (see
+[In a container](discovery.md#in-a-container)).
 
 ## If it does not show up
 
