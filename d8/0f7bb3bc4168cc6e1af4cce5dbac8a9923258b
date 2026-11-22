@@ -1,0 +1,67 @@
+internal/cluster/promote_test.go
+  s_18b57982fdff93::t_b43e407e654304 51-52,163
+docs/security.md
+  s_18b57982fdff93::t_b65768f6efb0de 56-65
+internal/cluster/keepmasters.go
+  s_18b57982fdff93::t_909b93c46d7127 6,98
+  s_18b57982fdff93::t_c9759cbe10bd8c 59-60
+  s_18b57982fdff93::t_7f41bda43c9b93 1-5,7-58,61-97,99-247
+  s_18b57982fdff93::t_4e8c9b48654f88 248-260
+internal/store/jointokens.go
+  s_18b57982fdff93::t_c356617b360d85 121-164
+internal/cluster/apnode.go
+  s_18b57982fdff93::t_2493507bef10a6 83-86,153-154,209
+cmd/hearth/cluster_test.go
+  s_18b57982fdff93::t_70dac378b4d9f2 114-138
+  s_18b57982fdff93::t_44b39332d0f8b4 14-15
+internal/policy/policy.go
+  s_18b57982fdff93::t_a9a1472e713cd9 375-380
+internal/cluster/deadmembers.go
+  s_18b57982fdff93::t_cce01459d0eccd 249
+  s_18b57982fdff93::t_e40b6b64884f0d 199,214,225-248
+test/e2e/autohub.compose.yaml
+  s_18b57982fdff93::t_dce0c3e14368c7 17-18
+internal/cluster/keepmasters_test.go
+  s_18b57982fdff93::t_a81ddd3bc409c4 301
+  s_18b57982fdff93::t_3f4a6710f5f07c 106-109,143-144,164,183,187-190,197-202,206-211,222-224,238,260,275-284,289,291-292,302,307
+  s_18b57982fdff93::t_1cc2e97442b2ce 1-6,8-105,110-117,124-132,134-142,150-155,170-178,180-182,184-186,192-196,203-205,212-221,225-235,237,239-251,253-259,261-274,285-288,290,293-300,303-306,318
+  s_18b57982fdff93::t_02db18f1ec2b0f 7
+  s_18b57982fdff93::t_bc11e80f8f49c2 145-149,165,169
+  s_18b57982fdff93::t_46e20f368dd3d9 133,179,191,236,252
+  s_18b57982fdff93::t_1ec3a05124fe09 156-163,166-168
+  s_18b57982fdff93::t_c9759cbe10bd8c 118-123
+  s_18b57982fdff93::t_808a63c43a8738 308-317
+docs/getting-started.md
+  s_18b57982fdff93::t_94d9d97e5a4959 190-191
+internal/policy/guardrails_test.go
+  s_18b57982fdff93::t_a9a1472e713cd9 134
+cmd/hearth/hub_ap_loops.go
+  s_18b57982fdff93::t_c6e19d4ed04379 51,103-106
+  s_18b57982fdff93::t_8f30d85740e12f 107
+  s_18b57982fdff93::t_e2c0c4910a653d 52-54
+internal/store/tokens_test.go
+  s_18b57982fdff93::t_665f85e19f3434 127-166
+test/e2e/autohub_test.go
+  s_18b57982fdff93::t_dce0c3e14368c7 27-31,40-42,131-145
+docs/cluster.md
+  s_18b57982fdff93::t_02885d7f86e5c1 147-148,290-292,395-396,433-464
+  s_18b57982fdff93::t_7572020e16a55a 465
+cmd/hearth/hub_cluster.go
+  s_18b57982fdff93::t_c6e19d4ed04379 57-60,109-119,130-132,290
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d80f7bb3bc4168cc6e1af4cce5dbac8a9923258b",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
