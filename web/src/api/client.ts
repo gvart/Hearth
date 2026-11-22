@@ -76,6 +76,13 @@ export interface Session {
   version?: string;
 }
 
+export interface CreateTokenOptions {
+  ttl?: string;
+  labels?: Record<string, string>;
+  name?: string;
+  hub?: boolean;
+}
+
 export interface CreatedToken {
   token: string;
   expires_at: string;
@@ -720,9 +727,12 @@ export const api = {
   metricsSparklines: () => request<MetricsSparklines>('GET', '/metrics/sparklines'),
   tlsInfo: () => request<TlsInfo>('GET', '/tls'),
   configDrift: () => request<ConfigDrift>('GET', '/cluster/config-drift'),
-  /** `name` names the device that enrolls with the token; without it, the device takes its hostname. */
-  createToken: (opts: { ttl?: string; labels?: Record<string, string>; name?: string } = {}) =>
-    request<CreatedToken>('POST', '/tokens', opts),
+  /**
+   * `name` names the device that enrolls with the token; without it, the device takes its hostname.
+   * `hub` lets a capable Linux device installed with it become a hub (it may receive the CA key): the hub
+   * asks for the admin password again.
+   */
+  createToken: (opts: CreateTokenOptions = {}) => request<CreatedToken>('POST', '/tokens', opts),
   audit: (filter: AuditFilter, before?: number | string) => {
     const q = new URLSearchParams();
     for (const [k, v] of Object.entries(filter)) {

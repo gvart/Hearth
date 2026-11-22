@@ -43,25 +43,29 @@ export function AddDeviceDialog({ host, joined, onClose, onShow }: Props) {
   const create = useCreateToken();
   const { mutate } = create;
   const [name, setName] = useState(() => (host ? suggestedName(host) : ''));
+  // On by default: a capable device then becomes a hub, so the laptop that
+  // started the first hub can go away. It asks for the password again.
+  const [hub, setHub] = useState(true);
   // Guards against StrictMode's double effect minting two tokens.
   const requested = useRef(false);
   useEffect(() => {
     if (!requested.current) {
       requested.current = true;
-      mutate(name === '' ? {} : { name });
+      mutate(name === '' ? { hub } : { name, hub });
     }
-  }, [mutate, name]);
+  }, [mutate, name, hub]);
 
   const tok = create.data;
   /** The name the shown token gives, which edits to the field change only on a new token. */
   const tokenName = create.variables?.name;
+  const tokenHub = create.variables?.hub === true;
   const [ttl, setTtl] = useState('15m');
   const [labels, setLabels] = useState<Label[]>([]);
   // Stays open across the new token, which remounts it.
   // Open for a discovered host, so its prefilled name shows.
   const [optionsOpen, setOptionsOpen] = useState(host !== undefined);
-  const remint = () => {
-    mutate({ ttl, labels: labelsOf(labels), name: name.trim() === '' ? undefined : name.trim() });
+  const remint = (asHub = hub) => {
+    mutate({ ttl, labels: labelsOf(labels), name: name.trim() === '' ? undefined : name.trim(), hub: asHub });
   };
 
   return (
@@ -77,13 +81,37 @@ export function AddDeviceDialog({ host, joined, onClose, onShow }: Props) {
         enrolls it with this hub and starts it.
       </p>
 
+      <label className="hub-opt">
+        <input
+          type="checkbox"
+          checked={hub}
+          disabled={create.isPending}
+          onChange={(e) => {
+            setHub(e.target.checked);
+            remint(e.target.checked);
+          }}
+        />
+        <span>
+          <strong>This device may become a hub</strong>
+          <span className="muted small">
+            A capable Linux device (64-bit, 2 GB of memory or more) also stores a copy of the data and, while the
+            cluster has fewer than 3 masters, becomes a master and holds the CA key. Needs your password again.
+          </span>
+        </span>
+      </label>
+
       {create.isError ? (
         <div className="error-box" role="alert">
           <p>Could not create an enrollment token: {create.error.message}</p>
+          {tokenHub ? (
+            <p className="muted small">Untick &ldquo;This device may become a hub&rdquo; to add it as a device only.</p>
+          ) : null}
           <button
             className="btn"
             type="button"
-            onClick={remint}
+            onClick={() => {
+              remint();
+            }}
           >
             Try again
           </button>
@@ -100,7 +128,8 @@ export function AddDeviceDialog({ host, joined, onClose, onShow }: Props) {
                 <Command label="Join only" value={tok.join_command} />
               </details>
               <p className="muted small">
-                Single use · {tokenName ? <>joins as <strong>{tokenName}</strong> · </> : null}expires at{' '}
+                Single use · {tokenName ? <>joins as <strong>{tokenName}</strong> · </> : null}
+                {tokenHub ? <>may become a hub · </> : null}expires at{' '}
                 {new Date(tok.expires_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </p>
               <details
