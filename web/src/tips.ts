@@ -28,7 +28,7 @@ export const tips: Record<TipId, TipText> = {
   devices: {
     about: 'devices',
     lines: [
-      'A device is a machine that runs the Hearth agent. The agent dials out to the hub; nothing listens on the device.',
+      'A device is a machine Hearth knows. Most run the Hearth agent, which dials out to the hub; nothing listens on the device.',
       'What the hub may do there is set where the agent is started, with its --allow flags. The hub can never grant more.',
       'Scan my network lists the other hosts on your LAN: Add device puts an agent on one, Adopt keeps a printer or TV as a network device, seen but not controlled.',
     ],
