@@ -91,3 +91,17 @@ export function suggestedName(h: Pick<NetworkHost, 'hostname'>): string {
     .replace(/^[^A-Za-z0-9]+/, '')
     .slice(0, 63);
 }
+
+/**
+ * The Devices page's subtitle: how many devices are online, agents and
+ * adopted network hosts together, and how many of them run no agent.
+ */
+export function devicesSummary(agents: { status: string }[], adopted: { online: boolean }[]): string {
+  const total = agents.length + adopted.length;
+  if (total === 0) {
+    return 'No devices yet';
+  }
+  const online = agents.filter((d) => d.status === 'online').length + adopted.filter((h) => h.online).length;
+  const summary = `${String(online)} of ${String(total)} online`;
+  return adopted.length === 0 ? summary : `${summary} · ${String(adopted.length)} without an agent`;
+}

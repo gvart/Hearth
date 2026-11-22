@@ -2,7 +2,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { diskUse, latest, meterTone, notAllowed, suggestedName } from '../src/devices.ts';
+import { devicesSummary, diskUse, latest, meterTone, notAllowed, suggestedName } from '../src/devices.ts';
 
 test('suggestedName is the hostname without .local, in the characters a device name allows', () => {
   const cases = [
@@ -72,4 +72,13 @@ test('notAllowed names what the agent keeps off and the flag for each', () => {
 
   // An agent too old to report a ceiling allows none of them.
   assert.equal(notAllowed({ facts: {} }).flags.length, 4);
+});
+
+test('the Devices subtitle counts adopted network hosts', () => {
+  const on = { status: 'online' };
+  const off = { status: 'offline' };
+  assert.equal(devicesSummary([], []), 'No devices yet');
+  assert.equal(devicesSummary([on, off], []), '1 of 2 online');
+  assert.equal(devicesSummary([], [{ online: true }]), '1 of 1 online · 1 without an agent');
+  assert.equal(devicesSummary([on], [{ online: true }, { online: false }]), '2 of 3 online · 2 without an agent');
 });

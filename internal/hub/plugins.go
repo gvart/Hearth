@@ -18,12 +18,12 @@ import (
 const maxPluginCommandBody = 32 << 10
 
 // pluginRoutes registers the exec plugins API, behind the admin session.
-// Without plugins there are no routes.
+// Without plugins the list answers none and there is no command route.
 func (a *api) pluginRoutes(mux *http.ServeMux) {
+	mux.Handle("GET /api/v1/plugins", a.auth(a.listPlugins))
 	if a.plugins == nil {
 		return
 	}
-	mux.Handle("GET /api/v1/plugins", a.auth(a.listPlugins))
 	mux.Handle("POST /api/v1/plugins/{name}/commands", a.auth(a.pluginCommand))
 }
 
@@ -42,10 +42,14 @@ func (a *api) listPlugins(w http.ResponseWriter, r *http.Request) {
 	for class, action := range pluginCommandActions {
 		decisions[class], _ = a.policy.Check(policy.Request{ActorKind: policy.ActorWeb, ActorID: remoteHost(r), Action: action})
 	}
+	list := []plugins.Status{}
+	if a.plugins != nil {
+		list = a.plugins.Plugins()
+	}
 	writeJSON(w, http.StatusOK, struct {
 		Plugins   []plugins.Status        `json:"plugins"`
 		Decisions map[policy.Class]string `json:"decisions"`
-	}{Plugins: a.plugins.Plugins(), Decisions: decisions})
+	}{Plugins: list, Decisions: decisions})
 }
 
 // pluginCommand runs a command of a plugin, through policy. One policy holds

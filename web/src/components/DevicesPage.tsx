@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { latest, rememberView, storedView, type DevicesView } from '../devices.ts';
+import { devicesSummary, latest, rememberView, storedView, type DevicesView } from '../devices.ts';
 import { addDeviceHash, deviceHash } from '../nav.ts';
 import type { Device, NetworkHost } from '../api/client.ts';
-import { useDevices, useMetricsSparklines, useNetworkScan } from '../api/hooks.ts';
+import { adoptedHosts } from '../adopt.ts';
+import { useDevices, useMetricsSparklines, useNetworkHosts, useNetworkScan } from '../api/hooks.ts';
 import { displayName, formatUptime, osArch, primaryIP, relativeTime, statusLabel } from '../format.ts';
 import { AddDeviceDialog } from './AddDeviceDialog.tsx';
 import { BeszelSystems } from './BeszelSystems.tsx';
@@ -57,6 +58,7 @@ export function DevicesPage() {
   const devices = useDevices();
   const sparklines = useMetricsSparklines();
   const scan = useNetworkScan();
+  const hosts = useNetworkHosts();
   const now = useNow(1_000); // uptime ticks in seconds
   // An add-device link (#/add-device, as the command bar makes) opens the dialog.
   const [adding, setAdding] = useState(() => window.location.hash === addDeviceHash);
@@ -67,7 +69,9 @@ export function DevicesPage() {
   const list = (devices.data ?? []).slice().sort(byStatusThenName);
   const isNew = (d: Device) => baseline !== undefined && !baseline.has(d.id);
   const joined = adding ? list.find(isNew) : undefined;
-  const online = list.filter((d) => d.status === 'online').length;
+  // Adopted network hosts are devices too: with one, the page is not empty.
+  const adopted = adoptedHosts(hosts.data ?? []);
+  const empty = list.length === 0 && adopted.length === 0 && !hosts.isPending;
 
   // The discovered host "Add device" was opened for, if any.
   const [prefill, setPrefill] = useState<NetworkHost>();
@@ -112,13 +116,9 @@ export function DevicesPage() {
               Devices <Tip id="devices" />
             </h1>
             {devices.data ? (
-              <p className="muted">
-                {list.length === 0
-                  ? 'No devices yet'
-                  : `${String(online)} of ${String(list.length)} online`}
-              </p>
+              <p className="muted">{devicesSummary(list, adopted)}</p>
             ) : null}
-            {list.length > 0 ? <NetworkScanResult scan={scan} /> : null}
+            {devices.isSuccess && empty ? null : <NetworkScanResult scan={scan} />}
           </div>
           <div className="devices-tools">
             <div className="range-picker" role="group" aria-label="View">
@@ -138,7 +138,7 @@ export function DevicesPage() {
               ))}
             </div>
             {/* The empty state below has its own. */}
-            {devices.isSuccess && list.length === 0 ? null : <NetworkScanButton scan={scan} />}
+            {devices.isSuccess && empty ? null : <NetworkScanButton scan={scan} />}
             <button className="btn btn-primary" type="button" onClick={openAdd}>
               <span aria-hidden="true">＋</span> Add device
             </button>
@@ -151,7 +151,7 @@ export function DevicesPage() {
           </div>
         ) : devices.isPending ? (
           <p className="muted">Loading devices…</p>
-        ) : list.length === 0 ? (
+        ) : empty ? (
           <div className="empty">
             <h2>Bring your first device home</h2>
             <p className="muted">Add a Raspberry Pi, a NAS, a laptop or a cluster node. It shows up here within seconds.</p>
@@ -164,7 +164,7 @@ export function DevicesPage() {
             <p className="muted">Or scan your network to see what is already on it.</p>
             <NetworkScanResult scan={scan} />
           </div>
-        ) : view === 'blocks' ? (
+        ) : list.length === 0 ? null : view === 'blocks' ? (
           <div className="dev-block-grid">
             {list.map((d, i) => {
               const charts = sparklines.data?.devices[d.id];

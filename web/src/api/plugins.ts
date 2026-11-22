@@ -1,7 +1,7 @@
 // Typed client and hooks for the hub's exec plugins (/api/v1/plugins).
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ApiError, request } from './client.ts';
+import { request } from './client.ts';
 
 export type PolicyClass = 'read' | 'safe' | 'dangerous';
 
@@ -59,17 +59,8 @@ export interface PluginCommand {
 }
 
 const pluginsApi = {
-  /** The hub's plugins, or null when it runs none (the API is not served then). */
-  list: async (): Promise<Plugins | null> => {
-    try {
-      return await request<Plugins>('GET', '/plugins');
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 404) {
-        return null;
-      }
-      throw err;
-    }
-  },
+  /** The hub's plugins: an empty list when it runs none. */
+  list: () => request<Plugins>('GET', '/plugins'),
   command: (plugin: string, cmd: PluginCommand) =>
     request<{ output: string }>('POST', `/plugins/${encodeURIComponent(plugin)}/commands`, cmd),
 };
