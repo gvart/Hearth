@@ -64,6 +64,11 @@ tasks:
     cmds:
       - go test -tags e2e -count=1 -v -run '^TestCluster$' ./test/e2e/...
 
+  e2e:autohub:
+    desc: Run the compose-based end-to-end test of devices becoming hubs from the install command, then the first hub killed (needs Docker with compose)
+    cmds:
+      - go test -tags e2e -count=1 -v -timeout 20m -run '^TestAutoHubs$' ./test/e2e/...
+
   e2e:install:
     desc: Test deploy/install.sh end to end in a Debian 12 container (needs Docker)
     cmds:
