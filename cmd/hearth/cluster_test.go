@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"net/netip"
 	"strings"
 	"testing"
 	"time"
@@ -35,22 +36,31 @@ func TestClusterCommandsNeedAHub(t *testing.T) {
 
 func TestAdvertiseAddr(t *testing.T) {
 	host := dialableHost(t.Context(), hostnameOr("localhost"))
+	lan := []netip.Addr{netip.MustParseAddr("192.168.1.20"), netip.MustParseAddr("10.0.0.7")}
 	tests := []struct {
-		opts clusterOptions
-		want string
+		opts  clusterOptions
+		hosts []string
+		lan   []netip.Addr
+		want  string
 	}{
-		{clusterOptions{listen: ":7444"}, host + ":7444"},
-		{clusterOptions{listen: "0.0.0.0:9000"}, host + ":9000"},
-		{clusterOptions{listen: "10.0.0.5:7444"}, "10.0.0.5:7444"},
-		{clusterOptions{listen: ":7444", advertise: "hub-b.lan:7999"}, "hub-b.lan:7999"},
+		// No LAN address: the hostname if it resolves beyond loopback.
+		{clusterOptions{listen: ":7444"}, nil, nil, host + ":7444"},
+		{clusterOptions{listen: "0.0.0.0:9000"}, nil, nil, host + ":9000"},
+		// A bare hub advertises its first LAN address, not its hostname.
+		{clusterOptions{listen: ":7444"}, nil, lan, "192.168.1.20:7444"},
+		// The first --host that is not loopback comes first.
+		{clusterOptions{listen: ":7444"}, []string{"localhost", "hub.lan"}, lan, "hub.lan:7444"},
+		{clusterOptions{listen: ":7444"}, []string{"127.0.0.1"}, lan, "192.168.1.20:7444"},
+		{clusterOptions{listen: "10.0.0.5:7444"}, []string{"hub.lan"}, lan, "10.0.0.5:7444"},
+		{clusterOptions{listen: ":7444", advertise: "hub-b.lan:7999"}, []string{"hub.lan"}, lan, "hub-b.lan:7999"},
 	}
 	for _, tt := range tests {
-		got, err := tt.opts.advertiseAddr(t.Context())
+		got, err := tt.opts.advertiseAddr(t.Context(), tt.hosts, tt.lan)
 		if err != nil || got != tt.want {
-			t.Errorf("%+v: advertiseAddr = %q, %v; want %q", tt.opts, got, err, tt.want)
+			t.Errorf("%+v %v %v: advertiseAddr = %q, %v; want %q", tt.opts, tt.hosts, tt.lan, got, err, tt.want)
 		}
 	}
-	if _, err := (clusterOptions{advertise: "no-port"}).advertiseAddr(t.Context()); err == nil {
+	if _, err := (clusterOptions{advertise: "no-port"}).advertiseAddr(t.Context(), nil, nil); err == nil {
 		t.Error("accepted an advertise address without a port")
 	}
 }

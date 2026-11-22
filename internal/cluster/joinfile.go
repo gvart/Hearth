@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/gvart/hearth/internal/pki"
 )
 
 // JoinFileName is the join file in a hub data dir: `hearth agent join
@@ -56,4 +58,29 @@ func ReadJoinFile(path string) (JoinFile, error) {
 		return JoinFile{}, fmt.Errorf("join file %s is not a join: delete it and install with a new command", path)
 	}
 	return j, nil
+}
+
+// ClearPartialJoin deletes what a join that stopped half way left in
+// dataDir: Join writes the CA certificate last, so a node certificate or a
+// CA key without it means the hub never joined. It reports whether there
+// was any.
+func ClearPartialJoin(dataDir string) (bool, error) {
+	if _, err := os.Stat(filepath.Join(dataDir, pki.CACertFile)); err == nil {
+		return false, nil
+	}
+	found := false
+	for _, f := range []string{
+		filepath.Join(dataDir, StateDir, nodeCertFile), filepath.Join(dataDir, StateDir, nodeKeyFile),
+		filepath.Join(dataDir, StateDir, rolesFile), filepath.Join(dataDir, StateDir, seedsFile),
+		filepath.Join(dataDir, EpochFile), filepath.Join(dataDir, pki.CAKeyFile),
+	} {
+		err := os.Remove(f)
+		switch {
+		case err == nil:
+			found = true
+		case !errors.Is(err, os.ErrNotExist):
+			return found, fmt.Errorf("clear a partial join: %w", err)
+		}
+	}
+	return found, nil
 }
