@@ -29,9 +29,12 @@ HTTPS; the agent then pins the hub CA by the fingerprint in its enrollment token
 
 ## 1. Pick the names you browse with
 
-The hub certificate is valid only for the names given with `--host` (default: this machine's
-hostname, `localhost`, `127.0.0.1`, `::1`). The browser checks the name in the address bar against
-it, so start the hub with every name and IP you use to reach it:
+The hub certificate is valid only for the names given with `--host`. Without `--host` it names this
+machine's hostname, its private LAN IPv4 addresses (RFC 1918, on interfaces that are up; not those of
+Docker, libvirt, VirtualBox, VMware or macOS VM bridges, veth pairs, CNI interfaces or macOS `utun`
+VPN tunnels; never link-local, public or tailnet `100.x` addresses), `localhost`, `127.0.0.1` and
+`::1`. The browser checks the name in the address bar against it, so for a DNS name, a tailnet
+address or anything else, start the hub with every name and IP you use to reach it:
 
 ```sh
 hearth hub --host nas.lan --host 192.168.1.10
@@ -40,10 +43,12 @@ hearth hub --host nas.lan --host 192.168.1.10
 In the container image the default hostname is the container's, so always pass them there:
 `docker run … ghcr.io/gvart/hearth:<tag> hub --host nas.lan --host 192.168.1.10`.
 
-The first `--host` is the preferred name: when the UI is opened over HTTP at an address the
-certificate doesn't cover, its "open the secure address" banner links to that first name. A new
-certificate is issued at every start, so changing `--host` only needs a restart; devices that
-already trust the CA need nothing.
+The first `--host` is the preferred name (without `--host`: the first LAN IP, unless the hostname
+is a DNS name with a dot other than `.local`): when the UI is opened over HTTP at an address the
+certificate doesn't cover, its "open the secure address" banner links to that first name, and install
+commands name it. A new certificate is issued at every start, so changing `--host`, or a new LAN IP
+from DHCP, only needs a restart; devices that already trust the CA need nothing. Agents keep the
+address they enrolled with, though: give the hub a fixed address or a DNS name for them.
 
 ## 2. Get the CA certificate and check its fingerprint
 

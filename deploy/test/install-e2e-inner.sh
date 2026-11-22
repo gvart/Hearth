@@ -70,7 +70,8 @@ chmod 0440 /etc/sudoers.d/e2e
 busybox httpd -p 127.0.0.1:8000 -h /srv
 # The agent port listens on every interface: the UI's command, made from a
 # browser at 127.0.0.1, names the hub by its first certificate name that is
-# not loopback, the container's hostname.
+# not loopback: with no --host, the container's LAN address (its hostname is a
+# bare name other devices could not resolve).
 HEARTH_ADMIN_PASSWORD=$PASSWORD /build/hearth hub --data-dir /tmp/hub --assets-dir "$E2E_ASSETS" \
   --listen :7443 --http-listen 127.0.0.1:7080 >/tmp/hub.log 2>&1 &
 wait_for 15 curl -fsS "$WEB/install.sh" || fail "hub did not start"
@@ -213,7 +214,7 @@ grep -q "cosign is not installed: the release signature was not checked, only SH
   fail "installer did not say the signature was not checked"
 grep -q "installed hearth v0.0.0-e2e" /tmp/install1.log || fail "hub version not installed"
 grep -q "enrolling with the hub the token names" /tmp/install1.log || fail "installer did not take the hub from the token"
-[ "$(cat "$DATA/hub_url")" = "https://$(hostname):7443" ] || fail "hub_url is $(cat "$DATA/hub_url"), want the token's https://$(hostname):7443"
+[ "$(cat "$DATA/hub_url")" = "https://$(hostname -i | cut -d' ' -f1):7443" ] || fail "hub_url is $(cat "$DATA/hub_url"), want the token's https://$(hostname -i | cut -d' ' -f1):7443"
 ! grep -q "looking up the latest release" /tmp/install1.log || fail "pinned install looked up the latest release"
 [ -x /usr/local/bin/hearth ] || fail "binary not installed"
 [ -f "$DATA/agent.crt" ] || fail "join did not write agent.crt"

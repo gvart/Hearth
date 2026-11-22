@@ -37,10 +37,7 @@ type apMember struct {
 // promotion to master starts the layer, a demotion stops it, and the
 // member's agents move to the other masters.
 func runClusterHub(ctx context.Context, opts hubOptions, allowed cluster.RoleSet, log *slog.Logger) error {
-	hosts := opts.hosts
-	if len(hosts) == 0 {
-		hosts = []string{hostnameOr("localhost")}
-	}
+	hosts := hubHosts(ctx, opts.hosts, log)
 	var agentURL string
 	if _, port, err := net.SplitHostPort(opts.listen); err == nil && port != "0" {
 		agentURL = "https://" + net.JoinHostPort(hosts[0], port)
