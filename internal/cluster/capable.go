@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"time"
 
 	"github.com/shirou/gopsutil/v4/disk"
 	"github.com/shirou/gopsutil/v4/mem"
@@ -29,14 +30,60 @@ const (
 	MaxAutoStorage = 5
 )
 
-// HubCounts counts the members of the cluster with the master and the
-// storage role that have not left, but for except: a dead member counts
-// until it is removed.
-func (n *APNode) HubCounts(except string) (masters, storage int) {
+// HubCounts counts the hubs of the cluster with the master and the storage
+// role, but for except: the members that have not left (a dead member
+// counts until it is removed), and the hubs that joined with a token minted
+// for a device and are not in the gossip yet (joining).
+func (n *APNode) HubCounts(ctx context.Context, except string) (masters, storage int, err error) {
+	masters, storage = n.gossipHubCounts(except)
+	jm, js, err := n.joining(ctx, except, time.Now())
+	return masters + jm, storage + js, err
+}
+
+// gossipHubCounts is HubCounts of the gossip members only.
+func (n *APNode) gossipHubCounts(except string) (masters, storage int) {
 	if n.membership == nil {
 		return 0, 0
 	}
 	return hubCounts(n.membership.Members(), except)
+}
+
+// joinedWithin is how long a hub that joined with a token minted for a
+// device counts towards the caps while it is not in the gossip: it gossips
+// within seconds of its join, or it failed.
+const joinedWithin = 10 * time.Minute
+
+// joining counts the hubs that joined with a token minted for a device in
+// the last joinedWithin and are not in the gossip (in any state), but for
+// except, by the roles their token granted: a hub between its join and its
+// first gossip holds its role, and the CA key for a master, already.
+func (n *APNode) joining(ctx context.Context, except string, now time.Time) (masters, storage int, err error) {
+	if n.st == nil {
+		return 0, 0, nil
+	}
+	joined, err := n.st.JoinTokens().JoinedSince(ctx, now.Add(-joinedWithin))
+	if err != nil {
+		return 0, 0, err
+	}
+	if n.membership != nil {
+		for _, m := range n.membership.Members() {
+			delete(joined, m.ID)
+		}
+	}
+	delete(joined, except)
+	for _, rs := range joined {
+		roles, err := ParseRoles(rs)
+		if err != nil {
+			continue
+		}
+		if roles.Has(RoleMaster) {
+			masters++
+		}
+		if roles.Has(RoleStorage) {
+			storage++
+		}
+	}
+	return masters, storage, nil
 }
 
 func hubCounts(members []MemberInfo, except string) (masters, storage int) {

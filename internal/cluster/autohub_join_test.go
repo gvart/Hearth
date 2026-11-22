@@ -119,6 +119,44 @@ func TestJoinMintedTokenCaps(t *testing.T) {
 		t.Fatalf("%d capped joins in the audit log, want 2", capped)
 	}
 
+	// A hub that joined but is not in the gossip yet holds its role, and
+	// the CA key, already: the next join counts it, until it is removed.
+	t.Run("joined, not gossiping yet", func(t *testing.T) {
+		// Of the joins above, dev-0 (master) and dev-1 (capped, its token
+		// granted master) hold certificates and are in no gossip: 2 masters.
+		masters, storage = 0, 0
+		first := t.TempDir()
+		if err := join(first, mint(t, "d6", time.Now().Add(time.Hour)), 20); err != nil {
+			t.Fatal(err)
+		}
+		if lr, err := LoadLocalRoles(first, HubRoles, nil); err != nil || !lr.Roles.Has(RoleMaster) {
+			t.Fatalf("first join roles = %v, %v; want master", lr.Roles, err)
+		}
+		second := t.TempDir()
+		if err := join(second, mint(t, "d7", time.Now().Add(time.Hour)), 21); err != nil {
+			t.Fatal(err)
+		}
+		if lr, err := LoadLocalRoles(second, HubRoles, nil); err != nil || lr.Roles != RolesOf(RoleStorage) {
+			t.Fatalf("second join roles = %v, %v; want storage only", lr.Roles, err)
+		}
+		if _, err := os.Stat(filepath.Join(second, pki.CAKeyFile)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("the second join got the CA key past 3 masters: %v", err)
+		}
+		// Removed: its certificates revoked, it counts no more.
+		for _, id := range []string{"dev-20", "dev-21"} {
+			if _, err := m.st.Hubs().RevokeCerts(ctx, id, time.Now()); err != nil {
+				t.Fatal(err)
+			}
+		}
+		third := t.TempDir()
+		if err := join(third, mint(t, "d8", time.Now().Add(time.Hour)), 22); err != nil {
+			t.Fatal(err)
+		}
+		if lr, err := LoadLocalRoles(third, HubRoles, nil); err != nil || !lr.Roles.Has(RoleMaster) {
+			t.Fatalf("join after the removal: roles = %v, %v; want master", lr.Roles, err)
+		}
+	})
+
 	t.Run("reused, expired, unknown", func(t *testing.T) {
 		masters, storage = 0, 0
 		tok := mint(t, "d4", time.Now().Add(time.Hour))

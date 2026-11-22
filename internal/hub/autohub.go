@@ -18,9 +18,10 @@ import (
 // hubCounter counts an AP cluster's members for the caps on the hubs
 // devices become on their own (#328). *cluster.APNode is one.
 type hubCounter interface {
-	// HubCounts counts the members with the master and the storage role
-	// that have not left, but for except.
-	HubCounts(except string) (masters, storage int)
+	// HubCounts counts the hubs with the master and the storage role, but
+	// for except: the members that have not left and the hubs that joined
+	// and are not in the gossip yet.
+	HubCounts(ctx context.Context, except string) (masters, storage int, err error)
 }
 
 // autoHubJoinTTL is how long a join token minted at an enrollment lasts:
@@ -80,7 +81,11 @@ func (e *Enroller) mintHubJoin(ctx context.Context, deviceID, handle, hubRoles s
 	e.mintMu.Lock()
 	defer e.mintMu.Unlock()
 	now := e.now()
-	masters, storage := e.hubs.HubCounts("")
+	masters, storage, err := e.hubs.HubCounts(ctx, "")
+	if err != nil {
+		e.log.ErrorContext(ctx, "count the hubs", "err", err)
+		return refuse("this hub could not count the cluster's hubs")
+	}
 	pending, pendingMasters, err := e.store.JoinTokens().PendingMinted(ctx, now)
 	if err != nil {
 		e.log.ErrorContext(ctx, "count the hubs to come", "err", err)

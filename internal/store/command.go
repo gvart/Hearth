@@ -420,7 +420,7 @@ func (ConsumeToken) Op() string { return "consume_token" }
 func (c ConsumeToken) minSchema() int64 { return ownedSchema(c.Master, 0) }
 
 func (c ConsumeToken) apply(ctx context.Context, w *writer) (Result, error) {
-	r, err := consume(ctx, w, "tokens", "token", c.Hash, c.Now, c.Master)
+	r, err := consume(ctx, w, "tokens", "token", c.Hash, c.Now, c.Master, nil)
 	if err != nil {
 		return Result{}, err
 	}
@@ -435,7 +435,7 @@ func (c ConsumeToken) apply(ctx context.Context, w *writer) (Result, error) {
 // join_tokens or approval_links) used at now, and returns its row. It fails
 // with ErrNotFound, a *NotOwnerError when master does not own it (what names
 // it), ErrTokenUsed or ErrTokenExpired, in that order.
-func consume(ctx context.Context, w *writer, table, what string, hash []byte, now int64, master string) (row, error) {
+func consume(ctx context.Context, w *writer, table, what string, hash []byte, now int64, master string, set row) (row, error) {
 	r, err := w.get(ctx, table, hash)
 	if err == nil && r != nil {
 		err = checkOwner(r, what, master)
@@ -451,6 +451,9 @@ func consume(ctx context.Context, w *writer, table, what string, hash []byte, no
 		return nil, ErrTokenExpired
 	}
 	r["used_at"] = now
+	for k, v := range set {
+		r[k] = v
+	}
 	return r, w.put(ctx, table, r)
 }
 
@@ -495,6 +498,9 @@ type ConsumeJoinToken struct {
 	Now  int64  `json:"now"`
 	// Master is the master consuming it in an AP cluster (OwnedBy).
 	Master string `json:"master,omitempty"`
+	// NodeID is the hub joining with it, kept on a token minted for a
+	// device (#328) from hubTokenSchema.
+	NodeID string `json:"node_id,omitempty"`
 }
 
 // Op implements Command.
@@ -503,7 +509,11 @@ func (ConsumeJoinToken) Op() string { return "consume_join_token" }
 func (c ConsumeJoinToken) minSchema() int64 { return ownedSchema(c.Master, joinTokenRolesSchema) }
 
 func (c ConsumeJoinToken) apply(ctx context.Context, w *writer) (Result, error) {
-	r, err := consume(ctx, w, "join_tokens", "join token", c.Hash, c.Now, c.Master)
+	var set row
+	if w.schema >= hubTokenSchema {
+		set = row{"joined_node": c.NodeID}
+	}
+	r, err := consume(ctx, w, "join_tokens", "join token", c.Hash, c.Now, c.Master, set)
 	if err != nil {
 		return Result{}, err
 	}

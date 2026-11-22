@@ -49,7 +49,7 @@ func (r JoinTokens) CreateFor(ctx context.Context, secret string, expiresAt time
 // roles it grants. It succeeds at most once per token and returns
 // ErrNotFound, ErrTokenUsed or ErrTokenExpired when the token cannot be used.
 func (r JoinTokens) Consume(ctx context.Context, secret string, now time.Time) (string, error) {
-	t, err := r.Use(ctx, secret, now)
+	t, err := r.Use(ctx, secret, "", now)
 	return t.Roles, err
 }
 
@@ -62,10 +62,11 @@ type JoinToken struct {
 	DeviceID string
 }
 
-// Use is Consume, returning the device the token was minted for too.
-func (r JoinTokens) Use(ctx context.Context, secret string, now time.Time) (JoinToken, error) {
+// Use is Consume by the hub nodeID, returning the device the token was
+// minted for too.
+func (r JoinTokens) Use(ctx context.Context, secret, nodeID string, now time.Time) (JoinToken, error) {
 	h := hashSecret(secret)
-	res, err := r.s.apply(ctx, ConsumeJoinToken{Hash: h[:], Now: toMillis(now)})
+	res, err := r.s.apply(ctx, ConsumeJoinToken{Hash: h[:], Now: toMillis(now), NodeID: nodeID})
 	if err != nil {
 		return JoinToken{}, fmt.Errorf("consume join token: %w", err)
 	}
@@ -92,4 +93,28 @@ func (r JoinTokens) PendingMinted(ctx context.Context, now time.Time) (all, mast
 		}
 	}
 	return len(roles), masters, nil
+}
+
+// JoinedSince returns the hubs that joined with a token minted for a device
+// (#328) after since, by node ID, with the roles the token granted (a join
+// capped to storage only still shows master): the caps count such a hub
+// until it shows in the gossip, as it may hold the CA key already. Only a
+// hub with an unrevoked hub certificate counts: a refused join got none,
+// and a removed hub's are revoked. Below schema 34 there are none.
+func (r JoinTokens) JoinedSince(ctx context.Context, since time.Time) (map[string]string, error) {
+	if ok, err := atSchema(ctx, r.s.db, hubTokenSchema); err != nil || !ok {
+		return nil, err
+	}
+	rows, err := listCol[string](ctx, r.s, "join_tokens", `SELECT joined_node || ' ' || roles`,
+		` FROM join_tokens WHERE device_id != '' AND joined_node != '' AND used_at > ? AND _deleted = 0`+
+			` AND joined_node IN (SELECT node_id FROM hub_certs WHERE revoked_at IS NULL)`, toMillis(since))
+	if err != nil {
+		return nil, fmt.Errorf("list joined hubs: %w", err)
+	}
+	out := map[string]string{}
+	for _, row := range rows {
+		node, roles, _ := strings.Cut(row, " ")
+		out[node] = roles
+	}
+	return out, nil
 }

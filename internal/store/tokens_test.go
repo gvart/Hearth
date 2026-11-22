@@ -79,20 +79,48 @@ func TestHubTokens(t *testing.T) {
 	if all, masters, err := s.JoinTokens().PendingMinted(ctx, now); err != nil || all != 2 || masters != 1 {
 		t.Fatalf("PendingMinted = %d, %d, %v; want 2, 1", all, masters, err)
 	}
-	jt, err := s.JoinTokens().Use(ctx, "m1", now)
+	jt, err := s.JoinTokens().Use(ctx, "m1", "hub-1", now)
 	if err != nil || jt.DeviceID != "dev-1" || jt.Roles != "storage,master" {
 		t.Fatalf("Use = %+v, %v", jt, err)
 	}
-	if _, err := s.JoinTokens().Use(ctx, "m1", now); !errors.Is(err, ErrTokenUsed) {
+	if _, err := s.JoinTokens().Use(ctx, "m1", "hub-1", now); !errors.Is(err, ErrTokenUsed) {
 		t.Fatalf("Use again = %v, want ErrTokenUsed", err)
 	}
-	if _, err := s.JoinTokens().Use(ctx, "old", now); !errors.Is(err, ErrTokenExpired) {
+	if _, err := s.JoinTokens().Use(ctx, "old", "hub-3", now); !errors.Is(err, ErrTokenExpired) {
 		t.Fatalf("Use expired = %v, want ErrTokenExpired", err)
 	}
-	if _, err := s.JoinTokens().Use(ctx, "nope", now); !errors.Is(err, ErrNotFound) {
+	if _, err := s.JoinTokens().Use(ctx, "nope", "hub-4", now); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Use unknown = %v, want ErrNotFound", err)
 	}
 	if all, masters, err := s.JoinTokens().PendingMinted(ctx, now); err != nil || all != 1 || masters != 0 {
 		t.Fatalf("PendingMinted after use = %d, %d, %v; want 1, 0", all, masters, err)
+	}
+
+	// The hub that joined with a minted token, and got its certificate,
+	// counts as joined, by the token's roles; one with an admin's token does
+	// not, nor one without a certificate (refused), nor one removed.
+	if _, err := s.JoinTokens().Use(ctx, "admin", "hub-x", now); err != nil {
+		t.Fatal(err)
+	}
+	if joined, err := s.JoinTokens().JoinedSince(ctx, now.Add(-time.Minute)); err != nil || len(joined) != 0 {
+		t.Fatalf("JoinedSince without a certificate = %v, %v; want none", joined, err)
+	}
+	for _, id := range []string{"hub-1", "hub-x"} {
+		if err := s.Hubs().RecordCert(ctx, "c-"+id, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	joined, err := s.JoinTokens().JoinedSince(ctx, now.Add(-time.Minute))
+	if err != nil || len(joined) != 1 || joined["hub-1"] != "storage,master" {
+		t.Fatalf("JoinedSince = %v, %v; want hub-1 as storage,master", joined, err)
+	}
+	if joined, err := s.JoinTokens().JoinedSince(ctx, now); err != nil || len(joined) != 0 {
+		t.Fatalf("JoinedSince(now) = %v, %v; want none", joined, err)
+	}
+	if _, err := s.Hubs().RevokeCerts(ctx, "hub-1", now); err != nil {
+		t.Fatal(err)
+	}
+	if joined, err := s.JoinTokens().JoinedSince(ctx, now.Add(-time.Minute)); err != nil || len(joined) != 0 {
+		t.Fatalf("JoinedSince after removal = %v, %v; want none", joined, err)
 	}
 }

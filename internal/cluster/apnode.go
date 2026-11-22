@@ -726,15 +726,19 @@ type APJoinServer struct {
 	policy *policy.Engine
 	log    *slog.Logger
 	now    func() time.Time
-	// hubCounts is node.HubCounts; tests stand in for a cluster.
+	// hubCounts counts the gossip members, as node.gossipHubCounts; tests
+	// stand in for a cluster.
 	hubCounts func(except string) (masters, storage int)
+	// joinMu makes the caps' count, the grant and the token's use of one
+	// join at a time on this master (#328).
+	joinMu sync.Mutex
 	// fetchRefused rate-limits the audit entries of refused FetchCAKey calls.
 	fetchRefused fetchRefusals
 }
 
 // NewAPJoinServer returns the join service of node.
 func NewAPJoinServer(node *APNode, st *store.Store, ca *pki.CA, pol *policy.Engine, log *slog.Logger) *APJoinServer {
-	return &APJoinServer{node: node, store: st, ca: ca, policy: pol, log: log, now: time.Now, hubCounts: node.HubCounts}
+	return &APJoinServer{node: node, store: st, ca: ca, policy: pol, log: log, now: time.Now, hubCounts: node.gossipHubCounts}
 }
 
 // Handler returns the service's path prefix and HTTP handler, for the hub's
@@ -800,7 +804,11 @@ func (s *APJoinServer) Join(ctx context.Context, req *connect.Request[clusterv1.
 		if err != nil {
 			return fmt.Errorf("%w: %w", errBadCSR, err)
 		}
-		jt, err := s.store.JoinTokens().Use(ctx, msg.GetTokenSecret(), now)
+		// The count of the caps below sees the hubs that joined before, in
+		// the gossip or recorded as joined by their token.
+		s.joinMu.Lock()
+		defer s.joinMu.Unlock()
+		jt, err := s.store.JoinTokens().Use(ctx, msg.GetTokenSecret(), msg.GetNodeId(), now)
 		if err != nil {
 			return err
 		}
@@ -811,6 +819,11 @@ func (s *APJoinServer) Join(ctx context.Context, req *connect.Request[clusterv1.
 			// checked again here, where the CA key leaves.
 			detail["device_id"] = jt.DeviceID
 			masters, storage := s.hubCounts(msg.GetNodeId())
+			jm, js, err := s.node.joining(ctx, msg.GetNodeId(), now)
+			if err != nil {
+				return err
+			}
+			masters, storage = masters+jm, storage+js
 			if storage >= MaxAutoStorage {
 				detail["capped"] = true
 				refused = fmt.Sprintf("the cluster has %d storage members already, the most devices join as on their own: "+

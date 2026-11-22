@@ -29,7 +29,9 @@ func (autoHubMasters) Live(string) bool                           { return true 
 func (autoHubMasters) AgentURLOf(context.Context, string) string  { return "https://192.0.2.10:7443" }
 func (autoHubMasters) Client() *http.Client                       { return http.DefaultClient }
 func (autoHubMasters) OwnerOf(string) string                      { return "hub-a" }
-func (m *autoHubMasters) HubCounts(string) (masters, storage int) { return m.masters, m.storage }
+func (m *autoHubMasters) HubCounts(context.Context, string) (masters, storage int, err error) {
+	return m.masters, m.storage, nil
+}
 
 type autoHubFixture struct {
 	st  *store.Store
@@ -142,12 +144,12 @@ func TestAutoHubMints(t *testing.T) {
 			t.Fatal("the join token secret is in the audit log")
 		}
 	}
-	got, err := f.st.JoinTokens().Use(t.Context(), jt.Secret, time.Now())
+	got, err := f.st.JoinTokens().Use(t.Context(), jt.Secret, "dev-x", time.Now())
 	if err != nil || got.DeviceID != msg.GetDeviceId() || got.Roles != "storage,master" {
 		t.Fatalf("minted token = %+v, %v", got, err)
 	}
 	// Single use.
-	if _, err := f.st.JoinTokens().Use(t.Context(), jt.Secret, time.Now()); err == nil {
+	if _, err := f.st.JoinTokens().Use(t.Context(), jt.Secret, "dev-x", time.Now()); err == nil {
 		t.Fatal("the minted join token was used twice")
 	}
 }
