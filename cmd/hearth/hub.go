@@ -15,6 +15,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -50,7 +51,10 @@ type hubOptions struct {
 	// and pass them, so no other process can take the port first.
 	agentLn, webLn net.Listener
 	hosts          []string
-	assetsDir      string
+	// lanName announces discovery.LANName over mDNS from one master and
+	// names it in the certificate; off with --no-lan-name (and in tests).
+	lanName   bool
+	assetsDir string
 	// automationsDir holds the automation files; default <dataDir>/automations.
 	automationsDir string
 	// runbooksDir holds the runbook files; default <dataDir>/runbooks.
@@ -125,6 +129,7 @@ type hubOptions struct {
 
 func newHubCmd() *cobra.Command {
 	opts := hubOptions{}
+	var noLANName bool
 	cmd := &cobra.Command{
 		Use:   "hub",
 		Short: "Run the Hearth hub",
@@ -159,6 +164,7 @@ func newHubCmd() *cobra.Command {
 			opts.netalertxToken = os.Getenv("HEARTH_NETALERTX_TOKEN")
 			opts.beszelPassword = os.Getenv("HEARTH_BESZEL_PASSWORD")
 			opts.version = cmd.Root().Version
+			opts.lanName = !noLANName
 			if v := os.Getenv("HEARTH_DISCOVER_INTERVAL"); v != "" && !cmd.Flags().Changed("discover-interval") {
 				d, err := time.ParseDuration(v)
 				if err != nil {
@@ -179,6 +185,8 @@ func newHubCmd() *cobra.Command {
 	cmd.Flags().StringSliceVar(&opts.hosts, "host", nil,
 		"DNS name or IP agents and browsers use to reach the hub (its TLS certificate names); repeatable "+
 			"(default: this hostname, the hub's private LAN IPv4 addresses, localhost, 127.0.0.1, ::1)")
+	cmd.Flags().BoolVar(&noLANName, "no-lan-name", false,
+		"do not answer at "+discovery.LANName+": no mDNS announcement, and the certificate does not name it")
 	cmd.Flags().StringVar(&opts.assetsDir, "assets-dir", "",
 		"directory of release archives and checksums.txt to serve at /download/ for `install.sh --from-hub`")
 	cmd.Flags().StringVar(&opts.prometheusURL, "prometheus-url", os.Getenv("HEARTH_PROMETHEUS_URL"),
@@ -319,7 +327,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		}
 		manifests = append(manifests, m)
 	}
-	hosts := hubHosts(ctx, opts.hosts, log)
+	hosts := hubHosts(ctx, opts.hosts, opts.lanName, log)
 	var agentPort string
 	if _, port, err := net.SplitHostPort(opts.listen); err == nil && port != "0" {
 		agentPort = port
@@ -657,7 +665,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	runAPLoops(gctx, g, node, apLoops{
 		agents: agents, reg: reg, st: st, pol: pol, automations: automations, runbooks: runbooks,
 		scanner: scanner, scheduledScans: scheduledScans, importer: importer, beszel: beszelReader, talos: talosReader, backups: backups,
-		ready: ready, log: log,
+		ready: ready, log: log, lanName: opts.lanName,
 	})
 	// Every master runs the scans asked for of it.
 	g.Go(func() error { return networkScans.Run(gctx) })
@@ -913,16 +921,21 @@ func loadNotifier(opts hubOptions, log *slog.Logger) (*notify.Notifier, error) {
 // hubHosts are the names of the hub certificate: the --host values when
 // given, as given; else defaultHubHosts with the hub's LAN addresses now,
 // so a restart after an address change (DHCP) issues a certificate for the
-// new ones.
-func hubHosts(ctx context.Context, flagHosts []string, log *slog.Logger) []string {
-	if len(flagHosts) > 0 {
-		return flagHosts
+// new ones. With lanName, discovery.LANName comes last: never the
+// preferred name, which install commands and agents use.
+func hubHosts(ctx context.Context, flagHosts []string, lanName bool, log *slog.Logger) []string {
+	hosts := flagHosts
+	if len(hosts) == 0 {
+		lan, err := discovery.LANAddrs()
+		if err != nil {
+			log.WarnContext(ctx, "list the LAN addresses for the hub certificate", "err", err)
+		}
+		hosts = defaultHubHosts(hostnameOr("localhost"), lan)
 	}
-	lan, err := discovery.LANAddrs()
-	if err != nil {
-		log.WarnContext(ctx, "list the LAN addresses for the hub certificate", "err", err)
+	if lanName && !slices.ContainsFunc(hosts, func(h string) bool { return strings.EqualFold(h, discovery.LANName) }) {
+		hosts = append(slices.Clone(hosts), discovery.LANName)
 	}
-	return defaultHubHosts(hostnameOr("localhost"), lan)
+	return hosts
 }
 
 // defaultHubHosts are the hub certificate's names without --host: the

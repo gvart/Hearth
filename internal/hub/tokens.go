@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gvart/hearth/internal/discovery"
 	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/policy"
 	"github.com/gvart/hearth/internal/store"
@@ -197,7 +198,8 @@ func releaseVersion(version string) string {
 // agent host is the browser's host only if the certificate covers it and it
 // is not a loopback address, which means nothing on another device, nor a
 // bare hostname (BareHostname) when the first certificate name that is not
-// loopback is an IP; else it is that first name. With no such name it
+// loopback is an IP, nor discovery.LANName, which only the master announcing
+// it answers at; else it is that first name. With no such name it
 // stays the browser's host: no choice works then. The install script
 // comes from the HTTP listener at the browser's address when the agent host
 // is the browser's host and the page came over plain HTTP; otherwise from the
@@ -215,7 +217,8 @@ func (a *api) commandHosts(reqHost string, overTLS bool) (httpHost, agentHost st
 	if i := slices.IndexFunc(a.agentHosts, func(h string) bool { return !isLoopback(h) }); i >= 0 {
 		first := a.agentHosts[i]
 		inCert := slices.ContainsFunc(a.agentHosts, func(h string) bool { return strings.EqualFold(h, host) })
-		if isLoopback(host) || !inCert || (BareHostname(host) && net.ParseIP(first) != nil) {
+		if isLoopback(host) || !inCert || (BareHostname(host) && net.ParseIP(first) != nil) ||
+			strings.EqualFold(strings.TrimSuffix(host, "."), discovery.LANName) {
 			agentHost = first
 		}
 	}

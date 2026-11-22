@@ -38,16 +38,19 @@ type apLoops struct {
 
 	// scheduledScans runs scanner on its schedule (--discover-subnet).
 	scheduledScans bool
+	// lanName announces discovery.LANName over mDNS (--no-lan-name).
+	lanName bool
 }
 
 // runAPLoops runs those loops on a master of an AP cluster
 // (docs/design/ap-cluster.md §6). Presence: each master sweeps the devices
 // it owns (hub.PresenceOwner). Automations, runbook runs and the approval
 // sweep run on every master, each on the items it owns on the ring of
-// masters. Network discovery, the network import, scheduled backups and the
-// removal of members down for good run on the one master owning their key;
-// during a partition, one may run on both sides (the removal guards itself:
-// only a side that sees a majority removes).
+// masters. Network discovery, the network import, scheduled backups, the
+// removal of members down for good and the mDNS announcement of
+// discovery.LANName run on the one master owning their key; during a
+// partition, one may run on both sides (the removal guards itself: only a
+// side that sees a majority removes).
 func runAPLoops(ctx context.Context, g *errgroup.Group, node *cluster.APNode, l apLoops) {
 	ring := node.Masters()
 	g.Go(func() error {
@@ -95,5 +98,9 @@ func runAPLoops(ctx context.Context, g *errgroup.Group, node *cluster.APNode, l 
 	// member keeps its own record of who is down (deadmembers.go).
 	if node.MemberDeadAfter() > 0 {
 		singleton("dead-members", func(ctx context.Context) error { return node.RunDeadMemberRemoval(ctx, l.pol) })
+	}
+	if l.lanName {
+		a := &discovery.Announcer{Name: discovery.LANName, Log: l.log.With("component", "lan-name")}
+		singleton("lan-name", a.Run)
 	}
 }

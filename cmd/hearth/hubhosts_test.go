@@ -55,16 +55,56 @@ func TestDefaultHubHosts(t *testing.T) {
 }
 
 // TestHubHostsExplicit: --host is the certificate's names as given, with no
-// LAN address added.
+// LAN address added; the LAN name, when on, comes last.
 func TestHubHostsExplicit(t *testing.T) {
 	log := slog.New(slog.DiscardHandler)
 	flag := []string{"hub", "pi.lan"}
-	if got := hubHosts(context.Background(), flag, log); !slices.Equal(got, flag) {
+	if got := hubHosts(context.Background(), flag, false, log); !slices.Equal(got, flag) {
 		t.Errorf("hubHosts(%v) = %v, want them unchanged", flag, got)
 	}
-	got := hubHosts(context.Background(), nil, log)
+	if got, want := hubHosts(context.Background(), flag, true, log), []string{"hub", "pi.lan", "hearth.local"}; !slices.Equal(got, want) {
+		t.Errorf("hubHosts(%v, lan name) = %v, want %v", flag, got, want)
+	}
+	if !slices.Equal(flag, []string{"hub", "pi.lan"}) {
+		t.Errorf("hubHosts changed its --host values: %v", flag)
+	}
+	dup := []string{"Hearth.local", "pi.lan"}
+	if got := hubHosts(context.Background(), dup, true, log); !slices.Equal(got, dup) {
+		t.Errorf("hubHosts(%v, lan name) = %v, want the LAN name once", dup, got)
+	}
+	got := hubHosts(context.Background(), nil, false, log)
 	if !slices.Contains(got, "localhost") || !slices.Contains(got, hostnameOr("localhost")) {
 		t.Errorf("hubHosts() = %v, want the hostname and localhost", got)
+	}
+	if slices.Contains(got, "hearth.local") {
+		t.Errorf("hubHosts() with --no-lan-name = %v, want no hearth.local", got)
+	}
+	got = hubHosts(context.Background(), nil, true, log)
+	if got[len(got)-1] != "hearth.local" || got[0] == "hearth.local" {
+		t.Errorf("hubHosts(lan name) = %v, want hearth.local last, never first", got)
+	}
+}
+
+// TestServerCertNamesLANName: with the LAN name on, the certificate covers
+// hearth.local next to the --host names; with --no-lan-name it does not.
+func TestServerCertNamesLANName(t *testing.T) {
+	ca, err := pki.LoadOrCreateCA(t.TempDir(), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := slog.New(slog.DiscardHandler)
+	for _, lanName := range []bool{true, false} {
+		p, err := newServerCert(context.Background(), ca, hubHosts(context.Background(), []string{"nas.lan"}, lanName, log), "", log)
+		if err != nil {
+			t.Fatal(err)
+		}
+		leaf := p.Load().Leaf
+		if err := leaf.VerifyHostname("nas.lan"); err != nil {
+			t.Errorf("lan name %v: certificate does not cover nas.lan: %v", lanName, err)
+		}
+		if err := leaf.VerifyHostname("hearth.local"); (err == nil) != lanName {
+			t.Errorf("lan name %v: VerifyHostname(hearth.local) = %v", lanName, err)
+		}
 	}
 }
 
