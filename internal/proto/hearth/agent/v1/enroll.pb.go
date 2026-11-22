@@ -31,7 +31,10 @@ type EnrollRequest struct {
 	// csr is a DER-encoded PKCS#10 certificate request. Its subject is ignored.
 	Csr []byte `protobuf:"bytes,2,opt,name=csr,proto3" json:"csr,omitempty"`
 	// hostname is informational: it seeds the device's name and hostname.
-	Hostname      string `protobuf:"bytes,3,opt,name=hostname,proto3" json:"hostname,omitempty"`
+	Hostname string `protobuf:"bytes,3,opt,name=hostname,proto3" json:"hostname,omitempty"`
+	// hub_offer, when set, says this device may also run a hub (#328): only
+	// the installer sends it. The hub checks it again (HubCapable).
+	HubOffer      *HubOffer `protobuf:"bytes,4,opt,name=hub_offer,json=hubOffer,proto3" json:"hub_offer,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -87,6 +90,161 @@ func (x *EnrollRequest) GetHostname() string {
 	return ""
 }
 
+func (x *EnrollRequest) GetHubOffer() *HubOffer {
+	if x != nil {
+		return x.HubOffer
+	}
+	return nil
+}
+
+// HubOffer describes the host of a device that offers to run a hub.
+type HubOffer struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// os and arch are the agent's runtime.GOOS and runtime.GOARCH.
+	Os   string `protobuf:"bytes,1,opt,name=os,proto3" json:"os,omitempty"`
+	Arch string `protobuf:"bytes,2,opt,name=arch,proto3" json:"arch,omitempty"`
+	// mem_total is the host's total memory, in bytes.
+	MemTotal uint64 `protobuf:"varint,3,opt,name=mem_total,json=memTotal,proto3" json:"mem_total,omitempty"`
+	// disk_free is the free space, in bytes, on the filesystem of the hub's
+	// data dir.
+	DiskFree      uint64 `protobuf:"varint,4,opt,name=disk_free,json=diskFree,proto3" json:"disk_free,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HubOffer) Reset() {
+	*x = HubOffer{}
+	mi := &file_hearth_agent_v1_enroll_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HubOffer) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HubOffer) ProtoMessage() {}
+
+func (x *HubOffer) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_agent_v1_enroll_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HubOffer.ProtoReflect.Descriptor instead.
+func (*HubOffer) Descriptor() ([]byte, []int) {
+	return file_hearth_agent_v1_enroll_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *HubOffer) GetOs() string {
+	if x != nil {
+		return x.Os
+	}
+	return ""
+}
+
+func (x *HubOffer) GetArch() string {
+	if x != nil {
+		return x.Arch
+	}
+	return ""
+}
+
+func (x *HubOffer) GetMemTotal() uint64 {
+	if x != nil {
+		return x.MemTotal
+	}
+	return 0
+}
+
+func (x *HubOffer) GetDiskFree() uint64 {
+	if x != nil {
+		return x.DiskFree
+	}
+	return 0
+}
+
+// HubJoin answers a hub offer: a join token minted for the device, to join
+// the cluster through the master at url with cluster.Join, or why not.
+type HubJoin struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// url is the agent-facing URL of the master that minted the token.
+	Url string `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"`
+	// token is the encoded cluster join token, single use. Never log it.
+	Token string `protobuf:"bytes,2,opt,name=token,proto3" json:"token,omitempty"`
+	// roles are the roles the token grants.
+	Roles []string `protobuf:"bytes,3,rep,name=roles,proto3" json:"roles,omitempty"`
+	// refused, when set, says why the device stays an agent; url and token
+	// are then empty.
+	Refused       string `protobuf:"bytes,4,opt,name=refused,proto3" json:"refused,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HubJoin) Reset() {
+	*x = HubJoin{}
+	mi := &file_hearth_agent_v1_enroll_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HubJoin) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HubJoin) ProtoMessage() {}
+
+func (x *HubJoin) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_agent_v1_enroll_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HubJoin.ProtoReflect.Descriptor instead.
+func (*HubJoin) Descriptor() ([]byte, []int) {
+	return file_hearth_agent_v1_enroll_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *HubJoin) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+func (x *HubJoin) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+func (x *HubJoin) GetRoles() []string {
+	if x != nil {
+		return x.Roles
+	}
+	return nil
+}
+
+func (x *HubJoin) GetRefused() string {
+	if x != nil {
+		return x.Refused
+	}
+	return ""
+}
+
 // EnrollResponse is the agent's new identity.
 type EnrollResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -99,14 +257,16 @@ type EnrollResponse struct {
 	// hubs are the agent-facing URLs of the hubs the agent may stream to, in
 	// an AP cluster every master, the enrolling one first. Empty from a
 	// single hub; a Welcome refreshes the list either way.
-	Hubs          []string `protobuf:"bytes,4,rep,name=hubs,proto3" json:"hubs,omitempty"`
+	Hubs []string `protobuf:"bytes,4,rep,name=hubs,proto3" json:"hubs,omitempty"`
+	// hub_join answers the request's hub_offer; unset without one.
+	HubJoin       *HubJoin `protobuf:"bytes,5,opt,name=hub_join,json=hubJoin,proto3" json:"hub_join,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *EnrollResponse) Reset() {
 	*x = EnrollResponse{}
-	mi := &file_hearth_agent_v1_enroll_proto_msgTypes[1]
+	mi := &file_hearth_agent_v1_enroll_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -118,7 +278,7 @@ func (x *EnrollResponse) String() string {
 func (*EnrollResponse) ProtoMessage() {}
 
 func (x *EnrollResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hearth_agent_v1_enroll_proto_msgTypes[1]
+	mi := &file_hearth_agent_v1_enroll_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -131,7 +291,7 @@ func (x *EnrollResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnrollResponse.ProtoReflect.Descriptor instead.
 func (*EnrollResponse) Descriptor() ([]byte, []int) {
-	return file_hearth_agent_v1_enroll_proto_rawDescGZIP(), []int{1}
+	return file_hearth_agent_v1_enroll_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *EnrollResponse) GetDeviceId() string {
@@ -162,20 +322,39 @@ func (x *EnrollResponse) GetHubs() []string {
 	return nil
 }
 
+func (x *EnrollResponse) GetHubJoin() *HubJoin {
+	if x != nil {
+		return x.HubJoin
+	}
+	return nil
+}
+
 var File_hearth_agent_v1_enroll_proto protoreflect.FileDescriptor
 
 const file_hearth_agent_v1_enroll_proto_rawDesc = "" +
 	"\n" +
-	"\x1chearth/agent/v1/enroll.proto\x12\x0fhearth.agent.v1\"`\n" +
+	"\x1chearth/agent/v1/enroll.proto\x12\x0fhearth.agent.v1\"\x98\x01\n" +
 	"\rEnrollRequest\x12!\n" +
 	"\ftoken_secret\x18\x01 \x01(\tR\vtokenSecret\x12\x10\n" +
 	"\x03csr\x18\x02 \x01(\fR\x03csr\x12\x1a\n" +
-	"\bhostname\x18\x03 \x01(\tR\bhostname\"\x8a\x01\n" +
+	"\bhostname\x18\x03 \x01(\tR\bhostname\x126\n" +
+	"\thub_offer\x18\x04 \x01(\v2\x19.hearth.agent.v1.HubOfferR\bhubOffer\"h\n" +
+	"\bHubOffer\x12\x0e\n" +
+	"\x02os\x18\x01 \x01(\tR\x02os\x12\x12\n" +
+	"\x04arch\x18\x02 \x01(\tR\x04arch\x12\x1b\n" +
+	"\tmem_total\x18\x03 \x01(\x04R\bmemTotal\x12\x1b\n" +
+	"\tdisk_free\x18\x04 \x01(\x04R\bdiskFree\"a\n" +
+	"\aHubJoin\x12\x10\n" +
+	"\x03url\x18\x01 \x01(\tR\x03url\x12\x14\n" +
+	"\x05token\x18\x02 \x01(\tR\x05token\x12\x14\n" +
+	"\x05roles\x18\x03 \x03(\tR\x05roles\x12\x18\n" +
+	"\arefused\x18\x04 \x01(\tR\arefused\"\xbf\x01\n" +
 	"\x0eEnrollResponse\x12\x1b\n" +
 	"\tdevice_id\x18\x01 \x01(\tR\bdeviceId\x12 \n" +
 	"\vcertificate\x18\x02 \x01(\fR\vcertificate\x12%\n" +
 	"\x0eca_certificate\x18\x03 \x01(\fR\rcaCertificate\x12\x12\n" +
-	"\x04hubs\x18\x04 \x03(\tR\x04hubs2Z\n" +
+	"\x04hubs\x18\x04 \x03(\tR\x04hubs\x123\n" +
+	"\bhub_join\x18\x05 \x01(\v2\x18.hearth.agent.v1.HubJoinR\ahubJoin2Z\n" +
 	"\rEnrollService\x12I\n" +
 	"\x06Enroll\x12\x1e.hearth.agent.v1.EnrollRequest\x1a\x1f.hearth.agent.v1.EnrollResponseB\xc0\x01\n" +
 	"\x13com.hearth.agent.v1B\vEnrollProtoP\x01Z>github.com/gvart/hearth/internal/proto/hearth/agent/v1;agentv1\xa2\x02\x03HAX\xaa\x02\x0fHearth.Agent.V1\xca\x02\x0fHearth\\Agent\\V1\xe2\x02\x1bHearth\\Agent\\V1\\GPBMetadata\xea\x02\x11Hearth::Agent::V1b\x06proto3"
@@ -192,19 +371,23 @@ func file_hearth_agent_v1_enroll_proto_rawDescGZIP() []byte {
 	return file_hearth_agent_v1_enroll_proto_rawDescData
 }
 
-var file_hearth_agent_v1_enroll_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_hearth_agent_v1_enroll_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_hearth_agent_v1_enroll_proto_goTypes = []any{
 	(*EnrollRequest)(nil),  // 0: hearth.agent.v1.EnrollRequest
-	(*EnrollResponse)(nil), // 1: hearth.agent.v1.EnrollResponse
+	(*HubOffer)(nil),       // 1: hearth.agent.v1.HubOffer
+	(*HubJoin)(nil),        // 2: hearth.agent.v1.HubJoin
+	(*EnrollResponse)(nil), // 3: hearth.agent.v1.EnrollResponse
 }
 var file_hearth_agent_v1_enroll_proto_depIdxs = []int32{
-	0, // 0: hearth.agent.v1.EnrollService.Enroll:input_type -> hearth.agent.v1.EnrollRequest
-	1, // 1: hearth.agent.v1.EnrollService.Enroll:output_type -> hearth.agent.v1.EnrollResponse
-	1, // [1:2] is the sub-list for method output_type
-	0, // [0:1] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	1, // 0: hearth.agent.v1.EnrollRequest.hub_offer:type_name -> hearth.agent.v1.HubOffer
+	2, // 1: hearth.agent.v1.EnrollResponse.hub_join:type_name -> hearth.agent.v1.HubJoin
+	0, // 2: hearth.agent.v1.EnrollService.Enroll:input_type -> hearth.agent.v1.EnrollRequest
+	3, // 3: hearth.agent.v1.EnrollService.Enroll:output_type -> hearth.agent.v1.EnrollResponse
+	3, // [3:4] is the sub-list for method output_type
+	2, // [2:3] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_hearth_agent_v1_enroll_proto_init() }
@@ -218,7 +401,7 @@ func file_hearth_agent_v1_enroll_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_hearth_agent_v1_enroll_proto_rawDesc), len(file_hearth_agent_v1_enroll_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

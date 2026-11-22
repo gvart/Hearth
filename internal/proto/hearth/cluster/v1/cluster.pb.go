@@ -129,7 +129,11 @@ type JoinResponse struct {
 	CaKey []byte `protobuf:"bytes,3,opt,name=ca_key,json=caKey,proto3" json:"ca_key,omitempty"`
 	// roles are the roles the hub is granted: those both its allowed_roles
 	// and the join token allow. The hub starts with them.
-	Roles         []string `protobuf:"bytes,6,rep,name=roles,proto3" json:"roles,omitempty"`
+	Roles []string `protobuf:"bytes,6,rep,name=roles,proto3" json:"roles,omitempty"`
+	// seeds are the gossip addresses (host:port) the cluster's members
+	// advertise, the joined master's first: the new hub finds the gossip by
+	// them, not by the host of the URL it joined through (#334).
+	Seeds         []string `protobuf:"bytes,7,rep,name=seeds,proto3" json:"seeds,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -188,6 +192,13 @@ func (x *JoinResponse) GetCaKey() []byte {
 func (x *JoinResponse) GetRoles() []string {
 	if x != nil {
 		return x.Roles
+	}
+	return nil
+}
+
+func (x *JoinResponse) GetSeeds() []string {
+	if x != nil {
+		return x.Seeds
 	}
 	return nil
 }
@@ -327,12 +338,13 @@ const file_hearth_cluster_v1_cluster_proto_rawDesc = "" +
 	"\aaddress\x18\x03 \x01(\tR\aaddress\x12\x10\n" +
 	"\x03csr\x18\x04 \x01(\fR\x03csr\x12%\n" +
 	"\x0eschema_version\x18\x05 \x01(\x03R\rschemaVersion\x12#\n" +
-	"\rallowed_roles\x18\a \x03(\tR\fallowedRolesJ\x04\b\x06\x10\aR\x0ecluster_epochs\"\xa7\x01\n" +
+	"\rallowed_roles\x18\a \x03(\tR\fallowedRolesJ\x04\b\x06\x10\aR\x0ecluster_epochs\"\xbd\x01\n" +
 	"\fJoinResponse\x12 \n" +
 	"\vcertificate\x18\x01 \x01(\fR\vcertificate\x12%\n" +
 	"\x0eca_certificate\x18\x02 \x01(\fR\rcaCertificate\x12\x15\n" +
 	"\x06ca_key\x18\x03 \x01(\fR\x05caKey\x12\x14\n" +
-	"\x05roles\x18\x06 \x03(\tR\x05rolesJ\x04\b\x04\x10\x05J\x04\b\x05\x10\x06R\tleader_idR\n" +
+	"\x05roles\x18\x06 \x03(\tR\x05roles\x12\x14\n" +
+	"\x05seeds\x18\a \x03(\tR\x05seedsJ\x04\b\x04\x10\x05J\x04\b\x05\x10\x06R\tleader_idR\n" +
 	"last_index\"|\n" +
 	"\x11FetchCAKeyRequest\x12,\n" +
 	"\x12new_ca_fingerprint\x18\x01 \x01(\tR\x10newCaFingerprint\x12\x10\n" +

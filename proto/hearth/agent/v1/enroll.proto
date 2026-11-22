@@ -20,6 +20,35 @@ message EnrollRequest {
   bytes csr = 2;
   // hostname is informational: it seeds the device's name and hostname.
   string hostname = 3;
+  // hub_offer, when set, says this device may also run a hub (#328): only
+  // the installer sends it. The hub checks it again (HubCapable).
+  HubOffer hub_offer = 4;
+}
+
+// HubOffer describes the host of a device that offers to run a hub.
+message HubOffer {
+  // os and arch are the agent's runtime.GOOS and runtime.GOARCH.
+  string os = 1;
+  string arch = 2;
+  // mem_total is the host's total memory, in bytes.
+  uint64 mem_total = 3;
+  // disk_free is the free space, in bytes, on the filesystem of the hub's
+  // data dir.
+  uint64 disk_free = 4;
+}
+
+// HubJoin answers a hub offer: a join token minted for the device, to join
+// the cluster through the master at url with cluster.Join, or why not.
+message HubJoin {
+  // url is the agent-facing URL of the master that minted the token.
+  string url = 1;
+  // token is the encoded cluster join token, single use. Never log it.
+  string token = 2;
+  // roles are the roles the token grants.
+  repeated string roles = 3;
+  // refused, when set, says why the device stays an agent; url and token
+  // are then empty.
+  string refused = 4;
 }
 
 // EnrollResponse is the agent's new identity.
@@ -34,4 +63,6 @@ message EnrollResponse {
   // an AP cluster every master, the enrolling one first. Empty from a
   // single hub; a Welcome refreshes the list either way.
   repeated string hubs = 4;
+  // hub_join answers the request's hub_offer; unset without one.
+  HubJoin hub_join = 5;
 }
