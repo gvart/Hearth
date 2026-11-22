@@ -3,10 +3,12 @@ title: Getting started
 description: Run a hub and bring your first device into it in about five minutes.
 ---
 
-By the end of this page you have a Hearth hub running and your first device (a Raspberry Pi, a NAS,
-a laptop) showing up in its web UI. You need:
+By the end of this page you have a Hearth hub running, your devices (a Raspberry Pi, a NAS, a mini
+PC) showing up in its web UI, and, if you started on your laptop, two or more of those devices
+running the hub in its place, so you can shut the laptop. You need:
 
-- **a machine for the hub**: Linux or macOS, amd64 or arm64. Your laptop is fine to try it out.
+- **a machine for the first hub**: Linux or macOS, amd64 or arm64. Your laptop is fine: the devices
+  you add take over from it (step 7).
 - **a device to add**: Linux (amd64, arm64, armv7) or macOS, on the same network, with `curl`.
 - the hub's address as the device sees it: its LAN IP or a DNS name. Below it is `192.168.1.10`;
   use yours everywhere you see it. To find it: `ipconfig getifaddr en0` on macOS, `hostname -I` on
@@ -86,7 +88,10 @@ name that is not loopback (its LAN IP, or your first `--host`). A bare hostname 
 `mac.local` in your browser gives way to the LAN IP too, when the hub found one, and `hearth.local`
 always does: agents never depend on it.
 
-Sign in with the admin password, then click **Add device**. The dialog shows a command like:
+Sign in with the admin password, then click **Add device**. **This device may become a hub** is
+ticked: the device may then join the hub's cluster as a hub too (step 7), so the token is as
+sensitive as the hub's CA key, and the dialog asks for your admin password again before it shows
+the command. Untick it for a device that should only run the agent. The dialog shows a command like:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/gvart/Hearth/v0.0.1-rc.9/deploy/install.sh | HEARTH_TOKEN=hearth2.… sh -s -- --version v0.0.1-rc.9
@@ -120,6 +125,13 @@ hearth: done: this device should show up in the hub UI within seconds
 The device appears in the UI as soon as its agent connects, typically within a second or two. If the
 installer warned `systemd is not running here`, start the agent yourself with the command it
 printed.
+
+With **This device may become a hub** ticked, the installer also says whether the device becomes a
+hub. Only a Linux device on amd64 or arm64 with at least 1.5 GiB of memory and 2 GiB of free disk
+does; it says so (`This device becomes a hub (storage, master)`), installs a second service,
+`hearth-hub`, and joins the cluster with it. Anything else (a Pi Zero, an armv7 board, a Mac) says
+`This device stays an agent, not a hub` and why. To keep a capable device an agent anyway, add
+`--agent-only` at the end of the command (after `sh -s --`).
 
 ### Without root
 
@@ -168,6 +180,29 @@ with a [kind](discovery.md#kinds): router, printer, media, phone, computer, NAS,
 
 In Docker, the hub sees your LAN only with host networking (see
 [In a container](discovery.md#in-a-container)).
+
+## 7. Let the laptop go
+
+A hub on your laptop stops when the laptop sleeps. Add **at least two** hub-capable Linux devices
+(step 6, with **This device may become a hub** ticked): each joins the cluster as a hub, and the
+**Cluster** page lists them. The first three hubs are masters: each serves the UI, the API and the
+agents and holds the CA key. Up to five hubs keep copies of the data (storage); a device added after
+that stays an agent. With two devices besides the laptop, either can die and nothing is lost.
+
+Before you stop the laptop's hub, open its **Cluster** page, or run `hearth cluster status` on it:
+
+```text
+Safe to stop this hub:  yes
+```
+
+It says yes once every row the laptop holds has an up-to-date copy on another hub and another master
+is live; a hub that just joined needs up to 30 seconds to catch up. See
+[Is it safe to stop this hub?](cluster.md#is-it-safe-to-stop-this-hub). Then stop it (Ctrl+C). The
+agents move to another master by themselves, and the UI is on every master: open
+`http://hearth.local:7080` again, or a device's IP on port 7080, and sign in with the same password.
+
+The laptop's data dir still holds the CA key: delete it (`~/.local/share/hearth/hub`), or keep the
+laptop as a hub of the cluster by starting it again later.
 
 ## If it does not show up
 

@@ -45,9 +45,11 @@ TLS port. Give each hub its name with `--host`: the **first** `--host` is the na
 hubs use to reach that hub's TLS port, so it must resolve from your devices. Without `--host`, each
 hub's certificate names its own hostname and private LAN IPv4 addresses, and agents and the other
 hubs reach its TLS port at its first LAN IP (a hostname with a dot, other than `.local`, comes first
-instead); the cluster port is still advertised by hostname unless you set `--cluster-advertise`. `--cluster-advertise
-host:port` is the address the other members dial for the cluster port (default: the first `--host`
-name and the `--cluster-listen` port). Every member listens on the same cluster port: a hub finds the
+instead). `--cluster-advertise host:port` is the address the other members dial for the cluster port.
+Without it a hub advertises, on its `--cluster-listen` port, the first of: the `--cluster-listen`
+host when it is a specific address, the first `--host` that is not loopback, its first private LAN
+IPv4 address, and last its hostname. A LAN IP rather than the hostname, because a bare hostname
+such as `raspberrypi` often does not resolve on the other hubs. Every member listens on the same cluster port: a hub finds the
 one it joins at that hub's host on its own cluster port.
 
 Membership is gossiped (hashicorp/memberlist, SWIM) over the cluster port, with the same hub node
@@ -106,6 +108,44 @@ takes the cluster's documents instead of its own.
 
 The new hub's Hearth must support the schema the cluster has written: the same version as the
 cluster or a newer one (see [Upgrading Hearth](#upgrading-hearth)). An older one is refused.
+
+### Auto hubs: a device becomes a hub when you add it
+
+You rarely need a join token by hand. **Add device** with **This device may become a hub** ticked
+(the default; `POST /api/v1/tokens` with `{"hub": true}`, or `hearth token create --hub`) makes an
+enrollment token that also lets the device join the cluster. Ticking it asks for the admin password
+again, and is the policy action `cluster.token.create` (by `web` or `admin`), audited with the roles
+it may grant; the token also creates the device as usual (`token.create`).
+
+When such a device enrolls, its installer says what it is: its OS, architecture, memory and free disk.
+Only Linux on amd64 or arm64, with at least 1.5 GiB of memory and 2 GiB free on the disk of the hub's
+data dir, is offered a hub; a Mac, an armv7 board or a Pi Zero stays an agent. For a capable device
+the master mints a join token for it, as the policy action `cluster.token.create` by the enrollment
+token (actor kind `token`, target the new device; audited, refused while the master is cut off),
+valid 15 minutes and bound to that device. The installer writes it to `/var/lib/hearth/hub/join`
+(0600) and installs a `hearth-hub` systemd service, `hearth hub --join-file
+/var/lib/hearth/hub/join`, which joins once, deletes the file, and from then on runs as an ordinary
+hub; the device keeps its agent too. `--agent-only` on the install command keeps a capable device an
+agent.
+
+The cluster stays small:
+
+| Hubs already in the cluster      | A new capable device becomes |
+| -------------------------------- | ---------------------------- |
+| fewer than 3 masters             | storage and master           |
+| 3 masters, fewer than 5 storage  | storage only (no CA key)     |
+| 5 storage members                | nothing more: it stays an agent |
+
+The counts include members that are down (not removed) and join tokens minted and not yet used, and
+`cluster.join` checks them again when the device joins: a device whose token allowed master but finds 3
+masters by then joins as storage only (audited `capped`), and one that finds 5 storage members is
+refused and stays an agent. Promote or demote by hand as before; the caps only bound what happens on
+its own.
+
+A join file the hub cannot use for good (a spent, expired or refused token) is deleted and the
+device stays an agent, with a log line saying why; an unreachable master is tried again until the
+token expires. Without a join file and without a cluster, `hearth hub --join-file` exits at once,
+so the service never forms a cluster of its own.
 
 **Away too long.** Deleted rows are forgotten after 7 days. A member that has not reached the cluster
 for longer refuses to start with its old data, so it cannot bring deleted rows back: clear its data
@@ -628,6 +668,8 @@ the time it was made and lands only once. If a spooled entry cannot be read back
 
 ## Limits
 
+- **Auto hubs are Linux only.** A Mac never offers itself as a hub; promote one by hand with a join
+  token.
 - **A removed master's data dir still holds the CA key.** Removal cannot take it back: whoever has that
   data dir can still mint certificates the cluster trusts until you [rotate the hub CA](#rotating-the-hub-ca).
   Wipe the data dir of every removed master. Storage-only members never hold the key.
