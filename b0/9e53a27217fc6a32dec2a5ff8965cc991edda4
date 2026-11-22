@@ -1,0 +1,20 @@
+docs/design/auto-hubs.md
+  s_18b57982fdff93::t_1e856131480c50 1-108
+  s_18b57982fdff93::t_965940caedf863 109-127
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b09e53a27217fc6a32dec2a5ff8965cc991edda4",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}

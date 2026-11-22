@@ -1,0 +1,37 @@
+web/src/components/SettingsPage.css
+  s_18b57982fdff93::t_35f9b6dc73ad90 108-125
+internal/hub/hubtoken_test.go
+  s_18b57982fdff93::t_d6821cc25d9496 1-36,39-190
+  s_18b57982fdff93::t_06bf770ce2e992 37-38
+internal/hub/tokens.go
+  s_18b57982fdff93::t_631684b74f6fba 69-72,79,100-103,124-126,128-147,149-154,162,170-172,345-349
+  s_18b57982fdff93::t_0c9b37652d11c4 127
+  s_18b57982fdff93::t_c366892efd8a10 350-351
+web/src/api/client.ts
+  s_18b57982fdff93::t_d9b216eb66da9d 79-85,730-735
+cmd/hearth/token.go
+  s_18b57982fdff93::t_dfa69b2d154839 14,26-29,56-58,88-106,109-113
+cmd/hearth/enroll_cmds_test.go
+  s_18b57982fdff93::t_eddf348f1be409 125-170
+web/src/api/hooks.ts
+  s_18b57982fdff93::t_ee93ed6f907b2c 11,27
+  s_18b57982fdff93::t_d9b216eb66da9d 258,260-264
+web/src/components/AddDeviceDialog.tsx
+  s_18b57982fdff93::t_4fae889dbbee45 46-48,54,56,61,67-68,84-102,106-108,112-114,131-132
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ff1b67a8bbee26bf539a368c6ba61a37d4edbfd7",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
