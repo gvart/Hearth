@@ -68,8 +68,11 @@ useradd -m alice
 printf 'Defaults logfile=/var/log/sudo.log\nalice ALL=(ALL) NOPASSWD: ALL\n' >/etc/sudoers.d/e2e
 chmod 0440 /etc/sudoers.d/e2e
 busybox httpd -p 127.0.0.1:8000 -h /srv
+# The agent port listens on every interface: the UI's command, made from a
+# browser at 127.0.0.1, names the hub by its first certificate name that is
+# not loopback, the container's hostname.
 HEARTH_ADMIN_PASSWORD=$PASSWORD /build/hearth hub --data-dir /tmp/hub --assets-dir "$E2E_ASSETS" \
-  --listen 127.0.0.1:7443 --http-listen 127.0.0.1:7080 >/tmp/hub.log 2>&1 &
+  --listen :7443 --http-listen 127.0.0.1:7080 >/tmp/hub.log 2>&1 &
 wait_for 15 curl -fsS "$WEB/install.sh" || fail "hub did not start"
 TOKEN=$(/build/hearth token create --data-dir /tmp/hub --hub-url "$HUB" | sed -n '2p' | tr -d ' ')
 [ -n "$TOKEN" ] || fail "no token"
@@ -133,6 +136,13 @@ expect_fail "unsigned release with cosign" "could not download .*/checksums.txt.
 [ ! -e /tmp/neg/usr/local/bin/hearth ] || fail "binary installed from an unsigned release"
 expect_fail "missing token" "pass HEARTH_TOKEN=<token>" \
   env HEARTH_INSTALL_PREFIX=/tmp/neg sh /deploy/install.sh --hub "$HUB"
+# The same secret and CA pin, in the hearth1 form that names no hub.
+NOHUB_TOKEN=$(printf '%s' "$TOKEN" | awk -F. '{ print "hearth1." $2 "." $3 }')
+expect_fail "token naming no hub, no --hub" "the token names no hub: pass --hub" \
+  env HEARTH_INSTALL_PREFIX=/tmp/neg HEARTH_TOKEN="$NOHUB_TOKEN" sh /deploy/install.sh
+! grep -qF -- "$NOHUB_TOKEN" <<<"$out" || fail "token naming no hub: token echoed"
+! grep -q "downloading" <<<"$out" || fail "token naming no hub: downloaded before failing"
+# --hub overrides the token's hub, and is checked.
 expect_fail "plain-http hub" "must be an https:// URL" \
   env HEARTH_INSTALL_PREFIX=/tmp/neg HEARTH_TOKEN="$TOKEN" sh /deploy/install.sh --hub "$WEB"
 expect_fail "missing release" "does release v9.9.9 exist" \
@@ -149,12 +159,17 @@ grep -q "enrollment failed" <<<"$out" || fail "--token over HEARTH_TOKEN: enroll
 
 log "install as a sudo user with the Add device dialog's command"
 # The command exactly as POST /api/v1/tokens gives it to the UI. The hub runs
-# release-like version v0.0.0-e2e, so the command pins the agent to it.
+# release-like version v0.0.0-e2e, so the command fetches install.sh of that
+# tag from GitHub and pins the agent to it. It names no hub: the token does.
 curl -fsS -b /tmp/cookies -H 'Content-Type: application/json' -d '{}' "$WEB/api/v1/tokens" >/tmp/token.json
 TOKEN=$(sed -n 's/.*"token":"\([^"]*\)".*/\1/p' /tmp/token.json)
 UI_CMD=$(sed -n 's/.*"install_command":"\([^"]*\)".*/\1/p' /tmp/token.json)
-want_cmd="curl -fsSL $WEB/install.sh | HEARTH_TOKEN=$TOKEN sh -s -- --hub $HUB --version v0.0.0-e2e"
+RAW_SCRIPT=https://raw.githubusercontent.com/gvart/Hearth/v0.0.0-e2e/deploy/install.sh
+want_cmd="curl -fsSL $RAW_SCRIPT | HEARTH_TOKEN=$TOKEN sh -s -- --version v0.0.0-e2e"
 [ -n "$TOKEN" ] && [ "$UI_CMD" = "$want_cmd" ] || fail "install_command $(cat /tmp/token.json) is not the one-liner pinned to the hub version"
+# Tag v0.0.0-e2e does not exist on GitHub: fetch the same script (compared
+# with deploy/install.sh above) from the hub instead. Nothing else changes.
+UI_CMD=${UI_CMD/"$RAW_SCRIPT"/"$WEB/install.sh"}
 # Record every process holding the token in its argv or its environment while
 # the installer runs. grep reads the token from a file so its own argv stays clean.
 printf '%s\n' "$TOKEN" >/tmp/token.pat
@@ -197,6 +212,8 @@ pass "token in no process's argv, in no child's environment, not in sudo's log (
 grep -q "cosign is not installed: the release signature was not checked, only SHA-256 (install cosign" /tmp/install1.log ||
   fail "installer did not say the signature was not checked"
 grep -q "installed hearth v0.0.0-e2e" /tmp/install1.log || fail "hub version not installed"
+grep -q "enrolling with the hub the token names" /tmp/install1.log || fail "installer did not take the hub from the token"
+[ "$(cat "$DATA/hub_url")" = "https://$(hostname):7443" ] || fail "hub_url is $(cat "$DATA/hub_url"), want the token's https://$(hostname):7443"
 ! grep -q "looking up the latest release" /tmp/install1.log || fail "pinned install looked up the latest release"
 [ -x /usr/local/bin/hearth ] || fail "binary not installed"
 [ -f "$DATA/agent.crt" ] || fail "join did not write agent.crt"

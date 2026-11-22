@@ -23,7 +23,7 @@ Start a hub, click **Add device** in its web UI and paste the command it gives y
 a NAS or a laptop:
 
 ```sh
-curl -fsSL http://192.168.1.10:7080/install.sh | HEARTH_TOKEN=hearth2.… sh -s -- --hub https://192.168.1.10:7443
+curl -fsSL https://raw.githubusercontent.com/gvart/Hearth/v0.0.1-rc.7/deploy/install.sh | HEARTH_TOKEN=hearth2.… sh -s -- --version v0.0.1-rc.7
 ```
 
 The agent installs as a service, enrolls over mTLS with a single-use token and dials out to the hub:

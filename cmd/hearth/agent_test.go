@@ -23,6 +23,13 @@ import (
 // its URL and a fresh enrollment token.
 func startTestHub(t *testing.T) (url, token string) {
 	t.Helper()
+	url, tok := startTestHubToken(t)
+	return url, tok.Encode()
+}
+
+// startTestHubToken is startTestHub with the token unencoded.
+func startTestHubToken(t *testing.T) (string, pki.Token) {
+	t.Helper()
 	dir, ca := initHub(t)
 	st := openStore(t, dir)
 	cert, err := ca.IssueServerCert([]string{"127.0.0.1"}, time.Now())
@@ -46,7 +53,7 @@ func startTestHub(t *testing.T) (url, token string) {
 	if err := st.Tokens().Create(t.Context(), tok.Secret, nil, time.Now().Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	return srv.URL, tok.Encode()
+	return srv.URL, tok
 }
 
 func TestAgentJoin(t *testing.T) {
@@ -96,6 +103,91 @@ func TestAgentJoin(t *testing.T) {
 				t.Errorf("no identity: %v", err)
 			}
 		})
+	}
+}
+
+// TestAgentJoinHubFromToken: with no hub URL argument, join enrolls with the
+// hub the token names, whichever way the token comes in.
+func TestAgentJoinHubFromToken(t *testing.T) {
+	tests := []struct {
+		name  string
+		env   bool
+		stdin bool
+		args  func(token string) []string
+	}{
+		{"HEARTH_TOKEN", true, false, func(string) []string { return nil }},
+		{"stdin", false, true, func(string) []string { return []string{"-"} }},
+		{"positional token", false, false, func(tok string) []string { return []string{tok} }},
+		{"token file", false, false, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			url, tok := startTestHubToken(t)
+			enc := tok.EncodeHub(url)
+			t.Setenv(tokenEnv, "")
+			if tt.env {
+				t.Setenv(tokenEnv, enc)
+			}
+			stdin := ""
+			if tt.stdin {
+				stdin = enc + "\n"
+			}
+			dataDir := filepath.Join(t.TempDir(), "agent")
+			args := []string{"agent", "join", "--data-dir", dataDir}
+			if tt.args != nil {
+				args = append(args, tt.args(enc)...)
+			} else {
+				tokenFile := filepath.Join(t.TempDir(), "token")
+				if err := os.WriteFile(tokenFile, []byte(enc+"\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				args = append(args, "--token-file", tokenFile)
+			}
+			out, err := executeWithStdin(t, stdin, args...)
+			if err != nil || !strings.Contains(out, "Enrolled as device") {
+				t.Fatalf("join: %v\n%s", err, out)
+			}
+			if strings.Contains(out, enc) {
+				t.Error("join echoed the token")
+			}
+			b, err := os.ReadFile(filepath.Join(dataDir, agent.HubURLFile))
+			if err != nil || strings.TrimSpace(string(b)) != url {
+				t.Errorf("%s = %q (%v), want the token's hub %s", agent.HubURLFile, b, err, url)
+			}
+		})
+	}
+}
+
+// TestAgentJoinNeedsAHub: a token that names no hub, without a hub URL
+// argument, fails before anything is sent; so does a token whose hub is not
+// https, and two arguments that do not start with the hub URL.
+func TestAgentJoinNeedsAHub(t *testing.T) {
+	url, tok := startTestHubToken(t)
+	tests := []struct {
+		name, token string
+		args        []string
+		want        string
+	}{
+		{"hearth1 token", tok.Encode(), nil, "the token names no hub"},
+		{"plain-http hub in token", tok.EncodeHub("http://127.0.0.1:7080"), nil, "hub URL must be https://"},
+		{"two args, no URL", tok.Encode(), []string{"-", "x"}, "the first of two arguments must be the hub URL"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(tokenEnv, tt.token)
+			out, err := executeWithStdin(t, "", append([]string{"agent", "join", "--data-dir", t.TempDir()}, tt.args...)...)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("err = %v, want %q", err, tt.want)
+			}
+			if strings.Contains(out+err.Error(), tok.Secret) {
+				t.Error("join echoed the token")
+			}
+		})
+	}
+	// The token was never spent: it still enrolls, with the URL given.
+	t.Setenv(tokenEnv, tok.Encode())
+	if out, err := executeWithStdin(t, "", "agent", "join", "--data-dir", t.TempDir(), url); err != nil {
+		t.Fatalf("join with the URL: %v\n%s", err, out)
 	}
 }
 

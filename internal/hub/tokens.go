@@ -138,24 +138,40 @@ func (a *api) createToken(w http.ResponseWriter, r *http.Request) {
 
 	a.log.InfoContext(ctx, "enrollment token created", "remote", remoteHost(r), "ttl", ttl.String())
 	agentURL := "https://" + net.JoinHostPort(agentHost, a.agentPort)
-	enc := tok.Encode()
-	if a.masters != nil {
-		// Only this master can use it: the token says where it is.
-		enc = tok.EncodeHub(agentURL)
-	}
+	// The token says where the hub is, so neither command repeats it. In a
+	// cluster only this master can use it.
+	enc := tok.EncodeHub(agentURL)
 	writeJSON(w, http.StatusCreated, TokenJSON{
 		Token:     enc,
 		ExpiresAt: expires,
-		// Every part is checked above (host characters) or base64url, so the
-		// command is safe to paste into a shell. The token goes in the
-		// environment of sh and hearth, not their argv: any local user can
-		// read argv with ps, but not another user's environment. No sudo in
-		// the join command: sudo drops HEARTH_TOKEN, and putting it after
-		// sudo would put it in sudo's argv. Run as root, join uses the
+		// Every part is checked above (host characters, release tag) or
+		// base64url, so the command is safe to paste into a shell. The token
+		// goes in the environment of sh and hearth, not their argv: any local
+		// user can read argv with ps, but not another user's environment. No
+		// sudo in the join command: sudo drops HEARTH_TOKEN, and putting it
+		// after sudo would put it in sudo's argv. Run as root, join uses the
 		// installed service's data dir.
-		InstallCommand: "curl -fsSL http://" + httpHost + "/install.sh | HEARTH_TOKEN=" + enc + " sh -s -- --hub " + agentURL + a.versionArg(),
-		JoinCommand:    "HEARTH_TOKEN=" + enc + " hearth agent join " + agentURL,
+		InstallCommand: a.installCommand(httpHost, enc),
+		JoinCommand:    "HEARTH_TOKEN=" + enc + " hearth agent join",
 	})
+}
+
+// installScriptURL is where a release hub's install command fetches
+// install.sh: the script of its own release tag, over HTTPS from GitHub.
+const installScriptURL = "https://raw.githubusercontent.com/gvart/Hearth/"
+
+// installCommand is the one-liner that installs and enrolls a device. A
+// release hub pins the agent to its own release, so agent and hub match and
+// the installer need not look up the latest release (which GitHub does not
+// report while every release is a pre-release); the piped script cannot know
+// its tag, hence --version. A dev hub serves its own install.sh, from the
+// HTTP listener at httpHost, and the installer picks the newest release.
+func (a *api) installCommand(httpHost, token string) string {
+	if a.installVersion == "" {
+		return "curl -fsSL http://" + httpHost + "/install.sh | HEARTH_TOKEN=" + token + " sh"
+	}
+	return "curl -fsSL " + installScriptURL + a.installVersion + "/deploy/install.sh | HEARTH_TOKEN=" + token +
+		" sh -s -- --version " + a.installVersion
 }
 
 // releaseTag matches the release tags goreleaser builds from: vX.Y.Z with an
@@ -176,23 +192,16 @@ func releaseVersion(version string) string {
 	return version
 }
 
-// versionArg pins the installed agent to the hub's own release, so agent and
-// hub match and the installer need not look up the latest release (which
-// GitHub does not report while every release is a pre-release). A dev hub
-// pins nothing and the installer picks the newest release.
-func (a *api) versionArg() string {
-	if a.installVersion == "" {
-		return ""
-	}
-	return " --version " + a.installVersion
-}
-
 // commandHosts derives the hosts for the install and join commands from the
-// Host the browser used. Over plain HTTP the install script comes from that
-// same address. Over HTTPS it comes from the HTTP listener on the same host
-// instead: curl on a fresh device does not trust the hub CA yet.
-// Agents verify the hub certificate by name, so the agent URL uses that host
-// only if the certificate covers it, and the first certificate name otherwise.
+// Host the browser used. Agents verify the hub certificate by name, so the
+// agent host is the browser's host only if the certificate covers it and it
+// is not a loopback address, which means nothing on another device; else it
+// is the first certificate name that is not loopback. With no such name it
+// stays the browser's host: no choice works then. The install script
+// comes from the HTTP listener at the browser's address when the agent host
+// is the browser's host and the page came over plain HTTP; otherwise from the
+// HTTP listener at the agent host (curl on a fresh device does not trust the
+// hub CA yet, so never from the HTTPS port).
 func (a *api) commandHosts(reqHost string, overTLS bool) (httpHost, agentHost string, ok bool) {
 	host, port := reqHost, ""
 	if h, p, err := net.SplitHostPort(reqHost); err == nil {
@@ -201,21 +210,33 @@ func (a *api) commandHosts(reqHost string, overTLS bool) (httpHost, agentHost st
 	if !validHost(host) || !validPort(port) {
 		return "", "", false
 	}
-	httpHost = host
-	if strings.Contains(host, ":") {
-		httpHost = "[" + host + "]"
+	agentHost = host
+	if len(a.agentHosts) > 0 && (isLoopback(host) || !slices.ContainsFunc(a.agentHosts, func(h string) bool { return strings.EqualFold(h, host) })) {
+		if i := slices.IndexFunc(a.agentHosts, func(h string) bool { return !isLoopback(h) }); i >= 0 {
+			agentHost = a.agentHosts[i]
+		}
 	}
-	if overTLS {
+	if overTLS || agentHost != host {
 		port = a.httpPort
 	}
+	httpHost = agentHost
 	if port != "" {
-		httpHost = net.JoinHostPort(host, port)
-	}
-	agentHost = host
-	if len(a.agentHosts) > 0 && !slices.ContainsFunc(a.agentHosts, func(h string) bool { return strings.EqualFold(h, host) }) {
-		agentHost = a.agentHosts[0]
+		httpHost = net.JoinHostPort(agentHost, port)
+	} else if strings.Contains(agentHost, ":") {
+		httpHost = "[" + agentHost + "]"
 	}
 	return httpHost, agentHost, true
+}
+
+// isLoopback reports whether host names this machine only: localhost (and
+// its subdomains) or a loopback IP.
+func isLoopback(host string) bool {
+	h := strings.ToLower(strings.TrimSuffix(host, "."))
+	if h == "localhost" || strings.HasSuffix(h, ".localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func validPort(p string) bool {

@@ -210,7 +210,8 @@ func TestTLSAgentServiceStillNeedsCert(t *testing.T) {
 }
 
 // TestTLSInstallCommandUsesHTTP: a token made from the HTTPS origin still
-// fetches install.sh from the plain-HTTP listener.
+// fetches install.sh from the plain-HTTP listener. The certificate names
+// only 127.0.0.1, so the loopback host stays: there is no better one.
 func TestTLSInstallCommandUsesHTTP(t *testing.T) {
 	f := newTLSFixture(t)
 	c := f.login(t)
@@ -219,8 +220,7 @@ func TestTLSInstallCommandUsesHTTP(t *testing.T) {
 		t.Fatalf("status = %d, body %s", resp.StatusCode, resp.body)
 	}
 	got := decode[TokenJSON](t, resp)
-	want := "curl -fsSL http://127.0.0.1:" + DefaultHTTPPort + "/install.sh | HEARTH_TOKEN=" + got.Token +
-		" sh -s -- --hub https://127.0.0.1:" + DefaultAgentPort
+	want := "curl -fsSL http://127.0.0.1:" + DefaultHTTPPort + "/install.sh | HEARTH_TOKEN=" + got.Token + " sh"
 	if got.InstallCommand != want {
 		t.Errorf("install_command = %q, want %q", got.InstallCommand, want)
 	}

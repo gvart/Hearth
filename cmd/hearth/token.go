@@ -48,7 +48,7 @@ func newTokenCreateCmd() *cobra.Command {
 	cmd.Flags().StringToStringVar(&opts.labels, "labels", nil, "labels for the enrolled device, k=v[,k=v]")
 	cmd.Flags().StringVar(&opts.name, "name", "", "name for the enrolled device (default: its hostname)")
 	cmd.Flags().StringVar(&opts.hubURL, "hub-url", "https://"+hostnameOr("localhost")+":"+defaultPort,
-		"hub URL to put in the join command")
+		"agent URL of the hub, which the token names; agents enroll there")
 	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false, "decide and audit the action without creating a token")
 	return cmd
 }
@@ -90,8 +90,8 @@ func runTokenCreate(ctx context.Context, opts tokenCreateOptions, out io.Writer)
 
 	// The token is this master's: it says where to enroll.
 	enc := tok.EncodeHub(opts.hubURL)
-	_, err = fmt.Fprintf(out, "Enrollment token (single use, expires %s):\n  %s\n\nJoin a device:\n  HEARTH_TOKEN=%s hearth agent join %s\n",
-		expires.Format(time.RFC3339), enc, enc, opts.hubURL)
+	_, err = fmt.Fprintf(out, "Enrollment token (single use, expires %s):\n  %s\n\nJoin a device:\n  HEARTH_TOKEN=%s hearth agent join\n",
+		expires.Format(time.RFC3339), enc, enc)
 	if err != nil {
 		return fmt.Errorf("write token: %w", err)
 	}

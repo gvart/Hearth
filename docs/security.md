@@ -97,8 +97,15 @@ the admin password entered again, audited. What it does and does not protect aga
 - **Stored hashed** on the hub: the database never holds a usable token.
 - **Pinned**: a token carries the fingerprint of the hub CA. `hearth agent join` checks the hub's
   certificate against it before it sends the token, so a token is useless to an impostor hub.
+- **Names its hub**: a token also carries the hub's agent URL, so the install and join commands need
+  no hub address. The URL is not secret and not signed: a token edited to name another server fails
+  the CA pin there, before the secret is sent. `--hub` gives another address to use.
 - **Kept out of argv**: pass it as `HEARTH_TOKEN=<token>` or on stdin, never as an argument, which
   any local user can read with `ps`. The installer passes it to `hearth agent join` on stdin.
+
+The install command of a release hub fetches `install.sh` of the hub's own release tag from GitHub
+over HTTPS; the installer then checks the binary's SHA-256 (and, with cosign, the release
+signature). A hub you built yourself serves the installer over plain HTTP on port 7080 instead.
 
 A device can be cut off with `hearth device revoke <device-id>` on the hub host, or with **Revoke
 device** in its panel of the web UI: its certificates are revoked, the agent is disconnected within
