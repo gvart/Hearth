@@ -87,6 +87,7 @@ func TestAutoHubs(t *testing.T) {
 	})
 	killAt := time.Now()
 	s.compose(ctx, "kill", "--signal", "SIGKILL", "hub-a")
+	killedAt := s.finishedAt(ctx, "hub-a")
 
 	// 4. dev-1 carries on: the UI, a login, Add device, and every agent
 	// online there within the headline bound.
@@ -102,10 +103,17 @@ func TestAutoHubs(t *testing.T) {
 	}
 	for _, d := range autoDevices {
 		d1.waitDevice(ctx, d, killAt.Add(DeviceVisibleWithin), "online on dev-1 after hub-a was killed", func(dv device) bool {
-			return dv.Status == "online" && dv.LastSeen.After(killAt)
+			return dv.Status == "online"
 		})
 	}
 	t.Logf("TIMING kill hub-a → UI, Add device and every agent online on dev-1 in %v", since(killAt))
+	// An agent still dialing hub-a would turn offline: each one heartbeats
+	// to a surviving master within the offline bound.
+	for _, d := range autoDevices {
+		d1.waitDevice(ctx, d, killAt.Add(OfflineWithin), "a heartbeat on dev-1 after hub-a was killed", func(dv device) bool {
+			return dv.Status == "online" && dv.LastSeen.After(killedAt)
+		})
+	}
 
 	// 5. Restart dev-1's hub: it finds dev-2 again without hub-a.
 	s.stopProc(ctx, "dev-1", "hearth hub")
@@ -121,14 +129,17 @@ func TestAutoHubs(t *testing.T) {
 func (s *stack) installAutoHub(ctx context.Context, c *apiClient, d string) {
 	s.t.Helper()
 	var tok struct {
+		Token          string `json:"token"`
 		InstallCommand string `json:"install_command"`
 	}
 	if err := c.post(ctx, "/api/v1/tokens", map[string]any{"hub": true}, &tok); err != nil {
 		s.t.Fatalf("Add device with hub: %v", err)
 	}
-	out, err := s.run(ctx, "exec", "-T", d, "sh", "-c", tok.InstallCommand)
+	// 2>&1: the installer's messages, on stderr, into out.
+	out, err := s.run(ctx, "exec", "-T", d, "sh", "-c", tok.InstallCommand+" 2>&1")
 	if err != nil {
-		s.t.Fatalf("install on %s: %v\n%s", d, err, out)
+		// The error names the command, and so the token.
+		s.t.Fatalf("install on %s: %s\n%s", d, strings.ReplaceAll(err.Error(), tok.Token, "<token>"), out)
 	}
 	if !strings.Contains(out, "This device becomes a hub") {
 		s.t.Fatalf("install on %s did not make it a hub:\n%s", d, out)

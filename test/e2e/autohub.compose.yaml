@@ -43,7 +43,7 @@ services:
       context: ../..
       dockerfile: test/e2e/Dockerfile
       target: device
-    command: [busybox, httpd, -f, -p, "8000", -h, /srv]
+    command: [busybox-extras, httpd, -f, -p, "8000", -h, /srv]
     ports: []
 
   dev-1:

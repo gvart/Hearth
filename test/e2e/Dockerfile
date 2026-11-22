@@ -11,10 +11,11 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/hearth ./cmd/heart
 # the pasted install command, and /srv, a release server's files (the
 # binary as a release archive, checksums.txt, latest.json) for install.sh.
 FROM alpine:3.22 AS device
-ARG TARGETARCH
-RUN apk add --no-cache curl
+RUN apk add --no-cache curl busybox-extras
 COPY --from=build /out/hearth /build/hearth
-RUN set -e; v=0.0.0-e2e; d=/srv/releases/v$v; a=hearth_${v}_linux_${TARGETARCH}.tar.gz; \
+# The arch from uname: the classic builder sets no TARGETARCH.
+RUN set -e; case "$(uname -m)" in aarch64) arch=arm64 ;; x86_64) arch=amd64 ;; *) exit 1 ;; esac; \
+    v=0.0.0-e2e; d=/srv/releases/v$v; a=hearth_${v}_linux_${arch}.tar.gz; \
     mkdir -p "$d"; tar -czf "$d/$a" -C /build hearth; \
     (cd "$d" && sha256sum "$a" >checksums.txt); \
     printf '{"tag_name": "v%s"}\n' "$v" >/srv/latest.json; \
