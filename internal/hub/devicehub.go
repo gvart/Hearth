@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gvart/hearth/internal/cluster"
+	"github.com/gvart/hearth/internal/discovery"
 	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/policy"
 	"github.com/gvart/hearth/internal/store"
@@ -156,14 +157,17 @@ func (a *api) makeDeviceHub(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "not_capable", "only a 64-bit Linux or macOS device (amd64 or arm64) runs a hub")
 		return
 	}
-	httpHost, _, ok := a.commandHosts(r.Host, r.TLS != nil)
+	// The hosts of Add device's command: no loopback address, no
+	// hearth.local (commandHosts). Join tokens (hearthj1) name no hub, so
+	// the join URL goes in the command.
+	httpHost, agentHost, ok := a.commandHosts(r.Host, r.TLS != nil)
 	if !ok {
 		writeError(w, http.StatusBadRequest, "bad_request", "request Host header is not a valid host name")
 		return
 	}
-	joinURL, ok := shellSafeURL(a.masters.AgentURLOf(r.Context(), a.masters.Self()))
-	if !ok {
-		writeError(w, http.StatusConflict, "no_agent_url", "this hub does not know its own agent URL")
+	joinURL, ok := shellSafeURL("https://" + net.JoinHostPort(agentHost, a.agentPort))
+	if !ok || isLoopback(agentHost) || strings.EqualFold(strings.TrimSuffix(agentHost, "."), discovery.LANName) {
+		writeError(w, http.StatusConflict, "no_agent_url", "this hub's certificate names no host a device can use in a command (an IPv6 address needs a name): set --host")
 		return
 	}
 	ctx := r.Context()

@@ -3,6 +3,7 @@
 package hub
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -73,7 +74,7 @@ func TestDeviceHubMake(t *testing.T) {
 		t.Fatalf("roles = %s, want storage and master under the caps", made.Roles)
 	}
 	env, rest, ok := strings.Cut(made.Command, " sh -s -- ")
-	if !ok || rest != "--make-hub https://192.0.2.10:7443" || !strings.Contains(env, "| HEARTH_JOIN_TOKEN=") {
+	if !ok || rest != "--make-hub https://hub.lan:7443" || !strings.Contains(env, "| HEARTH_JOIN_TOKEN=") {
 		t.Fatalf("command = %q", made.Command)
 	}
 	_, enc, _ := strings.Cut(env, "HEARTH_JOIN_TOKEN=")
@@ -205,6 +206,63 @@ func TestClusterPromoteMasterReauth(t *testing.T) {
 	c := sessionCookie(t, f.login(t, testPassword))
 	if resp := f.do(t, http.MethodPost, "/api/v1/cluster/members/b/promote", `{"role": "master"}`, c); resp.StatusCode != http.StatusOK {
 		t.Fatalf("promote to master after login = %d %s", resp.StatusCode, resp.body)
+	}
+}
+
+// The make-hub command names the hosts Add device's command does, whatever
+// the browser came by: never a loopback address nor hearth.local, which a
+// device cannot rely on; a hub whose certificate names no other refuses.
+func TestDeviceHubMakeCommandHosts(t *testing.T) {
+	for _, tc := range []struct {
+		hosts   []string
+		reqHost string
+		want    string // the host in the command; "" for a refusal
+	}{
+		{[]string{"localhost", "127.0.0.1", "hearth.local", "hub.lan"}, "hearth.local:7080", "hub.lan"},
+		{[]string{"localhost", "127.0.0.1", "hearth.local", "hub.lan"}, "localhost:7080", "hub.lan"},
+		{[]string{"localhost", "127.0.0.1", "hearth.local", "hub.lan"}, "127.0.0.1:7080", "hub.lan"},
+		{[]string{"192.168.2.124", "DNP6J4RC7Q", "localhost", "hearth.local"}, "hearth.local:7080", "192.168.2.124"},
+		{[]string{"127.0.0.1", "hearth.local"}, "127.0.0.1:7080", ""},
+		{[]string{"127.0.0.1", "hearth.local"}, "hearth.local:7080", ""},
+	} {
+		t.Run(tc.reqHost+" "+strings.Join(tc.hosts, ","), func(t *testing.T) {
+			f := deviceHubFixture(t, policy.Config{}, 1, 1)
+			f.api.agentHosts = tc.hosts
+			c := sessionCookie(t, f.login(t, testPassword))
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, f.srv.URL+"/api/v1/devices/mac/hub", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Host = tc.reqHost
+			req.AddCookie(c)
+			resp, err := f.srv.Client().Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			if tc.want == "" {
+				if resp.StatusCode != http.StatusConflict {
+					t.Fatalf("status = %d, want 409 no_agent_url", resp.StatusCode)
+				}
+				return
+			}
+			if resp.StatusCode != http.StatusCreated {
+				t.Fatalf("status = %d", resp.StatusCode)
+			}
+			var got MakeHubJSON
+			if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+				t.Fatal(err)
+			}
+			for _, bad := range []string{"localhost", "127.0.0.1", "hearth.local"} {
+				if strings.Contains(got.Command, bad) {
+					t.Fatalf("command names %s: %q", bad, got.Command)
+				}
+			}
+			if !strings.HasPrefix(got.Command, "curl -fsSL http://"+tc.want+":7080/install.sh | ") ||
+				!strings.HasSuffix(got.Command, " --make-hub https://"+tc.want+":7443") {
+				t.Fatalf("command = %q, want %s for both", got.Command, tc.want)
+			}
+		})
 	}
 }
 

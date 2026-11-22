@@ -372,6 +372,8 @@ func TestCommandHostsLANAddress(t *testing.T) {
 		{[]string{"hub.home.arpa", "192.168.2.124", "localhost", "hearth.local"}, "hearth.local:7080", "hub.home.arpa"},
 		{[]string{"nas.lan", "hearth.local"}, "HEARTH.local.:7080", "nas.lan"},
 		{[]string{"hub", "hearth.local"}, "hearth.local:7080", "hub"},
+		// Nor picked over a later name when the first names are loopback.
+		{[]string{"127.0.0.1", "hearth.local", "hub.lan"}, "127.0.0.1:7080", "hub.lan"},
 	} {
 		a := &api{agentHosts: tc.hosts, httpPort: "7080"}
 		httpHost, agentHost, ok := a.commandHosts(tc.reqHost, false)

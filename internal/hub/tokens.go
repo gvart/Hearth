@@ -253,7 +253,7 @@ func releaseVersion(version string) string {
 // agent host is the browser's host only if the certificate covers it and it
 // is not a loopback address, which means nothing on another device, nor a
 // bare hostname (BareHostname) when the first certificate name that is not
-// loopback is an IP, nor discovery.LANName, which only the master announcing
+// loopback (nor discovery.LANName) is an IP, nor discovery.LANName, which only the master announcing
 // it answers at; else it is that first name. With no such name it
 // stays the browser's host: no choice works then. The install script
 // comes from the HTTP listener at the browser's address when the agent host
@@ -269,7 +269,9 @@ func (a *api) commandHosts(reqHost string, overTLS bool) (httpHost, agentHost st
 		return "", "", false
 	}
 	agentHost = host
-	if i := slices.IndexFunc(a.agentHosts, func(h string) bool { return !isLoopback(h) }); i >= 0 {
+	if i := slices.IndexFunc(a.agentHosts, func(h string) bool {
+		return !isLoopback(h) && !strings.EqualFold(strings.TrimSuffix(h, "."), discovery.LANName)
+	}); i >= 0 {
 		first := a.agentHosts[i]
 		inCert := slices.ContainsFunc(a.agentHosts, func(h string) bool { return strings.EqualFold(h, host) })
 		if isLoopback(host) || !inCert || (BareHostname(host) && net.ParseIP(first) != nil) ||
