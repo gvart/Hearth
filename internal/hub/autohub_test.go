@@ -24,11 +24,11 @@ import (
 // the counts of its members.
 type autoHubMasters struct{ masters, storage int }
 
-func (autoHubMasters) Self() string                               { return "hub-a" }
-func (autoHubMasters) Live(string) bool                           { return true }
-func (autoHubMasters) AgentURLOf(context.Context, string) string  { return "https://192.0.2.10:7443" }
-func (autoHubMasters) Client() *http.Client                       { return http.DefaultClient }
-func (autoHubMasters) OwnerOf(string) string                      { return "hub-a" }
+func (autoHubMasters) Self() string                              { return "hub-a" }
+func (autoHubMasters) Live(string) bool                          { return true }
+func (autoHubMasters) AgentURLOf(context.Context, string) string { return "https://192.0.2.10:7443" }
+func (autoHubMasters) Client() *http.Client                      { return http.DefaultClient }
+func (autoHubMasters) OwnerOf(string) string                     { return "hub-a" }
 func (m *autoHubMasters) HubCounts(context.Context, string) (masters, storage int, err error) {
 	return m.masters, m.storage, nil
 }
