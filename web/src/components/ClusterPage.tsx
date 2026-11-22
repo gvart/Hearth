@@ -8,8 +8,10 @@ import {
   memberState,
   refusalMessage,
   roleSlots,
+  safeToStopLine,
   type ClusterAction,
   type ClusterMember,
+  type ClusterStatus,
 } from '../cluster.ts';
 import { AddHubDialog } from './AddHubDialog.tsx';
 import { ClusterCASection } from './ClusterCA.tsx';
@@ -95,6 +97,7 @@ export function ClusterPage() {
               </dd>
             </div>
           </dl>
+          {data ? <SafeToStopLine status={data} /> : null}
           <div className="member-grid">
             {members.map((m) => (
               <MemberCard
@@ -130,6 +133,31 @@ export function ClusterPage() {
         />
       ) : null}
     </main>
+  );
+}
+
+/** Whether the hub showing the page can stop now: green, or what is missing. */
+function SafeToStopLine({ status }: { status: ClusterStatus }) {
+  const line = safeToStopLine(status);
+  if (!line) {
+    return null;
+  }
+  return (
+    <section className={`safe-stop ${line.ok ? 'safe-stop-ok' : 'safe-stop-warn'}`} aria-label="Safe to stop this hub">
+      <p className="safe-stop-title">
+        <span className={`pill ${line.ok ? 'pill-ok' : 'pill-warn'}`}>{line.ok ? 'safe' : 'not yet'}</span>
+        <strong>{line.title}</strong> <span className="muted">({status.node_id})</span>
+      </p>
+      {line.ok ? (
+        <p className="muted small">{line.reasons[0]}</p>
+      ) : (
+        <ul className="safe-stop-reasons">
+          {line.reasons.map((r) => (
+            <li key={r}>{r}</li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

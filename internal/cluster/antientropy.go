@@ -114,15 +114,19 @@ func (r *Replicator) antiEntropy(ctx context.Context) {
 		return
 	}
 	v := r.view()
+	key := ringKeyOf(v.ring)
 	peers := 0
 	for _, p := range v.everyone {
 		if p == v.self || !v.live[p] {
+			r.noteSynced(p, key, false)
 			continue
 		}
 		peers++
-		if err := r.SyncWith(ctx, p); err != nil {
+		err := r.SyncWith(ctx, p)
+		if err != nil {
 			r.log.DebugContext(ctx, "anti-entropy", "peer", p, "err", err)
 		}
+		r.noteSynced(p, key, err == nil)
 	}
 	if peers == 0 && len(v.everyone) == 1 {
 		// Alone in the cluster: in contact with all of it.

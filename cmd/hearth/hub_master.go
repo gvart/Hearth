@@ -122,7 +122,7 @@ func waitMasterLayer(ctx context.Context, node *cluster.APNode, changes <-chan s
 // apClusterAdmin is an AP member as the hub API's hub.ClusterAdmin.
 type apClusterAdmin struct{ node *cluster.APNode }
 
-func (a apClusterAdmin) Status() any { return a.node.Status() }
+func (a apClusterAdmin) Status(ctx context.Context) any { return a.node.StatusWithSafeStop(ctx) }
 
 func (a apClusterAdmin) Promote(ctx context.Context, member, role string) (any, error) {
 	return a.node.Promote(ctx, member, cluster.Role(role))

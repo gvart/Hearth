@@ -213,3 +213,38 @@
 .member-card .meter-label {
   width: auto;
 }
+
+/* Whether this hub is safe to stop: one line, green or what is missing. */
+.safe-stop {
+  margin: 0 0 var(--space-5);
+  padding: var(--space-3) var(--space-4);
+  border: var(--line-1) solid var(--line);
+  border-left-width: var(--line-2);
+  background: var(--surface);
+  font-size: var(--type-13);
+}
+
+.safe-stop-ok {
+  border-left-color: var(--online);
+}
+
+.safe-stop-warn {
+  border-left-color: var(--warn);
+}
+
+.safe-stop-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.safe-stop p.small,
+.safe-stop-reasons {
+  margin: var(--space-1) 0 0;
+}
+
+.safe-stop-reasons {
+  padding-left: var(--space-5);
+}

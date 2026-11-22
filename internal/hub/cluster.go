@@ -19,7 +19,7 @@ import (
 // (docs/design/ap-cluster.md §2): cluster.APNode, through an adapter.
 type ClusterAdmin interface {
 	// Status is this hub's view of the cluster and its members, as JSON.
-	Status() any
+	Status(ctx context.Context) any
 	Promote(ctx context.Context, member, role string) (any, error)
 	Demote(ctx context.Context, member, role string) (any, error)
 	Remove(ctx context.Context, member string) (any, error)
@@ -120,12 +120,12 @@ func (a *api) clusterRoutes(mux *http.ServeMux) {
 }
 
 // clusterMembers lists the members of an AP cluster; 404 on any other hub.
-func (a *api) clusterMembers(w http.ResponseWriter, _ *http.Request) {
+func (a *api) clusterMembers(w http.ResponseWriter, r *http.Request) {
 	if a.clusterAdmin == nil {
 		writeError(w, http.StatusNotFound, "not_ap_cluster", "this hub is not a member of an AP cluster")
 		return
 	}
-	writeJSON(w, http.StatusOK, a.clusterAdmin.Status())
+	writeJSON(w, http.StatusOK, a.clusterAdmin.Status(r.Context()))
 }
 
 // clusterChange promotes, demotes or removes a member, as the web UI asks.

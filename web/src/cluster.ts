@@ -27,6 +27,41 @@ export interface ClusterStatus {
   storage_members?: number;
   replicas?: number;
   highly_available?: boolean;
+  /** Whether this hub can stop now without the cluster losing a row or its last master. */
+  safe_to_stop?: SafeToStop;
+}
+
+/** One thing missing before this hub can stop. */
+export interface SafeToStopReason {
+  /** no_other_master, only_copy, replica_behind, hand_off or writes_in_flight. */
+  kind: string;
+  member?: string;
+  buckets?: number;
+  message: string;
+}
+
+export interface SafeToStop {
+  safe: boolean;
+  reasons?: SafeToStopReason[];
+}
+
+/**
+ * The "this hub" line of the Cluster page: green when it is safe to stop,
+ * else what is missing. Nothing from a hub too old to say.
+ */
+export function safeToStopLine(s: ClusterStatus): { ok: boolean; title: string; reasons: string[] } | undefined {
+  const ss = s.safe_to_stop;
+  if (!ss) {
+    return undefined;
+  }
+  if (ss.safe) {
+    return {
+      ok: true,
+      title: 'Safe to stop this hub',
+      reasons: ['Every row it holds has a caught-up copy on another live hub, and another master is live.'],
+    };
+  }
+  return { ok: false, title: 'Not safe to stop this hub yet', reasons: (ss.reasons ?? []).map((r) => r.message) };
 }
 
 export type ClusterOp = 'promote' | 'demote' | 'remove';

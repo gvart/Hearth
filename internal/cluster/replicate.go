@@ -134,6 +134,11 @@ type Replicator struct {
 	handedMu sync.Mutex
 	handed   map[int]uint64
 
+	// synced names, for each peer whose last anti-entropy round succeeded,
+	// the ring it ran on (safestop.go).
+	syncedMu sync.Mutex
+	synced   map[string]string
+
 	// uses are the master-owned rows this member used (owned.go).
 	uses *ownedUses
 
@@ -287,6 +292,7 @@ func (r *Replicator) view() view {
 	r.ringMu.Lock()
 	if key != r.ringKey || r.ring == nil {
 		r.ring, r.ringKey = NewRing(ids), key
+		r.forgetSynced()
 	}
 	ring := r.ring
 	r.ringMu.Unlock()

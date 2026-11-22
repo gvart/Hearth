@@ -23,7 +23,9 @@ type fakeClusterAdmin struct {
 	err   error
 }
 
-func (f *fakeClusterAdmin) Status() any { return map[string]any{"node_id": "a", "members": []any{}} }
+func (f *fakeClusterAdmin) Status(context.Context) any {
+	return map[string]any{"node_id": "a", "members": []any{}}
+}
 
 func (f *fakeClusterAdmin) record(op, member, role string) (any, error) {
 	f.mu.Lock()

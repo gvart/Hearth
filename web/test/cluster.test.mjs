@@ -13,6 +13,7 @@ import {
   memberState,
   refusalMessage,
   roleSlots,
+  safeToStopLine,
   waitingFor,
 } from '../src/cluster.ts';
 
@@ -168,4 +169,23 @@ test('roleSlots says what a storage member is doing while it syncs or drains', (
 test('masterCount counts the members that serve the UI', () => {
   assert.equal(masterCount([member({}), member({ id: 'c', roles: ['storage'] }), member({ id: 'd', roles: ['master'] })]), 2);
   assert.equal(masterCount([]), 0);
+});
+
+test('safeToStopLine: green when safe, the reasons when not, nothing from an older hub', () => {
+  assert.equal(safeToStopLine({ node_id: 'a' }), undefined);
+  const ok = safeToStopLine({ node_id: 'a', safe_to_stop: { safe: true } });
+  assert.equal(ok.ok, true);
+  assert.equal(ok.title, 'Safe to stop this hub');
+  const no = safeToStopLine({
+    node_id: 'a',
+    safe_to_stop: {
+      safe: false,
+      reasons: [
+        { kind: 'no_other_master', message: 'no other master is live' },
+        { kind: 'replica_behind', member: 'b', buckets: 3, message: 'replica b is down' },
+      ],
+    },
+  });
+  assert.equal(no.ok, false);
+  assert.deepEqual(no.reasons, ['no other master is live', 'replica b is down']);
 });

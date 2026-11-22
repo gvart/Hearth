@@ -160,7 +160,9 @@ func newClusterStatusCmd() *cobra.Command {
 		Short: "Show this hub's view of the cluster",
 		Long: "Show the cluster as the hub on this host sees it: its node ID, the storage members, N and whether\n" +
 			"the cluster is highly available, and every member with its roles, allowed roles, state (alive,\n" +
-			"suspect, dead, left) and database schema.",
+			"suspect, dead, left) and database schema; and whether this hub is safe to stop now: every row it\n" +
+			"holds has a copy on another live storage member that is caught up, and another master is live.\n" +
+			"If not, it says what is missing.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runClusterStatus(cmd.Context(), dataDir, asJSON, cmd.OutOrStdout())
@@ -217,6 +219,16 @@ func writeStatus(out io.Writer, st cluster.Status) error {
 	tw := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintf(tw, "Node:\t%s\nStorage members:\t%d\nReplicas (N):\t%d\nHighly available:\t%s\n",
 		st.NodeID, st.StorageMembers, st.Replicas, ha)
+	if ss := st.SafeToStop; ss != nil {
+		if ss.Safe {
+			_, _ = fmt.Fprintln(tw, "Safe to stop this hub:\tyes")
+		} else {
+			_, _ = fmt.Fprintln(tw, "Safe to stop this hub:\tno")
+			for _, r := range ss.Reasons {
+				_, _ = fmt.Fprintf(tw, "  - %s\n", r.Message)
+			}
+		}
+	}
 	writeMembers(tw, st.Members)
 	if groups := cluster.HostFlagGroups(st.Members); len(groups) > 1 {
 		parts := make([]string, len(groups))
