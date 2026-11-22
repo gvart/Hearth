@@ -1,0 +1,57 @@
+deploy/test/install-e2e-inner.sh
+  s_18b57982fdff93::t_7b446f37a1332c 71-73,75,216
+  s_18b57982fdff93::t_2d471eb150dabb 139-142,144-145,162-163,167-168,170-172,215
+  s_18b57982fdff93::t_0f33083aa4cb04 143
+docs/security.md
+  s_18b57982fdff93::t_0d53235357d338 100-102,106-108
+  s_18b57982fdff93::t_1bbabcc8a08a78 109
+internal/agent/join.go
+  s_18b57982fdff93::t_4d9e9011ea3d97 36-37,46-50
+  s_18b57982fdff93::t_808c871adba9ac 51
+internal/hub/tokens_test.go
+  s_18b57982fdff93::t_000f47010d628c 25,27,31,35-36,38-39,50,100-102,107-108
+  s_18b57982fdff93::t_2457e867c66064 16-21,23-24,26,28-30,32-34,37,40,51-54,106,109-113,117,290,299-311,313-314,319,343-411,413-414
+  s_18b57982fdff93::t_064350e1da1adf 412
+internal/hub/tls_test.go
+  s_18b57982fdff93::t_33f3ba71281555 213-214
+  s_18b57982fdff93::t_000f47010d628c 223
+cmd/hearth/token.go
+  s_18b57982fdff93::t_4d9e9011ea3d97 51,93-94
+cmd/hearth/agent_test.go
+  s_18b57982fdff93::t_39dc9c1e3737d8 26-31,56,109-192
+  s_18b57982fdff93::t_d74f14e6a7ac79 25,193
+deploy/install.sh
+  s_18b57982fdff93::t_9a99bf54e06620 9-17,73-75,81-83,511-523,540-548
+docs/getting-started.md
+  s_18b57982fdff93::t_0d53235357d338 66-68,73,76-83,115,131-132,157,159-160
+cmd/hearth/enroll_cmds_test.go
+  s_18b57982fdff93::t_39dc9c1e3737d8 77
+internal/agent/jointoken_test.go
+  s_18b57982fdff93::t_a0e37a50a62344 6-7,9,13-14,16,41-139
+site/src/content/docs/index.mdx
+  s_18b57982fdff93::t_0d53235357d338 26
+docs/concepts.md
+  s_18b57982fdff93::t_0d53235357d338 57-59
+internal/hub/tokens.go
+  s_18b57982fdff93::t_9aa981e374ff80 199-200
+  s_18b57982fdff93::t_b350d793761796 141-143,147-152,154-155,159-176,196-198,201-204,213-217,219,222,224-226,231-239
+  s_18b57982fdff93::t_109a089f4496da 240-241
+cmd/hearth/agent.go
+  s_18b57982fdff93::t_4d9e9011ea3d97 122,124-127,134-136,146-154,158,163,168
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "01908ae0c131e07a3592d754ef7e36f0b3352ab6",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
