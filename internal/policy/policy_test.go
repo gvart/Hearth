@@ -154,11 +154,11 @@ func TestEngineDo(t *testing.T) {
 			wantResult:   "ok",
 		},
 		{
-			name:         "hub cannot remove a hub",
+			name:         "hub can remove a member down for good",
 			req:          Request{ActorKind: ActorHub, ActorID: "hub-b", Action: ClusterRemove, Target: "hub-c"},
-			wantErr:      ErrDenied,
-			wantDecision: Deny,
-			wantResult:   "actor kind not allowed",
+			wantRan:      true,
+			wantDecision: Allow,
+			wantResult:   "ok",
 		},
 		{
 			name:         "join token cannot remove a hub",

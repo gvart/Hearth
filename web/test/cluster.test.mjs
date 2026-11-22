@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   actionEffect,
+  autoRemoval,
   caRefusalMessage,
   caStepEffect,
   caSteps,
@@ -55,6 +56,15 @@ test('memberState shows syncing, draining progress and failures', () => {
   assert.deepEqual(memberState(member({ draining: true, progress: 40 })), { label: 'draining 40%', tone: 'warn' });
   assert.deepEqual(memberState(member({ state: 'dead', syncing: true })), { label: 'dead', tone: 'bad' });
   assert.deepEqual(memberState(member({ state: 'left' })), { label: 'left', tone: 'muted' });
+});
+
+test('autoRemoval says roughly when a member down is removed', () => {
+  const now = Date.parse('2026-11-22T12:00:00Z');
+  const at = (when) => member({ state: 'dead', auto_remove_at: when });
+  assert.equal(autoRemoval(member({ state: 'dead' }), now), undefined);
+  assert.equal(autoRemoval(at('2026-11-23T11:40:00Z'), now), 'Removed automatically in ~24h');
+  assert.equal(autoRemoval(at('2026-11-22T12:10:00Z'), now), 'Removed automatically in ~10m');
+  assert.equal(autoRemoval(at('2026-11-22T11:00:00Z'), now), 'Removed automatically soon');
 });
 
 test('actionEffect names the member and what happens', () => {

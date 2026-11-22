@@ -43,6 +43,11 @@ type clusterOptions struct {
 	// replicas is N, the copies of each row; 0 means min(2, storage
 	// members).
 	replicas int
+	// memberDeadAfter is how long a member stays down before a master
+	// removes it; 0 never removes one. envErr is a bad
+	// HEARTH_MEMBER_DEAD_AFTER, reported by check.
+	memberDeadAfter time.Duration
+	envErr          error
 }
 
 func addClusterFlags(cmd *cobra.Command, o *clusterOptions) {
@@ -77,10 +82,27 @@ func addClusterFlags(cmd *cobra.Command, o *clusterOptions) {
 	}
 	cmd.Flags().IntVar(&o.replicas, "replicas", replicas,
 		"copies of each row (N); 0 means min(2, storage members) (env HEARTH_REPLICAS)")
+	deadAfter := cluster.DefaultMemberDeadAfter
+	if v := os.Getenv("HEARTH_MEMBER_DEAD_AFTER"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			o.envErr = fmt.Errorf("HEARTH_MEMBER_DEAD_AFTER: %w", err)
+		}
+		deadAfter = d
+	}
+	cmd.Flags().DurationVar(&o.memberDeadAfter, "member-dead-after", deadAfter,
+		"remove a member that has been down this long, as `hearth cluster remove` does; 0 never removes one "+
+			"(env HEARTH_MEMBER_DEAD_AFTER)")
 }
 
 // check checks the cluster flags.
 func (o clusterOptions) check() error {
+	if o.envErr != nil {
+		return o.envErr
+	}
+	if o.memberDeadAfter < 0 {
+		return errors.New("--member-dead-after must not be negative (0 never removes a member)")
+	}
 	if o.replicas < 0 {
 		return errors.New("--replicas must be at least 1 (0 picks the default)")
 	}
@@ -207,6 +229,7 @@ func startClusterNode(ctx context.Context, opts hubOptions, allowed cluster.Role
 		DataDir: opts.dataDir, NodeID: nodeID, CA: ca, Allowed: allowed,
 		Listen: o.listen, Listener: ln, Advertise: advertise, Seeds: seeds,
 		Replicas: o.replicas, AgentURL: agentURL, Log: log, ConfigSource: cluster.HostFlagsSource(opts.dangerousAutomations),
+		MemberDeadAfter: o.memberDeadAfter,
 	})
 	if err != nil {
 		_ = ln.Close()

@@ -71,3 +71,31 @@ func TestJoinNeedsAToken(t *testing.T) {
 		t.Fatalf("err = %v, want a pointer to HEARTH_JOIN_TOKEN", err)
 	}
 }
+
+func TestRemovedIn(t *testing.T) {
+	for d, want := range map[time.Duration]string{
+		-time.Minute:                  "soon",
+		30 * time.Second:              "in <1m",
+		10 * time.Minute:              "in ~10m",
+		23*time.Hour + 40*time.Minute: "in ~24h",
+		90 * time.Minute:              "in ~2h",
+	} {
+		if got := removedIn(d); got != want {
+			t.Errorf("removedIn(%v) = %q, want %q", d, got, want)
+		}
+	}
+}
+
+func TestStatusShowsAutoRemoval(t *testing.T) {
+	at := time.Now().Add(5 * time.Hour)
+	var out strings.Builder
+	if err := writeStatus(&out, cluster.Status{NodeID: "a", Members: []cluster.MemberInfo{
+		{ID: "a", State: cluster.MemberAlive},
+		{ID: "c", State: cluster.MemberDead, AutoRemoveAt: &at},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "dead, removed automatically in ~5h") {
+		t.Fatalf("status:\n%s", out.String())
+	}
+}

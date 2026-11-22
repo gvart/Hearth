@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -44,6 +45,11 @@ type apTestNode struct {
 	config    ConfigSource
 	// caEvery, if set, is how often it reconciles its CA (100 ms if not).
 	caEvery time.Duration
+	// deadAfter, if set, is its --member-dead-after, with the members down
+	// looked at every 50 ms (deadmembers_test.go).
+	deadAfter time.Duration
+	// log, if set, receives its log instead of testLogger.
+	log *slog.Logger
 }
 
 type apSpec struct {
@@ -150,8 +156,9 @@ func (tn *apTestNode) start(t *testing.T, n int, seed string) {
 	node, err := NewAPNode(t.Context(), APConfig{
 		DataDir: tn.dir, NodeID: tn.id, CA: ca, Allowed: tn.allowed,
 		Listen: ln.Addr().String(), Listener: ln, Advertise: ln.Addr().String(), Seeds: seeds,
-		Replicas: n, Log: testLogger(t), RolesEvery: 50 * time.Millisecond, ConfigSource: tn.config,
+		Replicas: n, Log: cmp.Or(tn.log, testLogger(t)), RolesEvery: 50 * time.Millisecond, ConfigSource: tn.config,
 		CAReconcileEvery: cmp.Or(tn.caEvery, 100*time.Millisecond),
+		MemberDeadAfter:  tn.deadAfter, deadEvery: 50 * time.Millisecond,
 		Gossip: ReplicatorConfig{
 			RequestTimeout: 2 * time.Second, AntiEntropyEvery: time.Hour, HintsEvery: time.Hour, GCEvery: time.Hour,
 		},

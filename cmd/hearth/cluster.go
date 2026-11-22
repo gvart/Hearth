@@ -162,7 +162,8 @@ func newClusterStatusCmd() *cobra.Command {
 			"the cluster is highly available, and every member with its roles, allowed roles, state (alive,\n" +
 			"suspect, dead, left) and database schema; and whether this hub is safe to stop now: every row it\n" +
 			"holds has a copy on another live storage member that is caught up, and another master is live.\n" +
-			"If not, it says what is missing.",
+			"If not, it says what is missing. A member down shows when it is removed automatically\n" +
+			"(--member-dead-after).",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runClusterStatus(cmd.Context(), dataDir, asJSON, cmd.OutOrStdout())
@@ -206,8 +207,25 @@ func writeMembers(tw io.Writer, members []cluster.MemberInfo) {
 		case m.Draining:
 			state += fmt.Sprintf(", draining %d%%", m.Progress)
 		}
+		if m.AutoRemoveAt != nil {
+			state += ", removed automatically " + removedIn(time.Until(*m.AutoRemoveAt))
+		}
 		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%d\t\n", m.ID, m.Address, m.Roles, m.AllowedRoles, state, m.Schema)
 	}
+}
+
+// removedIn says roughly when a member down is removed automatically, d
+// from now.
+func removedIn(d time.Duration) string {
+	switch {
+	case d <= 0:
+		return "soon"
+	case d >= time.Hour:
+		return fmt.Sprintf("in ~%dh", (d+time.Hour/2)/time.Hour)
+	case d >= time.Minute:
+		return fmt.Sprintf("in ~%dm", (d+time.Minute/2)/time.Minute)
+	}
+	return "in <1m"
 }
 
 // writeStatus writes the status of a cluster member.
