@@ -47,6 +47,10 @@ HEARTH_ADMIN_PASSWORD='choose-a-password' ./hearth hub
 - `--host` replaces that list with the names and IPs you give, for a DNS name (`--host nas.lan`), a
   tailnet or VPN address, or an address behind a port forward. Repeat it to add more
   (`--host nas.lan --host 192.168.1.10`). The first one is the address install commands name.
+- The hub also answers at **`hearth.local`** on the LAN: it announces that name over mDNS (next to
+  the OS's own responder, Bonjour or avahi) and its certificate names it too. It is for your
+  browser only; install commands never name it. `--no-lan-name` turns it off, for instance when two
+  separate Hearth setups share a LAN.
 - `HEARTH_ADMIN_PASSWORD` sets the password of the web UI on the first start. Later starts ignore it;
   change the password with `hearth admin set-password`.
 - The hub keeps its database and certificate authority in `~/.local/share/hearth/hub`
@@ -63,19 +67,24 @@ docker run -d --name hearth -p 7443:7443 -p 7080:7080 -v hearth:/var/lib/hearth 
 ```
 
 In a container the hub sees only the container's own network, so pass `--host` with the host
-machine's LAN IP there.
+machine's LAN IP there. Its `hearth.local` announcement does not leave Docker's default bridge
+network either: use the IP, or run the container with `--network host` on Linux.
 
-**Firewall.** Devices must reach the hub on TCP ports 7443 and 7080. On macOS with the firewall on,
-answer **Allow** when macOS asks whether `hearth` may accept incoming connections. On Linux, open
-both ports if you run a firewall (`sudo ufw allow 7443,7080/tcp`).
+**Firewall.** Devices must reach the hub on TCP ports 7443 and 7080, and browsers looking up
+`hearth.local` on UDP port 5353 (mDNS). On macOS with the firewall on, answer **Allow** when macOS
+asks whether `hearth` may accept incoming connections. On Linux, open them if you run a firewall
+(`sudo ufw allow 7443,7080/tcp` and `sudo ufw allow 5353/udp`).
 
 ## 3. Open the web UI and add a device
 
-Open **`http://192.168.1.10:7080`** (or `http://localhost:7080` on the hub machine). The "Add
+Open **`http://hearth.local:7080`** from any computer or phone on the LAN (or the hub's IP,
+`http://192.168.1.10:7080`, where `.local` names do not resolve, such as some Android browsers and
+devices on another VLAN; `http://localhost:7080` on the hub machine). The "Add
 device" dialog builds its command for an address the device can reach: the one in your browser if
 the certificate names it and it is not `localhost` or a loopback IP, else the hub's first certificate
 name that is not loopback (its LAN IP, or your first `--host`). A bare hostname such as `nas` or
-`mac.local` in your browser gives way to the LAN IP too, when the hub found one.
+`mac.local` in your browser gives way to the LAN IP too, when the hub found one, and `hearth.local`
+always does: agents never depend on it.
 
 Sign in with the admin password, then click **Add device**. The dialog shows a command like:
 

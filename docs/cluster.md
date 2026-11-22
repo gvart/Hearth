@@ -174,8 +174,9 @@ dir and join it again.
   Prometheus a device metric trigger reads the device's value from the master holding its stream,
   over the masters' link; while that master is down there is no value, and the trigger does not fire.
   Network discovery, the DHCP/Pi-hole import,
-  scheduled backups and telemetry run on one master each; Beszel and Talos reads on every master.
-  During a split both sides may run one: accepted.
+  scheduled backups, telemetry and the [`hearth.local` announcement](#the-ui-on-any-master) run on
+  one master each; Beszel and Talos reads on every master. During a split both sides may run one:
+  accepted.
 - **Tokens and approvals have an owner.** An enrollment token, a join token, an approval and an
   approval link belong to the master that created it, and only that master consumes or decides it, so
   "single use" holds without a quorum; another master refuses with an error naming the owner. An
@@ -399,10 +400,29 @@ member that is down for good holds up a demotion whose rows it would own: remove
 
 ## The UI on any master
 
-Open `https://<any master>:7443` (or `http://<any master>:7080`). Logins, token creation and everything
-else work on every master. Sessions are replicated, but cookies belong to a host name: switching from
-`hub-a.lan` to `hub-b.lan` means logging in again. Give all masters one shared DNS name (several A
-records) if you want one login to survive a failover.
+Open `http://hearth.local:7080` (or `https://hearth.local:7443` once the CA is trusted): one master
+answers mDNS queries for `hearth.local` with its LAN IP, and every master's certificate names it. Logins,
+token creation and everything else work on every master. Sessions are replicated and cookies belong to
+the host name, which stays `hearth.local` when another master takes over, so a login survives a
+failover: reload the page.
+
+- **Takeover.** The master owning the `lan-name` key on the ring of live masters announces the name.
+  When it stops cleanly it says goodbye and another master answers within a couple of seconds; when
+  it dies, within about 10 seconds (the time the others take to find it dead). Records carry a
+  10-second TTL and every new announcement flushes the old address from caches, so a browser
+  reaches the new master within about 20 seconds at worst.
+- **Joining.** A master that has just joined may announce the name before it has caught up, so for a
+  moment two masters may answer; both serve the UI.
+- **Split network.** During a partition each side may have a master announcing the name; a browser
+  gets whichever answers it, and both work. It converges when the split heals.
+- **Where it works.** mDNS stays on one LAN segment: browsers on another VLAN or over a VPN, and
+  devices without an mDNS resolver (some Android browsers), need a master's address or a shared DNS
+  name instead. Agents never use `hearth.local`: their addresses come from the enrollment token and
+  the list of masters.
+
+Or open `https://<any master>:7443` (or `http://<any master>:7080`). Switching from `hub-a.lan` to
+`hub-b.lan` means logging in again; give all masters one shared DNS name (several A records) for one
+login across masters off the LAN.
 
 Live updates (the device list changing as devices come and go) reach a UI on every master, whichever
 master the device's agent streams to. For a device on another master they arrive as its rows are

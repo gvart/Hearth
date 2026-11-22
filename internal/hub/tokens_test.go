@@ -367,6 +367,11 @@ func TestCommandHostsLANAddress(t *testing.T) {
 		{[]string{"hub"}, "hub:7080", "hub"},
 		{[]string{"pi", "192.168.2.131"}, "pi:7080", "pi"},
 		{[]string{"pi", "192.168.2.131"}, "localhost:7080", "pi"},
+		// hearth.local is answered by one master only: never in a command.
+		{[]string{"192.168.2.124", "DNP6J4RC7Q", "localhost", "hearth.local"}, "hearth.local:7080", "192.168.2.124"},
+		{[]string{"hub.home.arpa", "192.168.2.124", "localhost", "hearth.local"}, "hearth.local:7080", "hub.home.arpa"},
+		{[]string{"nas.lan", "hearth.local"}, "HEARTH.local.:7080", "nas.lan"},
+		{[]string{"hub", "hearth.local"}, "hearth.local:7080", "hub"},
 	} {
 		a := &api{agentHosts: tc.hosts, httpPort: "7080"}
 		httpHost, agentHost, ok := a.commandHosts(tc.reqHost, false)

@@ -68,7 +68,8 @@ on, have a device that is on it [scan it](#scan-from-a-device).
    ordinary port: hosts running avahi or Bonjour (Raspberry Pi OS, macOS, iOS, most printers and
    TVs) answer with their `.local` name, and with the services they offer (`_ipp._tcp`,
    `_airplay._tcp`, `_ssh._tcp`, ...), which tell what [kind](#kinds) of host each is. The hub needs
-   neither port 5353 nor any privilege, and does not answer mDNS itself.
+   neither port 5353 nor any privilege for this. (Separately, one master answers mDNS for
+   `hearth.local`, the [web UI's LAN name](cluster.md#the-ui-on-any-master).)
 5. **Names, from reverse DNS.** Hosts mDNS did not name are looked up with reverse DNS, only against
    a nameserver in `/etc/resolv.conf` with a private or link-local address (usually your router or
    Pi-hole). If the hub uses only public or loopback resolvers, this step is skipped, so no lookup
