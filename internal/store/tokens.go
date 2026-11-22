@@ -20,6 +20,10 @@ var (
 // device name of an enrollment token.
 const tokenNameSchema = 32
 
+// hubTokenSchema is the schema version whose migration (00034) added the hub
+// roles of an enrollment token and the device of a join token (#328).
+const hubTokenSchema = 34
+
 // Tokens is the repository for single-use enrollment tokens. Callers pass the
 // token secret; only its SHA-256 hash is ever stored.
 type Tokens struct{ s *Store }
@@ -33,6 +37,9 @@ type EnrollToken struct {
 	Labels map[string]string
 	// Name is the device name, or "" for the agent's hostname.
 	Name string
+	// HubRoles are the cluster roles the device may be offered,
+	// comma-separated, or "" for none: the admin let it become a hub.
+	HubRoles string
 }
 
 // Create stores a new token that is valid until expiresAt.
@@ -44,6 +51,13 @@ func (r Tokens) Create(ctx context.Context, secret string, labels map[string]str
 // device that enrolls with it ("" leaves it its hostname). A named token
 // needs schema 32, and fails with ErrSchemaTooOld below it.
 func (r Tokens) CreateNamed(ctx context.Context, secret, name string, labels map[string]string, expiresAt time.Time) error {
+	return r.CreateHub(ctx, secret, name, "", labels, expiresAt)
+}
+
+// CreateHub is CreateNamed for a token that also lets the device become a
+// hub with at most hubRoles (comma-separated; "" for none). A token with hub
+// roles needs schema 34, and fails with ErrSchemaTooOld below it.
+func (r Tokens) CreateHub(ctx context.Context, secret, name, hubRoles string, labels map[string]string, expiresAt time.Time) error {
 	if secret == "" {
 		return errors.New("create token: empty secret")
 	}
@@ -52,7 +66,7 @@ func (r Tokens) CreateNamed(ctx context.Context, secret, name string, labels map
 		return fmt.Errorf("create token: %w", err)
 	}
 	h := hashSecret(secret)
-	if _, err := r.s.apply(ctx, CreateToken{Hash: h[:], Labels: l, Name: name, ExpiresAt: toMillis(expiresAt)}); err != nil {
+	if _, err := r.s.apply(ctx, CreateToken{Hash: h[:], Labels: l, Name: name, HubRoles: hubRoles, ExpiresAt: toMillis(expiresAt)}); err != nil {
 		return fmt.Errorf("create token: %w", err)
 	}
 	return nil
@@ -68,7 +82,7 @@ func (r Tokens) Consume(ctx context.Context, secret string, now time.Time) (Enro
 	if err != nil {
 		return EnrollToken{}, fmt.Errorf("consume token: %w", err)
 	}
-	return EnrollToken{Labels: res.Labels, Name: res.Name}, nil
+	return EnrollToken{Labels: res.Labels, Name: res.Name, HubRoles: res.HubRoles}, nil
 }
 
 func hashSecret(secret string) [sha256.Size]byte {

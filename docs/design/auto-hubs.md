@@ -40,9 +40,9 @@ The devices carry on as the cluster. No flags at install.
   `Precheck: a.recentAuth(r)`, held or denied by the policy modes, as for Add hub). The admin enters
   the password again. Its detail is `{via: "enrollment_token", roles, ttl, token: <handle>}`; the
   handle, `tokenActorID(secret)`, is the actor id of the later `device.enroll` entry.
-- Migration **00035**: `tokens.hub_roles TEXT NOT NULL DEFAULT ''` and `join_tokens.device_id TEXT
+- Migration **00034**: `tokens.hub_roles TEXT NOT NULL DEFAULT ''` and `join_tokens.device_id TEXT
   NOT NULL DEFAULT ''` (the device a join token was minted for). `CreateToken` and `CreateJoinToken`
-  carry them `omitempty`; writing either needs schema 35 (`hubTokenSchema`, gated like
+  carry them `omitempty`; writing either needs schema 34 (`hubTokenSchema`, gated like
   `tokenNameSchema`), else Add device answers 409 `schema_too_old`.
 
 ### 2. The device is the ceiling

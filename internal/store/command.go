@@ -59,6 +59,11 @@ type Result struct {
 	// Roles are the cluster roles of the join token consumed by
 	// ConsumeJoinToken, comma-separated.
 	Roles string
+	// DeviceID is the device the join token consumed by ConsumeJoinToken
+	// was minted for, or "".
+	DeviceID string
+	// HubRoles are the hub roles of the token consumed by ConsumeToken.
+	HubRoles string
 }
 
 // UpsertDevice inserts a device or replaces every field but first_seen.
@@ -366,6 +371,9 @@ type CreateToken struct {
 	// Name is the device name the token gives, or "" for the agent's
 	// hostname. A named token needs tokenNameSchema.
 	Name string `json:"name,omitempty"`
+	// HubRoles are the cluster roles the device may be offered,
+	// comma-separated, or "" for none. Hub roles need hubTokenSchema.
+	HubRoles string `json:"hub_roles,omitempty"`
 	// Owner is the master that owns the token in an AP cluster (OwnedBy).
 	Owner string `json:"owner,omitempty"`
 }
@@ -374,6 +382,9 @@ type CreateToken struct {
 func (CreateToken) Op() string { return "create_token" }
 
 func (c CreateToken) minSchema() int64 {
+	if c.HubRoles != "" {
+		return ownedSchema(c.Owner, hubTokenSchema)
+	}
 	if c.Name != "" {
 		return ownedSchema(c.Owner, tokenNameSchema)
 	}
@@ -384,6 +395,9 @@ func (c CreateToken) apply(ctx context.Context, w *writer) (Result, error) {
 	r := row{"hash": c.Hash, "labels": c.Labels, "expires_at": c.ExpiresAt, "used_at": nil}
 	if w.schema >= tokenNameSchema {
 		r["name"] = c.Name
+	}
+	if w.schema >= hubTokenSchema {
+		r["hub_roles"] = c.HubRoles
 	}
 	return Result{}, w.insert(ctx, "tokens", withOwner(r, c.Owner))
 }
@@ -414,7 +428,7 @@ func (c ConsumeToken) apply(ctx context.Context, w *writer) (Result, error) {
 	if err := json.Unmarshal([]byte(r.str("labels")), &out); err != nil {
 		return Result{}, fmt.Errorf("decode labels: %w", err)
 	}
-	return Result{Labels: out, Name: r.str("name")}, nil
+	return Result{Labels: out, Name: r.str("name"), HubRoles: r.str("hub_roles")}, nil
 }
 
 // consume marks the single-use secret with hash in table (tokens,
@@ -447,6 +461,9 @@ type CreateJoinToken struct {
 	ExpiresAt int64  `json:"expires_at"`
 	// Roles are the cluster roles the token grants, comma-separated.
 	Roles string `json:"roles"`
+	// DeviceID is the device the token was minted for at its enrollment
+	// (#328), or "" for a token an admin created. It needs hubTokenSchema.
+	DeviceID string `json:"device_id,omitempty"`
 	// Owner is the master that owns the token in an AP cluster (OwnedBy).
 	Owner string `json:"owner,omitempty"`
 }
@@ -454,11 +471,19 @@ type CreateJoinToken struct {
 // Op implements Command.
 func (CreateJoinToken) Op() string { return "create_join_token" }
 
-func (c CreateJoinToken) minSchema() int64 { return ownedSchema(c.Owner, joinTokenRolesSchema) }
+func (c CreateJoinToken) minSchema() int64 {
+	if c.DeviceID != "" {
+		return ownedSchema(c.Owner, hubTokenSchema)
+	}
+	return ownedSchema(c.Owner, joinTokenRolesSchema)
+}
 
 func (c CreateJoinToken) apply(ctx context.Context, w *writer) (Result, error) {
-	return Result{}, w.insert(ctx, "join_tokens",
-		withOwner(row{"hash": c.Hash, "expires_at": c.ExpiresAt, "used_at": nil, "roles": c.Roles}, c.Owner))
+	r := row{"hash": c.Hash, "expires_at": c.ExpiresAt, "used_at": nil, "roles": c.Roles}
+	if w.schema >= hubTokenSchema {
+		r["device_id"] = c.DeviceID
+	}
+	return Result{}, w.insert(ctx, "join_tokens", withOwner(r, c.Owner))
 }
 
 // ConsumeJoinToken marks a join token used at Now if it is unused and
@@ -482,7 +507,7 @@ func (c ConsumeJoinToken) apply(ctx context.Context, w *writer) (Result, error) 
 	if err != nil {
 		return Result{}, err
 	}
-	return Result{Roles: r.str("roles")}, nil
+	return Result{Roles: r.str("roles"), DeviceID: r.str("device_id")}, nil
 }
 
 // CreateCert records a certificate issued to a device. From CertPinsSchema it also
