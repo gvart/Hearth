@@ -57,6 +57,12 @@ func runAPLoops(ctx context.Context, g *errgroup.Group, node *cluster.APNode, l 
 	g.Go(func() error {
 		return l.reg.RunOwned(ctx, hub.PresenceOwner(l.agents, l.st.DeviceRoutes(), ring, hub.DefaultOfflineAfter, time.Now))
 	})
+	// Agents already streaming learn a master that joins or goes.
+	hubsChanged, unsubscribeHubs := ring.Subscribe()
+	g.Go(func() error {
+		defer unsubscribeHubs()
+		return l.agents.RunHubsPush(ctx, node.AgentURLs, hubsChanged)
+	})
 	g.Go(func() error { return l.automations.Run(ctx) })
 	g.Go(func() error { return l.runbooks.Run(ctx) })
 	g.Go(func() error { return l.pol.RunApprovalSweep(ctx, l.log) })

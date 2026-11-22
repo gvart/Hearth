@@ -103,6 +103,34 @@ func TestRunFailsOverToAnotherHub(t *testing.T) {
 	ag.assertRunning(t)
 }
 
+// TestRunLearnsPushedMaster: an agent streaming to A since before B was a
+// master learns B from A's Hubs push, saves it, and reconnects to B when A
+// stops (#328).
+func TestRunLearnsPushedMaster(t *testing.T) {
+	c, a, b := startCluster(t)
+	c.mu.Lock()
+	c.urls = []string{a.url} // B is no master yet: A's Welcome lists only A
+	c.mu.Unlock()
+	id, dataDir := a.join(t)
+	ag := startAgent(t, dataDir)
+	waitFor(t, 10*time.Second, "connection to A", connectedTo(a, id, 1))
+	waitFor(t, 5*time.Second, "a heartbeat", func() bool { return strings.Contains(a.logs.String(), `msg=heartbeat device_id=`+id) })
+	if _, err := os.Stat(filepath.Join(dataDir, agent.HubsFile)); err == nil {
+		t.Fatalf("%s saved before B was a master: %q", agent.HubsFile, readHubsFile(t, dataDir))
+	}
+
+	a.agents.PushHubs([]string{a.url, b.url})
+	waitFor(t, 5*time.Second, "the pushed hub list to be saved", func() bool {
+		raw, err := os.ReadFile(filepath.Join(dataDir, agent.HubsFile))
+		return err == nil && string(raw) == a.url+"\n"+b.url+"\n"
+	})
+
+	a.stop()
+	c.setLeader(b.url)
+	waitFor(t, 5*time.Second, "failover to B", connectedTo(b, id, 1))
+	ag.assertRunning(t)
+}
+
 // TestRunFollowerRedirectsToLeader: a follower's refusal sends the agent
 // straight to the leader it names, without a backoff.
 func TestRunFollowerRedirectsToLeader(t *testing.T) {

@@ -44,6 +44,7 @@ message HubMessage {
     ShellRequest shell_request = 7;
     ScanRequest scan_request = 8;
     DockerRequest docker_request = 9;
+    Hubs hubs = 10;
   }
 }
 
@@ -188,6 +189,14 @@ message Welcome {
   // ca_bundle, when set, is every hub CA the agent should trust (PEM): both
   // during a hub CA rotation, the new one alone after it.
   bytes ca_bundle = 5;
+}
+
+// Hubs is the hub list a master pushes on an open stream when the masters of
+// the cluster change, so an agent learns a master that appeared after it
+// connected. The agent keeps it as it keeps Welcome.hubs.
+message Hubs {
+  // urls are the agent-facing URLs of every master, as in Welcome.hubs.
+  repeated string urls = 1;
 }
 
 // NotLeader is the error detail a hub that is not the cluster leader attaches

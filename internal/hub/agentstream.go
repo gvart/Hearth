@@ -115,10 +115,11 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 	cert, bundle := s.renewal(ctx, log, deviceID)
 	rotation, _ := s.rotationState(ctx)
 
+	hubs := s.leadership.AgentURLs()
 	welcome := &agentv1.HubMessage{Payload: &agentv1.HubMessage_Welcome{Welcome: &agentv1.Welcome{
 		ServerTime:        timestamppb.New(s.now()),
 		HeartbeatInterval: durationpb.New(s.heartbeatInterval),
-		Hubs:              s.leadership.AgentURLs(),
+		Hubs:              hubs,
 		Certificate:       cert,
 		CaBundle:          bundle,
 	}}}
@@ -129,8 +130,10 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 	if err != nil {
 		return fmt.Errorf("send welcome to %s: %w", deviceID, err)
 	}
-	// From here on only Agents.Exec, Agents.Probe and Shells send on the stream.
+	// From here on only Agents.Exec, Agents.Probe, Agents.PushHubs and
+	// Shells send on the stream.
 	sess := s.agents.attach(deviceID, hello, stream.Send, streamAbort(ctx))
+	sess.setHubs(hubs)
 	s.forgetNetEdges(deviceID, hello.GetCeiling())
 	defer s.agents.detach(deviceID, sess)
 	var routed time.Time

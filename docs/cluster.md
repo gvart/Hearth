@@ -150,8 +150,11 @@ dir and join it again.
 ## Masters
 
 - **Every master serves agents.** An agent streams to any master. It gets the list of masters when it
-  enrolls and on every connect, keeps it in `hubs` in its data dir, and moves to another master, with
-  the usual backoff, when its master goes away. The master holding a device's stream records it (a
+  enrolls and on every connect, and while it streams its master pushes the new list whenever the
+  masters change (a couple of seconds after they settle, and again within 30 seconds if a new master's
+  URL is recorded late). It keeps the list in `hubs` in its data dir, and moves to another master, with
+  the usual backoff, when its master goes away: an agent streaming to the first hub since before the
+  others were masters still finds them when that hub stops. The master holding a device's stream records it (a
   `device → master` route); an exec, probe, Docker call, scan, built-in metric read, log stream or
   terminal for that device on another master is forwarded to it over the members' mutual TLS. For an
   exec, probe, Docker call or scan, the decision and the audit entry stay on the master that got the

@@ -49,6 +49,8 @@ type Agents struct {
 	devices store.Devices
 	// sendTimeout is sendTimeout, shorter in tests.
 	sendTimeout time.Duration
+	// hubsDebounce and hubsRecheck pace RunHubsPush; shorter in tests.
+	hubsDebounce, hubsRecheck time.Duration
 
 	mu       sync.Mutex
 	sessions map[string]*agentSession
@@ -61,7 +63,10 @@ type Agents struct {
 
 // NewAgents returns an Agents that resolves device references in devices.
 func NewAgents(devices store.Devices) *Agents {
-	return &Agents{devices: devices, sendTimeout: sendTimeout, sessions: map[string]*agentSession{}}
+	return &Agents{
+		devices: devices, sendTimeout: sendTimeout, hubsDebounce: hubsDebounce, hubsRecheck: hubsRecheck,
+		sessions: map[string]*agentSession{},
+	}
 }
 
 // agentSession is one open agent stream.
@@ -97,6 +102,8 @@ type agentSession struct {
 	ceiling *agentv1.Ceiling
 	// lastNetEdges is when the hub last took the stream's network edges.
 	lastNetEdges time.Time
+	// hubs is the hub list the agent last got, in Welcome or Hubs.
+	hubs []string
 }
 
 // attach records the stream of deviceID. A newer stream of the same device
