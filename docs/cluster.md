@@ -126,7 +126,10 @@ valid 15 minutes and bound to that device. The installer writes it to `/var/lib/
 (0600) and installs a `hearth-hub` systemd service, `hearth hub --join-file
 /var/lib/hearth/hub/join`, which joins once, deletes the file, and from then on runs as an ordinary
 hub; the device keeps its agent too. `--agent-only` on the install command keeps a capable device an
-agent.
+agent, and on a device that is a hub already it stops and removes the `hearth-hub` service (the hub's
+data dir stays until `--purge`; remove the member from the cluster as for any hub). The
+`device.enroll` audit entry says whether the device's join token was minted, with its roles, or
+refused and why.
 
 The cluster stays small:
 
@@ -136,8 +139,9 @@ The cluster stays small:
 | 3 masters, fewer than 5 storage  | storage only (no CA key)     |
 | 5 storage members                | nothing more: it stays an agent |
 
-The counts include members that are down (not removed) and join tokens minted and not yet used, and
-`cluster.join` checks them again when the device joins: a device whose token allowed master but finds 3
+The counts include members that are down (not removed), join tokens minted and not yet used, and hubs
+that joined with such a token in the last 10 minutes and are not in the gossip yet (until they are
+removed), and `cluster.join` checks them again when the device joins, one join at a time on a master: a device whose token allowed master but finds 3
 masters by then joins as storage only (audited `capped`), and one that finds 5 storage members is
 refused and stays an agent. Promote or demote by hand as before; the caps only bound what happens on
 its own.

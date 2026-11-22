@@ -62,10 +62,13 @@ The devices carry on as the cluster. No flags at install.
 On the master owning the enrollment token, once `device.enroll` has succeeded:
 
 1. No hub without the token's `hub_roles`, an offer, or a passing `HubCapable`; the `device.enroll`
-   detail says which (`hub: "not eligible" | "not offered" | "not capable"`).
+   detail says which (`hub: "not eligible" | "not offered" | "not capable"`), or, for a capable
+   device, the mint's outcome (`hub: "minted"` with `hub_roles`, or `hub: "refused"` with
+   `hub_refused`).
 2. Roles: `storage`, plus `master` while fewer than 3 masters are counted: members with the master
-   role that are not `left` (a dead one counts until removed), plus this master's unspent join
-   tokens minted with master.
+   role that are not `left` (a dead one counts until removed), plus the unspent join tokens minted
+   with master, plus the hubs that joined with a minted token in the last 10 minutes, hold an
+   unrevoked hub certificate and are not in the gossip yet (`join_tokens.joined_node`).
 3. A join token is minted (`store.JoinTokens().Create`, TTL 15 min, `device_id` set) as its own
    decision: `cluster.token.create`, actor kind `token`, actor id the enrollment token's handle,
    detail `{roles, device_id}`. The rule becomes `{Dangerous, [admin, web, token], fixedFor:

@@ -46,6 +46,13 @@ join checks both again). The device writes the join token to `/var/lib/hearth/hu
 deleted after the join), and the CA key travels only over the join channel above. Untick the box for
 a device you do not trust with the CA key; a plain enrollment token never leads to a hub.
 
+The mint is audited and refused while the master is cut off, but your policy cannot deny it: the
+decision for a `token` actor is fixed, so a hub-eligible token that is not yet used still mints its
+device's join token after you change the policy, even to one that denies dangerous actions.
+Enrollment tokens cannot be revoked yet: an unused one stays usable until its TTL ends (15 minutes
+by default), so give a hub-eligible token a short TTL and do not keep one around. The `device.enroll` audit entry says
+whether the join token was minted, with its roles, or refused and why.
+
 The hub CA is created on the first start in the hub's data dir (`ca.crt`, `ca.key`, mode 0600). Only
 masters of a cluster hold it. Its private key never leaves a master's data dir, except to a new hub
 joining a cluster as a master (with a join token that grants the master role, on a host that allows
