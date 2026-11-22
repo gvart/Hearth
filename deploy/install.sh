@@ -130,6 +130,8 @@ UNINSTALL=0
 PURGE=0
 AGENT_ONLY=${HEARTH_AGENT_ONLY:-0}
 MAKE_HUB=
+# NO_HUB=1: --make-hub failed, so no hub service is installed this run.
+NO_HUB=0
 
 need_arg() {
 	[ "$2" -ge 2 ] || die "$1 needs a value (see --help)"
@@ -561,7 +563,7 @@ systemd_running() {
 # is_hub reports whether this device has a hub to run: a join the enrollment
 # wrote, or a hub that joined already; never with --agent-only.
 is_hub() {
-	[ "$AGENT_ONLY" != 1 ] &&
+	[ "$AGENT_ONLY" != 1 ] && [ "$NO_HUB" != 1 ] &&
 		{ as_root test -f "$HUB_DATA_DIR/join" || as_root test -f "$HUB_DATA_DIR/cluster/node.crt"; }
 }
 
@@ -788,9 +790,12 @@ main() {
 
 	if [ -n "$MAKE_HUB" ]; then
 		# The join token goes in on stdin, as the enrollment token does. A
-		# device that cannot become a hub still gets its agent (re)started.
-		printf '%s\n' "$JOIN_TOKEN" | as_root "$BIN_PATH" agent make-hub --hub-data-dir "$HUB_DATA_DIR" "$MAKE_HUB" - ||
+		# device that cannot become a hub still gets its agent (re)started, and
+		# no hub service: not the one a removed hub left in its data dir.
+		if ! printf '%s\n' "$JOIN_TOKEN" | as_root "$BIN_PATH" agent make-hub --hub-data-dir "$HUB_DATA_DIR" "$MAKE_HUB" -; then
 			warn "this device stays an agent: it did not become a hub (see above)"
+			NO_HUB=1
+		fi
 	fi
 
 	install_service

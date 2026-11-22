@@ -249,8 +249,13 @@ function AgentOnlyDialog({
           </div>
           <p>{actionEffect({ op: 'remove', label: 'Remove' }, member.id)}</p>
           <p>The cluster refuses to remove its last master or its last storage member, and the hub you are using.</p>
+          {member.roles.includes('master') ? <p>{keepMastersNote}</p> : null}
         </section>
         <Command label="Then, on the device: stop and remove the hub service (the agent stays)" value={command} />
+        <p className="muted small">
+          The hub&apos;s data dir, <code>/var/lib/hearth/hub</code>, stays: delete it on the device. A master&apos;s
+          holds the CA key, and the device becomes a hub again only with it gone.
+        </p>
         {err ? (
           <div className="error-box" role="alert">
             {err instanceof ApiError ? removalRefusal(err) : err.message}
@@ -275,6 +280,10 @@ function AgentOnlyDialog({
     </Modal>
   );
 }
+
+/** Taking a master away may bring another one in (#331): said where it happens. */
+const keepMastersNote =
+  'With fewer masters than --keep-masters (3 by default), a master promotes another hub-eligible storage member to master. To run fewer masters, lower --keep-masters on the masters first.';
 
 function removalRefusal(err: ApiError): string {
   if (err.code === 'remove_self') {
@@ -311,6 +320,7 @@ function RoleDialog({ member, action, onClose }: { member: ClusterMember; action
             <span className="pill pill-bad">dangerous</span>
           </div>
           <p>{actionEffect(action, member.id)}</p>
+          {action.op === 'demote' && action.role === 'master' ? <p>{keepMastersNote}</p> : null}
         </section>
         {err ? (
           <div className="error-box" role="alert">

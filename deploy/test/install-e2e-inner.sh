@@ -353,6 +353,16 @@ cmp "$HUB_UNIT" /deploy/systemd/hearth-hub.service || fail "hub unit differs fro
 sh /deploy/install.sh --agent-only 2>&1 | tee /tmp/install8.log
 grep -q "agent-only: stopped and removed the hub service" /tmp/install8.log || fail "--agent-only re-run kept the hub"
 [ ! -e "$HUB_UNIT" ] || fail "--agent-only re-run: the hub unit is still there"
+# Made a hub again while the data dir still holds the removed hub: refused,
+# and the old hub's service is not brought back.
+mkdir -p "$HUB_DATA/cluster"
+echo stale >"$HUB_DATA/ca.crt"
+echo stale >"$HUB_DATA/cluster/node.crt"
+printf '%s\n' "$MH_CMD" | sh 2>&1 | tee /tmp/install9.log
+grep -q "holds a hub already" /tmp/install9.log || fail "--make-hub over a removed hub's data dir was not refused"
+grep -q "stays an agent: it did not become a hub" /tmp/install9.log || fail "--make-hub refusal not reported"
+[ ! -e "$HUB_UNIT" ] || fail "--make-hub refused, yet the old hub's unit is back"
+[ -f "$UNIT" ] || fail "--make-hub refused: no agent unit"
 sh /deploy/install.sh --purge
 pass "the page's command makes an enrolled agent a hub, keeping its identity; --agent-only removes the hub unit"
 

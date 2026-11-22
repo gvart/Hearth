@@ -184,7 +184,8 @@ counts against the caps, and `hearth device hub <device-id>` prints it on a mast
   shows the re-run that stops and removes its hub service, `install.sh --agent-only`. The hub's data
   dir stays; delete `/var/lib/hearth/hub` before making the device a hub again (`make-hub` refuses a
   data dir that holds a hub). A removed master's data dir still holds the CA key: see
-  [Limits](#limits).
+  [Limits](#limits). Taking a master away below `--keep-masters` may make a master promote another
+  hub-eligible storage member: lower `--keep-masters` first to run fewer masters.
 
 **Away too long.** Deleted rows are forgotten after 7 days. A member that has not reached the cluster
 for longer refuses to start with its old data, so it cannot bring deleted rows back: clear its data
