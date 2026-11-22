@@ -726,13 +726,15 @@ type APJoinServer struct {
 	policy *policy.Engine
 	log    *slog.Logger
 	now    func() time.Time
+	// hubCounts is node.HubCounts; tests stand in for a cluster.
+	hubCounts func(except string) (masters, storage int)
 	// fetchRefused rate-limits the audit entries of refused FetchCAKey calls.
 	fetchRefused fetchRefusals
 }
 
 // NewAPJoinServer returns the join service of node.
 func NewAPJoinServer(node *APNode, st *store.Store, ca *pki.CA, pol *policy.Engine, log *slog.Logger) *APJoinServer {
-	return &APJoinServer{node: node, store: st, ca: ca, policy: pol, log: log, now: time.Now}
+	return &APJoinServer{node: node, store: st, ca: ca, policy: pol, log: log, now: time.Now, hubCounts: node.HubCounts}
 }
 
 // Handler returns the service's path prefix and HTTP handler, for the hub's
@@ -798,11 +800,28 @@ func (s *APJoinServer) Join(ctx context.Context, req *connect.Request[clusterv1.
 		if err != nil {
 			return fmt.Errorf("%w: %w", errBadCSR, err)
 		}
-		tokenRoles, err := s.store.JoinTokens().Consume(ctx, msg.GetTokenSecret(), now)
+		jt, err := s.store.JoinTokens().Use(ctx, msg.GetTokenSecret(), now)
 		if err != nil {
 			return err
 		}
+		tokenRoles := jt.Roles
 		granted = joinGrant(tokenRoles, allowed)
+		if jt.DeviceID != "" {
+			// Minted for a device at its enrollment (#328): the caps are
+			// checked again here, where the CA key leaves.
+			detail["device_id"] = jt.DeviceID
+			masters, storage := s.hubCounts(msg.GetNodeId())
+			if storage >= MaxAutoStorage {
+				detail["capped"] = true
+				refused = fmt.Sprintf("the cluster has %d storage members already, the most devices join as on their own: "+
+					"this device stays an agent", storage)
+				return fmt.Errorf("%w: %d storage members", errNoRole, storage)
+			}
+			if granted.Has(RoleMaster) && masters >= MaxAutoMasters {
+				granted &^= RolesOf(RoleMaster)
+				detail["capped"] = true
+			}
+		}
 		detail["token_roles"], detail["granted_roles"] = cmp.Or(tokenRoles, "none"), granted.String()
 		if !granted.Gossips() {
 			refused = fmt.Sprintf("the join token grants %s and this host allows %s (--allow-roles): "+
@@ -837,7 +856,35 @@ func (s *APJoinServer) Join(ctx context.Context, req *connect.Request[clusterv1.
 		"ca_key_sent", keyDER != nil)
 	return connect.NewResponse(&clusterv1.JoinResponse{
 		Certificate: cert.Raw, CaCertificate: s.ca.Cert().Raw, CaKey: keyDER, Roles: granted.Strings(),
+		Seeds: s.node.joinSeeds(msg.GetNodeId()),
 	}), nil
+}
+
+// joinSeeds are the gossip addresses a hub joining as joiner finds the
+// cluster by (#334): this member's first, then every other member's that
+// has not left.
+func (n *APNode) joinSeeds(joiner string) []string {
+	var self string
+	var others []string
+	if n.membership != nil {
+		for _, m := range n.membership.Members() {
+			switch {
+			case m.Address == "" || m.State == MemberLeft || m.ID == joiner:
+			case m.ID == n.cfg.NodeID:
+				self = m.Address
+			default:
+				others = append(others, m.Address)
+			}
+		}
+	}
+	slices.Sort(others)
+	if self == "" {
+		self = n.cfg.Advertise
+	}
+	if self == "" {
+		return others
+	}
+	return append([]string{self}, others...)
 }
 
 // joinGrant is the roles a joining hub is granted: those of tokenRoles, the

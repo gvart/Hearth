@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"connectrpc.com/connect"
@@ -34,7 +35,11 @@ type Enroller struct {
 	leadership Leadership
 	// masters, in an AP cluster, names the master owning a token.
 	masters Masters
-	now     func() time.Time
+	// hubs, in an AP cluster, counts its hubs for the auto-hub caps (#328);
+	// mintMu serializes counting and minting.
+	hubs   HubCounter
+	mintMu sync.Mutex
+	now    func() time.Time
 }
 
 var _ agentv1connect.EnrollServiceHandler = (*Enroller)(nil)
@@ -62,13 +67,22 @@ func (e *Enroller) Enroll(ctx context.Context, req *connect.Request[agentv1.Enro
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
-	var cert *x509.Certificate
+	var (
+		cert     *x509.Certificate
+		hubRoles string
+		outcome  string
+		why      string
+	)
+	handle := tokenActorID(msg.GetTokenSecret())
+	// The outcome entry says whether the device may become a hub: fn adds
+	// it.
+	detail := map[string]any{"hostname": msg.GetHostname()}
 	err = e.policy.Do(ctx, policy.Request{
 		ActorKind: policy.ActorToken,
-		ActorID:   tokenActorID(msg.GetTokenSecret()),
+		ActorID:   handle,
 		Action:    policy.DeviceEnroll,
 		Target:    deviceID,
-		Detail:    map[string]any{"hostname": msg.GetHostname()},
+		Detail:    detail,
 	}, func(ctx context.Context) error {
 		now := e.now()
 		// Sign first: a malformed CSR must not burn the token.
@@ -80,6 +94,9 @@ func (e *Enroller) Enroll(ctx context.Context, req *connect.Request[agentv1.Enro
 		if err != nil {
 			return err
 		}
+		hubRoles = tok.HubRoles
+		outcome, why = hubOutcome(tok.HubRoles, msg.GetHubOffer())
+		detail["hub"] = outcome
 		// A named token names the device; otherwise it is its hostname.
 		name := tok.Name
 		if name == "" {
@@ -113,6 +130,12 @@ func (e *Enroller) Enroll(ctx context.Context, req *connect.Request[agentv1.Enro
 	if e.masters != nil {
 		// Every master, this one first: the agent fails over through them.
 		resp.Hubs = e.leadership.AgentURLs()
+	}
+	switch {
+	case outcome == hubOffered:
+		resp.HubJoin = e.mintHubJoin(ctx, deviceID, handle, hubRoles)
+	case msg.GetHubOffer() != nil:
+		resp.HubJoin = &agentv1.HubJoin{Refused: why}
 	}
 	return connect.NewResponse(resp), nil
 }

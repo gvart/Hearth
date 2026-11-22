@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -133,6 +134,11 @@ func Join(ctx context.Context, p JoinParams) error {
 			return fmt.Errorf("join: %w", err)
 		}
 	}
+	// It finds the gossip by the members' advertised addresses, not by the
+	// host of the URL it joined through (#334).
+	if err := writeJoinSeeds(dir, resp.Msg.GetSeeds(), p.Address); err != nil {
+		return fmt.Errorf("join: %w", err)
+	}
 	// The hub starts with the roles it was granted, within its --allow-roles.
 	if err := saveLocalRoles(p.DataDir, LocalRoles{Roles: granted & p.AllowedRoles}); err != nil {
 		return fmt.Errorf("join: %w", err)
@@ -148,4 +154,19 @@ func Join(ctx context.Context, p JoinParams) error {
 		return fmt.Errorf("join: %w", err)
 	}
 	return nil
+}
+
+// writeJoinSeeds keeps the gossip addresses a join response named, but this
+// hub's own (self), in dir's seeds file, where APNode finds them.
+func writeJoinSeeds(dir string, seeds []string, self string) error {
+	var keep []string
+	for _, s := range seeds {
+		if _, _, err := net.SplitHostPort(s); err == nil && s != self {
+			keep = append(keep, s)
+		}
+	}
+	if len(keep) == 0 {
+		return nil
+	}
+	return os.WriteFile(filepath.Join(dir, seedsFile), []byte(strings.Join(keep, "\n")+"\n"), 0o600)
 }
