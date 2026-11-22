@@ -1,0 +1,26 @@
+web/test/networkscan.test.mjs
+  s_18b57982fdff93::t_a0951b4bbea405 5
+  s_18b57982fdff93::t_d983a922099084 34-43
+web/src/api/hooks.ts
+  s_18b57982fdff93::t_e5fa48fd959359 175-178,180,186-187
+  s_18b57982fdff93::t_7b33921d4da411 26
+web/src/networkscan.ts
+  s_18b57982fdff93::t_d248e3064c4985 44-50
+  s_18b57982fdff93::t_08856f10b42273 43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "109587b60588bcf5fd09e55e623e3afebf2d0d73",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
