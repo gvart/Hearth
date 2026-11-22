@@ -65,6 +65,10 @@ From then on the device is **online** while its agent is connected and **offline
 not heard from it for 30 seconds. `hearth device revoke <device-id>` revokes its certificates: the
 agent is disconnected and can never reconnect with them.
 
+A host with no agent (a printer, a TV, the router) can be a device too: found by a
+[network scan](discovery.md) and [adopted](discovery.md#adopting-a-host), it gets a name and is
+online while scans see it, but it has no certificate and no actions.
+
 ## Policy
 
 Every action, whoever asks for it, passes through one policy engine before anything happens:
