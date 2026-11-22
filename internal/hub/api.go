@@ -85,19 +85,20 @@ func newAPI(cfg Config) *api {
 		plugins:  cfg.Plugins,
 		notify:   cfg.Notify,
 		verify:   newVerifyGate(), verifyWait: verifyWait, verifyPassword: verifier,
-		logins:        newLoginLimiter(time.Now, loginBurst, loginEvery),
-		metrics:       cfg.Metrics,
-		drift:         cfg.ConfigDrift,
-		runbooks:      cfg.Runbooks,
-		leadership:    leadershipOf(cfg),
-		masters:       cfg.Masters,
-		clusterAdmin:  cfg.ClusterAdmin,
-		clusterCA:     cfg.ClusterCA,
-		automations:   automation.Files{Dir: cfg.AutomationsDir, Docs: cfg.AutomationDocs, Kinds: cfg.AutomationKinds},
-		automationsMu: automationsLock(cfg.AutomationsLock),
-		agents:        cfg.Agents,
-		scans:         cfg.NetworkScans,
-		dryRuns:       newLoginLimiter(time.Now, dryRunBurst, dryRunEvery),
+		logins:           newLoginLimiter(time.Now, loginBurst, loginEvery),
+		metrics:          cfg.Metrics,
+		drift:            cfg.ConfigDrift,
+		runbooks:         cfg.Runbooks,
+		leadership:       leadershipOf(cfg),
+		masters:          cfg.Masters,
+		clusterAdmin:     cfg.ClusterAdmin,
+		clusterCA:        cfg.ClusterCA,
+		automations:      automation.Files{Dir: cfg.AutomationsDir, Docs: cfg.AutomationDocs, Kinds: cfg.AutomationKinds},
+		automationsMu:    automationsLock(cfg.AutomationsLock),
+		agents:           cfg.Agents,
+		scans:            cfg.NetworkScans,
+		discoverInterval: cfg.DiscoverInterval,
+		dryRuns:          newLoginLimiter(time.Now, dryRunBurst, dryRunEvery),
 		// Only a release tag is pinned: dev builds have no release to install.
 		installVersion: releaseVersion(cfg.Version),
 		version:        cfg.Version,
@@ -150,6 +151,8 @@ func (a *api) routes() http.Handler {
 	mux.Handle("POST /api/v1/network/hosts/{mac}/known", a.auth(a.markNetworkHost(store.HostKnown)))
 	mux.Handle("POST /api/v1/network/hosts/{mac}/ignore", a.auth(a.markNetworkHost(store.HostIgnored)))
 	mux.Handle("POST /api/v1/network/hosts/{mac}/unmark", a.auth(a.markNetworkHost(store.HostUnreviewed)))
+	mux.Handle("POST /api/v1/network/hosts/{mac}/adopt", a.auth(a.adoptNetworkHost(true)))
+	mux.Handle("POST /api/v1/network/hosts/{mac}/unadopt", a.auth(a.adoptNetworkHost(false)))
 	mux.Handle("POST /api/v1/network/scan", a.auth(a.scanNetwork))
 	mux.Handle("GET /api/v1/events", a.auth(a.events))
 	mux.Handle("POST /api/v1/tokens", a.auth(a.createToken))
@@ -274,6 +277,9 @@ type api struct {
 	agents *Agents
 	// scans is Config.NetworkScans; nil when scans cannot be asked for.
 	scans *NetworkScans
+	// discoverInterval is Config.DiscoverInterval (zero: discovery's default):
+	// a network host is online if seen within twice of it.
+	discoverInterval time.Duration
 	// installVersion is the --version install commands pin, or "" for none.
 	installVersion string
 	// version is the hub's build version, shown by the web UI.
@@ -601,7 +607,7 @@ func (a *api) events(w http.ResponseWriter, r *http.Request) {
 			case ev.Hosts != nil:
 				bodies = bodies[:0]
 				for _, h := range ev.Hosts {
-					bodies = append(bodies, NetworkEventJSON{Type: ev.Type, Host: networkHostJSON(h, "")})
+					bodies = append(bodies, NetworkEventJSON{Type: ev.Type, Host: a.networkHostJSON(h, "")})
 				}
 			}
 			for _, body := range bodies {

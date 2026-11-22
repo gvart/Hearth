@@ -137,7 +137,18 @@ export function useBeszelSystems() {
 export function useMarkNetworkHost() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ mac, state }: { mac: string; state: NetworkHostState }) => api.markNetworkHost(mac, state),
+    mutationFn: ({ mac, state }: { mac: string; state: Exclude<NetworkHostState, 'adopted'> }) =>
+      api.markNetworkHost(mac, state),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.networkHosts }),
+  });
+}
+
+/** Adopts a host under a name, or unadopts it (name null), then refetches the hosts. */
+export function useAdoptNetworkHost() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ mac, name }: { mac: string; name: string | null }) =>
+      name === null ? api.unadoptNetworkHost(mac) : api.adoptNetworkHost(mac, name),
     onSettled: () => qc.invalidateQueries({ queryKey: keys.networkHosts }),
   });
 }

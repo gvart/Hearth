@@ -447,7 +447,13 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	})
 	scheduledScans := len(subnets) > 0 || autoSubnets || len(scanFrom) > 0
 	networkScans := hub.NewNetworkScans(scanner, reg, log.With("component", "discovery"))
+	// Without a schedule, presence follows discovery's default interval.
+	var discoverInterval time.Duration
+	if scheduledScans {
+		discoverInterval = opts.discoverInterval
+	}
 	cfg := hub.Config{
+		DiscoverInterval:  discoverInterval,
 		Store:             st,
 		CA:                ca,
 		Policy:            pol,

@@ -31,7 +31,7 @@ type NetworkEvent struct {
 	Vendor   string
 	// Name is the host's mDNS or reverse DNS name, if any.
 	Name string
-	// Silenced is a host the operator marked known or ignored.
+	// Silenced is a host the operator marked known or ignored, or adopted.
 	Silenced bool
 }
 
@@ -44,7 +44,8 @@ type NetworkEvents interface {
 }
 
 // networkTrigger fires when network discovery finds a new host, or one back
-// after an absence, unless the operator marked it known or ignored.
+// after an absence, unless the operator marked it known or ignored, or
+// adopted it.
 type networkTrigger struct {
 	// event is "new", "returned" or "" for both.
 	event string

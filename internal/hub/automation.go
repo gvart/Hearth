@@ -58,8 +58,8 @@ func watchDevices(ctx context.Context, ch <-chan Event, fn func(automation.Devic
 func AutomationNetwork(reg *Registry) automation.NetworkEvents { return registryEvents{reg} }
 
 // WatchNetwork implements automation.NetworkEvents, renewing a subscription
-// the bus ends as WatchDevices does. A host marked known or ignored, or one
-// of an enrolled device's interfaces, is silenced.
+// the bus ends as WatchDevices does. A host marked known or ignored, an
+// adopted one, or one of an enrolled device's interfaces, is silenced.
 func (e registryEvents) WatchNetwork(ctx context.Context, fn func([]automation.NetworkEvent)) error {
 	for ctx.Err() == nil {
 		ch, unsubscribe := e.reg.Subscribe()

@@ -580,8 +580,9 @@ table {
   border: var(--line-2) dashed var(--offline);
 }
 
-/* Unmanaged hosts from network discovery */
-.unmanaged {
+/* Unmanaged hosts from network discovery, and those adopted as devices */
+.unmanaged,
+.network-devices {
   margin-top: var(--space-8);
 }
 
@@ -665,6 +666,20 @@ table {
   display: inline-flex;
   gap: var(--space-1);
   white-space: nowrap;
+}
+
+.adopt-form {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.adopt-form input {
+  width: 12rem;
+}
+
+.adopt-form input[aria-invalid='true'] {
+  border-color: var(--danger);
 }
 
 .badge-quiet {
@@ -1719,7 +1734,8 @@ dialog::backdrop {
 
 /* Log viewer (device logs and pod logs) */
 .logs-filter,
-.log-source-form input {
+.log-source-form input,
+.adopt-form input {
   height: var(--control-sm);
   min-width: 0;
   padding: 0 var(--space-2);

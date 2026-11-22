@@ -1,15 +1,13 @@
+import { useState } from 'react';
 import type { NetworkHost, NetworkHostSource } from '../api/client.ts';
-import { useDevices, useMarkNetworkHost, useNetworkHosts } from '../api/hooks.ts';
+import { useAdoptNetworkHost, useDevices, useMarkNetworkHost, useNetworkHosts } from '../api/hooks.ts';
+import { adoptPrefill, hostName, maxAdoptName, validAdoptName } from '../adopt.ts';
 import { relativeTime } from '../format.ts';
 import { hostKinds, hostKindTitle } from '../hostkinds.ts';
 
 /** A MAC whose locally administered bit is set: a randomized ("private") address. */
 function isRandomized(mac: string) {
   return (parseInt(mac.slice(0, 2), 16) & 0x02) !== 0;
-}
-
-function hostName(h: NetworkHost) {
-  return h.hostname.replace(/\.local$/, '') || h.vendor || h.ip;
 }
 
 function vendorLabel(h: NetworkHost) {
@@ -31,17 +29,63 @@ function byIP(a: NetworkHost, b: NetworkHost) {
   return n(a.ip) - n(b.ip);
 }
 
+/** The inline prompt for the name a host is adopted under, prefilled with its name. */
+function AdoptForm({ host, onDone }: { host: NetworkHost; onDone: () => void }) {
+  const adopt = useAdoptNetworkHost();
+  const [name, setName] = useState(() => adoptPrefill(host));
+  return (
+    <form
+      className="adopt-form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        adopt.mutate({ mac: host.mac, name: name.trim() }, { onSuccess: onDone });
+      }}
+    >
+      <input
+        aria-label={`Name for ${hostName(host)}`}
+        value={name}
+        maxLength={maxAdoptName}
+        autoFocus
+        aria-invalid={adopt.isError || undefined}
+        onChange={(e) => {
+          setName(e.target.value);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            onDone();
+          }
+        }}
+      />
+      <button className="btn btn-small" type="submit" disabled={adopt.isPending || !validAdoptName(name)}>
+        Adopt
+      </button>
+      <button className="btn btn-ghost btn-small" type="button" onClick={onDone}>
+        Cancel
+      </button>
+      {adopt.error ? (
+        <span className="error" role="alert">
+          {adopt.error.message}
+        </span>
+      ) : null}
+    </form>
+  );
+}
+
 /**
  * Hosts network discovery found that have no agent, each with a shortcut to
- * the "Add device" flow. Renders nothing while discovery has found none.
+ * the "Add device" flow and to adopting it as a device without an agent.
+ * Adopted hosts are listed under Network devices instead. Renders nothing
+ * while discovery has found none.
  */
 export function UnmanagedHosts({ now, onAdd }: { now: number; onAdd: (h: NetworkHost) => void }) {
   const hosts = useNetworkHosts();
   const devices = useDevices();
   const mark = useMarkNetworkHost();
+  /** The MAC of the host whose adopt prompt is open. */
+  const [adopting, setAdopting] = useState<string | null>(null);
   /** The name of the device a scan ran from: hosts on a subnet only that device is on. */
   const scannerName = (id: string) => devices.data?.find((d) => d.id === id)?.name ?? id;
-  const list = (hosts.data ?? []).filter((h) => h.device_id === '').sort(byIP);
+  const list = (hosts.data ?? []).filter((h) => h.device_id === '' && h.state !== 'adopted').sort(byIP);
   if (list.length === 0) {
     return null;
   }
@@ -114,55 +158,74 @@ export function UnmanagedHosts({ now, onAdd }: { now: number; onAdd: (h: Network
                   ) : null}
                 </td>
                 <td className="row-end">
-                  <span className="host-actions">
-                    {h.state === '' ? (
-                      <>
-                        <button
-                          className="btn btn-ghost btn-small"
-                          type="button"
-                          disabled={mark.isPending}
-                          title="Yours: no more new-device alerts for it"
-                          onClick={() => {
-                            mark.mutate({ mac: h.mac, state: 'known' });
-                          }}
-                        >
-                          Known
-                        </button>
-                        <button
-                          className="btn btn-ghost btn-small"
-                          type="button"
-                          disabled={mark.isPending}
-                          title="Not worth hearing about: no more new-device alerts for it"
-                          onClick={() => {
-                            mark.mutate({ mac: h.mac, state: 'ignored' });
-                          }}
-                        >
-                          Ignore
-                        </button>
-                      </>
-                    ) : (
+                  {adopting === h.mac ? (
+                    <AdoptForm
+                      host={h}
+                      onDone={() => {
+                        setAdopting(null);
+                      }}
+                    />
+                  ) : (
+                    <span className="host-actions">
                       <button
                         className="btn btn-ghost btn-small"
                         type="button"
-                        disabled={mark.isPending}
-                        title="Alert again when it comes back after an hour away"
+                        title="List it with your devices, without an agent: online while scans find it"
                         onClick={() => {
-                          mark.mutate({ mac: h.mac, state: '' });
+                          setAdopting(h.mac);
                         }}
                       >
-                        Unmark
+                        Adopt
                       </button>
-                    )}
-                    <button
-                      className="btn btn-ghost btn-small"
-                      type="button"
-                      onClick={() => {
-                        onAdd(h);
-                      }}
-                    >
-                      Add device
-                    </button>
-                  </span>
+                      {h.state === '' ? (
+                        <>
+                          <button
+                            className="btn btn-ghost btn-small"
+                            type="button"
+                            disabled={mark.isPending}
+                            title="Yours: no more new-device alerts for it"
+                            onClick={() => {
+                              mark.mutate({ mac: h.mac, state: 'known' });
+                            }}
+                          >
+                            Known
+                          </button>
+                          <button
+                            className="btn btn-ghost btn-small"
+                            type="button"
+                            disabled={mark.isPending}
+                            title="Not worth hearing about: no more new-device alerts for it"
+                            onClick={() => {
+                              mark.mutate({ mac: h.mac, state: 'ignored' });
+                            }}
+                          >
+                            Ignore
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          className="btn btn-ghost btn-small"
+                          type="button"
+                          disabled={mark.isPending}
+                          title="Alert again when it comes back after an hour away"
+                          onClick={() => {
+                            mark.mutate({ mac: h.mac, state: '' });
+                          }}
+                        >
+                          Unmark
+                        </button>
+                      )}
+                      <button
+                        className="btn btn-ghost btn-small"
+                        type="button"
+                        onClick={() => {
+                          onAdd(h);
+                        }}
+                      >
+                        Add device
+                      </button>
+                    </span>
+                  )}
                 </td>
               </tr>
             ))}

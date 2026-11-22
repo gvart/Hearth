@@ -102,6 +102,10 @@ type Config struct {
 	// NetworkScans runs the network scans asked for with
 	// POST /api/v1/network/scan; run it (NetworkScans.Run). Nil disables it.
 	NetworkScans *NetworkScans
+	// DiscoverInterval is the time between scheduled network scans: a
+	// network host is online if a scan saw it within twice of it. Zero, as
+	// when discovery runs on no schedule, means discovery.DefaultInterval.
+	DiscoverInterval time.Duration
 	// Notify serves the notification channels under /api/v1/notify. Nil
 	// disables it.
 	Notify *notify.Notifier
