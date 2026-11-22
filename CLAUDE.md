@@ -136,6 +136,7 @@ Keep this list in sync with `Taskfile.yml`. If you add a task, document it here.
 - If a decision isn't covered here or in the task spec, pick the simplest option, note it in the PR description under "Decisions", and move on.
 - PR descriptions follow `.github/pull_request_template.md` (What / Done when / Decisions / Checklist). `gh pr create --body` skips the template, so fill it in yourself. No AI attribution footers or co-author trailers.
 - Do not add features outside the task's scope. Open an issue instead.
+- Before tagging a release, bump the version in the docs (`docs/getting-started.md`, `docs/comparison.md`) in a PR first: the release workflow fails if `docs/getting-started.md` does not name the tag's version.
 
 ## Licensing
 
