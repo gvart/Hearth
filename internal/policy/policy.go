@@ -283,7 +283,9 @@ const (
 const (
 	// ActorAdmin is a local operator using the CLI on the hub host.
 	ActorAdmin = "admin"
-	// ActorToken is an agent authenticating with an enrollment token.
+	// ActorToken is an agent authenticating with an enrollment token. It also
+	// creates the cluster join token a hub-eligible enrollment token lets the
+	// hub mint for the device (cluster.token.create, #328).
 	ActorToken = "token"
 	// ActorWeb is a client of the hub's web API, identified by its remote
 	// address. The API checks the admin session before any action other than
@@ -363,8 +365,11 @@ var rules = map[Action]rule{
 	AdminReauth: {class: Safe, actors: []string{ActorWeb}, fixed: true},
 	// Joining hands out the CA key: every step of it is dangerous. The web
 	// UI's "Add hub" creates a token behind an admin session and the
-	// password again.
-	ClusterTokenCreate: {class: Dangerous, actors: []string{ActorAdmin, ActorWeb}},
+	// password again. An enrollment token the admin made hub-eligible in
+	// "Add device" (behind the password again too) mints one for the device
+	// it enrolls: never held, the admin decided already, but refused while
+	// the hub is cut off, as every dangerous action is.
+	ClusterTokenCreate: {class: Dangerous, actors: []string{ActorAdmin, ActorWeb, ActorToken}, fixedFor: []string{ActorToken}},
 	ClusterJoin:        {class: Dangerous, actors: []string{ActorJoinToken}, fixed: true},
 	// A promotion moves the CA key or the rows: dangerous, and held or
 	// denied as the policy says.

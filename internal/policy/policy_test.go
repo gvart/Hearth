@@ -126,6 +126,13 @@ func TestEngineDo(t *testing.T) {
 			wantResult:   "actor kind not allowed",
 		},
 		{
+			name:         "hub-eligible enrollment token mints its device's join token",
+			req:          Request{ActorKind: ActorToken, ActorID: "abc", Action: ClusterTokenCreate},
+			wantRan:      true,
+			wantDecision: Allow,
+			wantResult:   "ok",
+		},
+		{
 			name:         "MCP client cannot create a join token",
 			req:          Request{ActorKind: ActorMCP, ActorID: "claude", Action: ClusterTokenCreate},
 			wantErr:      ErrDenied,

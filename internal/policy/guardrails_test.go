@@ -129,7 +129,7 @@ var expected = map[Action]struct {
 	AdminSetPassword:       {Dangerous, []string{ActorAdmin, ActorWeb}, false},
 	AdminLogin:             {Safe, []string{ActorWeb}, true},
 	AdminReauth:            {Safe, []string{ActorWeb}, true},
-	ClusterTokenCreate:     {Dangerous, []string{ActorAdmin, ActorWeb}, false},
+	ClusterTokenCreate:     {Dangerous, []string{ActorAdmin, ActorWeb, ActorToken}, false},
 	ClusterJoin:            {Dangerous, []string{ActorJoinToken}, true},
 	ClusterPromote:         {Dangerous, []string{ActorAdmin, ActorWeb}, false},
 	ClusterDemote:          {Dangerous, []string{ActorAdmin, ActorWeb}, false},
@@ -221,6 +221,9 @@ var fixedFor = map[Action][]string{
 	// The hub host's set-password is the way back in, never held; the web
 	// UI's change follows the modes.
 	AdminSetPassword: {ActorAdmin},
+	// A hub-eligible enrollment token mints its device's join token: the
+	// admin consented in Add device.
+	ClusterTokenCreate: {ActorToken},
 }
 
 func TestExpectedCoversEveryAction(t *testing.T) {
