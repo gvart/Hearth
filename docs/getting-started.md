@@ -187,7 +187,8 @@ A hub on your laptop stops when the laptop sleeps. Add **at least two** hub-capa
 (step 6, with **This device may become a hub** ticked): each joins the cluster as a hub, and the
 **Cluster** page lists them. The first three hubs are masters: each serves the UI, the API and the
 agents and holds the CA key. Up to five hubs keep copies of the data (storage); a device added after
-that stays an agent. With two devices besides the laptop, either can die and nothing is lost.
+that stays an agent. A hub down for 24 hours is removed, and if it was a master another of these hubs
+becomes one, so the cluster keeps 3 masters ([Keeping 3 masters](cluster.md#keeping-3-masters)). With two devices besides the laptop, either can die and nothing is lost.
 
 Before you stop the laptop's hub, open its **Cluster** page, or run `hearth cluster status` on it:
 

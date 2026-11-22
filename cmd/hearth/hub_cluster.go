@@ -54,7 +54,10 @@ type clusterOptions struct {
 	// removes it; 0 never removes one. envErr is a bad
 	// HEARTH_MEMBER_DEAD_AFTER, reported by check.
 	memberDeadAfter time.Duration
-	envErr          error
+	// keepMasters is how many masters a master keeps by promoting a
+	// hub-eligible storage member; 0 never promotes one.
+	keepMasters int
+	envErr      error
 }
 
 func addClusterFlags(cmd *cobra.Command, o *clusterOptions) {
@@ -103,6 +106,17 @@ func addClusterFlags(cmd *cobra.Command, o *clusterOptions) {
 	cmd.Flags().DurationVar(&o.memberDeadAfter, "member-dead-after", deadAfter,
 		"remove a member that has been down this long, as `hearth cluster remove` does; 0 never removes one "+
 			"(env HEARTH_MEMBER_DEAD_AFTER)")
+	keep := cluster.DefaultKeepMasters
+	if v := os.Getenv("HEARTH_KEEP_MASTERS"); v != "" {
+		k, err := strconv.Atoi(v)
+		if err != nil && o.envErr == nil {
+			o.envErr = fmt.Errorf("HEARTH_KEEP_MASTERS: %w", err)
+		}
+		keep = k
+	}
+	cmd.Flags().IntVar(&o.keepMasters, "keep-masters", keep,
+		fmt.Sprintf("keep this many masters by promoting a live storage member that joined as a hub-eligible device, "+
+			"at most %d; 0 never promotes one (env HEARTH_KEEP_MASTERS)", cluster.MaxAutoMasters))
 }
 
 // check checks the cluster flags.
@@ -112,6 +126,9 @@ func (o clusterOptions) check() error {
 	}
 	if o.memberDeadAfter < 0 {
 		return errors.New("--member-dead-after must not be negative (0 never removes a member)")
+	}
+	if o.keepMasters < 0 || o.keepMasters > cluster.MaxAutoMasters {
+		return fmt.Errorf("--keep-masters must be 0 to %d (0 never promotes a member)", cluster.MaxAutoMasters)
 	}
 	if o.replicas < 0 {
 		return errors.New("--replicas must be at least 1 (0 picks the default)")
@@ -270,7 +287,7 @@ func startClusterNode(ctx context.Context, opts hubOptions, allowed cluster.Role
 		DataDir: opts.dataDir, NodeID: nodeID, CA: ca, Allowed: allowed,
 		Listen: o.listen, Listener: ln, Advertise: advertise, Seeds: seeds,
 		Replicas: o.replicas, AgentURL: agentURL, Log: log, ConfigSource: cluster.HostFlagsSource(opts.dangerousAutomations),
-		MemberDeadAfter: o.memberDeadAfter,
+		MemberDeadAfter: o.memberDeadAfter, KeepMasters: o.keepMasters,
 	})
 	if err != nil {
 		_ = ln.Close()

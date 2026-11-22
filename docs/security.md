@@ -53,6 +53,16 @@ Enrollment tokens cannot be revoked yet: an unused one stays usable until its TT
 by default), so give a hub-eligible token a short TTL and do not keep one around. The `device.enroll` audit entry says
 whether the join token was minted, with its roles, or refused and why.
 
+A hub-eligible device also counts as consent to a later promotion. A device that joined as storage
+only (3 masters existed then) may be promoted to master, and receive the CA key, when a master is
+removed and fewer than 3 are left ([Keeping 3 masters](cluster.md#keeping-3-masters)): you agreed to
+it holding the key when you ticked the box. That promotion is the `cluster.promote` policy action by
+the hub (actor `hub`), dangerous and audited with the reason `keep 3 masters`, and unlike the mint it
+follows your policy: `confirm` holds it for approval, `deny` refuses it. The key still travels only
+over the pinned `FetchCAKey` channel, granted only while that promotion runs. A hub that joined with a
+join token from `hearth cluster token create` or **Add hub** is never promoted on its own.
+`--keep-masters 0` turns automatic promotions off.
+
 The hub CA is created on the first start in the hub's data dir (`ca.crt`, `ca.key`, mode 0600). Only
 masters of a cluster hold it. Its private key never leaves a master's data dir, except to a new hub
 joining a cluster as a master (with a join token that grants the master role, on a host that allows

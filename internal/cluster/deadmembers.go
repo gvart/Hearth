@@ -196,18 +196,7 @@ type deadVerdict struct {
 // down; it may remove only while those alive, itself included, are a strict
 // majority of them, and never the last live master or storage member.
 func planDead(self string, members []MemberInfo, down map[string]downMember, deadAfter time.Duration) []deadVerdict {
-	known := map[string]bool{self: true}
-	live := map[string]MemberInfo{}
-	for _, m := range members {
-		known[m.ID] = true
-		if m.ID == self || m.State == MemberAlive {
-			live[m.ID] = m
-		}
-	}
-	for id := range down {
-		known[id] = true
-	}
-	majority := 2*len(live) > len(known)
+	live, known, majority := seesMajority(self, members, down)
 	ids := make([]string, 0, len(down))
 	for id := range down {
 		ids = append(ids, id)
@@ -222,7 +211,7 @@ func planDead(self string, members []MemberInfo, down map[string]downMember, dea
 		v := deadVerdict{ID: id, Since: d.Since, At: d.Since.Add(deadAfter)}
 		switch {
 		case !majority:
-			v.Refused = fmt.Sprintf("this hub sees %d of the %d members it knows alive, not a majority", len(live), len(known))
+			v.Refused = notMajority(len(live), known)
 		case d.Roles.Has(RoleMaster) && !hasLive(live, id, RoleMaster):
 			v.Refused = "it is the last master"
 		case d.Roles.Has(RoleStorage) && !hasLive(live, id, RoleStorage):
@@ -231,6 +220,31 @@ func planDead(self string, members []MemberInfo, down map[string]downMember, dea
 		out = append(out, v)
 	}
 	return out
+}
+
+// seesMajority returns the members self sees alive (itself included), how
+// many members it knows (those it sees and those recorded down), and whether
+// those alive are a strict majority of them: the minority side of a split,
+// or an even half, is not.
+func seesMajority(self string, members []MemberInfo, down map[string]downMember) (live map[string]MemberInfo, known int, ok bool) {
+	ids := map[string]bool{self: true}
+	live = map[string]MemberInfo{}
+	for _, m := range members {
+		ids[m.ID] = true
+		if m.ID == self || m.State == MemberAlive {
+			live[m.ID] = m
+		}
+	}
+	for id := range down {
+		ids[id] = true
+	}
+	return live, len(ids), 2*len(live) > len(ids)
+}
+
+// notMajority says why a hub that sees live of the known members alive does
+// not act.
+func notMajority(live, known int) string {
+	return fmt.Sprintf("this hub sees %d of the %d members it knows alive, not a majority", live, known)
 }
 
 // hasLive reports whether a live member other than but holds role (a
