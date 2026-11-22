@@ -22,8 +22,8 @@ import {
   type LogLine,
   type MetricsRange,
   type NetworkHostState,
-  type NetworkScanDone,
 } from './client.ts';
+import { applyScanDone, scanInterrupted, scanTimeoutMs, type NetworkScanState } from '../networkscan.ts';
 
 export const keys = {
   session: ['session'] as const,
@@ -142,18 +142,13 @@ export function useMarkNetworkHost() {
   });
 }
 
-/** A network scan asked for from this UI: running, and how the last one ended. */
-export interface NetworkScanState {
-  running: boolean;
-  done?: NetworkScanDone;
-}
-
 const idleScan: NetworkScanState = { running: false };
 
 /**
  * The state of the network scan asked for from this UI, kept in the query
  * cache: starting a scan sets it running, and the network.scan.done event
- * (useDeviceEvents) sets how it ended.
+ * with its id (useDeviceEvents) sets how it ended. If that event does not
+ * come within scanTimeoutMs, it stops running and the hosts are refetched.
  */
 export function useNetworkScan() {
   const qc = useQueryClient();
@@ -162,10 +157,23 @@ export function useNetworkScan() {
     queryFn: () => qc.getQueryData<NetworkScanState>(keys.networkScan) ?? idleScan,
     staleTime: Infinity,
   });
+  const running = state.data?.running ?? false;
+  useEffect(() => {
+    if (!running) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      qc.setQueryData<NetworkScanState>(keys.networkScan, (old) => old && scanInterrupted(old));
+      void qc.invalidateQueries({ queryKey: keys.networkHosts });
+    }, scanTimeoutMs);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [qc, running]);
   const start = useMutation({
     mutationFn: api.scanNetwork,
-    onSuccess: () => {
-      qc.setQueryData<NetworkScanState>(keys.networkScan, { running: true });
+    onSuccess: ({ id }) => {
+      qc.setQueryData<NetworkScanState>(keys.networkScan, { running: true, id });
     },
     onError: (err) => {
       // A scan already running ends with the event all the same.
@@ -263,6 +271,8 @@ export function useDeviceEvents(onEvent?: (ev: DeviceEvent) => void) {
     const connect = () => {
       close = subscribeEvents({
         onOpen: () => {
+          // A scan's done event may have been sent while the stream was down.
+          qc.setQueryData<NetworkScanState>(keys.networkScan, (old) => old && scanInterrupted(old));
           void qc.invalidateQueries({ queryKey: keys.devices });
           void qc.invalidateQueries({ queryKey: ['kube'] });
           void qc.invalidateQueries({ queryKey: keys.networkHosts });
@@ -271,7 +281,7 @@ export function useDeviceEvents(onEvent?: (ev: DeviceEvent) => void) {
           void qc.invalidateQueries({ queryKey: keys.networkHosts });
         },
         onNetworkScanDone: (done) => {
-          qc.setQueryData<NetworkScanState>(keys.networkScan, { running: false, done });
+          qc.setQueryData<NetworkScanState>(keys.networkScan, (old) => applyScanDone(old ?? idleScan, done));
           void qc.invalidateQueries({ queryKey: keys.networkHosts });
         },
         onKubeCluster: (c) => {
