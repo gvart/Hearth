@@ -1,0 +1,107 @@
+web/src/components/DeviceHub.tsx
+  s_18b57982fdff93::t_a57de708e2f393 99-102,104-105
+  s_18b57982fdff93::t_b3919964ae27ac 15,48-49
+  s_18b57982fdff93::t_37d5dd043dee0d 23-31,34-37,74-76,91,103,108-110,112,228
+  s_18b57982fdff93::t_ca95078e10c249 1-14,16-22,32-33,38-46,50-73,77-90,92-98,106-107,111,113-227,229-351
+  s_18b57982fdff93::t_647385e71c344c 47
+internal/cluster/capable.go
+  s_18b57982fdff93::t_b853cbc26c0ece 114-115,117,119-128
+web/src/tips.ts
+  s_18b57982fdff93::t_b80bc8f00a2965 16-17,108-112
+  s_18b57982fdff93::t_db7eff94e51256 113-115
+internal/store/tokens_test.go
+  s_18b57982fdff93::t_e20b0499a5631f 127,168-217
+internal/hub/autohub.go
+  s_18b57982fdff93::t_2f86a4abd9358a 9,17
+  s_18b57982fdff93::t_6f404063bb2185 89-91
+  s_18b57982fdff93::t_230655adfe4f0b 116-145
+internal/hub/devicehub.go
+  s_18b57982fdff93::t_bc39296e54abc0 134-135,138
+  s_18b57982fdff93::t_2a203ca45b01f3 130-133,137
+  s_18b57982fdff93::t_c721519601c45d 1-129,136,139-207,209-230,232-235,237-240
+  s_18b57982fdff93::t_5a1ee703640a33 208,231,236
+cmd/hearth/hub_master.go
+  s_18b57982fdff93::t_b284ab3999e7b6 198
+cmd/hearth/device.go
+  s_18b57982fdff93::t_14c624a311009c 16
+  s_18b57982fdff93::t_c5ad766d3bcaf8 23,27-84
+  s_18b57982fdff93::t_461b3b7a5806bf 85
+web/src/devicehub.ts
+  s_18b57982fdff93::t_13151d3c22d39b 57-62,64
+  s_18b57982fdff93::t_6a365789b8bc42 1-56,63,66-93
+  s_18b57982fdff93::t_8abb225601161d 65
+docs/getting-started.md
+  s_18b57982fdff93::t_1a60ba8851f9c2 193-198
+internal/hub/cluster_test.go
+  s_18b57982fdff93::t_ef1078cc690236 109-112
+internal/cluster/capable_test.go
+  s_18b57982fdff93::t_99e32847a84d9e 18-19,21-30,32-34,42-43
+  s_18b57982fdff93::t_897191b4743015 31
+  s_18b57982fdff93::t_3ff12b8b1191f9 44
+cmd/hearth/agent_hubjoin_test.go
+  s_18b57982fdff93::t_03eb528ababd83 12,15,58-130
+  s_18b57982fdff93::t_c530fd5caadd8d 131
+deploy/test/install-e2e-inner.sh
+  s_18b57982fdff93::t_4fc305e4fb8c4b 319-332,335-358
+  s_18b57982fdff93::t_43352e8a26ffea 333-334
+docs/cluster.md
+  s_18b57982fdff93::t_a64e8f31e142ce 155-188,291-293,706,748-749
+web/src/components/DevicePage.tsx
+  s_18b57982fdff93::t_e272547812ab36 22,255
+  s_18b57982fdff93::t_391fcf40296db2 256
+web/src/api/cluster.ts
+  s_18b57982fdff93::t_a25eee0a24e786 6,37-38,47-51,68-71,74,76-79,82,87-108
+  s_18b57982fdff93::t_be36b8d467166b 109
+deploy/launchd/dev.hearth.hub.plist
+  s_18b57982fdff93::t_9d6706202aedeb 1-38
+cmd/hearth/cluster_test.go
+  s_18b57982fdff93::t_2491b2908def83 29
+internal/hub/tokens.go
+  s_18b57982fdff93::t_c129a0085806df 209-230
+internal/hub/cluster.go
+  s_18b57982fdff93::t_b284ab3999e7b6 78-79,81,87,150-156
+  s_18b57982fdff93::t_aa799173cfdd7d 176-177
+deploy/install.sh
+  s_18b57982fdff93::t_8d31b17029d87f 61,76,92-93,99,114-118,132,175-183,214-216,510-552,564,568-578,580-585,599-628,634,640,646,694,728-736,789,792,794
+  s_18b57982fdff93::t_373c30ab29d845 30-35
+  s_18b57982fdff93::t_7133e5e329d752 790-791,793
+  s_18b57982fdff93::t_8848797a8ea3f6 795
+web/test/devicehub.test.mjs
+  s_18b57982fdff93::t_1ca36b45c01c63 47-48
+  s_18b57982fdff93::t_c793e16c40159b 36-41,43
+  s_18b57982fdff93::t_d29e231f5748e5 1-35,44-46,49-55
+  s_18b57982fdff93::t_ad2289850895c5 42
+internal/hub/api.go
+  s_18b57982fdff93::t_ba93529010110a 149-150
+  s_18b57982fdff93::t_22c4b2ee14b8a3 124-125
+  s_18b57982fdff93::t_b9c68ccb4173e6 274-279
+internal/hub/devicehub_test.go
+  s_18b57982fdff93::t_628a9676fde223 146
+  s_18b57982fdff93::t_f0556cecf2498f 1-35,40-145,147-231
+  s_18b57982fdff93::t_8fa16e564ddf19 36-39
+internal/store/jointokens.go
+  s_18b57982fdff93::t_5d52cf68af786e 121,166-186
+cmd/hearth/agent_makehub.go
+  s_18b57982fdff93::t_83cc12a51e3526 21
+  s_18b57982fdff93::t_ab614481229cc4 1-20,22-85
+deploy/embed_test.go
+  s_18b57982fdff93::t_d4189e2bdee294 20
+cmd/hearth/agent.go
+  s_18b57982fdff93::t_b05b6c8483dbdd 24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dad1355a3b509820834c398a0f8d058256ef8352",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "unknown"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
