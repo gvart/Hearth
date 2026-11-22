@@ -20,9 +20,16 @@
 # and root can read, not the argv, which any local user can see with ps.
 # --token still works but warns for that reason.
 #
+# On Linux, a capable device (64-bit, 1.5 GiB of memory, 2 GiB free) enrolled
+# with a token the admin made hub-eligible ("This device may become a hub" in
+# Add device) also becomes a hub of the cluster: the enrollment writes a join
+# into /var/lib/hearth/hub, and the hearth-hub service joins with it. Nothing
+# to pass for that; --agent-only (or HEARTH_AGENT_ONLY=1) keeps the device an
+# agent.
+#
 # Re-running upgrades the binary and keeps the device identity (no token
-# needed). --uninstall removes the service and binary; --purge also deletes the
-# agent's data dir.
+# needed). --uninstall removes the services and binary; --purge also deletes
+# the agent's and the hub's data dirs.
 #
 # Test-only environment overrides (not a supported interface):
 #   HEARTH_INSTALL_PREFIX    install under this root instead of / (no root needed)
@@ -55,7 +62,9 @@ SKIP_SERVICE=${HEARTH_SKIP_SERVICE:-0}
 
 BIN_PATH=$PREFIX/usr/local/bin/hearth
 DATA_DIR=$PREFIX/var/lib/hearth/agent
+HUB_DATA_DIR=$PREFIX/var/lib/hearth/hub
 UNIT_PATH=$PREFIX/etc/systemd/system/hearth-agent.service
+HUB_UNIT_PATH=$PREFIX/etc/systemd/system/hearth-hub.service
 PLIST_PATH=$PREFIX/Library/LaunchDaemons/$LAUNCHD_LABEL.plist
 
 say() { printf 'hearth: %s\n' "$*"; }
@@ -76,6 +85,7 @@ Usage:
 
 Environment:
   HEARTH_TOKEN       enrollment token from the hub (first install only)
+  HEARTH_AGENT_ONLY  1: as --agent-only
 
 Options:
   --hub URL          hub URL for enrollment (https://<hub>:7443); the token names
@@ -87,6 +97,8 @@ Options:
                      instead of GitHub releases
   --version vX.Y.Z   release to install (default: the latest release, or the
                      newest pre-release while there is no stable one)
+  --agent-only       never make this device a hub, even when it is capable and
+                     the token allows it
   --uninstall        stop and remove the service and binary; keep the data dir
   --purge            with --uninstall: also delete the data dir (device identity)
   -h, --help         show this help
@@ -99,6 +111,7 @@ FROM_HUB=0
 VERSION=
 UNINSTALL=0
 PURGE=0
+AGENT_ONLY=${HEARTH_AGENT_ONLY:-0}
 
 need_arg() {
 	[ "$2" -ge 2 ] || die "$1 needs a value (see --help)"
@@ -135,6 +148,10 @@ while [ $# -gt 0 ]; do
 		;;
 	--from-hub)
 		FROM_HUB=1
+		shift
+		;;
+	--agent-only)
+		AGENT_ONLY=1
 		shift
 		;;
 	--uninstall)
@@ -386,6 +403,45 @@ WantedBy=multi-user.target
 HEARTH_SYSTEMD_UNIT
 }
 
+write_hub_unit() {
+	cat >"$1" <<'HEARTH_HUB_UNIT'
+# SPDX-License-Identifier: AGPL-3.0-only
+# Installed by deploy/install.sh, which embeds a copy; keep the two identical.
+# The hub of a device the cluster made a hub at its enrollment (docs/cluster.md,
+# "Devices become hubs"): it joins with the join file the enrollment wrote,
+# never creating a cluster of its own, then runs as a member.
+[Unit]
+Description=Hearth hub
+Documentation=https://github.com/gvart/hearth
+After=network-online.target
+Wants=network-online.target
+# Only a device with a join to make, or one that joined already.
+ConditionPathExists=|/var/lib/hearth/hub/join
+ConditionPathExists=|/var/lib/hearth/hub/cluster/node.crt
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/hearth hub --data-dir /var/lib/hearth/hub --join-file /var/lib/hearth/hub/join
+# A join refused for good, or no join to make, exits 0 and is not restarted;
+# a join that may pass (the master unreachable) tries again until its token
+# expires.
+Restart=on-failure
+RestartSec=10
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=read-only
+PrivateTmp=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target
+HEARTH_HUB_UNIT
+}
+
 write_launchd_plist() {
 	cat >"$1" <<'HEARTH_LAUNCHD_PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -425,7 +481,52 @@ skip_service() {
 	[ "$SKIP_SERVICE" = 1 ]
 }
 
+systemd_running() {
+	command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]
+}
+
+# is_hub reports whether this device has a hub to run: a join the enrollment
+# wrote, or a hub that joined already.
+is_hub() {
+	[ "$OS" = linux ] && { as_root test -f "$HUB_DATA_DIR/join" || as_root test -f "$HUB_DATA_DIR/cluster/node.crt"; }
+}
+
+# install_hub_service installs and starts the hub before the agent, and waits
+# up to 60 s for it to answer `hearth cluster status` (a member that is no
+# master serves no web port). A hub that fails leaves a working agent.
+install_hub_service() {
+	write_hub_unit "$TMP/hearth-hub.service"
+	as_root mkdir -p "${HUB_UNIT_PATH%/*}"
+	as_root cp "$TMP/hearth-hub.service" "$HUB_UNIT_PATH"
+	as_root chmod 0644 "$HUB_UNIT_PATH"
+	if skip_service; then
+		say "wrote $HUB_UNIT_PATH (HEARTH_SKIP_SERVICE=1: not starting it)"
+		return
+	fi
+	if ! systemd_running; then
+		warn "systemd is not running here; start the hub yourself: $BIN_PATH hub --data-dir $HUB_DATA_DIR --join-file $HUB_DATA_DIR/join"
+		return
+	fi
+	as_root systemctl daemon-reload
+	as_root systemctl enable hearth-hub.service >/dev/null 2>&1
+	as_root systemctl restart hearth-hub.service
+	say "starting the hub: this device joins the cluster as a hub"
+	i=0
+	while [ $i -lt 60 ]; do
+		if as_root "$BIN_PATH" cluster status --data-dir "$HUB_DATA_DIR" >/dev/null 2>&1; then
+			say "service hearth-hub is running (logs: journalctl -u hearth-hub -f)"
+			return
+		fi
+		i=$((i + 1))
+		sleep 1
+	done
+	warn "the hub did not answer within 60 s; the agent runs anyway (see journalctl -u hearth-hub)"
+}
+
 install_service() {
+	if is_hub; then
+		install_hub_service
+	fi
 	if [ "$OS" = linux ]; then
 		write_systemd_unit "$TMP/hearth-agent.service"
 		as_root mkdir -p "${UNIT_PATH%/*}"
@@ -463,8 +564,9 @@ remove_service() {
 	if [ "$OS" = linux ]; then
 		if ! skip_service && command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
 			as_root systemctl disable --now hearth-agent.service >/dev/null 2>&1 || true
+			as_root systemctl disable --now hearth-hub.service >/dev/null 2>&1 || true
 		fi
-		as_root rm -f "$UNIT_PATH"
+		as_root rm -f "$UNIT_PATH" "$HUB_UNIT_PATH"
 		if ! skip_service && command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
 			as_root systemctl daemon-reload
 		fi
@@ -481,11 +583,11 @@ uninstall() {
 	as_root rm -f "$BIN_PATH"
 	say "removed the hearth service and $BIN_PATH"
 	if [ "$PURGE" = 1 ]; then
-		as_root rm -rf "$DATA_DIR"
+		as_root rm -rf "$DATA_DIR" "$HUB_DATA_DIR"
 		as_root rmdir "${DATA_DIR%/*}" >/dev/null 2>&1 || true
-		say "deleted $DATA_DIR; the device stays listed on the hub until you remove it there"
+		say "deleted $DATA_DIR and $HUB_DATA_DIR; the device (and its hub) stay listed until you remove them there"
 	else
-		say "kept $DATA_DIR (device identity); run with --purge to delete it"
+		say "kept $DATA_DIR (device identity) and any $HUB_DATA_DIR; run with --purge to delete them"
 	fi
 }
 
@@ -535,15 +637,21 @@ main() {
 	as_root chmod 0700 "$DATA_DIR"
 
 	if [ "$JOIN" = 1 ]; then
+		# Offer this device as a hub: the agent checks it is capable, the hub
+		# that the token allows it. Linux only; never with --agent-only.
+		set --
+		if [ "$OS" = linux ] && [ "$AGENT_ONLY" != 1 ]; then
+			set -- --hub-data-dir "$HUB_DATA_DIR"
+		fi
 		# The token goes in on stdin (printf is a shell builtin), never in argv,
 		# so neither ps nor sudo's log ever sees it.
 		if [ -n "$HUB" ]; then
 			say "enrolling with $HUB"
-			printf '%s\n' "$TOKEN" | as_root "$BIN_PATH" agent join --data-dir "$DATA_DIR" "$HUB" - ||
+			printf '%s\n' "$TOKEN" | as_root "$BIN_PATH" agent join --data-dir "$DATA_DIR" "$@" "$HUB" - ||
 				die "enrollment failed (is the token valid and unused, and the hub reachable at $HUB?)"
 		else
 			say "enrolling with the hub the token names"
-			printf '%s\n' "$TOKEN" | as_root "$BIN_PATH" agent join --data-dir "$DATA_DIR" - ||
+			printf '%s\n' "$TOKEN" | as_root "$BIN_PATH" agent join --data-dir "$DATA_DIR" "$@" - ||
 				die "enrollment failed (is the token valid and unused, and the hub it names reachable? --hub https://<hub>:7443 gives another address)"
 		fi
 	fi

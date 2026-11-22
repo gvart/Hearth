@@ -220,6 +220,10 @@ grep -q "enrolling with the hub the token names" /tmp/install1.log || fail "inst
 [ -f "$DATA/agent.crt" ] || fail "join did not write agent.crt"
 [ "$(stat -c %a "$DATA")" = 700 ] || fail "data dir mode is $(stat -c %a "$DATA"), want 700"
 cmp "$UNIT" /deploy/systemd/hearth-agent.service || fail "unit differs from deploy/systemd"
+# The token was not made hub-eligible: the device stays an agent, no hub.
+grep -q "stays an agent, not a hub" /tmp/install1.log || fail "installer did not say the device stays an agent"
+[ ! -e /var/lib/hearth/hub/join ] || fail "a join file without a hub-eligible token"
+[ ! -e /etc/systemd/system/hearth-hub.service ] || fail "a hub unit without a hub to run"
 start_agent
 wait_for 10 device_online || fail "device not online within 10 s"
 t_online=$(ms)

@@ -1,0 +1,34 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Installed by deploy/install.sh, which embeds a copy; keep the two identical.
+# The hub of a device the cluster made a hub at its enrollment (docs/cluster.md,
+# "Devices become hubs"): it joins with the join file the enrollment wrote,
+# never creating a cluster of its own, then runs as a member.
+[Unit]
+Description=Hearth hub
+Documentation=https://github.com/gvart/hearth
+After=network-online.target
+Wants=network-online.target
+# Only a device with a join to make, or one that joined already.
+ConditionPathExists=|/var/lib/hearth/hub/join
+ConditionPathExists=|/var/lib/hearth/hub/cluster/node.crt
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/hearth hub --data-dir /var/lib/hearth/hub --join-file /var/lib/hearth/hub/join
+# A join refused for good, or no join to make, exits 0 and is not restarted;
+# a join that may pass (the master unreachable) tries again until its token
+# expires.
+Restart=on-failure
+RestartSec=10
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=read-only
+PrivateTmp=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target
