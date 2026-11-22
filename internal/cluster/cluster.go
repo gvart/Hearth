@@ -44,6 +44,9 @@ type Status struct {
 	StorageMembers  int  `json:"storage_members"`
 	Replicas        int  `json:"replicas"`
 	HighlyAvailable bool `json:"highly_available"`
+	// SafeToStop says whether this member can stop now without the cluster
+	// losing a row or its last master (safestop.go); nil when not asked.
+	SafeToStop *SafeStop `json:"safe_to_stop,omitempty"`
 }
 
 // Alone reports whether this member is a cluster of one: no other member,

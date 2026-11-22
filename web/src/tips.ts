@@ -98,8 +98,9 @@ export const tips: Record<TipId, TipText> = {
   cluster: {
     about: 'cluster roles',
     lines: [
-      'Every hub is a member of a cluster with no leader. A storage member holds a replica of a share of the rows. A master serves the UI, the API and the agents, runs automations and runbooks, and holds the hub CA key. A hub can hold either role or both.',
+      'Every hub is a member of a cluster with no leader. A storage member holds a replica of a share of the rows; a master serves the UI, the API and the agents and holds the hub CA key.',
       'Promote gives a member a role, demote takes it away. The hub refuses to take away the last master or the last storage member.',
+      'Before you stop a hub, check its "safe to stop" line: green means every row it holds has a caught-up copy on another hub, and another master is live.',
     ],
     docs: 'cluster.md',
   },

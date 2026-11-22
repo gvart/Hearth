@@ -251,7 +251,48 @@ heard nothing from it directly for about two probe rounds), `dead` (failed) or `
 cleanly), with `syncing` or `draining` and its progress while its roles change. `dead` and `left`
 members stay listed until this hub restarts. A line under the table names the members whose host flags
 differ (see [Host flag drift](#host-flag-drift)). In the hub log, `caught up with the cluster` marks
-a member that is ready after a start.
+a member that is ready after a start. A line above the table says whether this hub is
+[safe to stop](#is-it-safe-to-stop-this-hub).
+
+### Is it safe to stop this hub?
+
+You started Hearth on a laptop, added hubs on other devices, and now want to shut the laptop. There is
+no handoff step: the hub you want to stop tells you whether stopping it now loses anything. Run
+`hearth cluster status` on its host, or open the **Cluster** page on it:
+
+```text
+Safe to stop this hub:  yes
+```
+
+It is safe when both hold:
+
+- **Every row this hub holds has a copy on another live storage member that is caught up.** A storage
+  member is caught up when it is live, is not still copying its rows after a promotion (`syncing`),
+  no hint waits for it on this hub, and its last anti-entropy round with this hub, on the current ring,
+  compared every bucket both hold and copied what differed. Rows this hub holds for buckets it does not
+  own (written before the others joined) must have been handed off to their owners.
+- **Another master is live**, so something still serves the UI, the API and the agents.
+
+Otherwise it says what is missing, for example:
+
+```text
+Safe to stop this hub:  no
+  - no other master is live: nothing would serve the UI, the API or the agents; promote another hub to master
+  - replica hub-b has not finished an anti-entropy round with this hub yet; until it catches up, this hub
+    holds the only up-to-date copy of the rows in 812 buckets
+```
+
+The reasons are `no_other_master`, `only_copy` (no other storage member holds some rows: add one or
+promote one to storage), `replica_behind` (with the member: down, syncing, hints waiting for it, or no
+anti-entropy round yet), `hand_off` and `writes_in_flight`. `--json` and `GET /api/v1/cluster/members`
+carry them under `safe_to_stop`.
+
+A hub that has just joined counts as catching up until its first anti-entropy round with this hub, which
+runs every 30 seconds: wait for the green line. A single hub is never safe to stop, as it holds the only
+copy of everything and is the only master. The check counts rows by shard bucket (65,536 of them), not
+one by one, and trusts a successful anti-entropy round until the ring changes, the round fails or the
+member is found down. A write another master sent to a member that went down for a moment waits as a
+hint on that master, not on this hub.
 
 ## Configuration
 

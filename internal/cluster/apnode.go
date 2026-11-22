@@ -612,8 +612,8 @@ func (n *APNode) Status() Status {
 // writes and `hearth cluster status`) until ctx ends.
 func ServeAPControl(ctx context.Context, dataDir string, n *APNode, log *slog.Logger) error {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /v1/status", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, n.Status())
+	mux.HandleFunc("GET /v1/status", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, n.StatusWithSafeStop(r.Context()))
 	})
 	mux.HandleFunc("POST /v1/change", n.serveRoleChange)
 	mux.HandleFunc("POST /v1/ca/change", n.serveCAChange)

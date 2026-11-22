@@ -177,5 +177,7 @@ On the hub, the log says `device enrolled` and then `agent connected` for each d
 - [Concepts](concepts.md): what the hub, agents, policy and the audit log do.
 - [Automations](automations.md): restart a service when a check fails.
 - [Prometheus](prometheus.md) and [Kubernetes](kubernetes.md): bring in what you already run.
-- [Cluster mode](cluster.md): several hubs, no leader, that keep working when one dies.
+- [Cluster mode](cluster.md): several hubs, no leader, that keep working when one dies. Started on a
+  laptop? Before you stop it, its Cluster page (or `hearth cluster status`) says whether it is
+  [safe to stop](cluster.md#is-it-safe-to-stop-this-hub).
 - [Security model](security.md): what protects your devices.
