@@ -47,7 +47,8 @@ The first `--host` is the preferred name (without `--host`: the first LAN IP, un
 is a DNS name with a dot other than `.local`): when the UI is opened over HTTP at an address the
 certificate doesn't cover, its "open the secure address" banner links to that first name, and install
 commands name it. A new certificate is issued at every start, so changing `--host`, or a new LAN IP
-from DHCP, only needs a restart; devices that already trust the CA need nothing.
+from DHCP, only needs a restart; devices that already trust the CA need nothing. Agents keep the
+address they enrolled with, though: give the hub a fixed address or a DNS name for them.
 
 ## 2. Get the CA certificate and check its fingerprint
 

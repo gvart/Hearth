@@ -42,7 +42,8 @@ HEARTH_ADMIN_PASSWORD='choose-a-password' ./hearth hub
 - The hub's TLS certificate names this machine's hostname, its private LAN IPv4 addresses
   (`192.168.x.x`, `10.x.x.x`, `172.16–31.x.x`) and `localhost`. Devices refuse any other name, and
   the install command names the LAN IP, so on one LAN nothing more is needed. A new certificate is
-  issued at every start: after the hub gets a new IP, restart it.
+  issued at every start for the addresses of the moment, but devices keep the address they enrolled
+  with: give the hub a fixed address (a DHCP reservation) or a DNS name with `--host`.
 - `--host` replaces that list with the names and IPs you give, for a DNS name (`--host nas.lan`), a
   tailnet or VPN address, or an address behind a port forward. Repeat it to add more
   (`--host nas.lan --host 192.168.1.10`). The first one is the address install commands name.
@@ -72,8 +73,9 @@ both ports if you run a firewall (`sudo ufw allow 7443,7080/tcp`).
 
 Open **`http://192.168.1.10:7080`** (or `http://localhost:7080` on the hub machine). The "Add
 device" dialog builds its command for an address the device can reach: the one in your browser if
-the certificate names it and it is not `localhost`, a loopback IP or a bare hostname, else the hub's
-first certificate name that is not loopback (its LAN IP, or your first `--host`).
+the certificate names it and it is not `localhost` or a loopback IP, else the hub's first certificate
+name that is not loopback (its LAN IP, or your first `--host`). A bare hostname such as `nas` or
+`mac.local` in your browser gives way to the LAN IP too, when the hub found one.
 
 Sign in with the admin password, then click **Add device**. The dialog shows a command like:
 
