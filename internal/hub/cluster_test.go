@@ -106,7 +106,10 @@ func TestClusterMembersOutsideAP(t *testing.T) {
 
 func TestClusterRoleChanges(t *testing.T) {
 	admin := &fakeClusterAdmin{}
-	f, cookie := clusterFixture(t, admin)
+	f, _ := clusterFixture(t, admin)
+	// Signed in just now: the promotion to master needs no password again.
+	f.api.argon = testArgon
+	cookie := sessionCookie(t, f.login(t, testPassword))
 	if resp := f.do(t, http.MethodGet, "/api/v1/cluster/members", "", nil); resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("members without a session = %d, want 401", resp.StatusCode)
 	}

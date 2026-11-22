@@ -152,6 +152,41 @@ device stays an agent, with a log line saying why; an unreachable master is trie
 token expires. Without a join file and without a cluster, `hearth hub --join-file` exits at once,
 so the service never forms a cluster of its own.
 
+### A device's page: make it a hub, or agent-only
+
+Each device's page in the UI has a **Hub** card: the cluster member the device became, with its roles
+and state, or **agent only** when the hub service is not installed. The device and the member are
+linked by the join recorded on the device's join token (the one minted at its enrollment, or the one
+below), while that hub's certificate is not revoked; a hub joined with a hand-made join token (`hearth
+hub --join`, Add hub) shows no device. `GET /api/v1/devices/{id}/hub` answers the same, with the
+counts against the caps, and `hearth device hub <device-id>` prints it on a master's host.
+
+- **Promote and demote** the device's hub there as on the Cluster page (`cluster.promote`,
+  `cluster.demote`). A promotion to master asks for the admin password again, on both pages: it hands
+  the member the CA key.
+- **Make this device a hub** is how a Mac, or any enrolled agent, becomes a hub later: auto hubs are
+  Linux only. It asks for the password again and mints a join token for the device
+  (`POST /api/v1/devices/{id}/hub`, the policy action `cluster.token.create` by `web`, target the
+  device, valid 15 minutes), with the same caps as an enrollment: storage, and master while fewer than
+  3 masters are counted; refused (`hubs_full`) with 5 storage members. The page shows a command to run
+  on the device:
+
+  ```sh
+  curl -fsSL <hub>/install.sh | HEARTH_JOIN_TOKEN=<token> sh -s -- --make-hub https://<master>:7443
+  ```
+
+  It re-runs the installer, which keeps the agent and its identity, checks the device (64-bit Linux or
+  macOS, 1.5 GiB of memory, 2 GiB free; `hearth agent make-hub`), writes the join file and installs the
+  hub service next to the agent: `hearth-hub` on Linux, the launchd job `dev.hearth.hub` on macOS
+  (logs in `/var/log/hearth-hub.log`). The device shows as a hub once it has joined.
+- **Make agent-only** removes the device's hub from the cluster (`cluster.remove`: refused for the last
+  master or storage member, and by the hub you are using; open another master's UI for that one) and
+  shows the re-run that stops and removes its hub service, `install.sh --agent-only`. The hub's data
+  dir stays; delete `/var/lib/hearth/hub` before making the device a hub again (`make-hub` refuses a
+  data dir that holds a hub). A removed master's data dir still holds the CA key: see
+  [Limits](#limits). Taking a master away below `--keep-masters` may make a master promote another
+  hub-eligible storage member: lower `--keep-masters` first to run fewer masters.
+
 **Away too long.** Deleted rows are forgotten after 7 days. A member that has not reached the cluster
 for longer refuses to start with its old data, so it cannot bring deleted rows back: clear its data
 dir and join it again.
@@ -254,8 +289,9 @@ dir and join it again.
 
 A member's roles change at runtime, within its own `--allow-roles`. Each change is a `dangerous`
 policy action (`cluster.promote`, `cluster.demote`, `cluster.remove`), decided and audited with its
-outcome on the master asked, and refused by a master that is cut off. Ask a master: on the **Cluster**
-page of its UI (members, roles, allowed roles, state and progress), its API
+outcome on the master asked, and refused by a master that is cut off. A promotion to master from the
+UI asks for the admin password again. Ask a master: on the **Cluster** page of its UI (members, roles,
+allowed roles, state and progress) or a device's page (its hub's roles), its API
 (`POST /api/v1/cluster/members/{id}/promote|demote` with `{"role": "storage"}` or `"master"`,
 `DELETE /api/v1/cluster/members/{id}`), or its host's CLI:
 
@@ -668,7 +704,7 @@ agent again.
 
 ## CLI on a member's host
 
-`hearth token create`, `hearth device revoke`, `hearth admin set-password`, `hearth cluster token
+`hearth token create`, `hearth device revoke`, `hearth device hub`, `hearth admin set-password`, `hearth cluster token
 create`, `hearth cluster status`, `hearth cluster promote|demote|remove` and `hearth cluster ca
 rotate|finish|abort|status` work on a member's host while its hub runs: they go through the hub's
 local control socket, and the running hub decides them. With the hub stopped they refuse, since
@@ -710,8 +746,8 @@ the time it was made and lands only once. If a spooled entry cannot be read back
 
 ## Limits
 
-- **Auto hubs are Linux only.** A Mac never offers itself as a hub; promote one by hand with a join
-  token.
+- **Auto hubs are Linux only.** A Mac never offers itself as a hub at enrollment: make it one from its
+  page ([Make this device a hub](#a-devices-page-make-it-a-hub-or-agent-only)).
 - **A removed master's data dir still holds the CA key.** Removal cannot take it back: whoever has that
   data dir can still mint certificates the cluster trusts until you [rotate the hub CA](#rotating-the-hub-ca).
   Wipe the data dir of every removed master. Storage-only members never hold the key.

@@ -75,15 +75,16 @@ func (c ClusterChange) Check() error {
 
 // DoClusterChange runs c on admin as actor through pol: decided as
 // cluster.promote, cluster.demote or cluster.remove (dangerous), audited
-// with its outcome. A dry run decides and audits, and changes nothing.
+// with its outcome. A dry run decides and audits, and changes nothing. A
+// precheck, when set, must pass too (policy.Request.Precheck).
 func DoClusterChange(ctx context.Context, pol *policy.Engine, admin ClusterAdmin, actorKind, actorID string,
-	c ClusterChange, dryRun bool, onHold func(id string, expires time.Time),
+	c ClusterChange, dryRun bool, onHold func(id string, expires time.Time), precheck func(context.Context) error,
 ) (any, error) {
 	if err := c.Check(); err != nil {
 		return nil, err
 	}
 	req := ClusterChangeRequest(c, actorKind, actorID)
-	req.DryRun, req.OnHold = dryRun, onHold
+	req.DryRun, req.OnHold, req.Precheck = dryRun, onHold, precheck
 	var out any
 	err := pol.Do(ctx, req, func(ctx context.Context) error {
 		var err error
@@ -146,7 +147,13 @@ func (a *api) clusterChange(op string) http.HandlerFunc {
 			}
 			c.Role = body.Role
 		}
-		out, err := DoClusterChange(r.Context(), a.policy, a.clusterAdmin, policy.ActorWeb, remoteHost(r), c, false, nil)
+		// A promotion to master hands the member the CA key: the password
+		// again, as for a join token that grants master.
+		var precheck func(context.Context) error
+		if c.Op == ClusterOpPromote && c.Role == "master" {
+			precheck = a.recentAuth(r)
+		}
+		out, err := DoClusterChange(r.Context(), a.policy, a.clusterAdmin, policy.ActorWeb, remoteHost(r), c, false, nil, precheck)
 		if err != nil {
 			a.writeClusterError(w, r, op, err)
 			return
@@ -166,6 +173,8 @@ func (a *api) writeClusterError(w http.ResponseWriter, r *http.Request, op strin
 	switch {
 	case errors.Is(err, errBadClusterChange):
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+	case errors.Is(err, errReauthRequired):
+		writeError(w, http.StatusForbidden, "reauth_required", "enter the admin password again to do this")
 	case errors.Is(err, policy.ErrDenied) && strings.Contains(err.Error(), policy.ErrIsolated):
 		writeError(w, http.StatusForbidden, "isolated", policy.ErrIsolated)
 	case errors.Is(err, policy.ErrDenied):

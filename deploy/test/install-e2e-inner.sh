@@ -316,4 +316,54 @@ HEARTH_TOKEN=$TOKEN sh /deploy/install.sh --agent-only 2>&1 | tee /tmp/install5.
 sh /deploy/install.sh --purge
 pass "--agent-only enrolls an agent and nothing more"
 
+log "a device's page makes an enrolled agent a hub (--make-hub); --agent-only takes it back"
+TOKEN=$(curl -fsS -b /tmp/cookies -H 'Content-Type: application/json' -d '{}' "$WEB/api/v1/tokens" |
+  sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+HEARTH_TOKEN=$TOKEN sh /deploy/install.sh 2>&1 | tee /tmp/install6.log
+DEV=$(sed -n 's/^Enrolled as device \([^;]*\);.*/\1/p' /tmp/install6.log)
+[ -n "$DEV" ] || fail "no device ID in the install output"
+[ ! -e "$HUB_UNIT" ] || fail "a plain token installed a hub unit"
+# The page's answer for an agent: no member, and the command that would take a hub away.
+curl -fsS -b /tmp/cookies "$WEB/api/v1/devices/$DEV/hub" >/tmp/devhub.json
+! grep -q '"node_id"' /tmp/devhub.json || fail "an agent shows a hub: $(cat /tmp/devhub.json)"
+grep -qF '"agent_only_command":"curl -fsSL '"$RAW_SCRIPT"' | sh -s -- --agent-only --version v0.0.0-e2e"' /tmp/devhub.json ||
+  fail "agent_only_command: $(cat /tmp/devhub.json)"
+# Signing in again enters the password: the join token needs it.
+curl -fsS -c /tmp/cookies -H 'Content-Type: application/json' -d "{\"password\":\"$PASSWORD\"}" "$WEB/api/v1/login" >/dev/null
+code=$(curl -sS -b /tmp/cookies -X POST -o /tmp/makehub.json -w '%{http_code}' "$WEB/api/v1/devices/$DEV/hub")
+[ "$code" = 201 ] || fail "POST hub = $code $(cat /tmp/makehub.json)"
+MH_CMD=$(sed -n 's/.*"command":"\([^"]*\)".*/\1/p' /tmp/makehub.json)
+JOIN=$(sed -n 's/.*HEARTH_JOIN_TOKEN=\([^ ]*\) .*/\1/p' <<<"$MH_CMD")
+want_cmd="curl -fsSL $RAW_SCRIPT | HEARTH_JOIN_TOKEN=$JOIN sh -s -- --make-hub https://$(hostname -i | cut -d' ' -f1):7443 --version v0.0.0-e2e"
+[ -n "$JOIN" ] && [ "$MH_CMD" = "$want_cmd" ] || fail "make-hub command $MH_CMD, want $want_cmd"
+TOKEN=$JOIN # expect_fail checks it is never echoed
+expect_fail "--make-hub without a join token" "needs the join token in HEARTH_JOIN_TOKEN" sh /deploy/install.sh --make-hub "$HUB"
+expect_fail "--make-hub over plain http" "must be an https:// URL" env HEARTH_JOIN_TOKEN="$JOIN" sh /deploy/install.sh --make-hub "$WEB"
+expect_fail "--make-hub with --agent-only" "contradict" env HEARTH_JOIN_TOKEN="$JOIN" sh /deploy/install.sh --make-hub "$HUB" --agent-only
+MH_CMD=${MH_CMD/"$RAW_SCRIPT"/"$WEB/install.sh"}
+printf '%s\n' "$MH_CMD" | sh 2>&1 | tee /tmp/install7.log
+! grep -qF -- "$JOIN" /tmp/install7.log || fail "installer echoed the join token"
+grep -q "already enrolled" /tmp/install7.log || fail "--make-hub re-enrolled the device"
+grep -q "This device becomes a hub" /tmp/install7.log || fail "--make-hub did not make the device a hub"
+[ "$(stat -c %a "$HUB_DATA/join")" = 600 ] || fail "join file mode is $(stat -c %a "$HUB_DATA/join" 2>&1), want 600"
+grep -qF -- "$JOIN" "$HUB_DATA/join" || fail "the join file does not hold the page's join token"
+cmp "$HUB_UNIT" /deploy/systemd/hearth-hub.service || fail "hub unit differs from deploy/systemd"
+[ -f "$UNIT" ] || fail "no agent unit next to the hub's"
+# Make agent-only: the page shows this re-run, which takes the hub's service away.
+sh /deploy/install.sh --agent-only 2>&1 | tee /tmp/install8.log
+grep -q "agent-only: stopped and removed the hub service" /tmp/install8.log || fail "--agent-only re-run kept the hub"
+[ ! -e "$HUB_UNIT" ] || fail "--agent-only re-run: the hub unit is still there"
+# Made a hub again while the data dir still holds the removed hub: refused,
+# and the old hub's service is not brought back.
+mkdir -p "$HUB_DATA/cluster"
+echo stale >"$HUB_DATA/ca.crt"
+echo stale >"$HUB_DATA/cluster/node.crt"
+printf '%s\n' "$MH_CMD" | sh 2>&1 | tee /tmp/install9.log
+grep -q "holds a hub already" /tmp/install9.log || fail "--make-hub over a removed hub's data dir was not refused"
+grep -q "stays an agent: it did not become a hub" /tmp/install9.log || fail "--make-hub refusal not reported"
+[ ! -e "$HUB_UNIT" ] || fail "--make-hub refused, yet the old hub's unit is back"
+[ -f "$UNIT" ] || fail "--make-hub refused: no agent unit"
+sh /deploy/install.sh --purge
+pass "the page's command makes an enrolled agent a hub, keeping its identity; --agent-only removes the hub unit"
+
 printf '\nALL PASSED in %d ms\n' "$(($(ms) - t_start))"

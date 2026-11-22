@@ -26,6 +26,7 @@ func TestClusterCommandsNeedAHub(t *testing.T) {
 		"ca rotate":    runClusterCARotate(t.Context(), dir, false, false, io.Discard),
 		"ca finish":    runClusterCAFinish(t.Context(), dir, false, false, io.Discard),
 		"ca status":    runClusterCAStatus(t.Context(), dir, io.Discard),
+		"device hub":   runDeviceHub(t.Context(), dir, "pi", io.Discard),
 	} {
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s: err = %v, want %q", name, err, want)

@@ -164,3 +164,54 @@ func TestHubEligible(t *testing.T) {
 		t.Fatalf("HubEligible = %v; want hub-1 then hub-2", got)
 	}
 }
+
+// HubOf links a device to the hub that joined last with a token minted for
+// it, while that hub's certificate is not revoked.
+func TestHubOf(t *testing.T) {
+	ctx := t.Context()
+	s := openAtSchema(t, hubTokenSchema)
+	now := time.Now()
+	for _, secret := range []string{"first", "second", "admin"} {
+		device := "dev-1"
+		if secret == "admin" {
+			device = ""
+		}
+		if err := s.JoinTokens().CreateFor(ctx, secret, now.Add(time.Hour), "storage", device); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if node, err := s.JoinTokens().HubOf(ctx, "dev-1"); err != nil || node != "" {
+		t.Fatalf("HubOf before any join = %q, %v; want none", node, err)
+	}
+	for i, j := range []struct{ secret, node string }{{"first", "hub-a"}, {"second", "hub-b"}, {"admin", "hub-x"}} {
+		if _, err := s.JoinTokens().Use(ctx, j.secret, j.node, now.Add(time.Duration(i)*time.Second)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if node, err := s.JoinTokens().HubOf(ctx, "dev-1"); err != nil || node != "" {
+		t.Fatalf("HubOf without a certificate = %q, %v; want none (the join was refused)", node, err)
+	}
+	for _, id := range []string{"hub-a", "hub-b", "hub-x"} {
+		if err := s.Hubs().RecordCert(ctx, "c-"+id, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if node, err := s.JoinTokens().HubOf(ctx, "dev-1"); err != nil || node != "hub-b" {
+		t.Fatalf("HubOf = %q, %v; want the last join, hub-b", node, err)
+	}
+	if node, err := s.JoinTokens().HubOf(ctx, ""); err != nil || node != "" {
+		t.Fatalf("HubOf of no device = %q, %v; want none", node, err)
+	}
+	if _, err := s.Hubs().RevokeCerts(ctx, "hub-b", now); err != nil {
+		t.Fatal(err)
+	}
+	if node, err := s.JoinTokens().HubOf(ctx, "dev-1"); err != nil || node != "hub-a" {
+		t.Fatalf("HubOf after hub-b's removal = %q, %v; want hub-a", node, err)
+	}
+	if _, err := s.Hubs().RevokeCerts(ctx, "hub-a", now); err != nil {
+		t.Fatal(err)
+	}
+	if node, err := s.JoinTokens().HubOf(ctx, "dev-1"); err != nil || node != "" {
+		t.Fatalf("HubOf after both removals = %q, %v; want none", node, err)
+	}
+}

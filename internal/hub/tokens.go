@@ -206,11 +206,28 @@ const installScriptURL = "https://raw.githubusercontent.com/gvart/Hearth/"
 // its tag, hence --version. A dev hub serves its own install.sh, from the
 // HTTP listener at httpHost, and the installer picks the newest release.
 func (a *api) installCommand(httpHost, token string) string {
-	if a.installVersion == "" {
-		return "curl -fsSL http://" + httpHost + "/install.sh | HEARTH_TOKEN=" + token + " sh"
+	return a.installCommandWith(httpHost, "HEARTH_TOKEN="+token)
+}
+
+// installCommandWith is installCommand with env (VAR=value, or "") in the
+// script's environment and args after it, such as the re-runs that make an
+// enrolled device a hub or agent-only (devicehub.go). Every part must be
+// safe to paste into a shell.
+func (a *api) installCommandWith(httpHost, env string, args ...string) string {
+	script := "http://" + httpHost + "/install.sh"
+	if a.installVersion != "" {
+		script = installScriptURL + a.installVersion + "/deploy/install.sh"
+		args = append(args, "--version", a.installVersion)
 	}
-	return "curl -fsSL " + installScriptURL + a.installVersion + "/deploy/install.sh | HEARTH_TOKEN=" + token +
-		" sh -s -- --version " + a.installVersion
+	cmd := "curl -fsSL " + script + " | "
+	if env != "" {
+		cmd += env + " "
+	}
+	cmd += "sh"
+	if len(args) > 0 {
+		cmd += " -s -- " + strings.Join(args, " ")
+	}
+	return cmd
 }
 
 // releaseTag matches the release tags goreleaser builds from: vX.Y.Z with an
@@ -236,7 +253,7 @@ func releaseVersion(version string) string {
 // agent host is the browser's host only if the certificate covers it and it
 // is not a loopback address, which means nothing on another device, nor a
 // bare hostname (BareHostname) when the first certificate name that is not
-// loopback is an IP, nor discovery.LANName, which only the master announcing
+// loopback (nor discovery.LANName) is an IP, nor discovery.LANName, which only the master announcing
 // it answers at; else it is that first name. With no such name it
 // stays the browser's host: no choice works then. The install script
 // comes from the HTTP listener at the browser's address when the agent host
@@ -252,7 +269,9 @@ func (a *api) commandHosts(reqHost string, overTLS bool) (httpHost, agentHost st
 		return "", "", false
 	}
 	agentHost = host
-	if i := slices.IndexFunc(a.agentHosts, func(h string) bool { return !isLoopback(h) }); i >= 0 {
+	if i := slices.IndexFunc(a.agentHosts, func(h string) bool {
+		return !isLoopback(h) && !strings.EqualFold(strings.TrimSuffix(h, "."), discovery.LANName)
+	}); i >= 0 {
 		first := a.agentHosts[i]
 		inCert := slices.ContainsFunc(a.agentHosts, func(h string) bool { return strings.EqualFold(h, host) })
 		if isLoopback(host) || !inCert || (BareHostname(host) && net.ParseIP(first) != nil) ||

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- Installed by deploy/install.sh, which embeds a copy; keep the two identical. -->
+<!-- The hub of a Mac made a hub on its page in the web UI (docs/cluster.md), as -->
+<!-- deploy/systemd/hearth-hub.service on Linux: it joins with the join file, -->
+<!-- never creating a cluster of its own, then runs as a member. A join refused -->
+<!-- for good, or no join to make, exits 0 and is not restarted. -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>dev.hearth.hub</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/usr/local/bin/hearth</string>
+		<string>hub</string>
+		<string>--data-dir</string>
+		<string>/var/lib/hearth/hub</string>
+		<string>--join-file</string>
+		<string>/var/lib/hearth/hub/join</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+	</dict>
+	<key>ThrottleInterval</key>
+	<integer>10</integer>
+	<key>Umask</key>
+	<integer>63</integer>
+	<key>StandardOutPath</key>
+	<string>/var/log/hearth-hub.log</string>
+	<key>StandardErrorPath</key>
+	<string>/var/log/hearth-hub.log</string>
+</dict>
+</plist>
