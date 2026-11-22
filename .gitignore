@@ -29,3 +29,6 @@ coverage.*
 .vscode/
 *.swp
 .DS_Store
+
+# Playwright MCP output
+.playwright-mcp/
