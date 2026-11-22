@@ -13,14 +13,31 @@ import (
 	"github.com/gvart/hearth/internal/policy"
 )
 
-// TestAPICreateTokenPinsHubVersion: a release hub pins the agent it installs
-// to its own version, so the installer never has to look up a "latest"
-// release (GitHub reports none while every release is a pre-release).
+// TestAPICreateTokenPinsHubVersion: a release hub's install command fetches
+// install.sh of its own release tag from GitHub over HTTPS and pins the agent
+// to that release, so the installer never has to look up a "latest" release
+// (GitHub reports none while every release is a pre-release). A dev hub
+// serves its own script and pins nothing. Neither names the hub: the token
+// does.
 func TestAPICreateTokenPinsHubVersion(t *testing.T) {
-	for _, tc := range []struct{ version, wantSuffix string }{
-		{"v0.0.1-rc.5", " --hub https://127.0.0.1:7443 --version v0.0.1-rc.5"},
-		{"v1.2.3", " --hub https://127.0.0.1:7443 --version v1.2.3"},
-		{"dev", " --hub https://127.0.0.1:7443"},
+	for _, tc := range []struct {
+		version string
+		want    func(token string) string
+	}{
+		{"v0.0.1-rc.5", func(tok string) string {
+			return "curl -fsSL https://raw.githubusercontent.com/gvart/Hearth/v0.0.1-rc.5/deploy/install.sh | HEARTH_TOKEN=" + tok +
+				" sh -s -- --version v0.0.1-rc.5"
+		}},
+		{"v1.2.3", func(tok string) string {
+			return "curl -fsSL https://raw.githubusercontent.com/gvart/Hearth/v1.2.3/deploy/install.sh | HEARTH_TOKEN=" + tok +
+				" sh -s -- --version v1.2.3"
+		}},
+		{"dev", func(tok string) string {
+			return "curl -fsSL http://hub.lan:7080/install.sh | HEARTH_TOKEN=" + tok + " sh"
+		}},
+		{"v0.0.2-snapshot", func(tok string) string {
+			return "curl -fsSL http://hub.lan:7080/install.sh | HEARTH_TOKEN=" + tok + " sh"
+		}},
 	} {
 		t.Run(tc.version, func(t *testing.T) {
 			f := newAPIFixture(t, true, func(c *Config) { c.Version = tc.version })
@@ -30,8 +47,11 @@ func TestAPICreateTokenPinsHubVersion(t *testing.T) {
 				t.Fatalf("status = %d, body %s", resp.StatusCode, resp.body)
 			}
 			got := decode[TokenJSON](t, resp)
-			if !strings.HasSuffix(got.InstallCommand, tc.wantSuffix) {
-				t.Errorf("install_command = %q, want suffix %q", got.InstallCommand, tc.wantSuffix)
+			if want := tc.want(got.Token); got.InstallCommand != want {
+				t.Errorf("install_command = %q, want %q", got.InstallCommand, want)
+			}
+			if !strings.HasPrefix(got.Token, "hearth2.") {
+				t.Errorf("token %q does not name its hub", got.Token)
 			}
 		})
 	}
@@ -77,19 +97,24 @@ func TestAPICreateToken(t *testing.T) {
 	if d := got.ExpiresAt.Sub(start); d < 29*time.Minute || d > 31*time.Minute {
 		t.Errorf("expires_at %s is %s from now, want ~30m", got.ExpiresAt, d)
 	}
-	// The fixture serves on 127.0.0.1, which the hub certificate covers.
-	port := strings.TrimPrefix(f.srv.URL, "http://127.0.0.1:")
-	wantInstall := "curl -fsSL http://127.0.0.1:" + port + "/install.sh | HEARTH_TOKEN=" + got.Token + " sh -s -- --hub https://127.0.0.1:7443"
+	// The fixture serves on 127.0.0.1, which means nothing on a device:
+	// the commands use the certificate name hub.lan instead.
+	wantInstall := "curl -fsSL http://hub.lan:7080/install.sh | HEARTH_TOKEN=" + got.Token + " sh"
 	if got.InstallCommand != wantInstall {
 		t.Errorf("install_command = %q, want %q", got.InstallCommand, wantInstall)
 	}
-	// Everything after `sh -s --` lands in the argv of the user's sh, which
-	// any local user can read with ps: the token must not be there.
-	_, args, ok := strings.Cut(got.InstallCommand, " sh -s --")
+	// The token, not the commands, names the hub, at a certificate name.
+	if tok.HubURL != "https://hub.lan:7443" {
+		t.Errorf("token names hub %q, want https://hub.lan:7443", tok.HubURL)
+	}
+	// Everything after `| HEARTH_TOKEN=<token> sh` lands in the argv of the
+	// user's sh, which any local user can read with ps: the token must not
+	// be there.
+	_, args, ok := strings.Cut(got.InstallCommand, got.Token+" sh")
 	if !ok || strings.Contains(args, got.Token) || strings.Contains(args, "--token") {
 		t.Errorf("install_command %q passes the token in the argv of sh", got.InstallCommand)
 	}
-	if want := "HEARTH_TOKEN=" + got.Token + " hearth agent join https://127.0.0.1:7443"; got.JoinCommand != want {
+	if want := "HEARTH_TOKEN=" + got.Token + " hearth agent join"; got.JoinCommand != want {
 		t.Errorf("join_command = %q, want %q", got.JoinCommand, want)
 	}
 	// Likewise the argv of hearth: the token is only in its environment.
@@ -262,7 +287,7 @@ func TestAPICreateTokenRejects(t *testing.T) {
 }
 
 func TestCommandHosts(t *testing.T) {
-	a := &api{agentHosts: []string{"hub.lan", "localhost", "127.0.0.1", "::1"}, httpPort: "7080"}
+	a := &api{agentHosts: []string{"localhost", "hub.lan", "127.0.0.1", "::1"}, httpPort: "7080"}
 	tests := []struct {
 		reqHost             string
 		overTLS             bool
@@ -271,17 +296,27 @@ func TestCommandHosts(t *testing.T) {
 	}{
 		{"hub.lan:7080", false, "hub.lan:7080", "hub.lan", true},
 		{"HUB.lan:7080", false, "HUB.lan:7080", "HUB.lan", true},
-		{"localhost", false, "localhost", "localhost", true},
-		{"[::1]:7080", false, "[::1]:7080", "::1", true},
+		{"hub.lan", false, "hub.lan", "hub.lan", true},
+		// Loopback means nothing on another device, certificate name or
+		// not: both URLs use the first certificate name that is not
+		// loopback, at the HTTP listener's port (the browser may come
+		// through a port forward or the Vite dev server).
+		{"localhost", false, "hub.lan:7080", "hub.lan", true},
+		{"localhost:5173", false, "hub.lan:7080", "hub.lan", true},
+		{"LOCALHOST:7080", false, "hub.lan:7080", "hub.lan", true},
+		{"app.localhost:7080", false, "hub.lan:7080", "hub.lan", true},
+		{"127.0.0.1:7080", false, "hub.lan:7080", "hub.lan", true},
+		{"127.1.2.3:7080", false, "hub.lan:7080", "hub.lan", true},
+		{"[::1]:7080", false, "hub.lan:7080", "hub.lan", true},
+		{"[::1]:7443", true, "hub.lan:7080", "hub.lan", true},
 		// Not in the certificate: agents would fail to verify it.
-		{"192.168.1.20:7080", false, "192.168.1.20:7080", "hub.lan", true},
-		{"nas.example.com", false, "nas.example.com", "hub.lan", true},
+		{"192.168.1.20:7080", false, "hub.lan:7080", "hub.lan", true},
+		{"nas.example.com", false, "hub.lan:7080", "hub.lan", true},
 		// Over HTTPS the install script still comes from the HTTP listener:
 		// curl on a new device does not trust the hub CA yet.
 		{"hub.lan:7443", true, "hub.lan:7080", "hub.lan", true},
 		{"hub.lan", true, "hub.lan:7080", "hub.lan", true},
-		{"[::1]:7443", true, "[::1]:7080", "::1", true},
-		{"192.168.1.20:7443", true, "192.168.1.20:7080", "hub.lan", true},
+		{"192.168.1.20:7443", true, "hub.lan:7080", "hub.lan", true},
 		{"", false, "", "", false},
 		{"evil;rm -rf /:7080", false, "", "", false},
 		{"$(id).lan:7080", false, "", "", false},
@@ -301,6 +336,78 @@ func TestCommandHosts(t *testing.T) {
 			if ok != tt.ok || httpHost != tt.wantHTTP || agentHost != tt.wantAgent {
 				t.Errorf("commandHosts(%q, %v) = %q, %q, %v; want %q, %q, %v",
 					tt.reqHost, tt.overTLS, httpHost, agentHost, ok, tt.wantHTTP, tt.wantAgent, tt.ok)
+			}
+		})
+	}
+}
+
+// TestCommandHostsIPv6AndNoChoice brackets an IPv6 certificate name in the
+// script URL, and keeps the browser's host when the certificate names only
+// loopback addresses (or nothing): no choice works then.
+func TestCommandHostsIPv6AndNoChoice(t *testing.T) {
+	for _, tc := range []struct {
+		hosts                        []string
+		reqHost, wantHTTP, wantAgent string
+	}{
+		{[]string{"::1", "fd00::10"}, "[::1]:7080", "[fd00::10]:7080", "fd00::10"},
+		{[]string{"fd00::10"}, "[fd00::10]:7080", "[fd00::10]:7080", "fd00::10"},
+		{[]string{"localhost", "127.0.0.1"}, "localhost:7080", "localhost:7080", "localhost"},
+		{nil, "localhost:7080", "localhost:7080", "localhost"},
+	} {
+		a := &api{agentHosts: tc.hosts, httpPort: "7080"}
+		httpHost, agentHost, ok := a.commandHosts(tc.reqHost, false)
+		if !ok || httpHost != tc.wantHTTP || agentHost != tc.wantAgent {
+			t.Errorf("hosts %v: commandHosts(%q) = %q, %q, %v; want %q, %q", tc.hosts, tc.reqHost, httpHost, agentHost, ok, tc.wantHTTP, tc.wantAgent)
+		}
+	}
+}
+
+// TestAPICreateTokenFromLoopback: a browser on the hub machine at localhost
+// gets commands a device can use: no loopback address in the script URL or
+// in the token, and no --hub.
+func TestAPICreateTokenFromLoopback(t *testing.T) {
+	f := newAPIFixture(t, true, func(c *Config) { c.AgentHosts = []string{"localhost", "hub.lan", "127.0.0.1", "::1"} })
+	c := sessionCookie(t, f.login(t, testPassword))
+	for _, host := range []string{"localhost:7080", "127.0.0.1:7080", "[::1]:7080"} {
+		t.Run(host, func(t *testing.T) {
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, f.srv.URL+"/api/v1/tokens", strings.NewReader(`{}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Host = host
+			req.Header.Set("Content-Type", "application/json")
+			req.AddCookie(c)
+			resp, err := f.srv.Client().Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			var got TokenJSON
+			if resp.StatusCode != http.StatusCreated {
+				t.Fatalf("status = %d", resp.StatusCode)
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+				t.Fatal(err)
+			}
+			tok, err := pki.ParseToken(got.Token)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tok.HubURL != "https://hub.lan:7443" {
+				t.Errorf("token names hub %q, want https://hub.lan:7443", tok.HubURL)
+			}
+			if want := "curl -fsSL http://hub.lan:7080/install.sh | HEARTH_TOKEN=" + got.Token + " sh"; got.InstallCommand != want {
+				t.Errorf("install_command = %q, want %q", got.InstallCommand, want)
+			}
+			if want := "HEARTH_TOKEN=" + got.Token + " hearth agent join"; got.JoinCommand != want {
+				t.Errorf("join_command = %q, want %q", got.JoinCommand, want)
+			}
+			for _, cmd := range []string{got.InstallCommand, got.JoinCommand} {
+				for _, bad := range []string{"localhost", "127.0.0.1", "::1", "--hub"} {
+					if strings.Contains(cmd, bad) {
+						t.Errorf("command %q contains %q", cmd, bad)
+					}
+				}
 			}
 		})
 	}

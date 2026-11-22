@@ -119,18 +119,21 @@ func newAgentJoinCmd() *cobra.Command {
 		ifNotEnrolled      bool
 	)
 	cmd := &cobra.Command{
-		Use:   "join <hub-url> [<token> | -]",
+		Use:   "join [<hub-url>] [<token> | -]",
 		Short: "Enroll this device with a hub",
-		Long: "Enroll this device with a hub using a token from `hearth token create`.\n" +
-			"The hub is verified against the CA fingerprint in the token before the token is sent.\n" +
+		Long: "Enroll this device with a hub using a token from `hearth token create` or the web UI.\n" +
+			"The token names the hub, so the hub URL is optional; given, it is where the agent connects\n" +
+			"and the way back if this device cannot reach the hub the token names. The hub is verified\n" +
+			"against the CA fingerprint in the token before the token is sent.\n" +
 			"The token comes from the " + tokenEnv + " environment variable, or from the first line of\n" +
 			"stdin when the token argument is -. Both keep it out of argv, which any local user can read\n" +
 			"with ps; a token argument still works but warns for that reason. --token-file reads it from\n" +
 			"the first line of a file instead, such as a Kubernetes Secret mounted in the agent's pod.\n\n" +
 			"--if-not-enrolled makes a join of a device that is already enrolled a success that does\n" +
 			"nothing, so a container can run it before every start (see docs/talos.md).",
-		Example: "  " + tokenEnv + "=<token> hearth agent join https://hub.lan:7443",
-		Args:    cobra.RangeArgs(1, 2),
+		Example: "  " + tokenEnv + "=<token> hearth agent join\n" +
+			"  " + tokenEnv + "=<token> hearth agent join https://hub.lan:7443",
+		Args: cobra.MaximumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if ifNotEnrolled {
 				if _, err := os.Stat(filepath.Join(dataDir, agent.CertFile)); err == nil {
@@ -140,20 +143,29 @@ func newAgentJoinCmd() *cobra.Command {
 					return nil
 				}
 			}
+			// A hub URL has a scheme; a token (base64url and dots) or - never
+			// contains "://".
+			var hubURL string
+			if len(args) > 0 && strings.Contains(args[0], "://") {
+				hubURL, args = args[0], args[1:]
+			}
+			if len(args) > 1 {
+				return errors.New("want [<hub-url>] [<token> | -]: the first of two arguments must be the hub URL (https://<hub>:7443)")
+			}
 			var token string
 			var err error
 			if tokenFile != "" {
-				if len(args) > 1 {
+				if len(args) > 0 {
 					return errors.New("--token-file and a token argument are mutually exclusive")
 				}
 				token, err = readTokenFile(tokenFile)
 			} else {
-				token, err = joinToken(cmd, args[1:])
+				token, err = joinToken(cmd, args)
 			}
 			if err != nil {
 				return err
 			}
-			id, err := agent.Join(cmd.Context(), args[0], token, dataDir, hostnameOr(""))
+			id, err := agent.Join(cmd.Context(), hubURL, token, dataDir, hostnameOr(""))
 			if err != nil {
 				return err
 			}

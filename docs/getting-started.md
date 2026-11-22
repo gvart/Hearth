@@ -63,21 +63,24 @@ both ports if you run a firewall (`sudo ufw allow 7443,7080/tcp`).
 
 ## 3. Open the web UI and add a device
 
-Open **`http://192.168.1.10:7080`**, using the same address you gave `--host`, not `localhost`:
-the "Add device" dialog builds its install command from the address in your browser, and the device
-cannot reach your `localhost`.
+Open **`http://192.168.1.10:7080`** (or `http://localhost:7080` on the hub machine). The "Add
+device" dialog builds its command for an address the device can reach: the one in your browser if it
+is one of the `--host` names, else the first `--host` name that is not `localhost` or a loopback IP.
 
 Sign in with the admin password, then click **Add device**. The dialog shows a command like:
 
 ```sh
-curl -fsSL http://192.168.1.10:7080/install.sh | HEARTH_TOKEN=hearth2.… sh -s -- --hub https://192.168.1.10:7443
+curl -fsSL https://raw.githubusercontent.com/gvart/Hearth/v0.0.1-rc.7/deploy/install.sh | HEARTH_TOKEN=hearth2.… sh -s -- --version v0.0.1-rc.7
 ```
 
-It holds a single-use enrollment token that expires after 15 minutes. The device joins under its
-hostname unless you give it a name under **Name, expiry and labels**: 1 to 63 letters, digits,
-`.`, `-` or `_`, starting with a letter or digit. The hub also ends
-the command with `--version` and its own version, so the device gets the same release as
-the hub. Keep the dialog open: it tells you when the device joins.
+It holds a single-use enrollment token that expires after 15 minutes. The token also names the hub
+(`https://192.168.1.10:7443`) and the fingerprint of its CA, so the command needs no hub address.
+The device joins under its hostname unless you give it a name under **Name, expiry and labels**: 1
+to 63 letters, digits, `.`, `-` or `_`, starting with a letter or digit. The command fetches the
+installer of the hub's own release from GitHub over HTTPS and passes `--version`, so the device
+gets the same release as the hub. (A hub you built yourself serves the installer instead:
+`curl -fsSL http://192.168.1.10:7080/install.sh | HEARTH_TOKEN=hearth2.… sh`.) Keep the dialog open:
+it tells you when the device joins.
 
 The UI also offers to switch to HTTPS. You don't need it to get started;
 [HTTPS for the web UI](https.md) explains how when you want it.
@@ -109,7 +112,7 @@ VERSION=0.0.1-rc.7
 PLATFORM=linux_arm64     # linux_amd64, linux_armv7, darwin_arm64, darwin_amd64
 curl -fsSLO "https://github.com/gvart/hearth/releases/download/v${VERSION}/hearth_${VERSION}_${PLATFORM}.tar.gz"
 tar -xzf "hearth_${VERSION}_${PLATFORM}.tar.gz" hearth
-HEARTH_TOKEN=hearth2.… ./hearth agent join https://192.168.1.10:7443   # the "Join only" command, with ./
+HEARTH_TOKEN=hearth2.… ./hearth agent join   # the "Join only" command, with ./
 ./hearth agent run
 ```
 
@@ -125,7 +128,8 @@ You can also create the token on the hub machine instead of in the UI:
 ./hearth token create --hub-url https://192.168.1.10:7443
 ```
 
-Add `--name garage-pi` to have the device join under that name instead of its hostname.
+`--hub-url` is the hub address the token names. Add `--name garage-pi` to have the device join
+under that name instead of its hostname.
 
 ## 5. See it
 
@@ -150,9 +154,10 @@ In Docker, the hub sees your LAN only with host networking (see
 
 | Symptom on the device                                   | Cause and fix                                                                                     |
 | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `curl: (7) Failed to connect ... port 7080`             | The hub is not reachable: wrong address, hub not running, or a firewall (step 2).                |
+| `curl: (7) Failed to connect ... port 7080`             | A hub you built yourself serves the installer: wrong address, hub not running, or a firewall (step 2). |
 | `enrollment token already used` or `expired`            | Tokens are single use and expire after 15 minutes. Click **Add device** again for a new one.      |
-| `verify hub certificate: x509: certificate is not valid for ...` | The address in `--hub` is not one of the hub's `--host` names. Restart the hub with it added. |
+| `verify hub certificate: x509: certificate is not valid for ...` | The hub address in the token (or in `--hub`) is not one of the hub's `--host` names. Restart the hub with it added. |
+| `enroll with ...: dial tcp ...` or `no such host`       | The device cannot reach the hub at the address in the token. Re-run with `--hub https://<address>:7443` at the end (after `sh -s --`), an address in the hub's `--host` list. |
 | joined, but stays offline                               | The agent is not running (no systemd: start it yourself), or port 7443 is blocked.                |
 
 On the hub, the log says `device enrolled` and then `agent connected` for each device.

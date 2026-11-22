@@ -33,6 +33,8 @@ var ErrAlreadyEnrolled = errors.New("agent is already enrolled")
 // Join enrolls this device with the hub at hubURL using a token string, and
 // writes the resulting key (0600), certificate, hub CA and hub URL into dataDir. The hub
 // is pinned by the CA fingerprint in the token before the secret is sent.
+// An empty hubURL means the hub the token names; a token that names none
+// then fails.
 // If the hub is a follower that names the cluster leader, Join enrolls with
 // the leader instead (once) and also stores the hubs it learned in HubsFile;
 // hub_url stays hubURL. It returns the device ID assigned by the hub.
@@ -40,6 +42,12 @@ func Join(ctx context.Context, hubURL, token, dataDir, hostname string) (string,
 	tok, err := pki.ParseToken(token)
 	if err != nil {
 		return "", err
+	}
+	if hubURL == "" {
+		if tok.HubURL == "" {
+			return "", errors.New("the token names no hub: pass the hub URL (https://<hub>:7443)")
+		}
+		hubURL = tok.HubURL
 	}
 	u, err := parseHubURL(hubURL)
 	if err != nil {

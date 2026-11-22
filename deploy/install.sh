@@ -6,7 +6,15 @@
 # it to /usr/local/bin, enrolls this device with a hub and runs the agent as a
 # service (systemd on Linux, launchd on macOS).
 #
-#   curl -fsSL http://<hub>:7080/install.sh | HEARTH_TOKEN=<token> sh -s -- --hub https://<hub>:7443
+#   curl -fsSL https://raw.githubusercontent.com/gvart/Hearth/<tag>/deploy/install.sh |
+#     HEARTH_TOKEN=<token> sh -s -- --version <tag>
+#
+# The hub's "Add device" dialog shows this command with the token filled in
+# (a dev build of the hub serves the script itself, from
+# http://<hub>:7080/install.sh). The token names the hub (its agent URL and CA
+# fingerprint), so no flag does; --hub gives the hub URL for a token that
+# names none, or one to use when this device cannot reach the hub the token
+# names.
 #
 # The enrollment token comes in through the environment, which only the owner
 # and root can read, not the argv, which any local user can see with ps.
@@ -62,15 +70,17 @@ usage() {
 Install the Hearth agent and enroll this device with a hub.
 
 Usage:
-  HEARTH_TOKEN=<token> install.sh --hub https://<hub>:7443   install and enroll
-  install.sh [--version vX.Y.Z]                              upgrade an enrolled agent
-  install.sh --uninstall [--purge]                           remove the agent
+  HEARTH_TOKEN=<token> install.sh [--hub https://<hub>:7443]   install and enroll
+  install.sh [--version vX.Y.Z]                                 upgrade an enrolled agent
+  install.sh --uninstall [--purge]                              remove the agent
 
 Environment:
   HEARTH_TOKEN       enrollment token from the hub (first install only)
 
 Options:
-  --hub URL          hub URL for enrollment (https://<hub>:7443)
+  --hub URL          hub URL for enrollment (https://<hub>:7443); the token names
+                     the hub, so it is needed only if the token names none, or
+                     to reach the hub at another address
   --token TOKEN      the enrollment token as an argument; avoid it: other local
                      users can read it with ps. Overrides HEARTH_TOKEN.
   --from-hub         download the binary from the hub (http://<hub>:7080/download/)
@@ -497,12 +507,20 @@ main() {
 		[ -z "$TOKEN" ] || say "ignoring the enrollment token: a token is not needed for an upgrade"
 		JOIN=0
 	else
-		[ -n "$HUB" ] || die "--hub is required for a first install (e.g. --hub https://<hub>:7443)"
 		[ -n "$TOKEN" ] || die "an enrollment token is required for a first install: pass HEARTH_TOKEN=<token> (create one in the hub UI or with 'hearth token create')"
-		case $HUB in
-		https://*) ;;
-		*) die "--hub must be an https:// URL (the hub's agent port, usually 7443)" ;;
-		esac
+		if [ -n "$HUB" ]; then
+			case $HUB in
+			https://*) ;;
+			*) die "--hub must be an https:// URL (the hub's agent port, usually 7443)" ;;
+			esac
+		else
+			# A hearth2 token names its hub (hearth2.<secret>.<fingerprint>.<url>);
+			# hearth agent join reads and checks the URL.
+			case $TOKEN in
+			hearth2.*.*.*) ;;
+			*) die "the token names no hub: pass --hub https://<hub>:7443" ;;
+			esac
+		fi
 		JOIN=1
 	fi
 
@@ -517,11 +535,17 @@ main() {
 	as_root chmod 0700 "$DATA_DIR"
 
 	if [ "$JOIN" = 1 ]; then
-		say "enrolling with $HUB"
 		# The token goes in on stdin (printf is a shell builtin), never in argv,
 		# so neither ps nor sudo's log ever sees it.
-		printf '%s\n' "$TOKEN" | as_root "$BIN_PATH" agent join --data-dir "$DATA_DIR" "$HUB" - ||
-			die "enrollment failed (is the token valid and unused, and the hub reachable at $HUB?)"
+		if [ -n "$HUB" ]; then
+			say "enrolling with $HUB"
+			printf '%s\n' "$TOKEN" | as_root "$BIN_PATH" agent join --data-dir "$DATA_DIR" "$HUB" - ||
+				die "enrollment failed (is the token valid and unused, and the hub reachable at $HUB?)"
+		else
+			say "enrolling with the hub the token names"
+			printf '%s\n' "$TOKEN" | as_root "$BIN_PATH" agent join --data-dir "$DATA_DIR" - ||
+				die "enrollment failed (is the token valid and unused, and the hub it names reachable? --hub https://<hub>:7443 gives another address)"
+		fi
 	fi
 
 	install_service
