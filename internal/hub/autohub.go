@@ -15,9 +15,9 @@ import (
 	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
 )
 
-// HubCounter counts an AP cluster's members for the caps on the hubs
+// hubCounter counts an AP cluster's members for the caps on the hubs
 // devices become on their own (#328). *cluster.APNode is one.
-type HubCounter interface {
+type hubCounter interface {
 	// HubCounts counts the members with the master and the storage role
 	// that have not left, but for except.
 	HubCounts(except string) (masters, storage int)

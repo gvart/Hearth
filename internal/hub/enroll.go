@@ -37,7 +37,7 @@ type Enroller struct {
 	masters Masters
 	// hubs, in an AP cluster, counts its hubs for the auto-hub caps (#328);
 	// mintMu serializes counting and minting.
-	hubs   HubCounter
+	hubs   hubCounter
 	mintMu sync.Mutex
 	now    func() time.Time
 }

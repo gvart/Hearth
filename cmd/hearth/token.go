@@ -96,7 +96,7 @@ func runTokenCreate(ctx context.Context, opts tokenCreateOptions, out io.Writer)
 	}
 	// A hub-eligible token hands the CA key to a master-to-be: decided as a
 	// cluster join token is, nested in token.create.
-	hubReq := policy.Request{Action: policy.ClusterTokenCreate, Detail: hub.HubTokenDetail(opts.ttl, tok.Secret)}
+	hubReq := policy.Request{Action: policy.ClusterTokenCreate, Detail: hub.ClusterTokenDetail(opts.ttl, tok.Secret)}
 	if opts.hub {
 		plain := create
 		create = func(ctx context.Context) error {

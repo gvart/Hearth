@@ -173,7 +173,7 @@ func NewHandler(cfg Config) http.Handler {
 	enroller := NewEnroller(cfg.Store, cfg.CA, cfg.Policy, cfg.Log)
 	enroller.leadership = lead
 	enroller.masters = cfg.Masters
-	if h, ok := cfg.Masters.(HubCounter); ok {
+	if h, ok := cfg.Masters.(hubCounter); ok {
 		enroller.hubs = h
 	}
 	mux.Handle(agentv1connect.NewEnrollServiceHandler(enroller))

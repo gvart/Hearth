@@ -136,7 +136,7 @@ func (a *api) createToken(w http.ResponseWriter, r *http.Request) {
 		// device: decided as Add hub's join token is, nested in token.create.
 		hubReq = policy.Request{
 			ActorKind: policy.ActorWeb, ActorID: remoteHost(r), Action: policy.ClusterTokenCreate,
-			Detail:   HubTokenDetail(ttl, tok.Secret),
+			Detail:   ClusterTokenDetail(ttl, tok.Secret),
 			Precheck: a.recentAuth(r), DryRun: body.DryRun,
 		}
 		plain := create
@@ -345,10 +345,10 @@ func TokenDetail(ttl time.Duration, labels map[string]string, name string) map[s
 	return d
 }
 
-// HubTokenDetail is the audited detail of the cluster.token.create decision
+// ClusterTokenDetail is the audited detail of the cluster.token.create decision
 // for a hub-eligible enrollment token: the roles it may lead to, its TTL and
 // its handle, the actor ID of the device.enroll entry that redeems it.
-func HubTokenDetail(ttl time.Duration, secret string) map[string]any {
+func ClusterTokenDetail(ttl time.Duration, secret string) map[string]any {
 	return map[string]any{"via": "enrollment_token", "roles": allJoinRoles, "ttl": ttl.String(), "token": tokenActorID(secret)}
 }
 

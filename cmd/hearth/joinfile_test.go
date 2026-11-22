@@ -40,7 +40,7 @@ func TestJoinFilePartialAndBroken(t *testing.T) {
 	t.Run("partial", func(t *testing.T) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, cluster.JoinFileName)
-		if err := cluster.WriteJoinFile(path, cluster.JoinFile{URL: "https://127.0.0.1:1", Token: "hearthj1.x.y"}); err != nil {
+		if err := cluster.WriteJoinFile(path, cluster.JoinFile{URL: "https://127.0.0.1:1", Token: "hearthj1.x.y"}); err != nil { //nolint:gosec // G101: a fake join token
 			t.Fatal(err)
 		}
 		node := filepath.Join(dir, cluster.StateDir, "node.crt")

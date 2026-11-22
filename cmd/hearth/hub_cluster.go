@@ -152,7 +152,6 @@ func (o clusterOptions) advertiseAddr(ctx context.Context, hosts []string, lan [
 		return "", fmt.Errorf("--cluster-listen %s: %w", o.listen, err)
 	}
 	if ip := net.ParseIP(host); host == "" || (ip != nil && ip.IsUnspecified()) {
-		host = ""
 		if i := slices.IndexFunc(hosts, func(h string) bool { return !loopbackHost(h) }); i >= 0 {
 			host = hosts[i]
 		} else if len(lan) > 0 {

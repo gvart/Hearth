@@ -187,4 +187,3 @@ func oldSchemaStore(t *testing.T, v int64) *store.Store {
 	}
 	return st
 }
-

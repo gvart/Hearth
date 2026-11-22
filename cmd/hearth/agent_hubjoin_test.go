@@ -29,7 +29,7 @@ func TestWriteHubJoin(t *testing.T) {
 		t.Fatalf("a refusal wrote a join file: %v", err)
 	}
 	out.Reset()
-	if err := writeHubJoin(dir, &agentv1.HubJoin{Url: "https://192.0.2.10:7443", Token: "hearthj1.s.f", Roles: []string{"storage", "master"}}, &out); err != nil {
+	if err := writeHubJoin(dir, &agentv1.HubJoin{Url: "https://192.0.2.10:7443", Token: "hearthj1.s.f", Roles: []string{"storage", "master"}}, &out); err != nil { //nolint:gosec // G101: a fake join token
 		t.Fatal(err)
 	}
 	path := filepath.Join(dir, cluster.JoinFileName)

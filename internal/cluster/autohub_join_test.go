@@ -138,4 +138,3 @@ func TestJoinMintedTokenCaps(t *testing.T) {
 		}
 	})
 }
-
