@@ -35,6 +35,24 @@ between Hearth processes is mutually authenticated TLS.
 | Admin (web)    | the admin password (argon2id hash), then a session cookie that lasts 7 days         |
 | Admin (CLI)    | access to the hub's data dir on the hub host                                       |
 
+**A hub-eligible enrollment token is as sensitive as the CA key.** An enrollment token made with
+**This device may become a hub** (`"hub": true`, `hearth token create --hub`) lets the device that
+uses it, if capable, get a join token granting master, and with it the CA key. So creating one takes
+the admin password again in the web UI and is the policy action `cluster.token.create`, audited; the
+master mints the device's join token as another audited `cluster.token.create`, by the enrollment
+token, only while the master is not cut off from the cluster, bound to that device and valid 15
+minutes, and only while fewer than 3 masters and 5 storage members exist or are on their way (the
+join checks both again). The device writes the join token to `/var/lib/hearth/hub/join` (0600,
+deleted after the join), and the CA key travels only over the join channel above. Untick the box for
+a device you do not trust with the CA key; a plain enrollment token never leads to a hub.
+
+The mint is audited and refused while the master is cut off, but your policy cannot deny it: the
+decision for a `token` actor is fixed, so a hub-eligible token that is not yet used still mints its
+device's join token after you change the policy, even to one that denies dangerous actions.
+Enrollment tokens cannot be revoked yet: an unused one stays usable until its TTL ends (15 minutes
+by default), so give a hub-eligible token a short TTL and do not keep one around. The `device.enroll` audit entry says
+whether the join token was minted, with its roles, or refused and why.
+
 The hub CA is created on the first start in the hub's data dir (`ca.crt`, `ca.key`, mode 0600). Only
 masters of a cluster hold it. Its private key never leaves a master's data dir, except to a new hub
 joining a cluster as a master (with a join token that grants the master role, on a host that allows

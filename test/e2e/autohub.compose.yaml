@@ -1,0 +1,57 @@
+# Auto hubs (#328), driven by autohub_test.go (`task e2e:autohub`): hub-a is
+# a bare `hearth hub` (no --host, --node-id or --cluster-advertise), as on a
+# laptop. dev-1..3 are fresh devices with no hearth: the test pastes the
+# Add device dialog's install command into each, then plays systemd (runs
+# each unit's ExecStart when its condition holds). releases serves the
+# release archive install.sh downloads.
+
+x-device: &device
+  image: hearth-e2e-device:local
+  pull_policy: never
+  init: true
+  command: [sleep, infinity]
+  environment:
+    HEARTH_RELEASE_BASE_URL: http://releases:8000/releases
+    HEARTH_LATEST_URL: http://releases:8000/latest.json
+    HEARTH_SKIP_SERVICE: "1"
+  ports:
+    - "127.0.0.1::7080"
+
+services:
+  hub-a:
+    image: hearth-e2e:local
+    build:
+      context: ../..
+      dockerfile: test/e2e/Dockerfile
+    pull_policy: never
+    init: true
+    hostname: hub-a
+    environment:
+      HEARTH_ADMIN_PASSWORD: e2e-admin-password
+    command: [hearth, hub, --data-dir, /var/lib/hearth/hub]
+    ports:
+      - "127.0.0.1::7080"
+    healthcheck:
+      test: [CMD, nc, -z, 127.0.0.1, "7080"]
+      interval: 1s
+      timeout: 1s
+      retries: 60
+
+  releases:
+    <<: *device
+    build:
+      context: ../..
+      dockerfile: test/e2e/Dockerfile
+      target: device
+    command: [busybox-extras, httpd, -f, -p, "8000", -h, /srv]
+    ports: []
+
+  dev-1:
+    <<: *device
+    hostname: dev-1
+  dev-2:
+    <<: *device
+    hostname: dev-2
+  dev-3:
+    <<: *device
+    hostname: dev-3

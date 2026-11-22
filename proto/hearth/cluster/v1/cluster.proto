@@ -53,6 +53,10 @@ message JoinResponse {
   // roles are the roles the hub is granted: those both its allowed_roles
   // and the join token allow. The hub starts with them.
   repeated string roles = 6;
+  // seeds are the gossip addresses (host:port) the cluster's members
+  // advertise, the joined master's first: the new hub finds the gossip by
+  // them, not by the host of the URL it joined through (#334).
+  repeated string seeds = 7;
   reserved 4, 5;
   reserved "leader_id", "last_index";
 }

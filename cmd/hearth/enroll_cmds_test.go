@@ -122,6 +122,52 @@ func TestTokenCreateNamed(t *testing.T) {
 	}
 }
 
+// --hub stores the hub roles with the token, decided and audited as
+// cluster.token.create too; denied, no token is created.
+func TestTokenCreateHub(t *testing.T) {
+	dir, _ := initHub(t)
+	out, err := execute(t, "token", "create", "--data-dir", dir, "--hub")
+	if err != nil {
+		t.Fatalf("token create --hub: %v\n%s", err, out)
+	}
+	var raw string
+	for _, f := range strings.Fields(out) {
+		if strings.HasPrefix(f, "hearth2.") {
+			raw = f
+			break
+		}
+	}
+	tok, err := pki.ParseToken(raw)
+	if err != nil {
+		t.Fatalf("output has no valid token: %v\n%s", err, out)
+	}
+	st := openStore(t, dir)
+	entries, err := st.Audit().List(t.Context(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var minted bool
+	for _, e := range entries {
+		minted = minted || (e.Action == string(policy.ClusterTokenCreate) && e.Result == "ok" &&
+			strings.Contains(string(e.Detail), `"via":"enrollment_token"`))
+	}
+	if !minted {
+		t.Fatalf("audit = %+v, want cluster.token.create via the enrollment token", entries)
+	}
+	got, err := st.Tokens().Consume(t.Context(), tok.Secret, time.Now())
+	if err != nil || got.HubRoles != "storage,master" {
+		t.Errorf("Consume = %+v, %v; want hub roles storage,master", got, err)
+	}
+
+	writePolicy(t, dir, "classes: {dangerous: deny}\n")
+	if out, err := execute(t, "token", "create", "--data-dir", dir, "--hub"); err == nil || strings.Contains(out, "hearth2.") {
+		t.Fatalf("token create --hub, dangerous denied = %v\n%s", err, out)
+	}
+	if out, err := execute(t, "token", "create", "--data-dir", dir, "--hub", "--dry-run"); err == nil {
+		t.Fatalf("token create --hub --dry-run, dangerous denied = %v\n%s", err, out)
+	}
+}
+
 func TestTokenCreateRejects(t *testing.T) {
 	dir, _ := initHub(t)
 	tests := []struct {

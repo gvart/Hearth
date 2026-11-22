@@ -23,13 +23,15 @@ func TestFailClosedWhenIsolated(t *testing.T) {
 	}
 	drain := Request{ActorKind: ActorWeb, ActorID: "192.0.2.1", Action: KubeNodeDrain, Target: "lab/pi-1"}
 	enroll := Request{ActorKind: ActorToken, ActorID: "tok", Action: DeviceEnroll, Target: "pi"}
+	// Fixed for the token, never held, yet still refused while cut off.
+	mint := Request{ActorKind: ActorToken, ActorID: "tok", Action: ClusterTokenCreate, Target: "pi"}
 	safe := Request{ActorKind: ActorWeb, ActorID: "192.0.2.1", Action: KubePodDelete, Target: "lab/web"}
 
 	if err := run(drain); err != nil {
 		t.Fatalf("dangerous action while connected = %v", err)
 	}
 	isolated.Store(true)
-	for _, req := range []Request{drain, enroll} {
+	for _, req := range []Request{drain, enroll, mint} {
 		if err := run(req); !errors.Is(err, ErrDenied) || !strings.Contains(err.Error(), ErrIsolated) {
 			t.Errorf("%s while isolated = %v, want a denial for isolation", req.Action, err)
 		}

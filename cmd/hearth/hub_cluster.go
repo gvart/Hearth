@@ -8,17 +8,21 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	"github.com/gvart/hearth/internal/cluster"
+	"github.com/gvart/hearth/internal/discovery"
 	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/store"
 )
@@ -28,7 +32,10 @@ import (
 type clusterOptions struct {
 	join      string
 	joinToken string
-	nodeID    string
+	// joinFile is --join-file: the join `hearth agent join --hub-data-dir`
+	// wrote (#328). Such a hub is a member, never a new cluster.
+	joinFile string
+	nodeID   string
 	// listen is the address members gossip and replicate over (mutual
 	// TLS); advertise is the host:port other members dial for it.
 	listen    string
@@ -54,6 +61,9 @@ func addClusterFlags(cmd *cobra.Command, o *clusterOptions) {
 	cmd.Flags().StringVar(&o.join, "join", "",
 		"join the cluster of the hub at this URL (e.g. https://hub-a:"+defaultPort+") with a join token "+
 			"from `hearth cluster token create`; needs a fresh data dir")
+	cmd.Flags().StringVar(&o.joinFile, "join-file", "",
+		"join the cluster with the join an enrollment wrote here (the installer's hub service sets it); "+
+			"without it and without a CA the hub exits, never creating a cluster of its own")
 	cmd.Flags().StringVar(&o.joinToken, "join-token", "",
 		"cluster join token (prefer env HEARTH_JOIN_TOKEN, which keeps it out of the process list)")
 	cmd.Flags().StringVar(&o.nodeID, "node-id", "",
@@ -65,8 +75,8 @@ func addClusterFlags(cmd *cobra.Command, o *clusterOptions) {
 	cmd.Flags().StringVar(&o.listen, "cluster-listen", listen,
 		"address for gossip and replication between the cluster's hubs (TCP, mutual TLS) (env HEARTH_CLUSTER_LISTEN)")
 	cmd.Flags().StringVar(&o.advertise, "cluster-advertise", os.Getenv("HEARTH_CLUSTER_ADVERTISE"),
-		"host:port other hubs use to reach this hub's --cluster-listen (default: this hostname and the "+
-			"--cluster-listen port) (env HEARTH_CLUSTER_ADVERTISE)")
+		"host:port other hubs use to reach this hub's --cluster-listen (default: the --cluster-listen host, else "+
+			"the first --host, else this host's first LAN address, at the --cluster-listen port) (env HEARTH_CLUSTER_ADVERTISE)")
 	cmd.Flags().StringSliceVar(&o.seeds, "cluster-seeds", splitList(os.Getenv("HEARTH_CLUSTER_SEEDS")),
 		"cluster addresses (host:port) of other members to find the cluster by; the --join hub's is added "+
 			"(env HEARTH_CLUSTER_SEEDS, comma-separated)")
@@ -124,9 +134,13 @@ func (o clusterOptions) allowedRoles() (cluster.RoleSet, error) {
 	return allowed, nil
 }
 
-// advertiseAddr is --cluster-advertise, or this hostname (the listen host
-// when it is a specific address) with the --cluster-listen port.
-func (o clusterOptions) advertiseAddr(ctx context.Context) (string, error) {
+// advertiseAddr is --cluster-advertise, or a host with the --cluster-listen
+// port: the listen host when it is a specific address, else the first of
+// hosts (--host) that is not loopback, else the first of lan (this host's
+// LAN addresses), else this hostname if it resolves to more than loopback
+// (dialableHost). A LAN address before the hostname: other devices of a
+// home LAN rarely resolve it (#328).
+func (o clusterOptions) advertiseAddr(ctx context.Context, hosts []string, lan []netip.Addr) (string, error) {
 	if o.advertise != "" {
 		if _, _, err := net.SplitHostPort(o.advertise); err != nil {
 			return "", fmt.Errorf("--cluster-advertise %s: %w", o.advertise, err)
@@ -138,9 +152,25 @@ func (o clusterOptions) advertiseAddr(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("--cluster-listen %s: %w", o.listen, err)
 	}
 	if ip := net.ParseIP(host); host == "" || (ip != nil && ip.IsUnspecified()) {
-		host = dialableHost(ctx, hostnameOr("localhost"))
+		if i := slices.IndexFunc(hosts, func(h string) bool { return !loopbackHost(h) }); i >= 0 {
+			host = hosts[i]
+		} else if len(lan) > 0 {
+			host = lan[0].String()
+		} else {
+			host = dialableHost(ctx, hostnameOr("localhost"))
+		}
 	}
 	return net.JoinHostPort(host, port), nil
+}
+
+// loopbackHost reports whether host names this machine only.
+func loopbackHost(host string) bool {
+	h := strings.ToLower(strings.TrimSuffix(host, "."))
+	if h == "localhost" || strings.HasSuffix(h, ".localhost") {
+		return true
+	}
+	ip := net.ParseIP(h)
+	return ip != nil && ip.IsLoopback()
 }
 
 // dialableHost is host, unless it resolves only to loopback addresses (as a
@@ -180,7 +210,8 @@ func startClusterNode(ctx context.Context, opts hubOptions, allowed cluster.Role
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	advertise, err := o.advertiseAddr(ctx)
+	lan, _ := discovery.LANAddrs()
+	advertise, err := o.advertiseAddr(ctx, opts.hosts, lan)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -193,7 +224,17 @@ func startClusterNode(ctx context.Context, opts hubOptions, allowed cluster.Role
 			seeds = append(seeds, s)
 		}
 	}
-	if !hasCA && o.join != "" {
+	if !hasCA && o.joinFile != "" {
+		j, err := joinWithFile(ctx, o.joinFile, cluster.JoinParams{
+			DataDir: opts.dataDir, NodeID: nodeID, Address: advertise, AllowedRoles: allowed,
+		}, log)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if s, err := joinSeed(j.URL, o.listen); err == nil {
+			seeds = append(seeds, s)
+		}
+	} else if !hasCA && o.join != "" {
 		token := o.joinToken
 		if token == "" {
 			token = opts.joinTokenEnv
@@ -255,6 +296,74 @@ func startClusterNode(ctx context.Context, opts hubOptions, allowed cluster.Role
 	}
 	log.InfoContext(ctx, "cluster member", "node_id", nodeID, "address", advertise, "seeds", seeds)
 	return st, ca, node, nil
+}
+
+// errNothingToJoin is a --join-file hub with no CA and no join file: the
+// device was not made a hub (not capable, not allowed, or it already gave
+// up), and the hub exits successfully without creating a cluster.
+var errNothingToJoin = errors.New("no join file and no cluster: this device is not a hub")
+
+// joinWithFile joins the cluster with the join file at path, deleting it once
+// the join succeeded or was refused for good. A failure that may pass (the
+// master unreachable, a CA rotation under way) keeps it, so the service
+// tries again until the token expires. What a join that stopped half way
+// left is deleted with the file: the device needs a new install command.
+func joinWithFile(ctx context.Context, path string, p cluster.JoinParams, log *slog.Logger) (cluster.JoinFile, error) {
+	j, err := cluster.ReadJoinFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		if partial, cerr := cluster.ClearPartialJoin(p.DataDir); cerr != nil || partial {
+			log.WarnContext(ctx, "deleted what an earlier join left half way", "err", cerr)
+		}
+		return j, errNothingToJoin
+	}
+	drop := func(why error) error {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return errors.Join(why, err)
+		}
+		return why
+	}
+	if err != nil {
+		return j, drop(err)
+	}
+	if partial, err := cluster.ClearPartialJoin(p.DataDir); err != nil {
+		return j, err
+	} else if partial {
+		return j, drop(errors.New("an earlier join of this hub stopped half way: " +
+			"add the device again with a new install command to make it a hub"))
+	}
+	p.URL, p.Token = j.URL, j.Token
+	if err := cluster.Join(ctx, p); err != nil {
+		if !joinRefusedForGood(err) {
+			return j, fmt.Errorf("%w (trying again until the join token expires)", err)
+		}
+		if _, cerr := cluster.ClearPartialJoin(p.DataDir); cerr != nil {
+			err = errors.Join(err, cerr)
+		}
+		return j, drop(fmt.Errorf("this device stays an agent: %w", err))
+	}
+	if err := os.Remove(path); err != nil {
+		return j, fmt.Errorf("joined, but delete the join file: %w", err)
+	}
+	log.InfoContext(ctx, "joined the cluster", "node_id", p.NodeID, "via", j.URL)
+	return j, nil
+}
+
+// joinRefusedForGood reports whether err, from cluster.Join, is the cluster
+// refusing this hub for good (an unknown, used or expired token, the caps,
+// policy): trying again cannot help. A network failure, an unavailable
+// cluster or a CA rotation under way may pass.
+func joinRefusedForGood(err error) bool {
+	var ce *connect.Error
+	if !errors.As(err, &ce) {
+		return false
+	}
+	switch ce.Code() {
+	case connect.CodeUnauthenticated, connect.CodePermissionDenied, connect.CodeInvalidArgument, connect.CodeAlreadyExists:
+		return true
+	case connect.CodeFailedPrecondition:
+		return !strings.Contains(ce.Message(), "rotation")
+	}
+	return false
 }
 
 // joinSeed is the cluster address of the hub at joinURL: its host, at this

@@ -67,13 +67,17 @@ func (a *api) createToken(w http.ResponseWriter, r *http.Request) {
 		// Name names the device that enrolls with the token; empty leaves
 		// it its hostname.
 		Name string `json:"name"`
+		// Hub lets a capable device that enrolls with the token become a
+		// hub (#328): it hands the CA key to a master, so it needs the
+		// password again and its own cluster.token.create decision.
+		Hub bool `json:"hub"`
 		// DryRun decides and audits the request without creating a token.
 		DryRun bool `json:"dry_run"`
 	}
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxTokenBody))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", `body must be {"ttl"?: "15m", "labels"?: {"k": "v"}, "name"?: "garage-pi", "dry_run"?: false}`)
+		writeError(w, http.StatusBadRequest, "bad_request", `body must be {"ttl"?: "15m", "labels"?: {"k": "v"}, "name"?: "garage-pi", "hub"?: false, "dry_run"?: false}`)
 		return
 	}
 	ttl := defaultTokenTTL
@@ -92,6 +96,10 @@ func (a *api) createToken(w http.ResponseWriter, r *http.Request) {
 	name, err := DeviceName(body.Name)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	if body.Hub && a.clusterCA == nil {
+		writeError(w, http.StatusNotFound, "not_ap_cluster", "this hub is not a member of an AP cluster")
 		return
 	}
 	httpHost, agentHost, ok := a.commandHosts(r.Host, r.TLS != nil)
@@ -114,10 +122,37 @@ func (a *api) createToken(w http.ResponseWriter, r *http.Request) {
 		Detail:    TokenDetail(ttl, body.Labels, name),
 		DryRun:    body.DryRun,
 	}
-	err = a.policy.Do(ctx, req, func(ctx context.Context) error {
-		return a.store.Tokens().CreateNamed(ctx, tok.Secret, name, body.Labels, expires)
-	})
+	hubRoles := ""
+	if body.Hub {
+		hubRoles = allJoinRoles
+		req.Detail["hub"] = true
+	}
+	create := func(ctx context.Context) error {
+		return a.store.Tokens().CreateHub(ctx, tok.Secret, name, hubRoles, body.Labels, expires)
+	}
+	var hubReq policy.Request
+	if body.Hub {
+		// The token hands the CA key to whoever redeems it on a capable
+		// device: decided as Add hub's join token is, nested in token.create.
+		hubReq = policy.Request{
+			ActorKind: policy.ActorWeb, ActorID: remoteHost(r), Action: policy.ClusterTokenCreate,
+			Detail:   ClusterTokenDetail(ttl, tok.Secret),
+			Precheck: a.recentAuth(r), DryRun: body.DryRun,
+		}
+		plain := create
+		create = func(ctx context.Context) error { return a.policy.Do(ctx, hubReq, plain) }
+	}
+	err = a.policy.Do(ctx, req, create)
+	if err == nil && body.DryRun && body.Hub {
+		err = a.policy.Do(ctx, hubReq, func(context.Context) error { return nil })
+	}
 	switch {
+	case errors.Is(err, errReauthRequired):
+		writeError(w, http.StatusForbidden, "reauth_required", "enter the admin password again to do this")
+		return
+	case errors.Is(err, policy.ErrDenied) && strings.Contains(err.Error(), policy.ErrIsolated):
+		writeError(w, http.StatusForbidden, "isolated", policy.ErrIsolated)
+		return
 	case errors.Is(err, policy.ErrDenied):
 		writeError(w, http.StatusForbidden, "forbidden", "token creation denied by policy")
 		return
@@ -125,7 +160,7 @@ func (a *api) createToken(w http.ResponseWriter, r *http.Request) {
 		writeUnavailable(w)
 		return
 	case errors.Is(err, store.ErrSchemaTooOld):
-		writeError(w, http.StatusConflict, "schema_too_old", "the hub cluster's database predates named tokens: upgrade every hub of the cluster first")
+		writeError(w, http.StatusConflict, "schema_too_old", "the hub cluster's database predates this kind of token (named or hub-eligible): upgrade every hub of the cluster first")
 		return
 	case err != nil:
 		a.log.ErrorContext(ctx, "create token", "err", err)
@@ -133,6 +168,9 @@ func (a *api) createToken(w http.ResponseWriter, r *http.Request) {
 		return
 	case body.DryRun:
 		decision, _ := a.policy.Check(req)
+		if body.Hub && decision == policy.Allow {
+			decision, _ = a.policy.Check(hubReq)
+		}
 		writeJSON(w, http.StatusOK, DryRunJSON{DryRun: true, Decision: decision})
 		return
 	}
@@ -305,6 +343,13 @@ func TokenDetail(ttl time.Duration, labels map[string]string, name string) map[s
 		d["name"] = name
 	}
 	return d
+}
+
+// ClusterTokenDetail is the audited detail of the cluster.token.create decision
+// for a hub-eligible enrollment token: the roles it may lead to, its TTL and
+// its handle, the actor ID of the device.enroll entry that redeems it.
+func ClusterTokenDetail(ttl time.Duration, secret string) map[string]any {
+	return map[string]any{"via": "enrollment_token", "roles": allJoinRoles, "ttl": ttl.String(), "token": tokenActorID(secret)}
 }
 
 func checkLabels(labels map[string]string) string {

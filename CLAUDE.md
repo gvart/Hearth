@@ -83,6 +83,7 @@ task lint         # SPDX header check + golangci-lint + eslint + tsc
 task proto        # buf lint + buf generate (into internal/proto)
 task e2e          # compose-based end-to-end test of the headline demo
 task e2e:cluster  # compose-based end-to-end test of a 3-hub cluster: kill a master and a storage member, partition, heal
+task e2e:autohub  # compose-based end-to-end test of auto hubs: install commands make devices hubs, kill the first hub
 task e2e:install  # install.sh end to end in a Debian 12 container (Docker)
 task dev          # web UI dev server with hot reload (Vite)
 task docs         # docs site dev server with hot reload (site/, Astro Starlight)
@@ -111,7 +112,10 @@ Keep this list in sync with `Taskfile.yml`. If you add a task, document it here.
   audited, or by a scheduled hub backup when the operator opts in with `--backup-include-ca` (also through
   policy and audited); it is replicated only over the pinned mTLS join channel (only to a joining hub granted the
   `master` role, i.e. both its join token's roles and its `--allow-roles` include master; a storage-only
-  member never receives it) and over the pinned mTLS `FetchCAKey`
+  member never receives it; that join token is either created by an admin, or minted at enrollment for a
+  capable device enrolled with a hub-eligible enrollment token, which itself takes the admin password again,
+  as an audited `cluster.token.create` by the enrollment token, capped at 3 masters and 5 storage members and
+  re-checked at the join) and over the pinned mTLS `FetchCAKey`
   channel: to a member being promoted to master, only while the promoting master's audited `cluster.promote`
   runs, and during a hub CA rotation only to a master that proves it holds the current CA key (policy-checked
   and audited, refusals too). A demoted master deletes its copy. A CA key never goes into the store, the

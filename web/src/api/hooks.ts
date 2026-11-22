@@ -8,6 +8,7 @@ import {
   subscribeGuestEvents,
   type PanelInput,
   type AuditFilter,
+  type CreateTokenOptions,
   type Device,
   type DeviceEvent,
   type KubeActionRequest,
@@ -23,6 +24,7 @@ import {
   type MetricsRange,
   type NetworkHostState,
 } from './client.ts';
+import { useWithReauth } from './reauth.ts';
 import { applyScanDone, scanInterrupted, scanStarted, scanTimeoutMs, type NetworkScanState } from '../networkscan.ts';
 
 export const keys = {
@@ -253,8 +255,13 @@ export function useMetricsSparklines() {
   });
 }
 
+/** Creates an enrollment token; a hub-eligible one asks for the admin password first. */
 export function useCreateToken() {
-  return useMutation({ mutationFn: api.createToken });
+  const withReauth = useWithReauth();
+  return useMutation({
+    mutationFn: (opts: CreateTokenOptions = {}) =>
+      opts.hub ? withReauth(() => api.createToken(opts)) : api.createToken(opts),
+  });
 }
 
 /** Applies one server-sent event to the cached device list. */

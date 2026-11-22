@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net"
 	"sync/atomic"
@@ -43,6 +44,11 @@ func runClusterHub(ctx context.Context, opts hubOptions, allowed cluster.RoleSet
 		agentURL = "https://" + net.JoinHostPort(hosts[0], port)
 	}
 	st, ca, node, err := startClusterNode(ctx, opts, allowed, agentURL, log)
+	if errors.Is(err, errNothingToJoin) {
+		// The installer's hub service on a device that is no hub: done.
+		log.InfoContext(ctx, err.Error(), "join_file", opts.cluster.joinFile)
+		return nil
+	}
 	if err != nil {
 		return err
 	}

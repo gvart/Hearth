@@ -117,7 +117,7 @@ func (UseApprovalLink) Op() string { return "use_approval_link" }
 func (c UseApprovalLink) minSchema() int64 { return ownedSchema(c.Master, approvalLinksSchema) }
 
 func (c UseApprovalLink) apply(ctx context.Context, w *writer) (Result, error) {
-	r, err := consume(ctx, w, "approval_links", "approval link", c.Hash, c.Now, c.Master)
+	r, err := consume(ctx, w, "approval_links", "approval link", c.Hash, c.Now, c.Master, nil)
 	if err != nil {
 		return Result{}, err
 	}

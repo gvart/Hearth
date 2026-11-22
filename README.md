@@ -66,8 +66,10 @@ Port 7443 is for agents (mTLS) and serves the web UI over HTTPS; 7080 serves the
 HTTP, the agent installer and the hub CA certificate. Hub state lives in `/var/lib/hearth`. To install
 the UI as an app and use its copy buttons from another machine, open it over HTTPS: pass
 `--host <name>` for each name you browse with and trust the hub CA once per device, as described in
-[docs/https.md](docs/https.md). To survive the loss of a hub, add hubs to its cluster:
-see [docs/cluster.md](docs/cluster.md).
+[docs/https.md](docs/https.md). To survive the loss of a hub, add hubs to its cluster: a capable
+Linux device you add with **This device may become a hub** ticked becomes one by itself, so you can
+start on a laptop and shut it later; see [docs/getting-started.md](docs/getting-started.md) and
+[docs/cluster.md](docs/cluster.md).
 `task release:snapshot` builds the same artifacts locally into `dist/` without publishing.
 
 ### Verifying releases

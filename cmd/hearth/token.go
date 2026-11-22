@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/gvart/hearth/internal/cluster"
 	"github.com/gvart/hearth/internal/hub"
 	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/policy"
@@ -22,7 +23,10 @@ type tokenCreateOptions struct {
 	labels  map[string]string
 	name    string
 	hubURL  string
-	dryRun  bool
+	// hub lets a capable device that enrolls with the token become a hub
+	// (#328): a cluster.token.create decision of its own.
+	hub    bool
+	dryRun bool
 }
 
 func newTokenCmd() *cobra.Command {
@@ -49,6 +53,9 @@ func newTokenCreateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&opts.name, "name", "", "name for the enrolled device (default: its hostname)")
 	cmd.Flags().StringVar(&opts.hubURL, "hub-url", "https://"+hostnameOr("localhost")+":"+defaultPort,
 		"agent URL of the hub, which the token names; agents enroll there")
+	cmd.Flags().BoolVar(&opts.hub, "hub", false,
+		"let a capable Linux device installed with the token become a hub: it stores a copy of the data and, "+
+			"while the cluster has fewer than 3 masters, becomes a master and holds the CA key")
 	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false, "decide and audit the action without creating a token")
 	return cmd
 }
@@ -78,12 +85,32 @@ func runTokenCreate(ctx context.Context, opts tokenCreateOptions, out io.Writer)
 		return err
 	}
 	expires := time.Now().Add(opts.ttl)
+	hubRoles := ""
+	detail := hub.TokenDetail(opts.ttl, opts.labels, name)
+	if opts.hub {
+		hubRoles = cluster.HubRoles.String()
+		detail["hub"] = true
+	}
+	create := func(ctx context.Context) error {
+		return st.Tokens().CreateHub(ctx, tok.Secret, name, hubRoles, opts.labels, expires)
+	}
+	// A hub-eligible token hands the CA key to a master-to-be: decided as a
+	// cluster join token is, nested in token.create.
+	hubReq := policy.Request{Action: policy.ClusterTokenCreate, Detail: hub.ClusterTokenDetail(opts.ttl, tok.Secret)}
+	if opts.hub {
+		plain := create
+		create = func(ctx context.Context) error {
+			_, err := adminDo(ctx, opts.dataDir, st, out, false, hubReq, plain)
+			return err
+		}
+	}
 	done, err := adminDo(ctx, opts.dataDir, st, out, opts.dryRun, policy.Request{
 		Action: policy.TokenCreate,
-		Detail: hub.TokenDetail(opts.ttl, opts.labels, name),
-	}, func(ctx context.Context) error {
-		return st.Tokens().CreateNamed(ctx, tok.Secret, name, opts.labels, expires)
-	})
+		Detail: detail,
+	}, create)
+	if err == nil && opts.dryRun && opts.hub {
+		_, err = adminDo(ctx, opts.dataDir, st, out, true, hubReq, nil)
+	}
 	if err != nil || !done {
 		return err
 	}
