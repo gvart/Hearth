@@ -10,7 +10,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
+	"text/tabwriter"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -26,7 +28,7 @@ func newNetworkCmd() *cobra.Command {
 	var hubURL string
 	cmd := &cobra.Command{
 		Use:   "network",
-		Short: "Scan the hub's network for hosts without an agent",
+		Short: "Scan the hub's network for hosts without an agent, and adopt them as devices",
 		Long: "These commands use the hub's API with a signed-in session: the admin password comes from\n" +
 			"HEARTH_ADMIN_PASSWORD or is asked for. See docs/discovery.md.",
 	}
@@ -47,7 +49,107 @@ func newNetworkCmd() *cobra.Command {
 			return c.scanNetwork(cmd.Context(), cmd.OutOrStdout())
 		},
 	})
+	login := func(cmd *cobra.Command) (*runbookClient, error) {
+		lines := &lineReader{in: cmd.InOrStdin(), buf: bufio.NewReader(cmd.InOrStdin()), prompt: cmd.ErrOrStderr()}
+		return loginRunbookClient(cmd.Context(), hubURL, lines)
+	}
+	cmd.AddCommand(&cobra.Command{
+		Use:   "hosts",
+		Short: "List the hosts network discovery found",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			c, err := login(cmd)
+			if err != nil {
+				return err
+			}
+			return c.listNetworkHosts(cmd.Context(), cmd.OutOrStdout())
+		},
+	})
+	var name string
+	adopt := &cobra.Command{
+		Use:   "adopt <mac>",
+		Short: "Adopt a host without an agent (a printer, a TV, a router) as a device",
+		Long: "Lists the host on the Devices page under Network devices, by --name, online while scans find\n" +
+			"it. Adopting an adopted host renames it. It fires no new-device alerts.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := login(cmd)
+			if err != nil {
+				return err
+			}
+			return c.postNetworkHost(cmd.Context(), args[0], "adopt", map[string]string{"name": name})
+		},
+	}
+	adopt.Flags().StringVar(&name, "name", "", "the device's name, 1 to 63 characters (required)")
+	_ = adopt.MarkFlagRequired("name")
+	cmd.AddCommand(adopt, &cobra.Command{
+		Use:   "unadopt <mac>",
+		Short: "Stop listing an adopted host as a device",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := login(cmd)
+			if err != nil {
+				return err
+			}
+			return c.postNetworkHost(cmd.Context(), args[0], "unadopt", nil)
+		},
+	})
 	return cmd
+}
+
+// listNetworkHosts prints the hosts the hub's discovery found, one per line.
+func (c *runbookClient) listNetworkHosts(ctx context.Context, out io.Writer) error {
+	resp, err := c.send(ctx, http.MethodGet, "/api/v1/network/hosts", nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if err := apiError(resp); err != nil {
+		return err
+	}
+	var body struct {
+		Hosts []hub.NetworkHostJSON `json:"hosts"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return fmt.Errorf("read the hub's answer: %w", err)
+	}
+	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "MAC\tIP\tNAME\tKIND\tSTATE\tONLINE")
+	for _, h := range body.Hosts {
+		name, state := h.Name, h.State
+		if name == "" {
+			name = h.Hostname
+		}
+		if h.DeviceID != "" {
+			state = "device " + h.DeviceID
+		}
+		online := "no"
+		if h.Online {
+			online = "yes"
+		}
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", h.MAC, h.IP, orDash(name), h.Kind, orDash(state), online)
+	}
+	if err := tw.Flush(); err != nil {
+		return fmt.Errorf("write hosts: %w", err)
+	}
+	return nil
+}
+
+func orDash(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
+}
+
+// postNetworkHost posts body to /api/v1/network/hosts/{mac}/{verb}.
+func (c *runbookClient) postNetworkHost(ctx context.Context, mac, verb string, body any) error {
+	resp, err := c.send(ctx, http.MethodPost, "/api/v1/network/hosts/"+url.PathEscape(mac)+"/"+verb, body)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	return apiError(resp)
 }
 
 // scanNetwork starts a scan and prints how it ended, from the done event

@@ -180,6 +180,10 @@ const (
 	// ignored, or neither again, which silences or restores its new-device
 	// alerts.
 	NetworkHostMark Action = "network.host.mark"
+	// NetworkHostAdopt adopts a host network discovery found as an
+	// agentless device under a name, or unadopts it: it is listed with the
+	// devices, its presence from the scans, and fires no new-device alerts.
+	NetworkHostAdopt Action = "network.host.adopt"
 	// NetworkImport is one import of the hosts a Pi-hole, a NetAlertX and
 	// DHCP lease files know, by the hub.
 	NetworkImport Action = "network.import"
@@ -476,6 +480,9 @@ var rules = map[Action]rule{
 	NetworkScan: {class: Read, actors: []string{ActorHub, ActorWeb}},
 	// Marking a host changes only which alerts the operator gets about it.
 	NetworkHostMark: {class: Safe, actors: []string{ActorWeb}},
+	// Adopting a host only names it and lists it with the devices: no
+	// enrollment, no certificate, nothing runs on it.
+	NetworkHostAdopt: {class: Safe, actors: []string{ActorWeb}},
 	// An import reads Pi-hole's and NetAlertX's APIs and lease files; it
 	// changes nothing.
 	NetworkImport: {class: Read, actors: []string{ActorHub}},

@@ -39,8 +39,12 @@ const networkHostScannedBySchema = 26
 // service or is the gateway, and scans record neither.
 const networkHostServicesSchema = 31
 
-// What the operator said about a host (NetworkHost.State). Known and ignored
-// hosts never fire new-device alerts.
+// networkHostNameSchema is the schema version whose migration (00033) added
+// network_hosts.name. Before it no host has a name and none can be adopted.
+const networkHostNameSchema = 33
+
+// What the operator said about a host (NetworkHost.State). Known, ignored and
+// adopted hosts never fire new-device alerts.
 const (
 	// HostUnreviewed is a host nobody has marked yet.
 	HostUnreviewed = ""
@@ -48,6 +52,9 @@ const (
 	HostKnown = "known"
 	// HostIgnored is a host the operator does not want to hear about.
 	HostIgnored = "ignored"
+	// HostAdopted is a host the operator adopted as an agentless device,
+	// under NetworkHost.Name.
+	HostAdopted = "adopted"
 )
 
 // Where a network host was learned (NetworkHost.Sources) and which source
@@ -76,8 +83,11 @@ type NetworkHost struct {
 	// import last saw it.
 	FirstSeen time.Time
 	LastSeen  time.Time
-	// State is HostUnreviewed, HostKnown or HostIgnored.
+	// State is HostUnreviewed, HostKnown, HostIgnored or HostAdopted.
 	State string
+	// Name is the name the operator adopted the host under; "" unless it is
+	// adopted. None before schema 33.
+	Name string
 	// Sources are where the host was learned (SourceScan, SourcePihole,
 	// SourceDHCP, SourceNetAlertX), sorted; none before schema 14.
 	Sources []string
@@ -193,19 +203,21 @@ func (r NetworkHosts) List(ctx context.Context) ([]NetworkHost, error) {
 // scanNetworkHost: before schema 13 there is no state, and every host reads
 // as unreviewed; before schema 14 no host has a source; before schema 26
 // every host reads as found by the hub; before schema 31 no host has a
-// service or is the gateway.
+// service or is the gateway; before schema 33 no host has a name.
 func networkHostSelect(v int64) string {
 	switch {
 	case v < networkHostStateSchema:
-		return `SELECT mac, ip, hostname, vendor, first_seen, last_seen, '', '', '', '', '', 0`
+		return `SELECT mac, ip, hostname, vendor, first_seen, last_seen, '', '', '', '', '', 0, ''`
 	case v < networkHostSourcesSchema:
-		return `SELECT mac, ip, hostname, vendor, first_seen, last_seen, state, '', '', '', '', 0`
+		return `SELECT mac, ip, hostname, vendor, first_seen, last_seen, state, '', '', '', '', 0, ''`
 	case v < networkHostScannedBySchema:
-		return `SELECT mac, ip, hostname, vendor, first_seen, last_seen, state, sources, hostname_source, '', '', 0`
+		return `SELECT mac, ip, hostname, vendor, first_seen, last_seen, state, sources, hostname_source, '', '', 0, ''`
 	case v < networkHostServicesSchema:
-		return `SELECT mac, ip, hostname, vendor, first_seen, last_seen, state, sources, hostname_source, scanned_by, '', 0`
+		return `SELECT mac, ip, hostname, vendor, first_seen, last_seen, state, sources, hostname_source, scanned_by, '', 0, ''`
+	case v < networkHostNameSchema:
+		return `SELECT mac, ip, hostname, vendor, first_seen, last_seen, state, sources, hostname_source, scanned_by, services, gateway, ''`
 	}
-	return `SELECT mac, ip, hostname, vendor, first_seen, last_seen, state, sources, hostname_source, scanned_by, services, gateway`
+	return `SELECT mac, ip, hostname, vendor, first_seen, last_seen, state, sources, hostname_source, scanned_by, services, gateway, name`
 }
 
 func scanNetworkHost(row interface{ Scan(...any) error }) (NetworkHost, error) {
@@ -215,7 +227,7 @@ func scanNetworkHost(row interface{ Scan(...any) error }) (NetworkHost, error) {
 		sources, services    string
 	)
 	if err := row.Scan(&h.MAC, &h.IP, &h.Hostname, &h.Vendor, &first, &last, &h.State, &sources, &h.HostnameSource,
-		&h.ScannedBy, &services, &gateway); err != nil {
+		&h.ScannedBy, &services, &gateway, &h.Name); err != nil {
 		return NetworkHost{}, err
 	}
 	h.FirstSeen, h.LastSeen = fromMillis(first), fromMillis(last)
@@ -403,6 +415,9 @@ func newNetworkHostRow(v int64, mac string, at int64) row {
 	if v >= networkHostServicesSchema {
 		r["services"], r["gateway"] = "", int64(0)
 	}
+	if v >= networkHostNameSchema {
+		r["name"] = ""
+	}
 	return r
 }
 
@@ -446,6 +461,7 @@ func networkHostOf(r row) NetworkHost {
 		FirstSeen: fromMillis(r.int("first_seen")), LastSeen: fromMillis(r.int("last_seen")),
 		State: r.str("state"), Sources: splitSources(r.str("sources")), HostnameSource: r.str("hostname_source"),
 		ScannedBy: r.str("scanned_by"), Services: decodeServices(r.str("services")), Gateway: r.int("gateway") != 0,
+		Name: r.str("name"),
 	}
 }
 
@@ -508,8 +524,9 @@ func (c RecordNetworkScan) baseline(ctx context.Context, tx *sql.Tx, knownIPs st
 }
 
 // SetState marks the host with this MAC known, ignored or, with
-// HostUnreviewed, neither. It fails with ErrNotFound if discovery never found
-// that MAC, and before schema 13 with ErrSchemaTooOld.
+// HostUnreviewed, neither; an adopted host stops being adopted (see Adopt). It
+// fails with ErrNotFound if discovery never found that MAC, and before schema
+// 13 with ErrSchemaTooOld.
 func (r NetworkHosts) SetState(ctx context.Context, mac, state string) error {
 	switch state {
 	case HostUnreviewed, HostKnown, HostIgnored:
@@ -522,18 +539,53 @@ func (r NetworkHosts) SetState(ctx context.Context, mac, state string) error {
 	return nil
 }
 
-// SetNetworkHostState sets a host's state (HostUnreviewed, HostKnown or
-// HostIgnored). It fails with ErrNotFound if there is no host with MAC.
+// Adopt adopts the host with this MAC as an agentless device named name, or
+// renames it if it is adopted already. It fails with ErrNotFound if discovery
+// never found that MAC, and before schema 33 with ErrSchemaTooOld. The caller
+// validates the name.
+func (r NetworkHosts) Adopt(ctx context.Context, mac, name string) error {
+	if name == "" {
+		return fmt.Errorf("adopt network host %s: a name is needed", mac)
+	}
+	if _, err := r.s.apply(ctx, SetNetworkHostState{MAC: mac, State: HostAdopted, Name: name}); err != nil {
+		return fmt.Errorf("adopt network host %s: %w", mac, err)
+	}
+	return nil
+}
+
+// Unadopt makes the adopted host with this MAC unreviewed again, without its
+// name. A host that is not adopted is left as it is. It fails with
+// ErrNotFound if discovery never found that MAC.
+func (r NetworkHosts) Unadopt(ctx context.Context, mac string) error {
+	if _, err := r.s.apply(ctx, SetNetworkHostState{MAC: mac, State: HostUnreviewed, Unadopt: true}); err != nil {
+		return fmt.Errorf("unadopt network host %s: %w", mac, err)
+	}
+	return nil
+}
+
+// SetNetworkHostState sets a host's state (HostUnreviewed, HostKnown,
+// HostIgnored or HostAdopted) and, from schema 33, its name: Name for an
+// adopted host, "" for any other state. It fails with ErrNotFound if there is
+// no host with MAC.
 type SetNetworkHostState struct {
 	Stamp
 	MAC   string `json:"mac"`
 	State string `json:"state"`
+	// Name is the adopted host's name; "" for any other state.
+	Name string `json:"name,omitempty"`
+	// Unadopt applies the state only to a host that is adopted.
+	Unadopt bool `json:"unadopt,omitempty"`
 }
 
 // Op implements Command.
 func (SetNetworkHostState) Op() string { return "set_network_host_state" }
 
-func (SetNetworkHostState) minSchema() int64 { return networkHostStateSchema }
+func (c SetNetworkHostState) minSchema() int64 {
+	if c.State == HostAdopted {
+		return networkHostNameSchema
+	}
+	return networkHostStateSchema
+}
 
 func (c SetNetworkHostState) apply(ctx context.Context, w *writer) (Result, error) {
 	r, err := w.get(ctx, "network_hosts", c.MAC)
@@ -543,7 +595,13 @@ func (c SetNetworkHostState) apply(ctx context.Context, w *writer) (Result, erro
 	if r == nil {
 		return Result{}, ErrNotFound
 	}
+	if c.Unadopt && r.str("state") != HostAdopted {
+		return Result{}, nil
+	}
 	r["state"] = c.State
+	if w.schema >= networkHostNameSchema {
+		r["name"] = c.Name
+	}
 	return Result{Count: 1}, w.put(ctx, "network_hosts", r)
 }
 

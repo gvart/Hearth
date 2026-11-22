@@ -5,6 +5,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -52,6 +53,84 @@ func fakeScanHub(t *testing.T, status int, body, done string) *httptest.Server {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv
+}
+
+// fakeHostsHub serves the network hosts and records the adopt and unadopt
+// requests it gets, as "verb mac body".
+func fakeHostsHub(t *testing.T, got *[]string) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/v1/login", func(w http.ResponseWriter, _ *http.Request) {
+		http.SetCookie(w, &http.Cookie{Name: "session", Value: "ok", HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode})
+		w.WriteHeader(http.StatusNoContent)
+	})
+	mux.HandleFunc("GET /api/v1/network/hosts", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = fmt.Fprint(w, `{"hosts":[
+			{"mac":"00:11:32:00:00:05","ip":"192.168.2.50","hostname":"lgtv","name":"Living room TV","kind":"media","state":"adopted","online":true},
+			{"mac":"00:11:32:00:00:06","ip":"192.168.2.60","hostname":"","name":"","kind":"unknown","state":"","online":false}]}`)
+	})
+	mux.HandleFunc("POST /api/v1/network/hosts/{mac}/{verb}", func(w http.ResponseWriter, r *http.Request) {
+		if c, err := r.Cookie("session"); err != nil || c.Value != "ok" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		b, _ := io.ReadAll(r.Body)
+		*got = append(*got, r.PathValue("verb")+" "+r.PathValue("mac")+" "+string(b))
+		if r.PathValue("mac") == "aa:aa:aa:aa:aa:aa" {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = fmt.Fprint(w, `{"error":"no such host","code":"not_found"}`)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestNetworkAdoptCommands(t *testing.T) {
+	t.Setenv("HEARTH_ADMIN_PASSWORD", "pw")
+	var got []string
+	srv := fakeHostsHub(t, &got)
+	run := func(args ...string) (string, error) {
+		cmd := newNetworkCmd()
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		cmd.SetArgs(append(args, "--hub-url", srv.URL))
+		err := cmd.ExecuteContext(t.Context())
+		return out.String(), err
+	}
+	if _, err := run("adopt", "00:11:32:00:00:05", "--name", "Living room TV"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := run("unadopt", "00:11:32:00:00:05"); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{`adopt 00:11:32:00:00:05 {"name":"Living room TV"}`, "unadopt 00:11:32:00:00:05 "}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("requests = %q, want %q", got, want)
+	}
+	if _, err := run("adopt", "00:11:32:00:00:05"); err == nil || !strings.Contains(err.Error(), "name") {
+		t.Errorf("adopt without --name = %v, want an error naming the flag", err)
+	}
+	if _, err := run("adopt", "aa:aa:aa:aa:aa:aa", "--name", "x"); err == nil || !strings.Contains(err.Error(), "no such host") {
+		t.Errorf("adopt of an unknown host = %v, want the hub's error", err)
+	}
+
+	out, err := run("hosts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range []string{
+		"MAC                IP            NAME            KIND     STATE    ONLINE",
+		"00:11:32:00:00:05  192.168.2.50  Living room TV  media    adopted  yes",
+		"00:11:32:00:00:06  192.168.2.60  -               unknown  -        no",
+	} {
+		if !strings.Contains(out, line) {
+			t.Errorf("hosts output lacks %q:\n%s", line, out)
+		}
+	}
 }
 
 func TestNetworkScanCommand(t *testing.T) {

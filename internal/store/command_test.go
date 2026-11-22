@@ -83,7 +83,7 @@ func allCommands() []Command {
 			{MAC: "2c:cf:67:00:00:01", IP: "192.168.2.171", Hostname: "pi5.local", Vendor: "Raspberry Pi"},
 			{MAC: "aa:bb:cc:dd:ee:ff", IP: "192.168.2.50"},
 		}},
-		SetNetworkHostState{MAC: "aa:bb:cc:dd:ee:ff", State: HostIgnored},
+		SetNetworkHostState{MAC: "aa:bb:cc:dd:ee:ff", State: HostAdopted, Name: "Living room TV"},
 		SetTelemetry{Enabled: true, InstallID: "0123456789abcdef", At: 25},
 		MarkTelemetrySent{InstallID: "0123456789abcdef", At: 26},
 		CreatePanel{ID: "p1", Name: "Hall", Widgets: `[{"id":"w1"}]`, At: 27},

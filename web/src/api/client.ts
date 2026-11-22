@@ -183,8 +183,12 @@ export interface NetworkHost {
   device_id: string;
   first_seen: string;
   last_seen: string;
-  /** What the operator marked it: known and ignored hosts fire no new-device alerts. */
+  /** What the operator marked it: known, ignored and adopted hosts fire no new-device alerts. */
   state: NetworkHostState;
+  /** The name it was adopted under; empty unless adopted. */
+  name: string;
+  /** Whether a scan or an import saw it within twice the discover interval. */
+  online: boolean;
   /** The device whose agent last found the host in a scan; empty when the hub did. */
   scanned_by: string;
   /** The mDNS service types it answers for, as `_ipp._tcp`, sorted. */
@@ -197,7 +201,7 @@ export interface NetworkHost {
 
 export type NetworkHostKind = 'router' | 'printer' | 'media' | 'phone' | 'computer' | 'nas' | 'iot' | 'unknown';
 
-export type NetworkHostState = '' | 'known' | 'ignored';
+export type NetworkHostState = '' | 'known' | 'ignored' | 'adopted';
 
 export type BeszelSystemStatus = 'up' | 'down' | 'paused' | 'pending';
 
@@ -746,11 +750,16 @@ export const api = {
   /** Starts a scan of the hub's network; it ends with a network.scan.done event with its id. 409 while one runs. */
   scanNetwork: () => request<{ id: string }>('POST', '/network/scan'),
   /** Marks a host known or ignored, or neither again (''). */
-  markNetworkHost: (mac: string, state: NetworkHostState) =>
+  markNetworkHost: (mac: string, state: Exclude<NetworkHostState, 'adopted'>) =>
     request<undefined>(
       'POST',
       `/network/hosts/${encodeURIComponent(mac)}/${state === 'known' ? 'known' : state === 'ignored' ? 'ignore' : 'unmark'}`,
     ),
+  /** Adopts a host as a device without an agent under a name, or renames it. */
+  adoptNetworkHost: (mac: string, name: string) =>
+    request<undefined>('POST', `/network/hosts/${encodeURIComponent(mac)}/adopt`, { name }),
+  /** Stops listing an adopted host as a device. */
+  unadoptNetworkHost: (mac: string) => request<undefined>('POST', `/network/hosts/${encodeURIComponent(mac)}/unadopt`),
   notifyChannels: async () => (await request<{ channels: NotifyChannel[] }>('GET', '/notify/channels')).channels,
   testNotifyChannel: (name: string) =>
     request<undefined>('POST', `/notify/channels/${encodeURIComponent(name)}/test`),

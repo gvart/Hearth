@@ -14,7 +14,7 @@ const NewDeviceAlertsID = "new-device-alerts"
 // the channel's name. Its triggers fire once per scan, so a scan that finds
 // any number of hosts takes one place in the queue for each kind of host.
 const newDeviceAlertsYAML = `id: new-device-alerts
-description: Notify about every host that joins the network, unless it is marked known or ignored.
+description: Notify about every host that joins the network, unless it is marked known or ignored, or adopted.
 mode: queued
 triggers:
   - id: new
@@ -35,8 +35,9 @@ actions:
 
 // NewDeviceAlerts returns the built-in automation that notifies channel
 // about every host network discovery finds for the first time, or back after
-// an absence, unless it is marked known or ignored. It is rejected, like a
-// file, if channel is not one of the hub's notification channels.
+// an absence, unless it is marked known or ignored, or adopted. It is
+// rejected, like a file, if channel is not one of the hub's notification
+// channels.
 func NewDeviceAlerts(channel string, kinds Kinds) (*Automation, error) {
 	if !idPattern().MatchString(channel) {
 		return nil, fmt.Errorf("new-device alerts: %q is not a channel name", channel)

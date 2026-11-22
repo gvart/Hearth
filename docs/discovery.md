@@ -8,7 +8,8 @@ phone) and lists them under **On your network** on the Devices page, with their 
 vendor and name. Each one has an **Add device** button that opens the usual
 [install-and-join flow](getting-started.md) for that host: the device name is prefilled from its
 hostname (without `.local`), and the device joins under that name. Change it under
-**Name, expiry and labels**, then click **New token with these options**.
+**Name, expiry and labels**, then click **New token with these options**. A host that cannot run
+an agent can be [adopted](#adopting-a-host) as a device instead.
 
 The hub scans only when you ask it to, with **Scan my network** (see [Scan now](#scan-now)), or on a
 schedule once you turn that on. Nothing it learns leaves your LAN.
@@ -142,6 +143,38 @@ The order settles the usual ambiguities, and leaves some:
 To add names from your Pi-hole or DHCP server, and hosts on VLANs the sweep cannot reach, see
 [Pi-hole and DHCP leases](pihole.md).
 
+## Adopting a host
+
+A printer, a TV or the router cannot run an agent, but it is still one of your devices. **Adopt**,
+on a host under **On your network**, asks for a name (prefilled with the host's name) and moves the
+host to **Network devices** on the Devices page: its name, kind, IP, vendor, when a scan last saw it
+and whether it is online. Nothing is installed or enrolled, and there is nothing to control: an
+adopted host has no certificate, no agent and no actions. **Unadopt** puts it back under **On your
+network**, unmarked, and forgets the name. Adopting an adopted host renames it.
+
+The same from a terminal:
+
+```sh
+hearth network hosts
+# MAC                IP             NAME            KIND     STATE    ONLINE
+# 00:11:32:12:34:56  192.168.1.20   Living room TV  media    adopted  yes
+# 00:80:77:12:34:56  192.168.1.40   brother         printer  -        yes
+hearth network adopt 00:80:77:12:34:56 --name "Office printer"
+hearth network unadopt 00:80:77:12:34:56
+```
+
+A name is 1 to 63 characters, leading and trailing spaces trimmed, with no control characters. A
+host that is one of an enrolled device's interfaces is that device, and cannot be adopted (409).
+
+**Online** means a scan (or an import, see [Pi-hole and DHCP leases](pihole.md)) saw the host
+within twice the discover interval: 10 minutes with the default `--discover-interval 5m`. Without
+a schedule (no `--discover-subnet`), it is twice the default interval after the last
+**Scan my network**. A host that sleeps (a TV in standby, a printer off) and does not answer the
+sweep shows as offline.
+
+An adopted host fires no new-device alerts, as a known one does (see
+[New-device alerts](#new-device-alerts)). Marking it known or ignored ends the adoption.
+
 ## Scan from a device
 
 A VLAN, another site, or a LAN the hub cannot reach from its container: the hub's sweep cannot see
@@ -228,6 +261,7 @@ button on each host. Both stop its alerts: *known* is a host you recognise as yo
 you do not care about (a neighbour's TV), shown dimmed. **Unmark** turns its alerts back on. A host
 nobody has marked notifies again each time it comes back after an hour or more away, so a phone
 that leaves the house every day should be marked known after its first alert.
+[Adopted](#adopting-a-host) hosts are silent too.
 
 **Randomized ("private") MACs.** A phone with a private Wi-Fi address shows as *private address* in
 the notification. iOS and Android keep one such address per network by default, so a phone still
@@ -294,7 +328,9 @@ dropped. In Kubernetes, the same applies: `hostNetwork: true` on the hub's pod.
 the host answers for, sorted (`[]` when none was heard).
 `device_id` is the enrolled device with that MAC, or empty for an unmanaged host. `scanned_by` is
 the device whose agent last found it in a scan, or empty when the hub did. `state` is `""`,
-`"known"` or `"ignored"`. Each host also has `sources` (`scan`, `pihole`, `dhcp`) and
+`"known"`, `"ignored"` or `"adopted"`, and `name` the name an adopted host was given (empty
+otherwise). `online` is whether a scan or an import saw it within twice the discover interval (see
+[Adopting a host](#adopting-a-host)). Each host also has `sources` (`scan`, `pihole`, `dhcp`) and
 `hostname_source`; see [Pi-hole and DHCP leases](pihole.md#api).
 
 ```
@@ -304,7 +340,19 @@ POST /api/v1/network/hosts/{mac}/unmark
 ```
 
 Each one is the action `network.host.mark` (class `safe`, actor `web`), audited with the MAC as
-target and the new state as detail.
+target and the new state as detail. Marking an adopted host ends its adoption.
+
+```
+POST /api/v1/network/hosts/{mac}/adopt {"name": "Living room TV"}
+     204; 400 bad name; 404 no such host; 409 enrolled (an enrolled device's interface)
+POST /api/v1/network/hosts/{mac}/unadopt
+     204 (also for a host that is not adopted: it is left as it is); 404 no such host
+```
+
+Both are the action `network.host.adopt` (class `safe`, actor `web`, also from `hearth network
+adopt` and `unadopt`, which use the web session), audited with the MAC as target and
+`{"op": "adopt", "name": "…"}` or `{"op": "unadopt"}` as detail. A policy that denies it refuses
+with 403 and audits the denial.
 
 ```
 POST /api/v1/network/scan    202 {"id": "…"}; 409 scan_running, or no_subnet; 403 denied by policy

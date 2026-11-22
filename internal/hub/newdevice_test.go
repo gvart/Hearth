@@ -170,7 +170,8 @@ func TestNewDeviceAlertExactlyOnce(t *testing.T) {
 }
 
 // A host away for an hour or more alerts again when it comes back, unless it
-// is marked known or ignored; marking it neither again restores the alert.
+// is marked known or ignored, or adopted; marking it neither again restores
+// the alert.
 func TestNewDeviceAlertMarkedHostsAreSilent(t *testing.T) {
 	for _, tc := range []struct {
 		state string
@@ -178,12 +179,17 @@ func TestNewDeviceAlertMarkedHostsAreSilent(t *testing.T) {
 	}{
 		{store.HostIgnored, 0},
 		{store.HostKnown, 0},
+		{store.HostAdopted, 0},
 		{store.HostUnreviewed, 1},
 	} {
 		t.Run("state "+tc.state, func(t *testing.T) {
 			h := newAlertHarness(t)
 			h.scan(t, 0, router, phone) // the baseline: the phone is already there
-			if err := h.st.NetworkHosts().SetState(t.Context(), phone.MAC, tc.state); err != nil {
+			mark := h.st.NetworkHosts().SetState
+			if tc.state == store.HostAdopted {
+				mark = func(ctx context.Context, mac, _ string) error { return h.st.NetworkHosts().Adopt(ctx, mac, "Phone") }
+			}
+			if err := mark(t.Context(), phone.MAC, tc.state); err != nil {
 				t.Fatal(err)
 			}
 			// The router stays, scan after scan; the phone is away.

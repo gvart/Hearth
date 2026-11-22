@@ -68,7 +68,7 @@ triggers:
 ```
 
 Fires once for each host a [network discovery](discovery.md) scan finds for the first time (`new`),
-or finds again after an hour or more unseen (`returned`). Hosts marked known or ignored on the
+or finds again after an hour or more unseen (`returned`). Hosts marked known or ignored, or adopted, on the
 Devices page, and hosts that are an enrolled device's interface, never fire it. Use `mode: queued`
 so that several hosts found by one scan each get their run, up to 11 at a time: the rest are dropped.
 

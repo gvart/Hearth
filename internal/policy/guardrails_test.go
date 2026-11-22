@@ -179,6 +179,7 @@ var expected = map[Action]struct {
 	MCPTokenRevoke:         {Safe, []string{ActorAdmin, ActorWeb}, false},
 	NetworkScan:            {Read, []string{ActorHub, ActorWeb}, false},
 	NetworkHostMark:        {Safe, []string{ActorWeb}, false},
+	NetworkHostAdopt:       {Safe, []string{ActorWeb}, false},
 	NetworkImport:          {Read, []string{ActorHub}, false},
 	BeszelRead:             {Read, []string{ActorHub}, false},
 	TalosRead:              {Read, []string{ActorHub, ActorAutomation}, false},
