@@ -14,6 +14,8 @@ x-device: &device
     HEARTH_RELEASE_BASE_URL: http://releases:8000/releases
     HEARTH_LATEST_URL: http://releases:8000/latest.json
     HEARTH_SKIP_SERVICE: "1"
+    # The killed hub-a is removed soon, and dev-3 promoted in its place.
+    HEARTH_MEMBER_DEAD_AFTER: 45s
   ports:
     - "127.0.0.1::7080"
 

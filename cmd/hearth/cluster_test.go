@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/gvart/hearth/internal/cluster"
 )
 
@@ -107,5 +109,30 @@ func TestStatusShowsAutoRemoval(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "dead, removed automatically in ~5h") {
 		t.Fatalf("status:\n%s", out.String())
+	}
+}
+
+// --keep-masters is 0 to the cap of 3 masters; HEARTH_KEEP_MASTERS sets it.
+func TestKeepMastersFlag(t *testing.T) {
+	for _, tc := range []struct {
+		keep int
+		ok   bool
+	}{{0, true}, {3, true}, {-1, false}, {4, false}} {
+		err := clusterOptions{listen: ":7444", keepMasters: tc.keep}.check()
+		if (err == nil) != tc.ok {
+			t.Fatalf("check with --keep-masters %d = %v, want ok %v", tc.keep, err, tc.ok)
+		}
+	}
+	t.Setenv("HEARTH_KEEP_MASTERS", "2")
+	var o clusterOptions
+	addClusterFlags(&cobra.Command{}, &o)
+	if o.keepMasters != 2 || o.check() != nil {
+		t.Fatalf("HEARTH_KEEP_MASTERS=2 gives %d, %v", o.keepMasters, o.check())
+	}
+	t.Setenv("HEARTH_KEEP_MASTERS", "many")
+	o = clusterOptions{}
+	addClusterFlags(&cobra.Command{}, &o)
+	if o.check() == nil {
+		t.Fatal("a bad HEARTH_KEEP_MASTERS passes the check")
 	}
 }

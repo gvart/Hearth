@@ -118,3 +118,47 @@ func (r JoinTokens) JoinedSince(ctx context.Context, since time.Time) (map[strin
 	}
 	return out, nil
 }
+
+// HubEligible returns the hubs whose latest join used a token minted for a
+// device (#328), by node ID, with when they joined: the admin made that
+// device hub-eligible when it created its enrollment token, so it may be
+// promoted to master to keep the masters (#331), whatever roles its token
+// granted under the caps. A hub whose latest join used a token an admin
+// created is not one, nor one without an unrevoked hub certificate. Below
+// schema 34 there are none.
+func (r JoinTokens) HubEligible(ctx context.Context) (map[string]time.Time, error) {
+	if ok, err := atSchema(ctx, r.s.db, hubTokenSchema); err != nil || !ok {
+		return nil, err
+	}
+	rows, err := listCol[string](ctx, r.s, "join_tokens",
+		`SELECT joined_node || ' ' || used_at || ' ' || (CASE WHEN device_id != '' THEN 1 ELSE 0 END)`,
+		` FROM join_tokens WHERE joined_node != '' AND used_at IS NOT NULL AND _deleted = 0`+
+			` AND joined_node IN (SELECT node_id FROM hub_certs WHERE revoked_at IS NULL)`)
+	if err != nil {
+		return nil, fmt.Errorf("list hub-eligible hubs: %w", err)
+	}
+	type join struct {
+		at     int64
+		minted bool
+	}
+	latest := map[string]join{}
+	for _, row := range rows {
+		var node string
+		var j join
+		var minted int
+		if _, err := fmt.Sscanf(row, "%s %d %d", &node, &j.at, &minted); err != nil {
+			continue
+		}
+		j.minted = minted == 1
+		if l, ok := latest[node]; !ok || j.at > l.at {
+			latest[node] = j
+		}
+	}
+	out := map[string]time.Time{}
+	for node, j := range latest {
+		if j.minted {
+			out[node] = fromMillis(j.at)
+		}
+	}
+	return out, nil
+}

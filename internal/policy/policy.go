@@ -372,8 +372,12 @@ var rules = map[Action]rule{
 	ClusterTokenCreate: {class: Dangerous, actors: []string{ActorAdmin, ActorWeb, ActorToken}, fixedFor: []string{ActorToken}},
 	ClusterJoin:        {class: Dangerous, actors: []string{ActorJoinToken}, fixed: true},
 	// A promotion moves the CA key or the rows: dangerous, and held or
-	// denied as the policy says.
-	ClusterPromote: {class: Dangerous, actors: []string{ActorAdmin, ActorWeb}},
+	// denied as the policy says. A master promotes a live storage member to
+	// master as the hub to keep --keep-masters masters (#331), only one that
+	// joined as a hub-eligible device: the admin consented to it becoming a
+	// master when they made its enrollment token hub-eligible. It follows
+	// the modes all the same: a policy may hold it for approval or deny it.
+	ClusterPromote: {class: Dangerous, actors: []string{ActorAdmin, ActorWeb, ActorHub}},
 	// A demotion takes a master's CA key and tokens away, or moves a
 	// storage member's rows; the last master or storage member stays.
 	ClusterDemote: {class: Dangerous, actors: []string{ActorAdmin, ActorWeb}},

@@ -24,6 +24,11 @@ const (
 	// CopiesWithin bounds how long until the devices that became storage
 	// members have copied their rows (no longer syncing).
 	CopiesWithin = 90 * time.Second
+	// KeepMastersWithin bounds how long after hub-a was killed it is
+	// removed (--member-dead-after 45s on the devices) and dev-3, storage
+	// only, is promoted to keep 3 masters: both loops look once a minute,
+	// after two minutes of grace from a hub's start.
+	KeepMastersWithin = 4 * time.Minute
 )
 
 var autoDevices = []string{"dev-1", "dev-2", "dev-3"}
@@ -32,7 +37,9 @@ var autoDevices = []string{"dev-1", "dev-2", "dev-3"}
 // command pasted on capable devices makes them hubs, the first two masters
 // and the third storage only (3 masters at most); once they hold copies the
 // first hub can be killed, and the devices carry on: the UI and Add device
-// work on another master and every agent is online there.
+// work on another master and every agent is online there. The killed hub is
+// removed after --member-dead-after and dev-3 promoted to keep 3 masters
+// (#331).
 func TestAutoHubs(t *testing.T) {
 	ctx := t.Context()
 	s := newStack(t, "hearth-e2e-autohub", "autohub.compose.yaml", append([]string{"hub-a", "releases"}, autoDevices...))
@@ -121,6 +128,21 @@ func TestAutoHubs(t *testing.T) {
 	s.startUnit(ctx, "dev-1", "hearth-hub")
 	s.waitLive(ctx, "dev-1", ids["dev-2"], restartAt.Add(AutoHubWithin))
 	t.Logf("TIMING dev-1 hub restart → dev-2 live again in %v", since(restartAt))
+
+	// 6. hub-a, down for --member-dead-after, is removed, and dev-3, which
+	// joined as a hub-eligible device, is promoted to master in its place.
+	waitFor(ctx, t, killAt.Add(KeepMastersWithin), "dev-3 promoted to master", func() (bool, string) {
+		m := s.memberOf(ctx, "dev-2", ids["dev-3"])
+		return slices.Contains(m.Roles, "master"), fmt.Sprintf("%+v", m)
+	})
+	if m := s.memberOf(ctx, "dev-2", "hub-a"); m.ID != "" {
+		t.Fatalf("hub-a still a member after dev-3's promotion: %+v", m)
+	}
+	waitFor(ctx, t, time.Now().Add(30*time.Second), "dev-3 to hold the CA key", func() (bool, string) {
+		_, err := s.run(ctx, "exec", "-T", "dev-3", "test", "-f", hubDataDir+"/ca.key")
+		return err == nil, "no ca.key"
+	})
+	t.Logf("TIMING kill hub-a → removed and dev-3 promoted to master in %v", since(killAt))
 }
 
 // installAutoHub pastes the Add device dialog's install command, with "may

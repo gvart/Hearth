@@ -144,7 +144,8 @@ that joined with such a token in the last 10 minutes and are not in the gossip y
 removed), and `cluster.join` checks them again when the device joins, one join at a time on a master: a device whose token allowed master but finds 3
 masters by then joins as storage only (audited `capped`), and one that finds 5 storage members is
 refused and stays an agent. Promote or demote by hand as before; the caps only bound what happens on
-its own.
+its own. When a master is removed, a storage member that joined this way is promoted to keep 3
+masters (see [Keeping 3 masters](#keeping-3-masters)).
 
 A join file the hub cannot use for good (a spent, expired or refused token) is deleted and the
 device stays an agent, with a log line saying why; an unreachable master is tried again until the
@@ -286,6 +287,9 @@ hearth cluster remove hub-c          # a member gone for good
   and an empty data dir.
 - **Removed automatically.** A member down for `--member-dead-after` is removed the same way, by a
   master on its own (see [A hub that stays down](#a-hub-that-stays-down)).
+- **Promoted automatically.** When fewer than 3 masters are left, a master promotes a storage member
+  that joined as a hub-eligible device to master the same way (see
+  [Keeping 3 masters](#keeping-3-masters)).
 
 ## Checking on it
 
@@ -388,7 +392,8 @@ it to `dangerous_automations` in `policy.yaml` and import that.
   split heals. A master that reaches no other member fails closed for dangerous actions after 60
   seconds.
 - **A hub stays down.** After `--member-dead-after` (24 h) a master removes it, if it sees a majority of
-  the members (see [A hub that stays down](#a-hub-that-stays-down)).
+  the members (see [A hub that stays down](#a-hub-that-stays-down)); if it was a master, a hub-eligible
+  storage member takes its place (see [Keeping 3 masters](#keeping-3-masters)).
 - **A hub restarts.** Until it has caught up with the cluster, its API waits up to 5 seconds per request
   and then answers 503 `catching_up`; the UI shows the error and works again once the hub is ready.
 
@@ -424,6 +429,39 @@ policy's modes for dangerous actions: `classes: {dangerous: confirm}` holds each
 `hearth cluster status` and the Cluster page show, for a member down, roughly when it is removed. A
 master that is due to remove one but may not (no majority, the last master or storage member) logs
 `a member is down for longer than --member-dead-after but is not removed`, with the reason.
+
+## Keeping 3 masters
+
+When a master is removed (by hand or after `--member-dead-after`) and fewer than `--keep-masters` (env
+`HEARTH_KEEP_MASTERS`, default `3`) masters are left, a master promotes a live storage member to
+master, exactly as `hearth cluster promote <member> master` does: the member fetches the CA key from
+that master over the pinned `FetchCAKey` channel and starts serving. One master does it (the owner of
+the `keep-masters` loop on the ring of masters), as the `cluster.promote` policy action by the hub
+(actor `hub`, its node ID), audited with the reason (`keep 3 masters`). It follows the policy's modes
+for dangerous actions: `classes: {dangerous: confirm}` holds the promotion for approval, `deny`
+refuses it (a refused promotion is tried again an hour later). `--keep-masters 0` turns it off; it
+cannot be more than 3, the cap on the masters devices become on their own.
+
+- **Only a hub-eligible device.** A member is promoted only if its latest join used the join token
+  minted for it when it enrolled with a token marked **This device may become a hub**: you agreed then
+  that it may hold the CA key, and it was checked capable. A hub that joined with a join token from
+  `hearth cluster token create` or **Add hub** is never promoted on its own; promote it by hand. The
+  member must also be `alive`, a storage member that is neither syncing nor draining, and allow master
+  in its `--allow-roles`.
+- **Which one.** The eligible member that joined first, then the lowest node ID: every master picks
+  the same. One at a time: the next promotion waits until the gossip shows the last one as master.
+- **A master counts until it is removed.** A master that is down, or that left because it was stopped,
+  still counts, so restarting a master promotes no one. Masters on their way count too (a hub joining
+  with a token that grants master, a minted join token not yet used), so the cluster never has more
+  than 3 masters this way.
+- **Only a majority promotes, never during a CA rotation.** As for removals, a master promotes only
+  while it sees a strict majority of the members it knows alive; and not while a
+  [hub CA rotation](#rotating-the-hub-ca) is under way.
+- **Demoting by hand.** A master you demote below `--keep-masters` may be replaced by an eligible
+  storage member: to run fewer masters, lower `--keep-masters` on the masters first.
+
+A master that is short of masters but promotes no one (no majority, no eligible member) logs
+`fewer masters than --keep-masters, but none is promoted`, with the reason.
 
 ## Replacing a dead hub
 

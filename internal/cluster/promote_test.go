@@ -48,6 +48,8 @@ type apTestNode struct {
 	// deadAfter, if set, is its --member-dead-after, with the members down
 	// looked at every 50 ms (deadmembers_test.go).
 	deadAfter time.Duration
+	// keepMasters, if set, is its --keep-masters (keepmasters_test.go).
+	keepMasters int
 	// log, if set, receives its log instead of testLogger.
 	log *slog.Logger
 }
@@ -158,7 +160,7 @@ func (tn *apTestNode) start(t *testing.T, n int, seed string) {
 		Listen: ln.Addr().String(), Listener: ln, Advertise: ln.Addr().String(), Seeds: seeds,
 		Replicas: n, Log: cmp.Or(tn.log, testLogger(t)), RolesEvery: 50 * time.Millisecond, ConfigSource: tn.config,
 		CAReconcileEvery: cmp.Or(tn.caEvery, 100*time.Millisecond),
-		MemberDeadAfter:  tn.deadAfter, deadEvery: 50 * time.Millisecond,
+		MemberDeadAfter:  tn.deadAfter, KeepMasters: tn.keepMasters, deadEvery: 50 * time.Millisecond,
 		Gossip: ReplicatorConfig{
 			RequestTimeout: 2 * time.Second, AntiEntropyEvery: time.Hour, HintsEvery: time.Hour, GCEvery: time.Hour,
 		},

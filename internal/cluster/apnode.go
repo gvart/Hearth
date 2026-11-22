@@ -80,6 +80,10 @@ type APConfig struct {
 	// MemberDeadAfter is how long a member stays down before a master
 	// removes it (deadmembers.go); zero never removes one.
 	MemberDeadAfter time.Duration
+	// KeepMasters is how many masters a master keeps by promoting a
+	// hub-eligible storage member (keepmasters.go), at most
+	// MaxAutoMasters; zero never promotes one.
+	KeepMasters int
 	// deadEvery, in tests, is how often the members down are looked at;
 	// zero means a minute.
 	deadEvery time.Duration
@@ -146,7 +150,8 @@ type APNode struct {
 	unpinnedClosed atomic.Pointer[string]
 	halted         atomic.Bool
 	// down records the members down, to remove those down for
-	// MemberDeadAfter (deadmembers.go); nil when none is removed.
+	// MemberDeadAfter (deadmembers.go) and to guard the promotions that
+	// keep KeepMasters masters (keepmasters.go); nil when neither runs.
 	down *downTracker
 }
 
@@ -201,7 +206,7 @@ func NewAPNode(ctx context.Context, cfg APConfig) (*APNode, error) {
 		cfg: cfg, log: cfg.Log.With("component", "ap-cluster"), epoch: pki.HubEpoch(cert.Leaf), hints: hints,
 		local: local, rolesKick: make(chan struct{}, 1), caKick: make(chan struct{}, 1),
 	}
-	if cfg.MemberDeadAfter > 0 {
+	if cfg.MemberDeadAfter > 0 || cfg.KeepMasters > 0 {
 		if n.down, err = loadDownTracker(dir, cfg.NodeID, time.Now()); err != nil && n.down == nil {
 			_ = hints.Close()
 			return nil, fmt.Errorf("ap node: %w", err)

@@ -48,9 +48,10 @@ type apLoops struct {
 // sweep run on every master, each on the items it owns on the ring of
 // masters. Network discovery, the network import, scheduled backups, the
 // removal of members down for good and the mDNS announcement of
-// discovery.LANName run on the one master owning their key; during a
-// partition, one may run on both sides (the removal guards itself: only a
-// side that sees a majority removes).
+// discovery.LANName run on the one master owning their key, and so does
+// the promotion that keeps --keep-masters masters; during a partition, one
+// may run on both sides (the removal and the promotion guard themselves:
+// only a side that sees a majority acts).
 func runAPLoops(ctx context.Context, g *errgroup.Group, node *cluster.APNode, l apLoops) {
 	ring := node.Masters()
 	g.Go(func() error {
@@ -98,6 +99,11 @@ func runAPLoops(ctx context.Context, g *errgroup.Group, node *cluster.APNode, l 
 	// member keeps its own record of who is down (deadmembers.go).
 	if node.MemberDeadAfter() > 0 {
 		singleton("dead-members", func(ctx context.Context) error { return node.RunDeadMemberRemoval(ctx, l.pol) })
+	}
+	// One master promotes a hub-eligible storage member when fewer than
+	// --keep-masters masters are left (keepmasters.go).
+	if node.KeepMasters() > 0 {
+		singleton("keep-masters", func(ctx context.Context) error { return node.RunKeepMasters(ctx, l.pol) })
 	}
 	if l.lanName {
 		a := &discovery.Announcer{Name: discovery.LANName, Log: l.log.With("component", "lan-name")}

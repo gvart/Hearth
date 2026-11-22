@@ -124,3 +124,43 @@ func TestHubTokens(t *testing.T) {
 		t.Fatalf("JoinedSince after removal = %v, %v; want none", joined, err)
 	}
 }
+
+// HubEligible lists the hubs whose latest join used a token minted for a
+// device, with an unrevoked hub certificate: not one that joined with an
+// admin's token, nor one that rejoined with one after a minted join, nor
+// one removed.
+func TestHubEligible(t *testing.T) {
+	ctx := t.Context()
+	s := openAtSchema(t, hubTokenSchema)
+	t0 := time.Now().Add(-time.Hour)
+	join := func(secret, device, node string, at time.Time) {
+		t.Helper()
+		if err := s.JoinTokens().CreateFor(ctx, secret, at.Add(time.Minute), "storage", device); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.JoinTokens().Use(ctx, secret, node, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	join("m1", "dev-1", "hub-1", t0)
+	join("m2", "dev-2", "hub-2", t0.Add(time.Minute))
+	join("a3", "", "hub-3", t0)
+	join("m4", "dev-4", "hub-4", t0)
+	join("a4", "", "hub-4", t0.Add(time.Minute))
+	join("m5", "dev-5", "hub-5", t0)
+	for _, id := range []string{"hub-1", "hub-2", "hub-3", "hub-4", "hub-5"} {
+		if err := s.Hubs().RecordCert(ctx, "c-"+id, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.Hubs().RevokeCerts(ctx, "hub-5", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.JoinTokens().HubEligible(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || !got["hub-1"].Equal(t0.Truncate(time.Millisecond)) || !got["hub-2"].After(got["hub-1"]) {
+		t.Fatalf("HubEligible = %v; want hub-1 then hub-2", got)
+	}
+}
