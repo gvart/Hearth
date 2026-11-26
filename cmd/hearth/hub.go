@@ -482,8 +482,11 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		Version:           opts.version,
 		Runbooks:          runbooks,
 		TelemetryOff:      telemetryOff,
-		ShellIdleTimeout:  opts.shellIdle,
-		ShellMaxDuration:  opts.shellMax,
+		// For tests only, as deploy/install.sh's: where agent upgrades
+		// download releases from instead of GitHub (test/e2e).
+		ReleaseBaseURL:   os.Getenv("HEARTH_RELEASE_BASE_URL"),
+		ShellIdleTimeout: opts.shellIdle,
+		ShellMaxDuration: opts.shellMax,
 	}
 	if exe, err := os.Executable(); err == nil {
 		cfg.VerifyPassword = hub.ChildVerifier(exe)

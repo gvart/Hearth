@@ -70,9 +70,9 @@ type upgrader struct {
 	target string
 	// client downloads the archive: a plain client, never the mTLS one,
 	// which would show the device certificate to the download server.
-	client               *http.Client
+	client                *http.Client
 	maxArchive, maxBinary int64
-	timeout              time.Duration
+	timeout               time.Duration
 }
 
 // newUpgrader is the upgrader of the executable exe ("" for the running

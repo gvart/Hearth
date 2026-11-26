@@ -10,3 +10,14 @@ func WithNetEdgesReader(cfg Config, read func() (*agentv1.NetEdges, error)) Conf
 	cfg.readNetEdges = read
 	return cfg
 }
+
+// WithSelfUpgrade makes Run upgrade the executable exe, whatever the
+// environment of the test says (a CI runner in a Kubernetes pod).
+func WithSelfUpgrade(cfg Config, exe string) Config {
+	cfg.upgrader = newUpgrader(exe, func(string) string { return "" })
+	return cfg
+}
+
+// FakeRelease is a release archive whose hearth prints version, and its
+// SHA-256.
+var FakeRelease = fakeRelease

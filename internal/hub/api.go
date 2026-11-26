@@ -98,6 +98,7 @@ func newAPI(cfg Config) *api {
 		agents:           cfg.Agents,
 		scans:            cfg.NetworkScans,
 		discoverInterval: cfg.DiscoverInterval,
+		releases:         newReleases(cfg.ReleaseBaseURL),
 		dryRuns:          newLoginLimiter(time.Now, dryRunBurst, dryRunEvery),
 		// Only a release tag is pinned: dev builds have no release to install.
 		installVersion: releaseVersion(cfg.Version),
@@ -148,6 +149,7 @@ func (a *api) routes() http.Handler {
 	mux.Handle("GET /api/v1/devices/{id}/metrics", a.auth(a.deviceMetrics))
 	mux.Handle("GET /api/v1/devices/{id}/hub", a.auth(a.deviceHub))
 	mux.Handle("POST /api/v1/devices/{id}/hub", a.auth(a.makeDeviceHub))
+	mux.Handle("POST /api/v1/devices/{id}/upgrade", a.auth(a.upgradeDevice))
 	mux.Handle("GET /api/v1/metrics/sparklines", a.auth(a.metricsSparklines))
 	mux.Handle("GET /api/v1/network/hosts", a.auth(a.listNetworkHosts))
 	mux.Handle("GET /api/v1/beszel/systems", a.auth(a.listBeszelSystems))
@@ -300,6 +302,8 @@ type api struct {
 	installVersion string
 	// version is the hub's build version, shown by the web UI.
 	version string
+	// releases reads the checksums of the releases agents upgrade to.
+	releases *releases
 	// reauths are the sessions that entered the password again lately.
 	reauths reauths
 	// argon is the cost of a password the web UI sets.
@@ -359,6 +363,10 @@ type DeviceJSON struct {
 	// BootTime is when the host last booted, derived from heartbeat uptime;
 	// null until the first heartbeat that reports uptime.
 	BootTime *time.Time `json:"boot_time"`
+	// AgentVersion is the agent's version next to the hub's, and whether it
+	// can be upgraded from the hub; absent for a device without an agent
+	// that reported one.
+	AgentVersion *AgentVersionJSON `json:"agent_version,omitempty"`
 }
 
 func deviceJSON(d store.Device) DeviceJSON {
@@ -548,7 +556,7 @@ func (a *api) listDevices(w http.ResponseWriter, r *http.Request) {
 		Devices []DeviceJSON `json:"devices"`
 	}{Devices: make([]DeviceJSON, 0, len(devs))}
 	for _, d := range devs {
-		out.Devices = append(out.Devices, deviceJSON(d))
+		out.Devices = append(out.Devices, a.deviceJSON(d))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -564,7 +572,15 @@ func (a *api) getDevice(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "cannot get device")
 		return
 	}
-	writeJSON(w, http.StatusOK, deviceJSON(d))
+	out := a.deviceJSON(d)
+	if v := out.AgentVersion; v != nil && !v.RemoteUpgrade && v.NoRemoteUpgrade == "" {
+		// An agent older than remote upgrades: the installer's command
+		// upgrades it once (#347).
+		if httpHost, _, ok := a.commandHosts(r.Host, r.TLS != nil); ok {
+			v.InstallCommand = a.installCommandWith(httpHost, "")
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // EventJSON is the data of one server-sent event; the SSE event name is Type.
@@ -616,7 +632,7 @@ func (a *api) events(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			// Clients get one message per host of a network discovery event.
-			bodies := []any{EventJSON{Type: ev.Type, Device: deviceJSON(ev.Device)}}
+			bodies := []any{EventJSON{Type: ev.Type, Device: a.deviceJSON(ev.Device)}}
 			switch {
 			case ev.Scan != nil:
 				bodies = []any{ev.Scan}

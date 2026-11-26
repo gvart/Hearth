@@ -203,6 +203,7 @@ var expected = map[Action]struct {
 	ConfigExport:            {Read, []string{ActorAdmin}, false},
 	TelemetrySet:            {Safe, []string{ActorWeb}, false},
 	DeviceShell:             {Dangerous, []string{ActorWeb}, false},
+	DeviceUpgrade:           {Dangerous, []string{ActorWeb}, false},
 	PanelSave:               {Safe, []string{ActorWeb}, false},
 	PanelDelete:             {Safe, []string{ActorWeb}, false},
 	PanelLinkCreate:         {Safe, []string{ActorWeb}, false},

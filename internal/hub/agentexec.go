@@ -95,6 +95,10 @@ type agentSession struct {
 	probes  map[string]chan *agentv1.ProbeResult
 	scans   map[string]chan *agentv1.ScanResult
 	dockers map[string]chan *agentv1.DockerResult
+	// upgrades wait for UpgradeResults; noUpgrade is why the agent said it
+	// does not upgrade itself, if it did.
+	upgrades  map[string]chan *agentv1.UpgradeResult
+	noUpgrade string
 	// logs are the open log streams, by LogRequest id (see agentlogs.go).
 	logs   map[string]*logQueue
 	shells map[string]*Shell
@@ -118,6 +122,7 @@ func (a *Agents) attach(deviceID string, hello *agentv1.Hello, send func(*agentv
 		minor: hello.GetProtocolVersion().GetMinor(), send: send, abort: abort, done: make(chan struct{}),
 		pending: map[string]chan *agentv1.ExecResult{}, probes: map[string]chan *agentv1.ProbeResult{},
 		scans: map[string]chan *agentv1.ScanResult{}, dockers: map[string]chan *agentv1.DockerResult{},
+		upgrades: map[string]chan *agentv1.UpgradeResult{}, noUpgrade: hello.GetNoSelfUpgrade(),
 		logs: map[string]*logQueue{}, shells: map[string]*Shell{}, ceiling: hello.GetCeiling(),
 	}
 	a.mu.Lock()

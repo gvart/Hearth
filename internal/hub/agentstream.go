@@ -183,6 +183,7 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 		case *agentv1.AgentMessage_Facts:
 			log.DebugContext(ctx, "facts")
 			sess.setCeiling(p.Facts.GetCeiling())
+			sess.setNoUpgrade(p.Facts.GetNoSelfUpgrade())
 			s.forgetNetEdges(deviceID, p.Facts.GetCeiling())
 			if err := s.registry.ReportFacts(ctx, deviceID, p.Facts); err != nil {
 				log.WarnContext(ctx, "record facts", "err", err)
@@ -195,6 +196,8 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 			sess.deliverScan(p.ScanResult)
 		case *agentv1.AgentMessage_DockerResult:
 			sess.deliverDocker(p.DockerResult)
+		case *agentv1.AgentMessage_UpgradeResult:
+			sess.deliverUpgrade(p.UpgradeResult)
 		case *agentv1.AgentMessage_MetricsBatch:
 			s.recordMetrics(ctx, log, deviceID, p.MetricsBatch)
 		case *agentv1.AgentMessage_LogLines:

@@ -167,6 +167,10 @@ const (
 	DeviceDockerStart   Action = "device.docker.start"
 	DeviceDockerStop    Action = "device.docker.stop"
 	DeviceDockerRestart Action = "device.docker.restart"
+	// DeviceUpgrade has a device's agent replace its own binary with the
+	// hearth of a release, checked against the release's checksums.txt,
+	// and restart (#347).
+	DeviceUpgrade Action = "device.upgrade"
 	// MCPTokenCreate creates a bearer token for an MCP client.
 	MCPTokenCreate Action = "mcp.token.create" //nolint:gosec // an action name
 	// MCPTokenRevoke revokes an MCP client's token.
@@ -486,6 +490,12 @@ var rules = map[Action]rule{
 	DeviceDockerStart:   {class: Safe, actors: []string{ActorWeb, ActorMCP}},
 	DeviceDockerStop:    {class: Safe, actors: []string{ActorWeb, ActorMCP}},
 	DeviceDockerRestart: {class: Safe, actors: []string{ActorWeb, ActorMCP}},
+	// An upgrade replaces the program that enforces the device's ceiling,
+	// with whatever the release holds: as dangerous as an arbitrary
+	// command. Only a signed-in admin, with the password again, asks for
+	// one (the CLI does through the web API); never an automation or an
+	// MCP client.
+	DeviceUpgrade: {class: Dangerous, actors: []string{ActorWeb}},
 	// A plan only parses the file.
 	AutomationPlan: {class: Read, actors: []string{ActorMCP}},
 	// An applied automation runs on its own, again and again, long after the
