@@ -90,6 +90,18 @@ export interface CreatedToken {
   join_command: string;
 }
 
+/** An enrollment token not used yet nor expired, without its secret. */
+export interface PendingToken {
+  /** The handle the audit log names it by (actor token/<id>), and what `hearth token revoke` takes. */
+  id: string;
+  /** The device name it gives; absent, the device takes its hostname. */
+  name?: string;
+  labels: Record<string, string>;
+  /** It lets a capable device become a hub: revoking it asks for the password again. */
+  hub: boolean;
+  expires_at: string;
+}
+
 /** One per-hub configuration item compared across the cluster's hubs: host_flags. */
 export interface ConfigDriftItem {
   item: string;
@@ -733,6 +745,8 @@ export const api = {
    * asks for the admin password again.
    */
   createToken: (opts: CreateTokenOptions = {}) => request<CreatedToken>('POST', '/tokens', opts),
+  pendingTokens: async () => (await request<{ tokens: PendingToken[] }>('GET', '/tokens')).tokens,
+  revokeToken: (id: string) => request<undefined>('DELETE', `/tokens/${encodeURIComponent(id)}`),
   audit: (filter: AuditFilter, before?: number | string) => {
     const q = new URLSearchParams();
     for (const [k, v] of Object.entries(filter)) {

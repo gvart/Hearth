@@ -12,6 +12,7 @@ import { DeviceSparklines } from './DeviceSparklines.tsx';
 import { Meter } from './Meter.tsx';
 import { NetworkDevices } from './NetworkDevices.tsx';
 import { NetworkScanButton, NetworkScanResult } from './NetworkScan.tsx';
+import { PendingTokens } from './PendingTokens.tsx';
 import { PluginDevices } from './PluginDevices.tsx';
 import { StatusDot } from './StatusDot.tsx';
 import { UnmanagedHosts } from './UnmanagedHosts.tsx';
@@ -259,6 +260,7 @@ export function DevicesPage() {
             </table>
           </div>
         )}
+        <PendingTokens now={now} />
         <NetworkDevices now={now} />
         <UnmanagedHosts now={now} onAdd={addDevice} />
         <TalosNodes now={now} onSelect={open} />

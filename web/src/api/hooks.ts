@@ -23,6 +23,7 @@ import {
   type LogLine,
   type MetricsRange,
   type NetworkHostState,
+  type PendingToken,
 } from './client.ts';
 import { useWithReauth } from './reauth.ts';
 import { applyScanDone, scanInterrupted, scanStarted, scanTimeoutMs, type NetworkScanState } from '../networkscan.ts';
@@ -52,6 +53,7 @@ export const keys = {
   panels: ['panels'] as const,
   guestPanel: (token: string) => ['guest-panel', token] as const,
   dashboardTokens: ['dashboard-tokens'] as const,
+  pendingTokens: ['tokens', 'pending'] as const,
 };
 
 /** A run moves on by itself on the hub, so it is polled until it has ended. */
@@ -258,9 +260,29 @@ export function useMetricsSparklines() {
 /** Creates an enrollment token; a hub-eligible one asks for the admin password first. */
 export function useCreateToken() {
   const withReauth = useWithReauth();
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: (opts: CreateTokenOptions = {}) =>
       opts.hub ? withReauth(() => api.createToken(opts)) : api.createToken(opts),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.pendingTokens }),
+  });
+}
+
+/** A token leaves the list once a device enrolls with it or it expires, so the list is polled. */
+const pendingTokensRefreshMs = 15_000;
+
+/** The enrollment tokens not used yet nor expired. */
+export function usePendingTokens() {
+  return useQuery({ queryKey: keys.pendingTokens, queryFn: api.pendingTokens, refetchInterval: pendingTokensRefreshMs });
+}
+
+/** Revokes an unused enrollment token; a hub-eligible one asks for the admin password first. */
+export function useRevokeToken() {
+  const withReauth = useWithReauth();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (t: PendingToken) => (t.hub ? withReauth(() => api.revokeToken(t.id)) : api.revokeToken(t.id)),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.pendingTokens }),
   });
 }
 

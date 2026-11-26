@@ -14,7 +14,8 @@ export type TipId =
   | 'audit'
   | 'policy'
   | 'cluster'
-  | 'devicehub';
+  | 'devicehub'
+  | 'tokens';
 
 export interface TipText {
   /** What the "?" is about, for a screen reader: "About runbooks". */
@@ -112,5 +113,13 @@ export const tips: Record<TipId, TipText> = {
       'Make this device a hub gives a command to run on it; a Mac becomes a hub only this way. Make agent-only removes it from the cluster and gives the command that stops its hub service.',
     ],
     docs: 'cluster.md',
+  },
+  tokens: {
+    about: 'enrollment tokens',
+    lines: [
+      'Add device makes a single-use enrollment token, inside the install command. It is listed here until a device enrolls with it or it expires.',
+      'Revoke one you handed out by mistake: no device can enroll with it. A hub-eligible token may make its device a hub, so revoking it asks for your password again, as creating it did.',
+    ],
+    docs: 'security.md',
   },
 };
