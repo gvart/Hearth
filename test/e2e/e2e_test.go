@@ -139,6 +139,71 @@ func TestHeadlineDemo(t *testing.T) {
 		return d.Status == "online" && d.LastSeen.After(before.LastSeen)
 	})
 	api.waitDevice(ctx, "agent-2", time.Now(), "still offline", func(d device) bool { return d.Status == "offline" })
+
+	// 8. Upgrade agent-1 from the hub (#347) to v0.0.2-e2e, a "newer" build
+	// the releases service serves (HEARTH_RELEASE_BASE_URL). The agent
+	// checks the archive, swaps its binary and exits with status 75; a loop
+	// that restarts it only on 75 stands in for systemd's Restart=. It must
+	// reconnect reporting the new version.
+	s.compose(ctx, "exec", "-T", "agent-1", "pkill", "-f", "hearth agent run")
+	s.waitAgentExited(ctx, "agent-1", 5*time.Second)
+	s.superviseAgent(ctx, "agent-1")
+	upgradeAt := time.Now()
+	var up struct {
+		Version string `json:"version"`
+		From    string `json:"from"`
+	}
+	for {
+		// The supervised agent may not have reconnected yet: 409.
+		err := api.postWithin(ctx, UpgradedWithin, "/api/v1/devices/"+ids["agent-1"]+"/upgrade",
+			map[string]string{"version": upgradeTo}, &up)
+		if err == nil {
+			break
+		}
+		if !strings.Contains(err.Error(), "409") || time.Since(upgradeAt) > DeviceVisibleWithin {
+			t.Fatalf("upgrade agent-1: %v", err)
+		}
+		if err := sleep(ctx, 200*time.Millisecond); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if up.Version != upgradeTo {
+		t.Fatalf("upgrade agent-1 answered %+v, want %s", up, upgradeTo)
+	}
+	api.waitDevice(ctx, "agent-1", upgradeAt.Add(UpgradedWithin), "back on "+upgradeTo, func(d device) bool {
+		return d.Status == "online" && d.AgentVersion != nil && d.AgentVersion.Agent == upgradeTo
+	})
+	t.Logf("agent-1: upgrade %s → %s, back online in %v", up.From, up.Version, time.Since(upgradeAt).Round(time.Millisecond))
+	if _, err := s.run(ctx, "exec", "-T", "agent-1", "test", "-f", "/usr/bin/hearth.prev"); err != nil {
+		t.Errorf("agent-1 kept no /usr/bin/hearth.prev: %v", err)
+	}
+	if logs := s.compose(ctx, "logs", "--no-color", "agent-1"); !strings.Contains(logs, "agent exited with status 75") {
+		t.Errorf("agent-1 did not exit with status 75 after the upgrade:\n%s", logs)
+	}
+}
+
+// UpgradedWithin bounds an agent upgrade from a local release server: the
+// download and check, the restart and the reconnect.
+const UpgradedWithin = 30 * time.Second
+
+// upgradeTo is the "newer" release test/e2e/Dockerfile builds.
+const upgradeTo = "v0.0.2-e2e"
+
+// superviseAgent runs `hearth agent run` in the service's container as a
+// service manager would: started again whenever it exits with status 75
+// (an upgrade), and only then.
+func (s *stack) superviseAgent(ctx context.Context, name string) {
+	s.t.Helper()
+	s.compose(ctx, "exec", "--detach", name, "sh", "-c",
+		"while :; do hearth agent run --data-dir "+agentDataDir+" >/proc/1/fd/1 2>&1; s=$?; "+
+			"echo \"agent exited with status $s\" >/proc/1/fd/1; [ $s -eq 75 ] || exit $s; done")
+}
+
+// postWithin is post with a timeout of d instead of the client's.
+func (c *apiClient) postWithin(ctx context.Context, d time.Duration, path string, body, into any) error {
+	long := *c
+	long.http = &http.Client{Jar: c.http.Jar, Timeout: d}
+	return long.post(ctx, path, body, into)
 }
 
 // stack is one compose project, torn down (with its volumes) when the test ends.
@@ -215,7 +280,7 @@ func (s *stack) waitAgentExited(ctx context.Context, name string, timeout time.D
 			return
 		}
 		if time.Now().After(deadline) {
-			s.t.Fatalf("%s: hearth agent run still running %v after the revoke", name, timeout)
+			s.t.Fatalf("%s: hearth agent run still running after %v", name, timeout)
 		}
 		if err := sleep(ctx, 200*time.Millisecond); err != nil {
 			s.t.Fatal(err)
@@ -372,6 +437,10 @@ type device struct {
 	Hostname string    `json:"hostname"`
 	Status   string    `json:"status"`
 	LastSeen time.Time `json:"last_seen"`
+	// AgentVersion is the version the agent reports.
+	AgentVersion *struct {
+		Agent string `json:"agent"`
+	} `json:"agent_version"`
 }
 
 func (c *apiClient) devices(ctx context.Context) ([]device, error) {
