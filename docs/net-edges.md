@@ -10,16 +10,16 @@ device's page under **Neighbors and connections**. No router, switch or conntrac
 
 ## Turn it on, per device
 
-Connections say who talks to whom, so an agent reports nothing until you start it with
-`--allow-net-edges`:
+Connections say who talks to whom, so an agent reports nothing until you turn **Neighbors** on in
+the device's **Capabilities** card, or from a hub host:
 
 ```sh
-hearth agent run --allow-net-edges
+hearth device capabilities pi --set net-edges=on
 ```
 
-The flag is part of the device's [capability ceiling](guardrails.md#device-capability-ceiling): the
-hub cannot turn it on from its side, and drops a report from an agent whose ceiling does not allow
-it. Drop the flag and restart the agent, and the hub forgets what it reported before.
+It is part of the device's [capability ceiling](guardrails.md#device-capability-ceiling): the hub
+drops a report from an agent whose ceiling does not allow it. Turn it off again and the hub forgets
+what it reported before. The agent's own `--allow-net-edges` flag turns it on from the device.
 
 Only Linux agents report edges for now; on other systems the agent refuses the flag.
 

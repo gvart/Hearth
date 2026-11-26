@@ -119,7 +119,7 @@ func TestRunbookCheckFromDeviceThroughItsAgent(t *testing.T) {
 			if len(entries) != 1 || entries[0].Target != "dev-1-name" || entries[0].ActorID != automation.RunbookActor("rb") {
 				t.Fatalf("audit = %+v, want one automation.probe entry for the runbook on dev-1-name", entries)
 			}
-			if !tc.sent && (entries[0].Decision != policy.Deny || !strings.Contains(entries[0].Result, "--allow-probe")) {
+			if !tc.sent && (entries[0].Decision != policy.Deny || !strings.Contains(entries[0].Result, "turn Checks on")) {
 				t.Errorf("audit = %+v, want denied beyond the ceiling", entries[0])
 			}
 		})

@@ -39,7 +39,7 @@ func unknownDevice() (*agentv1.ProbeResult, error) {
 }
 
 func TestRunbookCheckFromDevice(t *testing.T) {
-	beyond := fmt.Errorf("device pi: %w (start its agent with --allow-probe)", policy.ErrBeyondCeiling)
+	beyond := fmt.Errorf("device pi: %w (turn Checks on in its Capabilities)", policy.ErrBeyondCeiling)
 	denyReads := policy.Config{Actors: map[string]map[policy.Class]policy.Mode{policy.ActorAutomation: {policy.Read: policy.ModeDeny}}}
 	tests := []struct {
 		name   string

@@ -77,7 +77,7 @@ Pi, a NAS. Hearth adopts a Kubernetes cluster through its kubeconfig and takes d
 and Swarm. Hearth's automations are driven by what happens (a device goes offline, a check fails, a
 metric runs hot), where Komodo's run on a schedule, by hand or on a git push. And every Hearth action
 passes a deny-by-default policy, can be held for approval, and is limited by what the device itself
-allows (`--allow-restart`, `--allow-exec`).
+allows (its **Capabilities**: restarts, programs, a terminal).
 
 **Together.** Komodo deploys; Hearth watches and heals. Keep deploying your stacks with Komodo and let
 a Hearth automation restart a container (`docker:NAME`) when its health check fails. There is no
@@ -152,7 +152,7 @@ On `main`, Hearth has:
   that restart a systemd unit or Docker container, run a command, call a webhook, send a notification,
   or act on Kubernetes ([Automations](automations.md), [Notifications](notifications.md));
 - one deny-by-default policy for every action, a policy file to allow, confirm or deny each class,
-  approvals, dry runs, a per-device capability ceiling the hub cannot raise, and an audit log with its
+  approvals, dry runs, a per-device capability ceiling the agent enforces, and an audit log with its
   own page in the UI ([Guardrails](guardrails.md), [Security model](security.md));
 - device charts and metric triggers from an existing Prometheus, read-only ([Prometheus](prometheus.md));
 - Kubernetes adopted through a kubeconfig, with nothing installed in the cluster: nodes, workloads,

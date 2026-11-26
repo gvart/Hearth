@@ -173,3 +173,7 @@
     text-align: left;
   }
 }
+
+.caps-note {
+  margin: 0 0 var(--space-2);
+}

@@ -71,10 +71,10 @@ func (s *session) tools() []tool {
 			s.planAutomation),
 		newTool(policy.Safe, "restart_service",
 			"Restart a systemd unit or Docker container on a device, through its agent. service is manager:name, "+
-				"e.g. docker:pihole or systemd:nginx.service; the device's agent must allow it (--allow-restart).",
+				"e.g. docker:pihole or systemd:nginx.service; the device's agent must allow it (Restart services in its Capabilities).",
 			s.restartService),
 		newTool(policy.Dangerous, "exec_command",
-			"Run a command on a device, through its agent; the program must be allowed by the agent (--allow-exec). "+
+			"Run a command on a device, through its agent; the program must be allowed by the agent (Run programs in its Capabilities). "+
 				"Dangerous: usually held until an operator approves it. Returns the exit code, not the output.",
 			s.execCommand),
 		newTool(policy.Dangerous, "apply_automation",

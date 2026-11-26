@@ -155,8 +155,8 @@ func TestAgentsShellNeverBeyondCeiling(t *testing.T) {
 		want    string
 	}{
 		"old agent":         {minor: minShellMinor - 1, ceiling: &agentv1.Ceiling{Shell: true}, want: "too old"},
-		"shell not allowed": {minor: minShellMinor, ceiling: &agentv1.Ceiling{Exec: []string{"/bin/sh"}, Probe: true}, want: "--allow-shell"},
-		"no ceiling":        {minor: minShellMinor, want: "--allow-shell"},
+		"shell not allowed": {minor: minShellMinor, ceiling: &agentv1.Ceiling{Exec: []string{"/bin/sh"}, Probe: true}, want: "turn Terminal on"},
+		"no ceiling":        {minor: minShellMinor, want: "turn Terminal on"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()

@@ -9,22 +9,26 @@ agents support it; Windows agents refuse it.
 
 ## Turning it on
 
-A terminal is off by default, on every device. Start the agent with `--allow-shell`:
+A terminal is off by default, on every device. Turn **Terminal** on in the device's
+**Capabilities** card (it asks for your password again), or from a hub host:
 
 ```sh
-hearth agent run --allow-shell
+hearth device capabilities pi --set shell=on
 ```
+
+The agent applies it at once; turning it off again ends every open terminal on the device. The
+agent's own `--allow-shell` flag turns it on from the device instead, and then the hub cannot turn
+it off.
 
 The shell runs as the agent's user, in its home directory: `$SHELL` when it is set, else
 `/bin/bash`, else `/bin/sh`, as a login shell (`-l`), with `TERM=xterm-256color` and without the
-agent's `HEARTH_*` variables. A terminal can do anything that user can, so `--allow-shell` is the
-same as `--allow-exec` of every program: grant it only where an admin may log in anyway.
+agent's `HEARTH_*` variables. A terminal can do anything that user can, so it is the same as
+allowing every program: grant it only where an admin may log in anyway.
 
-The flag is part of the device's capability ceiling, which the agent reports to the hub. The hub
-refuses a terminal to an agent whose ceiling does not allow it, or that is too old to say (an agent
-from before this release: upgrade it), before asking; the agent refuses again whatever the hub says. The issue's
-`exec: off | allowlist | full` maps onto the flags: no flags is `off`, `--allow-exec <program>` is
-the allowlist, `--allow-shell` is `full`.
+It is part of the device's [capability ceiling](guardrails.md#device-capability-ceiling), which the
+agent reports to the hub. The hub refuses a terminal to an agent whose ceiling does not allow it, or
+that is too old to say (an agent from before this release: upgrade it), before asking; the agent
+refuses again whatever the hub says.
 
 ## HTTPS only
 

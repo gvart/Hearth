@@ -84,8 +84,8 @@ func TestAgentsProbeNeverBeyondCeiling(t *testing.T) {
 		want    string
 	}{
 		"old agent":         {minor: 2, ceiling: &agentv1.Ceiling{Probe: true}, want: "too old"},
-		"probe not allowed": {minor: 3, ceiling: &agentv1.Ceiling{Exec: []string{"/bin/true"}}, want: "--allow-probe"},
-		"no ceiling":        {minor: 3, want: "--allow-probe"},
+		"probe not allowed": {minor: 3, ceiling: &agentv1.Ceiling{Exec: []string{"/bin/true"}}, want: "turn Checks on"},
+		"no ceiling":        {minor: 3, want: "turn Checks on"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()

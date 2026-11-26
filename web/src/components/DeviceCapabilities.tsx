@@ -93,9 +93,9 @@ function CapsBody({ device, caps, applying }: { device: Device; caps: Capabiliti
   return (
     <>
       {mode === 'locked' ? (
-        <p className="notice small">
+        <p className="muted small caps-note">
           This device&apos;s agent runs with <code>--local-ceiling</code>: what the hub may do there is set on the
-          device, with its <code>--allow-*</code> flags. Shown here as it is.
+          device, with its <code>--allow-*</code> flags. Shown here as it is, read-only.
         </p>
       ) : mode === 'upgrade' ? (
         <div className="notice small caps-upgrade">

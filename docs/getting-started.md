@@ -171,6 +171,13 @@ by mistake there, or with `hearth token revoke <id>`.
 The device is in the **Devices** list, online, with its OS, architecture and IP. Click it for its
 facts. Stop the agent and it turns offline after 30 seconds; start it again and it is back at once.
 
+The hub may do nothing on a new device yet. Its **Capabilities** card, on the device's page, turns
+each thing on: logs, containers, a terminal, restarts, programs, checks, a scan from there. The
+agent applies a change at once, with no restart. Turning on a terminal, programs, restarts or
+container control asks for your password again. To keep that on the device alone, add
+`--local-ceiling` at the end of the install command: then only the agent's own `--allow-*` flags
+count (see [Guardrails](guardrails.md#device-capability-ceiling)).
+
 ## 6. Find the rest of your network
 
 On the **Devices** page, click **Scan my network** (or run `hearth network scan` on the hub

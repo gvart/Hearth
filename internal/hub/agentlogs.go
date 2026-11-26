@@ -106,7 +106,7 @@ func (s *agentSession) checkLogs(device string, src *agentv1.LogSource) error {
 	c := s.ceiling
 	s.mu.Unlock()
 	if err := policy.LogsWithinCeiling(c, src); err != nil {
-		return fmt.Errorf("device %s: %w (start its agent with --allow-logs)", device, err)
+		return fmt.Errorf("device %s: %w (turn Logs on in its Capabilities)", device, err)
 	}
 	return nil
 }

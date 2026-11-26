@@ -176,7 +176,7 @@ func (s *agentSession) checkProbe(device string) error {
 	c := s.ceiling
 	s.mu.Unlock()
 	if err := policy.ProbeWithinCeiling(c); err != nil {
-		return fmt.Errorf("device %s: %w (start its agent with --allow-probe)", device, err)
+		return fmt.Errorf("device %s: %w (turn Checks on in its Capabilities)", device, err)
 	}
 	return nil
 }

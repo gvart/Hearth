@@ -707,7 +707,7 @@ agent again.
 
 ## CLI on a member's host
 
-`hearth token create`, `hearth token revoke`, `hearth device revoke`, `hearth device hub`, `hearth admin set-password`, `hearth cluster token
+`hearth token create`, `hearth token revoke`, `hearth device revoke`, `hearth device hub`, `hearth device capabilities --set`, `hearth admin set-password`, `hearth cluster token
 create`, `hearth cluster status`, `hearth cluster promote|demote|remove` and `hearth cluster ca
 rotate|finish|abort|status` work on a member's host while its hub runs: they go through the hub's
 local control socket, and the running hub decides them. With the hub stopped they refuse, since

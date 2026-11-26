@@ -9,16 +9,18 @@ Open a device and scroll to **Containers**.
 
 ## Turn it on, per device
 
-The hub reaches no container until you start the agent with `--allow-docker`:
+The hub reaches no container until you turn **Containers** on in the device's **Capabilities**
+card: **Read** lists them and reads their logs, **Control** also starts, stops and restarts them (it
+asks for your password again). From a hub host:
 
 ```sh
-hearth agent run --allow-docker
+hearth device capabilities pi --set docker=read      # or docker=on for control
 ```
 
-The flag is part of the device's [capability ceiling](guardrails.md#device-capability-ceiling): the
-hub cannot turn it on from its side, refuses a request to an agent that does not report it, and the
-agent refuses it again. `--allow-restart docker:NAME` and `--allow-logs docker:NAME` are separate
-and unchanged: they are what automations and the **Logs** section use.
+It is part of the device's [capability ceiling](guardrails.md#device-capability-ceiling): the hub
+refuses a request to an agent that does not report it, and the agent refuses it again. The agent's
+own `--allow-docker` flag grants control from the device. **Restart services** and **Logs**
+(`docker:NAME` entries) are separate: they are what automations and the **Logs** section use.
 
 ### Which socket
 
