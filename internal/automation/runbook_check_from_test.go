@@ -80,7 +80,7 @@ func TestRunbookCheckFromDevice(t *testing.T) {
 		},
 		{
 			name: "the hub's view of the ceiling refuses probes", within: "0s", check: beyond, answer: up,
-			status: RunbookFailed, step: stepDenied, errIn: "--allow-probe", probes: 0,
+			status: RunbookFailed, step: stepDenied, errIn: "turn Checks on", probes: 0,
 			decision: policy.Deny, result: beyond.Error(),
 		},
 		{

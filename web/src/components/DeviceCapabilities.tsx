@@ -44,7 +44,7 @@ export function CapabilitiesLink({ children }: { children: string }) {
  * or too old to take capabilities from the hub, is shown read-only.
  */
 export function DeviceCapabilities({ device }: { device: Device }) {
-  const q = useCapabilities(device.id);
+  const q = useCapabilities(device.id, device.status === 'online');
   const caps = q.data;
   const isApplying = caps !== undefined && device.status === 'online' && !applied(caps);
   return (

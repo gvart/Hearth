@@ -14,7 +14,7 @@ card: **Read** lists them and reads their logs, **Control** also starts, stops a
 asks for your password again). From a hub host:
 
 ```sh
-hearth device capabilities pi --set docker=read      # or docker=on for control
+hearth device capabilities <device-id> --set docker=read      # or docker=on for control
 ```
 
 It is part of the device's [capability ceiling](guardrails.md#device-capability-ceiling): the hub

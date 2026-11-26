@@ -85,6 +85,8 @@ test('applied is false until the agent reports what was set', () => {
   const set = caps({ hub: withSwitch(emptyCeiling(), 'logs', true) });
   assert.equal(applied(set), false);
   assert.equal(applied({ ...set, effective: set.hub }), true);
+  // An agent too old to take it never applies it: nothing to wait for.
+  assert.equal(applied({ ...set, manageable: false }), true);
 });
 
 test('allowsService matches globs as the agent does', () => {

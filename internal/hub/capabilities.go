@@ -216,17 +216,20 @@ func (a *api) putCapabilities(w http.ResponseWriter, r *http.Request) {
 		a.writeActionError(w, r, "read the device's capabilities", err)
 		return
 	}
-	if cur.Locked {
-		writeError(w, http.StatusConflict, "locked", "this device's agent runs with --local-ceiling: its capabilities are set on the device")
-		return
-	}
 	change := ChangeOf(cur.Hub.Proto(), next)
+	reauth := a.recentAuth(r)
 	preq := policy.Request{
 		ActorKind: policy.ActorWeb, ActorID: remoteHost(r), Action: change.Action, Target: d.ID,
 		Detail: change.Detail(d.ID),
-	}
-	if change.Action == policy.DeviceCapabilitiesRaise {
-		preq.Precheck = a.recentAuth(r)
+		Precheck: func(ctx context.Context) error {
+			if cur.Locked {
+				return ErrCeilingLocked
+			}
+			if change.Action == policy.DeviceCapabilitiesRaise {
+				return reauth(ctx)
+			}
+			return nil
+		},
 	}
 	body, err := protojson.Marshal(next)
 	if err != nil {
@@ -238,6 +241,9 @@ func (a *api) putCapabilities(w http.ResponseWriter, r *http.Request) {
 	})
 	switch {
 	case err == nil:
+	case errors.Is(err, ErrCeilingLocked):
+		writeError(w, http.StatusConflict, "locked", ErrCeilingLocked.Error())
+		return
 	case errors.Is(err, store.ErrSchemaTooOld):
 		writeError(w, http.StatusConflict, "schema_too_old", "the hub cluster's database predates managed capabilities: upgrade every hub of the cluster first")
 		return
@@ -257,6 +263,10 @@ func (a *api) putCapabilities(w http.ResponseWriter, r *http.Request) {
 	out.Hub, out.UpdatedAt, out.UpdatedBy = *ceilingJSON(next), &at, policy.ActorWeb+"/"+remoteHost(r)
 	writeJSON(w, http.StatusOK, out)
 }
+
+// ErrCeilingLocked refuses, as an audited denial, a change to the
+// capabilities of a device whose agent runs with --local-ceiling.
+var ErrCeilingLocked = fmt.Errorf("this device's agent runs with --local-ceiling: its capabilities are set on the device: %w", policy.ErrDenied)
 
 // CapabilityKeys are the capabilities SetCapability takes, in the order the
 // web UI and the CLI show them.

@@ -82,9 +82,6 @@ func runDeviceCapabilities(ctx context.Context, dataDir, deviceID string, sets [
 	if len(sets) == 0 {
 		return printCapabilities(out, d, caps)
 	}
-	if caps.Locked {
-		return fmt.Errorf("device %s runs its agent with --local-ceiling: its capabilities are set on the device", deviceID)
-	}
 	next := caps.Hub
 	for _, s := range sets {
 		key, value, ok := strings.Cut(s, "=")
@@ -106,6 +103,12 @@ func runDeviceCapabilities(ctx context.Context, dataDir, deviceID string, sets [
 	change := hub.ChangeOf(caps.Hub.Proto(), c)
 	done, err := adminDo(ctx, dataDir, st, out, dryRun, policy.Request{
 		Action: change.Action, Target: deviceID, Detail: change.Detail(deviceID),
+		Precheck: func(context.Context) error {
+			if caps.Locked {
+				return hub.ErrCeilingLocked
+			}
+			return nil
+		},
 	}, func(ctx context.Context) error {
 		return st.DeviceCeilings().Set(ctx, deviceID, body, policy.ActorAdmin+"/"+adminActor(), time.Now())
 	})

@@ -13,11 +13,11 @@ const path = (id: string) => `/devices/${encodeURIComponent(id)}/capabilities`;
 const capsKey = (id: string) => ['devices', id, 'capabilities'] as const;
 
 /** The device's capabilities; polled often while the agent has not applied the last change. */
-export function useCapabilities(id: string) {
+export function useCapabilities(id: string, online: boolean) {
   return useQuery({
     queryKey: capsKey(id),
     queryFn: () => request<Capabilities>('GET', path(id)),
-    refetchInterval: (q) => (q.state.data && !applied(q.state.data) ? 2000 : 15000),
+    refetchInterval: (q) => (online && q.state.data && !applied(q.state.data) ? 2000 : 15000),
   });
 }
 

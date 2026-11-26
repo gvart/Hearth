@@ -98,7 +98,7 @@ func TestRunDockerWithoutTheCeiling(t *testing.T) {
 		_, err = h.agents.Docker(t.Context(), id, listRequest(), 5*time.Second)
 		return !errors.Is(err, hub.ErrAgentNotConnected)
 	})
-	if !errors.Is(err, policy.ErrBeyondCeiling) || !strings.Contains(err.Error(), "--allow-docker") {
+	if !errors.Is(err, policy.ErrBeyondCeiling) || !strings.Contains(err.Error(), "turn Containers on") {
 		t.Errorf("list = %v, want beyond the ceiling", err)
 	}
 	if n := hits.Load(); n != 0 {

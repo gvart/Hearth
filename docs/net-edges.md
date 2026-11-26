@@ -14,7 +14,7 @@ Connections say who talks to whom, so an agent reports nothing until you turn **
 the device's **Capabilities** card, or from a hub host:
 
 ```sh
-hearth device capabilities pi --set net-edges=on
+hearth device capabilities <device-id> --set net-edges=on
 ```
 
 It is part of the device's [capability ceiling](guardrails.md#device-capability-ceiling): the hub

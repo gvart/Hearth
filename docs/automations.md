@@ -312,7 +312,7 @@ Two gates stand before anything runs on a device, and both must agree:
   device's **Capabilities** card, or from a hub host:
 
   ```sh
-  hearth device capabilities pi --set restart=systemd:pihole-FTL.service,docker:jellyfin \
+  hearth device capabilities <device-id> --set restart=systemd:pihole-FTL.service,docker:jellyfin \
     --set exec=/usr/bin/df
   ```
 

@@ -183,8 +183,8 @@ it, but an enrolled device on that network can. Name the device after the subnet
 the same scan (ARP sweep, mDNS, LAN reverse DNS) there and sends the hosts it found to the hub:
 
 ```sh
-# let the hub sweep that subnet from the device named nas (or Network scan in its Capabilities card)
-hearth device capabilities nas --set scan=10.0.5.0/24
+# let the hub sweep that subnet from the device nas (Network scan in its Capabilities card, or:)
+hearth device capabilities <device-id> --set scan=10.0.5.0/24
 # on the hub: the LAN from the hub itself, the VLAN from the device named nas
 hearth hub --discover-subnet 192.168.1.0/24 --discover-subnet 10.0.5.0/24@nas
 ```

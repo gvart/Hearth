@@ -15,8 +15,8 @@ Turn **Logs** on in the device's **Capabilities** card (every source), or **Rest
 a hub host:
 
 ```sh
-hearth device capabilities pi --set logs=on
-hearth device capabilities pi --set 'logs=systemd:pihole-FTL.service,docker:*,systemd-user:backup-*'
+hearth device capabilities <device-id> --set logs=on
+hearth device capabilities <device-id> --set 'logs=systemd:pihole-FTL.service,docker:*,systemd-user:backup-*'
 ```
 
 The agent applies it at once, and ends a stream it no longer allows. Its own `--allow-logs` flag,

@@ -233,11 +233,11 @@ parts, and the agent uses both:
 - **Set on the hub.** Open the device and use its **Capabilities** card, or the CLI on a hub host:
 
   ```sh
-  hearth device capabilities pi                      # what is on, and where it is set
-  hearth device capabilities pi --set logs=on --set docker=read
-  hearth device capabilities pi --set restart=docker:jellyfin,systemd:pihole-FTL.service
-  hearth device capabilities pi --set exec=/usr/bin/df --set shell=on
-  hearth device capabilities pi --set shell=off
+  hearth device capabilities <device-id>               # what is on, and where it is set
+  hearth device capabilities <device-id> --set logs=on --set docker=read
+  hearth device capabilities <device-id> --set restart=docker:jellyfin,systemd:pihole-FTL.service
+  hearth device capabilities <device-id> --set exec=/usr/bin/df --set shell=on
+  hearth device capabilities <device-id> --set shell=off
   ```
 
   Each capability is on or off. On is all of it (every log source, every service, the private IPv4

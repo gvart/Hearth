@@ -13,7 +13,7 @@ A terminal is off by default, on every device. Turn **Terminal** on in the devic
 **Capabilities** card (it asks for your password again), or from a hub host:
 
 ```sh
-hearth device capabilities pi --set shell=on
+hearth device capabilities <device-id> --set shell=on
 ```
 
 The agent applies it at once; turning it off again ends every open terminal on the device. The

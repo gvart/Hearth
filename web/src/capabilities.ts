@@ -262,7 +262,7 @@ export function raisesRisky(old: Ceiling, next: Ceiling): boolean {
 
 /** Whether the agent reports what the hub and its flags add up to: false while it has not applied a change yet. */
 export function applied(caps: Capabilities): boolean {
-  if (!caps.effective || caps.locked) {
+  if (!caps.effective || caps.locked || !caps.manageable) {
     return true;
   }
   return capInfo.every((i) => {

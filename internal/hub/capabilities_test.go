@@ -134,14 +134,6 @@ func TestCapabilitiesRefused(t *testing.T) {
 	if resp := f.do(t, http.MethodPut, "/api/v1/devices/nope/capabilities", `{"hub":{}}`, c); resp.StatusCode != http.StatusNotFound {
 		t.Errorf("unknown device = %d", resp.StatusCode)
 	}
-	// A device installed with --local-ceiling is managed on the device.
-	reportHello(t, f, "pi", agentHello(10, true, &agentv1.Ceiling{Shell: true}))
-	if resp := f.do(t, http.MethodPut, capsPath, `{"hub":{}}`, c); resp.StatusCode != http.StatusConflict || errorCode(t, resp) != "locked" {
-		t.Errorf("locked device = %d %s, want 409 locked", resp.StatusCode, resp.body)
-	}
-	if got := decode[CapabilitiesJSON](t, f.do(t, http.MethodGet, capsPath, "", c)); !got.Locked {
-		t.Error("locked not reported")
-	}
 	// An older agent cannot take a ceiling.
 	reportHello(t, f, "pi", agentHello(9, false, &agentv1.Ceiling{}))
 	if got := decode[CapabilitiesJSON](t, f.do(t, http.MethodGet, capsPath, "", c)); got.Manageable {
@@ -182,5 +174,24 @@ func TestChangeOf(t *testing.T) {
 		if got := ChangeOf(tt.old, tt.next); got.Action != tt.want {
 			t.Errorf("ChangeOf(%v, %v) = %+v, want %s", tt.old, tt.next, got, tt.want)
 		}
+	}
+}
+
+// TestCapabilitiesLocked: a device installed with --local-ceiling is managed
+// on the device; the hub refuses a change, audited as a denial, and stores
+// nothing.
+func TestCapabilitiesLocked(t *testing.T) {
+	f := newWebAdminFixture(t, policy.Config{})
+	reportHello(t, f, "pi", agentHello(10, true, &agentv1.Ceiling{Shell: true}))
+	c := sessionCookie(t, f.login(t, testPassword))
+	if resp := f.do(t, http.MethodPut, capsPath, `{"hub":{"probe":true}}`, c); resp.StatusCode != http.StatusConflict || errorCode(t, resp) != "locked" {
+		t.Errorf("locked device = %d %s, want 409 locked", resp.StatusCode, resp.body)
+	}
+	if e := auditOf(t, f, policy.DeviceCapabilitiesSet); len(e) != 1 || e[0].Decision != policy.Deny {
+		t.Errorf("the refusal of a locked device is not audited as a denial: %+v", e)
+	}
+	got := decode[CapabilitiesJSON](t, f.do(t, http.MethodGet, capsPath, "", c))
+	if !got.Locked || got.Hub.Probe {
+		t.Errorf("locked device = %+v, want locked and nothing stored", got)
 	}
 }

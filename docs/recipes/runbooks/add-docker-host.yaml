@@ -5,12 +5,12 @@
 # Prerequisites:
 #   - The machine (any hardware) has internet access, ca-certificates, curl and
 #     gpg (apt-get install ca-certificates curl gnupg), and runs a Hearth agent
-#     that is enrolled with the hub, runs as root and is allowed to run:
-#       hearth agent run --allow-exec /bin/sh --allow-exec /bin/rm \
-#         --allow-exec /usr/bin/apt-get --allow-exec /usr/bin/docker \
-#         --allow-exec /usr/sbin/usermod --allow-exec /usr/bin/gpasswd
-#     Allowing sh is a wide grant: the agent can then run anything. Remove it
-#     from the agent again after the run.
+#     that is enrolled with the hub, runs as root and is allowed to run these
+#     (Run programs in its Capabilities card, or on the hub host):
+#       hearth device capabilities <device-id> \
+#         --set exec=/bin/sh,/bin/rm,/usr/bin/apt-get,/usr/bin/docker,/usr/sbin/usermod,/usr/bin/gpasswd
+#     Allowing sh is a wide grant: the agent can then run anything. Take it
+#     out of Run programs again after the run.
 #   - The agent's systemd unit keeps /usr and /etc read-only (ProtectSystem=full)
 #     and forbids setuid files (RestrictSUIDSGID=yes), which a package may
 #     install. For the run, lift both with a drop-in, and restart the agent:
@@ -30,9 +30,8 @@
 # For Podman instead: it is in Debian's and Ubuntu's own repositories, so no
 # repository or key is needed (apt-get install podman); this runbook does Docker.
 #
-# Afterwards, let the agent restart containers with --allow-restart
-# docker:<container>. The Docker integration (issue #64) adds --allow-docker
-# for containers once it ships.
+# Afterwards, turn Containers on in the device's Capabilities card, and list
+# the containers Hearth may restart under Restart services (docker:<container>).
 #
 # The exec actions are dangerous: they are held or denied until the hub grants
 # them, for example:
@@ -201,5 +200,5 @@ steps:
     action:
       type: log
       message: >-
-        Docker host ${{ vars.device }} is ready. Remove the agent's systemd drop-in and its sh grant, and
-        add --allow-restart docker:<container> for the containers Hearth should restart.
+        Docker host ${{ vars.device }} is ready. Remove the agent's systemd drop-in, take sh out of its
+        Run programs, and list the containers Hearth should restart under Restart services.
