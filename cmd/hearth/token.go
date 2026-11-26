@@ -3,10 +3,14 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"slices"
+	"strings"
+	"text/tabwriter"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -15,6 +19,7 @@ import (
 	"github.com/gvart/hearth/internal/hub"
 	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/policy"
+	"github.com/gvart/hearth/internal/store"
 )
 
 type tokenCreateOptions struct {
@@ -31,8 +36,103 @@ type tokenCreateOptions struct {
 
 func newTokenCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "token", Short: "Manage enrollment tokens"}
-	cmd.AddCommand(newTokenCreateCmd())
+	cmd.AddCommand(newTokenCreateCmd(), newTokenListCmd(), newTokenRevokeCmd())
 	return cmd
+}
+
+func newTokenListCmd() *cobra.Command {
+	var dataDir string
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List the enrollment tokens not used yet nor expired",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			st, err := openExistingHubStore(cmd.Context(), dataDir)
+			if err != nil {
+				return err
+			}
+			defer st.Close()
+			toks, err := st.Tokens().ListUnused(cmd.Context(), time.Now())
+			if err != nil {
+				return err
+			}
+			tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+			fmt.Fprintln(tw, "ID\tNAME\tHUB\tEXPIRES\tLABELS")
+			for _, t := range toks {
+				name, hub := cmp.Or(t.Name, "-"), "no"
+				if t.HubEligible {
+					hub = "yes"
+				}
+				labels := make([]string, 0, len(t.Labels))
+				for k, v := range t.Labels {
+					labels = append(labels, k+"="+v)
+				}
+				slices.Sort(labels)
+				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", t.ID, name, hub, t.ExpiresAt.Local().Format(time.DateTime),
+					cmp.Or(strings.Join(labels, ","), "-"))
+			}
+			if err := tw.Flush(); err != nil {
+				return fmt.Errorf("write tokens: %w", err)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir("hub"), "hub data directory (env HEARTH_DATA_DIR)")
+	return cmd
+}
+
+func newTokenRevokeCmd() *cobra.Command {
+	var (
+		dataDir string
+		dryRun  bool
+	)
+	cmd := &cobra.Command{
+		Use:   "revoke <id>",
+		Short: "Revoke an unused enrollment token: no device can enroll with it",
+		Long: "Revoke an unused enrollment token by the ID `hearth token list` shows: no device can enroll with it,\n" +
+			"and a hub-eligible one can no longer make a device a hub.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runTokenRevoke(cmd.Context(), dataDir, args[0], dryRun, cmd.OutOrStdout())
+		},
+	}
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir("hub"), "hub data directory (env HEARTH_DATA_DIR)")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "decide and audit the revocation without revoking the token")
+	return cmd
+}
+
+func runTokenRevoke(ctx context.Context, dataDir, id string, dryRun bool, out io.Writer) error {
+	st, err := openExistingHubStore(ctx, dataDir)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+	now := time.Now()
+	tok, found := st.Tokens().Unused(ctx, id, now)
+	done, err := adminDo(ctx, dataDir, st, out, dryRun, policy.Request{
+		Action: policy.TokenRevoke, Target: id, Detail: hub.RevokeTokenDetail(tok),
+	}, func(ctx context.Context) error {
+		if found != nil {
+			return found
+		}
+		return st.Tokens().Revoke(ctx, id, now)
+	})
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		return fmt.Errorf("no enrollment token has ID %s (see `hearth token list`)", id)
+	case errors.Is(err, store.ErrTokenUsed):
+		return fmt.Errorf("enrollment token %s was used or revoked already", id)
+	case errors.Is(err, store.ErrTokenExpired):
+		return fmt.Errorf("enrollment token %s has expired already", id)
+	case errors.Is(err, store.ErrNotOwner):
+		return fmt.Errorf("enrollment token %s belongs to hub %s: revoke it there", id, store.OwnerOf(err))
+	case err != nil || !done:
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "Revoked enrollment token %s.\n", id); err != nil {
+		return fmt.Errorf("write result: %w", err)
+	}
+	return nil
 }
 
 func newTokenCreateCmd() *cobra.Command {
