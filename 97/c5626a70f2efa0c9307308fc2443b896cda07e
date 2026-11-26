@@ -1,0 +1,32 @@
+proto/hearth/agent/v1/agent.proto
+  s_18b57982fdff93::t_5fa5aee17d3396 32,49,80-87,590-618
+cmd/hearth/main.go
+  s_18b57982fdff93::t_1b0883b221f0cb 47-49
+internal/agent/run.go
+  s_18b57982fdff93::t_0b973f76f90fa8 14,33-34,76-80,106-110,145-146,148,168-171,192-195,401,487-488
+internal/agent/upgrade.go
+  s_18b57982fdff93::t_dcaf0abf897840 1-23,25-336
+  s_18b57982fdff93::t_30e34a00c1ab44 24
+  s_18b57982fdff93::t_e1237d632247f8 337-367
+internal/agent/upgrade_test.go
+  s_18b57982fdff93::t_5c9ee9aee9d876 139-140,160-161
+  s_18b57982fdff93::t_90e17302fe039d 1-138,141-159,162-256
+internal/proto/hearth/agent/v1/agent.pb.go
+  s_18b57982fdff93::t_ecf1b4b9be155e 44,186-194,244-247,270-271,287,420-428,473-476,497-498,573-581,714-727,3837-3994,3999,4015-4017,4032-4033,4037,4055-4057,4260-4271,4289,4340-4344,4358-4416,4436,4449,4483
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "97c5626a70f2efa0c9307308fc2443b896cda07e",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
