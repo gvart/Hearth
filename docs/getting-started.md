@@ -228,7 +228,8 @@ After you upgrade the hub, the **Devices** page marks each device whose agent is
 date**. On the device's page, the **Agent version** card has **Upgrade agent**: after your admin
 password, the agent downloads the hub's release from GitHub, checks its SHA-256 against the release's
 `checksums.txt`, replaces `/usr/local/bin/hearth` (keeping the old one as `hearth.prev`) and restarts.
-The device is back on the new version within seconds. From a terminal, on any machine that reaches
+The device is back on the new version within seconds; the dialog's **Release** field takes another
+release instead of the hub's. From a terminal, on any machine that reaches
 the hub's web address:
 
 ```sh

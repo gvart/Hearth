@@ -95,6 +95,9 @@ function UpgradeDialog({ device, version, onClose }: { device: Device; version: 
     };
   }, [target, back]);
   const err = upgrade.error;
+  // Empty: the hub's own version, as `hearth device upgrade` without --version.
+  const [release, setRelease] = useState('');
+  const to = release.trim() || version.hub;
 
   return (
     <Modal className="dialog" labelledBy="upgrade-title" onClose={onClose}>
@@ -108,7 +111,7 @@ function UpgradeDialog({ device, version, onClose }: { device: Device; version: 
         className="form"
         onSubmit={(e) => {
           e.preventDefault();
-          upgrade.mutate();
+          upgrade.mutate(release.trim() || undefined);
         }}
       >
         <section className="plan" aria-label="What this does">
@@ -117,11 +120,26 @@ function UpgradeDialog({ device, version, onClose }: { device: Device; version: 
             <span className="pill pill-bad">dangerous</span>
           </div>
           <p>
-            The agent downloads Hearth <span className="mono">{version.hub}</span> from GitHub, checks it against the
+            The agent downloads Hearth <span className="mono">{to}</span> from GitHub, checks it against the
             release&apos;s checksums, replaces its binary (keeping the old one as <code>hearth.prev</code>) and restarts.
           </p>
           <p>The device is offline for a few seconds while the agent restarts.</p>
         </section>
+        {target === undefined ? (
+          <label className="field">
+            Release
+            <input
+              value={release}
+              pattern="\s*v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?\s*"
+              title="A release tag, such as v0.1.0"
+              placeholder={`${version.hub} (the hub's)`}
+              disabled={upgrade.isPending}
+              onChange={(e) => {
+                setRelease(e.target.value);
+              }}
+            />
+          </label>
+        ) : null}
         {err ? (
           <div className="error-box" role="alert">
             {upgradeRefusal(err)}
@@ -129,7 +147,7 @@ function UpgradeDialog({ device, version, onClose }: { device: Device; version: 
         ) : null}
         {upgrade.isPending ? (
           <p className="muted small" role="status">
-            Downloading and checking {version.hub} on the device… If policy holds this action, approve it on the
+            Downloading and checking {to} on the device… If policy holds this action, approve it on the
             Approvals page.
           </p>
         ) : null}
@@ -151,7 +169,7 @@ function UpgradeDialog({ device, version, onClose }: { device: Device; version: 
           </button>
           {target !== undefined ? null : (
             <button className="btn btn-danger" type="submit" disabled={upgrade.isPending}>
-              {upgrade.isPending ? 'Upgrading…' : `Upgrade to ${version.hub}`}
+              {upgrade.isPending ? 'Upgrading…' : `Upgrade to ${to}`}
             </button>
           )}
         </div>

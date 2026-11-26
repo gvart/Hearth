@@ -235,6 +235,12 @@ automation or an MCP client.
   its image), refuses every upgrade.
 - To replace its binary, the agent's systemd unit has `ReadWritePaths=/usr/local/bin` on top of
   `ProtectSystem=full`; the rest of its hardening stays.
+- On a device that is also a hub, the hub runs the same `/usr/local/bin/hearth`: it keeps running the
+  old version until its service restarts, and then runs the one the agent installed, an older one
+  too when the admin named an older release. Upgrade the hubs of a cluster first.
+- `HEARTH_RELEASE_BASE_URL` in a hub's environment makes it read releases from another server, as
+  it does for `install.sh`. It is for the end-to-end tests only, not a supported setting: a release
+  server you do not control could hand your agents any binary its `checksums.txt` names.
 
 ## Integrations
 

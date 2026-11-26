@@ -24,8 +24,8 @@ export function useDeviceDetail(id: string, enabled: boolean) {
   return useQuery({ queryKey: ['devices', id, 'detail'], queryFn: () => upgradeApi.device(id), enabled });
 }
 
-/** Upgrades the device's agent: dangerous, with the password again. */
+/** Upgrades the device's agent to a release, or to the hub's own: dangerous, with the password again. */
 export function useUpgradeDevice(id: string) {
   const withReauth = useWithReauth();
-  return useMutation({ mutationFn: () => withReauth(() => upgradeApi.upgrade(id)) });
+  return useMutation({ mutationFn: (version?: string) => withReauth(() => upgradeApi.upgrade(id, version)) });
 }
