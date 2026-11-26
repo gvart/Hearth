@@ -166,19 +166,33 @@ func TestUpgradeDeviceRefused(t *testing.T) {
 		code     string
 		audit    string // the decision audited, "" for none
 	}{
-		{name: "re-auth missing", minor: minUpgradeMinor, set: linuxAmd64, noReauth: true,
-			status: http.StatusForbidden, code: "reauth_required", audit: policy.Deny},
-		{name: "policy deny", pcfg: deny, minor: minUpgradeMinor, set: linuxAmd64,
-			status: http.StatusForbidden, code: "forbidden", audit: policy.Deny},
-		{name: "old agent", minor: minUpgradeMinor - 2, set: linuxAmd64,
-			status: http.StatusConflict, code: "agent_too_old", audit: policy.Deny},
-		{name: "kubernetes agent", minor: minUpgradeMinor,
-			set:    func(h *agentv1.Hello) { h.NoSelfUpgrade = "this agent runs in a Kubernetes pod: upgrade its image instead" },
-			status: http.StatusConflict, code: "cannot_upgrade", audit: policy.Deny},
-		{name: "dev hub without a version", version: "dev", minor: minUpgradeMinor, set: linuxAmd64,
-			status: http.StatusConflict, code: "no_version"},
-		{name: "not a release", minor: minUpgradeMinor, set: linuxAmd64, body: `{"version":"latest"}`,
-			status: http.StatusBadRequest, code: "bad_request"},
+		{
+			name: "re-auth missing", minor: minUpgradeMinor, set: linuxAmd64, noReauth: true,
+			status: http.StatusForbidden, code: "reauth_required", audit: policy.Deny,
+		},
+		{
+			name: "policy deny", pcfg: deny, minor: minUpgradeMinor, set: linuxAmd64,
+			status: http.StatusForbidden, code: "forbidden", audit: policy.Deny,
+		},
+		{
+			name: "old agent", minor: minUpgradeMinor - 2, set: linuxAmd64,
+			status: http.StatusConflict, code: "agent_too_old", audit: policy.Deny,
+		},
+		{
+			name: "kubernetes agent", minor: minUpgradeMinor,
+			set: func(h *agentv1.Hello) {
+				h.NoSelfUpgrade = "this agent runs in a Kubernetes pod: upgrade its image instead"
+			},
+			status: http.StatusConflict, code: "cannot_upgrade", audit: policy.Deny,
+		},
+		{
+			name: "dev hub without a version", version: "dev", minor: minUpgradeMinor, set: linuxAmd64,
+			status: http.StatusConflict, code: "no_version",
+		},
+		{
+			name: "not a release", minor: minUpgradeMinor, set: linuxAmd64, body: `{"version":"latest"}`,
+			status: http.StatusBadRequest, code: "bad_request",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

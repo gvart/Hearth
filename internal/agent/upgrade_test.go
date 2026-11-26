@@ -56,7 +56,7 @@ func testUpgrader(t *testing.T) (*upgrader, string) {
 		t.Skip("the fake release's hearth is a shell script")
 	}
 	exe := filepath.Join(t.TempDir(), "hearth")
-	if err := os.WriteFile(exe, []byte("old"), 0o755); err != nil {
+	if err := os.WriteFile(exe, []byte("old"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	u := newUpgrader(exe, func(string) string { return "" })
@@ -145,24 +145,39 @@ func TestUpgradeRefused(t *testing.T) {
 		denied  bool
 		wantErr string
 	}{
-		{name: "sha256 mismatch", req: &agentv1.UpgradeRequest{Version: "v1.2.3", Url: serve(t, archive, false), Sha256: other},
-			wantErr: "checksum mismatch"},
-		{name: "too large, by Content-Length", req: &agentv1.UpgradeRequest{Version: "v1.2.3", Url: serve(t, archive, false), Sha256: sum},
-			setup: func(u *upgrader) { u.maxArchive = 100 }, wantErr: "larger than"},
-		{name: "too large, while reading", req: &agentv1.UpgradeRequest{Version: "v1.2.3", Url: serve(t, archive, true), Sha256: sum},
-			setup: func(u *upgrader) { u.maxArchive = 100 }, wantErr: "larger than"},
-		{name: "binary too large", req: &agentv1.UpgradeRequest{Version: "v1.2.3", Url: serve(t, archive, false), Sha256: sum},
-			setup: func(u *upgrader) { u.maxBinary = 10 }, wantErr: "larger than"},
-		{name: "no hearth in the archive", req: &agentv1.UpgradeRequest{Version: "v1.2.3", Url: serve(t, noBinary, false), Sha256: noBinarySum},
-			wantErr: "no hearth binary"},
-		{name: "another version inside", req: &agentv1.UpgradeRequest{Version: "v1.2.4", Url: serve(t, archive, false), Sha256: sum},
-			wantErr: "reports version"},
-		{name: "not found", req: &agentv1.UpgradeRequest{Version: "v1.2.3", Url: notFound.URL + "/hearth.tar.gz", Sha256: sum},
-			wantErr: "404"},
+		{
+			name: "sha256 mismatch", req: &agentv1.UpgradeRequest{Version: "v1.2.3", Url: serve(t, archive, false), Sha256: other},
+			wantErr: "checksum mismatch",
+		},
+		{
+			name: "too large, by Content-Length", req: &agentv1.UpgradeRequest{Version: "v1.2.3", Url: serve(t, archive, false), Sha256: sum},
+			setup: func(u *upgrader) { u.maxArchive = 100 }, wantErr: "larger than",
+		},
+		{
+			name: "too large, while reading", req: &agentv1.UpgradeRequest{Version: "v1.2.3", Url: serve(t, archive, true), Sha256: sum},
+			setup: func(u *upgrader) { u.maxArchive = 100 }, wantErr: "larger than",
+		},
+		{
+			name: "binary too large", req: &agentv1.UpgradeRequest{Version: "v1.2.3", Url: serve(t, archive, false), Sha256: sum},
+			setup: func(u *upgrader) { u.maxBinary = 10 }, wantErr: "larger than",
+		},
+		{
+			name: "no hearth in the archive", req: &agentv1.UpgradeRequest{Version: "v1.2.3", Url: serve(t, noBinary, false), Sha256: noBinarySum},
+			wantErr: "no hearth binary",
+		},
+		{
+			name: "another version inside", req: &agentv1.UpgradeRequest{Version: "v1.2.4", Url: serve(t, archive, false), Sha256: sum},
+			wantErr: "reports version",
+		},
+		{
+			name: "not found", req: &agentv1.UpgradeRequest{Version: "v1.2.3", Url: notFound.URL + "/hearth.tar.gz", Sha256: sum},
+			wantErr: "404",
+		},
 		{name: "no sha256", req: &agentv1.UpgradeRequest{Version: "v1.2.3", Url: serve(t, archive, false)}, denied: true, wantErr: "SHA-256"},
 		{name: "no version", req: &agentv1.UpgradeRequest{Version: "latest", Url: serve(t, archive, false), Sha256: sum}, denied: true, wantErr: "version"},
 		{name: "file URL", req: &agentv1.UpgradeRequest{Version: "v1.2.3", Url: "file:///etc/passwd", Sha256: sum}, denied: true, wantErr: "URL"},
-		{name: "kubernetes", req: &agentv1.UpgradeRequest{Version: "v1.2.3", Url: serve(t, archive, false), Sha256: sum},
+		{
+			name: "kubernetes", req: &agentv1.UpgradeRequest{Version: "v1.2.3", Url: serve(t, archive, false), Sha256: sum},
 			setup: func(u *upgrader) {
 				u.refusal = selfUpgradeRefusal("linux", func(k string) string {
 					if k == "KUBERNETES_SERVICE_HOST" {
@@ -170,7 +185,8 @@ func TestUpgradeRefused(t *testing.T) {
 					}
 					return ""
 				})
-			}, denied: true, wantErr: "upgrade its image"},
+			}, denied: true, wantErr: "upgrade its image",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

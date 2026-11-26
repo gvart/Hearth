@@ -52,13 +52,19 @@ func TestDeviceUpgradeCmd(t *testing.T) {
 		args                                  []string
 		status                                int
 	}{
-		{name: "hub's version", status: http.StatusOK, body: `{"version":"v1.2.0","from":"v1.0.0"}`,
-			wantReq: `{}`, wantOut: "Device pi is back on v1.2.0."},
-		{name: "explicit version", args: []string{"--version", "v1.2.0"}, status: http.StatusOK,
-			body: `{"version":"v1.2.0","from":"v1.0.0"}`, wantReq: `{"version":"v1.2.0"}`, wantOut: "(v1.0.0 → v1.2.0)"},
-		{name: "old agent", status: http.StatusConflict,
+		{
+			name: "hub's version", status: http.StatusOK, body: `{"version":"v1.2.0","from":"v1.0.0"}`,
+			wantReq: `{}`, wantOut: "Device pi is back on v1.2.0.",
+		},
+		{
+			name: "explicit version", args: []string{"--version", "v1.2.0"}, status: http.StatusOK,
+			body: `{"version":"v1.2.0","from":"v1.0.0"}`, wantReq: `{"version":"v1.2.0"}`, wantOut: "(v1.0.0 → v1.2.0)",
+		},
+		{
+			name: "old agent", status: http.StatusConflict,
 			body:    `{"error":"the agent is too old to upgrade itself: upgrade it once with the installer","code":"agent_too_old"}`,
-			wantReq: `{}`, wantErr: "upgrade pi: the agent is too old"},
+			wantReq: `{}`, wantErr: "upgrade pi: the agent is too old",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

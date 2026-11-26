@@ -30,7 +30,7 @@ func TestUpgradeOverStream(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(archive) }))
 	t.Cleanup(srv.Close)
 	exe := filepath.Join(t.TempDir(), "hearth")
-	if err := os.WriteFile(exe, []byte("old"), 0o755); err != nil {
+	if err := os.WriteFile(exe, []byte("old"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
