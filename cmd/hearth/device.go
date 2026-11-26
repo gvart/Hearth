@@ -3,10 +3,13 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"time"
@@ -14,14 +17,78 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/gvart/hearth/internal/cluster"
+	"github.com/gvart/hearth/internal/hub"
 	"github.com/gvart/hearth/internal/policy"
 	"github.com/gvart/hearth/internal/store"
 )
 
 func newDeviceCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "device", Short: "Manage enrolled devices"}
-	cmd.AddCommand(newDeviceRevokeCmd(), newDeviceHubCmd(), newDeviceCapabilitiesCmd())
+	cmd.AddCommand(newDeviceRevokeCmd(), newDeviceHubCmd(), newDeviceCapabilitiesCmd(), newDeviceUpgradeCmd())
 	return cmd
+}
+
+// deviceUpgradeWait bounds how long `hearth device upgrade` waits for the
+// agent's upgrade, and deviceBackWait for it to come back on the new
+// version.
+const (
+	deviceUpgradeWait = 6 * time.Minute
+	deviceBackWait    = time.Minute
+)
+
+func newDeviceUpgradeCmd() *cobra.Command {
+	var hubURL, version string
+	cmd := &cobra.Command{
+		Use:   "upgrade <device-id>",
+		Short: "Upgrade a device's agent to the hub's version, or to --version",
+		Long: "Asks the device's agent to upgrade itself: it downloads the release archive from GitHub, checks it\n" +
+			"against the release's checksums.txt, replaces its binary (keeping the old one as hearth.prev) and\n" +
+			"restarts. This uses the hub's API with a signed-in session: the admin password comes from\n" +
+			"HEARTH_ADMIN_PASSWORD or is asked for. An agent older than remote upgrades is upgraded once by\n" +
+			"re-running the installer on the device; its page in the web UI shows the command.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			lines := &lineReader{in: cmd.InOrStdin(), buf: bufio.NewReader(cmd.InOrStdin()), prompt: cmd.ErrOrStderr()}
+			// Signing in enters the password: it counts as entering it again.
+			c, err := loginRunbookClient(cmd.Context(), hubURL, lines)
+			if err != nil {
+				return err
+			}
+			c.http.Timeout = deviceUpgradeWait
+			return c.upgradeDevice(cmd.Context(), args[0], version, cmd.OutOrStdout())
+		},
+	}
+	cmd.Flags().StringVar(&hubURL, "hub-url", envOr("HEARTH_HUB_URL", "http://127.0.0.1:"+defaultHTTPPort),
+		"the hub's web address (env HEARTH_HUB_URL)")
+	cmd.Flags().StringVar(&version, "version", "", "the release to upgrade to, such as v0.1.0 (default: the hub's version)")
+	return cmd
+}
+
+// upgradeDevice asks for the upgrade, then waits for the agent to come back
+// on the new version.
+func (c *runbookClient) upgradeDevice(ctx context.Context, id, version string, out io.Writer) error {
+	_, _ = fmt.Fprintf(out, "Upgrading the agent of %s…\n", id)
+	var done hub.UpgradeJSON
+	path := "/api/v1/devices/" + url.PathEscape(id)
+	if err := c.do(ctx, http.MethodPost, path+"/upgrade", hub.UpgradeJSON{Version: version}, &done); err != nil {
+		return fmt.Errorf("upgrade %s: %w", id, err)
+	}
+	_, _ = fmt.Fprintf(out, "The agent replaced its binary (%s → %s) and is restarting.\n", done.From, done.Version)
+	ctx, cancel := context.WithTimeout(ctx, deviceBackWait)
+	defer cancel()
+	for {
+		var d hub.DeviceJSON
+		if err := c.do(ctx, http.MethodGet, path, nil, &d); err == nil && d.Status == store.StatusOnline &&
+			d.AgentVersion != nil && d.AgentVersion.Agent == done.Version {
+			_, err := fmt.Fprintf(out, "Device %s is back on %s.\n", id, done.Version)
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("the agent of %s did not come back on %s within %s: check its service on the device", id, done.Version, deviceBackWait)
+		case <-time.After(time.Second):
+		}
+	}
 }
 
 func newDeviceHubCmd() *cobra.Command {

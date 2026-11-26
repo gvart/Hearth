@@ -17,6 +17,9 @@ UMask=0077
 # Hardening that keeps host fact collection (/proc, /sys, mounts) working.
 NoNewPrivileges=yes
 ProtectSystem=full
+# The agent upgrades itself when an admin asks: it replaces its own binary,
+# /usr/local/bin/hearth, by a rename in that directory.
+ReadWritePaths=/usr/local/bin
 ProtectHome=read-only
 PrivateTmp=yes
 ProtectKernelModules=yes
