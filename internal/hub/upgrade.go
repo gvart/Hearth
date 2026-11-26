@@ -251,7 +251,7 @@ func (a *api) upgradeDevice(w http.ResponseWriter, r *http.Request) {
 		},
 	}, func(ctx context.Context) error {
 		if !releaseTargetRE.MatchString(f.ReleaseTarget) {
-			return fmt.Errorf("device %s: no release of Hearth for its platform (%q): %w", d.ID, f.ReleaseTarget, errNoSelfUpgrade)
+			return fmt.Errorf("device %s: %w", d.ID, &refusedUpgrade{Why: "there is no release of Hearth for its platform (" + f.ReleaseTarget + ")"})
 		}
 		url, sum, err := a.releases.asset(ctx, version, f.ReleaseTarget)
 		if err != nil {
@@ -262,7 +262,7 @@ func (a *api) upgradeDevice(w http.ResponseWriter, r *http.Request) {
 		case err != nil:
 			return err
 		case res.GetDenied():
-			return fmt.Errorf("device %s: the agent refused: %s: %w", d.ID, res.GetError(), policy.ErrBeyondCeiling)
+			return fmt.Errorf("device %s: %w", d.ID, &refusedUpgrade{Why: "the agent refused: " + res.GetError()})
 		case !res.GetOk():
 			return fmt.Errorf("%w: %s", errUpgradeFailed, res.GetError())
 		}
@@ -278,13 +278,17 @@ func (a *api) upgradeDevice(w http.ResponseWriter, r *http.Request) {
 
 // writeUpgradeError answers an upgrade that policy refused or that failed.
 func (a *api) writeUpgradeError(w http.ResponseWriter, r *http.Request, err error) {
+	var refused *refusedUpgrade
 	switch {
 	case errors.Is(err, errReauthRequired):
 		writeError(w, http.StatusForbidden, "reauth_required", "enter the admin password again to do this")
 	case errors.Is(err, errAgentTooOld):
-		writeError(w, http.StatusConflict, "agent_too_old", errAgentTooOld.Error())
-	case errors.Is(err, policy.ErrBeyondCeiling):
+		writeError(w, http.StatusConflict, "agent_too_old", agentTooOld)
+	case errors.As(err, &refused):
 		// The reason (a Kubernetes pod, an upgrade running) is no secret.
+		writeError(w, http.StatusConflict, "cannot_upgrade", refused.Why)
+	case errors.Is(err, policy.ErrBeyondCeiling):
+		// Forwarded from another master: only its message is left.
 		writeError(w, http.StatusConflict, "cannot_upgrade", err.Error())
 	case errors.Is(err, policy.ErrDenied):
 		writeError(w, http.StatusForbidden, "forbidden", "denied by policy")

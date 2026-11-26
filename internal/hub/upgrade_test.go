@@ -193,6 +193,9 @@ func TestUpgradeDeviceRefused(t *testing.T) {
 			if resp.StatusCode != tt.status || errorCode(t, resp) != tt.code {
 				t.Fatalf("upgrade = %d %s, want %d %s", resp.StatusCode, resp.body, tt.status, tt.code)
 			}
+			if tt.status == http.StatusConflict && strings.Contains(string(resp.body), "denied by policy") {
+				t.Errorf("refusal %s says more than its reason", resp.body)
+			}
 			select {
 			case req := <-reqs:
 				t.Fatalf("the agent got %v", req)

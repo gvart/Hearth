@@ -17,15 +17,26 @@ import (
 // UpgradeRequest: it upgrades itself (#347).
 const minUpgradeMinor = 11
 
+// agentTooOld is what an admin is told when the agent is too old to
+// upgrade itself.
+const agentTooOld = "the agent is too old to upgrade itself: upgrade it once with the installer on the device; " +
+	"remote upgrades work after that"
+
 // errAgentTooOld refuses an upgrade to an agent older than minUpgradeMinor,
 // and errNoSelfUpgrade one to an agent that said it does not upgrade
 // itself. Both are beyond what the device allows, so policy audits them as
 // denials.
 var (
-	errAgentTooOld = fmt.Errorf("the agent is too old to upgrade itself: upgrade it once with the installer on the device; "+
-		"remote upgrades work after that: %w", policy.ErrBeyondCeiling)
+	errAgentTooOld   = fmt.Errorf("%s: %w", agentTooOld, policy.ErrBeyondCeiling)
 	errNoSelfUpgrade = fmt.Errorf("the agent does not upgrade itself: %w", policy.ErrBeyondCeiling)
 )
+
+// refusedUpgrade is an upgrade the agent refuses, or said it would: Why is
+// its reason, for the admin.
+type refusedUpgrade struct{ Why string }
+
+func (e *refusedUpgrade) Error() string { return e.Why + ": " + errNoSelfUpgrade.Error() }
+func (e *refusedUpgrade) Unwrap() error { return errNoSelfUpgrade }
 
 // setNoUpgrade records why the agent said, in its facts, that it does not
 // upgrade itself.
@@ -44,7 +55,7 @@ func (s *agentSession) checkUpgrade(device string) error {
 	why := s.noUpgrade
 	s.mu.Unlock()
 	if why != "" {
-		return fmt.Errorf("device %s: %s: %w", device, why, errNoSelfUpgrade)
+		return fmt.Errorf("device %s: %w", device, &refusedUpgrade{Why: why})
 	}
 	return nil
 }
