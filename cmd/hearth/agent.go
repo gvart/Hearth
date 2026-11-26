@@ -30,14 +30,20 @@ func newAgentRunCmd() *cobra.Command {
 		dataDir      string
 		ceiling      agent.Ceiling
 		dockerSocket string
+		localCeiling bool
 	)
 	cmd := &cobra.Command{
 		Use:   "run",
 		Short: "Connect to the hub and keep reporting this device",
 		Long: "Connect to the hub this device joined and keep the connection up: report host facts,\n" +
 			"send heartbeats and reconnect with backoff when the hub is unreachable. Stops on SIGINT/SIGTERM.\n\n" +
-			"--allow-exec and --allow-restart are this device's capability ceiling: the only commands and\n" +
-			"services the hub (its automations) may run or restart here. Without them it may run nothing.\n" +
+			"What the hub may do here, its capability ceiling, is managed from the hub: an admin turns each\n" +
+			"capability on or off on the device's page in the web UI (Capabilities) or with `hearth device\n" +
+			"capabilities`, and the agent applies it at once and saves it in its data dir. The --allow-* flags\n" +
+			"add to that, and the hub cannot take away what they grant. --local-ceiling makes the flags the\n" +
+			"whole ceiling: the agent then ignores what the hub sets.\n\n" +
+			"--allow-exec and --allow-restart name commands and services the hub (its automations) may run\n" +
+			"or restart here.\n" +
 			"--allow-probe lets the hub's http, tcp and dns checks run from here (from: <device>).\n" +
 			"--allow-logs names the logs the hub's UI may stream from here; logs can hold secrets, so none\n" +
 			"are readable without it.\n" +
@@ -48,7 +54,8 @@ func newAgentRunCmd() *cobra.Command {
 			"--allow-net-edges reports this device's neighbours and established TCP connections to the hub\n" +
 			"every minute (Linux); connections say who talks to whom, so nothing is reported without it.\n" +
 			"--allow-docker lets the hub list this device's Docker or Podman containers and images, read the last\n" +
-			"lines of a container's log, and start, stop and restart containers; nothing else of the engine.",
+			"lines of a container's log, and start, stop and restart containers; nothing else of the engine.\n" +
+			"--local-ceiling ignores the capabilities the hub sets for this device, and any it saved before.",
 		Example: "  hearth agent run --allow-restart systemd:pihole-FTL.service --allow-restart docker:jellyfin \\\n" +
 			"    --allow-exec /usr/bin/df --allow-logs 'systemd:pihole-FTL.service' --allow-logs 'docker:*'",
 		Args: cobra.NoArgs,
@@ -71,9 +78,6 @@ func newAgentRunCmd() *cobra.Command {
 			if ceiling.NetEdges && !agent.NetEdgesSupported {
 				return errors.New("--allow-net-edges: network edges are only reported on Linux")
 			}
-			if dockerSocket != "" && !ceiling.Docker {
-				return errors.New("--docker-socket: needs --allow-docker")
-			}
 			if ceiling.Shell && !agent.ShellSupported {
 				return errors.New("--allow-shell: interactive shells are not supported on this platform")
 			}
@@ -84,6 +88,7 @@ func newAgentRunCmd() *cobra.Command {
 				Version:      cmd.Root().Version,
 				Log:          newLogger(cmd.ErrOrStderr()),
 				Ceiling:      ceiling,
+				LocalCeiling: localCeiling,
 				DockerSocket: dockerSocket,
 				Connected:    connected,
 				Failed:       failed,
@@ -110,8 +115,10 @@ func newAgentRunCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&ceiling.Docker, "allow-docker", false,
 		"let the hub list Docker or Podman containers and images here, read a container's last log lines, and\n"+
 			"start, stop and restart containers")
+	cmd.Flags().BoolVar(&localCeiling, "local-ceiling", false,
+		"make the --allow-* flags this device's whole capability ceiling: ignore the capabilities the hub sets")
 	cmd.Flags().StringVar(&dockerSocket, "docker-socket", "",
-		"the container engine's unix socket for --allow-docker (default "+agent.DefaultDockerSocket+
+		"the container engine's unix socket, for Docker (default "+agent.DefaultDockerSocket+
 			", then Podman's\n$XDG_RUNTIME_DIR/podman/podman.sock and /run/podman/podman.sock)")
 	return cmd
 }

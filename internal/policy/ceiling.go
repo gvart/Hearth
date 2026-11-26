@@ -30,12 +30,35 @@ func WithinCeiling(c *agentv1.Ceiling, req *agentv1.ExecRequest) error {
 		return nil
 	case *agentv1.ExecRequest_Restart:
 		service := a.Restart.GetManager() + ":" + a.Restart.GetName()
-		if !slices.Contains(c.GetRestart(), service) {
+		if a.Restart.GetName() == "" || !matchEntry(c.GetRestart(), a.Restart.GetManager(), a.Restart.GetName()) {
 			return fmt.Errorf("restart %s: %w", service, ErrBeyondCeiling)
 		}
 		return nil
 	}
 	return errors.New("unknown action")
+}
+
+// matchEntry reports whether one of entries, each manager:pattern, allows
+// name of manager: the pattern is a name or a glob (path.Match, so "*"
+// allows every name).
+func matchEntry(entries []string, manager, name string) bool {
+	for _, e := range entries {
+		m, pattern, ok := strings.Cut(e, ":")
+		if !ok || m != manager {
+			continue
+		}
+		if ok, err := path.Match(pattern, name); err == nil && ok {
+			return true
+		}
+	}
+	return false
+}
+
+// IsPattern reports whether a manager:pattern ceiling entry is a glob rather
+// than one name: it allows a set of names, and names no one service.
+func IsPattern(entry string) bool {
+	_, pattern, _ := strings.Cut(entry, ":")
+	return strings.ContainsAny(pattern, `*?[\`)
 }
 
 // ProbeWithinCeiling checks a ProbeRequest against a device's capability
@@ -59,14 +82,8 @@ func LogsWithinCeiling(c *agentv1.Ceiling, src *agentv1.LogSource) error {
 	if src.GetManager() == "" || src.GetName() == "" {
 		return errors.New("empty log source")
 	}
-	for _, e := range c.GetLogs() {
-		manager, pattern, ok := strings.Cut(e, ":")
-		if !ok || manager != src.GetManager() {
-			continue
-		}
-		if m, err := path.Match(pattern, src.GetName()); err == nil && m {
-			return nil
-		}
+	if matchEntry(c.GetLogs(), src.GetManager(), src.GetName()) {
+		return nil
 	}
 	return fmt.Errorf("logs %s:%s: %w", src.GetManager(), src.GetName(), ErrBeyondCeiling)
 }
@@ -135,12 +152,13 @@ func ValidContainer(ref string) bool {
 
 // DockerWithinCeiling checks a DockerRequest against a device's capability
 // ceiling c, as the hub does before it sends one and the agent does again
-// before it asks the engine. It returns an error wrapping ErrBeyondCeiling
-// unless c allows docker, and one wrapping ErrDenied for a request no agent
-// takes: an unknown operation or verb, or an invalid container. A nil c
-// allows nothing.
+// before it asks the engine. Listing and reading a log need docker or
+// docker_read; a start, stop or restart needs docker. It returns an error
+// wrapping ErrBeyondCeiling unless c allows req, and one wrapping ErrDenied
+// for a request no agent takes: an unknown operation or verb, or an invalid
+// container. A nil c allows nothing.
 func DockerWithinCeiling(c *agentv1.Ceiling, req *agentv1.DockerRequest) error {
-	if !c.GetDocker() {
+	if !c.GetDocker() && !c.GetDockerRead() {
 		return fmt.Errorf("docker: %w", ErrBeyondCeiling)
 	}
 	var container string
@@ -148,6 +166,9 @@ func DockerWithinCeiling(c *agentv1.Ceiling, req *agentv1.DockerRequest) error {
 	case *agentv1.DockerRequest_List:
 		return nil
 	case *agentv1.DockerRequest_Action:
+		if !c.GetDocker() {
+			return fmt.Errorf("docker %s: read only: %w", op.Action.GetVerb(), ErrBeyondCeiling)
+		}
 		if !slices.Contains(DockerVerbs, op.Action.GetVerb()) {
 			return fmt.Errorf("docker %q: not a container action (start, stop, restart): %w", op.Action.GetVerb(), ErrDenied)
 		}

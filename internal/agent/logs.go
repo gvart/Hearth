@@ -95,8 +95,7 @@ func logArgv(src *agentv1.LogSource, tail int) []string {
 // and the ring is dropped, as soon as its last stream ends. Nothing is kept
 // for a source nobody reads.
 type logStreams struct {
-	ceiling Ceiling
-	log     *slog.Logger
+	log *slog.Logger
 	// argv builds the command of a source; logArgv, or a fake in tests.
 	argv func(src *agentv1.LogSource, tail int) []string
 	// freeMemory runs once the last active source is gone:
@@ -107,15 +106,22 @@ type logStreams struct {
 	// procs are the source goroutines; wait waits for them.
 	procs sync.WaitGroup
 
-	mu      sync.Mutex
+	mu sync.Mutex
+	// ceiling is the effective ceiling; setCeiling changes it.
+	ceiling Ceiling
 	sources map[string]*logSource         // by manager:name, active only
 	cancels map[string]context.CancelFunc // by request id
+	// srcs are the sources of the open streams, and revoked the streams a
+	// lower ceiling ended, by request id.
+	srcs    map[string]*agentv1.LogSource
+	revoked map[string]bool
 }
 
 func newLogStreams(c Ceiling, log *slog.Logger) *logStreams {
 	return &logStreams{
 		ceiling: c, log: log, argv: logArgv, freeMemory: debug.FreeOSMemory,
 		sources: map[string]*logSource{}, cancels: map[string]context.CancelFunc{},
+		srcs: map[string]*agentv1.LogSource{}, revoked: map[string]bool{},
 	}
 }
 
@@ -154,6 +160,7 @@ func (l *logStreams) stream(ctx context.Context, req *agentv1.LogRequest,
 		tail = int(min(t, logRing))
 	}
 
+	parent := ctx
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	l.mu.Lock()
@@ -162,12 +169,25 @@ func (l *logStreams) stream(ctx context.Context, req *agentv1.LogRequest,
 		send(ctx, msg(&agentv1.LogLines{End: true, Error: "duplicate log request id"}))
 		return
 	}
+	// A lower ceiling may have come since the check.
+	if err := l.checkLocked(src); err != nil {
+		l.mu.Unlock()
+		send(ctx, msg(&agentv1.LogLines{End: true, Denied: errors.Is(err, policy.ErrBeyondCeiling), Error: err.Error()}))
+		return
+	}
 	l.cancels[id] = cancel
+	l.srcs[id] = src
 	s, cursor := l.acquireLocked(src, tail)
 	l.mu.Unlock()
 	defer l.release(id, s)
 	l.log.InfoContext(ctx, "log stream opened", "id", id, "source", s.key)
 	defer l.log.InfoContext(ctx, "log stream closed", "id", id, "source", s.key)
+	defer func() {
+		// Tell the hub why, else its reader waits for lines that never come.
+		if l.wasRevoked(id) {
+			send(parent, msg(&agentv1.LogLines{End: true, Denied: true, Error: "logs of " + s.key + " were turned off on this device"}))
+		}
+	}()
 
 	for {
 		lines, next, skipped, changed, ended, errText := s.since(cursor)
@@ -186,8 +206,36 @@ func (l *logStreams) stream(ctx context.Context, req *agentv1.LogRequest,
 	}
 }
 
+// setCeiling makes c the ceiling of the streams to come, and ends each open
+// stream whose source c no longer allows.
+func (l *logStreams) setCeiling(ctx context.Context, c Ceiling) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.ceiling = c
+	for id, src := range l.srcs {
+		if l.checkLocked(src) != nil {
+			l.log.InfoContext(ctx, "ending log stream: its source was turned off", "id", id)
+			l.revoked[id] = true
+			l.cancels[id]()
+		}
+	}
+}
+
+// wasRevoked reports whether setCeiling ended the stream of request id.
+func (l *logStreams) wasRevoked(id string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.revoked[id]
+}
+
 // check refuses src unless the ceiling allows it.
 func (l *logStreams) check(src *agentv1.LogSource) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.checkLocked(src)
+}
+
+func (l *logStreams) checkLocked(src *agentv1.LogSource) error {
 	if !slices.Contains(logManagers, src.GetManager()) {
 		return fmt.Errorf("unknown log manager %q", src.GetManager())
 	}
@@ -228,6 +276,8 @@ func (l *logStreams) release(id string, s *logSource) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	delete(l.cancels, id)
+	delete(l.srcs, id)
+	delete(l.revoked, id)
 	s.refs--
 	if s.refs > 0 {
 		return

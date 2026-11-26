@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"path"
 	"slices"
 	"strings"
 	"time"
@@ -17,14 +18,17 @@ import (
 	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
 )
 
-// Ceiling is what this device lets the hub run: its capability ceiling. The
-// hub can never grant more. The zero Ceiling allows nothing.
+// Ceiling is what this device lets the hub run: its capability ceiling, the
+// union of the agent's flags and the ceiling the hub manages for it (see
+// ceiling.go). The agent enforces it itself. The zero Ceiling allows
+// nothing.
 type Ceiling struct {
 	// Exec are the programs the hub may run, matched exactly against argv[0]
 	// as the hub sends it, with any arguments.
 	Exec []string
 	// Restart are the services the hub may restart, as manager:name, where
-	// manager is systemd, systemd-user or docker.
+	// manager is systemd, systemd-user or docker and name a name or a glob
+	// such as *.
 	Restart []string
 	// Probe lets the hub run HTTP, TCP and DNS checks from this device: the
 	// http, tcp and dns automation triggers with from: set to it.
@@ -46,16 +50,23 @@ type Ceiling struct {
 	// Docker or Podman engine, read a bounded tail of a container's log, and
 	// start, stop and restart its containers (see docker.go).
 	Docker bool
+	// DockerRead lets the hub list the containers and images and read a
+	// container's log, but not start, stop or restart one. Docker implies it.
+	DockerRead bool
 }
 
 // Service managers a restart may name.
 var restartManagers = []string{"systemd", "systemd-user", "docker"}
 
-// ParseRestart checks a Ceiling.Restart entry.
+// ParseRestart checks a Ceiling.Restart entry: manager:name, where name may
+// be a glob (path.Match).
 func ParseRestart(entry string) error {
 	manager, name, ok := strings.Cut(entry, ":")
 	if !ok || name == "" || !slices.Contains(restartManagers, manager) {
 		return fmt.Errorf("restart entry %q: want manager:name with manager one of %s", entry, strings.Join(restartManagers, ", "))
+	}
+	if _, err := path.Match(name, ""); err != nil {
+		return fmt.Errorf("restart entry %q: %w", entry, err)
 	}
 	return nil
 }
@@ -71,7 +82,10 @@ const (
 
 // proto is the ceiling as the agent reports it to the hub.
 func (c Ceiling) proto() *agentv1.Ceiling {
-	return &agentv1.Ceiling{Exec: slices.Clone(c.Exec), Restart: slices.Clone(c.Restart), Probe: c.Probe, Logs: slices.Clone(c.Logs), Shell: c.Shell, Scan: slices.Clone(c.Scan), NetEdges: c.NetEdges, Docker: c.Docker}
+	return &agentv1.Ceiling{
+		Exec: slices.Clone(c.Exec), Restart: slices.Clone(c.Restart), Probe: c.Probe, Logs: slices.Clone(c.Logs),
+		Shell: c.Shell, Scan: slices.Clone(c.Scan), NetEdges: c.NetEdges, Docker: c.Docker, DockerRead: c.DockerRead,
+	}
 }
 
 // command returns the program and arguments req runs, or an error wrapping
