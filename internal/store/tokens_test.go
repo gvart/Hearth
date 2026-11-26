@@ -3,7 +3,9 @@
 package store
 
 import (
+	"encoding/hex"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -213,5 +215,80 @@ func TestHubOf(t *testing.T) {
 	}
 	if node, err := s.JoinTokens().HubOf(ctx, "dev-1"); err != nil || node != "" {
 		t.Fatalf("HubOf after both removals = %q, %v; want none", node, err)
+	}
+}
+
+// ListUnused lists the tokens neither used nor expired, soonest to expire
+// first; Revoke spends one by its ID so it cannot enroll, and refuses a
+// used, expired, unknown or malformed ID.
+func TestRevokeToken(t *testing.T) {
+	ctx := t.Context()
+	s := openTest(t)
+	now := time.Now()
+	id := func(secret string) string {
+		h := hashSecret(secret)
+		return hex.EncodeToString(h[:6])
+	}
+	if err := s.Tokens().CreateHub(ctx, "hub", "garage", "storage,master", map[string]string{"a": "b"}, now.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	for secret, exp := range map[string]time.Time{"plain": now.Add(time.Minute), "used": now.Add(time.Minute), "old": now.Add(-time.Minute)} {
+		if err := s.Tokens().Create(ctx, secret, nil, exp); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.Tokens().Consume(ctx, "used", now); err != nil {
+		t.Fatal(err)
+	}
+	list, err := s.Tokens().ListUnused(ctx, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 2 || list[0].ID != id("plain") || list[0].HubEligible ||
+		list[1].ID != id("hub") || !list[1].HubEligible || list[1].Name != "garage" || list[1].Labels["a"] != "b" {
+		t.Fatalf("ListUnused = %+v; want plain, then hub", list)
+	}
+	if got, err := s.Tokens().Unused(ctx, strings.ToUpper(id("hub")), now); err != nil || !got.HubEligible {
+		t.Fatalf("Unused(hub) = %+v, %v", got, err)
+	}
+
+	for _, tc := range []struct {
+		name, id string
+		want     error
+	}{
+		{"used", id("used"), ErrTokenUsed},
+		{"expired", id("old"), ErrTokenExpired},
+		{"unknown", id("nope"), ErrNotFound},
+		{"malformed", "zz", ErrNotFound},
+		{"too short", id("plain")[:8], ErrNotFound},
+	} {
+		if err := s.Tokens().Revoke(ctx, tc.id, now); !errors.Is(err, tc.want) {
+			t.Errorf("Revoke %s = %v, want %v", tc.name, err, tc.want)
+		}
+	}
+
+	if err := s.Tokens().Revoke(ctx, id("hub"), now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Tokens().Consume(ctx, "hub", now); !errors.Is(err, ErrTokenUsed) {
+		t.Fatalf("Consume revoked = %v, want it refused", err)
+	}
+	if err := s.Tokens().Revoke(ctx, id("hub"), now); !errors.Is(err, ErrTokenUsed) {
+		t.Fatalf("Revoke again = %v, want ErrTokenUsed", err)
+	}
+	if list, err := s.Tokens().ListUnused(ctx, now); err != nil || len(list) != 1 || list[0].ID != id("plain") {
+		t.Fatalf("ListUnused after revoke = %+v, %v; want plain only", list, err)
+	}
+}
+
+// Below schema 32, tokens are listed without a name or hub roles.
+func TestListUnusedBelowSchema(t *testing.T) {
+	ctx := t.Context()
+	s := openAtSchema(t, tokenNameSchema-1)
+	if err := s.Tokens().Create(ctx, "plain", nil, time.Now().Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if list, err := s.Tokens().ListUnused(ctx, time.Now()); err != nil || len(list) != 1 || list[0].Name != "" || list[0].HubEligible {
+		t.Fatalf("ListUnused = %+v, %v", list, err)
 	}
 }

@@ -3,10 +3,16 @@
 package store
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
+	"database/sql"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 )
 
@@ -83,6 +89,138 @@ func (r Tokens) Consume(ctx context.Context, secret string, now time.Time) (Enro
 		return EnrollToken{}, fmt.Errorf("consume token: %w", err)
 	}
 	return EnrollToken{Labels: res.Labels, Name: res.Name, HubRoles: res.HubRoles}, nil
+}
+
+// TokenIDLen is the length of an enrollment token's ID: the hex of the
+// first 6 bytes of its hash, the handle the audit log names it by.
+const TokenIDLen = 12
+
+// PendingToken is an enrollment token not used yet, without its secret.
+type PendingToken struct {
+	// ID is the hex of the first 6 bytes of the token's hash: the actor ID
+	// of the device.enroll entry that redeems it.
+	ID     string
+	Name   string
+	Labels map[string]string
+	// HubEligible is set when the token lets a capable device become a hub.
+	HubEligible bool
+	ExpiresAt   time.Time
+}
+
+// tokenRow is an enrollment token as the tokens table holds it.
+type tokenRow struct {
+	PendingToken
+	hash []byte
+	used bool
+}
+
+// ListUnused returns the enrollment tokens neither used nor expired at now,
+// the soonest to expire first.
+func (r Tokens) ListUnused(ctx context.Context, now time.Time) ([]PendingToken, error) {
+	rows, err := r.query(ctx, ` WHERE used_at IS NULL AND expires_at > ? AND _deleted = 0`, toMillis(now))
+	if err != nil {
+		return nil, fmt.Errorf("list enrollment tokens: %w", err)
+	}
+	slices.SortFunc(rows, func(a, b tokenRow) int {
+		return cmp.Or(a.ExpiresAt.Compare(b.ExpiresAt), strings.Compare(a.ID, b.ID))
+	})
+	out := make([]PendingToken, len(rows))
+	for i, t := range rows {
+		out[i] = t.PendingToken
+	}
+	return out, nil
+}
+
+// Unused returns the unused enrollment token whose ID is id. It fails with
+// ErrNotFound for an unknown or malformed ID, and with ErrTokenUsed or
+// ErrTokenExpired for a token that cannot be used any more.
+func (r Tokens) Unused(ctx context.Context, id string, now time.Time) (PendingToken, error) {
+	t, err := r.find(ctx, id, now)
+	return t.PendingToken, err
+}
+
+// Revoke spends the unused enrollment token whose ID is id at now, as a
+// master spends its tokens when it stops being one (CloseOwned): no device
+// can enroll with it, and an enrollment and a revocation at once cannot
+// both win. It fails as Unused does, and with a *NotOwnerError when another
+// master of an AP cluster owns the token.
+func (r Tokens) Revoke(ctx context.Context, id string, now time.Time) error {
+	t, err := r.find(ctx, id, now)
+	if err == nil {
+		_, err = r.s.apply(ctx, ConsumeToken{Hash: t.hash, Now: toMillis(now)})
+	}
+	if err != nil {
+		return fmt.Errorf("revoke enrollment token %s: %w", id, err)
+	}
+	return nil
+}
+
+// find returns the token whose ID is id, with ErrTokenUsed or
+// ErrTokenExpired when it cannot be used at now.
+func (r Tokens) find(ctx context.Context, id string, now time.Time) (tokenRow, error) {
+	id = strings.ToLower(id)
+	prefix, err := hex.DecodeString(id)
+	if err != nil || len(id) != TokenIDLen {
+		return tokenRow{}, ErrNotFound
+	}
+	rows, err := r.query(ctx, ` WHERE substr(hash, 1, ?) = ? AND _deleted = 0`, len(prefix), prefix)
+	switch {
+	case err != nil:
+		return tokenRow{}, fmt.Errorf("find enrollment token %s: %w", id, err)
+	case len(rows) == 0:
+		return tokenRow{}, ErrNotFound
+	case len(rows) > 1:
+		return tokenRow{}, fmt.Errorf("enrollment token ID %s names %d tokens", id, len(rows))
+	case rows[0].used:
+		return rows[0], ErrTokenUsed
+	case !rows[0].ExpiresAt.After(now):
+		return rows[0], ErrTokenExpired
+	}
+	return rows[0], nil
+}
+
+// query selects the enrollment tokens matching where, on every member. The
+// device name needs schema 32 and the hub roles schema 34; below them,
+// tokens have none.
+func (r Tokens) query(ctx context.Context, where string, args ...any) ([]tokenRow, error) {
+	v, err := schemaVersion(ctx, r.s.db)
+	if err != nil {
+		return nil, err
+	}
+	cols := `SELECT hash, labels, expires_at, used_at, ''`
+	if v >= tokenNameSchema {
+		cols = `SELECT hash, labels, expires_at, used_at, name`
+	}
+	if v >= hubTokenSchema {
+		cols += `, hub_roles`
+	} else {
+		cols += `, ''`
+	}
+	rows, err := r.s.list(ctx, "", gather{table: "tokens"}, cols, ` FROM tokens`+where, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []tokenRow
+	for rows.Next() {
+		var (
+			t        tokenRow
+			labels   string
+			expires  int64
+			used     sql.NullInt64
+			hubRoles string
+		)
+		if err := rows.Scan(&t.hash, &labels, &expires, &used, &t.Name, &hubRoles); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(labels), &t.Labels); err != nil {
+			return nil, fmt.Errorf("decode labels: %w", err)
+		}
+		t.ID = hex.EncodeToString(t.hash[:min(len(t.hash), TokenIDLen/2)])
+		t.ExpiresAt, t.used, t.HubEligible = fromMillis(expires), used.Valid, hubRoles != ""
+		out = append(out, t)
+	}
+	return out, rows.Err()
 }
 
 func hashSecret(secret string) [sha256.Size]byte {

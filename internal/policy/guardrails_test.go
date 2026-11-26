@@ -124,6 +124,7 @@ var expected = map[Action]struct {
 	fixed  bool
 }{
 	TokenCreate:            {Safe, []string{ActorAdmin, ActorWeb}, false},
+	TokenRevoke:            {Safe, []string{ActorAdmin, ActorWeb}, false},
 	DeviceEnroll:           {Safe, []string{ActorToken}, true},
 	DeviceRevoke:           {Dangerous, []string{ActorAdmin, ActorWeb}, false},
 	AdminSetPassword:       {Dangerous, []string{ActorAdmin, ActorWeb}, false},
