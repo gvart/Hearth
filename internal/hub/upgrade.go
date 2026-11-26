@@ -236,8 +236,7 @@ func (a *api) upgradeDevice(w http.ResponseWriter, r *http.Request) {
 	}
 	var f Facts
 	_ = json.Unmarshal(d.Facts, &f)
-	ctx, cancel := context.WithTimeout(r.Context(), upgradeWait)
-	defer cancel()
+	ctx := r.Context()
 	reauth := a.recentAuth(r)
 	var res *agentv1.UpgradeResult
 	err := a.policy.Do(ctx, policy.Request{
@@ -250,6 +249,9 @@ func (a *api) upgradeDevice(w http.ResponseWriter, r *http.Request) {
 			return a.agents.CheckUpgrade(ctx, d.ID)
 		},
 	}, func(ctx context.Context) error {
+		// The wait starts once policy allowed it, not while it was held.
+		ctx, cancel := context.WithTimeout(ctx, upgradeWait)
+		defer cancel()
 		if !releaseTargetRE.MatchString(f.ReleaseTarget) {
 			return fmt.Errorf("device %s: %w", d.ID, &refusedUpgrade{Why: "there is no release of Hearth for its platform (" + f.ReleaseTarget + ")"})
 		}
