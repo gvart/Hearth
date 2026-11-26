@@ -306,24 +306,30 @@ func revokedOn(t *testing.T, on *apTestNode, id string) bool {
 func TestDeadMemberRemoved(t *testing.T) {
 	const deadAfter = 2 * time.Second
 	c, _ := deadCluster(t, deadAfter, policy.Config{})
+	// a may see c leave, and start its timer, while stop is still running:
+	// the timer starts no earlier than the stop began.
+	stopping := time.Now()
 	c["c"].stop()
-	stopped := time.Now()
 	waitUntil(t, 10*time.Second, "a to see c down", func() bool {
 		s := c["c"].memberOn(c["a"]).State
 		return s == MemberDead || s == MemberLeft
 	})
+	// The record of the members down follows the gossip asynchronously.
 	var at *time.Time
-	for _, m := range c["a"].node.Status().Members {
-		if m.ID == "c" {
-			at = m.AutoRemoveAt
+	waitUntil(t, 5*time.Second, "a to plan c's removal", func() bool {
+		for _, m := range c["a"].node.Status().Members {
+			if m.ID == "c" {
+				at = m.AutoRemoveAt
+			}
 		}
-	}
-	if at == nil || at.Before(stopped) || at.After(time.Now().Add(deadAfter)) {
-		t.Fatalf("c's auto_remove_at %v, want within %v of its stop", at, deadAfter)
+		return at != nil
+	})
+	if at.Before(stopping.Add(deadAfter)) || at.After(time.Now().Add(deadAfter)) {
+		t.Fatalf("c's auto_remove_at %v, want %v after it was seen down", at, deadAfter)
 	}
 	waitUntil(t, 15*time.Second, "a to remove c", func() bool { return revokedOn(t, c["a"], "c") })
-	if took := time.Since(stopped); took < deadAfter {
-		t.Fatalf("c removed %v after it stopped, before --member-dead-after %v", took, deadAfter)
+	if now := time.Now(); now.Before(*at) {
+		t.Fatalf("c removed %v before its auto_remove_at, --member-dead-after %v after it was seen down", at.Sub(now), deadAfter)
 	}
 	waitUntil(t, 5*time.Second, "b to forget c", func() bool { return c["c"].memberOn(c["b"]).ID == "" })
 	entries, err := c["a"].st.Audit().Query(t.Context(), store.AuditFilter{Actions: []string{string(policy.ClusterRemove)}}, 10)
