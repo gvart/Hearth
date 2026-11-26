@@ -687,6 +687,11 @@ table {
   color: inherit;
 }
 
+.badge-warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
 .host-ignored td {
   opacity: var(--opacity-disabled);
 }

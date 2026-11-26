@@ -23,6 +23,7 @@ import { DeviceContainers } from './DeviceContainers.tsx';
 import { DeviceHubSection } from './DeviceHub.tsx';
 import { DeviceLogSources } from './DeviceLogSources.tsx';
 import { DeviceNetEdges } from './DeviceNetEdges.tsx';
+import { DeviceUpgrade } from './DeviceUpgrade.tsx';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
 import { StatusDot } from './StatusDot.tsx';
 
@@ -245,6 +246,8 @@ export function DevicePage({ id }: { id: string }) {
         )}
 
         <DeviceCapabilities device={device} />
+
+        <DeviceUpgrade device={device} />
 
         <DeviceHubSection device={device} />
 
