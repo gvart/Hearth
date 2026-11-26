@@ -178,7 +178,7 @@ proxy every login comes from the proxy's address and shares one limit.
 
 A signed-in session is not enough for the most sensitive actions of the web UI: revoking a device,
 creating or revoking a hub-eligible enrollment token, creating or revoking an MCP token, saving the policy, changing a notification channel, downloading
-a backup, creating a cluster join token (**Add hub**) and starting, finishing or aborting a hub CA
+a backup, creating a cluster join token (**Add hub**), upgrading a device's agent and starting, finishing or aborting a hub CA
 rotation. Each asks for the admin password again, then goes through policy like any other action.
 
 - An answer is good for **5 minutes**, for that session only, and is held in the hub's memory: a hub
@@ -212,6 +212,29 @@ The installer is served by the hub over plain HTTP (a fresh device does not trus
 Someone who can tamper with your LAN traffic could swap it; the agent still pins the hub CA from the
 token, but if that matters to you, download `install.sh` from the repository and check it before
 running it.
+
+### Remote agent upgrades
+
+An admin upgrades a device's agent from its page or with `hearth device upgrade`: the policy action
+`device.upgrade`, dangerous, only from a signed-in session with the admin password entered again
+(signing in counts, for the CLI), and audited with the versions, refusals and failures too. Never an
+automation or an MCP client.
+
+- The hub reads the archive's SHA-256 from the release's `checksums.txt` on GitHub, over HTTPS, and
+  sends the agent the archive's URL and that hash over the agent's mutual-TLS stream. The hub does not
+  check the release's Sigstore signature.
+- The agent takes an upgrade only on that stream from its hub. It downloads the archive with a plain
+  HTTPS client (not its device certificate), at most 128 MiB within 5 minutes, refuses it if the
+  SHA-256 differs, runs the new `hearth version` and refuses it unless it names the version asked
+  for. Only then does it rename the new binary over its own, keeping the old one as `hearth.prev`,
+  and exit with status 75 for systemd (`Restart=always`) or launchd (`KeepAlive`) to start the new
+  one. Nothing changes on a failed check.
+- An upgrade replaces the program that enforces the device's capability ceiling, with whatever the
+  release holds: it is above the ceiling, as re-running the installer is. That is why it is dangerous
+  and takes the password. An agent with `HEARTH_NO_SELF_UPGRADE` set, or in a Kubernetes pod (upgrade
+  its image), refuses every upgrade.
+- To replace its binary, the agent's systemd unit has `ReadWritePaths=/usr/local/bin` on top of
+  `ProtectSystem=full`; the rest of its hardening stays.
 
 ## Integrations
 
