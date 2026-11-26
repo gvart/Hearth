@@ -160,7 +160,9 @@ You can also create the token on the hub machine instead of in the UI:
 ```
 
 `--hub-url` is the hub address the token names. Add `--name garage-pi` to have the device join
-under that name instead of its hostname.
+under that name instead of its hostname. A token no device has used yet shows under **Unused
+enrollment tokens** on the **Devices** page and in `hearth token list`; revoke one you handed out
+by mistake there, or with `hearth token revoke <id>`.
 
 ## 5. See it
 
