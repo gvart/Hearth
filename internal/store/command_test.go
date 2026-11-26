@@ -106,6 +106,7 @@ func allCommands() []Command {
 		},
 		DeleteConfigDoc{Kind: ConfigRunbook, Name: "r.yaml"},
 		SetDeviceRoute{DeviceID: "pi", Master: "hub-a", At: 34},
+		SetDeviceCeiling{DeviceID: "pi", Ceiling: `{"logs":["docker:*"]}`, UpdatedAt: 37, UpdatedBy: "web/10.0.0.1"},
 		CreateRunbookRun{
 			ID: "rr1", RunbookID: "rb", Status: "running", StartedBy: "admin/root", StartedAt: 35,
 			Source: []byte("steps: []"), State: `{"step":0}`, Keep: 100,
@@ -522,6 +523,14 @@ func runScenario(t *testing.T, s *Store) {
 	// The master holding pi's stream, recorded twice.
 	must(s.DeviceRoutes().Set(ctx, "pi", "hub-a", at(14*time.Hour)))
 	must(s.DeviceRoutes().Set(ctx, "pi", "hub-b", at(14*time.Hour+time.Minute)))
+	// The ceiling the hub sets for pi.
+	must(s.DeviceCeilings().Set(ctx, "pi", []byte(`{"logs":["docker:*"]}`), "web/10.0.0.1", at(14*time.Hour+2*time.Minute)))
+	if c, err := s.DeviceCeilings().Get(ctx, "pi"); err != nil || string(c.Ceiling) != `{"logs":["docker:*"]}` || c.UpdatedBy != "web/10.0.0.1" {
+		t.Fatalf("device ceiling = %+v, %v", c, err)
+	}
+	if _, err := s.DeviceCeilings().Get(ctx, "nope"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("ceiling of an unknown device: %v, want ErrNotFound", err)
+	}
 }
 
 // dumpTables returns every row of every table (sqlite_sequence included,
@@ -610,7 +619,7 @@ func TestReplayIsDeterministic(t *testing.T) {
 		}
 	}
 	want, got := dumpTables(t, src.db), dumpTables(t, dst.db)
-	for _, table := range []string{"admin", "audit_log", "automation_runs", "certs", "cluster_hubs", "config_docs", "device_routes", "devices", "join_tokens", "mcp_tokens", "network_hosts", "runbook_runs", "sessions", "sqlite_sequence", "tokens"} {
+	for _, table := range []string{"admin", "audit_log", "automation_runs", "certs", "cluster_hubs", "config_docs", "device_ceilings", "device_routes", "devices", "join_tokens", "mcp_tokens", "network_hosts", "runbook_runs", "sessions", "sqlite_sequence", "tokens"} {
 		if len(want[table]) == 0 {
 			t.Errorf("scenario left %s empty; the comparison would prove nothing", table)
 		}

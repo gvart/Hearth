@@ -161,7 +161,8 @@ var tables = map[string]tableSpec{
 	"config_docs": {pk: []string{"id"}, deletable: true, since: configDocsSchema, tombstone: func(r row) {
 		r["content"], r["digest"] = []byte{}, ""
 	}},
-	"device_routes": {pk: []string{"device_id"}, since: mastersSchema},
+	"device_routes":   {pk: []string{"device_id"}, since: mastersSchema},
+	"device_ceilings": {pk: []string{"device_id"}, since: deviceCeilingsSchema},
 }
 
 // deletedName is the name a tombstone of a table with a UNIQUE name holds:

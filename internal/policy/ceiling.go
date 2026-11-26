@@ -183,3 +183,44 @@ func DockerWithinCeiling(c *agentv1.Ceiling, req *agentv1.DockerRequest) error {
 	}
 	return nil
 }
+
+// ceilingManagers are the service managers a logs or restart entry names.
+var ceilingManagers = []string{"systemd", "systemd-user", "docker"}
+
+// CheckHubCeiling checks a ceiling the hub sets for a device (#346), entry
+// by entry, as the agent checks its flags: programs are absolute paths,
+// matched exactly; logs and restart entries are manager:pattern with
+// manager systemd, systemd-user or docker and pattern a name or a glob; scan
+// entries are IPv4 subnets. The hub checks it before it stores it, and the
+// agent again before it applies it.
+func CheckHubCeiling(c *agentv1.Ceiling) error {
+	for _, e := range c.GetExec() {
+		if !strings.HasPrefix(e, "/") || path.Clean(e) != e {
+			return fmt.Errorf("exec entry %q: want an absolute path", e)
+		}
+	}
+	entries := func(what string, list []string) error {
+		for _, e := range list {
+			manager, pattern, ok := strings.Cut(e, ":")
+			if !ok || pattern == "" || !slices.Contains(ceilingManagers, manager) {
+				return fmt.Errorf("%s entry %q: want manager:name with manager one of %s", what, e, strings.Join(ceilingManagers, ", "))
+			}
+			if _, err := path.Match(pattern, ""); err != nil {
+				return fmt.Errorf("%s entry %q: %w", what, e, err)
+			}
+		}
+		return nil
+	}
+	if err := entries("logs", c.GetLogs()); err != nil {
+		return err
+	}
+	if err := entries("restart", c.GetRestart()); err != nil {
+		return err
+	}
+	for _, e := range c.GetScan() {
+		if p, err := netip.ParsePrefix(e); err != nil || !p.Addr().Is4() {
+			return fmt.Errorf("scan entry %q: want an IPv4 subnet such as 192.168.1.0/24", e)
+		}
+	}
+	return nil
+}

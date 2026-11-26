@@ -62,6 +62,9 @@ type AgentStream struct {
 	// stream (forward.go).
 	masters Masters
 	routes  store.DeviceRoutes
+	// ceilings, when set, are the capability ceilings the hub sets, pushed
+	// to the agents (ceilingpush.go).
+	ceilings ceilingReader
 }
 
 var _ agentv1connect.AgentServiceHandler = (*AgentStream)(nil)
@@ -138,6 +141,7 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 	defer s.agents.detach(deviceID, sess)
 	var routed time.Time
 	s.route(ctx, log, deviceID, &routed)
+	s.syncCeiling(ctx, log, sess)
 
 	for {
 		msg, err := stream.Receive()
@@ -175,6 +179,7 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 			if s.now().Sub(routed) >= routeRefresh {
 				s.route(ctx, log, deviceID, &routed)
 			}
+			s.syncCeiling(ctx, log, sess)
 		case *agentv1.AgentMessage_Facts:
 			log.DebugContext(ctx, "facts")
 			sess.setCeiling(p.Facts.GetCeiling())

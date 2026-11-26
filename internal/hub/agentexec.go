@@ -102,6 +102,10 @@ type agentSession struct {
 	ceiling *agentv1.Ceiling
 	// lastNetEdges is when the hub last took the stream's network edges.
 	lastNetEdges time.Time
+	// ceilingMu serialises CeilingConfig pushes; sentCeiling is the ceiling
+	// the agent last got (ceilingpush.go).
+	ceilingMu   sync.Mutex
+	sentCeiling *agentv1.Ceiling
 	// hubs is the hub list the agent last got, in Welcome or Hubs.
 	hubs []string
 }

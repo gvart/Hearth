@@ -27,6 +27,14 @@ type Facts struct {
 	// Ceiling is the capability ceiling the agent reports; nil for an agent
 	// too old to report one, to which the hub sends no action.
 	Ceiling *Ceiling `json:"ceiling,omitempty"`
+	// LocalCeiling is the part of it the agent's flags grant, which the hub
+	// cannot take away; nil for an agent too old to report it.
+	LocalCeiling *Ceiling `json:"local_ceiling,omitempty"`
+	// CeilingLocked is set for an agent started with --local-ceiling: it
+	// ignores the ceiling the hub sets.
+	CeilingLocked bool `json:"ceiling_locked,omitempty"`
+	// ProtocolMinor is the agent's protocol minor version.
+	ProtocolMinor uint32 `json:"protocol_minor,omitempty"`
 }
 
 // Ceiling is what the device's agent lets the hub run.
@@ -45,8 +53,30 @@ type Ceiling struct {
 	// NetEdges is whether the agent reports its network edges.
 	NetEdges bool `json:"net_edges"`
 	// Docker is whether the hub may list and act on the device's
-	// containers (--allow-docker).
+	// containers.
 	Docker bool `json:"docker"`
+	// DockerRead is whether the hub may list the device's containers and
+	// read their logs, without acting on them. Docker implies it.
+	DockerRead bool `json:"docker_read,omitempty"`
+}
+
+// ceilingJSON is c as served, or nil.
+func ceilingJSON(c *agentv1.Ceiling) *Ceiling {
+	if c == nil {
+		return nil
+	}
+	return &Ceiling{
+		Exec: nonNil(c.GetExec()), Restart: nonNil(c.GetRestart()), Probe: c.GetProbe(), Logs: nonNil(c.GetLogs()),
+		Shell: c.GetShell(), Scan: nonNil(c.GetScan()), NetEdges: c.GetNetEdges(), Docker: c.GetDocker(), DockerRead: c.GetDockerRead(),
+	}
+}
+
+// Proto is c as an agentv1.Ceiling.
+func (c Ceiling) Proto() *agentv1.Ceiling {
+	return &agentv1.Ceiling{
+		Exec: c.Exec, Restart: c.Restart, Probe: c.Probe, Logs: c.Logs, Shell: c.Shell, Scan: c.Scan,
+		NetEdges: c.NetEdges, Docker: c.Docker, DockerRead: c.DockerRead,
+	}
 }
 
 // Disk is a mounted filesystem.
@@ -81,9 +111,8 @@ func factsFromHello(h *agentv1.Hello) (store.DeviceFacts, error) {
 		AgentVersion:  h.GetAgentVersion(),
 		Capabilities:  nonNil(h.GetCapabilities()),
 	}
-	if c := h.GetCeiling(); c != nil {
-		f.Ceiling = &Ceiling{Exec: nonNil(c.GetExec()), Restart: nonNil(c.GetRestart()), Probe: c.GetProbe(), Logs: nonNil(c.GetLogs()), Shell: c.GetShell(), Scan: nonNil(c.GetScan()), NetEdges: c.GetNetEdges(), Docker: c.GetDocker()}
-	}
+	f.Ceiling, f.LocalCeiling = ceilingJSON(h.GetCeiling()), ceilingJSON(h.GetLocalCeiling())
+	f.CeilingLocked, f.ProtocolMinor = h.GetCeilingLocked(), h.GetProtocolVersion().GetMinor()
 	for _, d := range h.GetDisks() {
 		f.Disks = append(f.Disks, Disk{
 			Device: d.GetDevice(), Mountpoint: d.GetMountpoint(), FSType: d.GetFstype(), TotalBytes: d.GetTotalBytes(), UsedBytes: d.GetUsedBytes(),

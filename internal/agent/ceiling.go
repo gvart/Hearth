@@ -13,6 +13,7 @@ import (
 
 	"google.golang.org/protobuf/encoding/protojson"
 
+	"github.com/gvart/hearth/internal/policy"
 	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
 )
 
@@ -65,30 +66,13 @@ func (c Ceiling) equal(o Ceiling) bool {
 		c.NetEdges == o.NetEdges && c.Docker == o.Docker && c.DockerRead == o.DockerRead
 }
 
-// checkHubCeiling checks a ceiling the hub set, entry by entry, as the
-// flags are checked: one bad entry refuses all of it. A program must be an
-// absolute path, matched exactly. A capability this platform's agent lacks
-// (a shell on Windows, network edges off Linux) is dropped.
+// checkHubCeiling checks a ceiling the hub set, entry by entry
+// (policy.CheckHubCeiling): one bad entry refuses all of it. A capability
+// this platform's agent lacks (a shell on Windows, network edges off Linux)
+// is dropped.
 func checkHubCeiling(c Ceiling) (Ceiling, error) {
-	for _, e := range c.Exec {
-		if !filepath.IsAbs(e) {
-			return Ceiling{}, fmt.Errorf("exec entry %q: want an absolute path", e)
-		}
-	}
-	for _, e := range c.Restart {
-		if err := ParseRestart(e); err != nil {
-			return Ceiling{}, err
-		}
-	}
-	for _, e := range c.Logs {
-		if err := ParseLogs(e); err != nil {
-			return Ceiling{}, err
-		}
-	}
-	for _, e := range c.Scan {
-		if err := ParseScan(e); err != nil {
-			return Ceiling{}, err
-		}
+	if err := policy.CheckHubCeiling(c.proto()); err != nil {
+		return Ceiling{}, err
 	}
 	c.Shell = c.Shell && ShellSupported
 	c.NetEdges = c.NetEdges && NetEdgesSupported

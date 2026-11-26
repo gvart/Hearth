@@ -266,6 +266,17 @@ start_agent
 wait_for 10 device_online || fail "device not online after prerelease upgrade"
 pass "newest prerelease installed after cosign verify-blob with the expected args, identity kept"
 
+log "--local-ceiling goes into the unit, and a re-run keeps it"
+stop_agent
+PATH="/tmp/cosign-bin:$PATH" sh /deploy/install.sh --local-ceiling >/tmp/install3b.log 2>&1 || fail "--local-ceiling re-run failed: $(cat /tmp/install3b.log)"
+grep -q '^ExecStart=.*agent run --data-dir /var/lib/hearth/agent --local-ceiling$' "$UNIT" || fail "--local-ceiling not in the unit: $(grep ExecStart "$UNIT")"
+PATH="/tmp/cosign-bin:$PATH" sh /deploy/install.sh 2>&1 | tee /tmp/install3c.log
+grep -q "keeping --local-ceiling" /tmp/install3c.log || fail "re-run did not say it keeps --local-ceiling"
+[ "$(grep -c -- '--local-ceiling' "$UNIT")" = 1 ] || fail "re-run lost or doubled --local-ceiling: $(grep ExecStart "$UNIT")"
+start_agent
+wait_for 10 device_online || fail "device not online with --local-ceiling"
+pass "--local-ceiling written once and kept"
+
 log "--uninstall keeps data"
 stop_agent
 sh /deploy/install.sh --uninstall
