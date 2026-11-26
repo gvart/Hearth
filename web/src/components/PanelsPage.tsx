@@ -313,8 +313,8 @@ function PanelEditor({ panel, devices, onClose }: { panel?: Panel; devices: Devi
                 </div>
                 {services.length === 0 ? (
                   <p className="muted small">
-                    Shown read-only: this device&apos;s agent allows no restarts (start it with{' '}
-                    <code>--allow-restart</code>).
+                    Shown read-only: this device allows no restart by name (list services under Restart services,
+                    Restrict to…, in its Capabilities).
                   </p>
                 ) : (
                   <fieldset className="panel-editor-actions">

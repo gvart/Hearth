@@ -66,7 +66,8 @@ export function NetworkPage() {
           <div className="empty">
             <h2>No agent reports edges</h2>
             <p className="muted">
-              Start an agent with <code>--allow-net-edges</code> (Linux) to see its neighbours and connections here.
+              Turn Neighbors on in a device&apos;s Capabilities card, on its page (Linux), to see its neighbours and
+              connections here.
             </p>
           </div>
         ) : t.edges.length === 0 ? (

@@ -15,7 +15,8 @@ export type TipId =
   | 'policy'
   | 'cluster'
   | 'devicehub'
-  | 'tokens';
+  | 'tokens'
+  | 'capabilities';
 
 export interface TipText {
   /** What the "?" is about, for a screen reader: "About runbooks". */
@@ -31,7 +32,7 @@ export const tips: Record<TipId, TipText> = {
     about: 'devices',
     lines: [
       'A device is a machine Hearth knows. Most run the Hearth agent, which dials out to the hub; nothing listens on the device.',
-      'What the hub may do there is set where the agent is started, with its --allow flags. The hub can never grant more.',
+      'What the hub may do there (logs, containers, a terminal) is switched on and off in the Capabilities card of its page, and its agent applies it at once.',
       'Scan my network lists the other hosts on your LAN: Add device puts an agent on one, Adopt keeps a printer or TV as a network device, seen but not controlled.',
     ],
     docs: 'getting-started.md',
@@ -40,7 +41,7 @@ export const tips: Record<TipId, TipText> = {
     about: 'the network map',
     lines: [
       'A neighbour is someone a device sees on its own network. A connection is an established TCP connection, drawn from the client to the server and marked with the server’s port.',
-      'Only agents started with --allow-net-edges report them.',
+      'Only devices with Neighbors turned on in their Capabilities report them (Linux).',
     ],
     docs: 'net-edges.md',
   },
@@ -119,6 +120,15 @@ export const tips: Record<TipId, TipText> = {
     lines: [
       'Add device makes a single-use enrollment token, inside the install command. It is listed here until a device enrolls with it or it expires.',
       'Revoke one you handed out by mistake: no device can enroll with it. A hub-eligible token may make its device a hub, so revoking it asks for your password again, as creating it did.',
+    ],
+    docs: 'security.md',
+  },
+  capabilities: {
+    about: 'capabilities',
+    lines: [
+      'What the hub may do on this device. Its agent applies a change at once and checks every request against it itself.',
+      'Turning on a terminal, programs, restarts or container control asks for your password again. What a flag on the device grants shows as set there; the hub cannot take it away.',
+      'A device installed with --local-ceiling ignores what is set here.',
     ],
     docs: 'security.md',
   },

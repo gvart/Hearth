@@ -59,19 +59,18 @@ test('latest reads the newest point of one chart', () => {
   assert.equal(latest(undefined, 'cpu'), undefined);
 });
 
-test('notAllowed names what the agent keeps off and the flag for each', () => {
+test('notAllowed names the cards the agent keeps off', () => {
   const open = notAllowed({ facts: { ceiling: { exec: [], restart: [], probe: true, logs: ['systemd:*'], docker: true, net_edges: true, shell: true } } });
-  assert.deepEqual(open, { logs: false, docker: false, netEdges: false, flags: [] });
+  assert.deepEqual(open, { logs: false, docker: false, netEdges: false });
+
+  // Docker read only still shows the containers.
+  assert.equal(notAllowed({ facts: { ceiling: { exec: [], restart: [], probe: false, docker_read: true } } }).docker, false);
 
   const shut = notAllowed({ facts: { ceiling: { exec: [], restart: [], probe: false } } });
-  assert.equal(shut.logs && shut.docker && shut.netEdges, true);
-  assert.deepEqual(
-    shut.flags.map((f) => f.flag),
-    ['--allow-logs systemd:UNIT', '--allow-docker', '--allow-net-edges', '--allow-shell'],
-  );
+  assert.deepEqual(shut, { logs: true, docker: true, netEdges: true });
 
   // An agent too old to report a ceiling allows none of them.
-  assert.equal(notAllowed({ facts: {} }).flags.length, 4);
+  assert.deepEqual(notAllowed({ facts: {} }), { logs: true, docker: true, netEdges: true });
 });
 
 test('the Devices subtitle counts adopted network hosts', () => {

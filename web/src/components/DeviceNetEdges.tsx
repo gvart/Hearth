@@ -1,6 +1,7 @@
 import type { Device } from '../api/client.ts';
 import { useNetEdges, type Peer } from '../api/netedges.ts';
 import { formatDateTime } from '../format.ts';
+import { CapabilitiesLink } from './DeviceCapabilities.tsx';
 import './DeviceNetEdges.css';
 
 /** Who the device sees on its network and holds TCP connections with, as its agent reports. */
@@ -8,8 +9,8 @@ export function DeviceNetEdges({ device }: { device: Device }) {
   if (!device.facts.ceiling?.net_edges) {
     return (
       <p className="muted small">
-        Not reported. Start the agent with <code>--allow-net-edges</code> (Linux) to see its neighbours and connections
-        here.
+        Not reported. Turn Neighbors on in <CapabilitiesLink>Capabilities</CapabilitiesLink> (Linux) to see its
+        neighbours and connections here.
       </p>
     );
   }

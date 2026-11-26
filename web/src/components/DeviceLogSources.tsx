@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { Device } from '../api/client.ts';
+import { CapabilitiesLink } from './DeviceCapabilities.tsx';
 import { DeviceLogsDialog } from './DeviceLogsDialog.tsx';
 
 const managerLabel: Record<string, string> = {
@@ -16,8 +17,7 @@ export function DeviceLogSources({ device }: { device: Device }) {
   if (entries.length === 0) {
     return (
       <p className="muted small">
-        None allowed. Start the agent with <code>--allow-logs systemd:UNIT</code> (or <code>docker:NAME</code>,{' '}
-        globs like <code>systemd:*</code>) to stream logs here.
+        Off. Turn Logs on in <CapabilitiesLink>Capabilities</CapabilitiesLink> to stream them here.
       </p>
     );
   }

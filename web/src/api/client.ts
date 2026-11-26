@@ -34,6 +34,12 @@ export interface Facts {
   capabilities?: string[];
   /** What the device's agent lets the hub do; absent for an agent too old to say. */
   ceiling?: Ceiling;
+  /** The part of it the agent's --allow-* flags grant, which the hub cannot take away. */
+  local_ceiling?: Ceiling;
+  /** The agent runs with --local-ceiling: it ignores the capabilities set here. */
+  ceiling_locked?: boolean;
+  /** The agent's protocol minor version; 10 and later take capabilities from the hub. */
+  protocol_minor?: number;
 }
 
 export interface Ceiling {
@@ -42,14 +48,16 @@ export interface Ceiling {
   probe: boolean;
   /** Log sources the hub may stream, as manager:pattern (systemd:*, docker:web). */
   logs?: string[];
-  /** Whether an admin may open a terminal (the agent runs with --allow-shell). */
+  /** Whether an admin may open a terminal. */
   shell?: boolean;
-  /** IPv4 subnets network discovery may sweep from the device (--allow-scan). */
+  /** IPv4 subnets network discovery may sweep from the device. */
   scan?: string[];
-  /** Whether the agent reports its neighbours and connections (--allow-net-edges). */
+  /** Whether the agent reports its neighbours and connections. */
   net_edges?: boolean;
-  /** Whether the hub may list and start, stop and restart its containers (--allow-docker). */
+  /** Whether the hub may list and start, stop and restart its containers. */
   docker?: boolean;
+  /** Whether the hub may list its containers and read their logs, without acting on them. */
+  docker_read?: boolean;
 }
 
 export interface Device {
