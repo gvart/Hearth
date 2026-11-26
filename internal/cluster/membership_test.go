@@ -145,6 +145,7 @@ func TestMembershipJoinLeaveFail(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = bML.Shutdown() })
+	b.joinSeeds(t.Context())
 	c := newTestMember(t, ca, "c", memberOpts{seeds: []string{aAddr}, roles: RolesOf(RoleStorage)})
 	_, stopC := runMember(t, c)
 
