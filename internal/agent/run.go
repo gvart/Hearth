@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"slices"
 	"sync"
@@ -29,8 +30,8 @@ import (
 // Protocol version this agent speaks.
 const (
 	ProtocolMajor = 1
-	// 1: answers ExecRequest; 2: reports its capability ceiling; 3: answers ProbeRequest; 4: sends MetricsBatch; 5: streams logs (LogRequest); 6: answers ShellRequest; 7: answers ScanRequest; 8: sends NetEdges; 9: answers DockerRequest; 10: takes CeilingConfig
-	ProtocolMinor = 10
+	// 1: answers ExecRequest; 2: reports its capability ceiling; 3: answers ProbeRequest; 4: sends MetricsBatch; 5: streams logs (LogRequest); 6: answers ShellRequest; 7: answers ScanRequest; 8: sends NetEdges; 9: answers DockerRequest; 10: takes CeilingConfig; 11: answers UpgradeRequest
+	ProtocolMinor = 11
 )
 
 const (
@@ -75,6 +76,11 @@ type Config struct {
 	Connected func()
 	// Failed, if set, is called after each attempt that no hub accepted.
 	Failed func()
+	// Executable is the binary an UpgradeRequest replaces; empty means the
+	// running one.
+	Executable string
+	// upgrader, set by tests, replaces the upgrader Run makes.
+	upgrader *upgrader
 }
 
 type runner struct {
@@ -104,6 +110,11 @@ type runner struct {
 	ceilings *ceilings
 	// ceilingChanged wakes sendLoop to report a new ceiling at once.
 	ceilingChanged chan struct{}
+	// upgrader replaces the agent's binary, for UpgradeRequests, one at a
+	// time (upgrading); stop ends Run with ErrUpgraded once it did.
+	upgrader  *upgrader
+	upgrading atomic.Bool
+	stop      context.CancelCauseFunc
 }
 
 // ceiling is the effective capability ceiling.
@@ -146,7 +157,10 @@ func Run(ctx context.Context, cfg Config) error {
 	defer func() { tr.CloseIdleConnections() }()
 
 	log := cfg.Log.With("device_id", id.deviceID)
+	ctx, stop := context.WithCancelCause(ctx)
+	defer stop(nil)
 	r := &runner{
+		stop:          stop,
 		cfg:           cfg,
 		factsInterval: cmp.Or(cfg.FactsInterval, defaultFactsInterval),
 		log:           log,
@@ -181,6 +195,10 @@ func Run(ctx context.Context, cfg Config) error {
 	if cfg.readNetEdges != nil {
 		r.netEdges = cfg.readNetEdges
 	}
+	r.upgrader = cfg.upgrader
+	if r.upgrader == nil {
+		r.upgrader = newUpgrader(cfg.Executable, os.Getenv)
+	}
 	log.InfoContext(ctx, "agent starting", "version", cfg.Version, "hubs", r.hubs)
 
 	b := newBackoff()
@@ -200,6 +218,10 @@ func Run(ctx context.Context, cfg Config) error {
 				log.InfoContext(ctx, "reconnecting with the certificate renewed for the hub CA rotation")
 				continue
 			}
+		}
+		if errors.Is(context.Cause(ctx), ErrUpgraded) {
+			log.InfoContext(ctx, "agent upgraded; exiting for the service manager to start the new binary")
+			return ErrUpgraded
 		}
 		if ctx.Err() != nil {
 			log.InfoContext(ctx, "agent stopped")
@@ -408,6 +430,7 @@ func (r *runner) hello(ctx context.Context) *agentv1.Hello {
 	h.Ceiling = r.ceiling().proto()
 	h.LocalCeiling = r.ceilings.local.proto()
 	h.CeilingLocked = r.ceilings.locked
+	r.upgrader.hello(h)
 	return h
 }
 
@@ -503,6 +526,8 @@ func (r *runner) receive(ctx context.Context, hub string, stream *connect.BidiSt
 					"denied", res.GetDenied(), "error", res.GetError())
 				reply(&agentv1.AgentMessage{Payload: &agentv1.AgentMessage_DockerResult{DockerResult: res}})
 			})
+		case *agentv1.HubMessage_UpgradeRequest:
+			r.handleUpgrade(ctx, p.UpgradeRequest, execs, send)
 		default:
 			// Ping needs no answer: any traffic keeps the stream alive.
 			r.log.DebugContext(ctx, "hub message ignored", "type", fmt.Sprintf("%T", msg.GetPayload()))

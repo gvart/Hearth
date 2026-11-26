@@ -29,6 +29,7 @@ message AgentMessage {
     ScanResult scan_result = 9;
     NetEdges net_edges = 10;
     DockerResult docker_result = 11;
+    UpgradeResult upgrade_result = 12;
   }
 }
 
@@ -49,6 +50,7 @@ message HubMessage {
     // device (#346), sent to agents of protocol minor 10 and later on every
     // connect and on every change.
     CeilingConfig ceiling_config = 11;
+    UpgradeRequest upgrade_request = 12;
   }
 }
 
@@ -101,6 +103,14 @@ message Hello {
   // ignores the hub's CeilingConfig, so its flags are its whole ceiling.
   // Sent by agents of protocol minor 10 and later.
   bool ceiling_locked = 16;
+  // release_target is the os_arch of the release archive this agent
+  // upgrades itself from (hearth_<version>_<release_target>.tar.gz), such as
+  // linux_amd64 or linux_armv7, when it can replace its own binary; empty
+  // when it cannot, and no_self_upgrade then says why (a Kubernetes pod, a
+  // platform without a service manager to restart it). Reported by agents of
+  // protocol minor 11 and later.
+  string release_target = 17;
+  string no_self_upgrade = 18;
 }
 
 // Ceiling is what a device's agent lets the hub run: its flags, and from
@@ -611,4 +621,33 @@ message DockerImage {
   repeated string tags = 2;
   int64 size_bytes = 3;
   google.protobuf.Timestamp created = 4;
+}
+
+// UpgradeRequest asks the agent to replace its own binary with the hearth of
+// a release archive: download url (at most a size cap, within a timeout),
+// check its SHA-256 against sha256, extract hearth, run `hearth version`,
+// rename it over its executable (keeping the old one as <exe>.prev), answer
+// with an UpgradeResult and exit, for its service manager to start the new
+// binary. The hub takes sha256 from the release's checksums.txt. Sent to
+// agents of protocol minor 11 and later.
+message UpgradeRequest {
+  string id = 1;
+  // version is the release tag, such as v0.1.0.
+  string version = 2;
+  string url = 3;
+  // sha256 is the archive's SHA-256, in hex.
+  string sha256 = 4;
+}
+
+// UpgradeResult answers an UpgradeRequest. ok means the new binary is in
+// place and the agent exits to restart with it.
+message UpgradeResult {
+  string id = 1;
+  bool ok = 2;
+  // denied is set when the agent refuses to upgrade itself at all (a
+  // Kubernetes pod, an upgrade already running); error says why.
+  bool denied = 3;
+  string error = 4;
+  // version is what `<new binary> version` printed first.
+  string version = 5;
 }

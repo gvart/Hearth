@@ -44,6 +44,9 @@ func run() int {
 		if errors.Is(err, agent.ErrRevoked) {
 			return agent.ExitRevoked // the service unit does not restart on it
 		}
+		if errors.Is(err, agent.ErrUpgraded) {
+			return agent.ExitUpgraded // the service manager starts the new binary
+		}
 		return 1
 	}
 	return 0
