@@ -67,10 +67,11 @@ func (s *tlsStream) trackConn(c net.Conn, dialed string) (*trackedConn, error) {
 	return s.track(tc, dialed), nil
 }
 
-// Dial opens a mutually authenticated connection to a peer.
-func (s *tlsStream) Dial(addr string, timeout time.Duration) (net.Conn, error) {
+// Dial opens a mutually authenticated connection to a peer, giving up
+// after timeout or once ctx ends.
+func (s *tlsStream) Dial(ctx context.Context, addr string, timeout time.Duration) (net.Conn, error) {
 	d := &tls.Dialer{NetDialer: &net.Dialer{Timeout: timeout}, Config: s.client}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	c, err := d.DialContext(ctx, "tcp", addr)
 	if err != nil {

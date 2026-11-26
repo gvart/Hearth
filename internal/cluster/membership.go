@@ -360,6 +360,22 @@ func (m *Membership) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// A join dials each seed in turn, up to TCPTimeout each when the seed
+	// is silent (a member killed with its host): it runs aside, one at a
+	// time, so the end of ctx is seen at once; leaving shuts the transport,
+	// which ends its dials (#342).
+	var joins sync.WaitGroup
+	defer joins.Wait()
+	joining := new(atomic.Bool)
+	join := func() {
+		if joining.CompareAndSwap(false, true) {
+			joins.Go(func() {
+				defer joining.Store(false)
+				m.joinSeeds(ctx)
+			})
+		}
+	}
+	join()
 	t := time.NewTicker(m.cfg.RefreshEvery)
 	defer t.Stop()
 	for {
@@ -373,13 +389,13 @@ func (m *Membership) Run(ctx context.Context) error {
 			} else if err := m.updateNode(ml, m.cfg.RefreshEvery); err != nil {
 				m.log.DebugContext(ctx, "announce member metadata", "err", err)
 			}
-			m.joinSeeds(ctx)
+			join()
 			m.pruneRemoved()
 		}
 	}
 }
 
-// start starts the transport and memberlist and joins the seeds.
+// start starts the transport and memberlist.
 func (m *Membership) start(ctx context.Context) (*memberlist.Memberlist, error) {
 	if err := m.setMeta(ctx, false); err != nil {
 		return nil, fmt.Errorf("membership: %w", err)
@@ -410,7 +426,6 @@ func (m *Membership) start(ctx context.Context) (*memberlist.Memberlist, error) 
 	m.started.Store(&now)
 	m.log.InfoContext(ctx, "gossip membership started", "advertise", net.JoinHostPort(trans.ip.String(), strconv.Itoa(trans.port)),
 		"roles", m.Local().Roles.String())
-	m.joinSeeds(ctx)
 	return ml, nil
 }
 

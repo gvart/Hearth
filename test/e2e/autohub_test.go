@@ -181,14 +181,22 @@ exec $(sed -n 's/^ExecStart=//p' "$u") >/proc/1/fd/1 2>&1`
 	s.compose(ctx, "exec", "--detach", d, "sh", "-c", script)
 }
 
-// stopProc stops the process of d whose command line has pattern.
+// stopProc stops the process of d whose command line has pattern. One
+// still running after 20 s gets a SIGQUIT, so its goroutines go to d's log,
+// which the failed test dumps (#342).
 func (s *stack) stopProc(ctx context.Context, d, pattern string) {
 	s.t.Helper()
 	s.compose(ctx, "exec", "-T", d, "pkill", "-f", pattern)
-	waitFor(ctx, s.t, time.Now().Add(20*time.Second), pattern+" to stop on "+d, func() (bool, string) {
-		_, err := s.run(ctx, "exec", "-T", d, "pgrep", "-f", pattern)
-		return err != nil, "still running"
-	})
+	for deadline := time.Now().Add(20 * time.Second); ; time.Sleep(200 * time.Millisecond) {
+		if _, err := s.run(ctx, "exec", "-T", d, "pgrep", "-f", pattern); err != nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			_, _ = s.run(ctx, "exec", "-T", d, "pkill", "-QUIT", "-f", pattern)
+			time.Sleep(time.Second)
+			s.t.Fatalf("%s still running on %s 20 s after SIGTERM; its goroutines are in %s's log", pattern, d, d)
+		}
+	}
 }
 
 // waitNodeOf waits for the hub of device d to have its node ID, and returns it.
