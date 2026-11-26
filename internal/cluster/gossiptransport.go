@@ -247,7 +247,7 @@ func (t *gossipTransport) send(addr string, q chan []byte) {
 			idle.Reset(gossipIdle)
 			frame := make([]byte, 0, 5+len(b))
 			if conn == nil {
-				c, err := t.stream.Dial(addr, t.dialTimeout)
+				c, err := t.stream.Dial(t.ctx, addr, t.dialTimeout)
 				if err != nil {
 					t.log.Debug("gossip dial failed; dropping queued packets", "peer", addr, "err", err)
 					drain(q)
@@ -280,7 +280,7 @@ func drain(q chan []byte) {
 
 // DialTimeout opens a stream to addr.
 func (t *gossipTransport) DialTimeout(addr string, timeout time.Duration) (net.Conn, error) {
-	c, err := t.stream.Dial(addr, timeout)
+	c, err := t.stream.Dial(t.ctx, addr, timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -449,7 +449,7 @@ func (t *gossipTransport) verifyOwner(addr string) (string, error) {
 	if id, ok := t.ownerOf(addr); ok {
 		return id, nil
 	}
-	c, err := t.stream.Dial(addr, t.dialTimeout)
+	c, err := t.stream.Dial(t.ctx, addr, t.dialTimeout)
 	if err != nil {
 		return "", err
 	}
