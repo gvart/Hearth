@@ -55,3 +55,18 @@ test('an ESPHome device is a platform card, read-only unless calls are allowed',
   );
   assert.deepEqual(platformOfHash('#/platforms/esphome/e1'), { kind: 'esphome', id: 'e1' });
 });
+
+test('an OpenWrt router is a platform card counting its clients', () => {
+  const cards = platformCards([], [], [], [
+    { id: 'o1', name: 'gateway', url: 'https://192.168.1.1:443', state: 'connected', error: '', clients: 14 },
+    { id: 'o2', name: 'attic', url: 'http://192.168.1.2:80', state: 'unavailable', error: 'the router refused the username or password', clients: 0 },
+  ]);
+  assert.deepEqual(
+    cards.map((c) => [c.name, c.state, c.line, c.hash]),
+    [
+      ['attic', 'unreachable', '0 clients', '#/platforms/openwrt/o2'],
+      ['gateway', 'connected', '14 clients', '#/platforms/openwrt/o1'],
+    ],
+  );
+  assert.deepEqual(platformOfHash('#/platforms/openwrt/o1'), { kind: 'openwrt', id: 'o1' });
+});

@@ -39,6 +39,7 @@ export interface IntegrationInputs {
   clusters?: { state: string }[];
   servers?: { state: string }[];
   esphome?: { state: string }[];
+  openwrt?: { state: string }[];
   talos?: Read & { nodes: unknown[] };
   beszel?: Read & { systems: unknown[] };
   plugins?: { state: string }[];
@@ -107,6 +108,14 @@ export function integrations(x: IntegrationInputs): Integration[] {
       ...connected(x.esphome, 'unavailable', 'device', 'Adopt a device on the Platforms page, or from On your network.'),
       where: { label: 'Platforms', hash: '#/platforms' },
       docs: 'esphome.md',
+    },
+    {
+      id: 'openwrt',
+      name: 'OpenWrt',
+      gives: 'Clients (DHCP leases and Wi-Fi), interface traffic and system info of OpenWrt routers, through ubus. Their clients feed discovery.',
+      ...connected(x.openwrt, 'unavailable', 'router', 'Connect a router on the Platforms page.'),
+      where: { label: 'Platforms', hash: '#/platforms' },
+      docs: 'openwrt.md',
     },
     {
       id: 'talos',

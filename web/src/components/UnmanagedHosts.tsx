@@ -26,6 +26,7 @@ const sourceLabels: Record<NetworkHostSource, { label: string; title: string }> 
   pihole: { label: 'Pi-hole', title: 'Known to Pi-hole' },
   dhcp: { label: 'DHCP', title: 'In a DHCP lease file' },
   netalertx: { label: 'NetAlertX', title: 'Known to NetAlertX' },
+  openwrt: { label: 'OpenWrt', title: 'A client of an OpenWrt router' },
 };
 
 function byIP(a: NetworkHost, b: NetworkHost) {

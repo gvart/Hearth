@@ -2,12 +2,13 @@
 // one page. Kept apart from the components so node --test can check it
 // (web/test/platforms.test.mjs).
 
-export type PlatformKind = 'kubernetes' | 'proxmox' | 'esphome';
+export type PlatformKind = 'kubernetes' | 'proxmox' | 'esphome' | 'openwrt';
 
 export const kindLabel: Record<PlatformKind, string> = {
   kubernetes: 'Kubernetes cluster',
   proxmox: 'Proxmox server',
   esphome: 'ESPHome device',
+  openwrt: 'OpenWrt router',
 };
 
 /** How a platform reads now, whatever its kind calls it. */
@@ -54,6 +55,15 @@ interface ESPDevice {
   control: boolean;
 }
 
+interface Router {
+  id: string;
+  name: string;
+  url: string;
+  state: 'connecting' | 'connected' | 'unavailable';
+  error: string;
+  clients: number;
+}
+
 interface Server {
   id: string;
   name: string;
@@ -80,7 +90,7 @@ export function platformOfHash(hash: string): { kind: PlatformKind; id: string }
     return undefined;
   }
   const [kind, id, ...rest] = hash.slice(prefix.length).split('/');
-  if ((kind !== 'kubernetes' && kind !== 'proxmox' && kind !== 'esphome') || !id || rest.length > 0) {
+  if ((kind !== 'kubernetes' && kind !== 'proxmox' && kind !== 'esphome' && kind !== 'openwrt') || !id || rest.length > 0) {
     return undefined;
   }
   try {
@@ -95,7 +105,12 @@ function count(n: number, one: string, many = `${one}s`): string {
 }
 
 /** Every connected platform as a card: unreachable ones first, then by name. */
-export function platformCards(clusters: Cluster[], servers: Server[], devices: ESPDevice[] = []): PlatformCard[] {
+export function platformCards(
+  clusters: Cluster[],
+  servers: Server[],
+  devices: ESPDevice[] = [],
+  routers: Router[] = [],
+): PlatformCard[] {
   const cards: PlatformCard[] = [
     ...clusters.map(
       (c): PlatformCard => ({
@@ -131,6 +146,18 @@ export function platformCards(clusters: Cluster[], servers: Server[], devices: E
         line: `${count(d.entities, 'entity', 'entities')} · ${d.control ? 'calls allowed' : 'read-only'}`,
         error: d.error,
         hash: platformHash('esphome', d.id),
+      }),
+    ),
+    ...routers.map(
+      (r): PlatformCard => ({
+        kind: 'openwrt',
+        id: r.id,
+        name: r.name,
+        address: r.url,
+        state: r.state === 'unavailable' ? 'unreachable' : r.state,
+        line: count(r.clients, 'client'),
+        error: r.error,
+        hash: platformHash('openwrt', r.id),
       }),
     ),
   ];
