@@ -77,6 +77,9 @@ var ErrStreamElsewhere = errors.New("the device's agent streams to another hub, 
 // another master of an AP cluster (routes says which).
 func (a *Agents) SetMasters(m Masters, routes store.DeviceRoutes) {
 	a.masters, a.routes = m, routes
+	if a.blobs != nil {
+		a.blobs.masters = m
+	}
 }
 
 // Local reports whether device id's agent streams to this hub.

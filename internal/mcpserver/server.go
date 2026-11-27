@@ -69,6 +69,9 @@ type Config struct {
 	Kube Kube
 	// Plugins is nil when the hub runs no exec plugins.
 	Plugins Plugins
+	// DevicePlugins are the exec plugins on devices; nil offers no tool of
+	// them.
+	DevicePlugins DevicePlugins
 	// Metrics reads device metrics from Prometheus or the hub's built-in
 	// metrics; nil when the hub has neither.
 	Metrics automation.Metrics

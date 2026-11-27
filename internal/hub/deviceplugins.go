@@ -521,6 +521,15 @@ func (p DevicePluginRunner) Run(ctx context.Context, actorKind, actorID, device,
 	return out, err
 }
 
+// DevicePluginsOf is Device, for MCP.
+func (p DevicePluginRunner) DevicePluginsOf(ctx context.Context, device string) (any, error) {
+	id, err := p.Agents.resolve(ctx, device)
+	if err != nil {
+		return nil, err
+	}
+	return p.Device(ctx, id)
+}
+
 func (a *api) devicePlugins() DevicePluginRunner {
 	return DevicePluginRunner{Agents: a.agents, Store: a.store, Policy: a.policy}
 }

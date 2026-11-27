@@ -581,6 +581,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	}
 	uiMux.Handle(mcpserver.Path, hub.EndOnStop(stopping, mcpserver.Handler(mcpserver.Config{
 		Devices: st.Devices(), Tokens: st.MCPTokens(), Policy: pol, Agents: agents, Kube: kube, Plugins: mcpPlugins,
+		DevicePlugins: hub.DevicePluginRunner{Agents: agents, Store: st, Policy: pol},
 		Metrics: hub.AutomationMetrics(st, prom, ms, agents), AutomationsDir: automationsDir, AutomationDocs: automationDocs, AutomationKinds: kinds, AutomationsLock: &automationsMu,
 		Version: opts.version, Log: log,
 	})))
