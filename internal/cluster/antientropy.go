@@ -473,7 +473,10 @@ func (r *Replicator) syncSpaceProved(ctx context.Context, st *store.Store, peer 
 	if err != nil {
 		return false, err
 	}
-	pull, push := diffRows(ours, resp.Digests)
+	// A peer's digests and rows of another space's tables are no part of
+	// this comparison: a forged answer cannot pass master rows for global
+	// ones, or global rows for shard ones.
+	pull, push := diffRows(ours, digestsIn(sp, resp.Digests))
 	if pullOnly || (global && !pushGlobal) {
 		push = nil
 	}
@@ -486,7 +489,7 @@ func (r *Replicator) syncSpaceProved(ctx context.Context, st *store.Store, peer 
 		if err != nil {
 			return false, err
 		}
-		ms = liveOrRecent(ms, cutoff)
+		ms = liveOrRecent(rowsIn(sp, ms), cutoff)
 		if own {
 			err = r.mergeOn(ctx, r.cfg.NodeID, ms)
 		} else if len(ms) > 0 {
@@ -511,6 +514,16 @@ func (r *Replicator) syncSpaceProved(ctx context.Context, st *store.Store, peer 
 		r.log.DebugContext(ctx, "anti-entropy copied rows", "peer", peer, "space", sp, "pulled", len(pull), "pushed", len(push))
 	}
 	return proved, nil
+}
+
+// digestsIn drops the digests of rows of tables outside space sp.
+func digestsIn(sp store.Space, ds []store.RowDigest) []store.RowDigest {
+	return slices.DeleteFunc(ds, func(d store.RowDigest) bool { return store.SpaceOf(d.Table) != sp })
+}
+
+// rowsIn drops the rows of tables outside space sp.
+func rowsIn(sp store.Space, ms []store.Mutation) []store.Mutation {
+	return slices.DeleteFunc(ms, func(m store.Mutation) bool { return store.SpaceOf(m.Table) != sp })
 }
 
 // liveOrRecent drops the tombstones older than cutoff: the GC drops them

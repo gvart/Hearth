@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -490,4 +491,21 @@ func TestMasterRowsGate(t *testing.T) {
 			t.Fatalf("session with members that only say they are masters: %v", err)
 		}
 	})
+}
+
+// TestSyncKeepsToItsSpace: anti-entropy of one digest space takes no row,
+// and compares no digest, of another's tables: a member answering a shard
+// comparison with a session passes no master row for a shard one.
+func TestSyncKeepsToItsSpace(t *testing.T) {
+	ms := []store.Mutation{{Table: "sessions"}, {Table: "admin"}, {Table: "devices"}}
+	for sp, want := range map[store.Space]string{store.SpaceShard: "devices", store.SpaceGlobal: "admin", store.SpaceMaster: "sessions"} {
+		got := rowsIn(sp, slices.Clone(ms))
+		if len(got) != 1 || got[0].Table != want {
+			t.Errorf("rows in space %v: %v, want %s", sp, got, want)
+		}
+		ds := digestsIn(sp, []store.RowDigest{{RowRef: store.RowRef{Table: "sessions"}}, {RowRef: store.RowRef{Table: "admin"}}, {RowRef: store.RowRef{Table: "devices"}}})
+		if len(ds) != 1 || ds[0].Table != want {
+			t.Errorf("digests in space %v: %v, want %s", sp, ds, want)
+		}
+	}
 }

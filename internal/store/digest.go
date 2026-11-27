@@ -64,6 +64,9 @@ func spaceOf(table string) Space {
 	return SpaceShard
 }
 
+// SpaceOf is the digest space of table's rows.
+func SpaceOf(table string) Space { return spaceOf(table) }
+
 // digest holds the bucket digests.
 type digest struct {
 	mu    sync.Mutex
