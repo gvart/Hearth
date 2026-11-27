@@ -74,6 +74,8 @@ test/e2e/Dockerfile
 deploy/daemonset_test.go
   s_18b57982fdff93::t_cccc316d81cbd3 87-89,132-133
   s_18b57982fdff93::t_139a4e23bfb17c 134
+docs/cluster.md
+  s_18b57982fdff93::t_ee250d720335c6 710
 ---
 {
   "schema_version": "authorship/3.0.0",
