@@ -1,0 +1,35 @@
+internal/agent/run.go
+  s_18b57982fdff93::t_0e09a775f220f2 32-33,107-111,186-187,366-370,502-509,552-555,563-570
+internal/agent/rules.go
+  s_18b57982fdff93::t_f960d97333da6a 1-208,210-359
+  s_18b57982fdff93::t_a41ac43cd70b44 360-374
+  s_18b57982fdff93::t_a7a1abf7402a44 209
+internal/agent/runlog.go
+  s_18b57982fdff93::t_010a9da3beb512 1-184
+test/e2e/localrules_test.go
+  s_18b57982fdff93::t_ef76f3c78498bf 1-62,64-122
+  s_18b57982fdff93::t_4aa76a87145b49 63
+test/e2e/e2e_test.go
+  s_18b57982fdff93::t_4aa76a87145b49 122-125
+internal/agent/rules_test.go
+  s_18b57982fdff93::t_23976d3340ba98 1-51,53-61,63-64,66-275
+  s_18b57982fdff93::t_66fa56aefeef46 52,62,65
+test/e2e/Dockerfile
+  s_18b57982fdff93::t_4aa76a87145b49 32-35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "23750d6656dc67b8d75ad280775f034a55974804",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
