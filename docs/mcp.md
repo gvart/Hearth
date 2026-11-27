@@ -4,7 +4,7 @@ description: Let Claude Code or another MCP client see and operate the homelab, 
 ---
 
 The hub is a [Model Context Protocol](https://modelcontextprotocol.io) server. An AI assistant such
-as Claude Code can list your devices, read their facts, metrics and pod logs, restart a service, run
+as Claude Code can list your devices, read their facts, metrics, container and pod logs, restart a service or container, run
 a command or write an automation, with the same guardrails as every other client: each tool call is
 decided by the hub's [policy](guardrails.md) and lands in the audit log, as `mcp/<token name>`.
 
@@ -31,8 +31,8 @@ A token's **scope** is the highest class of action it may request, whatever the 
 
 | Scope       | The client may                                                                 |
 | ----------- | ------------------------------------------------------------------------------ |
-| `read`      | list and read devices, metrics, Kubernetes objects and pod logs; plan automations |
-| `safe`      | also restart services and act on Kubernetes (restart, scale, delete a pod, cordon) |
+| `read`      | list and read devices, metrics, containers and their logs, Kubernetes objects and pod logs; plan automations |
+| `safe`      | also restart services, start, stop and restart containers, and act on Kubernetes (restart, scale, delete a pod, cordon) |
 | `dangerous` | also run commands, drain nodes and apply automations                           |
 
 A client is only offered the tools its scope allows. A request beyond the scope is denied and
@@ -67,7 +67,10 @@ Over plain HTTP the token crosses the LAN in the clear, as the web session does.
 | `list_kube_objects` | read         | `kube.read`                                |
 | `pod_logs`          | read         | `kube.pod.logs`                            |
 | `plan_automation`   | read         | `automation.plan`                          |
+| `list_containers`   | read         | `device.docker.list`                       |
+| `container_logs`    | read         | `device.docker.logs`                       |
 | `restart_service`   | safe         | `device.restart`                           |
+| `container_action`  | safe         | `device.docker.start`, `.stop` or `.restart` |
 | `kube_action`       | safe or dangerous | `kube.workload.*`, `kube.pod.delete`, `kube.node.*` (drain is dangerous) |
 | `exec_command`      | dangerous    | `device.exec`                              |
 | `apply_automation`  | dangerous    | `automation.apply`                         |
@@ -84,6 +87,14 @@ ceiling (`--allow-restart`, `--allow-exec`, see [automations.md](automations.md)
 program the agent does not allow is denied before anything is sent. `exec_command` answers with the
 exit code, not the output. The command it runs is in the approval and the audit log, so the
 operator sees what they approve: keep secrets out of commands.
+
+`list_containers`, `container_logs` and `container_action` reach the device's Docker or Podman
+engine through its agent, as the device page's **Containers** does (see [docker.md](docker.md)), and
+only when its ceiling allows Docker (`--allow-docker`): otherwise they are denied before anything is
+sent. `list_containers` shows each container with its Compose project and service, and the images.
+`container_logs` reads the last lines of a container's log, 100 by default and at most 200; every
+read is audited, as a log may carry secrets. `container_action` starts, stops or restarts one
+container, named by its id or name; nothing else of the engine's API is reachable.
 
 `apply_automation` writes the automation file `<id>.yaml` into the hub's store, which every hub then loads;
 its plan is in the approval, and the audit log names only the file. Every action also takes `dry_run`: the decision is

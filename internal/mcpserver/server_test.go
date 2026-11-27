@@ -26,14 +26,49 @@ import (
 )
 
 // fakeAgents records the requests sent to devices. check, if set, is what
-// Check answers.
+// Check and CheckDocker answer.
 type fakeAgents struct {
-	mu    sync.Mutex
-	sent  []*agentv1.ExecRequest
-	check error
+	mu      sync.Mutex
+	sent    []*agentv1.ExecRequest
+	dockers []*agentv1.DockerRequest
+	check   error
 }
 
 func (a *fakeAgents) Check(context.Context, string, *agentv1.ExecRequest) error { return a.check }
+
+func (a *fakeAgents) CheckDocker(context.Context, string, *agentv1.DockerRequest) error {
+	return a.check
+}
+
+// Docker answers a list with a Compose container and a standalone one, a
+// log read with a line, and an action on the container "gone" with the
+// engine's error.
+func (a *fakeAgents) Docker(_ context.Context, _ string, req *agentv1.DockerRequest, _ time.Duration) (*agentv1.DockerResult, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.dockers = append(a.dockers, req)
+	switch {
+	case req.GetList() != nil:
+		return &agentv1.DockerResult{
+			Containers: []*agentv1.DockerContainer{
+				{Id: "c2", Name: "solo", Image: "alpine", State: "exited"},
+				{Id: "c1", Name: "media-web-1", Image: "nginx", State: "running", ComposeProject: "media", ComposeService: "web"},
+			},
+			Images: []*agentv1.DockerImage{{Id: "sha256:1", Tags: []string{"nginx:latest"}, SizeBytes: 1 << 20}},
+		}, nil
+	case req.GetLogs() != nil:
+		return &agentv1.DockerResult{Lines: []*agentv1.LogLine{{Text: "hello from " + req.GetLogs().GetContainer()}}}, nil
+	case req.GetAction().GetContainer() == "gone":
+		return &agentv1.DockerResult{Error: "docker engine: No such container: gone (HTTP 404)"}, nil
+	}
+	return &agentv1.DockerResult{}, nil
+}
+
+func (a *fakeAgents) dockerCount() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return len(a.dockers)
+}
 
 func (a *fakeAgents) Exec(_ context.Context, _ string, req *agentv1.ExecRequest) (*agentv1.ExecResult, error) {
 	a.mu.Lock()
@@ -245,8 +280,11 @@ func toolNames(t *testing.T, cs *mcp.ClientSession) []string {
 
 func TestToolsFollowTheScope(t *testing.T) {
 	f := newFixture(t, policy.Config{})
-	reads := []string{"device_metrics", "get_device", "list_devices", "list_kube_objects", "plan_automation", "pod_logs"}
-	safe := append(slices.Clone(reads), "kube_action", "restart_service")
+	reads := []string{
+		"container_logs", "device_metrics", "get_device", "list_containers", "list_devices", "list_kube_objects",
+		"plan_automation", "pod_logs",
+	}
+	safe := append(slices.Clone(reads), "container_action", "kube_action", "restart_service")
 	all := append(slices.Clone(safe), "apply_automation", "exec_command")
 	for _, s := range [][]string{reads, safe, all} {
 		slices.Sort(s)

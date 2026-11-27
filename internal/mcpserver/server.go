@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gvart/hearth/internal/automation"
 	"github.com/gvart/hearth/internal/integrations/kubernetes"
@@ -46,6 +47,8 @@ type Tokens interface {
 type Agents interface {
 	Check(ctx context.Context, device string, req *agentv1.ExecRequest) error
 	Exec(ctx context.Context, device string, req *agentv1.ExecRequest) (*agentv1.ExecResult, error)
+	CheckDocker(ctx context.Context, device string, req *agentv1.DockerRequest) error
+	Docker(ctx context.Context, device string, req *agentv1.DockerRequest, timeout time.Duration) (*agentv1.DockerResult, error)
 }
 
 // Kube reads and acts on adopted Kubernetes clusters: *kubernetes.Manager.
