@@ -1,0 +1,28 @@
+docs/discovery.md
+  s_18b57982fdff93::t_81a68806a749d6 148-149
+docs/backup.md
+  s_18b57982fdff93::t_dd3d06af368334 223-224
+docs/security.md
+  s_18b57982fdff93::t_dd3d06af368334 121,272-276
+docs/openwrt.md
+  s_18b57982fdff93::t_dd3d06af368334 16
+  s_18b57982fdff93::t_b059ad1dc927c9 1-15,17-132
+site/src/pages.mjs
+  s_18b57982fdff93::t_dd3d06af368334 11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e6091f5a733507465401afa3773c97a6417395d8",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
