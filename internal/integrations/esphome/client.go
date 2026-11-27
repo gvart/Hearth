@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"syscall"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -198,10 +199,17 @@ func setUpError(ctx context.Context, err error) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+	if closedByDevice(err) {
 		return ErrClosed
 	}
 	return err
+}
+
+// closedByDevice is whether a read failed because the device closed the
+// connection: cleanly, or with a reset when it closes with unread data or
+// reboots.
+func closedByDevice(err error) bool {
+	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, syscall.ECONNRESET)
 }
 
 // setUpPacket handles one packet before the entity list is done, and reports
@@ -302,7 +310,7 @@ func (s *session) run(ctx context.Context, onState func(stateUpdate)) error {
 			if ctx.Err() != nil {
 				return nil
 			}
-			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+			if closedByDevice(err) {
 				return ErrClosed
 			}
 			return err
