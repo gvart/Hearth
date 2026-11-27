@@ -126,6 +126,9 @@ func TestSession(t *testing.T) {
 				t.Fatal(err)
 			}
 			waitFor(t, "the switch's new state", func() bool { v, _ := got.get(3); return v == true })
+			// The device echoes the switch state before it reads the button
+			// press, so wait for both commands rather than the state alone.
+			waitFor(t, "both commands", func() bool { return len(dev.Commands()) >= 2 })
 			cmds := dev.Commands()
 			want := []esphomemock.Command{{Key: 3, Kind: esphomemock.Switch, On: true}, {Key: 4, Kind: esphomemock.Button}}
 			if len(cmds) != 2 || cmds[0] != want[0] || cmds[1] != want[1] {
