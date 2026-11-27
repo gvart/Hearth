@@ -28,6 +28,9 @@ func OpenWrtRouterID(name string) string { return naturalID("openwrt_routers", [
 // OPNsenseFirewallID is the id of the OPNsense firewall named name.
 func OPNsenseFirewallID(name string) string { return naturalID("opnsense_firewalls", []byte(name)) }
 
+// UniFiControllerID is the id of the UniFi controller named name.
+func UniFiControllerID(name string) string { return naturalID("unifi_controllers", []byte(name)) }
+
 // PanelLinkID is the id of the share link whose secret is secret: derived
 // from the secret's hash, the link's unique key, and telling nothing of it.
 func PanelLinkID(secret string) string {

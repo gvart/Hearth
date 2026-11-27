@@ -863,6 +863,10 @@ func DecodeCommand(b []byte) (Command, error) {
 		cmd, err = decodeAs[AddOPNsenseFirewall](env.Cmd)
 	case RemoveOPNsenseFirewall{}.Op():
 		cmd, err = decodeAs[RemoveOPNsenseFirewall](env.Cmd)
+	case AddUniFiController{}.Op():
+		cmd, err = decodeAs[AddUniFiController](env.Cmd)
+	case RemoveUniFiController{}.Op():
+		cmd, err = decodeAs[RemoveUniFiController](env.Cmd)
 	case SetDeviceRoute{}.Op():
 		cmd, err = decodeAs[SetDeviceRoute](env.Cmd)
 	default:

@@ -33,9 +33,11 @@ var readsExempt = map[string]string{ //nolint:gosec // op names and reasons, no 
 	"remove_openwrt_router":  "a missed row is refused with not found, retried; the delete is a tombstone",
 	// OPNsense firewalls (#364).
 	"remove_opnsense_firewall": "a missed row is refused with not found, retried; the delete is a tombstone",
-	"mark_telemetry_sent":      "telemetry state is soft",
-	"create_runbook_run":       "the unresolved-runs cap is a soft limit",
-	"revoke_ca_certs":          "runs on every storage member, each on the rows it holds",
+	// UniFi controllers (#365).
+	"remove_unifi_controller": "a missed row is refused with not found, retried; the delete is a tombstone",
+	"mark_telemetry_sent":     "telemetry state is soft",
+	"create_runbook_run":      "the unresolved-runs cap is a soft limit",
+	"revoke_ca_certs":         "runs on every storage member, each on the rows it holds",
 }
 
 // Every command that reads rows inside its write either names them in

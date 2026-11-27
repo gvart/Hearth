@@ -314,6 +314,14 @@ const (
 	// OPNsenseUnboundRestart restarts Unbound, the DNS resolver of an
 	// OPNsense firewall.
 	OPNsenseUnboundRestart Action = "opnsense.unbound.restart"
+	// UniFiControllerAdd adopts a UniFi Network controller: the hub stores its
+	// URL and API key or local login, sealed, and starts reading its site.
+	UniFiControllerAdd Action = "unifi.controller.add"
+	// UniFiControllerRemove forgets an adopted UniFi controller and its
+	// credentials.
+	UniFiControllerRemove Action = "unifi.controller.remove"
+	// UniFiAPRestart restarts an access point of a UniFi site.
+	UniFiAPRestart Action = "unifi.ap.restart"
 )
 
 // Actor kinds.
@@ -656,6 +664,13 @@ var rules = map[Action]rule{
 	// A restart drops every DNS lookup of the network for a moment, and fails
 	// it outright on a broken configuration.
 	OPNsenseUnboundRestart: {class: Dangerous, actors: []string{ActorWeb}},
+	// Adopting a UniFi controller hands the hub its credentials; the hub only
+	// reads with them, except for unifi.ap.restart, decided on its own.
+	UniFiControllerAdd:    {class: Safe, actors: []string{ActorWeb}},
+	UniFiControllerRemove: {class: Safe, actors: []string{ActorWeb}},
+	// A restart drops every Wi-Fi client of the access point for a minute or
+	// two, and one that does not come back leaves its area without Wi-Fi.
+	UniFiAPRestart: {class: Dangerous, actors: []string{ActorWeb}},
 }
 
 // Actions returns every known action, sorted.
