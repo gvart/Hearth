@@ -1393,7 +1393,7 @@ func (r *Replicator) call(ctx context.Context, m string, req apRequest) (apRespo
 				c.proved = true
 				c.peerMaster = r.verifyMaster(proofServer, bindingOf(c.Conn), resp.Master)
 			}
-			resp.fromMaster = c.peerMaster
+			resp.fromMaster = c.peerMaster && r.saysMaster(m)
 			break
 		}
 		_ = c.Close()
@@ -1472,9 +1472,10 @@ func (r *Replicator) conn(ctx context.Context, m string, pool bool) (c *replConn
 		for cs := r.pool[m]; len(cs) > 0; cs = r.pool[m] {
 			c := cs[len(cs)-1]
 			r.pool[m] = cs[:len(cs)-1]
-			if c.keyed != keyed {
-				// Pooled before this member was promoted to master, or
-				// demoted: the peer still takes it for what it was then.
+			if c.keyed != keyed || (c.proved && c.peerMaster != r.saysMaster(m)) {
+				// Pooled before this member or the peer was promoted to
+				// master, or demoted: each end still takes the conn for
+				// what the other was then.
 				_ = c.Close()
 				continue
 			}
@@ -1533,7 +1534,9 @@ func (r *Replicator) ServeConn(c net.Conn, peer string) {
 		}
 		if r.isMember(peer) {
 			r.clearSuspect(peer) // it reached this member: it is up
-			resp = r.handle(rctx, peer, peerMaster, req)
+			// A proof holds while the gossip says the peer is a master: a
+			// demoted one deleted its key, though it may keep this conn.
+			resp = r.handle(rctx, peer, peerMaster && r.saysMaster(peer), req)
 		} else {
 			r.log.Warn("refused a replication request from a non-member", "peer", peer, "op", req.Op)
 			resp = apResponse{Error: apWireError(fmt.Errorf("%s: %w", peer, errNotMember))}
@@ -1555,6 +1558,16 @@ func (r *Replicator) ServeConn(c net.Conn, peer string) {
 // isMember reports whether peer is a storage member or a master this
 // member knows: a master that holds no shard still coordinates writes and
 // reads, and holds the global rows.
+// saysMaster reports whether the gossip says peer is a master.
+func (r *Replicator) saysMaster(peer string) bool {
+	for _, m := range r.cfg.Peers.Members() {
+		if m.ID == peer {
+			return m.Roles.Has(RoleMaster) && m.State != MemberLeft
+		}
+	}
+	return false
+}
+
 func (r *Replicator) isMember(peer string) bool {
 	if peer == "" || peer == r.cfg.NodeID {
 		return false

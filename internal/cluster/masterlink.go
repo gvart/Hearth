@@ -187,7 +187,7 @@ func (l *MasterLink) isMaster(id string) bool {
 // Run serves the calls of other masters until ctx ends.
 func (l *MasterLink) Run(ctx context.Context) error {
 	srv := &http.Server{
-		Handler:           l.handler,
+		Handler:           l.stillMaster(l.handler),
 		ReadHeaderTimeout: 10 * time.Second,
 		BaseContext:       func(net.Listener) context.Context { return ctx },
 		ConnContext: func(ctx context.Context, c net.Conn) context.Context {
@@ -216,16 +216,48 @@ func (l *MasterLink) Run(ctx context.Context) error {
 	return nil
 }
 
+// stillMaster serves a request only while the gossip says the master it
+// came from is one: a demoted master deleted its key, but may keep the
+// connections it opened as a master.
+func (l *MasterLink) stillMaster(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !l.isMaster(MasterPeer(r.Context())) {
+			http.Error(w, "the caller is no longer a master", http.StatusForbidden)
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
+}
+
+// toMasters is the transport of Client: it sends a request on a connection
+// to a member only while the gossip says the member is a master, as one it
+// opened before the member was demoted is still open.
+type toMasters struct{ l *MasterLink }
+
+func (t toMasters) RoundTrip(req *http.Request) (*http.Response, error) {
+	if !t.l.isMaster(req.URL.Hostname()) {
+		if req.Body != nil {
+			_ = req.Body.Close()
+		}
+		return nil, fmt.Errorf("master link to %s: %w", req.URL.Hostname(), errNotLiveMaster)
+	}
+	return t.l.transport.RoundTrip(req)
+}
+
+// errNotLiveMaster refuses a call over the link to a member the gossip does
+// not say is a live master.
+var errNotLiveMaster = errors.New("not a live master")
+
 // Client returns an HTTP client whose requests to http://<master id>/...
 // go to that master over the link.
-func (l *MasterLink) Client() *http.Client { return &http.Client{Transport: l.transport} }
+func (l *MasterLink) Client() *http.Client { return &http.Client{Transport: toMasters{l}} }
 
 // MemberClient is Client for a request any member takes (a role change):
 // the member reached need not prove it holds the hub CA key.
 func (l *MasterLink) MemberClient() *http.Client { return &http.Client{Transport: l.anyTransport} }
 
 // Transport is the round tripper of Client.
-func (l *MasterLink) Transport() http.RoundTripper { return l.transport }
+func (l *MasterLink) Transport() http.RoundTripper { return toMasters{l} }
 
 // peerConn is an accepted connection and the master it came from.
 type peerConn struct {

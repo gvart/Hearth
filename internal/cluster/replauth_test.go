@@ -358,6 +358,60 @@ func (k *switchKey) Prove(msg []byte) ([]byte, bool) {
 
 func (*switchKey) Verify(msg, sig []byte) bool { return testMasterKey{}.Verify(msg, sig) }
 
+// TestPeerTrustFollowsTheGossip: another member's pooled connections to a
+// peer follow the peer's role on the gossip: once the peer is promoted to
+// master its answers count as a master's at once, and once it is demoted
+// they do not, nor do its requests, on connections it opened as a master.
+func TestPeerTrustFollowsTheGossip(t *testing.T) {
+	key := &switchKey{}
+	an := newAPNetWith(t, 0, func(c *ReplicatorConfig) {
+		if c.NodeID == "p" {
+			c.Master = key
+		}
+	}, "m", "p")
+	an.mu.Lock()
+	an.roles["p"] = storageOnly
+	an.mu.Unlock()
+	ctx := t.Context()
+	read := func() bool {
+		t.Helper()
+		resp, err := an.m("m").rep.call(ctx, "p", apRequest{Op: opRead, Query: `SELECT 1`})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp.fromMaster
+	}
+	for range 3 {
+		if read() {
+			t.Fatal("a storage-only member's answer counted as a master's")
+		}
+	}
+	// p is promoted: it gets the key, then says it is a master.
+	key.held.Store(true)
+	an.mu.Lock()
+	an.roles["p"] = HubRoles
+	an.mu.Unlock()
+	if !read() {
+		t.Fatal("m still took the promoted p for a storage member")
+	}
+	// p opens a conn to m as a master.
+	forged := forgeCeiling(t, an.m("p"))
+	if _, err := an.m("p").rep.call(ctx, "m", apRequest{Op: opRead, Query: `SELECT 1`}); err != nil {
+		t.Fatal(err)
+	}
+	// p is demoted, but keeps its key and its conns, as a compromised one
+	// would.
+	an.mu.Lock()
+	an.roles["p"] = storageOnly
+	an.mu.Unlock()
+	if read() {
+		t.Fatal("m still took the demoted p for a master")
+	}
+	if _, err := an.m("p").rep.call(ctx, "m", apRequest{Op: opMerge, Muts: forged}); !errors.Is(err, errNotMaster) {
+		t.Fatalf("a demoted master's merge of global rows: %v, want errNotMaster", err)
+	}
+}
+
 // TestPromotedMemberDropsUnprovedConns: the connections a member pooled
 // before it got the hub CA key are not used once it has it, so its global
 // writes are taken at once; nor are those it pooled while it held the key,
@@ -505,16 +559,32 @@ func TestMasterLinkOverTLS(t *testing.T) {
 	if err := get(c["c"], "a"); err == nil {
 		t.Fatal("a storage-only member called a master")
 	}
+
+	// b is demoted: a calls it no more.
+	if _, err := c["a"].node.Demote(t.Context(), "b", RoleMaster); err != nil {
+		t.Fatal(err)
+	}
+	waitUntil(t, 10*time.Second, "a to see b demoted", func() bool {
+		return !c["b"].memberOn(c["a"]).Roles.Has(RoleMaster)
+	})
+	if err := get(c["a"], "b"); err == nil {
+		t.Fatal("a called the demoted b")
+	}
 }
 
 // TestMasterLinkNeedsTheCAKey: a member that announces the master role on
 // the gossip but does not hold the hub CA key cannot call a master over the
 // master link (forwarded agent calls, role changes); a master can.
 func TestMasterLinkNeedsTheCAKey(t *testing.T) {
+	var demoted atomic.Bool
 	members := func() []MemberInfo {
+		sRoles := HubRoles // claims master
+		if demoted.Load() {
+			sRoles = storageOnly
+		}
 		return []MemberInfo{
 			{ID: "m", Roles: HubRoles, State: MemberAlive},
-			{ID: "s", Roles: HubRoles, State: MemberAlive}, // claims master
+			{ID: "s", Roles: sRoles, State: MemberAlive},
 		}
 	}
 	served := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "ok") })
@@ -551,6 +621,29 @@ func TestMasterLinkNeedsTheCAKey(t *testing.T) {
 	if _, err := get(testMasterKey{}); err == nil {
 		t.Fatal("a member without the key called a master")
 	}
+	// s calls m as a master, is demoted, and keeps its connection and its
+	// key, as a compromised one would: m serves it no more.
+	kept := NewMasterLink("s", dial, members, testMasterKey{holds: true}, nil, testLogger(t))
+	defer kept.transport.CloseIdleConnections()
+	call := func() int {
+		t.Helper()
+		req, _ := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://m/x", nil)
+		resp, err := kept.transport.RoundTrip(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+		return resp.StatusCode
+	}
+	if got := call(); got != http.StatusOK {
+		t.Fatalf("s's call as a master: %d", got)
+	}
+	demoted.Store(true)
+	if got := call(); got != http.StatusForbidden {
+		t.Fatalf("the demoted s's call on its kept conn: %d, want 403", got)
+	}
+	demoted.Store(false)
 	// A member that says it is a master, and answers a master's call with
 	// a proof it cannot make, is not called.
 	liar := NewMasterLink("s", nil, members, liarKey{}, served, testLogger(t))
