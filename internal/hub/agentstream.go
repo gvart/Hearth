@@ -145,6 +145,7 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 	var routed time.Time
 	s.route(ctx, log, deviceID, &routed)
 	s.syncCeiling(ctx, log, sess)
+	s.syncLocalRules(ctx, log, sess)
 
 	for {
 		msg, err := stream.Receive()
@@ -183,6 +184,7 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 				s.route(ctx, log, deviceID, &routed)
 			}
 			s.syncCeiling(ctx, log, sess)
+			s.syncLocalRules(ctx, log, sess)
 		case *agentv1.AgentMessage_Facts:
 			log.DebugContext(ctx, "facts")
 			sess.setCeiling(p.Facts.GetCeiling())
@@ -209,6 +211,8 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 			sess.deliverShell(p.ShellEvent)
 		case *agentv1.AgentMessage_NetEdges:
 			s.recordNetEdges(ctx, log, deviceID, sess, p.NetEdges)
+		case *agentv1.AgentMessage_LocalRuns:
+			s.recordLocalRuns(ctx, log, sess, p.LocalRuns)
 		case *agentv1.AgentMessage_Hello:
 			return connect.NewError(connect.CodeInvalidArgument, errors.New("duplicate Hello"))
 		}

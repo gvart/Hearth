@@ -349,3 +349,13 @@
 .auto-lock:disabled {
   opacity: var(--opacity-disabled);
 }
+
+.auto-local {
+  display: grid;
+  gap: var(--space-1);
+  max-width: 60ch;
+}
+
+.auto-local p {
+  margin: 0;
+}

@@ -62,6 +62,8 @@ export interface AutomationModel {
   id: string;
   description: string;
   mode: string;
+  /** Runs on the device its checks run from, also while the hub is down. */
+  local: boolean;
   blocks: Record<Section, Block[]>;
   /** A whole section the editor cannot show, such as an alias. */
   rawSections: Partial<Record<Section, ReadOnlyYaml>>;
@@ -79,7 +81,10 @@ export type ParseResult =
   /** With yamlOnly the file is fine, but the form could misrepresent it. */
   | { ok: false; problems: YamlProblem[]; yamlOnly?: boolean };
 
-const rootKeys = ['id', 'description', 'mode', ...sections];
+const rootKeys = ['id', 'description', 'mode', 'local', ...sections];
+
+/** `local: true`, which the form shows as a checkbox. */
+const localField: FieldSpec = { key: 'local', label: 'Run on the device', kind: 'bool' };
 
 /**
  * Characters the hub reads as line breaks, and this editor's parser does not:
@@ -317,6 +322,7 @@ export function readAutomation(source: string): ParseResult {
     id: '',
     description: '',
     mode: '',
+    local: false,
     blocks: { triggers: [], conditions: [], actions: [] },
     rawSections: {},
     extras: [],
@@ -328,6 +334,13 @@ export function readAutomation(source: string): ParseResult {
       const value = stringOf(pair.value);
       if (value !== undefined && !value.includes('\n') && !usesYamlFeatures(pair.value)) {
         model[key] = value;
+      } else {
+        model.extras.push({ yaml: text(), reason: 'The form cannot show this value.' });
+      }
+    } else if (key === 'local') {
+      const value = readField(localField, pair.value);
+      if (typeof value === 'boolean' && !usesYamlFeatures(pair.value)) {
+        model.local = value;
       } else {
         model.extras.push({ yaml: text(), reason: 'The form cannot show this value.' });
       }
@@ -860,6 +873,13 @@ export function setKey(source: string, ref: StepRef, key: string, value: string)
   });
 }
 
+/** Sets or removes `local: true`: the automation runs on its device. */
+export function setLocal(source: string, on: boolean): string {
+  return edit(source, (state) => {
+    applyField(state, null, localField, on ? true : undefined);
+  });
+}
+
 /** Sets a field of a step. Empty removes it. */
 export function setField(
   source: string,
@@ -1006,6 +1026,9 @@ export function writeBack(source: string): string {
     if (model[key] !== '') {
       out = setKey(out, null, key, model[key]);
     }
+  }
+  if (model.local) {
+    out = setLocal(out, true);
   }
   for (const section of sections) {
     for (const block of model.blocks[section]) {

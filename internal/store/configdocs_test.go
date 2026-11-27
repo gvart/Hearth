@@ -179,3 +179,41 @@ func TestConfigDocsCommandRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+// TestConfigDocsVersion: the version of a kind grows with each write and
+// delete of one of its documents, and no other kind's moves it.
+func TestConfigDocsVersion(t *testing.T) {
+	ctx := t.Context()
+	s := openMember(t, "a", time.Unix(1_700_000_000, 0))
+	r := s.ConfigDocs()
+	version := func() uint64 {
+		t.Helper()
+		v, err := r.Version(ctx, ConfigAutomation)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	if v := version(); v != 0 {
+		t.Fatalf("Version with no documents = %d, want 0", v)
+	}
+	if err := r.Put(ctx, "admin/op", []ConfigDoc{{Kind: ConfigAutomation, Name: "a.yaml", Content: []byte("id: a\n")}}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	put := version()
+	if put == 0 {
+		t.Fatal("Version after a put = 0")
+	}
+	if err := r.Put(ctx, "admin/op", []ConfigDoc{{Kind: ConfigRunbook, Name: "r.yaml", Content: []byte("id: r\n")}}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if v := version(); v != put {
+		t.Fatalf("Version after a runbook put = %d, want %d", v, put)
+	}
+	if err := r.Delete(ctx, ConfigAutomation, "a.yaml"); err != nil {
+		t.Fatal(err)
+	}
+	if v := version(); v <= put {
+		t.Fatalf("Version after a delete = %d, want more than %d", v, put)
+	}
+}

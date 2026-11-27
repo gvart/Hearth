@@ -154,6 +154,21 @@ func (r ConfigDocs) Fingerprint(ctx context.Context) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
+// Version is the newest version (hybrid logical clock) of the documents of
+// kind, tombstones included: it grows with every write, merge or delete of
+// one, whichever hub made it. It is 0 when there are none, and below
+// schema 28.
+func (r ConfigDocs) Version(ctx context.Context, kind string) (uint64, error) {
+	if ok, err := r.Available(ctx); err != nil || !ok {
+		return 0, err
+	}
+	var v int64
+	if err := r.s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(_hlc), 0) FROM config_docs WHERE kind = ?`, kind).Scan(&v); err != nil {
+		return 0, fmt.Errorf("version of the %s documents: %w", kind, err)
+	}
+	return uint64(v), nil //nolint:gosec // an HLC: never negative
+}
+
 // Put writes docs in one step, all or none, as by (kind/id) at now. A
 // document's Digest is computed here; the hub validates and seals before.
 func (r ConfigDocs) Put(ctx context.Context, by string, docs []ConfigDoc, now time.Time) error {

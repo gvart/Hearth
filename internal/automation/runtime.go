@@ -288,7 +288,9 @@ func (r *Runtime) start(ctx context.Context, a *Automation) *instance {
 	in := &instance{a: a, r: r, owned: r.owns(a.ID), stop: cancel, wake: make(chan struct{}, 1)}
 	in.wg.Go(func() { in.work(ictx) })
 	for _, t := range a.Triggers {
-		if !watched(in.owned, t.Impl) {
+		// A local automation's device watches its checks: the hub
+		// never does, so its actions are never taken twice.
+		if a.Local || !watched(in.owned, t.Impl) {
 			continue
 		}
 		in.wg.Go(func() {
@@ -380,6 +382,11 @@ type StepResult struct {
 	// Plan is what an action that can tell (a kube_* action) would have
 	// done, in a dry run.
 	Plan string `json:"plan,omitempty"`
+	// RanOn, on the first step of a run a local automation's device
+	// reported, is that device's id; HubUnreachable says the device had no
+	// hub stream when the run started.
+	RanOn          string `json:"ran_on,omitempty"`
+	HubUnreachable bool   `json:"hub_unreachable,omitempty"`
 }
 
 // Step statuses.

@@ -30,8 +30,8 @@ import (
 // Protocol version this agent speaks.
 const (
 	ProtocolMajor = 1
-	// 1: answers ExecRequest; 2: reports its capability ceiling; 3: answers ProbeRequest; 4: sends MetricsBatch; 5: streams logs (LogRequest); 6: answers ShellRequest; 7: answers ScanRequest; 8: sends NetEdges; 9: answers DockerRequest; 10: takes CeilingConfig; 11: answers UpgradeRequest
-	ProtocolMinor = 11
+	// 1: answers ExecRequest; 2: reports its capability ceiling; 3: answers ProbeRequest; 4: sends MetricsBatch; 5: streams logs (LogRequest); 6: answers ShellRequest; 7: answers ScanRequest; 8: sends NetEdges; 9: answers DockerRequest; 10: takes CeilingConfig; 11: answers UpgradeRequest; 12: runs LocalRules, sends LocalRuns
+	ProtocolMinor = 12
 )
 
 const (
@@ -115,6 +115,12 @@ type runner struct {
 	upgrader  *upgrader
 	upgrading atomic.Bool
 	stop      context.CancelCauseFunc
+
+	// rules runs the local rules, and runs logs what they did (rules.go);
+	// connected is set while a hub stream is open.
+	rules     *rules
+	runs      *runLog
+	connected atomic.Bool
 }
 
 // ceiling is the effective capability ceiling.
@@ -201,6 +207,8 @@ func Run(ctx context.Context, cfg Config) error {
 		}
 	}
 	r.ceilings = newCeilings(cfg.Ceiling, hubCeiling, version, cfg.LocalCeiling)
+	r.startRules(ctx)
+	defer r.rules.stop()
 	if cfg.readNetEdges != nil {
 		r.netEdges = cfg.readNetEdges
 	}
@@ -385,6 +393,11 @@ func (r *runner) session(ctx context.Context, hub string) (welcomed bool, err er
 	if r.cfg.Connected != nil {
 		r.cfg.Connected()
 	}
+	r.connected.Store(true)
+	defer r.connected.Store(false)
+	if r.runs != nil {
+		r.runs.resend()
+	}
 
 	g, gctx := errgroup.WithContext(ctx)
 	received := make(chan struct{})
@@ -517,6 +530,14 @@ func (r *runner) receive(ctx context.Context, hub string, stream *connect.BidiSt
 					(*logs).setCeiling(ctx, c)
 				}
 			}
+		case *agentv1.HubMessage_LocalRules:
+			if r.rules != nil {
+				r.rules.apply(ctx, p.LocalRules)
+			}
+		case *agentv1.HubMessage_LocalRunsAck:
+			if r.runs != nil {
+				r.runs.ack(ctx, p.LocalRunsAck.GetSeq())
+			}
 		case *agentv1.HubMessage_ScanRequest:
 			req := p.ScanRequest
 			execs.Go(func() {
@@ -561,6 +582,10 @@ func (r *runner) sendLoop(ctx context.Context, stream *connect.BidiStreamForClie
 	if r.ceiling().NetEdges {
 		edgesC = edges.C
 	}
+	var runsC <-chan struct{} // nil, never ready, for a runner a test made
+	if r.runs != nil {
+		runsC = r.runs.wake
+	}
 	for {
 		var msg *agentv1.AgentMessage
 		select {
@@ -568,6 +593,14 @@ func (r *runner) sendLoop(ctx context.Context, stream *connect.BidiStreamForClie
 			return nil
 		case now := <-hb.C:
 			msg = &agentv1.AgentMessage{Payload: &agentv1.AgentMessage_Heartbeat{Heartbeat: r.heartbeat(now)}}
+			if r.runs != nil {
+				// Runs not acknowledged are sent again, now and then.
+				r.runs.signal()
+			}
+		case <-runsC:
+			if msg = r.runs.next(time.Now()); msg == nil {
+				continue
+			}
 		case <-facts.C:
 			msg = &agentv1.AgentMessage{Payload: &agentv1.AgentMessage_Facts{Facts: r.hello(ctx)}}
 		case <-r.ceilingChanged:

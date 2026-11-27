@@ -108,6 +108,19 @@
         { "key": "timeout", "label": "Timeout", "kind": "duration" }
       ]
     },
+    "check": {
+      "label": "Run a check",
+      "fields": [
+        { "key": "check", "label": "Check", "kind": "select", "options": ["http", "tcp", "dns"], "required": true, "help": "Fails the run if it fails." },
+        { "key": "url", "label": "URL", "kind": "text", "help": "For http." },
+        { "key": "status", "label": "Expected status", "kind": "number", "help": "For http. Default: any 2xx or 3xx." },
+        { "key": "address", "label": "Address", "kind": "text", "help": "For tcp: host:port" },
+        { "key": "name", "label": "Name", "kind": "text", "help": "For dns." },
+        { "key": "server", "label": "DNS server", "kind": "text", "help": "For dns." },
+        { "key": "from", "label": "From device", "kind": "text" },
+        { "key": "timeout", "label": "Timeout", "kind": "duration" }
+      ]
+    },
     "exec": {
       "label": "Run a command",
       "fields": [

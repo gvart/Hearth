@@ -38,9 +38,12 @@ type ActionDeps struct {
 	// Plugins runs plugin_command actions; nil (as in a dry run) leaves each
 	// one dangerous, and denies it when it runs.
 	Plugins Plugins
+	// Probers run check actions that name a device in from; nil fails them
+	// when they run.
+	Probers Probers
 }
 
-// Actions returns the exec, restart, webhook, notify, plugin_command and kube_* action kinds,
+// Actions returns the exec, restart, check, webhook, notify, plugin_command and kube_* action kinds,
 // to add to Builtin's.
 func Actions(d ActionDeps) map[string]Builder[Action] {
 	if d.HTTP == nil {
@@ -49,6 +52,7 @@ func Actions(d ActionDeps) map[string]Builder[Action] {
 	out := map[string]Builder[Action]{
 		"exec":    func(p Params) (Action, error) { return buildExec(p, d.Agents) },
 		"restart": func(p Params) (Action, error) { return buildRestart(p, d.Agents) },
+		"check":   func(p Params) (Action, error) { return buildCheckAction(p, d.Probers) },
 		"webhook": func(p Params) (Action, error) { return buildWebhook(p, d.HTTP) },
 		"notify":  func(p Params) (Action, error) { return buildNotify(p, d.Notifier) },
 		"plugin_command": func(p Params) (Action, error) {

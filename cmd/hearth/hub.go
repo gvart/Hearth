@@ -517,7 +517,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		Log:     log,
 	}))
 	maps.Copy(kinds.Actions, automation.Actions(automation.ActionDeps{
-		Agents: agents, Notifier: notifier, Kube: kube, Plugins: pluginMgr,
+		Agents: agents, Notifier: notifier, Kube: kube, Plugins: pluginMgr, Probers: agents,
 	}))
 	kinds.Actions["script"] = automation.Script(automation.ScriptDeps{Devices: st.Devices()})
 	cfg.AutomationsDir, cfg.AutomationKinds = automationsDir, kinds
@@ -648,6 +648,11 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		Owns:    owns,
 		Owned:   ringChanged,
 	})
+	// Local automations run on their devices: their agents get them (#70).
+	agents.SetLocalRules(hub.LocalRulesConfig{
+		Automations: automations, Docs: st.ConfigDocs(), Policy: pol, Audit: st.Audit(),
+		Runs: st.AutomationRuns(), Devices: st.Devices(),
+	})
 
 	var importer *discovery.Importer
 	if len(importSources) > 0 {
@@ -752,7 +757,7 @@ func newRunbooks(opts hubOptions, st *store.Store, sealer *kubernetes.Sealer, po
 ) (*automation.Runbooks, error) {
 	kinds := automation.Builtin(log)
 	maps.Copy(kinds.Actions, automation.Actions(automation.ActionDeps{
-		Agents: agents, Notifier: notifier, Kube: kube, Plugins: pluginMgr,
+		Agents: agents, Notifier: notifier, Kube: kube, Plugins: pluginMgr, Probers: agents,
 	}))
 	return automation.NewRunbooks(automation.RunbooksConfig{
 		Dir: runbooksDirOf(opts), Source: docs, Kinds: kinds, Policy: pol, Runs: st.RunbookRuns(), Sealer: sealer, Probers: agents,

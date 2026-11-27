@@ -119,6 +119,10 @@ func TestHeadlineDemo(t *testing.T) {
 	}
 	t.Logf("hub restart → both agents reconnected in %v", time.Since(restartAt).Round(time.Millisecond))
 
+	// 6b. A local rule of agent-1 fires while the hub is stopped, and its
+	// run is audited once the hub is back (#70).
+	api = s.localRuleWithHubDown(ctx, api, ids["agent-1"])
+
 	// 7. Revoke agent-2 with the CLI on the hub host. Its live stream must
 	// end and the device go offline within RevokedWithin; the agent must log
 	// the revocation and exit rather than reconnect. agent-1 stays online.

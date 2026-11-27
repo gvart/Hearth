@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { AutomationDryRun, AutomationProblem, PolicyDecision } from '../api/automations.ts';
 import { useAutomation, useDryRunAutomation, useSaveAutomation } from '../api/automations.ts';
+import { useDevices } from '../api/hooks.ts';
 import { ApiError } from '../api/client.ts';
 import type {
   AutomationModel,
@@ -20,6 +21,7 @@ import {
   removeStep,
   setField,
   setKey,
+  setLocal,
   stepSpecs,
 } from '../automations/model.ts';
 import { mayEdit, savedNotice } from '../automations/session.ts';
@@ -394,6 +396,17 @@ function VisualView({ model, isNew, edit }: { model: AutomationModel; isNew: boo
             }}
           />
         </div>
+        <label className="auto-check">
+          <input
+            type="checkbox"
+            checked={model.local}
+            onChange={(e) => {
+              edit((s) => setLocal(s, e.target.checked));
+            }}
+          />
+          Run on the device (works when the hub is down)
+        </label>
+        {model.local ? <LocalNote model={model} /> : null}
         {model.extras.map((e) => (
           <ReadOnly key={e.yaml} part={e} />
         ))}
@@ -401,6 +414,36 @@ function VisualView({ model, isNew, edit }: { model: AutomationModel; isNew: boo
       {(['triggers', 'conditions', 'actions'] as const).map((section) => (
         <SectionView key={section} section={section} model={model} edit={edit} />
       ))}
+    </div>
+  );
+}
+
+/** The first protocol minor version whose agents run local automations. */
+const localRulesMinor = 12;
+
+/** What running on the device means, and whether the device's agent can. */
+function LocalNote({ model }: { model: AutomationModel }) {
+  const devices = useDevices();
+  const first = model.blocks.triggers[0];
+  const from = first?.kind === 'step' && typeof first.values.from === 'string' ? first.values.from : '';
+  const device = from
+    ? devices.data?.find((d) => d.id === from || d.name === from || d.hostname.toLowerCase() === from.toLowerCase())
+    : undefined;
+  const minor = device?.facts.protocol_minor ?? 0;
+  return (
+    <div className="auto-local small">
+      <p className="muted">
+        The device in the checks&apos; <strong>From device</strong> runs it itself and reports its runs when it
+        reaches a hub again; the hub stops watching it. Only HTTP, TCP and DNS checks from that device can trigger
+        it, and it can only restart a service on that device or run a check from it.
+      </p>
+      {!from ? <p className="error">Set From device on its checks.</p> : null}
+      {device && minor < localRulesMinor ? (
+        <p className="error" role="alert">
+          The agent of {device.name} is too old to run automations itself: upgrade it. Until then the automation
+          does not run.
+        </p>
+      ) : null}
     </div>
   );
 }

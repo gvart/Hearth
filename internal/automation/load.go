@@ -147,7 +147,7 @@ func Parse(name string, b []byte, kinds Kinds) (*Automation, error) {
 	a := &Automation{File: name, Mode: ModeSingle, sum: sha256.Sum256(b)}
 	var errs []error
 	checkDuplicateKeys(root, &errs)
-	idLine, modeLine := root.Line, root.Line
+	idLine, modeLine, localLine := root.Line, root.Line, 0
 	for i := 0; i+1 < len(root.Content); i += 2 {
 		k, v := root.Content[i], root.Content[i+1]
 		switch k.Value {
@@ -157,6 +157,11 @@ func Parse(name string, b []byte, kinds Kinds) (*Automation, error) {
 			a.Description = scalar(v, "description", &errs)
 		case "mode":
 			a.Mode, modeLine = Mode(scalar(v, "mode", &errs)), v.Line
+		case "local":
+			localLine = v.Line
+			if v.Kind != yaml.ScalarNode || v.Decode(&a.Local) != nil {
+				errs = append(errs, lineError(v.Line, "local must be true or false"))
+			}
 		case "triggers":
 			a.Triggers = buildSteps(v, "trigger", kinds.Triggers, &errs)
 		case "conditions":
@@ -186,6 +191,9 @@ func Parse(name string, b []byte, kinds Kinds) (*Automation, error) {
 		if _, ok := policy.ClassOf(s.Impl.Policy()); !ok {
 			errs = append(errs, lineError(s.Line, "action type %q has no policy class", s.Type))
 		}
+	}
+	if a.Local {
+		localShape(a, localLine, &errs)
 	}
 	checkStepIDs(a, &errs)
 	checkTemplates(a, &errs)
