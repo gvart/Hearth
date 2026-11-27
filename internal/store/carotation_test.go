@@ -98,12 +98,14 @@ func TestCARotations(t *testing.T) {
 	// Sealed secrets of every kind, re-sealed all or none.
 	must(s.KubeClusters().Add(ctx, KubeCluster{ID: "k1", Name: "lab", Sealed: []byte{1}, CreatedAt: now}))
 	must(s.ProxmoxServers().Add(ctx, ProxmoxServer{ID: "p1", Name: "rack", Sealed: []byte{2}, CreatedAt: now}))
+	must(s.ESPHomeDevices().Add(ctx, ESPHomeDevice{ID: "e1", Name: "kitchen", Sealed: []byte{3}, CreatedAt: now}))
 	sealed, err := rots.Sealed(ctx)
 	must(err)
-	if len(sealed) != 2 || sealed[0].Table != SealedKubeClusters || sealed[1].Table != SealedProxmoxServers {
+	if len(sealed) != 3 || sealed[0].Table != SealedKubeClusters || sealed[1].Table != SealedProxmoxServers ||
+		sealed[2].Table != SealedESPHomeDevices {
 		t.Fatalf("Sealed = %+v", sealed)
 	}
-	sealed[0].Resealed, sealed[1].Resealed = []byte{11}, []byte{12}
+	sealed[0].Resealed, sealed[1].Resealed, sealed[2].Resealed = []byte{11}, []byte{12}, []byte{13}
 	stale := append([]SealedSecret{}, sealed...)
 	stale[1].Sealed = []byte{9}
 	if err := rots.Reseal(ctx, "new", stale); !errors.Is(err, ErrCARotationConflict) {
@@ -118,7 +120,8 @@ func TestCARotations(t *testing.T) {
 	must(rots.Reseal(ctx, "new", sealed))
 	again, err := rots.Sealed(ctx)
 	must(err)
-	if string(again[0].Sealed) != string([]byte{11}) || string(again[1].Sealed) != string([]byte{12}) {
+	if string(again[0].Sealed) != string([]byte{11}) || string(again[1].Sealed) != string([]byte{12}) ||
+		string(again[2].Sealed) != string([]byte{13}) {
 		t.Errorf("after Reseal: %+v", again)
 	}
 

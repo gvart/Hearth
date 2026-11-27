@@ -214,6 +214,9 @@ var expected = map[Action]struct {
 	PluginCommandRead:       {Read, []string{ActorWeb, ActorAutomation, ActorMCP}, false},
 	PluginCommandSafe:       {Safe, []string{ActorWeb, ActorAutomation, ActorMCP}, false},
 	PluginCommandDangerous:  {Dangerous, []string{ActorWeb, ActorAutomation, ActorMCP}, false},
+	ESPHomeDeviceAdd:        {Safe, []string{ActorWeb}, false},
+	ESPHomeDeviceRemove:     {Safe, []string{ActorWeb}, false},
+	ESPHomeCall:             {Safe, []string{ActorWeb}, false},
 	DeviceCapabilitiesSet:   {Safe, []string{ActorAdmin, ActorWeb}, false},
 	DeviceCapabilitiesRaise: {Dangerous, []string{ActorAdmin, ActorWeb}, false},
 }

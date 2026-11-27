@@ -333,6 +333,8 @@ const (
 	// SealedConfigDocs holds the sealed notify documents; its other
 	// documents are not secret.
 	SealedConfigDocs = "config_docs"
+	// SealedESPHomeDevices holds the ESPHome devices' connections.
+	SealedESPHomeDevices = "esphome_devices"
 )
 
 // sealedColumns maps each table of sealed secrets to its sealed column.
@@ -341,13 +343,14 @@ var sealedColumns = map[string]string{
 	SealedProxmoxServers: "connection",
 	SealedRunbookRuns:    "source",
 	SealedConfigDocs:     "content",
+	SealedESPHomeDevices: "connection",
 }
 
 // sealedWhere narrows a table of sealedColumns to its sealed rows, and
 // sealedSince is the schema a table of it needs.
 var (
 	sealedWhere = map[string]string{SealedConfigDocs: ` AND kind = '` + ConfigNotify + `'`}
-	sealedSince = map[string]int64{SealedConfigDocs: configDocsSchema}
+	sealedSince = map[string]int64{SealedConfigDocs: configDocsSchema, SealedESPHomeDevices: esphomeDevicesSchema}
 )
 
 // SealedSecret is one sealed secret: the row id of table, and its sealed
@@ -369,7 +372,7 @@ func (r CARotations) Sealed(ctx context.Context) ([]SealedSecret, error) {
 	if r.s.shards == nil {
 		return readSealed(ctx, r.s.db)
 	}
-	out, err := readSealedTables(ctx, r.s.db, SealedKubeClusters, SealedProxmoxServers, SealedConfigDocs)
+	out, err := readSealedTables(ctx, r.s.db, SealedKubeClusters, SealedProxmoxServers, SealedConfigDocs, SealedESPHomeDevices)
 	if err != nil {
 		return nil, err
 	}
@@ -408,7 +411,9 @@ func (r CARotations) Sealed(ctx context.Context) ([]SealedSecret, error) {
 }
 
 // sealedOrder is the order Sealed lists the tables of sealed secrets in.
-var sealedOrder = map[string]int{SealedKubeClusters: 0, SealedProxmoxServers: 1, SealedRunbookRuns: 2, SealedConfigDocs: 3}
+var sealedOrder = map[string]int{
+	SealedKubeClusters: 0, SealedProxmoxServers: 1, SealedRunbookRuns: 2, SealedConfigDocs: 3, SealedESPHomeDevices: 4,
+}
 
 // SealedDigest is a digest of secrets, as Sealed returns them: finishing a
 // rotation names the digest of the secrets checked to be sealed with the new
@@ -434,7 +439,8 @@ type sealedQuerier interface {
 }
 
 func readSealed(ctx context.Context, q sealedQuerier) ([]SealedSecret, error) {
-	return readSealedTables(ctx, q, SealedKubeClusters, SealedProxmoxServers, SealedRunbookRuns, SealedConfigDocs)
+	return readSealedTables(ctx, q, SealedKubeClusters, SealedProxmoxServers, SealedRunbookRuns, SealedConfigDocs,
+		SealedESPHomeDevices)
 }
 
 // readSealedTables reads the sealed secrets of tables, in that order.

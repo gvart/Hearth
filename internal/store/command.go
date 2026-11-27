@@ -851,6 +851,10 @@ func DecodeCommand(b []byte) (Command, error) {
 		cmd, err = decodeAs[DeleteConfigDoc](env.Cmd)
 	case SetDeviceCeiling{}.Op():
 		cmd, err = decodeAs[SetDeviceCeiling](env.Cmd)
+	case AddESPHomeDevice{}.Op():
+		cmd, err = decodeAs[AddESPHomeDevice](env.Cmd)
+	case RemoveESPHomeDevice{}.Op():
+		cmd, err = decodeAs[RemoveESPHomeDevice](env.Cmd)
 	case SetDeviceRoute{}.Op():
 		cmd, err = decodeAs[SetDeviceRoute](env.Cmd)
 	default:
