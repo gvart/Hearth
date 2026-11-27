@@ -5,7 +5,8 @@ description: What protects the hub, the agents and your devices, and what you ar
 
 Hearth can restart services and run commands on your machines, so its rules are strict and few:
 every action is decided by policy and audited, each device enforces its own ceiling, and every connection
-between Hearth processes is mutually authenticated TLS.
+between Hearth processes is mutually authenticated TLS. The [threat model](threat-model.md) maps these
+rules to the trust boundaries they guard and lists the known residual risks.
 
 ## Rules
 
