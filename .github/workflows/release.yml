@@ -19,6 +19,9 @@ jobs:
   goreleaser:
     name: GoReleaser
     runs-on: ubuntu-latest
+    # HEARTH_RELEASE_SIGNING_KEY lives in this environment, which needs the
+    # maintainer's approval: only an approved run signs a release.
+    environment: release
     permissions:
       contents: write # GitHub release and assets
       packages: write # ghcr.io/gvart/hearth
@@ -27,6 +30,14 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # changelog and version come from git history and tags
+      - name: Check the release signing key is set
+        env:
+          HEARTH_RELEASE_SIGNING_KEY: ${{ secrets.HEARTH_RELEASE_SIGNING_KEY }}
+        run: |
+          if [ -z "$HEARTH_RELEASE_SIGNING_KEY" ]; then
+            echo "::error::the secret HEARTH_RELEASE_SIGNING_KEY of the release environment is empty: agents refuse an unsigned release (#359)"
+            exit 1
+          fi
       - name: Check docs name this version
         env:
           TAG: ${{ github.ref_name }}
@@ -59,3 +70,15 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Agents trust a release's checksums.txt only with this Ed25519
+      # signature (#359). The tool refuses a key agents do not trust, and
+      # never prints it.
+      - name: Sign checksums.txt for the agents
+        env:
+          HEARTH_RELEASE_SIGNING_KEY: ${{ secrets.HEARTH_RELEASE_SIGNING_KEY }}
+        run: go run ./internal/release/cmd/sign dist/checksums.txt
+      - name: Upload checksums.txt.sig
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: gh release upload "$TAG" dist/checksums.txt.sig
