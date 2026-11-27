@@ -109,6 +109,8 @@ func allCommands() []Command {
 		SetDeviceCeiling{DeviceID: "pi", Ceiling: `{"logs":["docker:*"]}`, UpdatedAt: 37, UpdatedBy: "web/10.0.0.1"},
 		AddESPHomeDevice{ID: "e1", Name: "kitchen", Sealed: []byte{9, 9}, CreatedAt: 38},
 		RemoveESPHomeDevice{ID: "e1"},
+		AddOpenWrtRouter{ID: "o1", Name: "gateway", Sealed: []byte{7}, CreatedAt: 39},
+		RemoveOpenWrtRouter{ID: "o1"},
 		CreateRunbookRun{
 			ID: "rr1", RunbookID: "rb", Status: "running", StartedBy: "admin/root", StartedAt: 35,
 			Source: []byte("steps: []"), State: `{"step":0}`, Keep: 100,
@@ -434,6 +436,10 @@ func runScenario(t *testing.T, s *Store) {
 	must(s.ESPHomeDevices().Add(ctx, ESPHomeDevice{ID: "e2", Name: "porch", Sealed: []byte{2}, CreatedAt: at(5 * time.Hour)}))
 	must(s.ESPHomeDevices().Remove(ctx, "e2"))
 	wantErr(s.ESPHomeDevices().Remove(ctx, "e2"), ErrNotFound)
+	must(s.OpenWrtRouters().Add(ctx, OpenWrtRouter{ID: "o1", Name: "gateway", Sealed: []byte{1}, CreatedAt: at(5 * time.Hour)}))
+	must(s.OpenWrtRouters().Add(ctx, OpenWrtRouter{ID: "o2", Name: "attic", Sealed: []byte{2}, CreatedAt: at(5 * time.Hour)}))
+	must(s.OpenWrtRouters().Remove(ctx, "o2"))
+	wantErr(s.OpenWrtRouters().Remove(ctx, "o2"), ErrNotFound)
 
 	// A hub CA rotation: started, a second refused, cut over, its secrets
 	// re-sealed (a stale one refused), finished.

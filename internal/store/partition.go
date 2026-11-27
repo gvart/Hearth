@@ -64,6 +64,7 @@ var globalTables = map[string]bool{
 	"kube_clusters":   true,
 	"proxmox_servers": true,
 	"esphome_devices": true,
+	"openwrt_routers": true,
 	"network_hosts":   true,
 	"config_docs":     true, // item 5 (ap-config): every member serves the configuration
 }
@@ -380,6 +381,8 @@ func RouteOf(cmd Command) (Route, error) {
 		SetTelemetry, MarkTelemetrySent, RecordNetworkScan, SetNetworkHostState, RecordNetworkImport:
 		return global(false)
 	case AddESPHomeDevice, RemoveESPHomeDevice:
+		return global(false)
+	case AddOpenWrtRouter, RemoveOpenWrtRouter:
 		return global(false)
 	}
 	return Route{}, fmt.Errorf("%w: %s", ErrNoRoute, cmd.Op())

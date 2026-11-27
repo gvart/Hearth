@@ -55,6 +55,14 @@ type Source interface {
 	Records(ctx context.Context) ([]Record, error)
 }
 
+// IdleSource is a Source that can have nothing to give, such as the OpenWrt
+// routers when none is adopted: an import leaves it out while it is idle,
+// and an import of idle sources only neither runs nor is audited.
+type IdleSource interface {
+	Source
+	Idle() bool
+}
+
 // ImportHosts stores import results: store.NetworkHosts.
 type ImportHosts interface {
 	RecordImport(ctx context.Context, at time.Time, hosts []store.ImportedHost) error
@@ -111,9 +119,18 @@ func (im *Importer) Run(ctx context.Context) error {
 // entry per import) and records what they know in one write. A source that
 // fails is logged and skipped; the import fails only if every source does.
 func (im *Importer) Import(ctx context.Context) error {
-	targets := make([]string, len(im.cfg.Sources))
-	for i, s := range im.cfg.Sources {
-		targets[i] = s.Target()
+	var (
+		sources []Source
+		targets []string
+	)
+	for _, s := range im.cfg.Sources {
+		if idle, ok := s.(IdleSource); ok && idle.Idle() {
+			continue
+		}
+		sources, targets = append(sources, s), append(targets, s.Target())
+	}
+	if len(sources) == 0 {
+		return nil
 	}
 	detail := map[string]any{"sources": targets}
 	err := im.cfg.Policy.Do(ctx, policy.Request{
@@ -131,7 +148,7 @@ func (im *Importer) Import(ctx context.Context) error {
 			failed []string
 			errs   []error
 		)
-		for _, s := range im.cfg.Sources {
+		for _, s := range sources {
 			recs, err := s.Records(ctx)
 			if err != nil {
 				if ctx.Err() != nil {

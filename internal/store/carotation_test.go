@@ -99,13 +99,14 @@ func TestCARotations(t *testing.T) {
 	must(s.KubeClusters().Add(ctx, KubeCluster{ID: "k1", Name: "lab", Sealed: []byte{1}, CreatedAt: now}))
 	must(s.ProxmoxServers().Add(ctx, ProxmoxServer{ID: "p1", Name: "rack", Sealed: []byte{2}, CreatedAt: now}))
 	must(s.ESPHomeDevices().Add(ctx, ESPHomeDevice{ID: "e1", Name: "kitchen", Sealed: []byte{3}, CreatedAt: now}))
+	must(s.OpenWrtRouters().Add(ctx, OpenWrtRouter{ID: "o1", Name: "gateway", Sealed: []byte{4}, CreatedAt: now}))
 	sealed, err := rots.Sealed(ctx)
 	must(err)
-	if len(sealed) != 3 || sealed[0].Table != SealedKubeClusters || sealed[1].Table != SealedProxmoxServers ||
-		sealed[2].Table != SealedESPHomeDevices {
+	if len(sealed) != 4 || sealed[0].Table != SealedKubeClusters || sealed[1].Table != SealedProxmoxServers ||
+		sealed[2].Table != SealedESPHomeDevices || sealed[3].Table != SealedOpenWrtRouters {
 		t.Fatalf("Sealed = %+v", sealed)
 	}
-	sealed[0].Resealed, sealed[1].Resealed, sealed[2].Resealed = []byte{11}, []byte{12}, []byte{13}
+	sealed[0].Resealed, sealed[1].Resealed, sealed[2].Resealed, sealed[3].Resealed = []byte{11}, []byte{12}, []byte{13}, []byte{14}
 	stale := append([]SealedSecret{}, sealed...)
 	stale[1].Sealed = []byte{9}
 	if err := rots.Reseal(ctx, "new", stale); !errors.Is(err, ErrCARotationConflict) {
@@ -121,7 +122,7 @@ func TestCARotations(t *testing.T) {
 	again, err := rots.Sealed(ctx)
 	must(err)
 	if string(again[0].Sealed) != string([]byte{11}) || string(again[1].Sealed) != string([]byte{12}) ||
-		string(again[2].Sealed) != string([]byte{13}) {
+		string(again[2].Sealed) != string([]byte{13}) || string(again[3].Sealed) != string([]byte{14}) {
 		t.Errorf("after Reseal: %+v", again)
 	}
 

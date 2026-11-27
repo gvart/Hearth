@@ -298,6 +298,14 @@ const (
 	// ESPHomeCall turns a switch of an ESPHome device on or off, or presses
 	// one of its buttons.
 	ESPHomeCall Action = "esphome.call"
+	// OpenWrtRouterAdd adopts an OpenWrt router: the hub stores its URL and
+	// rpcd login, sealed, and starts reading it through ubus.
+	OpenWrtRouterAdd Action = "openwrt.router.add"
+	// OpenWrtRouterRemove forgets an adopted OpenWrt router and its login.
+	OpenWrtRouterRemove Action = "openwrt.router.remove"
+	// OpenWrtDNSRestart restarts dnsmasq on an OpenWrt router: its DNS and
+	// DHCP server.
+	OpenWrtDNSRestart Action = "openwrt.dnsmasq.restart"
 )
 
 // Actor kinds.
@@ -626,6 +634,13 @@ var rules = map[Action]rule{
 	// call undoes a switch. The device must also have been adopted with
 	// calls allowed: read-only is the default.
 	ESPHomeCall: {class: Safe, actors: []string{ActorWeb}},
+	// Adopting an OpenWrt router hands the hub its login; the hub only reads
+	// with it, except for openwrt.dnsmasq.restart, decided on its own.
+	OpenWrtRouterAdd:    {class: Safe, actors: []string{ActorWeb}},
+	OpenWrtRouterRemove: {class: Safe, actors: []string{ActorWeb}},
+	// A restart drops every DNS lookup and DHCP answer of the network for a
+	// moment, and fails it outright on a broken configuration.
+	OpenWrtDNSRestart: {class: Dangerous, actors: []string{ActorWeb}},
 }
 
 // Actions returns every known action, sorted.
