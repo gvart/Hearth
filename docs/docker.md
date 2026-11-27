@@ -80,3 +80,6 @@ The API, behind an admin session:
 - `GET /api/v1/devices/{id}/docker`: stacks, other containers, images
 - `GET /api/v1/devices/{id}/docker/logs?container=NAME&tail=N`
 - `POST /api/v1/devices/{id}/docker/actions` with `{"action": "restart", "container": "NAME"}`
+
+An AI assistant takes the same requests through the MCP tools `list_containers`, `container_logs`
+and `container_action` (see [mcp.md](mcp.md)), as `mcp/<token name>`, within the same ceiling.

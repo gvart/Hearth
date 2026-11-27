@@ -471,12 +471,13 @@ var rules = map[Action]rule{
 	// read is audited. Starting, stopping and restarting a container is
 	// bounded and undone by the next one, as a service restart is. The
 	// device's agent does any of it only with --allow-docker, and nothing
-	// else of the engine's API (no exec, create, remove or pull).
-	DeviceDockerList:    {class: Read, actors: []string{ActorWeb}},
-	DeviceDockerLogs:    {class: Read, actors: []string{ActorWeb}},
-	DeviceDockerStart:   {class: Safe, actors: []string{ActorWeb}},
-	DeviceDockerStop:    {class: Safe, actors: []string{ActorWeb}},
-	DeviceDockerRestart: {class: Safe, actors: []string{ActorWeb}},
+	// else of the engine's API (no exec, create, remove or pull). An MCP
+	// client may too, as it restarts a service.
+	DeviceDockerList:    {class: Read, actors: []string{ActorWeb, ActorMCP}},
+	DeviceDockerLogs:    {class: Read, actors: []string{ActorWeb, ActorMCP}},
+	DeviceDockerStart:   {class: Safe, actors: []string{ActorWeb, ActorMCP}},
+	DeviceDockerStop:    {class: Safe, actors: []string{ActorWeb, ActorMCP}},
+	DeviceDockerRestart: {class: Safe, actors: []string{ActorWeb, ActorMCP}},
 	// A plan only parses the file.
 	AutomationPlan: {class: Read, actors: []string{ActorMCP}},
 	// An applied automation runs on its own, again and again, long after the

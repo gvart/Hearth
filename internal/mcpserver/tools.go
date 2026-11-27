@@ -82,6 +82,7 @@ func (s *session) tools() []tool {
 				"exists; the hub loads and runs it. Dangerous: usually held until an operator approves it.",
 			s.applyAutomation),
 	}
+	out = append(out, s.dockerTools()...)
 	if s.cfg.Kube != nil {
 		out = append(out,
 			newTool(policy.Read, "list_kube_objects",
