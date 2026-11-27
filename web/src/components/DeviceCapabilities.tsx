@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useCapabilities, useSetCapabilities } from '../api/capabilities.ts';
-import { ApiError, type Ceiling, type Device } from '../api/client.ts';
+import { ApiError, type Ceiling, type Device, type PluginGrant } from '../api/client.ts';
+import { useDevicePluginRegistry } from '../api/deviceplugins.ts';
 import {
   applied,
   capStates,
@@ -8,6 +9,9 @@ import {
   emptyCeiling,
   isAll,
   parseList,
+  pluginClasses,
+  withoutPlugin,
+  withPlugin,
   withDocker,
   withList,
   withSwitch,
@@ -133,6 +137,21 @@ function CapsBody({ device, caps, applying }: { device: Device; caps: Capabiliti
           />
         ))}
       </ul>
+      <PluginsSection
+        grants={hub.plugins ?? []}
+        local={caps.local?.plugins ?? []}
+        effective={caps.effective?.plugins ?? []}
+        reported={caps.effective !== null}
+        manageable={caps.plugins_manageable}
+        readOnly={mode === 'locked' || mode === 'upgrade' || !caps.plugins_manageable}
+        busy={set.isPending}
+        onAdd={(name, cls) => {
+          change(withPlugin(hub, name, cls));
+        }}
+        onRemove={(name) => {
+          change(withoutPlugin(hub, name));
+        }}
+      />
       {set.isError && !(set.error instanceof ApiError && set.error.code === 'reauth_cancelled') ? (
         <div className="error-box" role="alert">
           {set.error instanceof ApiError && set.error.code === 'forbidden'
@@ -416,4 +435,146 @@ function listOfEffective(s: CapState, c: Ceiling | null): string[] {
     default:
       return [];
   }
+}
+
+const classNote = 'Adding a plugin or raising its class asks for your password again';
+
+function grantText(g: PluginGrant[]): string {
+  return g.map((x) => `${x.name} (${x.class})`).join(', ');
+}
+
+/**
+ * The device plugins the hub may run commands of there, each up to a class.
+ * Granting one, or raising its class, is dangerous: the password again.
+ */
+function PluginsSection({
+  grants,
+  local,
+  effective,
+  reported,
+  manageable,
+  readOnly,
+  busy,
+  onAdd,
+  onRemove,
+}: {
+  grants: PluginGrant[];
+  local: PluginGrant[];
+  effective: PluginGrant[];
+  reported: boolean;
+  manageable: boolean;
+  readOnly: boolean;
+  busy: boolean;
+  onAdd: (name: string, cls: PluginGrant['class']) => void;
+  onRemove: (name: string) => void;
+}) {
+  const registry = useDevicePluginRegistry();
+  const [name, setName] = useState('');
+  const [cls, setCls] = useState<PluginGrant['class']>('read');
+  const disabled = readOnly || busy;
+  const known = [...new Set((registry.data?.plugins ?? []).map((p) => p.name))];
+  return (
+    <div className="caps-plugins">
+      <div className="caps-what">
+        <span className="caps-name">
+          Plugins
+          <span className="caps-risk small" title={classNote}>
+            dangerous
+          </span>
+        </span>
+        <span className="muted small">
+          Run the commands of device plugins, up to the class set for each.
+        </span>
+        {!manageable ? <span className="muted small">Plugins need an agent upgrade</span> : null}
+        {local.length ? (
+          <span className="caps-local small">
+            Set on the device: <span className="mono">{grantText(local)}</span>
+          </span>
+        ) : null}
+        {reported ? (
+          <span className="muted small">
+            In effect: <span className="mono">{effective.length ? grantText(effective) : 'none'}</span>
+          </span>
+        ) : null}
+      </div>
+      {grants.length ? (
+        <ul className="caps-list">
+          {grants.map((g) => (
+            <li key={g.name} className="caps-row">
+              <span className="mono">{g.name}</span>
+              <div className="caps-control">
+                <select
+                  aria-label={`Class of ${g.name}`}
+                  value={g.class}
+                  disabled={disabled}
+                  onChange={(e) => {
+                    onAdd(g.name, e.target.value as PluginGrant['class']);
+                  }}
+                >
+                  {pluginClasses.map((c) => (
+                    <option key={c}>{c}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="link small"
+                  disabled={disabled}
+                  onClick={() => {
+                    onRemove(g.name);
+                  }}
+                >
+                  Remove
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {readOnly ? null : (
+        <form
+          className="caps-editor"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const n = name.trim();
+            if (n) {
+              onAdd(n, cls);
+              setName('');
+            }
+          }}
+        >
+          <input
+            className="mono"
+            aria-label="Plugin name"
+            list="caps-plugin-names"
+            value={name}
+            placeholder="plugin name"
+            disabled={busy}
+            onChange={(e) => {
+              setName(e.target.value);
+            }}
+          />
+          <datalist id="caps-plugin-names">
+            {known.map((n) => (
+              <option key={n} value={n} />
+            ))}
+          </datalist>
+          <select
+            aria-label="Class of the new plugin"
+            value={cls}
+            disabled={busy}
+            onChange={(e) => {
+              setCls(e.target.value as PluginGrant['class']);
+            }}
+          >
+            {pluginClasses.map((c) => (
+              <option key={c}>{c}</option>
+            ))}
+          </select>
+          <button type="submit" className="btn btn-primary btn-small" disabled={busy || name.trim() === ''} title={classNote}>
+            Add plugin
+          </button>
+        </form>
+      )}
+    </div>
+  );
 }

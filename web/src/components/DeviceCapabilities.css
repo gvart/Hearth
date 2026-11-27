@@ -177,3 +177,16 @@
 .caps-note {
   margin: 0 0 var(--space-2);
 }
+
+/* The Plugins part: its grants, then the form that adds one. */
+.caps-plugins {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) 0 0;
+  border-top: var(--line-1) solid var(--border);
+}
+
+.caps-plugins .caps-editor {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+}

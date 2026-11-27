@@ -2,7 +2,7 @@
 // hub may do there, on or off, set here or by a flag on the device. Kept apart
 // from the components so node --test can check it (web/test/capabilities.test.mjs).
 
-import type { Ceiling } from './api/client.ts';
+import type { Ceiling, PluginGrant } from './api/client.ts';
 
 /** A device's capabilities, as GET /api/v1/devices/{id}/capabilities answers. */
 export interface Capabilities {
@@ -16,6 +16,8 @@ export interface Capabilities {
   locked: boolean;
   /** The agent takes capabilities from the hub; an older one must be upgraded first. */
   manageable: boolean;
+  /** The agent takes device plugins from the hub (protocol minor 14); an older one must be upgraded first. */
+  plugins_manageable: boolean;
   agent_version: string;
   updated_at?: string;
   updated_by?: string;
@@ -69,6 +71,7 @@ export const emptyCeiling = (): Ceiling => ({
   net_edges: false,
   docker: false,
   docker_read: false,
+  plugins: [],
 });
 
 function listOf(c: Ceiling | null | undefined, key: CapKey): string[] {
@@ -256,8 +259,31 @@ export function raisesRisky(old: Ceiling, next: Ceiling): boolean {
     ((next.shell ?? false) && !(old.shell ?? false)) ||
     added(old.exec, next.exec) ||
     added(old.restart, next.restart) ||
-    ((next.docker ?? false) && !(old.docker ?? false))
+    ((next.docker ?? false) && !(old.docker ?? false)) ||
+    raisesPlugin(old.plugins ?? [], next.plugins ?? [])
   );
+}
+
+export const pluginClasses: PluginGrant['class'][] = ['read', 'safe', 'dangerous'];
+
+/** Whether next grants a plugin old does not, or one at a higher class: the password again. */
+export function raisesPlugin(old: PluginGrant[], next: PluginGrant[]): boolean {
+  const rank = (c: PluginGrant['class']) => pluginClasses.indexOf(c);
+  return next.some((n) => {
+    const o = old.find((g) => g.name === n.name);
+    return !o || rank(n.class) > rank(o.class);
+  });
+}
+
+/** c with the plugin name granted up to class, replacing an earlier grant of it. */
+export function withPlugin(c: Ceiling, name: string, cls: PluginGrant['class']): Ceiling {
+  const rest = (c.plugins ?? []).filter((g) => g.name !== name);
+  return { ...emptyCeiling(), ...c, plugins: [...rest, { name, class: cls }] };
+}
+
+/** c without the grant of the plugin name. */
+export function withoutPlugin(c: Ceiling, name: string): Ceiling {
+  return { ...emptyCeiling(), ...c, plugins: (c.plugins ?? []).filter((g) => g.name !== name) };
 }
 
 /** Whether the agent reports what the hub and its flags add up to: false while it has not applied a change yet. */

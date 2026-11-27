@@ -1,22 +1,7 @@
 import { useState } from 'react';
 import { usePluginCommand, type Plugin, type PluginCommandSpec, type PluginDevice, type PolicyDecision } from '../api/plugins.ts';
+import { parseArgs } from '../plugincommands.ts';
 import { Modal } from './Modal.tsx';
-
-/** The parsed arguments, or an error: they must be a JSON object, or nothing. */
-function parseArgs(text: string): { args?: Record<string, unknown>; error?: string } {
-  if (text.trim() === '') {
-    return {};
-  }
-  try {
-    const v: unknown = JSON.parse(text);
-    if (v === null || typeof v !== 'object' || Array.isArray(v)) {
-      return { error: 'Arguments must be a JSON object, such as {"level": 3}.' };
-    }
-    return { args: v as Record<string, unknown> };
-  } catch {
-    return { error: 'Arguments are not valid JSON.' };
-  }
-}
 
 const pillOf = { read: 'pill-ok', safe: 'pill-ok', dangerous: 'pill-bad' } as const;
 

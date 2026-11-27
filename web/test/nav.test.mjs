@@ -50,6 +50,7 @@ test('pageOf reads the page from the hash', () => {
     ['#/settings/policy', 'policy'],
     ['#/settings/backup', 'backup'],
     ['#/settings/integrations', 'integrations'],
+    ['#/settings/device-plugins', 'deviceplugins'],
   ];
   for (const [hash, page] of cases) {
     assert.equal(pageOf(hash), page, hash);

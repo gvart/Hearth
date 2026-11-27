@@ -17,6 +17,7 @@ export type TipId =
   | "devicehub"
   | "tokens"
   | "capabilities"
+  | "deviceplugins"
   | "upgrade";
 
 export interface TipText {
@@ -136,6 +137,14 @@ export const tips: Record<TipId, TipText> = {
       "A device installed with --local-ceiling ignores what is set here.",
     ],
     docs: "security.md",
+  },
+  deviceplugins: {
+    about: "device plugins",
+    lines: [
+      "Programs you upload here run on a device, as its agent's user, and speak the same JSON lines as the hub's exec plugins. A device gets one when you grant it under Capabilities.",
+      "Uploading asks for your password again. A command's class decides what policy asks before it runs.",
+    ],
+    docs: "plugins.md",
   },
   upgrade: {
     about: "upgrading the agent",

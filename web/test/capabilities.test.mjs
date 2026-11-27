@@ -98,3 +98,13 @@ test('allowsService matches globs as the agent does', () => {
   assert.equal(isPattern('docker:*'), true);
   assert.equal(isPattern('docker:web'), false);
 });
+
+test('granting a plugin, or raising its class, asks for the password again', async () => {
+  const { raisesRisky, withPlugin, withoutPlugin } = await import('../src/capabilities.ts');
+  const none = emptyCeiling();
+  const read = withPlugin(none, 'pi', 'read');
+  assert.equal(raisesRisky(none, read), true);
+  assert.equal(raisesRisky(read, withPlugin(read, 'pi', 'dangerous')), true);
+  assert.equal(raisesRisky(withPlugin(read, 'pi', 'dangerous'), read), false);
+  assert.equal(raisesRisky(read, withoutPlugin(read, 'pi')), false);
+});
