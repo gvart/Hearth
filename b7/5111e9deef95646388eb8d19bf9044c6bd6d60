@@ -1,0 +1,21 @@
+docs/security.md
+  s_18b57982fdff93::t_a605bea7ca40ca 223-246,250-256
+docs/getting-started.md
+  s_18b57982fdff93::t_d5eb4e32e80c93 242-246
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b75111e9deef95646388eb8d19bf9044c6bd6d60",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
