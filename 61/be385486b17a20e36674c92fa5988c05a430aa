@@ -1,0 +1,58 @@
+internal/automation/load.go
+  s_18b57982fdff93::t_32407f23d60e21 150,160-164,195-197
+internal/automation/action_check.go
+  s_18b57982fdff93::t_f0208330ba7bf1 15-17
+  s_18b57982fdff93::t_456485ef0ad882 18,56,59,67,69,73,80
+  s_18b57982fdff93::t_a683ca96044b0c 1-14,19-55,57-58,60-66,68,70-72,74-79,81-92
+internal/hub/agentexec.go
+  s_18b57982fdff93::t_64a3d7546c6746 54-56,114-115
+internal/automation/spec.go
+  s_18b57982fdff93::t_bb23e6d6b7b9fc 101-106
+internal/store/configdocs_test.go
+  s_18b57982fdff93::t_0fd518c3b31db3 182-219
+internal/automation/local.go
+  s_18b57982fdff93::t_197bfd37031c2a 1-64,66-109,111-135
+  s_18b57982fdff93::t_456485ef0ad882 65,110
+internal/automation/runtime.go
+  s_18b57982fdff93::t_b7b1db36b25225 385-389
+  s_18b57982fdff93::t_6ab695f5eb4b1d 291-293
+proto/hearth/agent/v1/agent.proto
+  s_18b57982fdff93::t_c914680671bce2 624-728
+  s_18b57982fdff93::t_5697c8d100a3e1 32-35
+  s_18b57982fdff93::t_411458b5b16491 56-62
+internal/hub/agentstream.go
+  s_18b57982fdff93::t_eb4f659079bda0 145,184,208-209
+internal/automation/action_device.go
+  s_18b57982fdff93::t_d98a50b9b4205b 41-43,46,55
+internal/automation/local_test.go
+  s_18b57982fdff93::t_38ea6429630df7 203-221
+  s_18b57982fdff93::t_3fc2b79861d9c6 1-202
+internal/hub/localrules.go
+  s_18b57982fdff93::t_b00e8464bfa5ea 131,134-142,158-159,162-165,175,187,201-204,207,224-226,230-231,233,235-237,239-245,248-251,261,263-264,266,310,319,321-324
+  s_18b57982fdff93::t_4bed20c7cd7023 343-345
+  s_18b57982fdff93::t_357c5b266f6322 1-130,132-133,143-157,160-161,166-174,176-186,188-200,205-206,208-223,227-229,232,234,238,246-247,252-260,262,265,267-309,311-318,320,325-342,346-427
+cmd/hearth/hub.go
+  s_18b57982fdff93::t_facf08c5c784f8 517,648-652,755
+internal/proto/hearth/agent/v1/agent.pb.go
+  s_18b57982fdff93::t_2e0018ea12e8ba 44,186-194,244-250,273-274,291-292,434-451,503-515,538-541,3955-4610,4615,4631-4634,4650-4653,4885-4933,4951,5003-5013,5027-5102,5122,5136-5137,5165-5168,5175
+internal/hub/localrules_test.go
+  s_18b57982fdff93::t_7dd8a0da9c0384 1-302
+internal/store/configdocs.go
+  s_18b57982fdff93::t_ae64e74e4d76f9 157-171
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "61be385486b17a20e36674c92fa5988c05a430aa",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": null
+    }
+  }
+}
