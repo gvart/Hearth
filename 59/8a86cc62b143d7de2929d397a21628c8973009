@@ -6,6 +6,7 @@ web/src/integrations.ts
 web/src/platforms.ts
   s_18b57982fdff93::t_cca1d53cf10922 13,78-87,135,198-207
   s_18b57982fdff93::t_6fe9365d8f8fe0 208-209
+  s_18b57982fdff93::t_27d1a22293a289 5,114
 web/src/components/Shell.tsx
   s_18b57982fdff93::t_cca1d53cf10922 24,159-160
 web/test/unifi.test.mjs
@@ -14,20 +15,30 @@ web/src/components/AddUniFiDialog.tsx
   s_18b57982fdff93::t_a50b17cb682868 1-203
 web/src/components/CommandBar.tsx
   s_18b57982fdff93::t_cca1d53cf10922 8,32
+  s_18b57982fdff93::t_27d1a22293a289 38
 web/src/api/unifi.ts
   s_18b57982fdff93::t_c0125be1fe7cac 1-162
 web/src/components/PlatformsPage.tsx
   s_18b57982fdff93::t_cca1d53cf10922 8,26,65-69,84,140-144,177-178
+  s_18b57982fdff93::t_27d1a22293a289 72,88-89,96,154,158
 web/src/components/IntegrationsPage.tsx
   s_18b57982fdff93::t_cca1d53cf10922 7,32,43
+  s_18b57982fdff93::t_27d1a22293a289 49
 web/src/components/UnmanagedHosts.tsx
   s_18b57982fdff93::t_cca1d53cf10922 31
 web/test/platforms.test.mjs
   s_18b57982fdff93::t_cca1d53cf10922 73,75,91-98
+  s_18b57982fdff93::t_27d1a22293a289 88-90
 web/src/unifi.ts
   s_18b57982fdff93::t_7d4439eea54bbf 1-56
 web/test/integrations.test.mjs
   s_18b57982fdff93::t_cca1d53cf10922 20
+web/src/nav.ts
+  s_18b57982fdff93::t_27d1a22293a289 237
+web/src/api/client.ts
+  s_18b57982fdff93::t_27d1a22293a289 200
+web/src/tips.ts
+  s_18b57982fdff93::t_27d1a22293a289 52,54
 ---
 {
   "schema_version": "authorship/3.0.0",
