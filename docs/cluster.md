@@ -270,24 +270,43 @@ signs the connection's TLS exporter with it.
   prove it holds the key: what it coordinates is written in its own name.
 - **Masters call masters only.** The HTTP calls between masters (an agent call forwarded to the master
   holding the device's stream, a role change) are served only to a live master that proved the key
-  on the connection.
+  on the connection, and a master sends one only to a member that proves it too, so a member that
+  says it is a master cannot take a device's terminal or exec. A role change goes to the member
+  changed, which need not hold the key.
+- **Trust follows the gossip.** A proof counts while the gossip says the member is a master: a
+  connection opened before a demotion carries no master's call or row after it, and one opened before
+  a promotion is replaced.
 - **Sharded rows go through storage members.** They are their replicas: a storage member coordinates
   the writes a master forwards, keeps hints, hands rows off and runs anti-entropy for them.
 
 So a storage-only member, compromised, cannot change the admin password, the configuration (policy,
 automations, runbooks), a device's capability ceiling or plugins, the hub certificates or the
 integrations. It can still change the sharded rows it holds, and answer reads of them as it likes:
-sessions, tokens, enrollment and join tokens, approvals, devices and their certificates, audit
-entries. Treat a storage member as able to sign in as the admin (a forged session) until those rows are
-signed by the master that wrote them ([#384](https://github.com/gvart/hearth/issues/384)). A member of
-a version from before this check proves nothing: upgrade every hub together. Device ceilings were
-sharded before; a ceiling set before the upgrade that only storage-only members hold does not reach
-the masters: set it again. `hearth admin set-password --data-dir` refuses to run on a storage-only
-member's host: set the password on a master's.
+sessions, devices and their certificates, audit entries. Treat a storage member as able to sign in as
+the admin (a forged session) until those rows are signed by the master that wrote them
+([#384](https://github.com/gvart/hearth/issues/384)).
 
-A critical global write counts the storage members among its W replicas, but they never hand a global
-row on: if the master that made it is lost before any other master got it, it is lost with it (unless
-a storage member holding it is promoted to master; [#386](https://github.com/gvart/hearth/issues/386)).
+Tokens and approvals are sharded too, but the master that creates one keeps a record of it in its own
+data dir: it refuses a token, join token, approval or approval link it has no record of, and what a use
+grants (a join token's roles, an enrollment token's hub roles and labels, a link's approval) comes from
+the record, not the row. A held action acts on an approval only if its owner approved it. So a storage
+member cannot mint a join token that grants master (and so the CA key) or approve an action.
+
+A critical global write (the admin password, the configuration, a ceiling, a certificate) needs, while
+another master is live, the ack of a master that proves the key: the storage members never hand a
+global row on. A member that acks it without a proof is no master and does not count. A master is
+demoted, and deletes its key, only once another master took its global rows and no hint of one waits
+for a master. A master is safe to stop, as to the global rows, once another master is caught up; and a
+hub starting, or catching up after a promotion to storage, compares the global rows with a live master
+before it counts as in sync. `HEARTH_ADMIN_PASSWORD` is applied only once a master is in sync.
+
+**Upgrading.** A member of a version from before these checks proves nothing: upgrade every hub
+together. The owners' records start empty, so enrollment tokens, join tokens and pending approvals made
+before the upgrade are refused: create new ones. Device ceilings were sharded before; a master may lack
+one that only storage-only members hold. A change of such a device's ceiling is measured from none, so
+any raise asks for the password again, and it is refused until the device's agent reports its ceiling.
+Admin commands (`hearth admin set-password --data-dir` and the others) refuse to run on a storage-only
+member's host, before anything is written: run them on a master's.
 
 ## Masters
 
