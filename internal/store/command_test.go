@@ -115,8 +115,10 @@ func allCommands() []Command {
 		RemoveOPNsenseFirewall{ID: "f1"},
 		AddUniFiController{ID: "u1", Name: "console", Sealed: []byte{6}, CreatedAt: 41},
 		RemoveUniFiController{ID: "u1"},
-		SetDevicePlugin{ID: "p1", Name: "lamp", OS: "linux", Arch: "arm64", Version: "1", SHA256: "ab", Size: 3,
-			Manifest: `{}`, Holder: "hub-a", UploadedAt: 42, UploadedBy: "web/10.0.0.1"},
+		SetDevicePlugin{
+			ID: "p1", Name: "lamp", OS: "linux", Arch: "arm64", Version: "1", SHA256: "ab", Size: 3,
+			Manifest: `{}`, Holder: "hub-a", UploadedAt: 42, UploadedBy: "web/10.0.0.1",
+		},
 		RemoveDevicePlugin{ID: "p1"},
 		CreateRunbookRun{
 			ID: "rr1", RunbookID: "rb", Status: "running", StartedBy: "admin/root", StartedAt: 35,

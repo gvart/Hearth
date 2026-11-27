@@ -28,11 +28,11 @@ import (
 func uploadLamp(t *testing.T, h *restartableHub, goos, goarch string) hub.DevicePluginUpload {
 	t.Helper()
 	bin := filepath.Join(t.TempDir(), "lamp")
-	build := exec.Command("go", "build", "-o", bin, "../../examples/plugins/go-lamp") //nolint:gosec // a fixed build of the example
+	build := exec.Command("go", "build", "-o", bin, "../../examples/plugins/go-lamp")
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build: %v\n%s", err, out)
 	}
-	prog, err := os.ReadFile(bin) //nolint:gosec // the test's build
+	prog, err := os.ReadFile(bin)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -131,11 +131,11 @@ func (b *PluginBlobs) Open(ctx context.Context, sum, holder string) (*os.File, e
 
 // fetch copies the program of SHA-256 sum from master over the link.
 func (b *PluginBlobs) fetch(ctx context.Context, sum, master string) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+master+"/agents/plugin-blobs/"+sum, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+master+"/agents/plugin-blobs/"+sum, nil) //nolint:gosec // a cluster master over the pinned link; sum is a checked SHA-256
 	if err != nil {
 		return err
 	}
-	resp, err := b.masters.Client().Do(req)
+	resp, err := b.masters.Client().Do(req) //nolint:gosec // as above
 	if err != nil {
 		return fmt.Errorf("fetch program %.12s from hub %s: %w", sum, master, err)
 	}
@@ -168,7 +168,7 @@ func (b *PluginBlobs) serveLocal(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	f, err := os.Open(filepath.Join(b.dir, sum)) //nolint:gosec // named by a checked SHA-256 under the data dir
+	f, err := os.Open(filepath.Join(b.dir, sum))
 	if err != nil {
 		http.NotFound(w, r)
 		return

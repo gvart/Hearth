@@ -208,11 +208,11 @@ func (zeros) Read(p []byte) (int, error) {
 func buildLamp(t *testing.T) []byte {
 	t.Helper()
 	bin := filepath.Join(t.TempDir(), "lamp")
-	build := exec.Command("go", "build", "-o", bin, "../../examples/plugins/go-lamp") //nolint:gosec // a fixed build of the example
+	build := exec.Command("go", "build", "-o", bin, "../../examples/plugins/go-lamp")
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build: %v\n%s", err, out)
 	}
-	b, err := os.ReadFile(bin) //nolint:gosec // the test's build
+	b, err := os.ReadFile(bin)
 	if err != nil {
 		t.Fatal(err)
 	}

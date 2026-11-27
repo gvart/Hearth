@@ -67,7 +67,7 @@ func runPluginUpload(ctx context.Context, dataDir, program, manifest, goos, arch
 	if err := hub.CheckPlatform(goos, arch); err != nil {
 		return err
 	}
-	mb, err := os.ReadFile(manifest) //nolint:gosec // the admin's file
+	mb, err := os.ReadFile(manifest)
 	if err != nil {
 		return fmt.Errorf("read manifest: %w", err)
 	}
@@ -86,7 +86,7 @@ func runPluginUpload(ctx context.Context, dataDir, program, manifest, goos, arch
 			return err
 		}
 	}
-	f, err := os.Open(program) //nolint:gosec // the admin's file
+	f, err := os.Open(program)
 	if err != nil {
 		return fmt.Errorf("open program: %w", err)
 	}

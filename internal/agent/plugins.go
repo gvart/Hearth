@@ -224,7 +224,7 @@ func (h *pluginHost) install(ctx context.Context, client *http.Client, hub strin
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			return installedPlugin{}, err
 		}
-		if err := os.Chmod(d, 0o700); err != nil {
+		if err := os.Chmod(d, 0o700); err != nil { //nolint:gosec // a directory needs its search bit
 			return installedPlugin{}, err
 		}
 	}
@@ -317,7 +317,7 @@ func (h *pluginHost) prune(ctx context.Context, keep map[string]installedPlugin)
 
 // fileSHA256 is the SHA-256 of the file at path, in hex.
 func fileSHA256(path string) (string, error) {
-	f, err := os.Open(path) //nolint:gosec // a plugin's program under the data dir
+	f, err := os.Open(path)
 	if err != nil {
 		return "", err
 	}

@@ -21,7 +21,7 @@ func buildLamp(t *testing.T) (Manifest, string) {
 	t.Helper()
 	dir := tempDir(t)
 	bin := filepath.Join(dir, "lamp")
-	build := exec.Command("go", "build", "-o", bin, "../../examples/plugins/go-lamp") //nolint:gosec // a fixed build of the example
+	build := exec.Command("go", "build", "-o", bin, "../../examples/plugins/go-lamp")
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build: %v\n%s", err, out)
 	}
@@ -37,7 +37,7 @@ func buildLamp(t *testing.T) (Manifest, string) {
 		t.Fatal(err)
 	}
 	m.Command, m.Dir = bin, dir
-	prog, err := os.ReadFile(bin) //nolint:gosec // the test's build
+	prog, err := os.ReadFile(bin)
 	if err != nil {
 		t.Fatal(err)
 	}
