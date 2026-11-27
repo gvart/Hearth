@@ -7,6 +7,7 @@ internal/agent/plugins.go
   s_18b57982fdff93::t_c71491883aa636 380-409
 internal/agent/run.go
   s_18b57982fdff93::t_c71491883aa636 26,35,85-86,127-129,216-217,573-574,709
+  s_18b57982fdff93::t_509f8a6ca6d5a5 34
 internal/agent/plugins_test.go
   s_18b57982fdff93::t_213cff5a3fbcfb 1-322
 internal/store/reads_test.go
