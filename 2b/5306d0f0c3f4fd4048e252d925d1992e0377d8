@@ -33,6 +33,7 @@ web/src/capabilities.ts
 web/src/tips.ts
   s_18b57982fdff93::t_02f277fc2c0758 17,19,35,44,126-133
   s_18b57982fdff93::t_ed485ef5343355 134
+  s_18b57982fdff93::t_9ae45970740fcc 18
 web/src/components/DeviceCapabilities.tsx
   s_18b57982fdff93::t_ab4c1907d221d7 1-24,38-46,48-206,208-417
   s_18b57982fdff93::t_e0a6641ca80eaa 25-37,47
