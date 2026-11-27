@@ -148,7 +148,7 @@ func testUpgrader(t *testing.T, base string) (*upgrader, string) {
 	if err := os.WriteFile(exe, []byte("old"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	u := newUpgrader(exe, t.TempDir(), "v1.0.0", false, func(string) string { return "" })
+	u := newUpgrader(exe, t.TempDir(), "v1.0.0", "", false, func(string) string { return "" })
 	u.base, u.target, u.pubKey = base, testTarget, testReleasePublicKey()
 	return u, exe
 }
@@ -360,11 +360,11 @@ func TestHTTPSRedirects(t *testing.T) {
 
 func TestNewUpgraderBase(t *testing.T) {
 	t.Parallel()
-	u := newUpgrader("/x/hearth", t.TempDir(), "v1.0.0", false, func(string) string { return "" })
+	u := newUpgrader("/x/hearth", t.TempDir(), "v1.0.0", "", false, func(string) string { return "" })
 	if u.base != ReleaseBaseURL || !strings.HasPrefix(u.base, "https://") {
 		t.Errorf("base = %s, want the project's https releases", u.base)
 	}
-	u = newUpgrader("/x/hearth", t.TempDir(), "v1.0.0", false, func(k string) string {
+	u = newUpgrader("/x/hearth", t.TempDir(), "v1.0.0", "", false, func(k string) string {
 		if k == releaseBaseEnv {
 			return "http://releases:8000/r/"
 		}
@@ -374,8 +374,78 @@ func TestNewUpgraderBase(t *testing.T) {
 		t.Errorf("base with %s = %s", releaseBaseEnv, u.base)
 	}
 	// An agent started with --local-ceiling refuses, as Run builds it.
-	if u := newUpgrader("/x/hearth", t.TempDir(), "v1.0.0", true, func(string) string { return "" }); !strings.Contains(u.refusal, "--local-ceiling") {
+	if u := newUpgrader("/x/hearth", t.TempDir(), "v1.0.0", "", true, func(string) string { return "" }); !strings.Contains(u.refusal, "--local-ceiling") {
 		t.Errorf("refusal with --local-ceiling = %q", u.refusal)
+	}
+}
+
+func TestReleaseBase(t *testing.T) {
+	t.Parallel()
+	env := func(v string) func(string) string {
+		return func(k string) string {
+			if k == releaseBaseEnv {
+				return v
+			}
+			return ""
+		}
+	}
+	for _, tc := range []struct {
+		name, mirror, env, want string
+	}{
+		{"default", "", "", ReleaseBaseURL},
+		{"test override", "", "http://releases:8000/r/", "http://releases:8000/r"},
+		{"mirror", "https://mirror.lan/hearth/", "", "https://mirror.lan/hearth"},
+		{"mirror over the test override", "http://mirror.lan:8000", "http://releases:8000/r", "http://mirror.lan:8000"},
+	} {
+		if got := releaseBase(tc.mirror, env(tc.env)); got != tc.want {
+			t.Errorf("%s: releaseBase = %s, want %s", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestUpgradeFromMirror checks that an agent with a release mirror
+// downloads from it, and that the mirror cannot hand out anything that is
+// not signed with the release key.
+func TestUpgradeFromMirror(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake release's hearth is a shell script")
+	}
+	archive, sum := fakeRelease(t, "hearth", "v1.2.3")
+	good := releaseFor("v1.2.3", testTarget, archive, sum)
+	forged := good
+	forged.sig = string(release.Sign(otherReleaseKey, []byte(forged.checksums)))
+	for _, tc := range []struct {
+		name    string
+		rel     fakeReleaseFiles
+		wantErr string
+	}{
+		{"signed release", good, ""},
+		{"signed with another key", forged, "does not verify"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			mirror := releaseServer(t, tc.rel)
+			exe := filepath.Join(t.TempDir(), "hearth")
+			if err := os.WriteFile(exe, []byte("old"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			u := newUpgrader(exe, t.TempDir(), "v1.0.0", mirror+"/", false, func(string) string { return "" })
+			u.target, u.pubKey = testTarget, testReleasePublicKey()
+			res := u.upgrade(t.Context(), &agentv1.UpgradeRequest{Version: "v1.2.3"})
+			if tc.wantErr == "" {
+				if want := mirror + "/v1.2.3/" + assetName("v1.2.3", testTarget); !res.GetOk() || res.GetUrl() != want {
+					t.Fatalf("upgrade = %v, want ok from %s", res, want)
+				}
+				return
+			}
+			if res.GetOk() || !strings.Contains(res.GetError(), tc.wantErr) {
+				t.Fatalf("upgrade = %v, want an error with %q", res, tc.wantErr)
+			}
+			if got := readFile(t, exe); got != "old" {
+				t.Errorf("executable = %q, want the old binary intact", got)
+			}
+		})
 	}
 }
 

@@ -18,6 +18,7 @@ import (
 	"github.com/gvart/hearth/internal/agent"
 	"github.com/gvart/hearth/internal/cluster"
 	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
+	"github.com/gvart/hearth/internal/release"
 )
 
 func newAgentCmd() *cobra.Command {
@@ -33,6 +34,7 @@ func newAgentRunCmd() *cobra.Command {
 		dockerSocket string
 		localCeiling bool
 		allowPlugins []string
+		mirror       string
 	)
 	cmd := &cobra.Command{
 		Use:   "run",
@@ -63,7 +65,10 @@ func newAgentRunCmd() *cobra.Command {
 			"class, allowing a plugin lets whoever uploads it run code here. DIGEST pins one release, program and\n" +
 			"manifest (`hearth plugin list` shows it); without it, the agent pins the first release it installs\n" +
 			"(trusting the hub for that one) and refuses any other while the flag stays, whatever its class.\n" +
-			"--local-ceiling ignores the capabilities the hub sets for this device, and any it saved before.",
+			"--local-ceiling ignores the capabilities the hub sets for this device, and any it saved before.\n\n" +
+			"--release-mirror URL makes the agent upgrade itself from a local release mirror, laid out as the\n" +
+			"project's GitHub releases (<URL>/<tag>/<asset>; `hearth release mirror` fills one), instead of\n" +
+			"GitHub. It still checks the release's signature with the key compiled in.",
 		Example: "  hearth agent run --allow-restart systemd:pihole-FTL.service --allow-restart docker:jellyfin \\\n" +
 			"    --allow-exec /usr/bin/df --allow-logs 'systemd:pihole-FTL.service' --allow-logs 'docker:*'",
 		Args: cobra.NoArgs,
@@ -99,17 +104,25 @@ func newAgentRunCmd() *cobra.Command {
 			if ceiling.Shell && !agent.ShellSupported {
 				return errors.New("--allow-shell: interactive shells are not supported on this platform")
 			}
+			if mirror != "" {
+				m, err := release.MirrorBase(mirror)
+				if err != nil {
+					return fmt.Errorf("--release-mirror: %w", err)
+				}
+				mirror = m
+			}
 			connected, failed, stop := agent.TuneRuntime()
 			defer stop()
 			return agent.Run(cmd.Context(), agent.Config{
-				DataDir:      dataDir,
-				Version:      cmd.Root().Version,
-				Log:          newLogger(cmd.ErrOrStderr()),
-				Ceiling:      ceiling,
-				LocalCeiling: localCeiling,
-				DockerSocket: dockerSocket,
-				Connected:    connected,
-				Failed:       failed,
+				DataDir:       dataDir,
+				Version:       cmd.Root().Version,
+				Log:           newLogger(cmd.ErrOrStderr()),
+				Ceiling:       ceiling,
+				LocalCeiling:  localCeiling,
+				ReleaseMirror: mirror,
+				DockerSocket:  dockerSocket,
+				Connected:     connected,
+				Failed:        failed,
 			})
 		},
 	}
@@ -139,6 +152,9 @@ func newAgentRunCmd() *cobra.Command {
 			"release; repeatable")
 	cmd.Flags().BoolVar(&localCeiling, "local-ceiling", false,
 		"make the --allow-* flags this device's whole capability ceiling: ignore the capabilities the hub sets")
+	cmd.Flags().StringVar(&mirror, "release-mirror", os.Getenv(releaseMirrorEnv),
+		"base URL of a local release mirror to upgrade from, as <URL>/<tag>/<asset>, instead of GitHub\n(env "+
+			releaseMirrorEnv+")")
 	cmd.Flags().StringVar(&dockerSocket, "docker-socket", "",
 		"the container engine's unix socket, for Docker (default "+agent.DefaultDockerSocket+
 			", then Podman's\n$XDG_RUNTIME_DIR/podman/podman.sock and /run/podman/podman.sock)")
