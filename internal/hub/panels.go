@@ -370,7 +370,8 @@ func (a *api) updatePanel(w http.ResponseWriter, r *http.Request) {
 
 func (a *api) deletePanel(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	err := a.policy.Do(r.Context(), policy.Request{
+	ctx, reach := store.WithReach(r.Context())
+	err := a.policy.Do(ctx, policy.Request{
 		ActorKind: policy.ActorWeb, ActorID: remoteHost(r), Action: policy.PanelDelete, Target: id,
 	}, func(ctx context.Context) error { return a.store.Panels().Delete(ctx, id) })
 	if err != nil {
@@ -378,7 +379,7 @@ func (a *api) deletePanel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.guestStreams.recheck()
-	w.WriteHeader(http.StatusNoContent)
+	writeReach(w, *reach)
 }
 
 // maxPanelLinkTTL bounds a share link's expiry; none at all means never.
@@ -433,7 +434,8 @@ func (a *api) createPanelLink(w http.ResponseWriter, r *http.Request) {
 
 func (a *api) revokePanelLink(w http.ResponseWriter, r *http.Request) {
 	id, link := r.PathValue("id"), r.PathValue("link")
-	err := a.policy.Do(r.Context(), policy.Request{
+	ctx, reach := store.WithReach(r.Context())
+	err := a.policy.Do(ctx, policy.Request{
 		ActorKind: policy.ActorWeb, ActorID: remoteHost(r), Action: policy.PanelLinkRevoke, Target: id,
 		Detail: map[string]any{"link": link},
 	}, func(ctx context.Context) error { return a.store.Panels().RevokeLink(ctx, id, link, a.now()) })
@@ -442,7 +444,7 @@ func (a *api) revokePanelLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.guestStreams.recheck()
-	w.WriteHeader(http.StatusNoContent)
+	writeReach(w, *reach)
 }
 
 // writePanelError answers a failed panel request of the admin.

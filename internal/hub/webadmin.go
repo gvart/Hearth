@@ -177,13 +177,14 @@ func (a *api) createMCPToken(w http.ResponseWriter, r *http.Request) {
 // hub refuses it from its next request.
 func (a *api) revokeMCPToken(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
-	err := a.policy.Do(r.Context(), policy.Request{
+	ctx, reach := store.WithReach(r.Context())
+	err := a.policy.Do(ctx, policy.Request{
 		ActorKind: policy.ActorWeb, ActorID: remoteHost(r), Action: policy.MCPTokenRevoke, Target: name,
 		Precheck: a.recentAuth(r),
 	}, func(ctx context.Context) error { return a.store.MCPTokens().Revoke(ctx, name, a.now()) })
 	switch {
 	case err == nil:
-		w.WriteHeader(http.StatusNoContent)
+		writeReach(w, *reach)
 	case errors.Is(err, store.ErrNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "no MCP token of this name is in use")
 	default:
@@ -196,7 +197,7 @@ func (a *api) revokeMCPToken(w http.ResponseWriter, r *http.Request) {
 // It follows the modes (admin.set_password by web), and ends every session.
 // Resetting a lost password stays `hearth admin set-password` on the hub host.
 func (a *api) changePassword(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+	ctx, reach := store.WithReach(r.Context())
 	var body struct {
 		Current string `json:"current_password"`
 		New     string `json:"new_password"`
@@ -253,7 +254,7 @@ func (a *api) changePassword(w http.ResponseWriter, r *http.Request) {
 			Name: sessionCookieName(r), Value: "", Path: "/", MaxAge: -1,
 			Secure: r.TLS != nil, HttpOnly: true, SameSite: http.SameSiteStrictMode,
 		})
-		w.WriteHeader(http.StatusNoContent)
+		writeReach(w, *reach)
 	case errors.Is(err, errWrongPassword), errors.Is(err, errNoPassword):
 		a.log.WarnContext(ctx, "password change refused: wrong or missing current password", "remote", remoteHost(r))
 		writeError(w, http.StatusForbidden, "reauth_failed", "the current password was missing or wrong")

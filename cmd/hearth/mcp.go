@@ -226,6 +226,7 @@ func newMCPTokenRevokeCmd() *cobra.Command {
 				return err
 			}
 			defer st.Close()
+			ctx, reach := store.WithReach(ctx)
 			done, err := adminDo(ctx, dataDir, st, out, dryRun, policy.Request{
 				Action: policy.MCPTokenRevoke, Target: name,
 			}, func(ctx context.Context) error { return st.MCPTokens().Revoke(ctx, name, time.Now()) })
@@ -235,7 +236,7 @@ func newMCPTokenRevokeCmd() *cobra.Command {
 			if err != nil || !done {
 				return err
 			}
-			if _, err := fmt.Fprintf(out, "Revoked MCP token %s.\n", name); err != nil {
+			if _, err := fmt.Fprintf(out, "Revoked MCP token %s.%s\n", name, reachNote(*reach)); err != nil {
 				return fmt.Errorf("write result: %w", err)
 			}
 			return nil

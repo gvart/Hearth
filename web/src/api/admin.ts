@@ -6,7 +6,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { AutomationProblem } from './automations.ts';
-import { ApiError, request, type RunbookPlan } from './client.ts';
+import { ApiError, request, type Reach, type RunbookPlan } from './client.ts';
 import { keys as appKeys } from './hooks.ts';
 import { useWithReauth } from './reauth.ts';
 
@@ -102,9 +102,9 @@ export const adminApi = {
   revokeDevice: (id: string) => request<{ revoked: number }>('POST', `/devices/${e(id)}/revoke`),
   mcpTokens: async () => (await request<{ tokens: McpToken[] }>('GET', '/mcp/tokens')).tokens,
   createMcpToken: (name: string, scope: McpScope) => request<CreatedMcpToken>('POST', '/mcp/tokens', { name, scope }),
-  revokeMcpToken: (name: string) => request<undefined>('DELETE', `/mcp/tokens/${e(name)}`),
+  revokeMcpToken: (name: string) => request<Reach | undefined>('DELETE', `/mcp/tokens/${e(name)}`),
   changePassword: (current: string, next: string) =>
-    request<undefined>('PUT', '/admin/password', { current_password: current, new_password: next }),
+    request<Reach | undefined>('PUT', '/admin/password', { current_password: current, new_password: next }),
   policy: () => request<ConfigDoc>('GET', '/policy'),
   validatePolicy: (yaml: string) => request<Validation>('POST', '/policy/validate', { yaml }),
   savePolicy: (yaml: string, revision: string) => request<ConfigDoc>('PUT', '/policy', { yaml, revision }),
@@ -188,9 +188,12 @@ export function useChangePassword() {
     // Every session ended, this one too: back to the login form, with
     // nothing of the old session left in the cache. The session query
     // stays, so the app sees it turn null.
-    onSuccess: () => {
+    onSuccess: (reach) => {
+      qc.setQueryData(appKeys.signOutNotice, reach?.message ?? null);
       qc.setQueryData(appKeys.session, null);
-      qc.removeQueries({ predicate: (q) => q.queryKey[0] !== appKeys.session[0] });
+      qc.removeQueries({
+        predicate: (q) => q.queryKey[0] !== appKeys.session[0] && q.queryKey[0] !== appKeys.signOutNotice[0],
+      });
     },
   });
 }

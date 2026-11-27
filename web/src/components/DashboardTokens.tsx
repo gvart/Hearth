@@ -74,6 +74,11 @@ export function DashboardTokens() {
           {revoke.error.message}
         </p>
       ) : null}
+      {revoke.data ? (
+        <p className="notice small" role="status">
+          Revoked: {revoke.data.message}.
+        </p>
+      ) : null}
       {creating ? (
         <CreateDialog
           onClose={() => {

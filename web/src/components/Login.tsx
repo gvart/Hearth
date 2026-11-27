@@ -1,11 +1,12 @@
 import { useState, type SubmitEvent } from 'react';
 import { ApiError } from '../api/client.ts';
-import { useLogin } from '../api/hooks.ts';
+import { useLogin, useSignOutNotice } from '../api/hooks.ts';
 import { Logo } from './Logo.tsx';
 
 export function Login() {
   const [password, setPassword] = useState('');
   const login = useLogin();
+  const signedOut = useSignOutNotice().data;
 
   const submit = (e: SubmitEvent) => {
     e.preventDefault();
@@ -23,6 +24,11 @@ export function Login() {
           <h1>Hearth</h1>
         </div>
         <p className="muted">Sign in to your homelab.</p>
+        {signedOut ? (
+          <p className="notice small" role="status">
+            Signed out: {signedOut}.
+          </p>
+        ) : null}
         {notSet ? (
           <div className="notice" role="alert">
             <strong>No admin password yet.</strong>

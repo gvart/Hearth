@@ -129,6 +129,10 @@ type Config struct {
 	// GET /api/v1/cluster/config-drift; nil on a standalone hub. Its result is
 	// served as is, so it must hold no digests or file contents.
 	ConfigDrift func(context.Context) (any, error)
+	// Uncompared reports whether this master reads sign-ins and tokens it
+	// could not compare with another master (cluster.Replicator.Uncompared):
+	// the web UI says so. Nil is false.
+	Uncompared func() bool
 	// Runbooks serves the runbooks under /api/v1/runbooks and
 	// /api/v1/runbook-runs. Nil disables them.
 	Runbooks *automation.Runbooks

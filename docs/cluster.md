@@ -215,10 +215,17 @@ dir and join it again.
   to the other masters, each of them that is down (or left the gossip) getting it from a hint, so any
   one master signs in alone, one of two included. A sign-in on a master that dies before another has it
   is lost: sign in again. A sign-out, a token or link revocation and a password reset need no quorum
-  either: each only takes access away, so it is applied on the master at once and hinted to every
-  other master. A password reset also raises a session epoch on the admin row, and a session created
-  before it is ended on every master as the reset reaches it, the sessions that master alone held
-  included; a sign-out of a session the master does not hold writes its deletion all the same. Runbook runs need more: a strict **majority** of the
+  either: each only takes access away, so it is applied on the master at once and sent to every other
+  master, trying one that does not take it for up to 3 seconds before it hints it. The answer says
+  how many masters took it ("applied on 1 of 2 masters; the others get it when they are back"), in the
+  web UI and the CLI: until the others do, a master that dies first loses it, and it must be done again.
+  A password reset also raises a session epoch on the admin row (two resets keep the higher), and a
+  session created before it is ended on every master as the reset reaches it, the sessions that master
+  alone held included. A sign-out of a session the master does not hold writes its deletion all the
+  same, and a deletion wins over any copy of the session created before it, whatever the clocks of
+  the masters. Revoking an MCP or dashboard token or a share link the master does not hold writes a
+  revoked stub of it, and the token's own copy, from the master that has it, merges into a revoked
+  one. Runbook runs need more: a strict **majority** of the
   run's N replicas themselves (W = N/2 + 1, a stand-in never counts), both to read the run and to save
   it, so runbooks are consistent rather than available across a split (below). Other writes (presence, facts, scans, automation run
   history) need one replica and reach the others in the background. A replica that is down is replaced by the
@@ -228,10 +235,17 @@ dir and join it again.
   device or device route is asked of every live replica, and the newest copy wins, a deletion included.
   A master reads a sign-in session, an MCP or dashboard token, a panel and a share link on its own
   copy, and never asks another member. A master that started, or was just promoted, first compares
-  these rows with the other live masters that prove the hub CA key, so it holds every sign-out and reset
-  they took while it was down: until it has (a moment: it tries as the first check comes, then in the
-  background, backing off), a sign-in check answers 503 `cluster_unavailable`, the session cookie is
-  kept and the UI retries. With no other master live, it reads its own copy at once. A list asks every storage member and merges the answers. A stale copy a read sees is repaired.
+  these rows with every other live master that proves the hub CA key, so it holds every sign-out and
+  reset they took while it was down: until it has (a moment: it tries as the first check comes, then
+  in the background, backing off; a check that comes while one runs does not wait for it), a sign-in,
+  MCP or dashboard token check or a share link answers 503 `cluster_unavailable`, the session cookie
+  is kept and the UI retries. A hub that never had another hub reads its own copy at once. One that
+  did (the hub certificates of more than one hub are recorded, those of a hub removed since included)
+  and finds no other master live waits 30 seconds for the gossip to find one, then reads its own copy,
+  logs a warning and shows a banner in the web UI: "This hub could not compare sign-ins with another
+  master." That is the AP trade-off: a master cut off from the others keeps signing in rather than
+  stop, so a sign-out, a revocation or a reset taken only by masters it cannot reach is not in force on
+  it until one of them is back. The banner goes once it compared with one. A list asks every storage member and merges the answers. A stale copy a read sees is repaired.
   A write that depends on rows it reads first copies their newest version from the other live members. These
   writes are pinning or revoking a device's certificates, revoking hub certificates, consuming a token or
   approval link, deciding an approval, signing out, a password reset, revoking an MCP or dashboard token
@@ -302,7 +316,9 @@ signs the connection's TLS exporter with it.
   that names these tables, or a comparison of their digests only to a master that proved the key; and a
   master checks a session or a token on its own copy, never asking another member. The rows a master
   withholds from a member that did not prove the key stay in that member's hints, for a connection on
-  which it does. A read another member sends without proving the key runs under an SQLite authorizer
+  which it does: no more than 1000 hints or 8 MiB of them per member, and none after it answered 20
+  times without a proof since its last one (anti-entropy brings the rows to a master that proves it
+  again). A read another member sends without proving the key runs under an SQLite authorizer
   that allows only a `SELECT` of the replicated tables that are not these: not the database's raw pages
   (`sqlite_dbpage`, `dbstat`), its schema or a pragma, however the query is written. Anti-entropy of the
   sharded rows, the global rows or these takes no row of another kind's tables. A storage-only member
@@ -702,7 +718,8 @@ storage-only members held. This happens once per database, and also when you res
 before this version. Sign in again, and create the MCP tokens, dashboard tokens and share links you use
 again. Panels stay on the masters that held them; a storage-only member deletes its copies, so in a
 cluster with storage-only members a panel that only they held is gone: create it again. A hub that
-never had another member keeps everything.
+never had another member keeps everything. A hub that had one, removed since, counts as a cluster's
+(the removed member's certificates stay recorded): sign in again there too.
 
 ## Node certificates
 

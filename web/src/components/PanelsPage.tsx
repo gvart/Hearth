@@ -214,6 +214,11 @@ function PanelCard({
           {(del.error ?? revoke.error)?.message}
         </p>
       ) : null}
+      {revoke.data ? (
+        <p className="notice small" role="status">
+          Revoked: {revoke.data.message}.
+        </p>
+      ) : null}
       {deleting ? (
         <ConfirmDialog
           title={`Delete ${panel.name}`}

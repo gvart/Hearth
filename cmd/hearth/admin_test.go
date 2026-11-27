@@ -234,3 +234,20 @@ func TestRunHubServesAPIAndStops(t *testing.T) {
 		t.Fatal("hub did not stop on cancel")
 	}
 }
+
+// TestReachNote: the CLI says when a revocation or a reset has not reached
+// every master yet, and nothing when it has or outside a cluster.
+func TestReachNote(t *testing.T) {
+	for _, tc := range []struct {
+		reach store.Reach
+		want  string
+	}{
+		{store.Reach{}, ""},
+		{store.Reach{Applied: 2, Of: 2}, ""},
+		{store.Reach{Applied: 1, Of: 3}, " Applied on 1 of 3 masters; the others get it when they are back."},
+	} {
+		if got := reachNote(tc.reach); got != tc.want {
+			t.Errorf("reachNote(%+v) = %q, want %q", tc.reach, got, tc.want)
+		}
+	}
+}

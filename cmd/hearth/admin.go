@@ -17,6 +17,7 @@ import (
 
 	"github.com/gvart/hearth/internal/hub"
 	"github.com/gvart/hearth/internal/policy"
+	"github.com/gvart/hearth/internal/store"
 )
 
 func newAdminCmd() *cobra.Command {
@@ -57,13 +58,23 @@ func runAdminSetPassword(ctx context.Context, dataDir, password string, out io.W
 		return err
 	}
 	defer st.Close()
+	ctx, reach := store.WithReach(ctx)
 	if err := hub.SetAdminPassword(ctx, st, policy.New(st.Audit()), adminActor(), password); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintln(out, "Admin password set. Existing sessions have been logged out."); err != nil {
+	if _, err := fmt.Fprintln(out, "Admin password set. Existing sessions have been logged out."+reachNote(*reach)); err != nil {
 		return fmt.Errorf("write result: %w", err)
 	}
 	return nil
+}
+
+// reachNote tells, after a write that takes access away, how many masters
+// of the cluster took it, when some have not yet; "" when all did.
+func reachNote(r store.Reach) string {
+	if !r.Partial() {
+		return ""
+	}
+	return fmt.Sprintf(" Applied on %d of %d masters; the others get it when they are back.", r.Applied, r.Of)
 }
 
 // readPassword prompts twice without echo when in is a terminal, and otherwise
