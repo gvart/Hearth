@@ -220,7 +220,7 @@ func TestNormalize(t *testing.T) {
 		{url: "http://192.168.1.1:8080/ubus", want: "http://192.168.1.1:8080"},
 		{url: "https://[fd00::1]", want: "https://[fd00::1]:443"},
 		{url: "ftp://192.168.1.1", fail: true},
-		{url: "http://root:pw@192.168.1.1", fail: true},
+		{url: "http://root:pw@192.168.1.1", fail: true}, //nolint:gosec // a URL that must be refused
 		{url: "http://192.168.1.1/admin", fail: true},
 		{url: "http://192.168.1.1", fp: strings.Repeat("ab", 32), fail: true},
 		{url: "https://192.168.1.1", fp: "AB:CD", fail: true},

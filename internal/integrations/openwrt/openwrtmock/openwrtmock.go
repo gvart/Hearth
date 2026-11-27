@@ -25,7 +25,7 @@ import (
 // Default login of the mock.
 const (
 	Username = "hearth"
-	Password = "correct horse battery staple" //nolint:gosec // a made-up password for the mock
+	Password = "correct horse battery staple"
 )
 
 // Call is one ubus call the mock received.

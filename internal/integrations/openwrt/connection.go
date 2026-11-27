@@ -126,7 +126,7 @@ func tlsConfig(c Connection) (*tls.Config, error) {
 	}
 	// VerifyConnection below takes over from the chain check, on every
 	// connection including resumed ones.
-	cfg.InsecureSkipVerify = true //nolint:gosec // the pinned fingerprint is checked instead
+	cfg.InsecureSkipVerify = true
 	cfg.VerifyConnection = func(cs tls.ConnectionState) error {
 		if len(cs.PeerCertificates) == 0 {
 			return errors.New("the router sent no certificate")
