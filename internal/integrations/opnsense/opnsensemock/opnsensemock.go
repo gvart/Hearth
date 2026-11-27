@@ -24,7 +24,7 @@ import (
 // Default API key of the mock.
 const (
 	Key    = "w86XNZob/8Oq8aC5r0kbNarNtdpoQU781fyoeaOBQsBwkXUt"
-	Secret = "XeD26XVrJ5ilAc/EmglCRC+0j2e57tRsjHwFepOseySWLM53pJASeTA3"
+	Secret = "XeD26XVrJ5ilAc/EmglCRC+0j2e57tRsjHwFepOseySWLM53pJASeTA3" //nolint:gosec // the fake key
 )
 
 // Request is one API request the mock received.
@@ -209,28 +209,44 @@ func (s *Server) answer(path string) (any, bool) {
 	case "/api/diagnostics/interface/get_arp":
 		return []map[string]any{
 			// The firewall's own LAN address.
-			{"mac": "00:0d:b9:00:00:10", "ip": "192.168.1.1", "intf": "igb1", "expired": false, "expires": -1,
-				"permanent": true, "type": "ethernet", "manufacturer": "PC Engines GmbH", "hostname": "", "intf_description": "LAN"},
-			{"mac": "2c:cf:67:00:00:01", "ip": "192.168.1.10", "intf": "igb1", "expired": false, "expires": 1100,
+			{
+				"mac": "00:0d:b9:00:00:10", "ip": "192.168.1.1", "intf": "igb1", "expired": false, "expires": -1,
+				"permanent": true, "type": "ethernet", "manufacturer": "PC Engines GmbH", "hostname": "", "intf_description": "LAN",
+			},
+			{
+				"mac": "2c:cf:67:00:00:01", "ip": "192.168.1.10", "intf": "igb1", "expired": false, "expires": 1100,
 				"permanent": false, "type": "ethernet", "manufacturer": "Raspberry Pi (Trading) Ltd", "hostname": "nas.home.arpa",
-				"intf_description": "LAN"},
-			{"mac": "a4:5e:60:00:00:02", "ip": "192.168.1.23", "intf": "igb1", "expired": false, "expires": 900,
-				"permanent": false, "type": "ethernet", "manufacturer": "Google, Inc.", "hostname": "", "intf_description": "LAN"},
+				"intf_description": "LAN",
+			},
+			{
+				"mac": "a4:5e:60:00:00:02", "ip": "192.168.1.23", "intf": "igb1", "expired": false, "expires": 900,
+				"permanent": false, "type": "ethernet", "manufacturer": "Google, Inc.", "hostname": "", "intf_description": "LAN",
+			},
 			// A host with a static address the DHCP servers do not know.
-			{"mac": "f0:99:b6:00:00:05", "ip": "192.168.1.200", "intf": "igb1", "expired": false, "expires": 1180,
+			{
+				"mac": "f0:99:b6:00:00:05", "ip": "192.168.1.200", "intf": "igb1", "expired": false, "expires": 1180,
 				"permanent": false, "type": "ethernet", "manufacturer": "Apple, Inc.", "hostname": "",
-				"intf_description": "LAN"},
-			{"mac": "02:22:33:00:00:08", "ip": "192.168.1.99", "intf": "igb1", "expired": true, "expires": 0,
-				"permanent": false, "type": "ethernet", "manufacturer": "", "hostname": "", "intf_description": "LAN"},
+				"intf_description": "LAN",
+			},
+			{
+				"mac": "02:22:33:00:00:08", "ip": "192.168.1.99", "intf": "igb1", "expired": true, "expires": 0,
+				"permanent": false, "type": "ethernet", "manufacturer": "", "hostname": "", "intf_description": "LAN",
+			},
 		}, true
 	case "/api/diagnostics/interface/get_ndp":
 		return []map[string]any{
-			{"mac": "00:0d:b9:00:00:10", "ip": "fe80::20d:b9ff:fe00:10%igb1", "intf": "igb1",
-				"manufacturer": "PC Engines GmbH", "intf_description": "LAN"},
-			{"mac": "a4:5e:60:00:00:02", "ip": "fe80::a65e:60ff:fe00:2%igb1", "intf": "igb1",
-				"manufacturer": "Google, Inc.", "intf_description": "LAN"},
-			{"mac": "a4:5e:60:00:00:02", "ip": "fd00::23", "intf": "igb1",
-				"manufacturer": "Google, Inc.", "intf_description": "LAN"},
+			{
+				"mac": "00:0d:b9:00:00:10", "ip": "fe80::20d:b9ff:fe00:10%igb1", "intf": "igb1",
+				"manufacturer": "PC Engines GmbH", "intf_description": "LAN",
+			},
+			{
+				"mac": "a4:5e:60:00:00:02", "ip": "fe80::a65e:60ff:fe00:2%igb1", "intf": "igb1",
+				"manufacturer": "Google, Inc.", "intf_description": "LAN",
+			},
+			{
+				"mac": "a4:5e:60:00:00:02", "ip": "fd00::23", "intf": "igb1",
+				"manufacturer": "Google, Inc.", "intf_description": "LAN",
+			},
 		}, true
 	case "/api/diagnostics/traffic/interface":
 		// legacy_interface_stats: ifinfo's text lines, every value a string.

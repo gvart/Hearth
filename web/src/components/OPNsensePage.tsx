@@ -70,7 +70,8 @@ function FirewallView({ firewall }: { firewall: OPNsenseFirewall }) {
   const data = snap.data;
   const sys = data?.system;
   const cancelled = restart.error instanceof ApiError && restart.error.code === 'reauth_cancelled';
-  const now = Date.now() / 1000;
+  // When the snapshot was fetched: what its leases have left is read against it.
+  const now = snap.dataUpdatedAt / 1000;
   const firmware = data ? firmwareLine(data.firmware) : '';
 
   return (

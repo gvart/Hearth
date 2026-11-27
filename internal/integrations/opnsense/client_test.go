@@ -281,10 +281,10 @@ func TestNormalize(t *testing.T) {
 		}
 	}
 	for _, c := range []Connection{
-		{URL: "https://192.168.1.1", Secret: "zz-secret-zz"},
+		{URL: "https://192.168.1.1", Secret: "zz-secret-zz"}, //nolint:gosec // values that must be refused
 		{URL: "https://192.168.1.1", Key: "k"},
-		{URL: "https://192.168.1.1", Key: "a b", Secret: "zz-secret-zz"},
-		{URL: "https://192.168.1.1", Key: "k", Secret: "zz:secret-zz"},
+		{URL: "https://192.168.1.1", Key: "a b", Secret: "zz-secret-zz"}, //nolint:gosec // values that must be refused
+		{URL: "https://192.168.1.1", Key: "k", Secret: "zz:secret-zz"},   //nolint:gosec // values that must be refused
 	} {
 		got, err := c.normalize()
 		if !errors.Is(err, ErrBadConnection) {
