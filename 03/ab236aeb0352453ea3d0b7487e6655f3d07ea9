@@ -1,0 +1,42 @@
+internal/cluster/replicate.go
+  s_18b57982fdff93::t_0a9cd9c6a2c1f6 453-458
+internal/cluster/promote.go
+  s_18b57982fdff93::t_b66433accafa8f 375-379,389-402
+  s_18b57982fdff93::t_4ea257b0d1e7ac 403-404
+internal/cluster/apnode.go
+  s_18b57982fdff93::t_a946e15932a427 331
+CLAUDE.md
+  s_18b57982fdff93::t_55710e1b9941c6 123-125
+internal/cluster/replauth_test.go
+  s_18b57982fdff93::t_3a1027ee663abf 408-413
+  s_18b57982fdff93::t_8be2ddccec970c 7,9-11
+  s_18b57982fdff93::t_a2eb98881696d3 392-407,414-446,449-451
+  s_18b57982fdff93::t_afcc4425275d1c 447-448
+cmd/hearth/admin_test.go
+  s_18b57982fdff93::t_04c294ea562ed6 11-12,19,36-49
+  s_18b57982fdff93::t_a0068e127b8a70 50-51
+internal/cluster/masterlink.go
+  s_18b57982fdff93::t_a946e15932a427 20-22,29,39-40,42,44,51-59,85-89,95-128
+  s_18b57982fdff93::t_e49d7ae07486db 129
+cmd/hearth/admin.go
+  s_18b57982fdff93::t_570eaf89327bb4 57-63
+  s_18b57982fdff93::t_840d40110a5184 18,20
+docs/cluster.md
+  s_18b57982fdff93::t_41cd6d41296ae5 271-273,283-290
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "03ab236aeb0352453ea3d0b7487e6655f3d07ea9",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
