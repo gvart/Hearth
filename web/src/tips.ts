@@ -140,9 +140,9 @@ export const tips: Record<TipId, TipText> = {
   upgrade: {
     about: "upgrading the agent",
     lines: [
-      "Upgrade agent brings the agent up to the hub's version: it downloads the release from GitHub, checks the release's checksums and their signature, replaces its binary and restarts, in a few seconds. It takes the admin password again.",
-      "If the new version reaches no hub (it keeps failing at start, or runs 5 minutes without a hub), the agent puts the old one back, and this page says so.",
-      "An agent older than remote upgrades is upgraded once by running the installer command on the device; after that, from here or with hearth device upgrade. An agent in a Kubernetes pod is upgraded with its image.",
+      "Upgrade agent (or hearth device upgrade) brings the agent to the hub's version: it downloads the release, checks its signed checksums, swaps its binary and restarts. It asks for the admin password again.",
+      "If the new version reaches no hub (failing starts, or 5 minutes without one), the agent puts the old one back and this page says so.",
+      "An agent older than remote upgrades needs the installer run on the device once; one in a Kubernetes pod, a new image.",
     ],
     docs: "getting-started.md",
   },
