@@ -28,6 +28,8 @@ cmd/hearth/hub.go
   s_18b57982fdff93::t_b09e1536b065f8 485-486
 internal/hub/server.go
   s_18b57982fdff93::t_1cb255b23dbf37 136-139
+internal/policy/guardrails_test.go
+  s_18b57982fdff93::t_9beaff45807901 206
 ---
 {
   "schema_version": "authorship/3.0.0",
