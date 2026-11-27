@@ -1,0 +1,24 @@
+internal/cluster/owned.go
+  s_18b57982fdff93::t_531d28baab701c 222
+  s_18b57982fdff93::t_eb5f9f077f8566 52-55,106-107,119,121-122,141,143-144,160-161,203-207,213-217,223-225
+  s_18b57982fdff93::t_3b4fc2f498a6c9 226-227
+internal/cluster/ownedforge_test.go
+  s_18b57982fdff93::t_901eff6ac30df4 41-52,59-61
+  s_18b57982fdff93::t_45ec9538bfa511 101-159
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "b9034078825c2bd2f8999e423fe9a9fd63762ae6",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
