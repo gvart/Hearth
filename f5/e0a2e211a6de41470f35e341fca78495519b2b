@@ -1,0 +1,65 @@
+README.md
+  s_18b57982fdff93::t_86af6144c02080 97-100
+cmd/hearth/device.go
+  s_18b57982fdff93::t_c578ce8b4b2eb1 45-47
+proto/hearth/agent/v1/agent.proto
+  s_18b57982fdff93::t_7fd77f58173923 125-131
+web/src/tips.ts
+  s_18b57982fdff93::t_194d3942936474 143-144
+internal/agent/run.go
+  s_18b57982fdff93::t_780071f5197a97 33-34,216,277-281
+web/src/components/DeviceUpgrade.tsx
+  s_18b57982fdff93::t_bd4f982b55a4f5 33-34,41,55-63,67,151-156
+docs/security.md
+  s_18b57982fdff93::t_0455bce08433fb 225-236,246-247,253-258,271-272
+web/src/api/client.ts
+  s_18b57982fdff93::t_68155697dc1e38 92-93
+internal/agent/export_test.go
+  s_18b57982fdff93::t_59307f25d90d37 27
+  s_18b57982fdff93::t_82b9ccbbf9a661 44-64,66
+  s_18b57982fdff93::t_092f703ac29528 10
+  s_18b57982fdff93::t_249c1ec546583a 65
+internal/hub/rollback_test.go
+  s_18b57982fdff93::t_728ab04a6f54ce 1-132
+internal/hub/registry.go
+  s_18b57982fdff93::t_7701652d0f537c 130,134,137
+  s_18b57982fdff93::t_07a19e15478584 125-126,128-129,131-133,135-136
+  s_18b57982fdff93::t_80fda914fcd2c4 7
+internal/agent/upgrade_stream_test.go
+  s_18b57982fdff93::t_3ccc6cd44782b3 68-109
+  s_18b57982fdff93::t_44fb8f2c2d5677 6
+  s_18b57982fdff93::t_3b032ebe6dc98e 110
+internal/hub/capabilities_test.go
+  s_18b57982fdff93::t_07a19e15478584 18
+internal/agent/upgrade_test.go
+  s_18b57982fdff93::t_59307f25d90d37 11-12,25,28,31-49,93-98,119-124,152,261-270,440-443,446,469-535,554-584
+  s_18b57982fdff93::t_d07d9afa92a758 585
+internal/hub/facts.go
+  s_18b57982fdff93::t_342f2622609993 43-47,110-113,128-135
+internal/agent/upgrade.go
+  s_18b57982fdff93::t_535b6a60361a18 8,11,37-40,48-50,79-80,82,94-97,119-126,128,130-133,149,153-157,231-233,299-315,317-318,321,325-334,552-559,578,581-582,590-591,596-600,620,625-633,642-687,690-691,693-705
+docs/getting-started.md
+  s_18b57982fdff93::t_0455bce08433fb 233-235,250-252
+internal/hub/agentstream.go
+  s_18b57982fdff93::t_50d27ee076711d 117-119,324-349
+internal/hub/upgrade.go
+  s_18b57982fdff93::t_26ca86fc162c7d 51-53,64
+internal/proto/hearth/agent/v1/agent.pb.go
+  s_18b57982fdff93::t_88b4e893a91c45 726-734,893-899,4893,4915-4916
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "f5e0a2e211a6de41470f35e341fca78495519b2b",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
