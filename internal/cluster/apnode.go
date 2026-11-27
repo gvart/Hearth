@@ -509,28 +509,6 @@ func (n *APNode) checkPeer(cert *x509.Certificate) error {
 	return err
 }
 
-// seeds are the configured seeds and the members learnt before.
-func (n *APNode) seeds() []string {
-	out := slices.Clone(n.cfg.Seeds)
-	if b, err := os.ReadFile(filepath.Join(n.cfg.DataDir, StateDir, seedsFile)); err == nil {
-		out = append(out, strings.Fields(string(b))...)
-	}
-	if m := n.membership; m != nil {
-		var learnt []string
-		for _, mi := range m.Members() {
-			if mi.ID != n.cfg.NodeID && mi.State != MemberLeft && mi.Address != "" {
-				learnt = append(learnt, mi.Address)
-			}
-		}
-		if len(learnt) > 0 {
-			slices.Sort(learnt)
-			_ = os.WriteFile(filepath.Join(n.cfg.DataDir, StateDir, seedsFile), []byte(strings.Join(learnt, "\n")+"\n"), 0o600)
-		}
-	}
-	slices.Sort(out)
-	return slices.Compact(out)
-}
-
 // WaitPeers waits, up to limit, until the gossip has found another member,
 // when this member has seeds to find them by: a hub that wrote before then
 // would see a ring of one and keep its writes alone.
@@ -598,6 +576,12 @@ func (n *APNode) Run(ctx context.Context) error {
 		changes, stop := n.membership.Changes()
 		defer stop()
 		n.runSchemaGate(gctx, changes)
+		return nil
+	})
+	g.Go(func() error {
+		changes, stop := n.membership.Changes()
+		defer stop()
+		n.runSeeds(gctx, changes)
 		return nil
 	})
 	return g.Wait()
