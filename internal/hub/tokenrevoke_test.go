@@ -3,6 +3,8 @@
 package hub
 
 import (
+	"context"
+	"crypto/sha256"
 	"net/http"
 	"strings"
 	"testing"
@@ -13,6 +15,8 @@ import (
 	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/policy"
 	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
+	"github.com/gvart/hearth/internal/store"
+	"github.com/gvart/hearth/internal/store/storetest"
 )
 
 // newTokenRevokeFixture is an API fixture holding an unused plain token, an
@@ -109,6 +113,40 @@ func TestAPIRevokeToken(t *testing.T) {
 				t.Fatalf("token %s listed = %v after DELETE %d", tc.id, listed, resp.StatusCode)
 			}
 		})
+	}
+}
+
+// In an AP cluster only the master that created a token revokes it: another
+// master is refused, naming the owner, and the token stays usable.
+func TestAPIRevokeTokenNotOwner(t *testing.T) {
+	// This hub is master hub-b: every write it applies is hub-b's.
+	st := storetest.Open(t, store.WithApplier(func(s *store.Store) store.Applier {
+		return store.ApplierFunc(func(ctx context.Context, cmd store.Command) (store.Result, error) {
+			return s.ApplyLocal(ctx, store.OwnedBy(cmd, "hub-b"))
+		})
+	}))
+	h := sha256.Sum256([]byte("owned-secret"))
+	if _, err := st.ApplyLocal(t.Context(), store.CreateToken{
+		Hash: h[:], Labels: "{}", ExpiresAt: time.Now().Add(time.Hour).UnixMilli(), Owner: "hub-a",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := setAdminPassword(t.Context(), st, policy.New(st.Audit()), "test", testPassword, testArgon); err != nil {
+		t.Fatal(err)
+	}
+	f := newAPIFixture(t, true, func(c *Config) { c.Store = st })
+	f.api.argon = testArgon
+	c := sessionCookie(t, f.login(t, testPassword))
+	id := tokenActorID("owned-secret")
+	resp := f.do(t, http.MethodDelete, "/api/v1/tokens/"+id, "", c)
+	if resp.StatusCode != http.StatusConflict || errorCode(t, resp) != "not_owner" || !strings.Contains(string(resp.body), "hub-a") {
+		t.Fatalf("DELETE on another master = %d %s, want 409 not_owner naming hub-a", resp.StatusCode, resp.body)
+	}
+	if e := auditOf(t, f, policy.TokenRevoke); len(e) != 1 || e[0].Target != id || e[0].Result == "ok" {
+		t.Fatalf("token.revoke audit = %+v, want one failed entry", e)
+	}
+	if tok, err := st.Tokens().Unused(t.Context(), id, time.Now()); err != nil || tok.ID != id {
+		t.Fatalf("token after a refused revoke = %+v, %v; want it still unused", tok, err)
 	}
 }
 

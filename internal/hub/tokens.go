@@ -258,7 +258,7 @@ func (a *api) revokeToken(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, store.ErrTokenExpired):
 		writeError(w, http.StatusConflict, "token_expired", "the token has expired already")
 	case errors.Is(err, store.ErrNotOwner):
-		writeError(w, http.StatusConflict, "not_owner", "the token belongs to hub "+store.OwnerOf(err)+": revoke it there")
+		a.writeNotOwner(r.Context(), w, err)
 	default:
 		a.writeActionError(w, r, "revoke the enrollment token", err)
 	}

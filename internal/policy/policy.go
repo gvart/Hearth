@@ -24,10 +24,8 @@ type Action string
 
 // Known actions.
 const (
-	TokenCreate Action = "token.create"
-	// TokenRevoke spends an unused enrollment token, so no device can
-	// enroll with it.
-	TokenRevoke  Action = "token.revoke"
+	TokenCreate  Action = "token.create"
+	TokenRevoke  Action = "token.revoke" // spends an unused enrollment token: no device can enroll with it
 	DeviceEnroll Action = "device.enroll"
 	DeviceRevoke Action = "device.revoke"
 	// AdminSetPassword sets or resets the admin password.
@@ -351,10 +349,8 @@ type rule struct {
 // rules is the action table. Anything not listed here is denied.
 var rules = map[Action]rule{
 	// The web UI's "Add device" creates tokens behind an admin session.
-	TokenCreate: {class: Safe, actors: []string{ActorAdmin, ActorWeb}},
-	// Revoking only takes access away; a hub-eligible token's revocation
-	// asks for the password again in the web UI.
-	TokenRevoke:  {class: Safe, actors: []string{ActorAdmin, ActorWeb}},
+	TokenCreate:  {class: Safe, actors: []string{ActorAdmin, ActorWeb}},
+	TokenRevoke:  {class: Safe, actors: []string{ActorAdmin, ActorWeb}}, // only takes access away
 	DeviceEnroll: {class: Safe, actors: []string{ActorToken}, fixed: true},
 	// The web UI revokes behind an admin session and the password again.
 	DeviceRevoke: {class: Dangerous, actors: []string{ActorAdmin, ActorWeb}},
