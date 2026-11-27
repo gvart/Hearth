@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -285,6 +286,18 @@ func TestForgedMasterRowsRefused(t *testing.T) {
 		if _, err := an.m("s").rep.call(ctx, "m", apRequest{Op: opRead, Query: q}); !errors.Is(err, errNotMaster) {
 			t.Fatalf("s read %q on m: %v, want errNotMaster", q, err)
 		}
+	}
+	// Past the check of the query's text, SQLite refuses the raw pages.
+	for _, q := range []string{`SELECT data FROM sqlite_dbpage`, `SELECT count(*) FROM dbstat`} {
+		if _, err := an.m("s").rep.call(ctx, "m", apRequest{Op: opRead, Query: q}); err == nil || !strings.Contains(err.Error(), store.ErrReadRefused.Error()) {
+			t.Fatalf("s read %q on m: %v, want refused", q, err)
+		}
+		if _, err := an.m("m").st.ReadLocal(ctx, q, nil); err != nil {
+			t.Fatalf("%q on m's own connection: %v", q, err)
+		}
+	}
+	if rows, err := an.m("s").rep.call(ctx, "m", apRequest{Op: opRead, Query: `SELECT id FROM devices`}); err != nil || rows.Rows == nil {
+		t.Fatalf("s's read of the devices on m: %v, %v", rows.Rows, err)
 	}
 	if _, err := an.m("s").rep.call(ctx, "m", apRequest{Op: opRows, Space: store.SpaceMaster, Buckets: []int{0}}); !errors.Is(err, errNotMaster) {
 		t.Fatalf("s read the master rows' digests on m: %v, want errNotMaster", err)

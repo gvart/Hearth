@@ -1830,8 +1830,18 @@ func (r *Replicator) handle(ctx context.Context, peer string, master bool, req a
 			r.log.WarnContext(ctx, "refused a read of master rows from a member that did not prove it holds the hub CA key", "peer", peer)
 			return fail(fmt.Errorf("%s: read master rows: %w", peer, errNotMaster))
 		}
-		rows, err := st.ReadLocal(ctx, req.Query, req.Args)
+		read := st.ReadLocal
+		if !master {
+			// SQLite refuses it the master tables and the raw pages, whatever
+			// the query's text (store.ReadLocalUnproven); the check above is
+			// a first, cheaper refusal.
+			read = st.ReadLocalUnproven
+		}
+		rows, err := read(ctx, req.Query, req.Args)
 		if err != nil {
+			if errors.Is(err, store.ErrReadRefused) {
+				r.log.WarnContext(ctx, "refused a read from a member that did not prove it holds the hub CA key", "peer", peer, "err", err)
+			}
 			return fail(err)
 		}
 		return apResponse{Rows: &rows}

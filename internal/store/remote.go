@@ -111,7 +111,14 @@ func (s *Store) ReadLocal(ctx context.Context, query string, args Values) (Rows,
 	if s.ro == nil {
 		return Rows{}, fmt.Errorf("read: %w", ErrNoRoute)
 	}
-	rows, err := s.ro.QueryContext(ctx, query, args...)
+	return s.readOn(ctx, s.ro, query, args)
+}
+
+// readOn runs query on q and returns its rows.
+func (s *Store) readOn(ctx context.Context, q interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}, query string, args Values) (Rows, error) {
+	rows, err := q.QueryContext(ctx, query, args...)
 	if err != nil {
 		return Rows{}, fmt.Errorf("read: %w", err)
 	}
