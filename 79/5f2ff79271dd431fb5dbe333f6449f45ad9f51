@@ -1,0 +1,72 @@
+cmd/hearth/device.go
+  s_18b57982fdff93::t_32036b4227915c 23
+internal/store/command_test.go
+  s_18b57982fdff93::t_b77923b866d84e 526-533
+  s_18b57982fdff93::t_c417a4b1a85c03 109
+  s_18b57982fdff93::t_c78056cb7f3d89 622
+internal/hub/capabilities.go
+  s_18b57982fdff93::t_55ddbd21863a02 1-71,78-187,189-222,224-254,258,327
+  s_18b57982fdff93::t_d4cb6a10bc61f8 255-257
+  s_18b57982fdff93::t_b5f71db15e4c5d 72-77,259-326
+  s_18b57982fdff93::t_9c4714579fc67a 188,223
+internal/store/partition.go
+  s_18b57982fdff93::t_c05408b29df9ab 54,87,290-291
+internal/hub/ceilingpush.go
+  s_18b57982fdff93::t_20681c92fe7798 1-94
+deploy/test/install-e2e-inner.sh
+  s_18b57982fdff93::t_83236515735f76 269-279
+cmd/hearth/device_caps.go
+  s_18b57982fdff93::t_0b230b038c9bcf 1-195
+internal/store/command.go
+  s_18b57982fdff93::t_c05408b29df9ab 852-853
+internal/store/version.go
+  s_18b57982fdff93::t_c05408b29df9ab 164-165
+internal/hub/facts.go
+  s_18b57982fdff93::t_58c52b6d382cb4 30-37,56,58-73,76-79,114-115
+  s_18b57982fdff93::t_9c4714579fc67a 74-75
+internal/hub/capabilities_test.go
+  s_18b57982fdff93::t_5b80049faac3c4 1-186
+internal/store/migrations/00035_device_ceilings.sql
+  s_18b57982fdff93::t_1d13a32dbff54e 1-20
+internal/store/ceilings.go
+  s_18b57982fdff93::t_f8f884632215e1 1-90
+deploy/install.sh
+  s_18b57982fdff93::t_1e53c60dad7bbb 36-41,106,126-128,142,188-191,667-671,674-678,696-700
+internal/hub/server.go
+  s_18b57982fdff93::t_680f67b0464bf1 190
+internal/hub/api.go
+  s_18b57982fdff93::t_145e4cfa1becb2 188,283-285
+internal/hub/agentexec.go
+  s_18b57982fdff93::t_9428592fa68796 105-108
+internal/agent/ceiling_stream_test.go
+  s_18b57982fdff93::t_59e8bfac05d01f 1-89
+cmd/hearth/device_caps_test.go
+  s_18b57982fdff93::t_7712d758758d33 1-68
+internal/store/store_test.go
+  s_18b57982fdff93::t_c417a4b1a85c03 86
+internal/agent/ceiling.go
+  s_18b57982fdff93::t_fc20833d874655 16
+  s_18b57982fdff93::t_683d9a7179ec06 69-72,74-75
+internal/policy/ceiling.go
+  s_18b57982fdff93::t_666e290fa022c5 186-226
+internal/hub/agentstream.go
+  s_18b57982fdff93::t_c6699fad64ee0a 65-67
+  s_18b57982fdff93::t_cc983ae7c86246 182
+  s_18b57982fdff93::t_c71c39fe36e62a 144
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "795f2ff79271dd431fb5dbe333f6449f45ad9f51",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}

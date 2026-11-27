@@ -1,0 +1,63 @@
+web/src/runbookdoc.ts
+  s_18b57982fdff93::t_621aec9e01974c 335,379,383,392,914,927,942,1008
+  s_18b57982fdff93::t_ccbcad515eb667 8
+web/src/components/DeviceLogSources.tsx
+  s_18b57982fdff93::t_02f277fc2c0758 3,20
+web/src/components/DeviceCapabilities.css
+  s_18b57982fdff93::t_e6be6720b04475 1-175
+web/src/api/capabilities.ts
+  s_18b57982fdff93::t_72216b2cda5f67 1-5,7-14,17-19,21-41
+  s_18b57982fdff93::t_e0a6641ca80eaa 6,15-16,20
+web/src/components/DeviceContainers.tsx
+  s_18b57982fdff93::t_02f277fc2c0758 5,12,15-16
+  s_18b57982fdff93::t_396fab8ea93a5d 23
+  s_18b57982fdff93::t_e3be5f439cba64 30-31,88,98,143-144,170
+web/test/devices.test.mjs
+  s_18b57982fdff93::t_e00a5b754f5425 62,64-67,70,73
+web/src/devices.ts
+  s_18b57982fdff93::t_02f277fc2c0758 27,40-44
+web/test/capabilities.test.mjs
+  s_18b57982fdff93::t_e00a5b754f5425 1-98
+web/src/panels.ts
+  s_18b57982fdff93::t_621aec9e01974c 33-35,38
+  s_18b57982fdff93::t_ccbcad515eb667 6
+web/src/api/client.ts
+  s_18b57982fdff93::t_16058dd361ea3a 37-42,51,53,55,57,59-60
+web/src/components/DevicePage.tsx
+  s_18b57982fdff93::t_02f277fc2c0758 20,46,247,322
+web/src/components/PanelsPage.tsx
+  s_18b57982fdff93::t_621aec9e01974c 316-317
+web/src/capabilities.ts
+  s_18b57982fdff93::t_736b584a58fa6e 1-285
+  s_18b57982fdff93::t_621aec9e01974c 286-314
+web/src/tips.ts
+  s_18b57982fdff93::t_02f277fc2c0758 17,19,35,44,126-133
+  s_18b57982fdff93::t_ed485ef5343355 134
+  s_18b57982fdff93::t_9ae45970740fcc 18
+web/src/components/DeviceCapabilities.tsx
+  s_18b57982fdff93::t_ab4c1907d221d7 1-24,38-46,48-206,208-417
+  s_18b57982fdff93::t_e0a6641ca80eaa 25-37,47
+  s_18b57982fdff93::t_e62b6081b6d534 207
+web/src/components/NetworkPage.tsx
+  s_18b57982fdff93::t_02f277fc2c0758 69-70
+web/test/runbookdoc.test.mjs
+  s_18b57982fdff93::t_621aec9e01974c 125,134
+web/src/components/DeviceNetEdges.tsx
+  s_18b57982fdff93::t_02f277fc2c0758 4,12-13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "446c75de31301f54113533235e0ec5af02b538c9",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
