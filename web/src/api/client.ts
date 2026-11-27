@@ -89,6 +89,8 @@ export interface AgentVersion {
   no_remote_upgrade?: string;
   /** On the device's own page, for an agent too old to upgrade itself: the installer's one-liner. */
   install_command?: string;
+  /** The release an upgrade went to and was rolled back from: the new binary reached no hub (#359). */
+  rolled_back_from?: string;
 }
 
 export interface Session {

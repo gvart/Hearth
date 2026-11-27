@@ -5,8 +5,10 @@ package agent
 import (
 	"archive/tar"
 	"bufio"
+	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -32,8 +34,10 @@ import (
 
 // An agent upgrades itself when its hub asks (UpgradeRequest, #347). The hub
 // names only a version: the agent builds the archive's URL itself, from its
-// compiled-in release base and its own platform, reads the SHA-256 from the
-// same release's checksums.txt, checks the archive against it, puts the new
+// compiled-in release base and its own platform, checks the release's
+// checksums.txt against its Ed25519 signature (checksums.txt.sig) with the
+// release key compiled in (#359), reads the archive's SHA-256 from it,
+// checks the archive against it, puts the new
 // hearth in place of its own executable by a rename in the same directory,
 // keeping the old one as <exe>.prev, answers, and exits with ExitUpgraded
 // for systemd (Restart=always) or launchd (KeepAlive) to start the new one.
@@ -41,7 +45,9 @@ import (
 //
 // Until the new binary is welcomed by a hub, a marker in the data directory
 // (upgradePendingFile) counts its starts: after maxUpgradeStarts without a
-// Welcome, it puts <exe>.prev back and exits for the old binary to start.
+// Welcome, or once it has run noHubRollback without one, it puts <exe>.prev
+// back and exits for the old binary to start. That one tells the hub, in
+// Hello.rolled_back_from, until a hub welcomes it (upgradeRolledBackFile).
 
 // ReleaseBaseURL is where an agent downloads releases from, as
 // <base>/<tag>/<asset>, as deploy/install.sh does.
@@ -70,8 +76,10 @@ const (
 	maxUpgradeArchive  = 128 << 20
 	maxUpgradeBinary   = 256 << 20
 	maxUpgradeUnpacked = 512 << 20
-	// maxChecksums caps the read of a release's checksums.txt.
+	// maxChecksums caps the read of a release's checksums.txt, and
+	// maxSignature that of its checksums.txt.sig.
 	maxChecksums = 1 << 20
+	maxSignature = 1 << 10
 	// upgradeVersionTimeout bounds `<new binary> version`.
 	upgradeVersionTimeout = 15 * time.Second
 	// maxRedirects bounds the redirects of a download (GitHub sends one).
@@ -82,6 +90,10 @@ const (
 // upgrade itself. An agent never installs it or an older one, whatever
 // version it runs (a development build too): it could not come back.
 const lastReleaseWithoutSelfUpgrade = "v0.0.1-rc.10"
+
+// lastUnsignedRelease is the newest release without a checksums.txt.sig,
+// which an agent refuses to upgrade to.
+const lastUnsignedRelease = "v0.0.1-rc.11"
 
 // upgrader replaces the agent's executable.
 type upgrader struct {
@@ -104,9 +116,23 @@ type upgrader struct {
 	client                             *http.Client
 	maxArchive, maxBinary, maxUnpacked int64
 	timeout                            time.Duration
-	// pending is set while the upgrade-pending marker exists: the next
-	// Welcome removes it.
-	pending bool
+	// pubKey is the key a release's checksums.txt must be signed with.
+	pubKey ed25519.PublicKey
+	// noHub is how long an upgraded binary may run without a Welcome before
+	// it is rolled back: noHubRollback, shorter in tests.
+	noHub time.Duration
+
+	// mu guards what follows: a Welcome and the no-hub rollback race.
+	mu sync.Mutex
+	// pending is set while an upgrade of this binary waits for a Welcome,
+	// which clears it and removes the upgrade-pending marker. marker is its
+	// content; markerLeft is set when that removal failed, to retry it.
+	pending    bool
+	marker     pendingUpgrade
+	markerLeft bool
+	// rolledBackFrom is the release a rollback put this binary back from,
+	// told the hub in Hello until one welcomes the agent.
+	rolledBackFrom string
 }
 
 // newUpgrader is the upgrader of the executable exe ("" for the running
@@ -122,10 +148,15 @@ func newUpgrader(exe, dataDir, current string, localCeiling bool, getenv func(st
 		base:       strings.TrimRight(base, "/"),
 		client:     &http.Client{Transport: http.DefaultTransport, CheckRedirect: httpsRedirects},
 		maxArchive: maxUpgradeArchive, maxBinary: maxUpgradeBinary, maxUnpacked: maxUpgradeUnpacked,
-		timeout: upgradeTimeout,
+		timeout: upgradeTimeout, noHub: noHubRollback,
 		refusal: selfUpgradeRefusal(runtime.GOOS, localCeiling, getenv),
 		target:  releaseTarget(runtime.GOOS, runtime.GOARCH, goarm()),
 	}
+	key, err := release.TrustedKey()
+	if err != nil && u.refusal == "" {
+		u.refusal = err.Error()
+	}
+	u.pubKey = key
 	if exe == "" {
 		p, err := os.Executable()
 		if err == nil {
@@ -199,6 +230,9 @@ func (u *upgrader) hello(h *agentv1.Hello) {
 	if u == nil {
 		return
 	}
+	u.mu.Lock()
+	h.RolledBackFrom = u.rolledBackFrom
+	u.mu.Unlock()
 	if u.refusal != "" {
 		h.NoSelfUpgrade = u.refusal
 		return
@@ -264,16 +298,42 @@ func (u *upgrader) get(ctx context.Context, url string) (*http.Response, error) 
 	return resp, nil
 }
 
+// fetch reads the whole body at url, refusing one over limit bytes.
+func (u *upgrader) fetch(ctx context.Context, url string, limit int64) ([]byte, error) {
+	resp, err := u.get(ctx, url)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	b, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", url, err)
+	}
+	if int64(len(b)) > limit {
+		return nil, fmt.Errorf("%s is larger than %d bytes: refused", url, limit)
+	}
+	return b, nil
+}
+
 // checksum is the SHA-256 of the asset name that the checksums.txt of
-// release version lists.
+// release version lists, once that checksums.txt is found signed with the
+// release key.
 func (u *upgrader) checksum(ctx context.Context, version, name string) (string, error) {
 	url := u.base + "/" + version + "/checksums.txt"
-	resp, err := u.get(ctx, url)
+	sums, err := u.fetch(ctx, url, maxChecksums)
 	if err != nil {
 		return "", fmt.Errorf("%w (is %s a release?)", err, version)
 	}
-	defer func() { _ = resp.Body.Close() }()
-	sc := bufio.NewScanner(io.LimitReader(resp.Body, maxChecksums))
+	sig, err := u.fetch(ctx, url+release.SignatureSuffix, maxSignature)
+	if err != nil {
+		return "", fmt.Errorf("%s is not signed, so the agent does not trust it: %w "+
+			"(releases up to %s carry no signature: upgrade to a later one, or with the installer on the device)",
+			version, err, lastUnsignedRelease)
+	}
+	if err := release.Verify(u.pubKey, sums, sig); err != nil {
+		return "", fmt.Errorf("%s: %w; nothing was changed", url, err)
+	}
+	sc := bufio.NewScanner(bytes.NewReader(sums))
 	for sc.Scan() {
 		fields := strings.Fields(sc.Text())
 		if len(fields) == 2 && strings.TrimPrefix(fields[1], "*") == name {
@@ -343,6 +403,11 @@ func (u *upgrader) install(ctx context.Context, version, url, sum string) (strin
 	if err := os.Link(u.exe, prev); err != nil {
 		return "", fmt.Errorf("keep the current binary as %s: %w", prev, err)
 	}
+	// No rollback of this binary's own upgrade may run past this point: it
+	// would put an older binary over the one going in.
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.pending = false
 	// The marker goes first: a new binary that never reaches a hub is
 	// rolled back, and one written over a binary still the old changes
 	// nothing.
@@ -491,6 +556,14 @@ const upgradePendingFile = "upgrade-pending"
 // being welcomed by a hub before it puts the previous binary back.
 const maxUpgradeStarts = 3
 
+// noHubRollback is how long an upgraded agent that stays up may run without
+// a hub welcoming it before it puts the previous binary back.
+const noHubRollback = 5 * time.Minute
+
+// upgradeRolledBackFile, in the data directory, holds the release a
+// rollback put the agent back from, until a hub has been told.
+const upgradeRolledBackFile = "upgrade-rolled-back"
+
 // pendingUpgrade is the content of upgradePendingFile.
 type pendingUpgrade struct {
 	From   string `json:"from"`
@@ -509,11 +582,11 @@ func writePending(dataDir string, p pendingUpgrade) error {
 // rolledBack is the error of Run when the upgraded binary never reached a
 // hub and the previous one is back in place: it is ErrUpgraded, for the
 // service manager to start that one.
-type rolledBack struct{ from, to string }
+type rolledBack struct{ from, to, within string }
 
 func (e *rolledBack) Error() string {
-	return fmt.Sprintf("the upgraded agent (%s) reached no hub in %d starts; the previous binary (%s) is back, "+
-		"exiting so the service manager starts it", e.to, maxUpgradeStarts, e.from)
+	return fmt.Sprintf("the upgraded agent (%s) reached no hub in %s; the previous binary (%s) is back, "+
+		"exiting so the service manager starts it", e.to, e.within, e.from)
 }
 
 func (e *rolledBack) Is(target error) bool { return target == ErrUpgraded }
@@ -521,12 +594,14 @@ func (e *rolledBack) Is(target error) bool { return target == ErrUpgraded }
 // started counts a start of the agent while an upgrade is pending. After
 // maxUpgradeStarts it moves <exe>.prev back over the executable and returns
 // a rolledBack error: the caller exits for the service manager to start the
-// previous binary.
+// previous binary. It also reads what an earlier rollback left to tell the
+// hub.
 func (u *upgrader) started(ctx context.Context, log *slog.Logger) error {
 	if u == nil || u.dataDir == "" {
 		return nil
 	}
 	path := filepath.Join(u.dataDir, upgradePendingFile)
+	u.readRollback(ctx, log, path)
 	b, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
@@ -545,12 +620,44 @@ func (u *upgrader) started(ctx context.Context, log *slog.Logger) error {
 		if err := writePending(u.dataDir, p); err != nil {
 			log.WarnContext(ctx, "count the start of the upgraded agent", "err", err)
 		}
-		u.pending = true
+		u.pending, u.marker = true, p
 		log.InfoContext(ctx, "upgraded agent starting; waiting for a hub to welcome it",
 			"from", p.From, "version", p.To, "start", strconv.Itoa(p.Starts)+"/"+strconv.Itoa(maxUpgradeStarts))
 		return nil
 	}
-	_ = os.Remove(path)
+	return u.rollBack(ctx, log, p, strconv.Itoa(maxUpgradeStarts)+" starts")
+}
+
+// readRollback reads the rollback record an earlier rollback left for the
+// hub. A record is stale, and removed, when an upgrade is pending (pending
+// names its marker): a newer upgrade came since, which a binary from before
+// the record existed did not report. So is one naming a release no newer
+// than the one running.
+func (u *upgrader) readRollback(ctx context.Context, log *slog.Logger, pending string) {
+	rec := filepath.Join(u.dataDir, upgradeRolledBackFile)
+	b, err := os.ReadFile(rec)
+	if err != nil {
+		return
+	}
+	v := strings.TrimSpace(string(b))
+	_, perr := os.Stat(pending)
+	stale := !release.Tag.MatchString(v) || perr == nil ||
+		(release.Tag.MatchString(u.current) && release.Compare(v, u.current) <= 0)
+	if !stale {
+		u.rolledBackFrom = v
+		return
+	}
+	if err := os.Remove(rec); err != nil && !errors.Is(err, os.ErrNotExist) {
+		log.WarnContext(ctx, "remove a stale rollback record", "err", err)
+	}
+}
+
+// rollBack removes the marker of the pending upgrade p and moves
+// <exe>.prev back over the executable. Once it is back, it records p.To
+// for the previous binary to tell the hub, and returns a rolledBack error;
+// nil if it could not be put back.
+func (u *upgrader) rollBack(ctx context.Context, log *slog.Logger, p pendingUpgrade, within string) error {
+	_ = os.Remove(filepath.Join(u.dataDir, upgradePendingFile))
 	if u.exe == "" {
 		return nil
 	}
@@ -559,21 +666,85 @@ func (u *upgrader) started(ctx context.Context, log *slog.Logger) error {
 		return nil
 	}
 	syncDir(filepath.Dir(u.exe))
-	log.ErrorContext(ctx, "the upgraded agent reached no hub; put the previous binary back", "from", p.From, "version", p.To)
-	return &rolledBack{from: p.From, to: p.To}
+	if release.Tag.MatchString(p.To) {
+		if err := replaceFile(u.dataDir, upgradeRolledBackFile, []byte(p.To+"\n")); err != nil {
+			log.WarnContext(ctx, "record the rollback for the hub", "err", err)
+		}
+	}
+	log.ErrorContext(ctx, "the upgraded agent reached no hub; put the previous binary back",
+		"from", p.From, "version", p.To, "within", within)
+	return &rolledBack{from: p.From, to: p.To, within: within}
 }
 
-// welcomed confirms a pending upgrade: a hub welcomed the new binary.
+// watchWelcome rolls a pending upgrade back if no hub welcomes the agent
+// within u.noHub, then calls stop with the rolledBack error for the agent
+// to exit. The function it returns ends the watch and waits for it: Run
+// calls it on its way out.
+func (u *upgrader) watchWelcome(ctx context.Context, log *slog.Logger, stop func(error)) func() {
+	if u == nil {
+		return func() {}
+	}
+	u.mu.Lock()
+	pending := u.pending
+	u.mu.Unlock()
+	if !pending {
+		return func() {}
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		t := time.NewTimer(u.noHub)
+		defer t.Stop()
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		u.mu.Lock()
+		defer u.mu.Unlock()
+		if !u.pending || ctx.Err() != nil {
+			return
+		}
+		u.pending = false
+		if err := u.rollBack(ctx, log, u.marker, u.noHub.String()); err != nil {
+			stop(err)
+		}
+	}()
+	return func() { cancel(); <-done }
+}
+
+// welcomed confirms a pending upgrade: a hub welcomed the new binary. It
+// also drops the rollback record the Hello told the hub.
 func (u *upgrader) welcomed(ctx context.Context, log *slog.Logger) {
-	if u == nil || !u.pending {
+	if u == nil {
 		return
 	}
-	if err := os.Remove(filepath.Join(u.dataDir, upgradePendingFile)); err != nil && !errors.Is(err, os.ErrNotExist) {
-		log.WarnContext(ctx, "remove the upgrade marker", "err", err)
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.rolledBackFrom != "" {
+		if err := os.Remove(filepath.Join(u.dataDir, upgradeRolledBackFile)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			log.WarnContext(ctx, "remove the rollback record", "err", err)
+		} else {
+			u.rolledBackFrom = ""
+		}
+	}
+	if !u.pending && !u.markerLeft {
 		return
 	}
+	// Confirmed, whether or not the marker goes: a hub welcomed this
+	// binary, so the no-hub rollback must not put the old one back.
+	confirmed := u.pending
 	u.pending = false
-	log.InfoContext(ctx, "upgrade confirmed: a hub welcomed the new binary")
+	if err := os.Remove(filepath.Join(u.dataDir, upgradePendingFile)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		u.markerLeft = true
+		log.WarnContext(ctx, "remove the upgrade marker; retrying at the next Welcome", "err", err)
+	} else {
+		u.markerLeft = false
+	}
+	if confirmed {
+		log.InfoContext(ctx, "upgrade confirmed: a hub welcomed the new binary")
+	}
 }
 
 // handleUpgrade runs req on its own goroutine in execs, one upgrade at a

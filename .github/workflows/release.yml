@@ -19,6 +19,8 @@ jobs:
   goreleaser:
     name: GoReleaser
     runs-on: ubuntu-latest
+    # No signing key here: this job runs npm's lifecycle scripts and other
+    # third-party code. The sign job below signs and publishes.
     permissions:
       contents: write # GitHub release and assets
       packages: write # ghcr.io/gvart/hearth
@@ -59,3 +61,64 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # goreleaser leaves the GitHub release a draft (.goreleaser.yaml
+  # release.draft). This job signs its checksums.txt with the Ed25519 key
+  # agents trust (#359) and only then publishes it, so no published release
+  # lacks checksums.txt.sig. It alone holds HEARTH_RELEASE_SIGNING_KEY: a
+  # fresh checkout of the tag, Go and gh, no npm, no other third-party code,
+  # nothing carried over from the goreleaser job but the release's assets.
+  # If it fails, the release stays an unpublished draft: fix the cause and
+  # re-run this job. (The images are already pushed by then.)
+  sign:
+    name: Sign and publish
+    needs: goreleaser
+    runs-on: ubuntu-latest
+    # The key lives in this environment, which needs the maintainer's
+    # approval: only an approved run signs a release.
+    environment: release
+    permissions:
+      contents: write # upload the signature, publish the release
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false # nothing restored from a cache another job wrote
+      - name: Build the signer
+        run: go build -o "$RUNNER_TEMP/sign" ./internal/release/cmd/sign
+      # Every file checksums.txt lists must be in the release and match it:
+      # an archive changed after goreleaser hashed it fails here. (An archive
+      # and checksums.txt changed together would not; that takes the
+      # goreleaser job, which never holds the key.)
+      - name: Download the draft release and check its checksums
+        run: |
+          mkdir "$RUNNER_TEMP/release"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir "$RUNNER_TEMP/release"
+          cd "$RUNNER_TEMP/release"
+          sha256sum --check --strict checksums.txt
+      # The signer refuses an empty, malformed or untrusted key, and never
+      # prints it.
+      - name: Sign checksums.txt for the agents
+        env:
+          HEARTH_RELEASE_SIGNING_KEY: ${{ secrets.HEARTH_RELEASE_SIGNING_KEY }}
+        run: |
+          if [ -z "$HEARTH_RELEASE_SIGNING_KEY" ]; then
+            echo "::error::the secret HEARTH_RELEASE_SIGNING_KEY of the release environment is empty: agents refuse an unsigned release"
+            exit 1
+          fi
+          "$RUNNER_TEMP/sign" "$RUNNER_TEMP/release/checksums.txt"
+      - name: Upload checksums.txt.sig
+        run: gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" "$RUNNER_TEMP/release/checksums.txt.sig"
+      - name: Publish the release
+        run: |
+          # A pre-release (vX.Y.Z-rc.N) is never "latest"; a release is.
+          case "$TAG" in
+            *-*) gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false ;;
+            *) gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest ;;
+          esac

@@ -723,8 +723,15 @@ type Hello struct {
 	// protocol minor 11 and later.
 	ReleaseTarget string `protobuf:"bytes,17,opt,name=release_target,json=releaseTarget,proto3" json:"release_target,omitempty"`
 	NoSelfUpgrade string `protobuf:"bytes,18,opt,name=no_self_upgrade,json=noSelfUpgrade,proto3" json:"no_self_upgrade,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// rolled_back_from is the release an upgrade of this agent went to and
+	// was rolled back from: the new binary reached no hub (it kept failing at
+	// start, or stayed up with no hub welcoming it), so the previous one was
+	// put back. Sent in the Hello of the binary put back until a hub welcomes
+	// it; the hub keeps it while the agent reports the same version. Sent by
+	// agents of protocol minor 13 and later.
+	RolledBackFrom string `protobuf:"bytes,19,opt,name=rolled_back_from,json=rolledBackFrom,proto3" json:"rolled_back_from,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Hello) Reset() {
@@ -879,6 +886,13 @@ func (x *Hello) GetReleaseTarget() string {
 func (x *Hello) GetNoSelfUpgrade() string {
 	if x != nil {
 		return x.NoSelfUpgrade
+	}
+	return ""
+}
+
+func (x *Hello) GetRolledBackFrom() string {
+	if x != nil {
+		return x.RolledBackFrom
 	}
 	return ""
 }
@@ -4876,7 +4890,7 @@ const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"\aversion\x18\x02 \x01(\x04R\aversion\"=\n" +
 	"\x0fProtocolVersion\x12\x14\n" +
 	"\x05major\x18\x01 \x01(\rR\x05major\x12\x14\n" +
-	"\x05minor\x18\x02 \x01(\rR\x05minor\"\xcd\x05\n" +
+	"\x05minor\x18\x02 \x01(\rR\x05minor\"\xf7\x05\n" +
 	"\x05Hello\x12K\n" +
 	"\x10protocol_version\x18\x01 \x01(\v2 .hearth.agent.v1.ProtocolVersionR\x0fprotocolVersion\x12\x1b\n" +
 	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\x12\x1a\n" +
@@ -4898,7 +4912,8 @@ const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"\rlocal_ceiling\x18\x0f \x01(\v2\x18.hearth.agent.v1.CeilingR\flocalCeiling\x12%\n" +
 	"\x0eceiling_locked\x18\x10 \x01(\bR\rceilingLocked\x12%\n" +
 	"\x0erelease_target\x18\x11 \x01(\tR\rreleaseTarget\x12&\n" +
-	"\x0fno_self_upgrade\x18\x12 \x01(\tR\rnoSelfUpgrade\"\xe1\x01\n" +
+	"\x0fno_self_upgrade\x18\x12 \x01(\tR\rnoSelfUpgrade\x12(\n" +
+	"\x10rolled_back_from\x18\x13 \x01(\tR\x0erolledBackFrom\"\xe1\x01\n" +
 	"\aCeiling\x12\x12\n" +
 	"\x04exec\x18\x01 \x03(\tR\x04exec\x12\x18\n" +
 	"\arestart\x18\x02 \x03(\tR\arestart\x12\x14\n" +

@@ -15,7 +15,7 @@ import (
 // reportHello records hello as device id's facts.
 func reportHello(t *testing.T, f *apiFixture, id string, hello *agentv1.Hello) {
 	t.Helper()
-	df, err := factsFromHello(hello)
+	df, err := factsFromHello(hello, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

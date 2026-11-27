@@ -94,6 +94,10 @@ cosign verify-blob \
 sha256sum --check --ignore-missing checksums.txt
 ```
 
+`checksums.txt.sig` is a second signature of `checksums.txt`, made with the Hearth Ed25519 release
+key, whose public half is built into the agent: an agent upgrading itself checks it, and refuses a
+release without it (see [docs/security.md](docs/security.md#remote-agent-upgrades)).
+
 The agent installer (`install.sh`) does the same when `cosign` is on its `PATH`: it checks the
 signature of `checksums.txt` before trusting any checksum in it, and installs nothing if the
 signature does not verify or the release has no bundle. Without cosign it says that the signature

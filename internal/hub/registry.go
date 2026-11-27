@@ -4,6 +4,7 @@ package hub
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -121,25 +122,44 @@ func (r *Registry) Merged(rows []store.MergedRow) {
 
 // ReportFacts records facts from a Hello (or a periodic facts message) and
 // marks the device online. It publishes device.online if the device was not
-// online, and device.updated otherwise.
+// online, and device.updated otherwise. A rollback the agent told of earlier
+// is kept while it reports the same version.
 func (r *Registry) ReportFacts(ctx context.Context, deviceID string, h *agentv1.Hello) error {
-	facts, err := factsFromHello(h)
-	if err != nil {
-		return fmt.Errorf("report facts of device %s: %w", deviceID, err)
-	}
+	_, err := r.ReportHello(ctx, deviceID, h)
+	return err
+}
+
+// ReportHello is ReportFacts, and also returns the rollback h reports when
+// it is new: not the one the device's facts held already.
+func (r *Registry) ReportHello(ctx context.Context, deviceID string, h *agentv1.Hello) (newRollback string, err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	var stored json.RawMessage
+	// Not found is ReportFacts' error to give, below.
+	if d, err := r.devices.Get(ctx, deviceID); err == nil {
+		stored = d.Facts
+	}
+	facts, err := factsFromHello(h, stored)
+	if err != nil {
+		return "", fmt.Errorf("report facts of device %s: %w", deviceID, err)
+	}
 	now := r.now()
 	d, prev, err := r.devices.ReportFacts(ctx, deviceID, facts, now)
 	if err != nil {
-		return err
+		return "", err
 	}
 	typ := EventDeviceUpdated
 	if prev != store.StatusOnline {
 		typ = EventDeviceOnline
 	}
 	r.publish(ctx, Event{Type: typ, Device: d})
-	return nil
+	if v := reportedRollback(h); v != "" {
+		var old Facts
+		if json.Unmarshal(stored, &old) != nil || old.RolledBackFrom != v || old.AgentVersion != h.GetAgentVersion() {
+			newRollback = v
+		}
+	}
+	return newRollback, nil
 }
 
 // bootTimeJitter is how far a derived boot time may drift from the stored one
