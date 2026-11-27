@@ -135,6 +135,12 @@ func (h *Hints) Take(ctx context.Context, member string, limit int) ([]int64, []
 	return ids, muts, rows.Err()
 }
 
+// DropMember removes every hint for member: it was removed from the cluster.
+func (h *Hints) DropMember(ctx context.Context, member string) error {
+	_, err := h.db.ExecContext(ctx, `DELETE FROM hints WHERE member = ?`, member)
+	return err
+}
+
 // Delete removes delivered hints.
 func (h *Hints) Delete(ctx context.Context, ids []int64) error {
 	if len(ids) == 0 {

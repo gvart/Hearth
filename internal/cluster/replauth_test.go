@@ -538,8 +538,8 @@ func TestHungClaimantBlocksNothing(t *testing.T) {
 }
 
 // TestDemotionWaitsForTheGlobalRows: a master is not demoted, and keeps its
-// CA key, while global rows it holds may reach no other master: no other
-// master took its global rows, or a hint of one waits for a master.
+// CA key, while a hint of a global row waits for a master that is down; one
+// that left, or was removed (its hints dropped), is not waited for.
 func TestDemotionWaitsForTheGlobalRows(t *testing.T) {
 	ctx := t.Context()
 	c := newAPTestCluster(t, 2,
@@ -555,18 +555,32 @@ func TestDemotionWaitsForTheGlobalRows(t *testing.T) {
 	if err != nil || len(ms) != 1 {
 		t.Fatalf("read the ceiling: %v, %v", ms, err)
 	}
-	if err := b.node.hints.Add("a", ms); err != nil {
+	if err := b.node.hints.Add("x", ms); err != nil {
 		t.Fatal(err)
 	}
-	c["a"].stop()
-	waitUntil(t, 10*time.Second, "b to see a down", func() bool {
-		return c["a"].memberOn(b).State != MemberAlive
-	})
-	if _, err := b.node.Demote(ctx, "b", RoleMaster); err == nil || !strings.Contains(err.Error(), "wait in hints for master a") {
-		t.Fatalf("b demoted with a global row waiting for master a: %v", err)
+	live := c["c"].memberOn(b)
+	gone := func(state string) []MemberInfo {
+		return []MemberInfo{live, {ID: "x", Roles: storageMaster, State: state}}
 	}
-	if !b.node.IsMaster() || !b.node.cfg.CA.HasKey() {
-		t.Fatal("b lost the master role or its key")
+	if err := b.node.pushGlobalsTo(ctx, gone(MemberDead)); err == nil || !strings.Contains(err.Error(), "wait in hints for master x") {
+		t.Fatalf("with a global row waiting for the dead master x: %v", err)
+	}
+	if err := b.node.pushGlobalsTo(ctx, gone(MemberLeft)); err != nil {
+		t.Fatalf("with x left: %v", err)
+	}
+	// x is removed: its hints go, and it is listed no more.
+	b.node.dropHints(ctx, "x")
+	if n, err := b.node.hints.Count(ctx, "x"); err != nil || n != 0 {
+		t.Fatalf("hints of the removed x: %d, %v", n, err)
+	}
+	if err := b.node.pushGlobalsTo(ctx, gone(MemberDead)); err != nil {
+		t.Fatalf("after x's hints were dropped: %v", err)
+	}
+	if _, err := c["a"].node.Demote(ctx, "b", RoleMaster); err != nil {
+		t.Fatal(err)
+	}
+	if b.node.cfg.CA.HasKey() {
+		t.Fatal("b kept its key after its demotion")
 	}
 }
 

@@ -412,12 +412,20 @@ func (n *APNode) pushGlobals(ctx context.Context) error {
 		return nil
 	}
 	n.rep.deliverHints(ctx)
+	return n.pushGlobalsTo(ctx, n.membership.Members())
+}
+
+// pushGlobalsTo is pushGlobals with members, the cluster as the gossip
+// lists it.
+func (n *APNode) pushGlobalsTo(ctx context.Context, members []MemberInfo) error {
 	masters, synced := 0, 0
-	for _, m := range n.membership.Members() {
-		if m.ID == n.cfg.NodeID || !m.Roles.Has(RoleMaster) {
+	for _, m := range members {
+		// A member that left, or was removed (not listed), is not waited
+		// for: one that left and comes back gets the rows by anti-entropy.
+		if m.ID == n.cfg.NodeID || !m.Roles.Has(RoleMaster) || m.State == MemberLeft {
 			continue
 		}
-		// A master that is down or left may come back: its hints count too.
+		// A master that is down may come back: its hints count too.
 		if n.hints != nil {
 			_, ms, err := n.hints.Take(ctx, m.ID, 1<<20)
 			if err != nil {
@@ -502,6 +510,7 @@ func (n *APNode) RemoveMember(ctx context.Context, id string) (Removal, error) {
 		return Removal{}, err
 	}
 	n.membership.Forget(id)
+	n.dropHints(ctx, id)
 	n.membership.closeRevoked(func(c *x509.Certificate) bool {
 		got, err := pki.HubNodeID(c)
 		return err == nil && got == id
@@ -530,10 +539,22 @@ func (n *APNode) handleMessage(b []byte) {
 	if json.Unmarshal(b, &msg) == nil && msg.Kind == msgRemoved {
 		if msg.ID != n.cfg.NodeID && ValidNodeID(msg.ID) == nil {
 			n.membership.Forget(msg.ID)
+			n.dropHints(context.Background(), msg.ID)
 		}
 		return
 	}
 	n.rep.HandleMessage(b)
+}
+
+// dropHints deletes the hints kept for id, a member removed from the
+// cluster: nothing will take them.
+func (n *APNode) dropHints(ctx context.Context, id string) {
+	if n.hints == nil {
+		return
+	}
+	if err := n.hints.DropMember(context.WithoutCancel(ctx), id); err != nil {
+		n.log.WarnContext(ctx, "drop the hints of a removed member", "member", id, "err", err)
+	}
 }
 
 // removed reports whether member id was removed: it has hub certificates,
