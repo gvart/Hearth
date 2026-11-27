@@ -145,7 +145,10 @@ func TestConnectRejected(t *testing.T) {
 			defer cancel()
 
 			stream := newTestClient(t, "dev-1").Connect(ctx)
-			if err := stream.Send(tt.first); err != nil {
+			// The hub may refuse and close the stream before the send
+			// completes; Connect then reports io.EOF on Send and the real
+			// error on Receive.
+			if err := stream.Send(tt.first); err != nil && !errors.Is(err, io.EOF) {
 				t.Fatalf("send: %v", err)
 			}
 			_, err := stream.Receive()
