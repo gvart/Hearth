@@ -15,7 +15,7 @@ the DNS resolver, and only when you ask, with your password, through policy.
 > for OPNsense 25.7 or later: the first release whose privileges match the API paths it uses (with an
 > older release, a key with limited privileges may be refused).
 
-OpenWrt routers are covered in [OpenWrt](openwrt.md); UniFi is tracked in [#365](https://github.com/gvart/hearth/issues/365).
+OpenWrt routers are covered in [OpenWrt](openwrt.md); UniFi controllers in [UniFi](unifi.md).
 
 ## Give Hearth a user and key of its own
 

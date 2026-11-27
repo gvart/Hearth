@@ -118,7 +118,7 @@ the admin password entered again, audited. What it does and does not protect aga
   rotate.
 - Backups taken before the finish with the CA key still hold the old key. Destroy them if its leak is
   why you rotate.
-- A leaked database also leaked the Kubernetes, Proxmox, ESPHome, OpenWrt and OPNsense credentials and the notification channel
+- A leaked database also leaked the Kubernetes, Proxmox, ESPHome, OpenWrt, OPNsense and UniFi credentials and the notification channel
   credentials sealed in it, whatever the key: rotate them at their source.
 - Enrollment and join tokens created before the finish stop working.
 - A cluster of one can also replace its CA without a rotation: delete `ca.crt` and `ca.key` and enroll
@@ -279,6 +279,11 @@ automation or an MCP client.
   pinned fingerprint. Hearth only reads, but for restarting Unbound (`opnsense.unbound.restart`,
   dangerous), which asks for the admin password again. The key's user privileges are the ceiling. See
   [OPNsense](opnsense.md).
+- **UniFi**: the API key or local login is sealed with AES-256-GCM under a key of its own, and never
+  logged, served or audited; so are the session cookie and the CSRF token. The controller is reached
+  over https only, verified against the system roots or a pinned fingerprint. Hearth only reads, but
+  for restarting an access point (`unifi.ap.restart`, dangerous), which asks for the admin password
+  again. The account's UniFi role is the ceiling. See [UniFi](unifi.md).
 - **Prometheus**: read only. Hearth never writes to Prometheus.
 - **MCP clients** (AI assistants): each has its own bearer token, stored as a SHA-256 hash and
   checked on every request, so a revocation takes effect at once. The token's scope caps the class
