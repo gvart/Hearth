@@ -1,0 +1,21 @@
+deploy/install.sh
+  s_18b57982fdff93::t_8a5c168fd11862 42-47,113,136-140,155,205-213,341-343,364-388,732-736,759-763,854
+deploy/test/install-e2e-inner.sh
+  s_18b57982fdff93::t_05be6a91f2877f 291-308
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "9dc1f13f4b4f24c1d0dc944b3bddf0b5a2ec1e6e",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "unknown"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
