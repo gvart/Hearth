@@ -122,6 +122,14 @@ func TestHeadlineDemo(t *testing.T) {
 	// 6b. A local rule of agent-1 fires while the hub is stopped, and its
 	// run is audited once the hub is back (#70).
 	api = s.localRuleWithHubDown(ctx, api, ids["agent-1"])
+	// Step 7 revokes a live stream: wait for both agents to stream to the
+	// hub started again, as after the restart in step 6.
+	hubStarted = s.startedAt(ctx, "hub")
+	for _, name := range agents {
+		api.waitDevice(ctx, name, time.Now().Add(HubReconnectWithin), "reconnected after the hub stop", func(d device) bool {
+			return d.Status == "online" && d.LastSeen.After(hubStarted)
+		})
+	}
 
 	// 7. Revoke agent-2 with the CLI on the hub host. Its live stream must
 	// end and the device go offline within RevokedWithin; the agent must log
