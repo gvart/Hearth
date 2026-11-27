@@ -82,7 +82,11 @@ type ReplicatorConfig struct {
 	AntiEntropyEvery time.Duration
 	HintsEvery       time.Duration
 	GCEvery          time.Duration
-	Now              func() time.Time
+	// LoneMasterWait is how long a master that started or was promoted
+	// keeps the master tables' rows closed while it finds no other master
+	// live to compare them with (compareMasterRows).
+	LoneMasterWait time.Duration
+	Now            func() time.Time
 	// OnSynced, if set, is called once a member promoted to storage has
 	// copied the rows of every bucket it owns (see SetLocal).
 	OnSynced func()
@@ -95,6 +99,11 @@ const (
 	defaultAntiEntropyEvery = 30 * time.Second
 	defaultHintsEvery       = 5 * time.Second
 	defaultGCEvery          = time.Hour
+	// defaultLoneMasterWait is the time the gossip takes to find a
+	// cluster; after it, a master alone reads its own copy of the rows
+	// only masters hold, which may lack a sign-out or a reset made on a
+	// master it cannot reach (an AP trade-off, docs/cluster.md).
+	defaultLoneMasterWait = 30 * time.Second
 	// replicaIdle closes a served replication connection after this long
 	// without a request.
 	replicaIdle = 2 * time.Minute
@@ -151,15 +160,25 @@ type Replicator struct {
 	// masters a critical global write or a sync waits for.
 	provedMu sync.Mutex
 	proved   map[string]bool
+	// strikes counts, per member, the answers without a proof of the hub
+	// CA key to a merge that held master rows, since its last proof
+	// (hintWithheld).
+	strikesMu sync.Mutex
+	strikes   map[string]int
 	// masterSynced is set once this member compared the global rows with a
 	// master that proved the hub CA key.
 	masterSynced atomic.Bool
 	// masterRowsSynced is set once this master compared the master tables'
-	// rows with another master that proved the key, since it started or was
-	// promoted: until then it reads none of them while another is live
-	// (MasterRowsReady). pullMaster asks for that comparison now.
+	// rows with every other live master that proved the key, since it
+	// started or was promoted, or once it found none for LoneMasterWait:
+	// until then it reads none of them (MasterRowsReady). pullMaster asks
+	// for that comparison now. gateSince is when it started or was
+	// promoted (unix nanoseconds); lone is set while it opened with no
+	// other master to compare with (Uncompared).
 	masterRowsSynced atomic.Bool
 	pullMaster       chan struct{}
+	gateSince        atomic.Int64
+	lone             atomic.Bool
 	// pullMu runs one comparison of the master tables' rows at a time.
 	pullMu sync.Mutex
 
@@ -210,6 +229,7 @@ func NewReplicator(cfg ReplicatorConfig) (*Replicator, error) {
 	setIfZero(&cfg.AntiEntropyEvery, defaultAntiEntropyEvery)
 	setIfZero(&cfg.HintsEvery, defaultHintsEvery)
 	setIfZero(&cfg.GCEvery, defaultGCEvery)
+	setIfZero(&cfg.LoneMasterWait, defaultLoneMasterWait)
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
@@ -222,6 +242,7 @@ func NewReplicator(cfg ReplicatorConfig) (*Replicator, error) {
 		pool: map[string][]*replConn{}, jobs: make(chan func(context.Context), asyncQueue),
 		suspect: map[string]time.Time{}, handed: map[int]uint64{}, uses: uses,
 		pullMaster: make(chan struct{}, 1),
+		strikes:    map[string]int{},
 	}
 	bg := context.Background()
 	r.ctx.Store(&bg)
@@ -1107,12 +1128,58 @@ func (r *Replicator) replicateRevocation(ctx context.Context, muts []store.Mutat
 	return reach
 }
 
+// Bounds of the master rows kept for a member that does not prove the hub
+// CA key: past maxStrikes answers without a proof since its last one, none
+// is kept for it any more; and no more than maxWithheldHints hints, or
+// maxWithheldBytes of them, wait for it. A master that proves the key
+// again gets the rows dropped by anti-entropy.
+const (
+	maxStrikes       = 20
+	maxWithheldHints = 1000
+	maxWithheldBytes = 8 << 20
+)
+
 // hintWithheld keeps for member t the master rows call did not send it, as
-// it did not prove the hub CA key: they are not delivered.
+// it did not prove the hub CA key: they are not delivered. It keeps them
+// within the bounds above.
 func (r *Replicator) hintWithheld(t string, resp apResponse) {
-	if len(resp.withheld) > 0 {
-		r.hint(t, resp.withheld)
+	if len(resp.withheld) == 0 || !r.keepWithheld(t) {
+		return
 	}
+	r.hint(t, resp.withheld)
+}
+
+// keepWithheld counts an answer without a proof from t, and reports
+// whether master rows withheld from t are still kept for it.
+func (r *Replicator) keepWithheld(t string) bool {
+	r.strikesMu.Lock()
+	r.strikes[t]++
+	k := r.strikes[t]
+	r.strikesMu.Unlock()
+	if k > maxStrikes {
+		if k == maxStrikes+1 {
+			r.log.Warn("a member answers as no master again and again: the rows only masters hold are kept for it no more",
+				"member", t, "answers", k)
+		}
+		return false
+	}
+	if r.cfg.Hints == nil {
+		return false
+	}
+	n, size, err := r.cfg.Hints.Usage(context.Background(), t)
+	if err != nil || n >= maxWithheldHints || size >= maxWithheldBytes {
+		r.log.Warn("too many hints wait for a member that did not prove the hub CA key: the rows only masters hold are not kept",
+			"member", t, "hints", n, "bytes", size, "err", err)
+		return false
+	}
+	return true
+}
+
+// clearStrikes forgets t's answers without a proof: it proved the key.
+func (r *Replicator) clearStrikes(t string) {
+	r.strikesMu.Lock()
+	delete(r.strikes, t)
+	r.strikesMu.Unlock()
 }
 
 // hint keeps ms for member t.
@@ -1357,6 +1424,7 @@ func (r *Replicator) mergeHere(ctx context.Context, ms []store.Mutation) error {
 // background jobs until ctx ends.
 func (r *Replicator) Run(ctx context.Context) error {
 	r.ctx.Store(&ctx)
+	r.closeMasterRows()
 	var wg sync.WaitGroup
 	for range 2 {
 		wg.Go(func() {
@@ -1456,8 +1524,13 @@ func (r *Replicator) deliverHints(ctx context.Context) {
 			}
 			if len(resp.withheld) > 0 {
 				// m did not prove the hub CA key: its master rows wait, in
-				// place, for a connection on which it does.
-				if err := h.Replace(ctx, ids, resp.withheld); err != nil {
+				// place, for a connection on which it does, unless it
+				// answered so too often.
+				kept := resp.withheld
+				if !r.keepWithheld(m) {
+					kept = nil
+				}
+				if err := h.Replace(ctx, ids, kept); err != nil {
 					r.log.WarnContext(ctx, "keep the hints not delivered", "err", err)
 				}
 				break
@@ -1635,6 +1708,9 @@ func (r *Replicator) call(ctx context.Context, m string, req apRequest) (apRespo
 		if err == nil {
 			resp.fromMaster = c.peerMaster && r.saysMaster(m)
 			resp.withheld = withheld
+			if resp.fromMaster {
+				r.clearStrikes(m)
+			}
 			break
 		}
 		_ = c.Close()

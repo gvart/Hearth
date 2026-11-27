@@ -170,7 +170,8 @@ func (an *apNet) add(t testing.TB, n int, id string) *apMember {
 	cfg := ReplicatorConfig{
 		NodeID: id, Peers: apPeers{net: an, self: id}, Replicas: n, Hints: hints,
 		RequestTimeout: 2 * time.Second, AntiEntropyEvery: time.Hour, HintsEvery: time.Hour, GCEvery: time.Hour,
-		Master: testMasterKey{holds: true},
+		LoneMasterWait: time.Nanosecond,
+		Master:         testMasterKey{holds: true},
 	}
 	if an.tune != nil {
 		an.tune(&cfg)

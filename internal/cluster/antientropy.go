@@ -265,8 +265,9 @@ func (r *Replicator) syncGlobal(ctx context.Context, peer string) (bool, error) 
 	if err == nil && proved {
 		var compared bool
 		compared, err = r.syncMasterRows(ctx, r.store(), peer, false)
-		if err == nil && compared {
-			r.masterRowsSynced.Store(true)
+		if err == nil && compared && r.masterRowsSynced.Load() {
+			// Compared at last: the gate opened with none to compare with.
+			r.lone.Store(false)
 		}
 	}
 	if err == nil && proved {

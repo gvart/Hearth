@@ -72,26 +72,35 @@ func (n *APNode) dropMasterRows(ctx context.Context) error {
 	return nil
 }
 
-// pullMasterRowsFor bounds how long pullMasterRows retries; anti-entropy
-// compares the rows later anyway.
-const pullMasterRowsFor = 2 * time.Minute
+// closeMasterRows closes the master tables' rows until they are compared
+// again: at the start and on a promotion.
+func (r *Replicator) closeMasterRows() {
+	r.gateSince.Store(r.cfg.Now().UnixNano())
+	r.masterRowsSynced.Store(false)
+	r.lone.Store(false)
+}
+
+// Uncompared reports whether this master reads the master tables' rows
+// without having compared them with another master since it started or
+// was promoted: it found none live for LoneMasterWait. The web UI says so.
+func (r *Replicator) Uncompared() bool { return r.holdsKey() && r.lone.Load() }
 
 // pullMasterRows compares, on a master that started or was just promoted,
 // the master tables' rows with every other live master that proves the hub
 // CA key, so it holds the newest of each before it reads its own
-// (MasterRowsReady). It retries, backing off, while none answers: the
-// others take a promoted member for a master only once their gossip says
-// it is one.
+// (MasterRowsReady). It retries, backing off, until it is done: the others
+// take a promoted member for a master only once their gossip says it is
+// one, and one that does not answer leaves the live set once the gossip
+// suspects it.
 func (r *Replicator) pullMasterRows(ctx context.Context) {
-	start, wait := r.cfg.Now(), 250*time.Millisecond
+	wait := 250 * time.Millisecond
 	for {
-		done, masters := r.compareMasterRows(ctx)
+		r.pullMu.Lock()
+		rctx, cancel := context.WithTimeout(ctx, r.cfg.RequestTimeout)
+		done, _ := r.compareMasterRows(rctx)
+		cancel()
+		r.pullMu.Unlock()
 		if done {
-			return
-		}
-		if r.cfg.Now().Sub(start) > pullMasterRowsFor {
-			r.log.WarnContext(ctx, "the rows only masters hold not compared with another master yet; "+
-				"sign-ins wait for anti-entropy", "masters", masters)
 			return
 		}
 		select {
@@ -103,32 +112,53 @@ func (r *Replicator) pullMasterRows(ctx context.Context) {
 	}
 }
 
-// compareMasterRows runs one round of pullMasterRows, one at a time. done
-// reports that there is nothing left to wait for; masters are the ones it
-// tried.
+// compareMasterRows runs one round of pullMasterRows, under pullMu. It is
+// done, and opens the rows, once it compared them with every other live
+// master that proves the hub CA key (one that answered without a proof is
+// no master), or once none was live for LoneMasterWait since the gate
+// closed; masters are the ones it tried.
 func (r *Replicator) compareMasterRows(ctx context.Context) (done bool, masters []string) {
-	r.pullMu.Lock()
-	defer r.pullMu.Unlock()
 	if !r.holdsKey() || r.masterRowsSynced.Load() {
 		return true, nil
 	}
-	masters = slices.DeleteFunc(r.view().otherLiveMasters(), r.unproved)
-	if len(masters) == 0 {
-		return true, nil // no other master live: nothing to wait for
+	v := r.view() // first: it notices the cluster found
+	if r.seeking.Load() {
+		return false, nil
 	}
-	var from []string
+	masters = slices.DeleteFunc(v.otherLiveMasters(), r.unproved)
+	if len(masters) == 0 {
+		clustered, err := r.store().Hubs().Clustered(ctx)
+		if err != nil {
+			r.log.WarnContext(ctx, "compare the rows only masters hold", "err", err)
+			return false, nil
+		}
+		if !clustered {
+			// A hub that was never in a cluster with another: no other
+			// master holds a row it lacks.
+			r.masterRowsSynced.Store(true)
+			return true, nil
+		}
+		if r.cfg.Now().Sub(time.Unix(0, r.gateSince.Load())) < r.cfg.LoneMasterWait {
+			return false, nil // the gossip may still find one
+		}
+		r.lone.Store(true)
+		r.masterRowsSynced.Store(true)
+		r.log.WarnContext(ctx, "no other master to compare sessions and tokens with: this hub reads its own copy, "+
+			"which may lack a sign-out or a password reset made on a master it cannot reach", "waited", r.cfg.LoneMasterWait)
+		return true, nil
+	}
 	for _, m := range masters {
 		proved, err := r.syncGlobal(ctx, m)
+		// syncGlobal compared the master tables' rows too if m is a
+		// master that proved the key (syncMasterRows).
+		proved = proved && r.saysMaster(m) && r.provedLast(m)
 		if err != nil || !proved {
 			r.log.DebugContext(ctx, "compare the rows only masters hold", "member", m, "proved", proved, "err", err)
-			continue
+			return false, masters
 		}
-		from = append(from, m)
 	}
-	if !r.masterRowsSynced.Load() {
-		return false, masters
-	}
-	r.log.InfoContext(ctx, "compared the rows only masters hold with the other masters", "with", from)
+	r.masterRowsSynced.Store(true)
+	r.log.InfoContext(ctx, "compared the rows only masters hold with the other masters", "with", masters)
 	return true, masters
 }
 
@@ -155,18 +185,16 @@ func (r *Replicator) MasterRowsReady() error {
 	if !r.holdsKey() || r.masterRowsSynced.Load() {
 		return nil
 	}
-	v := r.view() // first: it notices the cluster found
-	if r.seeking.Load() {
+	// Once, here, for a quick timeout: the read waits for it rather than
+	// fail, unless a comparison runs already (it does not queue behind it).
+	if !r.pullMu.TryLock() {
 		return fmt.Errorf("%w: %w", errMasterRowsSyncing, store.ErrUnavailable)
 	}
-	if !slices.ContainsFunc(v.otherLiveMasters(), func(m string) bool { return !r.unproved(m) }) {
-		return nil
-	}
-	// Once, here, for a quick timeout: the read waits for it rather than
-	// fail.
 	ctx, cancel := context.WithTimeout(*r.ctx.Load(), 2*r.cfg.QuickTimeout)
-	defer cancel()
-	if done, _ := r.compareMasterRows(ctx); done {
+	done, _ := r.compareMasterRows(ctx)
+	cancel()
+	r.pullMu.Unlock()
+	if done {
 		return nil
 	}
 	r.askPullMaster()

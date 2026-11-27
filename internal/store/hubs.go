@@ -50,6 +50,23 @@ func (r Hubs) AgentURLs(ctx context.Context) (map[string]string, error) {
 	return out, nil
 }
 
+// Clustered reports whether more than one hub ever took part in this
+// hub's cluster: certificates of more than one hub are recorded, those of
+// a hub removed since included. Before the schema that records them, it
+// is false.
+func (r Hubs) Clustered(ctx context.Context) (bool, error) {
+	if err := r.RequireCerts(ctx); errors.Is(err, ErrSchemaTooOld) {
+		return false, nil
+	} else if err != nil {
+		return false, fmt.Errorf("hub certs: %w", err)
+	}
+	var n int
+	if err := r.s.db.QueryRowContext(ctx, `SELECT count(DISTINCT node_id) FROM hub_certs`).Scan(&n); err != nil {
+		return false, fmt.Errorf("count hubs: %w", err)
+	}
+	return n > 1, nil
+}
+
 // RecordCert records the hub node certificate serial issued to nodeID. A
 // serial already recorded, revoked or not, is left as it is.
 func (r Hubs) RecordCert(ctx context.Context, serial, nodeID string) error {

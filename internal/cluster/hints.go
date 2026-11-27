@@ -106,6 +106,13 @@ func (h *Hints) Count(ctx context.Context, member string) (int, error) {
 	return n, err
 }
 
+// Usage is the number of hints waiting for member and their size in
+// bytes.
+func (h *Hints) Usage(ctx context.Context, member string) (n int, size int64, err error) {
+	err = h.db.QueryRowContext(ctx, `SELECT count(*), coalesce(sum(length(muts)), 0) FROM hints WHERE member = ?`, member).Scan(&n, &size)
+	return n, size, err
+}
+
 // Take returns up to limit of member's oldest hints, in order, without
 // removing them: their ids, and their writes together.
 func (h *Hints) Take(ctx context.Context, member string, limit int) ([]int64, []store.Mutation, error) {

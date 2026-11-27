@@ -3,6 +3,7 @@
 package cluster
 
 import (
+	"context"
 	"crypto/sha256"
 	"errors"
 	"os"
@@ -444,7 +445,7 @@ func TestOneMasterWithStorageMembersDown(t *testing.T) {
 func TestMasterRowsGate(t *testing.T) {
 	ctx := t.Context()
 	t.Run("another master hung", func(t *testing.T) {
-		an := newAPNet(t, 2, "a", "b")
+		an := newAPNetWith(t, 2, func(c *ReplicatorConfig) { c.LoneMasterWait = time.Hour }, "a", "b")
 		a := an.m("a")
 		if err := a.st.Admin().CreateSession(ctx, "s", time.Now(), time.Now().Add(time.Hour)); err != nil {
 			t.Fatal(err)
@@ -463,11 +464,17 @@ func TestMasterRowsGate(t *testing.T) {
 		an.hung["b"] = false
 		an.mu.Unlock()
 		a.rep.clearSuspect("b")
-		if _, err := a.st.Admin().CheckSession(ctx, "s", time.Now()); err != nil {
-			t.Fatalf("session once b answers: %v", err)
-		}
-		if !a.rep.masterRowsSynced.Load() {
-			t.Fatal("a did not record the comparison")
+		// A read while a comparison runs is refused at once (it does not
+		// queue): it reads once one is done.
+		apEventuallyTB(t, "a reads the session once b answers", func() bool {
+			_, err := a.st.Admin().CheckSession(ctx, "s", time.Now())
+			if err != nil && !errors.Is(err, store.ErrUnavailable) {
+				t.Fatalf("session once b answers: %v", err)
+			}
+			return err == nil
+		})
+		if !a.rep.masterRowsSynced.Load() || a.rep.Uncompared() {
+			t.Fatal("a did not record the comparison with b")
 		}
 	})
 	t.Run("the other master down", func(t *testing.T) {
@@ -476,10 +483,92 @@ func TestMasterRowsGate(t *testing.T) {
 		if err := a.st.Admin().CreateSession(ctx, "s", time.Now(), time.Now().Add(time.Hour)); err != nil {
 			t.Fatal(err)
 		}
+		for _, id := range []string{"a", "b"} {
+			if err := a.st.Hubs().RecordCert(ctx, "serial-"+id, id); err != nil {
+				t.Fatal(err)
+			}
+		}
 		a.rep.masterRowsSynced.Store(false)
 		an.setDown("b", true)
 		if _, err := a.st.Admin().CheckSession(ctx, "s", time.Now()); err != nil {
 			t.Fatalf("session with the only other master down: %v", err)
+		}
+		if !a.rep.Uncompared() {
+			t.Fatal("a read with no master to compare with, and does not say so")
+		}
+		// Once b is back and compared, a says so no more.
+		an.setDown("b", false)
+		if err := a.rep.SyncGlobal(ctx, "b"); err != nil {
+			t.Fatal(err)
+		}
+		if a.rep.Uncompared() {
+			t.Fatal("a still says it compared with no master after it did")
+		}
+	})
+	t.Run("alone, within the wait", func(t *testing.T) {
+		// A master that just started, or was just promoted, waits for the
+		// gossip to find another master before it reads its own copy.
+		an := newAPNetWith(t, 2, func(c *ReplicatorConfig) { c.LoneMasterWait = time.Hour }, "a", "b")
+		a := an.m("a")
+		if err := a.st.Admin().CreateSession(ctx, "s", time.Now(), time.Now().Add(time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+		for _, id := range []string{"a", "b"} {
+			if err := a.st.Hubs().RecordCert(ctx, "serial-"+id, id); err != nil {
+				t.Fatal(err)
+			}
+		}
+		an.setDown("b", true)
+		a.rep.closeMasterRows()
+		if _, err := a.st.Admin().CheckSession(ctx, "s", time.Now()); !errors.Is(err, store.ErrUnavailable) {
+			t.Fatalf("session within the wait, alone: %v, want unavailable", err)
+		}
+		if a.rep.Uncompared() {
+			t.Fatal("a says it reads uncompared rows while it reads none")
+		}
+		a.rep.gateSince.Store(time.Now().Add(-2 * time.Hour).UnixNano())
+		if _, err := a.st.Admin().CheckSession(ctx, "s", time.Now()); err != nil {
+			t.Fatalf("session after the wait, alone: %v", err)
+		}
+		if !a.rep.Uncompared() {
+			t.Fatal("a read with no master to compare with, and does not say so")
+		}
+	})
+	t.Run("never in a cluster", func(t *testing.T) {
+		// A hub that never had another one waits for none.
+		an := newAPNetWith(t, 1, func(c *ReplicatorConfig) { c.LoneMasterWait = time.Hour }, "a")
+		a := an.m("a")
+		if err := a.st.Admin().CreateSession(ctx, "s", time.Now(), time.Now().Add(time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+		a.rep.closeMasterRows()
+		if _, err := a.st.Admin().CheckSession(ctx, "s", time.Now()); err != nil {
+			t.Fatalf("session of a hub alone from the start: %v", err)
+		}
+		if a.rep.Uncompared() {
+			t.Fatal("a hub alone from the start says it could not compare")
+		}
+	})
+	t.Run("every live master", func(t *testing.T) {
+		// Compared with one master of two live: not yet.
+		an := newAPNet(t, 3, "a", "b", "c")
+		a := an.m("a")
+		if err := a.st.Admin().CreateSession(ctx, "s", time.Now(), time.Now().Add(time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+		a.rep.closeMasterRows()
+		if err := a.rep.SyncGlobal(ctx, "b"); err != nil {
+			t.Fatal(err)
+		}
+		if a.rep.masterRowsSynced.Load() {
+			t.Fatal("an ordinary anti-entropy round with one master opened the rows")
+		}
+		an.mu.Lock()
+		an.hung["c"] = true
+		an.mu.Unlock()
+		a.rep.closePool()
+		if _, err := a.st.Admin().CheckSession(ctx, "s", time.Now()); !errors.Is(err, store.ErrUnavailable) {
+			t.Fatalf("session compared with b, not c: %v, want unavailable", err)
 		}
 	})
 	t.Run("claimants only", func(t *testing.T) {
@@ -507,5 +596,149 @@ func TestSyncKeepsToItsSpace(t *testing.T) {
 		if len(ds) != 1 || ds[0].Table != want {
 			t.Errorf("digests in space %v: %v, want %s", sp, ds, want)
 		}
+	}
+}
+
+// TestWithheldHintsBounded: the master rows kept for a member that does not
+// prove the hub CA key are bounded; past maxStrikes answers without a proof
+// none is kept for it, and its proof clears the count.
+func TestWithheldHintsBounded(t *testing.T) {
+	an := newGateNet(t)
+	ctx := t.Context()
+	m := an.m("m")
+	makeGrants(t, m)
+	for range maxStrikes + 5 {
+		m.rep.deliverHints(ctx)
+	}
+	n, _, err := m.hints.Usage(ctx, "s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("hints for s after %d answers without a proof: %d, want none kept", maxStrikes+5, n)
+	}
+	m.rep.clearStrikes("s")
+	if !m.rep.keepWithheld("s") {
+		t.Fatal("rows for s not kept after its count was cleared")
+	}
+}
+
+// TestWithheldHintsSizeBound: past maxWithheldHints hints for a member,
+// withheld master rows are not kept for it.
+func TestWithheldHintsSizeBound(t *testing.T) {
+	an := newGateNet(t)
+	m := an.m("m")
+	for range maxWithheldHints {
+		if err := m.hints.Add("s", []store.Mutation{{Table: "devices"}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if m.rep.keepWithheld("s") {
+		t.Fatal("withheld rows kept past the bound of hints")
+	}
+}
+
+// TestRevokeWhatThisMasterLacks: a master revokes an MCP token, a
+// dashboard token and a share link it never received (it was down when
+// they were made, and the master that made them is down now): it keeps a
+// revoked stub, and once the two meet the grant is revoked on both, in
+// either order of delivery. The revocation says it reached one master of
+// two; with both up, two of two.
+func TestRevokeWhatThisMasterLacks(t *testing.T) {
+	ctx := t.Context()
+	an := newAPNet(t, 2, "a", "b")
+	a, b := an.m("a"), an.m("b")
+	now := time.Now()
+	if err := a.st.Panels().Create(ctx, store.Panel{ID: "p", Name: "p", Widgets: "[]", CreatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	an.setDown("b", true)
+	if err := a.st.MCPTokens().Create(ctx, "mcp", "mcp-secret", "write", now); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.st.DashboardTokens().Create(ctx, store.DashboardToken{ID: "dash", Name: "dash", CreatedAt: now}, "dash-secret"); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.st.Panels().CreateLink(ctx, store.PanelLink{ID: "link", PanelID: "p", CreatedAt: now}, "link-secret"); err != nil {
+		t.Fatal(err)
+	}
+	an.setDown("b", false)
+	an.setDown("a", true)
+	b.rep.masterRowsSynced.Store(true)
+	revokes := map[string]func(context.Context) error{
+		"mcp":  func(ctx context.Context) error { return b.st.MCPTokens().Revoke(ctx, "mcp", now) },
+		"dash": func(ctx context.Context) error { return b.st.DashboardTokens().Revoke(ctx, "dash", now) },
+		"link": func(ctx context.Context) error { return b.st.Panels().RevokeLink(ctx, "p", "link", now) },
+	}
+	for name, revoke := range revokes {
+		rctx, reach := store.WithReach(ctx)
+		if err := revoke(rctx); err != nil {
+			t.Fatalf("b revokes %s it lacks: %v", name, err)
+		}
+		if *reach != (store.Reach{Applied: 1, Of: 2}) {
+			t.Fatalf("reach of b's revocation of %s with a down: %+v, want 1 of 2", name, *reach)
+		}
+	}
+	// A second revocation of a stub is of nothing in use.
+	if err := b.st.MCPTokens().Revoke(ctx, "mcp", now); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("revoke the stub again: %v, want not found", err)
+	}
+	an.setDown("a", false)
+	// b's stubs reach a, a's grants reach b.
+	b.rep.deliverHints(ctx)
+	a.rep.deliverHints(ctx)
+	for name, st := range map[string]*store.Store{"a": a.st, "b": b.st} {
+		if _, err := st.MCPTokens().Check(ctx, "mcp-secret"); err == nil {
+			t.Errorf("%s: the MCP token revoked on b is still valid", name)
+		}
+		if _, err := st.DashboardTokens().Check(ctx, "dash-secret", now); err == nil {
+			t.Errorf("%s: the dashboard token revoked on b is still valid", name)
+		}
+		if _, _, err := st.Panels().CheckLink(ctx, "link-secret", now); err == nil {
+			t.Errorf("%s: the link revoked on b is still valid", name)
+		}
+	}
+	// Both up: the revocation reaches both masters.
+	if err := a.st.MCPTokens().Create(ctx, "mcp2", "mcp2-secret", "write", now); err != nil {
+		t.Fatal(err)
+	}
+	rctx, reach := store.WithReach(ctx)
+	if err := a.st.MCPTokens().Revoke(rctx, "mcp2", now); err != nil {
+		t.Fatal(err)
+	}
+	if *reach != (store.Reach{Applied: 2, Of: 2}) {
+		t.Fatalf("reach with both masters up: %+v, want 2 of 2", *reach)
+	}
+}
+
+// TestRevocationWaitsForAMaster: a revocation tries a master that does not
+// answer at once again for a few seconds, and counts it once it took it.
+func TestRevocationWaitsForAMaster(t *testing.T) {
+	ctx := t.Context()
+	an := newAPNetWith(t, 2, func(c *ReplicatorConfig) { c.QuickTimeout = 200 * time.Millisecond }, "a", "b")
+	a := an.m("a")
+	now := time.Now()
+	if err := a.st.MCPTokens().Create(ctx, "mcp", "mcp-secret", "write", now); err != nil {
+		t.Fatal(err)
+	}
+	an.mu.Lock()
+	an.hung["b"] = true
+	an.mu.Unlock()
+	a.rep.closePool()
+	go func() {
+		time.Sleep(time.Second)
+		an.mu.Lock()
+		an.hung["b"] = false
+		an.mu.Unlock()
+	}()
+	rctx, reach := store.WithReach(ctx)
+	if err := a.st.MCPTokens().Revoke(rctx, "mcp", now); err != nil {
+		t.Fatal(err)
+	}
+	if *reach != (store.Reach{Applied: 2, Of: 2}) {
+		t.Fatalf("reach once b answers within the wait: %+v, want 2 of 2", *reach)
+	}
+	if _, err := an.m("b").st.MCPTokens().Check(ctx, "mcp-secret"); err == nil {
+		t.Fatal("b: the revoked token is still valid")
 	}
 }
