@@ -215,16 +215,22 @@ func TestRefreshWithAHungMember(t *testing.T) {
 	}
 }
 
-// A password reset with no storage member reachable fails: it ended no
-// session.
-func TestPasswordResetNeedsAStorageMember(t *testing.T) {
+// A password reset with no storage member reachable succeeds on the master,
+// which ends its sessions: a revocation waits for no quorum (#384). The
+// members down get the new password from hints.
+func TestPasswordResetWithNoStorageMember(t *testing.T) {
 	ctx := t.Context()
 	an := newAPNet(t, 2, "a", "b", "c")
 	an.m("a").rep.SetLocal(false, false) // a master that holds no partition
 	an.setDown("b", true)
 	an.setDown("c", true)
-	if err := an.m("a").st.Admin().SetPasswordHash(ctx, "$argon2id$new"); !errors.Is(err, store.ErrUnavailable) {
-		t.Fatalf("reset with no storage member = %v, want ErrUnavailable", err)
+	if err := an.m("a").st.Admin().SetPasswordHash(ctx, "$argon2id$new"); err != nil {
+		t.Fatalf("reset with no storage member = %v", err)
+	}
+	for _, id := range []string{"b", "c"} {
+		if n, err := an.m("a").hints.Count(ctx, id); err != nil || n == 0 {
+			t.Fatalf("hints for %s: %d, %v; want the new password", id, n, err)
+		}
 	}
 }
 

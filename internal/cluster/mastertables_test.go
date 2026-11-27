@@ -130,13 +130,24 @@ func TestMasterRowsStayOnMasters(t *testing.T) {
 			t.Fatalf("anti-entropy of %s with %s: %v", p[0], p[1], err)
 		}
 	}
+	// The rows withheld from s and s2, which never prove the key, stay
+	// hinted, in place: delivering them again sends nothing and adds none.
+	an.m("m").rep.deliverHints(ctx)
+	kept := map[string]int{}
+	for _, id := range []string{"s", "s2"} {
+		n, err := an.m("m").hints.Count(ctx, id)
+		if err != nil || n == 0 {
+			t.Fatalf("hints for %s: %d, %v; want the withheld rows kept", id, n, err)
+		}
+		kept[id] = n
+	}
 	an.m("m").rep.deliverHints(ctx)
 	for _, id := range []string{"s", "s2"} {
 		if n := masterRowCount(t, an.m(id).st); n != 0 {
 			t.Fatalf("storage-only %s holds %d master rows", id, n)
 		}
-		if n, err := an.m("m").hints.Count(ctx, id); err != nil || n != 0 {
-			t.Fatalf("hints for %s: %d, %v", id, n, err)
+		if n, err := an.m("m").hints.Count(ctx, id); err != nil || n != kept[id] {
+			t.Fatalf("hints for %s after another delivery: %d, %v; want %d", id, n, err, kept[id])
 		}
 	}
 	m := an.m("m").st
@@ -377,9 +388,9 @@ func TestPlaceMasterRows(t *testing.T) {
 }
 
 // TestOneMasterWithStorageMembersDown: with one master and its storage-only
-// members down, a sign-in, which needs the masters alone, still succeeds;
-// a password reset, which also writes the admin password every storage
-// member holds, is refused before it writes anything.
+// members down, a sign-in and a password reset still succeed: neither waits
+// for a quorum (#384). The reset ends the session from before, and the admin
+// row waits in hints for the storage members.
 func TestOneMasterWithStorageMembersDown(t *testing.T) {
 	an := newGateNet(t)
 	ctx := t.Context()
@@ -396,13 +407,18 @@ func TestOneMasterWithStorageMembersDown(t *testing.T) {
 	if err := m.Admin().CreateSession(ctx, "alone", now, now.Add(time.Hour)); err != nil {
 		t.Fatalf("a sign-in on the one master: %v", err)
 	}
-	if err := m.Admin().SetPasswordHash(ctx, "h2"); !errors.Is(err, store.ErrUnavailable) {
-		t.Fatalf("a reset with every storage member down: %v, want unavailable", err)
+	if err := m.Admin().SetPasswordHash(ctx, "h2"); err != nil {
+		t.Fatalf("a reset with every storage member down: %v", err)
 	}
-	if h, err := m.Admin().PasswordHash(ctx); err != nil || h != "h1" {
-		t.Fatalf("password hash = %q, %v; want h1 unchanged", h, err)
+	if h, err := m.Admin().PasswordHash(ctx); err != nil || h != "h2" {
+		t.Fatalf("password hash = %q, %v; want h2", h, err)
 	}
-	if _, err := m.Admin().CheckSession(ctx, "alone", time.Now()); err != nil {
-		t.Fatalf("the session after a refused reset: %v", err)
+	if _, err := m.Admin().CheckSession(ctx, "alone", time.Now()); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("the session after the reset: %v, want not found", err)
+	}
+	for _, id := range []string{"s", "s2"} {
+		if n, err := an.m("m").hints.Count(ctx, id); err != nil || n == 0 {
+			t.Fatalf("hints for %s: %d, %v; want the admin row", id, n, err)
+		}
 	}
 }

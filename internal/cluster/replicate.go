@@ -277,6 +277,9 @@ type view struct {
 	// masters, live or not. A row goes to one only once it proved the key
 	// (call).
 	masterSet []string
+	// leftMasters are the masters that left the gossip, still members: the
+	// master rows are hinted to them.
+	leftMasters []string
 	// syncing are the storage members still catching up after their
 	// promotion: on the ring for writes, last for reads.
 	syncing map[string]bool
@@ -302,6 +305,7 @@ func (r *Replicator) view() view {
 	live := map[string]bool{r.cfg.NodeID: true}
 	syncing := map[string]bool{}
 	masters := map[string]bool{}
+	var leftMasters []string
 	if local.storage {
 		ids = append(ids, r.cfg.NodeID)
 		if local.syncing {
@@ -309,7 +313,13 @@ func (r *Replicator) view() view {
 		}
 	}
 	for _, m := range members {
-		if m.ID == r.cfg.NodeID || !m.Roles.Gossips() || m.State == MemberLeft {
+		if m.ID == r.cfg.NodeID || !m.Roles.Gossips() {
+			continue
+		}
+		if m.State == MemberLeft {
+			if m.Roles.Has(RoleMaster) {
+				leftMasters = append(leftMasters, m.ID)
+			}
 			continue
 		}
 		everyone = append(everyone, m.ID)
@@ -354,7 +364,7 @@ func (r *Replicator) view() view {
 	n = max(1, min(n, ring.Size()))
 	return view{
 		self: r.cfg.NodeID, ring: ring, live: live, n: n, everyone: everyone, masterSet: masterSet,
-		syncing: syncing, masters: masters,
+		syncing: syncing, masters: masters, leftMasters: leftMasters,
 	}
 }
 
@@ -667,12 +677,6 @@ func (r *Replicator) applyHere(ctx context.Context, cmd store.Command, route sto
 		switch {
 		case route.Kind == store.RouteKey:
 			live, _ = v.targets(store.BucketOf(store.Token(route.Key)))
-		case route.Master:
-			// A member that answered without a proof is none of the masters
-			// (shortOf).
-			live, _ = v.mastersHolding()
-			live = slices.DeleteFunc(live, r.unproved)
-			n = len(slices.DeleteFunc(slices.Clone(v.masterSet), r.unproved))
 		default:
 			live, _ = v.globals()
 			n = len(v.everyone)
@@ -680,15 +684,6 @@ func (r *Replicator) applyHere(ctx context.Context, cmd store.Command, route sto
 		if w := writeQuorum(true, n); len(live) < w {
 			return store.Result{}, fmt.Errorf("apply %s: %d of %d replicas reachable, %d needed: %w",
 				cmd.Op(), len(live), n, w, store.ErrUnavailable)
-		}
-		if _, reset := cmd.(store.SetPasswordHash); reset {
-			// It writes a global row too (the admin password), which every
-			// storage member holds.
-			live, _ := v.globals()
-			if w := writeQuorum(true, len(v.everyone)); len(live) < w {
-				return store.Result{}, fmt.Errorf("apply %s: %d of %d members reachable, %d needed: %w",
-					cmd.Op(), len(live), len(v.everyone), w, store.ErrUnavailable)
-			}
 		}
 		// A global row also needs another master's ack when one is live
 		// (writeGroup.needMaster): such a master is then among live, and
@@ -839,13 +834,20 @@ func (r *Replicator) replicate(ctx context.Context, muts []store.Mutation, route
 	for t, ms := range hinted {
 		r.hint(t, ms)
 	}
+	if route.Master {
+		r.sendMaster(ctx, batches)
+		return nil
+	}
 	if !critical {
 		for t, ms := range batches {
 			r.enqueue(func(ctx context.Context) {
-				if _, err := r.call(ctx, t, apRequest{Op: opMerge, Muts: ms}); err != nil {
+				resp, err := r.call(ctx, t, apRequest{Op: opMerge, Muts: ms})
+				if err != nil {
 					r.log.DebugContext(ctx, "replicate: hinted", "member", t, "err", err)
 					r.hint(t, ms)
+					return
 				}
+				r.hintWithheld(t, resp)
 			}, func() { r.hint(t, ms) })
 		}
 		return nil
@@ -857,7 +859,7 @@ func (r *Replicator) replicate(ctx context.Context, muts []store.Mutation, route
 	masterAcked := map[string]bool{v.self: true}
 	for round := 0; ; round++ {
 		r.sendCritical(ctx, batches, acked, failed, masterAcked)
-		err := shortOf(groups, acked, masterAcked, r.unproved)
+		err := shortOf(groups, acked, masterAcked)
 		if err == nil || round == 1 || len(failed) == 0 {
 			return err
 		}
@@ -880,24 +882,16 @@ func (r *Replicator) replicate(ctx context.Context, muts []store.Mutation, route
 
 // shortOf returns ErrUnavailable if a row has fewer than W acks, or if a
 // global row that needs another master has none (masterAcked) while one of
-// them has not answered. unproved reports the members that answered without
-// proving the hub CA key.
-func shortOf(groups []writeGroup, acked, masterAcked map[string]bool, unproved func(string) bool) error {
+// them has not answered.
+func shortOf(groups []writeGroup, acked, masterAcked map[string]bool) error {
 	for _, g := range groups {
 		if len(g.masters) > 0 && !slices.ContainsFunc(g.masters, func(t string) bool { return masterAcked[t] }) &&
 			slices.ContainsFunc(g.masters, func(t string) bool { return !acked[t] }) {
 			return fmt.Errorf("no other master took a critical global write: %w", store.ErrUnavailable)
 		}
-		if g.proven {
-			// A master row went only to the members that proved the key
-			// (call): one that said it was a master and did not prove it
-			// holds no copy, and is none of the row's replicas.
-			holders := slices.DeleteFunc(slices.Clone(g.holders), unproved)
-			g.w = writeQuorum(true, len(holders))
-		}
 		n := 0
 		for _, t := range g.live {
-			if acked[t] && (!g.proven || masterAcked[t]) {
+			if acked[t] {
 				n++
 			}
 		}
@@ -923,11 +917,6 @@ type writeGroup struct {
 	// never hand a global row on (replauth.go). One that takes it without a
 	// proof is no master, and does not count.
 	masters []string
-	// proven is set for a master row: only the acks of members that proved
-	// the key count, as no other is sent it; W is reckoned over holders,
-	// view.masterSet, but those that answered without a proof.
-	proven  bool
-	holders []string
 }
 
 // plan returns, for muts written here, the rows to send to each other live
@@ -964,9 +953,6 @@ func (r *Replicator) plan(ctx context.Context, muts []store.Mutation, critical, 
 			groups = append(groups, writeGroup{live: owners, w: majority(n), majority: true})
 		} else {
 			g := writeGroup{live: live, w: writeQuorum(critical, n)}
-			if p.Master {
-				g.proven, g.holders = true, v.masterSet
-			}
 			if critical && p.Global {
 				g.masters = v.liveMasters
 			}
@@ -984,6 +970,13 @@ func (r *Replicator) plan(ctx context.Context, muts []store.Mutation, critical, 
 		}
 		for _, t := range down {
 			hinted[t] = append(hinted[t], m)
+		}
+		if p.Master {
+			// A master that left the gossip is still one: it gets them
+			// when it is back.
+			for _, t := range v.leftMasters {
+				hinted[t] = append(hinted[t], m)
+			}
 		}
 	}
 	for t, refs := range parents {
@@ -1016,9 +1009,40 @@ func (r *Replicator) sendCritical(ctx context.Context, batches map[string][]stor
 			}
 			acked[t] = true
 			masterAcked[t] = resp.fromMaster
+			r.hintWithheld(t, resp)
 		})
 	}
 	wg.Wait()
+}
+
+// sendMaster sends each batch of a master command's rows and waits a quick
+// timeout for the answers, so the other live masters have them by the time
+// it returns; it needs no ack (#384). A member that does not take them, or
+// is sent none for want of a proof, gets a hint.
+func (r *Replicator) sendMaster(ctx context.Context, batches map[string][]store.Mutation) {
+	var wg sync.WaitGroup
+	for t, ms := range batches {
+		wg.Go(func() {
+			qctx, cancel := context.WithTimeout(ctx, r.cfg.QuickTimeout)
+			defer cancel()
+			resp, err := r.call(qctx, t, apRequest{Op: opMerge, Muts: ms})
+			if err != nil {
+				r.log.DebugContext(ctx, "replicate a master write: hinted", "member", t, "err", err)
+				r.hint(t, ms)
+				return
+			}
+			r.hintWithheld(t, resp)
+		})
+	}
+	wg.Wait()
+}
+
+// hintWithheld keeps for member t the master rows call did not send it, as
+// it did not prove the hub CA key: they are not delivered.
+func (r *Replicator) hintWithheld(t string, resp apResponse) {
+	if len(resp.withheld) > 0 {
+		r.hint(t, resp.withheld)
+	}
 }
 
 // hint keeps ms for member t.
@@ -1342,8 +1366,17 @@ func (r *Replicator) deliverHints(ctx context.Context) {
 				// global rows from masters only, and have them from one.
 				ms = withoutGlobal(ms)
 			}
-			if _, err := r.call(ctx, m, apRequest{Op: opMerge, Muts: ms}); err != nil {
+			resp, err := r.call(ctx, m, apRequest{Op: opMerge, Muts: ms})
+			if err != nil {
 				r.log.DebugContext(ctx, "deliver hints", "member", m, "err", err)
+				break
+			}
+			if len(resp.withheld) > 0 {
+				// m did not prove the hub CA key: its master rows wait, in
+				// place, for a connection on which it does.
+				if err := h.Replace(ctx, ids, resp.withheld); err != nil {
+					r.log.WarnContext(ctx, "keep the hints not delivered", "err", err)
+				}
 				break
 			}
 			if err := h.Delete(ctx, ids); err != nil {
@@ -1397,6 +1430,9 @@ type apResponse struct {
 	// fromMaster is set by call when the member that answered is this one
 	// or proved it holds the hub CA key.
 	fromMaster bool
+	// withheld, set by call, are the master rows of a merge it did not send
+	// to a member that did not prove the key: the caller keeps them.
+	withheld []store.Mutation
 }
 
 // The store errors a member's answer carries beyond those of wireKinds.
@@ -1467,8 +1503,9 @@ func (r *Replicator) call(ctx context.Context, m string, req apRequest) (apRespo
 	// member cut off a moment ago costs that, not the request's timeout,
 	// before the next target is tried.
 	var (
-		c    *replConn
-		resp apResponse
+		c        *replConn
+		resp     apResponse
+		withheld []store.Mutation
 	)
 	// A pooled connection may have been closed since it was pooled (a hub
 	// CA rotation closes the connections of the old CA's certificates): its
@@ -1500,11 +1537,12 @@ func (r *Replicator) call(ctx context.Context, m string, req apRequest) (apRespo
 			}
 			if err == nil && (!c.peerMaster || !r.saysMaster(m)) {
 				r.log.DebugContext(ctx, "master rows not sent to a member that did not prove it holds the hub CA key", "member", m)
+				withheld = onlyMaster(out.Muts)
 				out.Muts = withoutMaster(out.Muts)
 				if len(out.Muts) == 0 {
 					_ = c.SetDeadline(time.Time{})
 					r.putConn(m, c)
-					return apResponse{}, nil
+					return apResponse{withheld: withheld}, nil
 				}
 			}
 		}
@@ -1513,6 +1551,7 @@ func (r *Replicator) call(ctx context.Context, m string, req apRequest) (apRespo
 		}
 		if err == nil {
 			resp.fromMaster = c.peerMaster && r.saysMaster(m)
+			resp.withheld = withheld
 			break
 		}
 		_ = c.Close()

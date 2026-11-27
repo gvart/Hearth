@@ -171,6 +171,17 @@ func withoutMaster(ms []store.Mutation) []store.Mutation {
 	return slices.DeleteFunc(slices.Clone(ms), func(m store.Mutation) bool { return store.MasterTable(m.Table) })
 }
 
+// onlyMaster returns the rows of ms of the master tables.
+func onlyMaster(ms []store.Mutation) []store.Mutation {
+	var out []store.Mutation
+	for _, m := range ms {
+		if store.MasterTable(m.Table) {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
 // namesMasterTable reports whether query, a read another member sent, names
 // a master table. SQL identifiers are case-insensitive, and however one is
 // quoted it spells the table's name.

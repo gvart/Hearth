@@ -182,6 +182,26 @@ func (h *Hints) DropTables(ctx context.Context, tables []string) error {
 	return nil
 }
 
+// Replace keeps ms in place of the hints ids, under the oldest's id: ms
+// are what is left of them to deliver.
+func (h *Hints) Replace(ctx context.Context, ids []int64, ms []store.Mutation) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	if len(ms) == 0 {
+		return h.Delete(ctx, ids)
+	}
+	b, err := json.Marshal(ms)
+	if err != nil {
+		return err
+	}
+	first := slices.Min(ids)
+	if _, err := h.db.ExecContext(ctx, `UPDATE hints SET muts = ? WHERE id = ?`, b, first); err != nil {
+		return fmt.Errorf("replace hints: %w", err)
+	}
+	return h.Delete(ctx, slices.DeleteFunc(slices.Clone(ids), func(id int64) bool { return id == first }))
+}
+
 // DropMember removes every hint for member: it was removed from the cluster.
 func (h *Hints) DropMember(ctx context.Context, member string) error {
 	_, err := h.db.ExecContext(ctx, `DELETE FROM hints WHERE member = ?`, member)

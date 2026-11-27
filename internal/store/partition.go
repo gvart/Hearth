@@ -314,6 +314,7 @@ type Route struct {
 	First bool
 	// Master commands of a RouteGlobal write master tables: the masters
 	// are their replicas, and the rows they read are read on masters only.
+	// They are never Critical.
 	Master bool
 }
 
@@ -329,9 +330,10 @@ func RouteOf(cmd Command) (Route, error) {
 		return Route{Kind: RouteKey, Key: k, Critical: critical}, nil
 	}
 	global := func(critical bool) (Route, error) { return Route{Kind: RouteGlobal, Critical: critical}, nil }
-	master := func(critical bool) (Route, error) {
-		return Route{Kind: RouteGlobal, Critical: critical, Master: true}, nil
-	}
+	// A master command waits for no quorum (#384): a grant is written on
+	// this master and sent to the others, and a revocation, monotone, is
+	// never refused for want of one.
+	master := func() (Route, error) { return Route{Kind: RouteGlobal, Master: true}, nil }
 	switch c := cmd.(type) {
 	case UpsertDevice:
 		return key(c.ID, false)
@@ -355,8 +357,9 @@ func RouteOf(cmd Command) (Route, error) {
 		return global(true)
 	case SetPasswordHash:
 		// It ends every session: the masters hold them, and the master that
-		// runs it reads first every session the other live masters hold.
-		return master(true)
+		// runs it reads first every session the other live masters hold. The
+		// time it stamps on the admin row ends the ones it still misses.
+		return master()
 	case StartCARotation, AdvanceCARotation:
 		return global(true)
 	case RevokeCACerts:
@@ -392,7 +395,7 @@ func RouteOf(cmd Command) (Route, error) {
 	case AppendAuditOnce:
 		return key(auditPartition(c.row(c.Key)), true)
 	case CreateSession, DeleteSession, CreateDashboardToken, RevokeDashboardToken, CreateMCPToken, RevokeMCPToken:
-		return master(true)
+		return master()
 	case CreateApproval:
 		return key(c.ID, true)
 	case DecideApproval:
@@ -401,10 +404,8 @@ func RouteOf(cmd Command) (Route, error) {
 		return key(keyString(c.Hash), true)
 	case UseApprovalLink:
 		return key(keyString(c.Hash), true)
-	case CreatePanel, UpdatePanel, DeletePanel:
-		return master(false)
-	case CreatePanelLink, RevokePanelLink:
-		return master(true)
+	case CreatePanel, UpdatePanel, DeletePanel, CreatePanelLink, RevokePanelLink:
+		return master()
 	case RecordAutomationRun:
 		return key(c.AutomationID, false)
 	case CreateRunbookRun:
