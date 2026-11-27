@@ -40,6 +40,7 @@ export interface IntegrationInputs {
   servers?: { state: string }[];
   esphome?: { state: string }[];
   openwrt?: { state: string }[];
+  opnsense?: { state: string }[];
   talos?: Read & { nodes: unknown[] };
   beszel?: Read & { systems: unknown[] };
   plugins?: { state: string }[];
@@ -116,6 +117,14 @@ export function integrations(x: IntegrationInputs): Integration[] {
       ...connected(x.openwrt, 'unavailable', 'router', 'Connect a router on the Platforms page.'),
       where: { label: 'Platforms', hash: '#/platforms' },
       docs: 'openwrt.md',
+    },
+    {
+      id: 'opnsense',
+      name: 'OPNsense',
+      gives: 'DHCP leases, the ARP table, interface traffic, system info and firmware status of OPNsense firewalls, through their REST API. Their clients feed discovery.',
+      ...connected(x.opnsense, 'unavailable', 'firewall', 'Connect a firewall on the Platforms page.'),
+      where: { label: 'Platforms', hash: '#/platforms' },
+      docs: 'opnsense.md',
     },
     {
       id: 'talos',

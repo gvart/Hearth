@@ -365,7 +365,8 @@ func (c *client) read(ctx context.Context) (reading, error) {
 }
 
 // readLeases reads the leases of every DHCP server OPNsense has: ISC dhcpd
-// (a plugin since 25.7), Kea and dnsmasq (the default of new installs). A
+// (the os-isc-dhcp plugin on current releases), Kea and dnsmasq (the
+// default of new installs). A
 // firewall runs one or two of them, and a key needs the privilege of only
 // those: while one is read, the others' refusals are not listed as missing.
 func (c *client) readLeases(ctx context.Context, r *reading, get func(string) *Client) error {

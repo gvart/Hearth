@@ -3,6 +3,7 @@ import { useRunbookFiles } from '../api/admin.ts';
 import { useDevices, useKubeClusters, useRunbooks } from '../api/hooks.ts';
 import { useESPHomeDevices } from '../api/esphome.ts';
 import { useOpenWrtRouters } from '../api/openwrt.ts';
+import { useOPNsenseFirewalls } from '../api/opnsense.ts';
 import { useProxmoxServers } from '../api/proxmox.ts';
 import { findCommands, type Command } from '../nav.ts';
 import { kindLabel, platformCards } from '../platforms.ts';
@@ -26,12 +27,13 @@ export function CommandBar({ cluster, className }: { cluster: boolean; className
   const servers = useProxmoxServers(typed);
   const esp = useESPHomeDevices(typed);
   const owrt = useOpenWrtRouters(typed);
+  const opn = useOPNsenseFirewalls(typed);
   const runbooks = useRunbooks(typed);
   const files = useRunbookFiles(typed);
   const theme = useTheme();
   const results = findCommands(query, {
     devices,
-    platforms: platformCards(clusters.data ?? [], servers.data ?? [], esp.data ?? [], owrt.data ?? []).map((p) => ({
+    platforms: platformCards(clusters.data ?? [], servers.data ?? [], esp.data ?? [], owrt.data ?? [], opn.data ?? []).map((p) => ({
       name: p.name,
       kind: kindLabel[p.kind],
       hash: p.hash,

@@ -19,6 +19,7 @@ import { PanelsPage } from './PanelsPage.tsx';
 import { PlatformsPage } from './PlatformsPage.tsx';
 import { ESPHomePage } from './ESPHomePage.tsx';
 import { OpenWrtPage } from './OpenWrtPage.tsx';
+import { OPNsensePage } from './OPNsensePage.tsx';
 import { ProxmoxPage } from './ProxmoxPage.tsx';
 import { ReauthHost } from './ReauthDialog.tsx';
 import { RunbooksPage } from './RunbooksPage.tsx';
@@ -152,6 +153,8 @@ export function Shell() {
               <ESPHomePage id={platform.id} />
             ) : platform?.kind === 'openwrt' ? (
               <OpenWrtPage id={platform.id} />
+            ) : platform?.kind === 'opnsense' ? (
+              <OPNsensePage id={platform.id} />
             ) : (
               <PlatformsPage />
             )

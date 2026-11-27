@@ -2,13 +2,14 @@
 // one page. Kept apart from the components so node --test can check it
 // (web/test/platforms.test.mjs).
 
-export type PlatformKind = 'kubernetes' | 'proxmox' | 'esphome' | 'openwrt';
+export type PlatformKind = 'kubernetes' | 'proxmox' | 'esphome' | 'openwrt' | 'opnsense';
 
 export const kindLabel: Record<PlatformKind, string> = {
   kubernetes: 'Kubernetes cluster',
   proxmox: 'Proxmox server',
   esphome: 'ESPHome device',
   openwrt: 'OpenWrt router',
+  opnsense: 'OPNsense firewall',
 };
 
 /** How a platform reads now, whatever its kind calls it. */
@@ -64,6 +65,15 @@ interface Router {
   clients: number;
 }
 
+interface Firewall {
+  id: string;
+  name: string;
+  url: string;
+  state: 'connecting' | 'connected' | 'unavailable';
+  error: string;
+  clients: number;
+}
+
 interface Server {
   id: string;
   name: string;
@@ -90,7 +100,7 @@ export function platformOfHash(hash: string): { kind: PlatformKind; id: string }
     return undefined;
   }
   const [kind, id, ...rest] = hash.slice(prefix.length).split('/');
-  if ((kind !== 'kubernetes' && kind !== 'proxmox' && kind !== 'esphome' && kind !== 'openwrt') || !id || rest.length > 0) {
+  if ((kind !== 'kubernetes' && kind !== 'proxmox' && kind !== 'esphome' && kind !== 'openwrt' && kind !== 'opnsense') || !id || rest.length > 0) {
     return undefined;
   }
   try {
@@ -110,6 +120,7 @@ export function platformCards(
   servers: Server[],
   devices: ESPDevice[] = [],
   routers: Router[] = [],
+  firewalls: Firewall[] = [],
 ): PlatformCard[] {
   const cards: PlatformCard[] = [
     ...clusters.map(
@@ -158,6 +169,18 @@ export function platformCards(
         line: count(r.clients, 'client'),
         error: r.error,
         hash: platformHash('openwrt', r.id),
+      }),
+    ),
+    ...firewalls.map(
+      (f): PlatformCard => ({
+        kind: 'opnsense',
+        id: f.id,
+        name: f.name,
+        address: f.url,
+        state: f.state === 'unavailable' ? 'unreachable' : f.state,
+        line: count(f.clients, 'client'),
+        error: f.error,
+        hash: platformHash('opnsense', f.id),
       }),
     ),
   ];
