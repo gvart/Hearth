@@ -146,6 +146,12 @@ type Replicator struct {
 	// uses are the master-owned rows this member used (owned.go).
 	uses *ownedUses
 
+	// proved records, for each peer reached, whether it proved the hub CA
+	// key on the last connection that answered: only those count as
+	// masters a critical global write or a sync waits for.
+	provedMu sync.Mutex
+	proved   map[string]bool
+
 	// local is this member's own part in the storage ring (SetLocal).
 	local atomic.Pointer[replicaLocal]
 	// catchUpMu runs one CatchUp at a time.
@@ -390,6 +396,31 @@ func (v view) placementTargets(p store.Placement) (live, down []string) {
 		return v.globals()
 	}
 	return v.targets(store.BucketOf(store.Token(p.Key)))
+}
+
+// noteProved records whether peer proved the hub CA key on a connection.
+func (r *Replicator) noteProved(peer string, proved bool) {
+	r.provedMu.Lock()
+	defer r.provedMu.Unlock()
+	if r.proved == nil {
+		r.proved = map[string]bool{}
+	}
+	r.proved[peer] = proved
+}
+
+// provenMasters are the other live members that say they are masters and
+// proved the hub CA key on the last connection that answered: a member that
+// only says it is one neither counts nor holds anything back.
+func (r *Replicator) provenMasters(v view) []string {
+	return slices.DeleteFunc(v.otherLiveMasters(), func(m string) bool { return !r.provedLast(m) })
+}
+
+// provedLast reports whether peer proved the hub CA key on the last
+// connection to it that answered.
+func (r *Replicator) provedLast(peer string) bool {
+	r.provedMu.Lock()
+	defer r.provedMu.Unlock()
+	return r.proved[peer]
 }
 
 // otherLiveMasters are the live members other than this one that say they
@@ -759,7 +790,7 @@ func (r *Replicator) replicate(ctx context.Context, muts []store.Mutation, route
 		return nil
 	}
 	critical := route.Critical || route.Majority
-	v.liveMasters = v.otherLiveMasters()
+	v.liveMasters = r.provenMasters(v)
 	batches, hinted, groups, err := r.plan(ctx, muts, critical, route.Majority, v)
 	if err != nil {
 		return err
@@ -1397,6 +1428,7 @@ func (r *Replicator) call(ctx context.Context, m string, req apRequest) (apRespo
 			if !c.proved {
 				c.proved = true
 				c.peerMaster = r.verifyMaster(proofServer, bindingOf(c.Conn), resp.Master)
+				r.noteProved(m, c.peerMaster)
 			}
 			resp.fromMaster = c.peerMaster && r.saysMaster(m)
 			break

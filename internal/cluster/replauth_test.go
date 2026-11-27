@@ -515,6 +515,28 @@ func TestCatchUpNeedsAMaster(t *testing.T) {
 	}
 }
 
+// TestHungClaimantBlocksNothing: a member that says it is a master but
+// never proved the hub CA key, and never answers, holds back neither a
+// critical global write of the only real master nor its first sync.
+func TestHungClaimantBlocksNothing(t *testing.T) {
+	an := newAPNetWith(t, 0, func(c *ReplicatorConfig) {
+		if c.NodeID != "m" {
+			c.Master = testMasterKey{}
+		}
+	}, "m", "s", "s2")
+	an.mu.Lock()
+	an.roles["s2"] = storageOnly // s says it is a master
+	an.hung["s"] = true
+	an.mu.Unlock()
+	ctx := t.Context()
+	if err := an.m("m").st.DeviceCeilings().Set(ctx, "pi", []byte(`{"terminal":false}`), "user/admin", time.Now()); err != nil {
+		t.Fatalf("critical global write with a hung claimant: %v", err)
+	}
+	if err := an.m("m").rep.WaitSynced(ctx, 10*time.Second); err != nil {
+		t.Fatalf("first sync with a hung claimant: %v", err)
+	}
+}
+
 // TestDemotionWaitsForTheGlobalRows: a master is not demoted, and keeps its
 // CA key, while global rows it holds may reach no other master: no other
 // master took its global rows, or a hint of one waits for a master.

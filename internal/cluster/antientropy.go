@@ -275,11 +275,13 @@ var errNoMasterSynced = errors.New("no master that proves the hub CA key took pa
 func (r *Replicator) syncGlobalWithAMaster(ctx context.Context, v view) error {
 	unanswered := false
 	for _, m := range v.otherLiveMasters() {
+		known := r.provedLast(m)
 		proved, err := r.syncGlobal(ctx, m)
 		if err == nil && proved {
 			return nil
 		}
-		unanswered = unanswered || err != nil
+		// One that never proved the key does not hold it back.
+		unanswered = unanswered || (err != nil && known)
 	}
 	if unanswered {
 		return fmt.Errorf("global rows: %w", errNoMasterSynced)
