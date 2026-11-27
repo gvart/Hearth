@@ -18,11 +18,11 @@ Anything Hearth does not do on `main` today is marked **planned**, with a link t
 |                     | [Beszel](https://beszel.dev)                         | [Komodo](https://komo.do)                                          | [NetAlertX](https://docs.netalertx.com)                       | [Homepage](https://gethomepage.dev)                         | Hearth                                                                      |
 | ------------------- | ---------------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------- |
 | What it is          | Server monitoring: metrics history, container stats, alerts | Build and deploy software (Docker, Compose, Swarm) across servers | Network inventory: what is on the network and what changed     | Application dashboard and start page                        | Control plane: devices, automations that act, policy and audit              |
-| Runs on devices     | Agent (Go)                                           | Periphery agent                                                    | Nothing; it scans from where it runs                          | Nothing                                                     | Agent (Go), the same binary as the hub                                      |
+| Runs on devices     | Agent (Go)                                           | Periphery agent                                                    | Nothing; it scans from where it runs                          | Nothing                                                     | Agent (Go), the same binary as the hub; upgraded from the UI or CLI         |
 | Metrics             | Wide range, with history                             | CPU, memory, disk per server                                       | Presence, not system metrics                                  | Through service widgets                                     | Reads your Prometheus; stores none itself                                   |
 | Alerts              | On most metrics; ~27 services through Shoutrrr       | CPU, memory, disk                                                  | On network events; Apprise (80+ services), ntfy, MQTT, ...    | No                                                          | Automation triggers; ntfy, Telegram, webhooks                               |
 | Takes actions       | No                                                   | Yes: deploys, builds, container start/stop, terminals, scripts     | On its own records (workflows); Wake-on-LAN plugin            | No                                                          | Yes: restart, command, webhook, Kubernetes day-two actions                  |
-| Automations         | No                                                   | Procedures and TypeScript Actions; schedules, git webhooks         | Workflows on device records                                   | No                                                          | YAML triggers (device, metric, HTTP/DNS/TCP checks, schedule) to actions    |
+| Automations         | No                                                   | Procedures and TypeScript Actions; schedules, git webhooks         | Workflows on device records                                   | No                                                          | YAML triggers (device, metric, HTTP/DNS/TCP checks, schedule) to actions; on-device rules run while the hub is down |
 | Kubernetes          | No                                                   | No (Docker and Swarm)                                              | No                                                            | Service discovery from Ingress annotations; pod CPU/memory  | Adopts via kubeconfig: watch, restart, scale, cordon, drain                 |
 | Access control      | Multi-user, OAuth/OIDC                               | Users, roles, OAuth/OIDC, audit trail                              | Optional login password (SETPWD plugin)                       | Opt-in OIDC or password login; meant to sit behind an auth proxy | One admin account; deny-by-default policy for every action; audit log      |
 | Maturity            | v0.21.2, 27k stars                                   | v2.3.4, 13k stars                                                  | v26.10.28, 7k stars                                           | v2.8.0, 34k stars                                           | v0.0.1-rc.10, pre-alpha                                                      |
@@ -66,10 +66,8 @@ disk.
 
 **Use Komodo when** you deploy and update Docker workloads on several hosts and want git-driven,
 repeatable deploys and builds. That is Komodo's job and it does it well; Hearth does not deploy
-anything and has no plan to manage Compose stacks or builds. Komodo also has things Hearth does not
-have yet: terminals (Hearth's web terminal is **planned**,
-[#34](https://github.com/gvart/hearth/issues/34)), container logs (**planned**,
-[#33](https://github.com/gvart/hearth/issues/33)) and multiple users.
+anything and has no plan to manage Compose stacks or builds. Komodo also has multiple users, which
+Hearth does not have yet.
 
 **Use Hearth when** your lab is more than Docker hosts: Kubernetes clusters, systemd services on a
 Pi, a NAS. Hearth adopts a Kubernetes cluster through its kubeconfig and takes day-two actions on it
@@ -77,12 +75,13 @@ Pi, a NAS. Hearth adopts a Kubernetes cluster through its kubeconfig and takes d
 and Swarm. Hearth's automations are driven by what happens (a device goes offline, a check fails, a
 metric runs hot), where Komodo's run on a schedule, by hand or on a git push. And every Hearth action
 passes a deny-by-default policy, can be held for approval, and is limited by what the device itself
-allows (its **Capabilities**: restarts, programs, a terminal).
+allows (its **Capabilities**: restarts, programs, a terminal), which you turn on and off from the
+web UI without logging in to the device.
 
 **Together.** Komodo deploys; Hearth watches and heals. Keep deploying your stacks with Komodo and let
 a Hearth automation restart a container (`docker:NAME`) when its health check fails. There is no
-direct integration; a Docker integration of Hearth's own is **planned**
-([#64](https://github.com/gvart/hearth/issues/64)), and Komodo is not part of it.
+direct integration with Komodo; Hearth's own [Docker](docker.md) support lists a device's containers,
+with their logs, and starts, stops or restarts them.
 
 ## NetAlertX
 
@@ -95,10 +94,10 @@ GraphQL, SSE and MCP), and workflows that update or delete device records when a
 Nothing is installed on the devices.
 
 **Use NetAlertX when** you want to know everything on your network, including the things that will
-never run an agent: the TV, the smart plugs, a guest's phone. Hearth only knows devices that run its
-agent or are nodes of an adopted Kubernetes cluster. Network discovery (ARP, mDNS) and Pi-hole and
-DHCP lease import are **planned** ([#35](https://github.com/gvart/hearth/issues/35),
-[#36](https://github.com/gvart/hearth/issues/36)), and NetAlertX will stay far ahead on breadth of
+never run an agent: the TV, the smart plugs, a guest's phone. Hearth's [network discovery](discovery.md)
+finds hosts by ARP and mDNS, imports Pi-hole and DHCP leases, and reads the clients of
+[OpenWrt](openwrt.md), [OPNsense](opnsense.md) and [UniFi](unifi.md); those three are a first slice,
+tested against fakes, not yet against real hardware. NetAlertX stays far ahead on breadth of
 discovery and router support.
 
 **Use Hearth when** you want to act on the machines you run: restart a service, run a command, drain a
@@ -146,28 +145,33 @@ Today, Hearth is not the right choice if you need:
 On `main`, Hearth has:
 
 - a hub and agent in one Go binary; agents dial out over mutual TLS, so devices open no ports, and
-  enroll with a one-line installer and a single-use token ([Getting started](getting-started.md));
+  enroll with a one-line installer and a single-use token; after that, capabilities and agent
+  upgrades (official releases, checked against their checksums) are set from the web UI or the CLI
+  ([Getting started](getting-started.md));
+- logs, a web terminal and Docker containers per device ([Logs](logs.md), [Terminal](terminal.md),
+  [Docker](docker.md)), and network discovery with lease import ([Discovery](discovery.md));
 - automations in YAML, kept in git: triggers on device online/offline, metric thresholds or any
   PromQL query, HTTP, DNS and TCP checks (from the hub or from a device), and cron schedules; actions
   that restart a systemd unit or Docker container, run a command, call a webhook, send a notification,
-  or act on Kubernetes ([Automations](automations.md), [Notifications](notifications.md));
+  or act on Kubernetes; a watchdog can run on the device itself while the hub is down; and
+  runbooks for multi-step procedures ([Automations](automations.md), [Runbooks](runbooks.md),
+  [Notifications](notifications.md));
 - one deny-by-default policy for every action, a policy file to allow, confirm or deny each class,
   approvals, dry runs, a per-device capability ceiling the agent enforces, and an audit log with its
   own page in the UI ([Guardrails](guardrails.md), [Security model](security.md));
 - device charts and metric triggers from an existing Prometheus, read-only ([Prometheus](prometheus.md));
 - Kubernetes adopted through a kubeconfig, with nothing installed in the cluster: nodes, workloads,
-  pods, events, pod logs, and day-two actions ([Kubernetes](kubernetes.md));
+  pods, events, pod logs, and day-two actions ([Kubernetes](kubernetes.md)); Proxmox VE guests
+  ([Proxmox](proxmox.md)); and, as a first slice tested only against fakes, ESPHome devices,
+  OpenWrt routers, OPNsense firewalls and UniFi controllers, which Hearth changes only when you ask,
+  through policy
+  ([ESPHome](esphome.md), [OpenWrt](openwrt.md), [OPNsense](opnsense.md), [UniFi](unifi.md));
 - a leaderless cluster of hubs that keeps working when one dies or the network splits ([Cluster mode](cluster.md));
 - an MCP server, so Claude Code and other AI assistants can see and operate the lab with scoped
-  tokens, through the same policy, approvals and audit log ([MCP](mcp.md)).
+  tokens, through the same policy, approvals and audit log, Docker containers included ([MCP](mcp.md)).
 
-**Planned** for v0 and not on `main` yet: network discovery
-([#35](https://github.com/gvart/hearth/issues/35)), Pi-hole and DHCP lease import
-([#36](https://github.com/gvart/hearth/issues/36)), log tail
-([#33](https://github.com/gvart/hearth/issues/33)), a web terminal
-([#34](https://github.com/gvart/hearth/issues/34)), built-in Tailscale
-([#48](https://github.com/gvart/hearth/issues/48)) and runbooks
-([#61](https://github.com/gvart/hearth/issues/61)).
+**Planned** for v0 and not on `main` yet: built-in Tailscale
+([#48](https://github.com/gvart/hearth/issues/48)).
 
 ## Sources
 

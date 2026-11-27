@@ -178,6 +178,10 @@ container control asks for your password again. To keep that on the device alone
 `--local-ceiling` at the end of the install command: then only the agent's own `--allow-*` flags
 count (see [Guardrails](guardrails.md#device-capability-ceiling)).
 
+After the install command you need not log in to the device again. What the hub may do there is its
+**Capabilities** card; a new release is **Upgrade agent** on the same page (step 8). Neither needs
+SSH, a service restart or an edited unit file.
+
 ## 6. Find the rest of your network
 
 On the **Devices** page, click **Scan my network** (or run `hearth network scan` on the hub
@@ -236,9 +240,10 @@ the hub's web address:
 hearth device upgrade <device-id> --hub-url http://<hub>:7080   # --version v0.1.0 for another release
 ```
 
-An agent from before remote upgrades (older than this release) cannot upgrade itself: its card shows
-the installer's command instead. Run it on the device once; it keeps the device's identity, and
-writes the service unit that lets the agent replace its binary. Every upgrade after that is remote.
+A device installed with v0.0.1-rc.10 or earlier needs one manual upgrade: its agent cannot upgrade
+itself, and its card shows the installer's command instead. Run it on the device once; it keeps the
+device's identity, and writes the service unit that lets the agent replace its binary. Every upgrade
+after that is remote.
 An agent in a Kubernetes pod refuses: upgrade its image in the DaemonSet. So does one started with
 `--local-ceiling`: re-run the installer on the device. An agent never goes back to an older release,
 and if the new one does not reach a hub after three restarts it puts the old one back. The hub only

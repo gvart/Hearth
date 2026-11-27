@@ -67,7 +67,7 @@ stream is. The API is `GET /api/v1/devices/{id}/net-edges`.
   found and, unless you untick **Unknown addresses**, addresses the hub knows nothing of (internet
   peers, mostly).
 - **Connections**: a solid line from client to server, the arrow at the server, labelled with the
-  server's ports, by service name when the hub knows one (`ssh`, `https`). When both ends report the same connection (both run with `--allow-net-edges`),
+  server's ports, by service name when the hub knows one (`ssh`, `https`). When both ends report the same connection (both have **Neighbors** turned on),
   it is drawn once.
 - **Neighbours**: a dashed, lighter line between a device and an entry of its neighbour table. Untick
   **Neighbours** to see only who talks to whom.

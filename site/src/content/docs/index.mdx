@@ -40,15 +40,23 @@ change that makes it take longer than ten. [Get started](/getting-started/).
 	</Card>
 	<Card title="Automations that act" icon="setting">
 		YAML, kept in git if you like: a device goes offline, a check fails or a metric runs hot, and
-		Hearth restarts the service, calls a webhook or notifies you. [Automations](/automations/).
+		Hearth restarts the service, calls a webhook or notifies you. A watchdog can run on the device
+		itself and keep working while the hub is down. [Automations](/automations/).
+	</Card>
+	<Card title="Never touch the device again" icon="pencil">
+		After the install command, its **Capabilities** card turns on logs, a terminal, restarts or
+		containers, and **Upgrade agent** installs a new official release, checked against its
+		checksums. [Getting started](/getting-started/).
 	</Card>
 	<Card title="Runbooks" icon="list-format">
 		Multi-step procedures with checks, prompts, retry and rollback, started from the UI or the CLI.
 		[Runbooks](/runbooks/).
 	</Card>
 	<Card title="Adopt, don't replace" icon="puzzle">
-		Plugs into the Kubernetes, Talos, Prometheus, Pi-hole and Docker you already run. Nothing to
-		migrate. [Kubernetes](/kubernetes/), [Prometheus](/prometheus/).
+		Plugs into the Kubernetes, Talos, Prometheus, Pi-hole, Docker and Proxmox you already run, and
+		reads ESPHome devices, OpenWrt routers, OPNsense firewalls and UniFi controllers (tested against
+		fakes so far). Nothing to migrate. [Kubernetes](/kubernetes/), [Prometheus](/prometheus/),
+		[ESPHome](/esphome/), [OpenWrt](/openwrt/).
 	</Card>
 	<Card title="Deny by default" icon="approve-check">
 		Every action from the UI, the CLI, an automation or an AI assistant passes one policy engine and
