@@ -1,0 +1,89 @@
+internal/store/opnsense.go
+  s_18b57982fdff93::t_94e4e2bd880247 1-13,15-146
+  s_18b57982fdff93::t_a9bf4cca1571c5 14
+internal/store/reads_test.go
+  s_18b57982fdff93::t_743d973161a528 35-38
+  s_18b57982fdff93::t_cef0e6d09938e5 34
+internal/store/version.go
+  s_18b57982fdff93::t_28432f69e52082 159-161
+internal/integrations/opnsense/opnsensemock/opnsensemock.go
+  s_18b57982fdff93::t_c71bb2e758b2d1 1-222,224-262
+  s_18b57982fdff93::t_c2004f8edded49 223
+internal/hub/opnsense.go
+  s_18b57982fdff93::t_b3e825cea9733c 16,55,74,86
+  s_18b57982fdff93::t_7e7e2e7796cb5c 30,36
+  s_18b57982fdff93::t_d7d8b4b9d7557a 1-15,17-29,31-35,37-54,56-73,75-85,87-112
+internal/store/partition.go
+  s_18b57982fdff93::t_cef0e6d09938e5 68
+  s_18b57982fdff93::t_743d973161a528 69-71,389
+  s_18b57982fdff93::t_146428e44315dc 390
+internal/policy/policy.go
+  s_18b57982fdff93::t_28432f69e52082 309-316,652-658
+internal/integrations/opnsense/manager.go
+  s_18b57982fdff93::t_91691380c46e09 1-54,56-59,61-66,70-73,79-80,82-88,91-117,119-131,133-138,141-255,257-317,322-346,348-368,370,373-390,392-393,395-400,402-411,413-424,426-434,436-460,462-517,521-530,532,536-553
+  s_18b57982fdff93::t_32ba68f7611897 55,60,67-69,81,89-90,118,139,256,369,391,394,401,412,425,435,461
+  s_18b57982fdff93::t_28432f69e52082 74-78,132,140,318-321,347,371-372,518-520,531,533-535
+cmd/hearth/carotation.go
+  s_18b57982fdff93::t_00f2f2dad79fdc 76
+  s_18b57982fdff93::t_c6489b760177fd 18,72,103-105,122,143-144
+internal/store/carotation_test.go
+  s_18b57982fdff93::t_28432f69e52082 103,106-108,112,128-129
+internal/store/store_test.go
+  s_18b57982fdff93::t_28432f69e52082 86
+internal/integrations/opnsense/client_test.go
+  s_18b57982fdff93::t_3d07ea053e7924 284,286-287
+  s_18b57982fdff93::t_3e4ebaca271ddc 1-283,285,288-297
+internal/integrations/opnsense/connection.go
+  s_18b57982fdff93::t_b5810558d12b57 1-143
+internal/policy/guardrails_test.go
+  s_18b57982fdff93::t_28432f69e52082 224-226
+internal/integrations/opnsense/read.go
+  s_18b57982fdff93::t_7e7f5faee870d3 1-235,237-293,295-370,372-400,402-470
+  s_18b57982fdff93::t_b66dcbe1aaf2b7 236,294,371,401
+internal/integrations/opnsense/manager_test.go
+  s_18b57982fdff93::t_debebbeabfab95 110
+  s_18b57982fdff93::t_a733d8d5e88538 33,39,64,67-70,73,90,105-107,117-118,124-127,135-140,153-156,163-165,167,170,172-173,179,181-182,191,195,197,199-201,203-204,215,250,252-254,258-266,268-270,273,283-285,297,308-311,325,329,335-336,338,340-347,349-350,369-370,384
+  s_18b57982fdff93::t_fb443ee03efa46 1-32,34-38,40-63,65-66,71-72,74-89,91-104,108-109,111-116,119-123,128-134,141-152,157-162,166,168-169,171,174-178,180,183-190,192-194,196,198,202,205-214,216-249,251,255-257,267,271-272,274-282,286-296,298-307,312-324,326-328,330-334,337,339,348,351-368,371-383,385-404
+internal/hub/opnsense_test.go
+  s_18b57982fdff93::t_b223e047691d43 1-181
+internal/integrations/opnsense/client.go
+  s_18b57982fdff93::t_e38b8b8652973a 1-132,149-156
+  s_18b57982fdff93::t_aa904dec3b8610 133-148
+internal/store/command.go
+  s_18b57982fdff93::t_28432f69e52082 862-865
+internal/store/carotation.go
+  s_18b57982fdff93::t_cef0e6d09938e5 352
+  s_18b57982fdff93::t_743d973161a528 340-341,353,362,386,427,455
+internal/store/command_test.go
+  s_18b57982fdff93::t_28432f69e52082 114-115,445-448
+internal/store/naturalid.go
+  s_18b57982fdff93::t_28432f69e52082 28-30
+internal/store/networkhosts.go
+  s_18b57982fdff93::t_28432f69e52082 74-75
+internal/store/migrations/00038_opnsense_firewalls.sql
+  s_18b57982fdff93::t_a9bf4cca1571c5 1-19
+cmd/hearth/backup.go
+  s_18b57982fdff93::t_cbafb3ee672374 191
+cmd/hearth/hub.go
+  s_18b57982fdff93::t_94951ef3cfa0c3 36,423-425,492,699-700
+internal/hub/api.go
+  s_18b57982fdff93::t_dacbb3bb263909 27,90,176,275-276
+internal/hub/server.go
+  s_18b57982fdff93::t_c835a5f47a2034 22,108-110
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "199d94b0a629cdbd82a861a8c6a5d7b31b57805c",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
