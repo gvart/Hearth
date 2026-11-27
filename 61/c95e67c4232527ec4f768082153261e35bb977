@@ -1,0 +1,31 @@
+internal/cluster/promote.go
+  s_18b57982fdff93::t_4eab2a164b9667 185-195
+internal/cluster/replauth_test.go
+  s_18b57982fdff93::t_3fd69078975721 518-525,527-533,535-542
+  s_18b57982fdff93::t_e65dada2f62287 526,534
+internal/cluster/antientropy.go
+  s_18b57982fdff93::t_84446368d8ed73 263-267,270-272
+  s_18b57982fdff93::t_7c4c956055f74e 273
+internal/cluster/replicate.go
+  s_18b57982fdff93::t_84446368d8ed73 154-156
+cmd/hearth/hub_cluster.go
+  s_18b57982fdff93::t_84446368d8ed73 432-436
+docs/cluster.md
+  s_18b57982fdff93::t_3feecf5211caf9 645-650
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "61c95e67c4232527ec4f768082153261e35bb977",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
