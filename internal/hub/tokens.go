@@ -348,13 +348,9 @@ func (a *api) commandHosts(reqHost string, overTLS bool) (httpHost, agentHost st
 		return "", "", false
 	}
 	agentHost = host
-	if i := slices.IndexFunc(a.agentHosts, func(h string) bool {
-		return !isLoopback(h) && !strings.EqualFold(strings.TrimSuffix(h, "."), discovery.LANName)
-	}); i >= 0 {
-		first := a.agentHosts[i]
+	if first, found := a.stableHost(); found {
 		inCert := slices.ContainsFunc(a.agentHosts, func(h string) bool { return strings.EqualFold(h, host) })
-		if isLoopback(host) || !inCert || (BareHostname(host) && net.ParseIP(first) != nil) ||
-			strings.EqualFold(strings.TrimSuffix(host, "."), discovery.LANName) {
+		if !inCert || localOnly(host, first) {
 			agentHost = first
 		}
 	}
@@ -368,6 +364,48 @@ func (a *api) commandHosts(reqHost string, overTLS bool) (httpHost, agentHost st
 		httpHost = "[" + agentHost + "]"
 	}
 	return httpHost, agentHost, true
+}
+
+// stableHost returns the first certificate name that is neither loopback nor
+// discovery.LANName: the address other devices should use for this hub.
+func (a *api) stableHost() (string, bool) {
+	i := slices.IndexFunc(a.agentHosts, func(h string) bool {
+		return !isLoopback(h) && !strings.EqualFold(strings.TrimSuffix(h, "."), discovery.LANName)
+	})
+	if i < 0 {
+		return "", false
+	}
+	return a.agentHosts[i], true
+}
+
+// localOnly reports whether host, the browser's, is one other devices and
+// containers are unlikely to reach the hub at, given first (stableHost):
+// loopback, discovery.LANName, or a bare hostname when first is an IP.
+func localOnly(host, first string) bool {
+	return isLoopback(host) || (BareHostname(host) && net.ParseIP(first) != nil) ||
+		strings.EqualFold(strings.TrimSuffix(host, "."), discovery.LANName)
+}
+
+// lanOrigin returns the origin for links and snippets other devices use
+// (MCP, Homepage, panel links) when the browser's host is local-only
+// (localOnly): the stable host at this listener's own port. It returns ""
+// when the browser's origin will do, so a name outside the certificate, such
+// as a reverse proxy's, stays; and when there is no stable host. It never
+// echoes reqHost.
+func (a *api) lanOrigin(reqHost string, overTLS bool) string {
+	host := reqHost
+	if h, _, err := net.SplitHostPort(reqHost); err == nil {
+		host = h
+	}
+	first, found := a.stableHost()
+	if !found || !validHost(host) || !localOnly(host, first) {
+		return ""
+	}
+	scheme, port := "http", a.httpPort
+	if overTLS {
+		scheme, port = "https", a.agentPort
+	}
+	return scheme + "://" + net.JoinHostPort(first, port)
 }
 
 // BareHostname reports whether host is a name other devices are unlikely to

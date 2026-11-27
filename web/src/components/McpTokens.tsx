@@ -7,6 +7,7 @@ import {
   type McpScope,
   type McpToken,
 } from '../api/admin.ts';
+import { useShareOrigin } from '../api/hooks.ts';
 import { formatDateTime } from '../format.ts';
 import { Command } from './AddDeviceDialog.tsx';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
@@ -128,7 +129,7 @@ function CreateDialog({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState('claude');
   const [scope, setScope] = useState<McpScope>('safe');
   const [created, setCreated] = useState<CreatedMcpToken | null>(null);
-  const hub = window.location.origin;
+  const hub = useShareOrigin();
 
   return (
     <Modal className="dialog dialog-wide" labelledBy="mcp-token-title" onClose={onClose}>
@@ -148,10 +149,12 @@ function CreateDialog({ onClose }: { onClose: () => void }) {
             </span>
           </div>
           <Command label="Token" value={created.secret} />
-          <Command
-            label="Claude Code, over HTTP"
-            value={`claude mcp add --transport http hearth ${hub}${created.path} --header "Authorization: Bearer ${created.secret}"`}
-          />
+          {hub ? (
+            <Command
+              label="Claude Code, over HTTP"
+              value={`claude mcp add --transport http hearth ${hub}${created.path} --header "Authorization: Bearer ${created.secret}"`}
+            />
+          ) : null}
           <div className="form-actions">
             <button className="btn btn-primary" type="button" onClick={onClose}>
               Done

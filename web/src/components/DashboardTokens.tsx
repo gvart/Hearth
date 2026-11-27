@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { CreatedDashboardToken } from '../api/client.ts';
-import { useCreateDashboardToken, useDashboardTokens, useRevokeDashboardToken } from '../api/hooks.ts';
+import { useCreateDashboardToken, useDashboardTokens, useRevokeDashboardToken, useShareOrigin } from '../api/hooks.ts';
 import { homepageSnippet } from '../dashboard.ts';
 import { formatDateTime } from '../format.ts';
 import { linkExpiries } from '../panels.ts';
@@ -90,6 +90,7 @@ function CreateDialog({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState('homepage');
   const [expiresIn, setExpiresIn] = useState('');
   const [created, setCreated] = useState<CreatedDashboardToken | null>(null);
+  const origin = useShareOrigin();
 
   return (
     <Modal className="dialog dialog-wide" labelledBy="dashboard-token-title" onClose={onClose}>
@@ -101,10 +102,7 @@ function CreateDialog({ onClose }: { onClose: () => void }) {
             <span>It reads device counts and states. Revoke it when the dashboard no longer needs it.</span>
           </div>
           <Command label="Token" value={created.secret} />
-          <Command
-            label="Homepage services.yaml"
-            value={homepageSnippet(window.location.origin, created.secret)}
-          />
+          {origin ? <Command label="Homepage services.yaml" value={homepageSnippet(origin, created.secret)} /> : null}
           <div className="form-actions">
             <button className="btn btn-primary" type="button" onClick={onClose}>
               Done

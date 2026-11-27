@@ -7,6 +7,7 @@ import {
   usePanels,
   useRevokePanelLink,
   useSavePanel,
+  useShareOrigin,
 } from '../api/hooks.ts';
 import { displayName, formatDateTime, statusLabel } from '../format.ts';
 import { addDevice, linkExpiries, moveWidget, restartServices, shareURL, toggleRestart, toInput } from '../panels.ts';
@@ -393,6 +394,7 @@ function ShareDialog({ panel, onClose }: { panel: Panel; onClose: () => void }) 
   const create = useCreatePanelLink();
   const [expiresIn, setExpiresIn] = useState('');
   const [created, setCreated] = useState<CreatedPanelLink | null>(null);
+  const origin = useShareOrigin();
 
   return (
     <Modal className="dialog" labelledBy="share-panel-title" onClose={onClose}>
@@ -403,8 +405,12 @@ function ShareDialog({ panel, onClose }: { panel: Panel; onClose: () => void }) 
             <strong>Copy the link now: it is shown only this once.</strong>
             <span>Anyone with it can see this panel and take the restarts it allows. Revoke it when done.</span>
           </div>
-          <Command label="Guest link" value={shareURL(window.location.origin, created.path, false)} />
-          <Command label="Kiosk link (full screen, for a wall display)" value={shareURL(window.location.origin, created.path, true)} />
+          {origin ? (
+            <>
+              <Command label="Guest link" value={shareURL(origin, created.path, false)} />
+              <Command label="Kiosk link (full screen, for a wall display)" value={shareURL(origin, created.path, true)} />
+            </>
+          ) : null}
           <div className="form-actions">
             <button className="btn btn-primary" type="button" onClick={onClose}>
               Done

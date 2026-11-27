@@ -126,6 +126,8 @@ export interface TlsInfo {
   hosts: string[];
   /** SHA-256 of the hub CA certificate, as colon-separated hex pairs. */
   ca_fingerprint: string;
+  /** Set when this page's host resolves only here: the origin other devices use instead. */
+  lan_origin?: string;
 }
 
 /** Why device metrics have no charts; `ok` means they do. */

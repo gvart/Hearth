@@ -58,15 +58,22 @@ type TLSInfoJSON struct {
 	// CAFingerprint is the SHA-256 of the CA certificate, as colon-separated
 	// upper-case hex pairs (openssl's format).
 	CAFingerprint string `json:"ca_fingerprint"`
+	// LANOrigin, when set, replaces the browser's origin in links and
+	// snippets for other devices, as the browser's host resolves only here
+	// (hearth.local, localhost): see lanOrigin.
+	LANOrigin string `json:"lan_origin,omitempty"`
 }
 
 // tlsInfo is unauthenticated: the banner that uses it shows on the login page.
-func (a *api) tlsInfo(w http.ResponseWriter, _ *http.Request) {
+func (a *api) tlsInfo(w http.ResponseWriter, r *http.Request) {
 	hosts := a.agentHosts
 	if hosts == nil {
 		hosts = []string{}
 	}
-	writeJSON(w, http.StatusOK, TLSInfoJSON{Port: a.agentPort, Hosts: hosts, CAFingerprint: formatFingerprint(a.ca.Cert())})
+	writeJSON(w, http.StatusOK, TLSInfoJSON{
+		Port: a.agentPort, Hosts: hosts, CAFingerprint: formatFingerprint(a.ca.Cert()),
+		LANOrigin: a.lanOrigin(r.Host, r.TLS != nil),
+	})
 }
 
 func formatFingerprint(cert *x509.Certificate) string {

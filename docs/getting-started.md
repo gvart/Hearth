@@ -86,7 +86,9 @@ device" dialog builds its command for an address the device can reach: the one i
 the certificate names it and it is not `localhost` or a loopback IP, else the hub's first certificate
 name that is not loopback (its LAN IP, or your first `--host`). A bare hostname such as `nas` or
 `mac.local` in your browser gives way to the LAN IP too, when the hub found one, and `hearth.local`
-always does: agents never depend on it.
+always does: agents never depend on it. The MCP, Homepage and panel-link snippets do the same when
+your browser is at `hearth.local`, `localhost` or a bare hostname, so a container without mDNS can
+reach the hub; any other address you opened, a reverse proxy's included, stays.
 
 Sign in with the admin password, then click **Add device**. **This device may become a hub** is
 ticked: the device may then join the hub's cluster as a hub too (step 7), so the token is as
