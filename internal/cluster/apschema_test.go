@@ -3,6 +3,7 @@
 package cluster
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"slices"
@@ -77,12 +78,16 @@ func TestSchemaGateAcrossVersions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := NewAPJoinServer(b.node, b.st, b.ca, policy.New(b.st.Audit()), testLogger(t))
-	_, err = srv.Join(ctx, connect.NewRequest(&clusterv1.JoinRequest{
-		TokenSecret: "any", NodeId: "c", Csr: csr, Address: "c:7444", SchemaVersion: old,
-	}))
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "has written") {
-		t.Fatalf("join of an older binary: %v, want failed precondition", err)
+	// Also when the cluster cannot take the audit entry: an older binary is
+	// told to upgrade, not to try again.
+	for name, audit := range map[string]policy.Auditor{"": b.st.Audit(), " with the cluster unavailable": unavailableAudit{}} {
+		srv := NewAPJoinServer(b.node, b.st, b.ca, policy.New(audit), testLogger(t))
+		_, err = srv.Join(ctx, connect.NewRequest(&clusterv1.JoinRequest{
+			TokenSecret: "any", NodeId: "c", Csr: csr, Address: "c:7444", SchemaVersion: old,
+		}))
+		if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "has written") {
+			t.Fatalf("join of an older binary%s: %v, want failed precondition", name, err)
+		}
 	}
 	// The gossip check itself.
 	if err := b.node.schema.checkSchema("a", old); err == nil {
@@ -118,4 +123,12 @@ func TestHostFlagDrift(t *testing.T) {
 	}); len(got) != 1 {
 		t.Fatalf("a dead member counted: %v", got)
 	}
+}
+
+// unavailableAudit is the audit log of a member that cannot reach enough
+// replicas.
+type unavailableAudit struct{}
+
+func (unavailableAudit) Append(context.Context, store.AuditEntry) (int64, error) {
+	return 0, store.ErrUnavailable
 }
