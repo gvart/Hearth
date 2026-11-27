@@ -291,10 +291,31 @@ export function applied(caps: Capabilities): boolean {
   if (!caps.effective || caps.locked || !caps.manageable) {
     return true;
   }
-  return capInfo.every((i) => {
-    const want = flagOf(caps.hub, i.key) || flagOf(caps.local, i.key);
-    return i.key === 'shell' || i.key === 'net_edges' ? true : want === flagOf(caps.effective, i.key);
-  });
+  const effective = caps.effective;
+  return (
+    capInfo.every((i) => {
+      const want = flagOf(caps.hub, i.key) || flagOf(caps.local, i.key);
+      return i.key === 'shell' || i.key === 'net_edges' ? true : want === flagOf(effective, i.key);
+    }) &&
+    (!caps.plugins_manageable || samePlugins(unionPlugins(caps.hub.plugins ?? [], caps.local?.plugins ?? []), effective.plugins ?? []))
+  );
+}
+
+/** The grants of a and b together, each plugin at the higher class, as the agent adds them up. */
+export function unionPlugins(a: PluginGrant[], b: PluginGrant[]): PluginGrant[] {
+  const rank = (c: PluginGrant['class']) => pluginClasses.indexOf(c);
+  const out = new Map<string, PluginGrant>();
+  for (const g of [...a, ...b]) {
+    const o = out.get(g.name);
+    if (!o || rank(g.class) > rank(o.class)) {
+      out.set(g.name, g);
+    }
+  }
+  return [...out.values()];
+}
+
+function samePlugins(a: PluginGrant[], b: PluginGrant[]): boolean {
+  return a.length === b.length && a.every((g) => b.some((x) => x.name === g.name && x.class === g.class));
 }
 
 /** What the card says about the agent: who manages its capabilities. */

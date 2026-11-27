@@ -14,6 +14,7 @@ import { ConfirmDialog } from './ConfirmDialog.tsx';
 import { Tip } from './Tip.tsx';
 import './PanelsPage.css';
 import './SettingsPage.css';
+import './DevicePluginsPage.css';
 
 /** What the upload's errors say, beyond the hub's own message. */
 function uploadError(err: Error): string {
@@ -59,12 +60,11 @@ export function DevicePluginsPage() {
             <p className="muted small">None yet. Upload one above, then grant it to a device under Capabilities.</p>
           ) : (
             <div className="table-wrap">
-              <table className="devices network">
+              <table className="devices network device-plugins">
                 <thead>
                   <tr>
                     <th>Plugin</th>
-                    <th>Platform</th>
-                    <th>Size</th>
+                    <th>Program</th>
                     <th>Commands</th>
                     <th>Uploaded</th>
                     <th />
@@ -75,26 +75,28 @@ export function DevicePluginsPage() {
                     <tr key={p.id}>
                       <td>
                         <span className="name">{p.name}</span> <span className="muted small mono">{p.version}</span>
-                      </td>
-                      <td className="mono small">
-                        {p.os}/{p.arch}
+                        <div className="mono small">
+                          {p.os}/{p.arch}
+                        </div>
                       </td>
                       <td className="small">
-                        {formatBytes(p.size)}{' '}
-                        <span className="muted mono" title={p.sha256}>
+                        {formatBytes(p.size)}
+                        <div className="muted mono" title={p.sha256}>
                           {p.sha256.slice(0, 12)}
-                        </span>
+                        </div>
                       </td>
                       <td>
-                        {p.commands.map((c) => (
-                          <span key={c.name} className={`pill ${classPill[c.class]}`} title={c.description}>
-                            {c.name} · {c.class}
-                          </span>
-                        ))}
+                        <div className="device-plugins-commands">
+                          {p.commands.map((c) => (
+                            <span key={c.name} className={`pill ${classPill[c.class]}`} title={c.description}>
+                              {c.name} · {c.class}
+                            </span>
+                          ))}
+                        </div>
                       </td>
                       <td className="small">
                         {formatDateTime(p.uploaded_at)}
-                        {p.uploaded_by ? <span className="muted"> by {p.uploaded_by}</span> : null}
+                        {p.uploaded_by ? <div className="muted">by {p.uploaded_by}</div> : null}
                       </td>
                       <td>
                         <button

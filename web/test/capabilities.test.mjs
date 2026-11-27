@@ -15,6 +15,7 @@ import {
   raisesRisky,
   withDocker,
   withList,
+  withPlugin,
   withSwitch,
 } from '../src/capabilities.ts';
 
@@ -87,6 +88,19 @@ test('applied is false until the agent reports what was set', () => {
   assert.equal(applied({ ...set, effective: set.hub }), true);
   // An agent too old to take it never applies it: nothing to wait for.
   assert.equal(applied({ ...set, manageable: false }), true);
+});
+
+test('applied waits for a plugin grant too', () => {
+  const hub = withPlugin(emptyCeiling(), 'go-lamp', 'safe');
+  const set = caps({ hub, effective: emptyCeiling(), plugins_manageable: true });
+  assert.equal(applied(set), false);
+  assert.equal(applied({ ...set, effective: hub }), true);
+  // The agent adds its own grant, at the higher class.
+  const local = withPlugin(emptyCeiling(), 'go-lamp', 'dangerous');
+  assert.equal(applied({ ...set, local, effective: hub }), false);
+  assert.equal(applied({ ...set, local, effective: local }), true);
+  // An agent too old for plugins never applies them.
+  assert.equal(applied({ ...set, plugins_manageable: false }), true);
 });
 
 test('allowsService matches globs as the agent does', () => {

@@ -443,6 +443,42 @@ function grantText(g: PluginGrant[]): string {
   return g.map((x) => `${x.name} (${x.class})`).join(', ');
 }
 
+/** A plugin's class, as a segmented control like Containers'. */
+function ClassLevels({
+  label,
+  value,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: PluginGrant['class'];
+  disabled: boolean;
+  onChange: (cls: PluginGrant['class']) => void;
+}) {
+  return (
+    <div className="caps-levels" role="radiogroup" aria-label={label}>
+      {pluginClasses.map((c) => (
+        <button
+          key={c}
+          type="button"
+          role="radio"
+          aria-checked={value === c}
+          className={value === c ? 'is-on' : ''}
+          disabled={disabled}
+          title={c === 'read' ? undefined : `Up to ${c} commands: raising it asks for your password`}
+          onClick={() => {
+            if (c !== value) {
+              onChange(c);
+            }
+          }}
+        >
+          {c.charAt(0).toUpperCase() + c.slice(1)}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /**
  * The device plugins the hub may run commands of there, each up to a class.
  * Granting one, or raising its class, is dangerous: the password again.
@@ -472,7 +508,10 @@ function PluginsSection({
   const [name, setName] = useState('');
   const [cls, setCls] = useState<PluginGrant['class']>('read');
   const disabled = readOnly || busy;
-  const known = [...new Set((registry.data?.plugins ?? []).map((p) => p.name))];
+  // Uploaded plugins not granted yet: one click picks the name.
+  const known = [...new Set((registry.data?.plugins ?? []).map((p) => p.name))].filter(
+    (n) => !grants.some((g) => g.name === n),
+  );
   return (
     <div className="caps-plugins">
       <div className="caps-what">
@@ -501,20 +540,16 @@ function PluginsSection({
         <ul className="caps-list">
           {grants.map((g) => (
             <li key={g.name} className="caps-row">
-              <span className="mono">{g.name}</span>
+              <span className="caps-name mono">{g.name}</span>
               <div className="caps-control">
-                <select
-                  aria-label={`Class of ${g.name}`}
+                <ClassLevels
+                  label={`Class of ${g.name}`}
                   value={g.class}
                   disabled={disabled}
-                  onChange={(e) => {
-                    onAdd(g.name, e.target.value as PluginGrant['class']);
+                  onChange={(c) => {
+                    onAdd(g.name, c);
                   }}
-                >
-                  {pluginClasses.map((c) => (
-                    <option key={c}>{c}</option>
-                  ))}
-                </select>
+                />
                 <button
                   type="button"
                   className="link small"
@@ -532,7 +567,7 @@ function PluginsSection({
       ) : null}
       {readOnly ? null : (
         <form
-          className="caps-editor"
+          className="caps-plugin-add"
           onSubmit={(e) => {
             e.preventDefault();
             const n = name.trim();
@@ -545,34 +580,36 @@ function PluginsSection({
           <input
             className="mono"
             aria-label="Plugin name"
-            list="caps-plugin-names"
             value={name}
             placeholder="plugin name"
+            autoComplete="off"
             disabled={busy}
             onChange={(e) => {
               setName(e.target.value);
             }}
           />
-          <datalist id="caps-plugin-names">
-            {known.map((n) => (
-              <option key={n} value={n} />
-            ))}
-          </datalist>
-          <select
-            aria-label="Class of the new plugin"
-            value={cls}
-            disabled={busy}
-            onChange={(e) => {
-              setCls(e.target.value as PluginGrant['class']);
-            }}
-          >
-            {pluginClasses.map((c) => (
-              <option key={c}>{c}</option>
-            ))}
-          </select>
+          <ClassLevels label="Class of the new plugin" value={cls} disabled={busy} onChange={setCls} />
           <button type="submit" className="btn btn-primary btn-small" disabled={busy || name.trim() === ''} title={classNote}>
             Add plugin
           </button>
+          {known.length ? (
+            <span className="muted small caps-plugin-known">
+              Uploaded:{' '}
+              {known.map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  className="link small mono"
+                  disabled={busy}
+                  onClick={() => {
+                    setName(n);
+                  }}
+                >
+                  {n}
+                </button>
+              ))}
+            </span>
+          ) : null}
         </form>
       )}
     </div>

@@ -1,0 +1,15 @@
+/* The uploaded device plugins: wrapped cells, so the table fits without a sideways scroll. */
+.device-plugins td {
+  white-space: normal;
+  vertical-align: top;
+}
+
+.device-plugins td:last-child {
+  text-align: right;
+}
+
+.device-plugins-commands {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
