@@ -1,0 +1,43 @@
+docs/cluster.md
+  s_18b57982fdff93::t_bdc942d73df686 208-212,228-238,778-781
+  s_18b57982fdff93::t_c0d6dac034b410 759-760
+internal/cluster/aprunbook_test.go
+  s_18b57982fdff93::t_0d5f43fb18c7b1 92-93,96,134,191-196,199,211-212,231-314,317-364
+  s_18b57982fdff93::t_6acdcdb64d4ef9 315-316
+internal/store/runbookruns.go
+  s_18b57982fdff93::t_6983d10f50fd98 40-52
+internal/hub/runbooks.go
+  s_18b57982fdff93::t_cbdc6b2dee5b89 208-209
+internal/hub/runbooks_test.go
+  s_18b57982fdff93::t_167775027e9a95 428-440
+internal/cluster/apnode.go
+  s_18b57982fdff93::t_932661589c27e7 537-539
+internal/cluster/control.go
+  s_18b57982fdff93::t_932661589c27e7 131,160-162
+  s_18b57982fdff93::t_e59d1341b91e70 163
+internal/cluster/control_test.go
+  s_18b57982fdff93::t_6852c0494ca33e 8,15-16
+  s_18b57982fdff93::t_0d5f43fb18c7b1 111-125
+internal/store/partition.go
+  s_18b57982fdff93::t_6983d10f50fd98 270-274,329-331,385-387,391-392,394
+docs/runbooks.md
+  s_18b57982fdff93::t_bdc942d73df686 325-332
+internal/cluster/replicate.go
+  s_18b57982fdff93::t_932661589c27e7 153-156,221-229,289,342-347,388-406,472-476,548-549,573-583,591,601-603,606,615,617,620,631,636,639-644,646,648-667,697-699,703-704,736,771-772,776,789-794
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "18f2ee57d5c27790113e9843fd302618c15c26b4",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
