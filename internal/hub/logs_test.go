@@ -241,6 +241,7 @@ func TestDeviceLogsRefused(t *testing.T) {
 		{"agent too old", minLogsMinor - 1, &agentv1.Ceiling{Logs: []string{"systemd:*"}}, "systemd:a.service", http.StatusForbidden, "too old"},
 		{"beyond the ceiling", minLogsMinor, &agentv1.Ceiling{Logs: []string{"systemd:a.service"}}, "systemd:b.service", http.StatusForbidden, "turn Logs on"},
 		{"wrong manager", minLogsMinor, &agentv1.Ceiling{Logs: []string{"systemd:*"}}, "docker:a", http.StatusForbidden, "capability ceiling"},
+		{"a glob as the source", minLogsMinor, &agentv1.Ceiling{Logs: []string{"systemd:web?.service"}}, "systemd:web*.service", http.StatusForbidden, "capability ceiling"},
 		{"no ceiling", minLogsMinor, nil, "systemd:a.service", http.StatusForbidden, "capability ceiling"},
 		{"bad source", minLogsMinor, nil, "nginx", http.StatusBadRequest, "manager:name"},
 	} {

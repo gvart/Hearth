@@ -165,6 +165,21 @@ func TestAgentRefusesBeyondHubCeiling(t *testing.T) {
 	if _, err := c.command(&agentv1.ExecRequest{Action: &agentv1.ExecRequest_Restart{Restart: &agentv1.RestartService{Manager: "docker", Name: "jellyfin"}}}); err != nil {
 		t.Errorf("docker:* refused docker:jellyfin: %v", err)
 	}
+	// A requested name is never a glob, whatever the hub sent: the agent
+	// refuses it before docker or systemctl could expand it.
+	for _, name := range []string{"*", "jelly*", "web?"} {
+		if _, err := c.command(&agentv1.ExecRequest{Action: &agentv1.ExecRequest_Restart{Restart: &agentv1.RestartService{Manager: "docker", Name: name}}}); err == nil {
+			t.Errorf("restart docker:%s allowed by docker:*", name)
+		}
+	}
+	r.applyCeiling(t.Context(), push(&agentv1.Ceiling{Restart: []string{"systemd:web?.service"}, Logs: []string{"systemd:web?.service"}}))
+	if _, err := r.ceiling().command(&agentv1.ExecRequest{Action: &agentv1.ExecRequest_Restart{Restart: &agentv1.RestartService{Manager: "systemd", Name: "web*.service"}}}); err == nil {
+		t.Error("restart systemd:web*.service allowed by systemd:web?.service")
+	}
+	if err := newLogStreams(r.ceiling(), r.log).check(&agentv1.LogSource{Manager: "systemd", Name: "web*.service"}); err == nil {
+		t.Error("logs systemd:web*.service allowed by systemd:web?.service")
+	}
+	r.applyCeiling(t.Context(), push(&agentv1.Ceiling{Exec: []string{"/usr/bin/df"}, Restart: []string{"docker:*"}, DockerRead: true}))
 	action := &agentv1.DockerRequest{Op: &agentv1.DockerRequest_Action{Action: &agentv1.DockerAction{Verb: "stop", Container: "jellyfin"}}}
 	if err := policy.DockerWithinCeiling(c.proto(), action); err == nil {
 		t.Error("docker read allows a stop")

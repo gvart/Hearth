@@ -37,6 +37,34 @@ func TestRestartGlob(t *testing.T) {
 	}
 }
 
+// TestRequestedGlobRefused: a requested name is a name, never a glob. A
+// grant of web?.service must not let web*.service through, which systemctl
+// and journalctl would expand to every matching unit; not even "*" allows one.
+func TestRequestedGlobRefused(t *testing.T) {
+	c := &agentv1.Ceiling{
+		Restart: []string{"systemd:web?.service", "docker:*"},
+		Logs:    []string{"systemd:web?.service", "systemd:*", "docker:*"},
+	}
+	for _, name := range []string{"web*.service", "web?.service", "web[1].service", `web\1.service`, "*"} {
+		req := &agentv1.ExecRequest{Action: &agentv1.ExecRequest_Restart{Restart: &agentv1.RestartService{Manager: "systemd", Name: name}}}
+		if err := WithinCeiling(c, req); !errors.Is(err, ErrBeyondCeiling) {
+			t.Errorf("restart systemd:%s = %v, want beyond the ceiling", name, err)
+		}
+		if err := LogsWithinCeiling(c, &agentv1.LogSource{Manager: "systemd", Name: name}); !errors.Is(err, ErrBeyondCeiling) {
+			t.Errorf("logs systemd:%s = %v, want beyond the ceiling", name, err)
+		}
+		req.GetRestart().Manager = "docker"
+		if err := WithinCeiling(c, req); !errors.Is(err, ErrBeyondCeiling) {
+			t.Errorf("restart docker:%s = %v, want beyond the ceiling", name, err)
+		}
+	}
+	// A plain name the glob matches is still allowed.
+	req := &agentv1.ExecRequest{Action: &agentv1.ExecRequest_Restart{Restart: &agentv1.RestartService{Manager: "systemd", Name: "web1.service"}}}
+	if err := WithinCeiling(c, req); err != nil {
+		t.Errorf("restart systemd:web1.service = %v", err)
+	}
+}
+
 // TestDockerRead is Docker read only: lists and logs, no start, stop or
 // restart.
 func TestDockerRead(t *testing.T) {

@@ -225,6 +225,8 @@ func TestAgentsExecNeverBeyondCeiling(t *testing.T) {
 		{"exec by another path", 2, full, exec("df"), false},
 		{"restart of another service", 2, full, restart("docker", "pihole"), false},
 		{"restart with another manager", 2, full, restart("systemd", "jellyfin"), false},
+		{"a glob as the service", 10, &agentv1.Ceiling{Restart: []string{"systemd:web?.service"}}, restart("systemd", "web*.service"), false},
+		{"a glob under docker:*", 10, &agentv1.Ceiling{Restart: []string{"docker:*"}}, restart("docker", "*"), false},
 		{"empty ceiling", 2, &agentv1.Ceiling{}, exec("/usr/bin/df"), false},
 		{"no ceiling reported", 2, nil, exec("/usr/bin/df"), false},
 		{"agent too old to report a ceiling", 1, full, exec("/usr/bin/df"), false},

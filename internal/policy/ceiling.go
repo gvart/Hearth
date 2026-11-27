@@ -40,8 +40,13 @@ func WithinCeiling(c *agentv1.Ceiling, req *agentv1.ExecRequest) error {
 
 // matchEntry reports whether one of entries, each manager:pattern, allows
 // name of manager: the pattern is a name or a glob (path.Match, so "*"
-// allows every name).
+// allows every name). A requested name with a glob character of its own is
+// never allowed: systemctl and journalctl expand it, so web*.service would
+// reach every unit a grant of web?.service matched.
 func matchEntry(entries []string, manager, name string) bool {
+	if strings.ContainsAny(name, globChars) {
+		return false
+	}
 	for _, e := range entries {
 		m, pattern, ok := strings.Cut(e, ":")
 		if !ok || m != manager {
@@ -58,8 +63,12 @@ func matchEntry(entries []string, manager, name string) bool {
 // than one name: it allows a set of names, and names no one service.
 func IsPattern(entry string) bool {
 	_, pattern, _ := strings.Cut(entry, ":")
-	return strings.ContainsAny(pattern, `*?[\`)
+	return strings.ContainsAny(pattern, globChars)
 }
+
+// globChars are the characters that make a name a glob (path.Match), and
+// that systemctl and journalctl expand.
+const globChars = `*?[\`
 
 // ProbeWithinCeiling checks a ProbeRequest against a device's capability
 // ceiling c, as the hub does before it sends one and the agent does again
