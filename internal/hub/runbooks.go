@@ -205,6 +205,8 @@ func (a *api) writeRunbookError(w http.ResponseWriter, r *http.Request, what str
 		writeError(w, http.StatusConflict, "schema_too_old", "upgrade every hub of the cluster to use runbooks")
 	case errors.Is(err, policy.ErrDenied):
 		writeError(w, http.StatusForbidden, "forbidden", "denied by policy")
+	case errors.Is(err, store.ErrNoMajority):
+		writeError(w, http.StatusServiceUnavailable, "cluster_split", store.ErrNoMajority.Error())
 	case errors.Is(err, store.ErrUnavailable):
 		writeUnavailable(w)
 	default:

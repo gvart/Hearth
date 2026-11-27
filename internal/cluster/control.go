@@ -128,6 +128,7 @@ var wireKinds = map[string]error{
 	"token_used":           store.ErrTokenUsed,
 	"token_expired":        store.ErrTokenExpired,
 	"unavailable":          store.ErrUnavailable,
+	"no_majority":          store.ErrNoMajority,
 	"closed":               store.ErrApprovalClosed,
 	"run_conflict":         store.ErrRunbookRunConflict,
 	"runs_unresolved":      store.ErrRunbookRunsUnresolved,
@@ -155,6 +156,10 @@ func toWireError(err error) *wireError {
 	var no *store.NotOwnerError
 	if errors.As(err, &no) {
 		return &wireError{Kind: "not_owner", Message: err.Error(), Owner: no.Owner, What: no.What}
+	}
+	// Before the kinds: it is also ErrUnavailable.
+	if errors.Is(err, store.ErrNoMajority) {
+		return &wireError{Kind: "no_majority", Message: err.Error()}
 	}
 	for kind, target := range wireKinds {
 		if errors.Is(err, target) {

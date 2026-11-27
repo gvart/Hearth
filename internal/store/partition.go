@@ -267,6 +267,11 @@ type Route struct {
 	Key string
 	// Critical commands wait for W = min(2, N) replicas.
 	Critical bool
+	// Majority commands of a RouteKey (a runbook run's start and saves)
+	// need a strict majority of their key's N replicas, stand-ins not
+	// counted, to read the rows they decide on and to take the write: the
+	// minority side of a split refuses them with ErrNoMajority (#307).
+	Majority bool
 	// First commands of a RouteKey run on the first live replica of their
 	// key, even on a member that is another replica: of two such commands
 	// that read and write one row, one replica runs both, in turn.
@@ -321,7 +326,9 @@ func RouteOf(cmd Command) (Route, error) {
 			return Route{}, fmt.Errorf("%w: re-seal one secret per command in a sharded cluster", ErrNoRoute)
 		}
 		if sec := c.Secrets[0]; sec.Table == SealedRunbookRuns {
-			return key(sec.Key, true)
+			r, err := key(sec.Key, true)
+			r.Majority = true
+			return r, err
 		}
 		return global(true)
 	case CreateToken:
@@ -375,12 +382,16 @@ func RouteOf(cmd Command) (Route, error) {
 	case RecordAutomationRun:
 		return key(c.AutomationID, false)
 	case CreateRunbookRun:
-		return key(c.RunbookID, true)
+		r, err := key(c.RunbookID, true)
+		r.Majority = true
+		return r, err
 	case SaveRunbookRun:
 		// Its version check runs on one replica: two saves from one
 		// version, from two masters, are decided there and one is refused.
+		// A majority of the replicas reads and takes it, so of two sides of
+		// a split at most one records a step (#307).
 		r, err := key(c.RunbookID, true)
-		r.First = true
+		r.First, r.Majority = true, true
 		return r, err
 	case AddKubeCluster, RemoveKubeCluster, AddProxmoxServer, RemoveProxmoxServer,
 		SetTelemetry, MarkTelemetrySent, RecordNetworkScan, SetNetworkHostState, RecordNetworkImport:

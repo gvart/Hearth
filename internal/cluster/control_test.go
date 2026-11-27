@@ -5,12 +5,15 @@ package cluster
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gvart/hearth/internal/store"
 )
 
 // shortDir returns a fresh directory whose path is short enough for a unix
@@ -102,6 +105,21 @@ func TestControlSocketNeverLoose(t *testing.T) {
 		}
 		if t.Failed() {
 			return
+		}
+	}
+}
+
+// ErrNoMajority keeps its kind across the wire, though it is also
+// ErrUnavailable.
+func TestWireErrorNoMajority(t *testing.T) {
+	for range 20 {
+		w := toWireError(fmt.Errorf("apply save_runbook_run: %w", store.ErrNoMajority))
+		if w.Kind != "no_majority" {
+			t.Fatalf("kind %q, want no_majority", w.Kind)
+		}
+		err := w.toError()
+		if !errors.Is(err, store.ErrNoMajority) || !errors.Is(err, store.ErrUnavailable) {
+			t.Fatalf("%v is not ErrNoMajority and ErrUnavailable", err)
 		}
 	}
 }

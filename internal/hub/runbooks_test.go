@@ -425,3 +425,16 @@ steps:
 		t.Errorf("answered %d %s", rec.Code, rec.Body)
 	}
 }
+
+// A runbook save refused on the minority side of a split answers its own
+// reason, not the generic cluster_unavailable one (#307).
+func TestRunbookErrorClusterSplit(t *testing.T) {
+	a := &api{log: slog.New(slog.DiscardHandler), leadership: soloLeadership{}}
+	rec := httptest.NewRecorder()
+	err := fmt.Errorf("save runbook run r1: apply save_runbook_run: 1 of 3 replicas of its key reachable, 2 needed: %w", store.ErrNoMajority)
+	a.writeRunbookError(rec, httptest.NewRequest(http.MethodPost, "/", nil), "retry runbook run", err)
+	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), `"cluster_split"`) ||
+		!strings.Contains(rec.Body.String(), "runbook steps need a majority of replicas; retry when the cluster heals") {
+		t.Errorf("answered %d %s", rec.Code, rec.Body)
+	}
+}
