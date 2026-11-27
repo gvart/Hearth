@@ -115,8 +115,11 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 		return connect.NewError(connect.CodeUnavailable, errors.New("cannot record device facts"))
 	}
 	pinned := s.pinCert(ctx, log, deviceID)
-	cert, bundle := s.renewal(ctx, log, deviceID)
+	// The rotation state is read before the renewal: a rotation that moves
+	// on in between then ends the stream on its next heartbeat, rather than
+	// passing as seen by a Welcome that did not carry it.
 	rotation, _ := s.rotationState(ctx)
+	cert, bundle := s.renewal(ctx, log, deviceID)
 
 	hubs := s.leadership.AgentURLs()
 	welcome := &agentv1.HubMessage{Payload: &agentv1.HubMessage_Welcome{Welcome: &agentv1.Welcome{

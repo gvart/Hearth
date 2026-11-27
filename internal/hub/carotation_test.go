@@ -8,12 +8,16 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"connectrpc.com/connect"
 
 	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/store"
@@ -155,5 +159,57 @@ func TestRequireClientCertRefusesUntrustedCA(t *testing.T) {
 	c = context.WithValue(c, chainKey{}, []*x509.Certificate{leaf})
 	if err := s.recheckCert(c, s.log, "pi"); !errors.Is(err, errUntrustedCA) {
 		t.Errorf("recheckCert of an old-CA stream after the finish = %v, want errUntrustedCA", err)
+	}
+}
+
+// lateRotation is the store's CA rotations, except that the first read finds
+// none: a hub CA rotation that starts while an agent connects, after the
+// hub's first look at it.
+type lateRotation struct {
+	rotationReader
+	reads atomic.Int32
+}
+
+func (r *lateRotation) Latest(ctx context.Context) (store.CARotation, error) {
+	if r.reads.Add(1) == 1 {
+		return store.CARotation{}, store.ErrNotFound
+	}
+	return r.rotationReader.Latest(ctx)
+}
+
+// A hub CA rotation that starts while an agent connects reaches the agent:
+// the stream whose Welcome did not renew it ends on its next heartbeat, so
+// that it reconnects for its certificate and CAs.
+func TestRotationStartedWhileConnecting(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	f := newRevokeFixture(t)
+	ca, err := pki.LoadOrCreateCA(t.TempDir(), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, err := ca.GenerateNext(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.st.CARotations().Start(ctx, store.CARotation{
+		NewCAFP: pki.FingerprintHex(next), OldCAFP: pki.FingerprintHex(ca.Cert()),
+		NewCACert: string(pki.EncodeCertPEM(next)), Pins: map[string]string{},
+	}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	f.as.ca, f.as.rotations = ca, &lateRotation{rotationReader: f.st.CARotations()}
+	f.chains = map[string][]*x509.Certificate{"dev-1": {issueClientCert(t, ca, "dev-1"), ca.Cert()}}
+
+	stream := f.open(ctx, t, "dev-1", "0a")
+	if err := stream.Send(heartbeat()); err != nil && !errors.Is(err, io.EOF) {
+		t.Fatal(err)
+	}
+	if err := stream.CloseRequest(); err != nil {
+		t.Fatal(err)
+	}
+	_, err = stream.Receive()
+	if connect.CodeOf(err) != connect.CodeUnavailable || !strings.Contains(err.Error(), "rotation moved") {
+		t.Fatalf("the stream after a heartbeat ended with %v, want the rotation moved on", err)
 	}
 }

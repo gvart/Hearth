@@ -25,8 +25,12 @@ func TestRunRenewsForCARotation(t *testing.T) {
 	h := startRestartableHub(t, time.Second)
 	id, dataDir := h.join(t)
 	a := startAgent(t, dataDir)
+	// Counted on the agent, which logs a connection once it has the Welcome:
+	// the hub logs it before it reads the rotation for the Welcome, so a
+	// rotation step made then would already be in that Welcome and leave a
+	// connection out of the count.
 	connected := func(n int) func() bool {
-		return func() bool { return strings.Count(h.logs.String(), `msg="agent connected" device_id=`+id) >= n }
+		return func() bool { return strings.Count(a.logs.String(), `msg="connected to hub"`) >= n }
 	}
 	waitFor(t, 10*time.Second, "first connection", connected(1))
 	oldPair, err := tls.LoadX509KeyPair(filepath.Join(dataDir, agent.CertFile), filepath.Join(dataDir, agent.KeyFile))
