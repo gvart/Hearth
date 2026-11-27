@@ -1,0 +1,41 @@
+internal/cluster/masterlink.go
+  s_18b57982fdff93::t_166d0344fc556a 212,223-225
+  s_18b57982fdff93::t_cb4536c2a1b9aa 32-37,48-55,65,100-109,131-132,136,167,169
+  s_18b57982fdff93::t_5b447751af0ec8 168,226
+internal/cluster/replauth_test.go
+  s_18b57982fdff93::t_91e702f9e3d17c 393-394,398-413,420,428,430-432
+  s_18b57982fdff93::t_aa4135fd87d6b3 444-457,460-463
+  s_18b57982fdff93::t_fa1c4e2003b66f 433-440,442-443,464-465
+  s_18b57982fdff93::t_6887983e8783aa 416-419,423-425
+  s_18b57982fdff93::t_44d23f050deffe 441
+  s_18b57982fdff93::t_8bf3cf98464388 458-459
+  s_18b57982fdff93::t_6e33cbaa71ab8e 395-397,414-415,421-422,426-427,429
+internal/cluster/promote.go
+  s_18b57982fdff93::t_166d0344fc556a 251
+  s_18b57982fdff93::t_90e9b54320008f 372-377,382,384-385,393-410,412,414-415,421-432,436,438,440,443
+  s_18b57982fdff93::t_d576879bbff8e8 14
+  s_18b57982fdff93::t_f0666165c2c5b4 417,420,433,441
+  s_18b57982fdff93::t_e7125dc1306ea4 442
+internal/cluster/replicate.go
+  s_18b57982fdff93::t_c5b65681e04337 805-806,809-810,837-840,875,878-879
+  s_18b57982fdff93::t_2c952581445112 622-624
+  s_18b57982fdff93::t_cc7166c99b9c34 271-273,395-398,401,404,757,835-836,876-877
+  s_18b57982fdff93::t_669e3c26c1d5bc 269-270,286,298-300,334,399-400,402-403,778-780,782-783,804,807,811-812,907,914,924
+  s_18b57982fdff93::t_e7a76109f7b5e2 405-406
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "91ce1a41edc01276415444f0b07480fd7dae5b10",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
