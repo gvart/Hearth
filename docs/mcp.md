@@ -90,7 +90,7 @@ operator sees what they approve: keep secrets out of commands.
 
 `list_containers`, `container_logs` and `container_action` reach the device's Docker or Podman
 engine through its agent, as the device page's **Containers** does (see [docker.md](docker.md)), and
-only when its ceiling allows Docker (`--allow-docker`): otherwise they are denied before anything is
+only when its ceiling allows Docker (**Containers** in its Capabilities card; `container_action` needs control): otherwise they are denied before anything is
 sent. `list_containers` shows each container with its Compose project and service, and the images.
 `container_logs` reads the last lines of a container's log, 100 by default and at most 200; every
 read is audited, as a log may carry secrets. `container_action` starts, stops or restarts one

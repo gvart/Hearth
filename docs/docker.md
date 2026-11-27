@@ -35,7 +35,7 @@ Name another one, such as Colima's or a rootless Docker's, with `--docker-socket
 prefix, as `DOCKER_HOST` has it, is fine:
 
 ```sh
-hearth agent run --allow-docker --docker-socket unix:///home/me/.colima/default/docker.sock
+hearth agent run --docker-socket unix:///home/me/.colima/default/docker.sock
 ```
 
 The agent's user must be able to open the socket: in the `docker` group for Docker, or the user who
@@ -74,7 +74,7 @@ and starting are `safe`, as a service restart is; hold them for approval with a 
 ## Nothing kept on the hub
 
 The hub asks the agent when you open the device's page, press **Refresh** or take an action, and keeps
-nothing: container state never goes into the replicated store, and an agent with `--allow-docker`
+nothing: container state never goes into the replicated store, and an agent with Containers on
 holds no connection to the engine between requests. The page never polls.
 
 The API, behind an admin session:
