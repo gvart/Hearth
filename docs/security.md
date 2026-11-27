@@ -288,21 +288,40 @@ automation or an MCP client.
 ### Plugins on devices
 
 An agent runs an [exec plugin](plugins.md#plugins-on-devices) only when its ceiling names it, with
-the highest class of command the hub may send.
+the highest class of command the hub may send, and only the release the grant pins.
 
-- Uploading a plugin's program is `plugin.binary.upload` (dangerous, the password again); allowing it
-  on a device, or raising its class, is `device.capabilities.raise` (dangerous, the password again).
-  Both are audited, with the program's SHA-256.
-- The agent downloads the program over mTLS with its own certificate, only for a plugin its ceiling
-  allows and only for its own platform, at most 64 MB, streamed to disk. It checks the SHA-256 the hub
-  pinned before it keeps the file (0700, in its data directory) and again before every start. It runs
-  the program with `exec`, no shell, a clean environment and its own process group.
-- The agent takes each command's class from the manifest it installed, not from the hub, and refuses
-  a command above the plugin's class in its own ceiling or one the manifest does not declare.
-- Allowing a plugin trusts the hub with code: it supplies the program and the manifest, and the
-  program runs as the agent's user. A class limits the commands the hub may send, not what the
-  program does. An agent with `--local-ceiling` takes plugins only from its own `--allow-plugin`
-  flags, but the program still comes from the hub, pinned by the hash the hub sends.
+**Any plugin grant lets whoever can upload plugins run arbitrary code on the device as the agent's
+user, whatever the class.** A class limits which commands the hub may send, not what the program does
+once it runs. Allow only plugins you built or read, on devices where that user may do what the program
+does.
+
+- A release is a program and its manifest together, named by a digest: the SHA-256 of the program's
+  SHA-256 and the manifest's. A grant the hub sets pins one release; the agent installs only that one
+  and takes each command's class only from its manifest. Uploading a new program, or the same program
+  with another manifest (other classes, arguments), makes a new release that no device runs until its
+  grant is moved to it. The device keeps running the release it was allowed meanwhile.
+- Uploading a plugin's program is `plugin.binary.upload` (dangerous, the password again); its audit
+  entry holds the program's SHA-256 and the release digest. Allowing a plugin on a device, raising its
+  class, or moving it to another release ("approve" in the Capabilities card, `@latest` in the CLI) is
+  `device.capabilities.raise` (dangerous, the password again). All are audited.
+- An agent's own `--allow-plugin NAME[:CLASS]@DIGEST` pins a release on the device. Without `@DIGEST`
+  the agent pins the first release it installs (trust on first use), keeps the pin in
+  `<data-dir>/plugin-pins.json` and refuses any other until the flag changes: the hub is still trusted
+  for that first release. An agent with `--local-ceiling` takes plugins only from its own flags.
+- The hub hands a device only the releases its grants allow: those the hub set for it (not on
+  `--local-ceiling`) and those its own flags hold, as it reported them. A device reporting a grant
+  nobody set gets neither the plugin's configuration nor its program.
+- The agent downloads the program over mTLS with its own certificate, only for its own platform, at
+  most 64 MB, streamed to disk, up to 512 MB of plugins in all. It checks the SHA-256 the release pins
+  before it keeps the file (0700, in its data directory) and again before every start, and makes sure
+  the file it starts is the one it checked. It runs the program with `exec`, no shell, a clean
+  environment and its own process group, at most 4 commands at once; removing or replacing a release
+  cancels its commands in flight.
+- The agent refuses a command above the plugin's class in its own ceiling or one the manifest does
+  not declare.
+- A plugin's program, manifest and arguments are not secret: they are stored on every hub and sent to
+  every device the plugin is allowed on. Keep settings and credentials in a file on the device.
+- Device plugins do not run on Windows yet: the agent refuses them there.
 
 ## Integrations
 

@@ -237,10 +237,14 @@ process speaking the same protocol, one process per command.
    ```
 
    An upload is the dangerous policy action `plugin.binary.upload` and asks for the admin password
-   again in the web UI; the audit entry holds the program's SHA-256. A program may be at most 64 MB.
-   A device manifest may not set `env`: the agent starts the program with a clean environment.
-   Uploading again for the same platform replaces the program. In a cluster, upload on a master: the
-   program stays on that hub, and the other masters fetch it from there when their devices need it.
+   again in the web UI; the audit entry holds the program's SHA-256 and the release digest. A program
+   may be at most 64 MB. A device manifest may not set `env`: the agent starts the program with a
+   clean environment. The program, manifest and `args` are not secret (every hub stores them, every
+   allowed device receives them): keep settings in a file on the device. Uploading again for the same
+   platform replaces the program, and makes a new release that devices run only once approved (step 2).
+   In a cluster, upload on a master: the program stays on that hub, and the other masters fetch it
+   from there when their devices need it. A copy another master fetched stays there after a re-upload
+   or a delete.
 2. **Allow it on the device**, in its **Capabilities** card (**Plugins**), with the highest class of
    command the hub may run there: `read` (the default), `safe` or `dangerous`. Or on a hub host:
 
@@ -248,22 +252,31 @@ process speaking the same protocol, one process per command.
    hearth device capabilities pi --set plugins=go-lamp:safe
    ```
 
-   Allowing a plugin, or raising its class, is `device.capabilities.raise` (dangerous, asks for the
-   password again); lowering or removing it is `device.capabilities.set`. A device installed with
-   `--local-ceiling` ignores the hub's grants: allow plugins there with the agent's own flag,
-   `--allow-plugin NAME[:CLASS]`, repeatable.
+   A grant pins the release uploaded now for the device's platform: its program and manifest,
+   by their digest (`hearth plugin list` shows it). Allowing a plugin, or raising its class, is
+   `device.capabilities.raise` (dangerous, asks for the password again); lowering or removing it is
+   `device.capabilities.set`. When a new release is uploaded, the device keeps the one it runs and its
+   Capabilities card says **New release available — Approve**; approving it, or on a hub host
+   `--set plugins=go-lamp:safe@latest`, is `device.capabilities.raise` too.
+
+   A device installed with `--local-ceiling` ignores the hub's grants: allow plugins there with the
+   agent's own flag, `--allow-plugin NAME[:CLASS][@DIGEST]`, repeatable. Without `@DIGEST` the agent
+   pins the first release it installs, in `<data-dir>/plugin-pins.json`, and refuses any other until
+   the flag changes; that first release is still the hub's choice.
 3. **The agent installs it.** At its next heartbeat it downloads the program for its platform from
    the hub over mTLS, with its own certificate, and checks its SHA-256 against the one the hub pinned
    before it writes it, 0700, to `<data-dir>/plugins/<name>/<sha256>`. It checks the hash again
-   before each start. It refuses a program bigger than 64 MB, one for another platform, one whose
-   hash differs, and any plugin its ceiling does not allow. Taken off the ceiling, or deleted on the
-   hub, the plugin is removed from the device.
+   before each start. It refuses a program bigger than 64 MB (512 MB of plugins in all), one for
+   another platform, one whose hash differs, any plugin its ceiling does not allow and any release
+   its grant does not pin. Taken off the ceiling, or deleted on the hub, the plugin is removed from
+   the device, and its commands in flight are cancelled. Device plugins do not run on Windows yet.
 4. **Run its commands** from the device page's **Plugins** card, or with MCP's `device_plugin_command`
    tool. Each one goes through policy as `device.plugin.command.read`, `.safe` or `.dangerous`, after
    the class the manifest declares, with the device as target; a command the manifest does not declare
    is denied as a dangerous one. The hub denies a command above the plugin's class in the device's
    ceiling before it is held for approval or sent, and the agent checks it again against the manifest
-   it installed and the ceiling it holds, whatever the hub decided.
+   it installed and the ceiling it holds, whatever the hub decided. An agent runs at most 4 plugin
+   commands at once.
 
 | Action | Class | Actors |
 | --- | --- | --- |
@@ -273,9 +286,9 @@ process speaking the same protocol, one process per command.
 | `device.plugin.command.safe` | safe | `web`, `mcp` |
 | `device.plugin.command.dangerous` | dangerous | `web`, `mcp` |
 
-Allowing a plugin trusts the hub with what it runs: the hub supplies the program and its manifest,
-and the agent runs it as its own user, so a class bounds which commands the hub may send, not what
-the program does. Allow only plugins you built or read. Agents older than this release (protocol
+Any plugin grant lets whoever can upload plugins run arbitrary code on the device as the agent's
+user, whatever the class: a class bounds which commands the hub may send, not what the program does.
+Allow only plugins you built or read. Agents older than this release (protocol
 minor 14) take no plugins: the device's cards ask to upgrade them.
 
 On a device a plugin's discover and state messages are not relayed to the hub yet; it serves
