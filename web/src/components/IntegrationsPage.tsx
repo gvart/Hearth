@@ -4,6 +4,7 @@ import { useESPHomeDevices } from '../api/esphome.ts';
 import { useOpenWrtRouters } from '../api/openwrt.ts';
 import { useOPNsenseFirewalls } from '../api/opnsense.ts';
 import { useProxmoxServers } from '../api/proxmox.ts';
+import { useUniFiControllers } from '../api/unifi.ts';
 import { docsURL } from '../docs.ts';
 import { integrationSummary, integrations, stateWord, type Integration, type IntegrationState } from '../integrations.ts';
 import './PanelsPage.css';
@@ -28,6 +29,7 @@ export function IntegrationsPage() {
   const esp = useESPHomeDevices();
   const owrt = useOpenWrtRouters();
   const opn = useOPNsenseFirewalls();
+  const ufi = useUniFiControllers();
   const talos = useTalosNodes();
   const beszel = useBeszelSystems();
   const plugins = usePlugins();
@@ -38,12 +40,13 @@ export function IntegrationsPage() {
     esphome: esp.data,
     openwrt: owrt.data,
     opnsense: opn.data,
+    unifi: ufi.data,
     talos: talos.data,
     beszel: beszel.data,
     plugins: plugins.data?.plugins,
     hosts: hosts.data,
   });
-  const loading = [clusters, servers, esp, owrt, opn, talos, beszel, plugins, hosts].some((q) => q.isPending);
+  const loading = [clusters, servers, esp, owrt, opn, ufi, talos, beszel, plugins, hosts].some((q) => q.isPending);
 
   return (
     <main className="content">

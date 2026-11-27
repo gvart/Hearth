@@ -49,9 +49,9 @@ export const tips: Record<TipId, TipText> = {
   platforms: {
     about: "platforms",
     lines: [
-      "A platform is something Hearth reads through its own API: a Kubernetes cluster, a Proxmox server, an ESPHome device, an OpenWrt router or an OPNsense firewall.",
+      "A platform is something Hearth reads through its own API: a Kubernetes cluster, a Proxmox server, an ESPHome device, an OpenWrt router, an OPNsense firewall or a UniFi controller.",
       "Nothing is installed there, and Hearth changes something only when you ask it to.",
-      "An ESPHome device is read-only unless you allow calls. OpenWrt and OPNsense leases name the hosts discovery finds.",
+      "An ESPHome device is read-only unless you allow calls. OpenWrt, OPNsense and UniFi clients name the hosts discovery finds.",
     ],
     docs: "kubernetes.md",
   },

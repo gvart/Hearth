@@ -5,6 +5,7 @@ import { useESPHomeDevices, type ESPHomeDevice } from '../api/esphome.ts';
 import { useOpenWrtRouters, type OpenWrtRouter } from '../api/openwrt.ts';
 import { useOPNsenseFirewalls, type OPNsenseFirewall } from '../api/opnsense.ts';
 import { useProxmoxServers, type ProxmoxServer } from '../api/proxmox.ts';
+import { useUniFiControllers, type UniFiController } from '../api/unifi.ts';
 import { connectPlatformHash } from '../nav.ts';
 import {
   kindLabel,
@@ -22,6 +23,7 @@ import { AddESPHomeDialog } from './AddESPHomeDialog.tsx';
 import { AddOpenWrtDialog } from './AddOpenWrtDialog.tsx';
 import { AddOPNsenseDialog } from './AddOPNsenseDialog.tsx';
 import { AddProxmoxDialog } from './AddProxmoxDialog.tsx';
+import { AddUniFiDialog } from './AddUniFiDialog.tsx';
 import { Modal } from './Modal.tsx';
 import './PanelsPage.css';
 import './PlatformsPage.css';
@@ -60,9 +62,14 @@ const kinds: { kind: PlatformKind; mark: string; needs: string }[] = [
     mark: 'OPN',
     needs: "Give a firewall's URL and an API key. Hearth reads its leases, ARP table and traffic, and feeds discovery.",
   },
+  {
+    kind: 'unifi',
+    mark: 'UBNT',
+    needs: 'Give a console or controller URL and an API key or local login. Hearth reads its devices, clients and health, and feeds discovery.',
+  },
 ];
 
-const mark: Record<PlatformKind, string> = { kubernetes: 'K8S', proxmox: 'PVE', esphome: 'ESP', openwrt: 'OWRT', opnsense: 'OPN' };
+const mark: Record<PlatformKind, string> = { kubernetes: 'K8S', proxmox: 'PVE', esphome: 'ESP', openwrt: 'OWRT', opnsense: 'OPN', unifi: 'UBNT' };
 
 /**
  * The clusters and servers Hearth reads next to its own devices: Kubernetes
@@ -74,18 +81,19 @@ export function PlatformsPage() {
   const esp = useESPHomeDevices();
   const owrt = useOpenWrtRouters();
   const opn = useOPNsenseFirewalls();
+  const ufi = useUniFiControllers();
   // The chooser is open while the URL says so (#/platforms/connect), so a link can open it.
   const choosing = useChoosing();
   const [kind, setKind] = useState<PlatformKind | null>(null);
-  const cards = platformCards(clusters.data ?? [], servers.data ?? [], esp.data ?? [], owrt.data ?? [], opn.data ?? []);
-  const loading = clusters.isPending || servers.isPending || esp.isPending || owrt.isPending || opn.isPending;
+  const cards = platformCards(clusters.data ?? [], servers.data ?? [], esp.data ?? [], owrt.data ?? [], opn.data ?? [], ufi.data ?? []);
+  const loading = clusters.isPending || servers.isPending || esp.isPending || owrt.isPending || opn.isPending || ufi.isPending;
   const close = () => {
     setKind(null);
     if (window.location.hash === connectPlatformHash) {
       window.location.hash = platformsHash;
     }
   };
-  const opened = (k: PlatformKind) => (p: KubeCluster | ProxmoxServer | ESPHomeDevice | OpenWrtRouter | OPNsenseFirewall) => {
+  const opened = (k: PlatformKind) => (p: KubeCluster | ProxmoxServer | ESPHomeDevice | OpenWrtRouter | OPNsenseFirewall | UniFiController) => {
     setKind(null);
     window.location.hash = platformHash(k, p.id);
   };
@@ -129,6 +137,11 @@ export function PlatformsPage() {
           Could not load the OPNsense firewalls: {opn.error.message}
         </div>
       ) : null}
+      {ufi.isError ? (
+        <div className="error-box" role="alert">
+          Could not load the UniFi controllers: {ufi.error.message}
+        </div>
+      ) : null}
 
       {cards.length > 0 ? (
         <div className="panel-list">
@@ -138,11 +151,11 @@ export function PlatformsPage() {
         </div>
       ) : loading ? (
         <p className="muted">Loading platforms…</p>
-      ) : clusters.isError || servers.isError || esp.isError || owrt.isError || opn.isError ? null : (
+      ) : clusters.isError || servers.isError || esp.isError || owrt.isError || opn.isError || ufi.isError ? null : (
         <div className="empty">
           <h2>Adopt what you already run</h2>
           <p className="muted">
-            Connect a Kubernetes cluster, a Proxmox server, an ESPHome device, an OpenWrt router or an OPNsense firewall to see it next to your devices. Hearth only changes something
+            Connect a Kubernetes cluster, a Proxmox server, an ESPHome device, an OpenWrt router, an OPNsense firewall or a UniFi controller to see it next to your devices. Hearth only changes something
             when you ask it to, and installs nothing there.
           </p>
           <a className="btn btn-primary" href={connectPlatformHash}>
@@ -161,6 +174,8 @@ export function PlatformsPage() {
         <AddOpenWrtDialog onClose={close} onAdded={opened('openwrt')} />
       ) : kind === 'opnsense' ? (
         <AddOPNsenseDialog onClose={close} onAdded={opened('opnsense')} />
+      ) : kind === 'unifi' ? (
+        <AddUniFiDialog onClose={close} onAdded={opened('unifi')} />
       ) : choosing ? (
         <Modal className="dialog" labelledBy="connect-title" onClose={close}>
           <header className="dialog-head">

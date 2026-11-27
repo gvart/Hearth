@@ -2,7 +2,7 @@
 // one page. Kept apart from the components so node --test can check it
 // (web/test/platforms.test.mjs).
 
-export type PlatformKind = 'kubernetes' | 'proxmox' | 'esphome' | 'openwrt' | 'opnsense';
+export type PlatformKind = 'kubernetes' | 'proxmox' | 'esphome' | 'openwrt' | 'opnsense' | 'unifi';
 
 export const kindLabel: Record<PlatformKind, string> = {
   kubernetes: 'Kubernetes cluster',
@@ -10,6 +10,7 @@ export const kindLabel: Record<PlatformKind, string> = {
   esphome: 'ESPHome device',
   openwrt: 'OpenWrt router',
   opnsense: 'OPNsense firewall',
+  unifi: 'UniFi controller',
 };
 
 /** How a platform reads now, whatever its kind calls it. */
@@ -74,6 +75,16 @@ interface Firewall {
   clients: number;
 }
 
+interface Controller {
+  id: string;
+  name: string;
+  url: string;
+  state: 'connecting' | 'connected' | 'unavailable';
+  error: string;
+  devices: number;
+  clients: number;
+}
+
 interface Server {
   id: string;
   name: string;
@@ -100,7 +111,7 @@ export function platformOfHash(hash: string): { kind: PlatformKind; id: string }
     return undefined;
   }
   const [kind, id, ...rest] = hash.slice(prefix.length).split('/');
-  if ((kind !== 'kubernetes' && kind !== 'proxmox' && kind !== 'esphome' && kind !== 'openwrt' && kind !== 'opnsense') || !id || rest.length > 0) {
+  if ((kind !== 'kubernetes' && kind !== 'proxmox' && kind !== 'esphome' && kind !== 'openwrt' && kind !== 'opnsense' && kind !== 'unifi') || !id || rest.length > 0) {
     return undefined;
   }
   try {
@@ -121,6 +132,7 @@ export function platformCards(
   devices: ESPDevice[] = [],
   routers: Router[] = [],
   firewalls: Firewall[] = [],
+  controllers: Controller[] = [],
 ): PlatformCard[] {
   const cards: PlatformCard[] = [
     ...clusters.map(
@@ -181,6 +193,18 @@ export function platformCards(
         line: count(f.clients, 'client'),
         error: f.error,
         hash: platformHash('opnsense', f.id),
+      }),
+    ),
+    ...controllers.map(
+      (c): PlatformCard => ({
+        kind: 'unifi',
+        id: c.id,
+        name: c.name,
+        address: c.url,
+        state: c.state === 'unavailable' ? 'unreachable' : c.state,
+        line: `${count(c.devices, 'device')} · ${count(c.clients, 'client')}`,
+        error: c.error,
+        hash: platformHash('unifi', c.id),
       }),
     ),
   ];
