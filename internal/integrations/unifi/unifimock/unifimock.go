@@ -2,9 +2,13 @@
 
 // Package unifimock is a fake UniFi Network controller: the part of its API
 // Hearth uses, for tests. It serves either a UniFi OS console or a classic
-// self-hosted controller, written from the behaviour of maintained clients
-// of the API (Art-of-WiFi's UniFi-API-client, unifi-cli) and the fields of
-// their documented responses:
+// self-hosted controller, written from maintained clients of the API:
+// Art-of-WiFi's UniFi-API-client (login paths, cookies, the 401 re-login,
+// /proxy/network), aiounifi (the stat/sta and stat/device fields, device
+// types and states, devmgr restart, the X-CSRF-Token login header) and
+// unifi-cli (X-API-KEY on the /api/s/<site>/ endpoints). The stat/health
+// fields come from users' notes: rx_bytes-r, tx_bytes-r, wan_ip and
+// num_user are confirmed there, isp_name and latency are not. It serves:
 //
 //   - the classic login, POST /api/login, which sets the unifises cookie
 //     and refuses a bad password with 400 api.err.Invalid;

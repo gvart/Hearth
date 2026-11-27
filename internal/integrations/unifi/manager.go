@@ -427,7 +427,7 @@ func (m *Manager) RestartAP(ctx context.Context, actorKind, actorID, id, mac str
 		if err != nil {
 			return err
 		}
-		return r.client.batch().call(ctx, http.MethodPost, "/cmd/devmgr", map[string]any{"cmd": "restart", "mac": mac}, nil)
+		return r.client.batch().call(ctx, http.MethodPost, "/cmd/devmgr", map[string]any{"cmd": "restart", "mac": mac, "reboot_type": "soft"}, nil)
 	})
 	if err != nil {
 		return ActionResult{}, fmt.Errorf("restart %s: %w", target, err)

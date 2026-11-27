@@ -171,7 +171,7 @@ func (c *client) do(ctx context.Context, method, path string, body, out any) err
 	var env envelope
 	jsonErr := json.Unmarshal(raw, &env)
 	if env.Meta.Msg == "api.err.NoSiteContext" {
-		return fmt.Errorf("the controller has no site %q: give the site's short name, as in /manage/site/<name>/", c.site)
+		return fmt.Errorf("the controller has no site %q: give the site's short name, as in /network/<name>/ or /manage/site/<name>/", c.site)
 	}
 	switch {
 	case resp.StatusCode == http.StatusUnauthorized:

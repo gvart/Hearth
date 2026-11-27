@@ -109,7 +109,7 @@ export function AddUniFiDialog({ onClose, onAdded }: Props) {
                 setSignIn(e.target.value as SignIn);
               }}
             >
-              <option value="api_key">An API key (Settings → Control Plane → Integrations)</option>
+              <option value="api_key">An API key (Network settings → Integrations)</option>
               <option value="password">A local username and password</option>
             </select>
           </label>
@@ -159,7 +159,7 @@ export function AddUniFiDialog({ onClose, onAdded }: Props) {
           </>
         )}
         <label className="field">
-          <span>Site (its short name, as in /manage/site/&lt;name&gt;/)</span>
+          <span>Site (its short name, as in /network/&lt;name&gt;/ or /manage/site/&lt;name&gt;/)</span>
           <input
             className="mono"
             value={site}

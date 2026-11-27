@@ -18,11 +18,12 @@ you ask, with your password, through policy.
 
 Hearth signs in one of two ways:
 
-- **An API key** (UniFi OS consoles, Network 9.0 and later): in the console, **Settings → Control Plane
-  → Integrations → Create API key**. Hearth sends it as `X-API-KEY`.
+- **An API key** (recent UniFi OS consoles): create one in the Network application, under
+  **Integrations** in its settings (where exactly depends on the version). Hearth sends it as
+  `X-API-KEY`.
 - **A local username and password** (any controller): create a local admin, not a UI.com account, as
-  two-factor sign-in cannot be automated. A **View Only** role is enough to read everything; restarting
-  an access point needs a role that may manage devices (Site Admin). A role that cannot read something
+  two-factor sign-in cannot be automated. A view-only role is enough to read everything; restarting
+  an access point needs a role that may manage devices. A role that cannot read something
   does not make the controller unavailable: the page lists what it could not read.
 
 A self-hosted controller has no API keys: give it a local login.
@@ -37,7 +38,7 @@ A self-hosted controller has no API keys: give it a local login.
 | Controller     | **UniFi OS console** or **Self-hosted UniFi Network application**.                             |
 | Controller URL | `https://192.168.1.1` for a console, `https://unifi.lan:8443` for a self-hosted controller.     |
 | Sign in with   | An API key, or a local username and password (a self-hosted controller takes only the latter). |
-| Site           | The site's short name, as in the address bar's `/manage/site/<name>/`. `default` unless you have several. |
+| Site           | The site's short name, as in the address bar: `/network/<name>/` on a console, `/manage/site/<name>/` self-hosted. `default` unless you have several. |
 | Fingerprint    | The SHA-256 of the controller's certificate, `AA:BB:…`, for a self-signed one.                  |
 
 UniFi serves its API over https only. Its certificate is self-signed unless you replaced it, so pin its
@@ -90,7 +91,7 @@ leaves its area without Wi-Fi, so it is a **dangerous** action (`unifi.ap.restar
 for the admin password again, policy decides, and the audit log keeps the decision with the access
 point's MAC. Only an access point the last read listed can be restarted, never a gateway or a switch.
 Only a signed-in admin of the web UI can ask for it: automations, MCP clients and agents cannot. The
-account's UniFi role is the ceiling: a View Only account is refused by the controller itself.
+account's UniFi role is the ceiling: a view-only account is refused by the controller itself.
 
 ## Security
 

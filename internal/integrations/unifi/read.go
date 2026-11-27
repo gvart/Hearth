@@ -152,13 +152,14 @@ type healthReply struct {
 
 // deviceStates names the controller's device states.
 var deviceStates = map[int]string{
-	0: "disconnected", 1: "connected", 2: "pending adoption", 4: "upgrading", 5: "provisioning",
-	6: "heartbeat missed", 7: "adopting", 9: "adoption failed", 10: "isolated", 11: "isolated",
+	0: "disconnected", 1: "connected", 2: "pending adoption", 3: "firmware mismatch", 4: "upgrading",
+	5: "provisioning", 6: "heartbeat missed", 7: "adopting", 8: "deleting", 9: "inform error",
+	10: "adoption failed", 11: "isolated",
 }
 
 func deviceKind(typ string) string {
 	switch typ {
-	case "ugw", "udm", "uxg":
+	case "ugw", "udm", "uxg", "ucg":
 		return DeviceGateway
 	case "usw":
 		return DeviceSwitch
