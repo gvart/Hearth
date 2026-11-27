@@ -150,6 +150,15 @@ func TestDevicePluginUpload(t *testing.T) {
 		})
 	}
 
+	// A new program for the same platform replaces the old one, on disk too.
+	resp = f.upload(t, "?os=linux&arch=arm64", lampManifest, strings.NewReader("#!/bin/sh\necho v2\n"), stale)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("re-upload = %d %s", resp.StatusCode, resp.body)
+	}
+	got = decode[DevicePluginJSON](t, resp)
+	if files := blobFiles(t, dir); len(files) != 1 || files[0] != got.SHA256 {
+		t.Fatalf("programs after a re-upload = %v, want %s only", files, got.SHA256)
+	}
 	list := decode[DevicePluginsJSON](t, f.do(t, http.MethodGet, "/api/v1/device-plugins", "", stale))
 	if len(list.Plugins) != 1 || list.MaxSize != plugins.MaxProgramSize {
 		t.Fatalf("list = %+v", list)

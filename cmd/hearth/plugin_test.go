@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gvart/hearth/internal/cluster"
 	"github.com/gvart/hearth/internal/hub"
 	"github.com/gvart/hearth/internal/policy"
 )
@@ -36,6 +37,16 @@ func TestPluginCommands(t *testing.T) {
 	out, err := execute(t, upload...)
 	if err != nil || !strings.Contains(out, "Uploaded plugin go-lamp") {
 		t.Fatalf("upload = %v\n%s", err, out)
+	}
+	// A new program for the same platform replaces the old one, on disk too.
+	if err := os.WriteFile(prog, []byte("#!/bin/sh\n# v2\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := execute(t, upload...); err != nil {
+		t.Fatalf("re-upload = %v\n%s", err, out)
+	}
+	if len(blobs()) != 1 {
+		t.Fatalf("programs after a re-upload = %v, want the new one only", blobs())
 	}
 	for _, args := range [][]string{
 		{prog, "--manifest", manifest, "--os", "../x"},
@@ -71,5 +82,29 @@ func TestPluginCommands(t *testing.T) {
 		if !strings.Contains(strings.Join(actions, " "), string(a)) {
 			t.Errorf("no %s in the audit log: %v", a, actions)
 		}
+	}
+}
+
+// TestPluginUploadNeedsMaster: a storage-only cluster member holds no CA key
+// and serves no agents: it refuses to hold a plugin's program.
+func TestPluginUploadNeedsMaster(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, cluster.StateDir), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	src := t.TempDir()
+	prog, manifest := filepath.Join(src, "lamp"), filepath.Join(src, "plugin.yaml")
+	if err := os.WriteFile(prog, []byte("#!/bin/sh\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifest, []byte("protocol: 1\nname: go-lamp\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := execute(t, "plugin", "upload", prog, "--manifest", manifest, "--data-dir", dir)
+	if err == nil || !strings.Contains(err.Error(), "not a master") {
+		t.Fatalf("upload on a storage member = %v", err)
+	}
+	if entries, _ := os.ReadDir(filepath.Join(dir, hub.PluginBlobsDir)); len(entries) != 0 {
+		t.Fatalf("kept a program: %v", entries)
 	}
 }

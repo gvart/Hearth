@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/gvart/hearth/internal/cluster"
 	"github.com/gvart/hearth/internal/hub"
+	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/plugins"
 	"github.com/gvart/hearth/internal/policy"
 	"github.com/gvart/hearth/internal/store"
@@ -75,17 +77,22 @@ func runPluginUpload(ctx context.Context, dataDir, program, manifest, goos, arch
 	if err != nil {
 		return err
 	}
+	holder := ""
+	if cluster.IsMember(dataDir) {
+		// Agents and the other masters fetch the program from a master:
+		// a storage-only member serves neither.
+		if _, err := os.Stat(filepath.Join(dataDir, pki.CAKeyFile)); err != nil {
+			return errors.New("this hub is not a master of its cluster: upload the plugin on a master's host, or in the web UI")
+		}
+		if holder, err = cluster.NodeID(dataDir, "", ""); err != nil {
+			return err
+		}
+	}
 	st, err := openExistingHubStore(ctx, dataDir)
 	if err != nil {
 		return err
 	}
 	defer st.Close()
-	holder := ""
-	if cluster.IsMember(dataDir) {
-		if holder, err = cluster.NodeID(dataDir, "", ""); err != nil {
-			return err
-		}
-	}
 	f, err := os.Open(program)
 	if err != nil {
 		return fmt.Errorf("open program: %w", err)
@@ -97,6 +104,10 @@ func runPluginUpload(ctx context.Context, dataDir, program, manifest, goos, arch
 		return err
 	}
 	u := hub.DevicePluginUpload{Manifest: m, OS: goos, Arch: arch, SHA256: sum, Size: size}
+	previous, err := u.Previous(ctx, st)
+	if err != nil {
+		return err
+	}
 	req := u.Request()
 	done, err := adminDo(ctx, dataDir, st, out, dryRun, req, func(ctx context.Context) error {
 		return u.Save(ctx, st, holder, policy.ActorAdmin+"/"+adminActor(), time.Now())
@@ -111,6 +122,13 @@ func runPluginUpload(ctx context.Context, dataDir, program, manifest, goos, arch
 	}
 	if err != nil || !done {
 		return err
+	}
+	// The program it replaces goes, here; a copy another master fetched
+	// stays there.
+	if previous != "" && previous != sum {
+		if err := hub.RemoveDevicePluginBlob(ctx, st, blobs, previous); err != nil {
+			return err
+		}
 	}
 	_, err = fmt.Fprintf(out, "Uploaded plugin %s %s for %s/%s (%d bytes, sha256 %s).\n"+
 		"Devices whose capabilities allow it install it at their next heartbeat.\n", m.Name, m.Version, goos, arch, size, sum)

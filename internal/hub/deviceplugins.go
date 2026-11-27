@@ -147,6 +147,20 @@ func ListDevicePlugins(ctx context.Context, st *store.Store) ([]DevicePluginJSON
 	return out, nil
 }
 
+// Previous is the SHA-256 of the program uploaded for the
+// platform of u before it, or "" for none.
+func (u DevicePluginUpload) Previous(ctx context.Context, st *store.Store) (string, error) {
+	list, err := st.DevicePlugins().List(ctx)
+	if err != nil {
+		return "", err
+	}
+	id := store.DevicePluginID(u.Manifest.Name, u.OS, u.Arch)
+	if i := slices.IndexFunc(list, func(p store.DevicePlugin) bool { return p.ID == id }); i >= 0 {
+		return list[i].SHA256, nil
+	}
+	return "", nil
+}
+
 // RemoveDevicePluginBlob deletes the program of SHA-256 sum from blobs
 // unless a plugin uploaded for devices still names it.
 func RemoveDevicePluginBlob(ctx context.Context, st *store.Store, blobs *PluginBlobs, sum string) error {
@@ -243,6 +257,11 @@ func (a *api) uploadDevicePlugin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u := DevicePluginUpload{Manifest: m, OS: goos, Arch: arch, SHA256: sum, Size: size}
+	previous, err := u.Previous(ctx, a.store)
+	if err != nil {
+		a.writeActionError(w, r, "list the device plugins", err)
+		return
+	}
 	holder := ""
 	if a.masters != nil {
 		holder = a.masters.Self()
@@ -260,6 +279,13 @@ func (a *api) uploadDevicePlugin(w http.ResponseWriter, r *http.Request) {
 		}
 		a.writeActionError(w, r, "upload the plugin", err)
 		return
+	}
+	// The program it replaces goes, here; a copy another master fetched
+	// stays there.
+	if previous != "" && previous != sum {
+		if err := RemoveDevicePluginBlob(ctx, a.store, a.agents.blobs, previous); err != nil {
+			a.log.WarnContext(ctx, "remove a replaced plugin's program", "sha256", previous, "err", err)
+		}
 	}
 	a.log.InfoContext(ctx, "device plugin uploaded", "plugin", m.Name, "version", m.Version, "os", goos, "arch", arch, "sha256", sum)
 	a.pushPlugins(ctx)

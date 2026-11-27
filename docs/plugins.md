@@ -239,6 +239,8 @@ process speaking the same protocol, one process per command.
    An upload is the dangerous policy action `plugin.binary.upload` and asks for the admin password
    again in the web UI; the audit entry holds the program's SHA-256. A program may be at most 64 MB.
    A device manifest may not set `env`: the agent starts the program with a clean environment.
+   Uploading again for the same platform replaces the program. In a cluster, upload on a master: the
+   program stays on that hub, and the other masters fetch it from there when their devices need it.
 2. **Allow it on the device**, in its **Capabilities** card (**Plugins**), with the highest class of
    command the hub may run there: `read` (the default), `safe` or `dangerous`. Or on a hub host:
 
