@@ -4,6 +4,7 @@ package hub
 
 import (
 	"context"
+	"crypto/tls"
 	"crypto/x509"
 	"errors"
 	"io"
@@ -15,6 +16,7 @@ import (
 
 	"connectrpc.com/connect"
 
+	"github.com/gvart/hearth/internal/pki"
 	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
 	"github.com/gvart/hearth/internal/proto/hearth/agent/v1/agentv1connect"
 	"github.com/gvart/hearth/internal/store"
@@ -218,6 +220,59 @@ func TestHeartbeatRecheckEndsRevokedStream(t *testing.T) {
 			assertStreaming(t, "dev-2", dev2)
 			if got := statusOf(t, f.st, "dev-2"); got != store.StatusOnline {
 				t.Errorf("dev-2 status = %s, want online", got)
+			}
+		})
+	}
+}
+
+// A revoked agent that connects while it has no open stream (it lost the
+// last one to a hub restart, say) is refused, and the hub marks its device
+// offline then instead of leaving the persisted online status to the sweep.
+// A device that still streams here keeps its status: its stream ends, and
+// marks it offline, at its next heartbeat.
+func TestRevokedConnectMarksOffline(t *testing.T) {
+	t.Parallel()
+	for _, streaming := range []bool{false, true} {
+		t.Run(map[bool]string{false: "no stream", true: "streaming"}[streaming], func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+			f := newRevokeFixture(t)
+			ca, err := pki.LoadOrCreateCA(t.TempDir(), time.Now())
+			if err != nil {
+				t.Fatal(err)
+			}
+			leaf := issueClientCert(t, ca, "dev-1")
+			if err := f.st.Certs().Create(ctx, pki.SerialString(leaf), "dev-1"); err != nil {
+				t.Fatal(err)
+			}
+			if streaming {
+				f.open(ctx, t, "dev-1", "0a")
+			} else if err := f.reg.Heartbeat(ctx, "dev-1", 0); err != nil {
+				t.Fatal(err)
+			}
+			offlineEvents(f.events, "dev-1")
+			if _, err := f.st.Certs().RevokeDevice(ctx, "dev-1", time.Now()); err != nil {
+				t.Fatal(err)
+			}
+
+			h := requireClientCert(f.st.Certs(), ca, slog.New(slog.DiscardHandler), f.as.revokedConnect,
+				http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Error("a revoked certificate was let through") }))
+			r := httptest.NewRequest(http.MethodPost, "/", nil)
+			r.TLS = &tls.ConnectionState{VerifiedChains: [][]*x509.Certificate{{leaf, ca.Cert()}}}
+			h.ServeHTTP(httptest.NewRecorder(), r)
+
+			want, wantEvents := store.StatusOffline, 1
+			if streaming {
+				want, wantEvents = store.StatusOnline, 0
+			}
+			if got := statusOf(t, f.st, "dev-1"); got != want {
+				t.Errorf("dev-1 status after a revoked connect = %s, want %s", got, want)
+			}
+			if n := offlineEvents(f.events, "dev-1"); n != wantEvents {
+				t.Errorf("device.offline events for dev-1 = %d, want %d", n, wantEvents)
+			}
+			if got := statusOf(t, f.st, "dev-2"); got != store.StatusUnknown {
+				t.Errorf("dev-2 status = %s, want unknown (untouched)", got)
 			}
 		})
 	}

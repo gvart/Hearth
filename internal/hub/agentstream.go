@@ -271,6 +271,21 @@ func (s *AgentStream) recheckCert(ctx context.Context, log *slog.Logger, deviceI
 	return certRejection(revoked)
 }
 
+// revokedConnect is called when requireClientCert refuses a connect of
+// deviceID for a revoked certificate. A device revoked while it had no open
+// stream (it was reconnecting, say after a hub restart) would otherwise keep
+// its persisted online status until the sweep: mark it offline now. A device
+// that still streams, here or to another live master, is left to that
+// stream's next heartbeat, which re-checks its certificate.
+func (s *AgentStream) revokedConnect(ctx context.Context, deviceID string) {
+	if s.agents.Local(deviceID) || s.agents.holder(ctx, deviceID) != "" {
+		return
+	}
+	if err := s.registry.markOffline(ctx, deviceID); err != nil {
+		s.log.WarnContext(ctx, "mark revoked device offline", "device_id", deviceID, "err", err)
+	}
+}
+
 // markOffline marks one online device offline now and publishes
 // device.offline, the transition Sweep makes for a silent device. It lives
 // here rather than in registry.go only to keep this change apart from

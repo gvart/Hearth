@@ -208,7 +208,7 @@ func NewHandler(cfg Config) http.Handler {
 		stream.agents.SetMasters(cfg.Masters, cfg.Store.DeviceRoutes())
 	}
 	path, h := agentServiceHandler(stream)
-	mux.Handle(path, requireClientCert(cfg.Store.Certs(), cfg.CA, cfg.Log,
+	mux.Handle(path, requireClientCert(cfg.Store.Certs(), cfg.CA, cfg.Log, stream.revokedConnect,
 		EndOnStop(cfg.Stopping, abortableStream(h))))
 	return mux
 }
@@ -344,7 +344,9 @@ type certChecker interface {
 // and the certificate serial into the request context. The store is consulted
 // on every request so revocations by another process (the CLI) refuse the
 // next connect; AgentStream re-checks open streams on every heartbeat.
-func requireClientCert(certs certChecker, ca *pki.CA, log *slog.Logger, next http.Handler) http.Handler {
+// revoked, if set, is called with the device ID of each connect refused for
+// a revoked certificate.
+func requireClientCert(certs certChecker, ca *pki.CA, log *slog.Logger, revoked func(context.Context, string), next http.Handler) http.Handler {
 	errWriter := connect.NewErrorWriter()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -372,6 +374,9 @@ func requireClientCert(certs certChecker, ca *pki.CA, log *slog.Logger, next htt
 		switch {
 		case errors.Is(err, store.ErrCertRevoked):
 			log.WarnContext(ctx, "agent rejected: certificate revoked", "device_id", deviceID, "serial", serial)
+			if revoked != nil {
+				revoked(ctx, deviceID)
+			}
 			_ = errWriter.Write(w, r, certRejection(true))
 			return
 		case errors.Is(err, store.ErrNotFound):

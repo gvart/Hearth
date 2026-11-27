@@ -126,7 +126,7 @@ func TestRequireClientCertRefusesUntrustedCA(t *testing.T) {
 	if err := st.Certs().Create(t.Context(), pki.SerialString(leaf), "pi"); err != nil {
 		t.Fatal(err)
 	}
-	h := requireClientCert(st.Certs(), ca, slog.New(slog.DiscardHandler),
+	h := requireClientCert(st.Certs(), ca, slog.New(slog.DiscardHandler), nil,
 		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
 	serve := func() int {
 		r := httptest.NewRequest(http.MethodPost, "/", nil)
