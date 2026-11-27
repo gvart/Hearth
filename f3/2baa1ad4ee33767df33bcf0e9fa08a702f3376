@@ -1,0 +1,83 @@
+internal/integrations/esphome/frame.go
+  s_18b57982fdff93::t_05ce30f80f1cae 1-313
+internal/store/carotation_test.go
+  s_18b57982fdff93::t_1e3ae6f2c33be4 101,104-105,108
+  s_18b57982fdff93::t_1ad48e7fd6499d 123-124
+internal/policy/guardrails_test.go
+  s_18b57982fdff93::t_fb052c3771dc80 217-219
+internal/integrations/esphome/manager.go
+  s_18b57982fdff93::t_fcf5928e1abae4 503
+  s_18b57982fdff93::t_2dd7245d4d38c6 298,324-325
+  s_18b57982fdff93::t_9f90e1a0cab1f2 1-297,299-323,326-502,504-564
+internal/store/reads_test.go
+  s_18b57982fdff93::t_4411eaf9068145 32
+internal/integrations/esphome/esphomemock/esphomemock.go
+  s_18b57982fdff93::t_7f082e6cdc8a33 480-481
+  s_18b57982fdff93::t_3faf7d3ffcc375 1-470,472-479,482-483,485-547,549-553
+  s_18b57982fdff93::t_fcf5928e1abae4 471,484,548
+internal/integrations/esphome/connection.go
+  s_18b57982fdff93::t_e35d869f4d45a1 1-113
+internal/store/migrations/00036_esphome_devices.sql
+  s_18b57982fdff93::t_e6c6a9b517ff9f 1-20
+internal/store/esphome.go
+  s_18b57982fdff93::t_b13dd00d3b7f28 1-146
+internal/store/carotation.go
+  s_18b57982fdff93::t_3bf4e8e76043fe 336-337,346,353,375,414-416,442-443
+internal/store/command_test.go
+  s_18b57982fdff93::t_1e3ae6f2c33be4 110-111
+  s_18b57982fdff93::t_285c4c422eff23 433-436
+internal/store/command.go
+  s_18b57982fdff93::t_a668fa0b1ff8d2 854-857
+go.mod
+  s_18b57982fdff93::t_d8bc36d8035650 29
+internal/integrations/esphome/client_test.go
+  s_18b57982fdff93::t_538ab28314ea28 1-248
+internal/store/store_test.go
+  s_18b57982fdff93::t_1e3ae6f2c33be4 86
+internal/store/partition.go
+  s_18b57982fdff93::t_a668fa0b1ff8d2 66,382
+  s_18b57982fdff93::t_fd3523dc093e54 383
+internal/store/esphome_test.go
+  s_18b57982fdff93::t_1ad48e7fd6499d 1-58,60-96
+  s_18b57982fdff93::t_062f25f5ee3f90 59
+internal/policy/policy.go
+  s_18b57982fdff93::t_fb052c3771dc80 289-296,611-618
+internal/integrations/esphome/entity.go
+  s_18b57982fdff93::t_e82b7d3d2594c6 1-35,40-44,49-55,60-65,70-74,79-185
+  s_18b57982fdff93::t_fcf5928e1abae4 36-39,45-48,56-59,66-69,75-78
+proto/hearth/esphome/v1/api.proto
+  s_18b57982fdff93::t_ec19de3c2736a0 1-209
+internal/integrations/esphome/manager_test.go
+  s_18b57982fdff93::t_3100e6338eef73 179
+  s_18b57982fdff93::t_2f4cbf46e3eb28 1-178,180-250,252-339
+  s_18b57982fdff93::t_fcf5928e1abae4 251
+internal/integrations/esphome/client.go
+  s_18b57982fdff93::t_d9cc5f2f6d974d 1-268
+  s_18b57982fdff93::t_668f16811747b1 269-277,283-356
+  s_18b57982fdff93::t_629c56d9ec7815 278-282
+internal/store/version.go
+  s_18b57982fdff93::t_7e3cddd2d06b4a 153
+  s_18b57982fdff93::t_a668fa0b1ff8d2 154-155
+internal/store/naturalid.go
+  s_18b57982fdff93::t_a668fa0b1ff8d2 22-24
+go.sum
+  s_18b57982fdff93::t_ddf45a09f800d8 12-13,57,60-61,120,125,133,137,140,143
+internal/proto/hearth/esphome/v1/api.pb.go
+  s_18b57982fdff93::t_e3470a48ec0207 1-1719
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f32baa1ad4ee33767df33bcf0e9fa08a702f3376",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
