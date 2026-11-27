@@ -1,0 +1,27 @@
+internal/cluster/apnode.go
+  s_18b57982fdff93::t_a607bf5ab354fa 581-584
+  s_18b57982fdff93::t_f8804fca04826c 585-586
+internal/cluster/seeds_test.go
+  s_18b57982fdff93::t_a16336acd9ed30 166-173
+  s_18b57982fdff93::t_fe3bce97a50acc 1-165,174
+internal/cluster/seeds.go
+  s_18b57982fdff93::t_252bfaa82e74a2 1-120
+docs/cluster.md
+  s_18b57982fdff93::t_f9783fa2d7b0eb 104-107
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e26424ad6d04ccb5290aa4fde3deb48646bc63ba",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
