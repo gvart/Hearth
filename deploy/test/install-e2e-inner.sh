@@ -288,6 +288,24 @@ start_agent
 wait_for 10 device_online || fail "device not online with --local-ceiling"
 pass "--local-ceiling written once and kept"
 
+log "--release-mirror downloads from the mirror, goes into the unit, and a re-run keeps it"
+stop_agent
+MIRROR=http://127.0.0.1:8000/releases
+expect_fail "mirror without --version" "pass --version" sh /deploy/install.sh --release-mirror "$MIRROR/"
+expect_fail "mirror with credentials" "may hold only" sh /deploy/install.sh --release-mirror "http://u:p@127.0.0.1:8000/releases" --version v0.0.0-e2e
+expect_fail "mirror not http" "http:// or https://" sh /deploy/install.sh --release-mirror "ftp://127.0.0.1/releases" --version v0.0.0-e2e
+# The release base points nowhere: only the mirror can serve the release.
+HEARTH_RELEASE_BASE_URL=http://127.0.0.1:1/nowhere sh /deploy/install.sh --release-mirror "$MIRROR/" --version v0.0.0-e2e \
+  >/tmp/install3d.log 2>&1 || fail "--release-mirror install failed: $(cat /tmp/install3d.log)"
+grep -q "^ExecStart=.*agent run --data-dir /var/lib/hearth/agent --local-ceiling --release-mirror $MIRROR\$" "$UNIT" ||
+  fail "--release-mirror not in the unit: $(grep ExecStart "$UNIT")"
+HEARTH_RELEASE_BASE_URL=http://127.0.0.1:1/nowhere sh /deploy/install.sh --version v0.0.0-e2e 2>&1 | tee /tmp/install3e.log
+grep -q "keeping the release mirror $MIRROR" /tmp/install3e.log || fail "re-run did not say it keeps the release mirror"
+[ "$(grep -c -- '--release-mirror' "$UNIT")" = 1 ] || fail "re-run lost or doubled --release-mirror: $(grep ExecStart "$UNIT")"
+start_agent
+wait_for 10 device_online || fail "device not online with --release-mirror"
+pass "--release-mirror used for the download, written once and kept, accepted by the agent"
+
 log "--uninstall keeps data"
 stop_agent
 sh /deploy/install.sh --uninstall
