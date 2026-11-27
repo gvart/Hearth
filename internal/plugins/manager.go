@@ -240,23 +240,36 @@ func (m *Manager) lookup(name string, req CommandRequest) (*plugin, error) {
 	if p == nil {
 		return nil, ErrNotFound
 	}
+	if err := checkRequest(req); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+// checkRequest checks that req is well formed: a command name, a device id
+// if any, and args that are a JSON object of at most 16 KiB.
+func checkRequest(req CommandRequest) error {
 	if !idRE().MatchString(req.Command) {
-		return nil, fmt.Errorf("%w: invalid command name", ErrBadRequest)
+		return fmt.Errorf("%w: invalid command name", ErrBadRequest)
 	}
 	if req.Device != "" && !idRE().MatchString(req.Device) {
-		return nil, fmt.Errorf("%w: invalid device id", ErrBadRequest)
+		return fmt.Errorf("%w: invalid device id", ErrBadRequest)
 	}
 	if len(req.Args) > maxArgs {
-		return nil, fmt.Errorf("%w: args larger than %d bytes", ErrBadRequest, maxArgs)
+		return fmt.Errorf("%w: args larger than %d bytes", ErrBadRequest, maxArgs)
 	}
 	if len(req.Args) > 0 {
 		var obj map[string]any
 		if err := json.Unmarshal(req.Args, &obj); err != nil || obj == nil {
-			return nil, fmt.Errorf("%w: args must be a JSON object", ErrBadRequest)
+			return fmt.Errorf("%w: args must be a JSON object", ErrBadRequest)
 		}
 	}
-	return p, nil
+	return nil
 }
+
+// CheckRequest checks that req is well formed, as Command does before it
+// decides on it: errors match ErrBadRequest.
+func CheckRequest(req CommandRequest) error { return checkRequest(req) }
 
 // command sends req to the running plugin and waits for its result.
 func (p *plugin) command(ctx context.Context, req CommandRequest) (CommandResult, error) {

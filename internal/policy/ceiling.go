@@ -231,5 +231,77 @@ func CheckHubCeiling(c *agentv1.Ceiling) error {
 			return fmt.Errorf("scan entry %q: want an IPv4 subnet such as 192.168.1.0/24", e)
 		}
 	}
+	return CheckPluginGrants(c.GetPlugins())
+}
+
+// CheckPluginGrants checks a ceiling's plugin grants: each names a plugin
+// (letters, digits, '.', '_' and '-'; up to 64) once, with a class of read,
+// safe or dangerous.
+func CheckPluginGrants(grants []*agentv1.PluginGrant) error {
+	seen := map[string]bool{}
+	for _, g := range grants {
+		if !ValidPluginName(g.GetName()) {
+			return fmt.Errorf("plugin entry %q: want 1-64 letters, digits, '.', '_' or '-'", g.GetName())
+		}
+		if _, ok := classRank[Class(g.GetMaxClass())]; !ok {
+			return fmt.Errorf("plugin entry %s: class %q: want read, safe or dangerous", g.GetName(), g.GetMaxClass())
+		}
+		if seen[g.GetName()] {
+			return fmt.Errorf("plugin entry %s: listed twice", g.GetName())
+		}
+		seen[g.GetName()] = true
+	}
 	return nil
 }
+
+// ValidPluginName reports whether name may name an exec plugin: 1-64
+// letters, digits, '.', '_' and '-', starting with a letter or digit. A
+// plugin's name becomes a directory on the device, so nothing else is.
+func ValidPluginName(name string) bool {
+	if name == "" || len(name) > 64 {
+		return false
+	}
+	for i, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case i > 0 && (r == '_' || r == '.' || r == '-'):
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// PluginGrantOf is the class c allows for plugin name's commands, and
+// whether c allows the plugin at all.
+func PluginGrantOf(c *agentv1.Ceiling, name string) (Class, bool) {
+	for _, g := range c.GetPlugins() {
+		if g.GetName() == name {
+			if _, ok := classRank[Class(g.GetMaxClass())]; ok {
+				return Class(g.GetMaxClass()), true
+			}
+			return "", false
+		}
+	}
+	return "", false
+}
+
+// PluginWithinCeiling checks a command of class of plugin name against a
+// device's capability ceiling c, as the hub does before it sends one and
+// the agent does again, with the class its installed manifest declares,
+// before it runs it. An empty class checks only that c allows the plugin, as
+// installing it needs. It returns an error wrapping ErrBeyondCeiling unless
+// c allows the plugin up to class; a nil c allows nothing.
+func PluginWithinCeiling(c *agentv1.Ceiling, name string, class Class) error {
+	limit, ok := PluginGrantOf(c, name)
+	if !ok {
+		return fmt.Errorf("plugin %s: not allowed on this device: %w", name, ErrBeyondCeiling)
+	}
+	if class != "" && !Within(class, limit) {
+		return fmt.Errorf("plugin %s: a %s command is above the %s the device allows: %w", name, class, limit, ErrBeyondCeiling)
+	}
+	return nil
+}
+
+// ClassAbove reports whether class a ranks above class b.
+func ClassAbove(a, b Class) bool { return classRank[a] > classRank[b] }

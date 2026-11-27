@@ -34,6 +34,10 @@ message AgentMessage {
     // agents of protocol minor 12 and later. The hub answers each with a
     // LocalRunsAck once it recorded them.
     LocalRuns local_runs = 13;
+    // plugin_event is what the agent's exec plugins did (#223): the state of
+    // its plugins after a PluginConfig, and a command's result. Sent by
+    // agents of protocol minor 14 and later.
+    PluginEvent plugin_event = 14;
   }
 }
 
@@ -62,6 +66,10 @@ message HubMessage {
     // local_runs_ack tells the agent which of its reported local runs are
     // recorded, so it can drop them.
     LocalRunsAck local_runs_ack = 14;
+    // plugin_request is for the device's exec plugins (#223): the plugins
+    // to install, and a command to run. Sent to agents of protocol minor 14
+    // and later.
+    PluginRequest plugin_request = 15;
   }
 }
 
@@ -174,6 +182,18 @@ message Ceiling {
   // images and reading a container's log tail, no start, stop or restart.
   // docker implies it. Reported by agents of protocol minor 10 and later.
   bool docker_read = 9;
+  // plugins are the exec plugins the hub may install and run on this
+  // device (#223), each with the highest class of command it may run.
+  // Reported by agents of protocol minor 14 and later.
+  repeated PluginGrant plugins = 10;
+}
+
+// PluginGrant allows one exec plugin on a device: the hub may install it
+// and run its commands up to max_class, "read", "safe" or "dangerous", the
+// class the plugin's manifest declares for each command.
+message PluginGrant {
+  string name = 1;
+  string max_class = 2;
 }
 
 // Disk is a mounted filesystem.
@@ -780,4 +800,102 @@ message LocalStep {
 // LocalRunsAck acknowledges every LocalRun up to seq.
 message LocalRunsAck {
   uint64 seq = 1;
+}
+
+// PluginRequest is a request about the device's exec plugins (#223).
+message PluginRequest {
+  oneof op {
+    PluginConfig config = 1;
+    PluginCommand command = 2;
+  }
+}
+
+// PluginConfig is every plugin the hub has for the device, for each
+// platform it was uploaded for, among the plugins the device's ceiling
+// allows. It replaces the one before: the agent installs, within its own
+// ceiling, those of its own platform, and removes the rest. Sent on every
+// connect, an empty one too, and on every change.
+message PluginConfig {
+  repeated PluginBinary plugins = 1;
+}
+
+// PluginBinary is an exec plugin for one platform: its manifest and its
+// program, pinned by SHA-256. The agent fetches the program from the hub
+// it streams to, at /hearth.agent.v1.Plugins/blobs/<sha256>, with its
+// client certificate, and runs it only while its SHA-256 matches.
+message PluginBinary {
+  string name = 1;
+  string version = 2;
+  // os and arch are the platform the program is for, as Go names them
+  // (linux, arm64).
+  string os = 3;
+  string arch = 4;
+  string sha256 = 5;
+  uint64 size = 6;
+  repeated string args = 7;
+  repeated string capabilities = 8;
+  repeated PluginCommandSpec commands = 9;
+}
+
+// PluginCommandSpec is a command a plugin's manifest declares, with its
+// class: read, safe or dangerous.
+message PluginCommandSpec {
+  string name = 1;
+  string class = 2;
+  string description = 3;
+}
+
+// PluginCommand runs a command of an installed plugin: the agent starts the
+// plugin, runs the command and stops it. It refuses a plugin its ceiling
+// does not allow, a command its installed manifest does not declare, and a
+// command whose class (from that manifest) is above the plugin's max_class.
+message PluginCommand {
+  string id = 1;
+  string plugin = 2;
+  // sha256 is the program the hub decided on: the agent refuses to run
+  // another.
+  string sha256 = 3;
+  string command = 4;
+  // device is the plugin's own device the command is for, if any.
+  string device = 5;
+  // args_json are the command's arguments, a JSON object, or empty.
+  string args_json = 6;
+  google.protobuf.Duration timeout = 7;
+}
+
+// PluginEvent is what the agent's exec plugins did.
+message PluginEvent {
+  oneof event {
+    PluginStatus status = 1;
+    PluginResult result = 2;
+  }
+}
+
+// PluginStatus is the state of the device's plugins, sent after each
+// PluginConfig once the agent installed what it could.
+message PluginStatus {
+  // os and arch are the agent's platform, as Go names them.
+  string os = 1;
+  string arch = 2;
+  repeated PluginState plugins = 3;
+}
+
+// PluginState is one plugin of a PluginConfig: installed (sha256 set, no
+// error) or not, and why.
+message PluginState {
+  string name = 1;
+  string version = 2;
+  string sha256 = 3;
+  string error = 4;
+}
+
+// PluginResult answers a PluginCommand. denied is set when the agent
+// refused it (beyond its ceiling, not installed, not declared); error says
+// why, or what failed.
+message PluginResult {
+  string id = 1;
+  bool ok = 2;
+  bool denied = 3;
+  string error = 4;
+  string output = 5;
 }
