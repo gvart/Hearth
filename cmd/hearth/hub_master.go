@@ -59,6 +59,8 @@ func runClusterHub(ctx context.Context, opts hubOptions, allowed cluster.RoleSet
 	// action is fixed, so no configuration applies.
 	setupPol := policy.NewWithConfig(st.Audit(), st.Approvals(), policy.Config{})
 	g, gctx := errgroup.WithContext(ctx)
+	// Set before any goroutine starts: the member's closure reads opts.
+	opts.apm = &apMember{st: st, ca: ca, node: node, ready: ready, caughtUp: caughtUp, ctx: gctx}
 	g.Go(func() error { return node.Run(gctx) })
 	g.Go(func() error { return cluster.ServeAPControl(gctx, opts.dataDir, node, log) })
 	g.Go(func() error {
@@ -66,7 +68,6 @@ func runClusterHub(ctx context.Context, opts hubOptions, allowed cluster.RoleSet
 			return ensureAdminPassword(ctx, st, setupPol, opts, log)
 		}, ready, caughtUp, log)
 	})
-	opts.apm = &apMember{st: st, ca: ca, node: node, ready: ready, caughtUp: caughtUp, ctx: gctx}
 	g.Go(func() error { return runMasterLayer(gctx, opts, log) })
 	return g.Wait()
 }
