@@ -30,8 +30,8 @@ import (
 // Protocol version this agent speaks.
 const (
 	ProtocolMajor = 1
-	// 1: answers ExecRequest; 2: reports its capability ceiling; 3: answers ProbeRequest; 4: sends MetricsBatch; 5: streams logs (LogRequest); 6: answers ShellRequest; 7: answers ScanRequest; 8: sends NetEdges; 9: answers DockerRequest; 10: takes CeilingConfig; 11: answers UpgradeRequest; 12: runs LocalRules, sends LocalRuns
-	ProtocolMinor = 12
+	// 1: answers ExecRequest; 2: reports its capability ceiling; 3: answers ProbeRequest; 4: sends MetricsBatch; 5: streams logs (LogRequest); 6: answers ShellRequest; 7: answers ScanRequest; 8: sends NetEdges; 9: answers DockerRequest; 10: takes CeilingConfig; 11: answers UpgradeRequest; 12: runs LocalRules, sends LocalRuns; 13: reports Hello.rolled_back_from
+	ProtocolMinor = 13
 )
 
 const (
@@ -213,6 +213,7 @@ func Run(ctx context.Context, cfg Config) error {
 		r.netEdges = cfg.readNetEdges
 	}
 	r.upgrader = up
+	defer up.watchWelcome(ctx, log, stop)()
 	log.InfoContext(ctx, "agent starting", "version", cfg.Version, "hubs", r.hubs)
 
 	b := newBackoff()
@@ -273,6 +274,11 @@ func Run(ctx context.Context, cfg Config) error {
 		select {
 		case <-ctx.Done():
 			t.Stop()
+			if errors.Is(context.Cause(ctx), ErrUpgraded) {
+				// The upgraded binary reached no hub and was rolled back.
+				log.InfoContext(ctx, "exiting for the service manager to start the previous binary")
+				return ErrUpgraded
+			}
 			log.InfoContext(ctx, "agent stopped")
 			return nil
 		case <-t.C:

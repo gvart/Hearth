@@ -230,8 +230,9 @@ laptop as a hub of the cluster by starting it again later.
 
 After you upgrade the hub, the **Devices** page marks each device whose agent is older with **Out of
 date**. On the device's page, the **Agent version** card has **Upgrade agent**: after your admin
-password, the agent downloads the hub's release from GitHub, checks its SHA-256 against the release's
-`checksums.txt`, replaces `/usr/local/bin/hearth` (keeping the old one as `hearth.prev`) and restarts.
+password, the agent downloads the hub's release from GitHub, checks the release's `checksums.txt`
+against its signature with the Hearth release key built into the agent, checks the archive's SHA-256
+against it, replaces `/usr/local/bin/hearth` (keeping the old one as `hearth.prev`) and restarts.
 The device is back on the new version within seconds; the dialog's **Release** field takes another
 release instead of the hub's. From a terminal, on any machine that reaches
 the hub's web address:
@@ -246,7 +247,9 @@ device's identity, and writes the service unit that lets the agent replace its b
 after that is remote.
 An agent in a Kubernetes pod refuses: upgrade its image in the DaemonSet. So does one started with
 `--local-ceiling`: re-run the installer on the device. An agent never goes back to an older release,
-and if the new one does not reach a hub after three restarts it puts the old one back. The hub only
+and if the new one does not reach a hub, after three restarts or within 5 minutes of running, it puts
+the old one back; the device's page then says **Upgrade to vX rolled back**. Releases up to
+v0.0.1-rc.11 carry no signature, so an agent refuses to upgrade to them. The hub only
 names the version: the device itself downloads the official release from GitHub, so it needs to
 reach GitHub; a local mirror is not supported yet.
 

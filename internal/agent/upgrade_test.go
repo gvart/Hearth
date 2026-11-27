@@ -8,6 +8,8 @@ import (
 	"cmp"
 	"compress/gzip"
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -20,9 +22,30 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
+	"github.com/gvart/hearth/internal/release"
 )
+
+// testReleaseKey signs the fake releases' checksums.txt, and the test
+// upgraders trust its public half; otherReleaseKey is a key they do not
+// trust. Both are made for this test run.
+var testReleaseKey, otherReleaseKey = newTestKey(), newTestKey()
+
+func newTestKey() ed25519.PrivateKey {
+	_, k, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		panic(err)
+	}
+	return k
+}
+
+// testReleasePublicKey is the public half of testReleaseKey.
+func testReleasePublicKey() ed25519.PublicKey {
+	pub, _ := testReleaseKey.Public().(ed25519.PublicKey)
+	return pub
+}
 
 // fakeRelease is a release archive whose hearth is a script printing
 // version, and its SHA-256.
@@ -67,8 +90,12 @@ type fakeReleaseFiles struct {
 	version, target string
 	archive         []byte
 	checksums       string // checksums.txt; "" for a 404
-	chunked         bool   // no Content-Length on the archive
-	noArchive       bool   // a 404 for the archive
+	// sig is checksums.txt.sig; "" for testReleaseKey's signature of
+	// checksums, and noSig for a 404.
+	sig       string
+	noSig     bool
+	chunked   bool // no Content-Length on the archive
+	noArchive bool // a 404 for the archive
 }
 
 // releaseFor is the release of version for target holding archive, its
@@ -89,6 +116,12 @@ func releaseServer(t *testing.T, rel fakeReleaseFiles) string {
 		switch {
 		case r.URL.Path == "/"+rel.version+"/checksums.txt" && rel.checksums != "":
 			_, _ = w.Write([]byte(rel.checksums))
+		case r.URL.Path == "/"+rel.version+"/checksums.txt.sig" && !rel.noSig:
+			sig := []byte(rel.sig)
+			if rel.sig == "" {
+				sig = release.Sign(testReleaseKey, []byte(rel.checksums))
+			}
+			_, _ = w.Write(sig)
 		case r.URL.Path == "/"+rel.version+"/"+assetName(rel.version, rel.target) && !rel.noArchive:
 			if rel.chunked {
 				// No Content-Length: the cap must hold while reading.
@@ -116,7 +149,7 @@ func testUpgrader(t *testing.T, base string) (*upgrader, string) {
 		t.Fatal(err)
 	}
 	u := newUpgrader(exe, t.TempDir(), "v1.0.0", false, func(string) string { return "" })
-	u.base, u.target = base, testTarget
+	u.base, u.target, u.pubKey = base, testTarget, testReleasePublicKey()
 	return u, exe
 }
 
@@ -225,6 +258,16 @@ func TestUpgradeRefused(t *testing.T) {
 			r.checksums = "xyz  " + assetName("v1.2.3", testTarget) + "\n"
 		}), wantErr: "no valid SHA-256"},
 		{name: "no checksums", rel: with(func(r *fakeReleaseFiles) { r.checksums = "" }), wantErr: "404"},
+		{name: "no signature", rel: with(func(r *fakeReleaseFiles) { r.noSig = true }), wantErr: "is not signed"},
+		{name: "signed with another key", rel: with(func(r *fakeReleaseFiles) {
+			r.sig = string(release.Sign(otherReleaseKey, []byte(r.checksums)))
+		}), wantErr: "does not verify"},
+		{name: "checksums changed after signing", rel: with(func(r *fakeReleaseFiles) {
+			r.sig = string(release.Sign(testReleaseKey, []byte(r.checksums)))
+			r.checksums = strings.Replace(r.checksums, sum, strings.Repeat("1", 64), 1)
+		}), wantErr: "does not verify"},
+		{name: "malformed signature", rel: with(func(r *fakeReleaseFiles) { r.sig = "not a signature" }), wantErr: "malformed"},
+		{name: "signature too large", rel: with(func(r *fakeReleaseFiles) { r.sig = strings.Repeat("A", maxSignature+1) }), wantErr: "larger than"},
 		{name: "no archive", rel: with(func(r *fakeReleaseFiles) { r.noArchive = true }), wantErr: "404"},
 		{name: "another platform's archive", rel: with(func(r *fakeReleaseFiles) {
 			*r = releaseFor("v1.2.3", "linux_arm64", archive, sum)
@@ -394,10 +437,13 @@ func TestUpgradeRollback(t *testing.T) {
 		if _, ok := readPending(t, u.dataDir); ok {
 			t.Error("marker left after the rollback")
 		}
-		// The previous binary starts with no marker: nothing more happens.
-		if err := u.started(t.Context(), log); err != nil {
+		// The previous binary starts with no marker: nothing more happens,
+		// but it tells the hub what it was rolled back from.
+		prev := &upgrader{exe: exe, dataDir: u.dataDir}
+		if err := prev.started(t.Context(), log); err != nil {
 			t.Errorf("start after the rollback = %v", err)
 		}
+		assertRollbackReported(t, prev, "v1.2.3")
 	})
 
 	t.Run("welcomed", func(t *testing.T) {
@@ -420,6 +466,73 @@ func TestUpgradeRollback(t *testing.T) {
 		}
 	})
 
+	t.Run("no hub within the timeout", func(t *testing.T) {
+		t.Parallel()
+		u, exe := setup(t)
+		u.noHub = 10 * time.Millisecond
+		if err := u.started(t.Context(), log); err != nil {
+			t.Fatal(err)
+		}
+		stopped := make(chan error, 1)
+		end := u.watchWelcome(t.Context(), log, func(err error) { stopped <- err })
+		var err error
+		select {
+		case err = <-stopped:
+		case <-time.After(10 * time.Second):
+			t.Fatal("no rollback after the timeout")
+		}
+		end()
+		if !errors.Is(err, ErrUpgraded) || !strings.Contains(err.Error(), "v1.2.3") {
+			t.Fatalf("stop(%v), want a rollback from v1.2.3 that is ErrUpgraded", err)
+		}
+		if got := readFile(t, exe); got != "old" {
+			t.Errorf("executable after the rollback = %q, want the previous one", got)
+		}
+		if _, ok := readPending(t, u.dataDir); ok {
+			t.Error("marker left after the rollback")
+		}
+		// A Welcome arriving after the rollback changes nothing.
+		u.welcomed(t.Context(), log)
+		if got := readFile(t, exe); got != "old" {
+			t.Errorf("executable after a late Welcome = %q, want the previous one", got)
+		}
+		prev := &upgrader{exe: exe, dataDir: u.dataDir}
+		if err := prev.started(t.Context(), log); err != nil {
+			t.Fatal(err)
+		}
+		assertRollbackReported(t, prev, "v1.2.3")
+	})
+
+	t.Run("welcomed before the timeout", func(t *testing.T) {
+		t.Parallel()
+		u, exe := setup(t)
+		u.noHub = 50 * time.Millisecond
+		if err := u.started(t.Context(), log); err != nil {
+			t.Fatal(err)
+		}
+		stopped := make(chan error, 1)
+		end := u.watchWelcome(t.Context(), log, func(err error) { stopped <- err })
+		u.welcomed(t.Context(), log)
+		time.Sleep(100 * time.Millisecond)
+		end()
+		select {
+		case err := <-stopped:
+			t.Fatalf("stop(%v) after a Welcome", err)
+		default:
+		}
+		if got := readFile(t, exe); got != "new" {
+			t.Errorf("executable = %q, want the upgraded one kept", got)
+		}
+	})
+
+	t.Run("nothing pending", func(t *testing.T) {
+		t.Parallel()
+		u := &upgrader{dataDir: t.TempDir(), noHub: time.Millisecond}
+		end := u.watchWelcome(t.Context(), log, func(err error) { t.Errorf("stop(%v) with no upgrade pending", err) })
+		time.Sleep(20 * time.Millisecond)
+		end()
+	})
+
 	t.Run("unreadable marker", func(t *testing.T) {
 		t.Parallel()
 		u, exe := setup(t)
@@ -436,6 +549,38 @@ func TestUpgradeRollback(t *testing.T) {
 			t.Errorf("executable = %q, want it kept", got)
 		}
 	})
+}
+
+// assertRollbackReported checks that u, the binary a rollback put back,
+// tells the hub it was rolled back from from until a Welcome, and then no
+// more.
+func assertRollbackReported(t *testing.T, u *upgrader, from string) {
+	t.Helper()
+	log := slog.New(slog.DiscardHandler)
+	h := &agentv1.Hello{}
+	u.hello(h)
+	if h.GetRolledBackFrom() != from {
+		t.Fatalf("Hello.rolled_back_from = %q, want %q", h.GetRolledBackFrom(), from)
+	}
+	// Until a hub welcomes it, every Hello says it, a restart's too.
+	again := &upgrader{exe: u.exe, dataDir: u.dataDir}
+	if err := again.started(t.Context(), log); err != nil {
+		t.Fatal(err)
+	}
+	h = &agentv1.Hello{}
+	again.hello(h)
+	if h.GetRolledBackFrom() != from {
+		t.Errorf("Hello.rolled_back_from after a restart = %q, want %q", h.GetRolledBackFrom(), from)
+	}
+	again.welcomed(t.Context(), log)
+	h = &agentv1.Hello{}
+	again.hello(h)
+	if h.GetRolledBackFrom() != "" {
+		t.Errorf("Hello.rolled_back_from after a Welcome = %q, want none", h.GetRolledBackFrom())
+	}
+	if _, err := os.Stat(filepath.Join(u.dataDir, upgradeRolledBackFile)); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("rollback record kept after a Welcome: %v", err)
+	}
 }
 
 // TestRunCountsStartsFirst checks that Run counts the start of an upgraded

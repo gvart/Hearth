@@ -40,6 +40,11 @@ type Facts struct {
 	// says why, if the agent says.
 	ReleaseTarget string `json:"release_target,omitempty"`
 	NoSelfUpgrade string `json:"no_self_upgrade,omitempty"`
+	// RolledBackFrom is the release an upgrade of the agent went to and was
+	// rolled back from, its new binary having reached no hub. The agent
+	// says it once; the hub keeps it while the agent reports the same
+	// version.
+	RolledBackFrom string `json:"rolled_back_from,omitempty"`
 }
 
 // Ceiling is what the device's agent lets the hub run.
@@ -102,7 +107,10 @@ type Interface struct {
 	IPs  []string `json:"ips"`
 }
 
-func factsFromHello(h *agentv1.Hello) (store.DeviceFacts, error) {
+// factsFromHello is the facts h reports. prev, the facts stored before, if
+// any, keeps a rollback the agent told of while it reports the same
+// version.
+func factsFromHello(h *agentv1.Hello, prev json.RawMessage) (store.DeviceFacts, error) {
 	f := Facts{
 		Hostname:      h.GetHostname(),
 		OS:            h.GetOs(),
@@ -117,6 +125,14 @@ func factsFromHello(h *agentv1.Hello) (store.DeviceFacts, error) {
 		Capabilities:  nonNil(h.GetCapabilities()),
 		ReleaseTarget: h.GetReleaseTarget(),
 		NoSelfUpgrade: h.GetNoSelfUpgrade(),
+
+		RolledBackFrom: h.GetRolledBackFrom(),
+	}
+	if f.RolledBackFrom == "" && len(prev) > 0 {
+		var p Facts
+		if json.Unmarshal(prev, &p) == nil && p.AgentVersion == f.AgentVersion {
+			f.RolledBackFrom = p.RolledBackFrom
+		}
 	}
 	f.Ceiling, f.LocalCeiling = ceilingJSON(h.GetCeiling()), ceilingJSON(h.GetLocalCeiling())
 	f.CeilingLocked, f.ProtocolMinor = h.GetCeilingLocked(), h.GetProtocolVersion().GetMinor()

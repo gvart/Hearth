@@ -222,7 +222,18 @@ automation or an MCP client.
 
 - The hub sends the agent a release version and nothing else, over the agent's mutual-TLS stream.
   It cannot name a server, a file or a hash: **a hub, even a compromised one, can only make an agent
-  install an official Hearth release, verified against that release's own checksums.**
+  install an official Hearth release, signed with the Hearth release key.**
+- Each release's `checksums.txt` is signed with an Ed25519 key: `checksums.txt.sig` holds the base64
+  of the signature over its exact bytes. The public key is compiled into the agent, and nothing at
+  run time, neither a flag nor the environment, changes it. The agent downloads `checksums.txt` and
+  `checksums.txt.sig` and checks the signature before it trusts any hash in it; a missing, malformed
+  or wrong signature refuses the upgrade, with the reason in the upgrade's result and its audit entry.
+  So whoever can change a release's assets on GitHub, without the signing key, cannot make agents
+  install their code. The release workflow signs with the private seed (the secret
+  `HEARTH_RELEASE_SIGNING_KEY` of the `release` environment, which needs the maintainer's approval)
+  through `internal/release/cmd/sign`, a separate program not in the `hearth` binary, which never
+  prints the key and refuses one whose public half agents do not trust. Releases up to v0.0.1-rc.11
+  are unsigned, and agents refuse them.
 - The agent builds both URLs itself, from its compiled-in release base
   (`https://github.com/gvart/hearth/releases/download/<tag>/`) and its own platform: it reads the
   release's `checksums.txt`, then downloads its archive with a plain HTTPS client (not its device
@@ -232,14 +243,19 @@ automation or an MCP client.
   unless it names the version asked for. Only then does it rename the new binary over its own
   (synced to disk first), keeping the old one as `hearth.prev`, and exit with status 75 for systemd
   (`Restart=always`) or launchd (`KeepAlive`) to start the new one. Nothing changes on a failed check.
-  Neither the hub nor the agent checks the release's Sigstore signature: the trust is GitHub's HTTPS
-  and the release's checksums.
+  The agent does not check the release's Sigstore bundle (that would take a large dependency): its
+  trust is the Ed25519 signature above.
 - The agent refuses a release older than the one it runs: no downgrades, so no way back to a release
   with a known flaw. Whatever it runs, a development build too, it never installs a release that
   cannot upgrade itself (v0.0.1-rc.10 or older).
 - If the new binary does not reach a hub, it does not stay: until a hub welcomes it, a marker in the
   agent's data directory (`upgrade-pending`) counts its starts, and on the fourth start without a
-  welcome the agent puts `hearth.prev` back and exits for its service manager to start the old one.
+  welcome, or once it has run 5 minutes without one, the agent puts `hearth.prev` back and exits for
+  its service manager to start the old one. The old binary tells the hub in its next Hello
+  (`rolled_back_from`, kept in `upgrade-rolled-back` in the data directory until a hub welcomes it):
+  the hub records it in the audit log (`agent.upgrade.rolled_back`) and the device's page says the
+  upgrade was rolled back, until the agent reports another version. A binary that crashes before the
+  agent even starts counting is not covered.
 - An upgrade replaces the program that enforces the device's capability ceiling: it is above the
   ceiling, as re-running the installer is. That is why it is dangerous and takes the password. An
   agent started with `--local-ceiling` refuses every upgrade, as it refuses the hub's ceiling: upgrade
@@ -252,7 +268,8 @@ automation or an MCP client.
   hubs of a cluster first.
 - `HEARTH_RELEASE_BASE_URL` in an agent's environment replaces its release base, as it does for
   `install.sh`. It is for the end-to-end tests only, not a supported setting; whoever sets an agent's
-  environment owns its host already.
+  environment owns its host already. It does not skip the signature: the end-to-end image is built
+  with a test key in place of the release key.
 - The audit entry of an upgrade records the version asked for, the version the agent ran, and the
   archive URL and SHA-256 the agent reports.
 

@@ -4,6 +4,7 @@ package hub
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -121,14 +122,22 @@ func (r *Registry) Merged(rows []store.MergedRow) {
 
 // ReportFacts records facts from a Hello (or a periodic facts message) and
 // marks the device online. It publishes device.online if the device was not
-// online, and device.updated otherwise.
+// online, and device.updated otherwise. A rollback the agent told of earlier
+// is kept while it reports the same version.
 func (r *Registry) ReportFacts(ctx context.Context, deviceID string, h *agentv1.Hello) error {
-	facts, err := factsFromHello(h)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var stored json.RawMessage
+	if h.GetRolledBackFrom() == "" {
+		// Not found is ReportFacts' error to give, below.
+		if d, err := r.devices.Get(ctx, deviceID); err == nil {
+			stored = d.Facts
+		}
+	}
+	facts, err := factsFromHello(h, stored)
 	if err != nil {
 		return fmt.Errorf("report facts of device %s: %w", deviceID, err)
 	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
 	now := r.now()
 	d, prev, err := r.devices.ReportFacts(ctx, deviceID, facts, now)
 	if err != nil {

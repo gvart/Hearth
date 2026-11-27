@@ -122,6 +122,13 @@ message Hello {
   // protocol minor 11 and later.
   string release_target = 17;
   string no_self_upgrade = 18;
+  // rolled_back_from is the release an upgrade of this agent went to and
+  // was rolled back from: the new binary reached no hub (it kept failing at
+  // start, or stayed up with no hub welcoming it), so the previous one was
+  // put back. Sent in the Hello of the binary put back until a hub welcomes
+  // it; the hub keeps it while the agent reports the same version. Sent by
+  // agents of protocol minor 13 and later.
+  string rolled_back_from = 19;
 }
 
 // Ceiling is what a device's agent lets the hub run: its flags, and from

@@ -30,14 +30,15 @@ export function AgentVersionLink({ children }: { children: string }) {
  * The agent's version next to the hub's, and the way to bring it up to the
  * hub's (#347): "Upgrade agent" for an agent that upgrades itself, the
  * installer's command for one too old to, and why not for one that will not
- * (a Kubernetes pod). Nothing while the agent is up to date.
+ * (a Kubernetes pod). An upgrade that was rolled back says so (#359).
+ * Nothing while the agent is up to date and was not rolled back.
  */
 export function DeviceUpgrade({ device }: { device: Device }) {
   const v = device.agent_version;
   const tooOld = v !== undefined && v.upgrade_available && !v.remote_upgrade && !v.no_remote_upgrade;
   const detail = useDeviceDetail(device.id, tooOld);
   const [open, setOpen] = useState(false);
-  if (!v || (!v.upgrade_available && !open)) {
+  if (!v || (!v.upgrade_available && !v.rolled_back_from && !open)) {
     return null;
   }
   const command = detail.data?.agent_version?.install_command;
@@ -51,10 +52,19 @@ export function DeviceUpgrade({ device }: { device: Device }) {
         </h2>
         {v.upgrade_available ? <span className="pill pill-warn">out of date</span> : null}
       </div>
+      {v.rolled_back_from ? (
+        <div className="error-box" role="status">
+          <span>
+            Upgrade to <span className="mono">{v.rolled_back_from}</span> rolled back: the new version did not reach a
+            hub, so the agent put its previous binary back.
+          </span>
+          <span className="small">Check that the device reaches the hub, or the agent&apos;s log, before you upgrade again.</span>
+        </div>
+      ) : null}
       <p className="small">
         Runs <span className="mono">{v.agent}</span>; the hub runs <span className="mono">{v.hub}</span>.
       </p>
-      {v.remote_upgrade ? (
+      {!v.upgrade_available && !open ? null : v.remote_upgrade ? (
         <>
           {online ? null : <p className="muted small">The agent is offline: it can upgrade once it is back.</p>}
           <div className="form-actions">
@@ -138,10 +148,13 @@ function UpgradeDialog({ device, version, onClose }: { device: Device; version: 
             <span className="pill pill-bad">dangerous</span>
           </div>
           <p>
-            The agent downloads Hearth <span className="mono">{to}</span> from GitHub, checks it against the
-            release&apos;s checksums, replaces its binary (keeping the old one as <code>hearth.prev</code>) and restarts.
+            The agent downloads Hearth <span className="mono">{to}</span> from GitHub, checks the release&apos;s
+            signed checksums, replaces its binary (keeping the old one as <code>hearth.prev</code>) and restarts.
           </p>
-          <p>The device is offline for a few seconds while the agent restarts.</p>
+          <p>
+            The device is offline for a few seconds while the agent restarts. If the new version reaches no hub, the
+            agent puts the old one back.
+          </p>
         </section>
         {target === undefined ? (
           <label className="field">

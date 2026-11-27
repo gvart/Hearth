@@ -48,6 +48,9 @@ type AgentVersionJSON struct {
 	// InstallCommand, on a device's own page, is the installer's one-liner
 	// that upgrades an agent too old to upgrade itself.
 	InstallCommand string `json:"install_command,omitempty"`
+	// RolledBackFrom is the release an upgrade of the agent went to and was
+	// rolled back from: the new binary reached no hub (#359).
+	RolledBackFrom string `json:"rolled_back_from,omitempty"`
 }
 
 // deviceJSON is d as the API shows it, with its agent's version next to
@@ -58,7 +61,7 @@ func (a *api) deviceJSON(d store.Device) DeviceJSON {
 	if json.Unmarshal(d.Facts, &f) != nil || f.AgentVersion == "" {
 		return out
 	}
-	v := &AgentVersionJSON{Agent: f.AgentVersion, Hub: a.version}
+	v := &AgentVersionJSON{Agent: f.AgentVersion, Hub: a.version, RolledBackFrom: f.RolledBackFrom}
 	hub, agent := releaseVersion(a.version), releaseVersion(f.AgentVersion)
 	v.UpgradeAvailable = hub != "" && agent != "" && release.Compare(agent, hub) < 0
 	if f.ProtocolMinor >= minUpgradeMinor {
