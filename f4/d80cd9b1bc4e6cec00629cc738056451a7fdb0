@@ -1,0 +1,24 @@
+internal/hub/upgrade.go
+  s_18b57982fdff93::t_f9a8f2c76bb3b1 254,265,281,286-287,289-291
+internal/hub/upgrade_test.go
+  s_18b57982fdff93::t_93bbfc2b6695a7 196-198
+internal/hub/agentupgrade.go
+  s_18b57982fdff93::t_f9a8f2c76bb3b1 30,34-40,58
+  s_18b57982fdff93::t_93bbfc2b6695a7 20-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f4d80cd9b1bc4e6cec00629cc738056451a7fdb0",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
