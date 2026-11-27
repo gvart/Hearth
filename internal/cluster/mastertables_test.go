@@ -422,3 +422,60 @@ func TestOneMasterWithStorageMembersDown(t *testing.T) {
 		}
 	}
 }
+
+// TestMasterRowsGate: a master that has not compared the master tables'
+// rows with another since it started reads none of them while another
+// master that may prove the hub CA key is live; it reads them once it
+// compared them, or once none is (a down one, or members that only say
+// they are masters, are waited for by none).
+func TestMasterRowsGate(t *testing.T) {
+	ctx := t.Context()
+	t.Run("another master hung", func(t *testing.T) {
+		an := newAPNet(t, 2, "a", "b")
+		a := an.m("a")
+		if err := a.st.Admin().CreateSession(ctx, "s", time.Now(), time.Now().Add(time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+		a.rep.masterRowsSynced.Store(false)
+		an.mu.Lock()
+		an.hung["b"] = true
+		an.mu.Unlock()
+		a.rep.closePool()
+		if _, err := a.st.Admin().CheckSession(ctx, "s", time.Now()); !errors.Is(err, store.ErrUnavailable) {
+			t.Fatalf("session before the comparison: %v, want unavailable", err)
+		}
+		// b, which did not answer, is taken as down for a while: the next
+		// read waits for it no more.
+		an.mu.Lock()
+		an.hung["b"] = false
+		an.mu.Unlock()
+		a.rep.clearSuspect("b")
+		if _, err := a.st.Admin().CheckSession(ctx, "s", time.Now()); err != nil {
+			t.Fatalf("session once b answers: %v", err)
+		}
+		if !a.rep.masterRowsSynced.Load() {
+			t.Fatal("a did not record the comparison")
+		}
+	})
+	t.Run("the other master down", func(t *testing.T) {
+		an := newAPNet(t, 2, "a", "b")
+		a := an.m("a")
+		if err := a.st.Admin().CreateSession(ctx, "s", time.Now(), time.Now().Add(time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+		a.rep.masterRowsSynced.Store(false)
+		an.setDown("b", true)
+		if _, err := a.st.Admin().CheckSession(ctx, "s", time.Now()); err != nil {
+			t.Fatalf("session with the only other master down: %v", err)
+		}
+	})
+	t.Run("claimants only", func(t *testing.T) {
+		an := newGateNet(t)
+		m := an.m("m")
+		makeGrants(t, m)
+		m.rep.masterRowsSynced.Store(false)
+		if _, err := m.st.Admin().CheckSession(ctx, "real-session", time.Now()); err != nil {
+			t.Fatalf("session with members that only say they are masters: %v", err)
+		}
+	})
+}

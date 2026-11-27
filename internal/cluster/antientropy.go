@@ -263,7 +263,11 @@ func (r *Replicator) SyncGlobal(ctx context.Context, peer string) error {
 func (r *Replicator) syncGlobal(ctx context.Context, peer string) (bool, error) {
 	proved, err := r.syncSpaceProved(ctx, r.store(), peer, store.SpaceGlobal, []bucketRange{{0, store.GlobalBuckets}}, false)
 	if err == nil && proved {
-		err = r.syncMasterRows(ctx, r.store(), peer, false)
+		var compared bool
+		compared, err = r.syncMasterRows(ctx, r.store(), peer, false)
+		if err == nil && compared {
+			r.masterRowsSynced.Store(true)
+		}
 	}
 	if err == nil && proved {
 		r.masterSynced.Store(true)
@@ -273,12 +277,12 @@ func (r *Replicator) syncGlobal(ctx context.Context, peer string) (bool, error) 
 
 // syncMasterRows compares the master tables' rows of st with peer's, if
 // both are masters that proved the hub CA key: they are compared with no
-// other member (replauth.go).
-func (r *Replicator) syncMasterRows(ctx context.Context, st *store.Store, peer string, pullOnly bool) error {
+// other member (replauth.go). It reports whether they were compared.
+func (r *Replicator) syncMasterRows(ctx context.Context, st *store.Store, peer string, pullOnly bool) (bool, error) {
 	if !r.holdsKey() || !r.saysMaster(peer) || !r.provedLast(peer) {
-		return nil
+		return false, nil
 	}
-	return r.syncSpaceOf(ctx, st, peer, store.SpaceMaster, []bucketRange{{0, store.GlobalBuckets}}, pullOnly)
+	return true, r.syncSpaceOf(ctx, st, peer, store.SpaceMaster, []bucketRange{{0, store.GlobalBuckets}}, pullOnly)
 }
 
 // SyncedWithAMaster reports whether this member compared the global rows

@@ -53,6 +53,23 @@ type Shards interface {
 	Repair(refs []RowRef)
 }
 
+// MasterRowsGate is implemented by a Shards whose master may hold a stale
+// copy of the master tables' rows (#384): until it compared them with
+// another master since it started or was promoted, MasterRowsReady fails
+// with ErrUnavailable, and the store reads none of them.
+type MasterRowsGate interface {
+	MasterRowsReady() error
+}
+
+// masterRowsReady is nil when this member may read its copy of the master
+// tables' rows (MasterRowsGate).
+func (s *Store) masterRowsReady() error {
+	if g, ok := s.shards.(MasterRowsGate); ok {
+		return g.MasterRowsReady()
+	}
+	return nil
+}
+
 // Rows are the rows a read returned on one member.
 type Rows struct {
 	Member string   `json:"member"`
@@ -267,6 +284,11 @@ func (s *Store) queryRowNewest(ctx context.Context, table, key, query string, ar
 // live. On a store that holds every row, and for a global table, which every
 // member holds, it is the plain read, live rows of a deletable table only.
 func (s *Store) queryRowLive(ctx context.Context, table, key, sel, rest string, args ...any) rowScanner {
+	if masterTables[table] {
+		if err := s.masterRowsReady(); err != nil {
+			return memRow{err: err}
+		}
+	}
 	if s.shards == nil || globalTables[table] {
 		if tables[table].deletable {
 			versioned, err := isVersioned(ctx, s.db)
@@ -344,6 +366,11 @@ func (s *Store) queryAll(ctx context.Context, g gather, query string, args ...an
 // holds whole, is read here: a master table's rows are never read on
 // another member (#384).
 func (s *Store) list(ctx context.Context, key string, g gather, sel, rest string, args ...any) (rowIter, error) {
+	if masterTables[g.table] {
+		if err := s.masterRowsReady(); err != nil {
+			return nil, err
+		}
+	}
 	if globalTables[g.table] {
 		return s.db.QueryContext(ctx, sel+rest, args...)
 	}

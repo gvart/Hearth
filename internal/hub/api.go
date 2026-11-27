@@ -705,6 +705,11 @@ func (a *api) auth(next http.HandlerFunc) http.Handler {
 		case errors.Is(err, store.ErrNotFound), errors.Is(err, store.ErrSessionExpired), errors.Is(err, http.ErrNoCookie):
 			writeError(w, http.StatusUnauthorized, "unauthenticated", "not logged in")
 			return
+		case errors.Is(err, store.ErrUnavailable):
+			// A master still comparing sessions with the others (#384): the
+			// session may be valid, so the client keeps it and retries.
+			writeUnavailable(w)
+			return
 		case err != nil:
 			a.log.ErrorContext(r.Context(), "check session", "err", err)
 			writeError(w, http.StatusInternalServerError, "internal", "cannot check session")

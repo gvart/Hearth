@@ -154,6 +154,14 @@ type Replicator struct {
 	// masterSynced is set once this member compared the global rows with a
 	// master that proved the hub CA key.
 	masterSynced atomic.Bool
+	// masterRowsSynced is set once this master compared the master tables'
+	// rows with another master that proved the key, since it started or was
+	// promoted: until then it reads none of them while another is live
+	// (MasterRowsReady). pullMaster asks for that comparison now.
+	masterRowsSynced atomic.Bool
+	pullMaster       chan struct{}
+	// pullMu runs one comparison of the master tables' rows at a time.
+	pullMu sync.Mutex
 
 	// local is this member's own part in the storage ring (SetLocal).
 	local atomic.Pointer[replicaLocal]
@@ -213,6 +221,7 @@ func NewReplicator(cfg ReplicatorConfig) (*Replicator, error) {
 		cfg: cfg, log: cfg.Log.With("component", "replication"),
 		pool: map[string][]*replConn{}, jobs: make(chan func(context.Context), asyncQueue),
 		suspect: map[string]time.Time{}, handed: map[int]uint64{}, uses: uses,
+		pullMaster: make(chan struct{}, 1),
 	}
 	bg := context.Background()
 	r.ctx.Store(&bg)
@@ -1302,6 +1311,19 @@ func (r *Replicator) Run(ctx context.Context) error {
 			}
 		})
 	}
+	wg.Go(func() {
+		// At the start, and each time it is asked (promotion, a read kept
+		// waiting): a master compares the rows only masters hold with the
+		// others before it reads its own.
+		for {
+			r.pullMasterRows(ctx)
+			select {
+			case <-ctx.Done():
+				return
+			case <-r.pullMaster:
+			}
+		}
+	})
 	wg.Go(func() { r.every(ctx, r.cfg.HintsEvery, r.deliverHints) })
 	wg.Go(func() { r.every(ctx, r.cfg.AntiEntropyEvery, r.antiEntropy) })
 	wg.Go(func() { r.every(ctx, r.cfg.GCEvery, r.gc) })

@@ -364,8 +364,9 @@ func (n *APNode) applyRoleChange(ctx context.Context, req roleRequest) (string, 
 		}
 		n.log.InfoContext(ctx, "promoted to master")
 		// The rows only masters hold (#384): from the other masters, once
-		// they take this member for one.
-		n.rep.enqueue(n.rep.pullMasterRows, nil)
+		// they take this member for one; it reads none before.
+		n.rep.masterRowsSynced.Store(false)
+		n.rep.askPullMaster()
 		return RoleDone, nil
 	case req.Role == RoleStorage:
 		if lr.Draining {

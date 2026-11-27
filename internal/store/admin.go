@@ -40,7 +40,7 @@ func (r Admin) SetPasswordHash(ctx context.Context, hash string) error {
 	if hash == "" {
 		return errors.New("set admin password: empty hash")
 	}
-	if _, err := r.s.apply(ctx, SetPasswordHash{Hash: hash}); err != nil {
+	if _, err := r.s.apply(ctx, SetPasswordHash{Hash: hash, Now: toMillis(time.Now())}); err != nil {
 		return fmt.Errorf("set admin password: %w", err)
 	}
 	return nil
@@ -62,15 +62,24 @@ func (r Admin) CreateSession(ctx context.Context, secret string, now, expiresAt 
 // ErrNotFound or ErrSessionExpired otherwise.
 func (r Admin) CheckSession(ctx context.Context, secret string, now time.Time) (time.Time, error) {
 	h := hashSecret(secret)
-	var expiresAt int64
+	var expiresAt, epoch, current int64
 	// Sessions are a master table (#384): a master reads its own copy, and
 	// never asks another member.
-	versioned, err := isVersioned(ctx, r.s.db)
+	if err := r.s.masterRowsReady(); err != nil {
+		return time.Time{}, fmt.Errorf("check session: %w", err)
+	}
+	v, err := schemaVersion(ctx, r.s.db)
 	if err != nil {
 		return time.Time{}, fmt.Errorf("check session: %w", err)
 	}
-	err = r.s.db.QueryRowContext(ctx, `SELECT expires_at FROM sessions WHERE hash = ?`+liveOnly(versioned), h[:]).Scan(&expiresAt)
-	if errors.Is(err, sql.ErrNoRows) {
+	q := `SELECT expires_at, 0, 0 FROM sessions WHERE hash = ?`
+	if v >= sessionEpochSchema {
+		q = `SELECT expires_at, epoch, coalesce((SELECT session_epoch FROM admin WHERE id = 1), 0) FROM sessions WHERE hash = ?`
+	}
+	err = r.s.db.QueryRowContext(ctx, q+liveOnly(v >= VersionedSchema), h[:]).Scan(&expiresAt, &epoch, &current)
+	if errors.Is(err, sql.ErrNoRows) || epoch < current {
+		// One created before the last password reset is ended, wherever
+		// it was created.
 		return time.Time{}, fmt.Errorf("check session: %w", ErrNotFound)
 	}
 	if err != nil {

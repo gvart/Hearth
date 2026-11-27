@@ -76,7 +76,7 @@ func (r *Replicator) PullAll(ctx context.Context, dst *store.Store) error {
 			continue
 		}
 		// The master tables' rows, from masters only.
-		if err := r.syncMasterRows(ctx, dst, p, true); err != nil {
+		if _, err := r.syncMasterRows(ctx, dst, p, true); err != nil {
 			problems = append(problems, fmt.Sprintf("%s (%v)", p, err))
 			continue
 		}

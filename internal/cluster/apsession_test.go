@@ -201,6 +201,71 @@ func TestMasterRowsFollowTheRole(t *testing.T) {
 	}
 }
 
+// TestTwoMastersOneDown: of two masters, either signs in and signs out
+// while the other is down, and a sign-out or a password reset holds on the
+// other once it is back: it reads no session before it compared them with
+// the master that stayed up (#384).
+func TestTwoMastersOneDown(t *testing.T) {
+	ctx := t.Context()
+	c := newAPTestCluster(t, 2,
+		apSpec{"a", storageMaster, storageMaster},
+		apSpec{"b", storageMaster, storageMaster},
+	)
+	before := createSessions(t, c["a"], 3)
+	if n := lacking(t, c["b"], before); n != 0 {
+		t.Fatalf("b lacks %d sessions", n)
+	}
+	gone := func(tn *apTestNode, secret string) {
+		t.Helper()
+		waitUntil(t, 10*time.Second, secret+" ended on "+tn.id, func() bool {
+			_, err := tn.st.Admin().CheckSession(ctx, secret, time.Now())
+			if err == nil {
+				t.Fatalf("%s still valid on %s", secret, tn.id)
+			}
+			return errors.Is(err, store.ErrNotFound)
+		})
+	}
+	valid := func(tn *apTestNode, secret string) {
+		t.Helper()
+		waitUntil(t, 10*time.Second, secret+" valid on "+tn.id, func() bool {
+			_, err := tn.st.Admin().CheckSession(ctx, secret, time.Now())
+			return err == nil
+		})
+	}
+
+	// b down: a signs in and signs out.
+	c["b"].stop()
+	now := time.Now()
+	if err := c["a"].st.Admin().CreateSession(ctx, "while-b-down", now, now.Add(time.Hour)); err != nil {
+		t.Fatalf("a sign-in with b down: %v", err)
+	}
+	if err := c["a"].st.Admin().DeleteSession(ctx, before[0]); err != nil {
+		t.Fatalf("a sign-out with b down: %v", err)
+	}
+	c["b"].start(t, 2, c["a"].addr)
+	gone(c["b"], before[0])
+	valid(c["b"], "while-b-down")
+	valid(c["b"], before[1])
+
+	// a down: b signs out a session, and resets the password.
+	c["a"].stop()
+	if err := c["b"].st.Admin().DeleteSession(ctx, "while-b-down"); err != nil {
+		t.Fatalf("b's sign-out with a down: %v", err)
+	}
+	if err := c["b"].st.Admin().SetPasswordHash(ctx, "$argon2id$new"); err != nil {
+		t.Fatalf("b's reset with a down: %v", err)
+	}
+	now = time.Now()
+	if err := c["b"].st.Admin().CreateSession(ctx, "after-reset", now, now.Add(time.Hour)); err != nil {
+		t.Fatalf("b's sign-in after the reset: %v", err)
+	}
+	c["a"].start(t, 2, c["b"].addr)
+	gone(c["a"], "while-b-down")
+	gone(c["a"], before[1])
+	gone(c["a"], before[2])
+	valid(c["a"], "after-reset")
+}
+
 // createSessions creates n sessions on tn and returns their secrets.
 func createSessions(t *testing.T, tn *apTestNode, n int) []string {
 	t.Helper()
