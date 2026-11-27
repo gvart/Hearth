@@ -221,6 +221,9 @@ var expected = map[Action]struct {
 	OpenWrtRouterAdd:        {Safe, []string{ActorWeb}, false},
 	OpenWrtRouterRemove:     {Safe, []string{ActorWeb}, false},
 	OpenWrtDNSRestart:       {Dangerous, []string{ActorWeb}, false},
+	OPNsenseFirewallAdd:     {Safe, []string{ActorWeb}, false},
+	OPNsenseFirewallRemove:  {Safe, []string{ActorWeb}, false},
+	OPNsenseUnboundRestart:  {Dangerous, []string{ActorWeb}, false},
 	DeviceCapabilitiesSet:   {Safe, []string{ActorAdmin, ActorWeb}, false},
 	DeviceCapabilitiesRaise: {Dangerous, []string{ActorAdmin, ActorWeb}, false},
 }

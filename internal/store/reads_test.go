@@ -31,9 +31,11 @@ var readsExempt = map[string]string{ //nolint:gosec // op names and reasons, no 
 	"remove_proxmox_server":  "a missed row is refused with not found, retried; the delete is a tombstone",
 	"remove_esphome_device":  "a missed row is refused with not found, retried; the delete is a tombstone",
 	"remove_openwrt_router":  "a missed row is refused with not found, retried; the delete is a tombstone",
-	"mark_telemetry_sent":    "telemetry state is soft",
-	"create_runbook_run":     "the unresolved-runs cap is a soft limit",
-	"revoke_ca_certs":        "runs on every storage member, each on the rows it holds",
+	// OPNsense firewalls (#364).
+	"remove_opnsense_firewall": "a missed row is refused with not found, retried; the delete is a tombstone",
+	"mark_telemetry_sent":      "telemetry state is soft",
+	"create_runbook_run":       "the unresolved-runs cap is a soft limit",
+	"revoke_ca_certs":          "runs on every storage member, each on the rows it holds",
 }
 
 // Every command that reads rows inside its write either names them in

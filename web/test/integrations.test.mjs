@@ -16,6 +16,7 @@ test('with nothing set up, every integration is off or only known on the hub', (
       'proxmox:off',
       'esphome:off',
       'openwrt:off',
+      'opnsense:off',
       'talos:off',
       'beszel:off',
       'plugins:off',

@@ -306,6 +306,14 @@ const (
 	// OpenWrtDNSRestart restarts dnsmasq on an OpenWrt router: its DNS and
 	// DHCP server.
 	OpenWrtDNSRestart Action = "openwrt.dnsmasq.restart"
+	// OPNsenseFirewallAdd adopts an OPNsense firewall: the hub stores its URL
+	// and API key, sealed, and starts reading it through its REST API.
+	OPNsenseFirewallAdd Action = "opnsense.firewall.add"
+	// OPNsenseFirewallRemove forgets an adopted OPNsense firewall and its key.
+	OPNsenseFirewallRemove Action = "opnsense.firewall.remove"
+	// OPNsenseUnboundRestart restarts Unbound, the DNS resolver of an
+	// OPNsense firewall.
+	OPNsenseUnboundRestart Action = "opnsense.unbound.restart"
 )
 
 // Actor kinds.
@@ -641,6 +649,13 @@ var rules = map[Action]rule{
 	// A restart drops every DNS lookup and DHCP answer of the network for a
 	// moment, and fails it outright on a broken configuration.
 	OpenWrtDNSRestart: {class: Dangerous, actors: []string{ActorWeb}},
+	// Adopting an OPNsense firewall hands the hub an API key; the hub only
+	// reads with it, except for opnsense.unbound.restart, decided on its own.
+	OPNsenseFirewallAdd:    {class: Safe, actors: []string{ActorWeb}},
+	OPNsenseFirewallRemove: {class: Safe, actors: []string{ActorWeb}},
+	// A restart drops every DNS lookup of the network for a moment, and fails
+	// it outright on a broken configuration.
+	OPNsenseUnboundRestart: {class: Dangerous, actors: []string{ActorWeb}},
 }
 
 // Actions returns every known action, sorted.

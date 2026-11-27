@@ -859,6 +859,10 @@ func DecodeCommand(b []byte) (Command, error) {
 		cmd, err = decodeAs[AddOpenWrtRouter](env.Cmd)
 	case RemoveOpenWrtRouter{}.Op():
 		cmd, err = decodeAs[RemoveOpenWrtRouter](env.Cmd)
+	case AddOPNsenseFirewall{}.Op():
+		cmd, err = decodeAs[AddOPNsenseFirewall](env.Cmd)
+	case RemoveOPNsenseFirewall{}.Op():
+		cmd, err = decodeAs[RemoveOPNsenseFirewall](env.Cmd)
 	case SetDeviceRoute{}.Op():
 		cmd, err = decodeAs[SetDeviceRoute](env.Cmd)
 	default:

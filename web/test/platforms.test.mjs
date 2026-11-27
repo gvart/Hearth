@@ -70,3 +70,18 @@ test('an OpenWrt router is a platform card counting its clients', () => {
   );
   assert.deepEqual(platformOfHash('#/platforms/openwrt/o1'), { kind: 'openwrt', id: 'o1' });
 });
+
+test('an OPNsense firewall is a platform card counting its clients', () => {
+  const cards = platformCards([], [], [], [], [
+    { id: 'f1', name: 'edge', url: 'https://192.168.1.1:443', state: 'connected', error: '', clients: 6 },
+    { id: 'f2', name: 'lab', url: 'https://10.0.0.1:443', state: 'unavailable', error: 'the firewall refused the API key or secret', clients: 0 },
+  ]);
+  assert.deepEqual(
+    cards.map((c) => [c.name, c.state, c.line, c.hash]),
+    [
+      ['lab', 'unreachable', '0 clients', '#/platforms/opnsense/f2'],
+      ['edge', 'connected', '6 clients', '#/platforms/opnsense/f1'],
+    ],
+  );
+  assert.deepEqual(platformOfHash('#/platforms/opnsense/f1'), { kind: 'opnsense', id: 'f1' });
+});

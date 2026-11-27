@@ -27,6 +27,7 @@ const sourceLabels: Record<NetworkHostSource, { label: string; title: string }> 
   dhcp: { label: 'DHCP', title: 'In a DHCP lease file' },
   netalertx: { label: 'NetAlertX', title: 'Known to NetAlertX' },
   openwrt: { label: 'OpenWrt', title: 'A client of an OpenWrt router' },
+  opnsense: { label: 'OPNsense', title: 'A client of an OPNsense firewall' },
 };
 
 function byIP(a: NetworkHost, b: NetworkHost) {

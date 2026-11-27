@@ -2,6 +2,7 @@ import { useBeszelSystems, useKubeClusters, useNetworkHosts, useTalosNodes } fro
 import { usePlugins } from '../api/plugins.ts';
 import { useESPHomeDevices } from '../api/esphome.ts';
 import { useOpenWrtRouters } from '../api/openwrt.ts';
+import { useOPNsenseFirewalls } from '../api/opnsense.ts';
 import { useProxmoxServers } from '../api/proxmox.ts';
 import { docsURL } from '../docs.ts';
 import { integrationSummary, integrations, stateWord, type Integration, type IntegrationState } from '../integrations.ts';
@@ -26,6 +27,7 @@ export function IntegrationsPage() {
   const servers = useProxmoxServers();
   const esp = useESPHomeDevices();
   const owrt = useOpenWrtRouters();
+  const opn = useOPNsenseFirewalls();
   const talos = useTalosNodes();
   const beszel = useBeszelSystems();
   const plugins = usePlugins();
@@ -35,12 +37,13 @@ export function IntegrationsPage() {
     servers: servers.data,
     esphome: esp.data,
     openwrt: owrt.data,
+    opnsense: opn.data,
     talos: talos.data,
     beszel: beszel.data,
     plugins: plugins.data?.plugins,
     hosts: hosts.data,
   });
-  const loading = [clusters, servers, esp, owrt, talos, beszel, plugins, hosts].some((q) => q.isPending);
+  const loading = [clusters, servers, esp, owrt, opn, talos, beszel, plugins, hosts].some((q) => q.isPending);
 
   return (
     <main className="content">

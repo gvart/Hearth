@@ -15,6 +15,7 @@ import (
 	"github.com/gvart/hearth/internal/integrations/esphome"
 	"github.com/gvart/hearth/internal/integrations/kubernetes"
 	"github.com/gvart/hearth/internal/integrations/openwrt"
+	"github.com/gvart/hearth/internal/integrations/opnsense"
 	"github.com/gvart/hearth/internal/integrations/proxmox"
 	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/store"
@@ -68,11 +69,11 @@ func newServerCert(ctx context.Context, ca *pki.CA, hosts []string, epoch string
 }
 
 // hubSealers seal secrets in the store with keys derived from the hub CA
-// key, which every hub of a cluster holds: kubeconfigs, Proxmox, ESPHome and OpenWrt connections,
+// key, which every hub of a cluster holds: kubeconfigs, Proxmox, ESPHome, OpenWrt and OPNsense connections,
 // runbook runs' files and the notify configuration document. During a hub CA rotation they open with either
 // CA's key and seal with the one the hub serves.
 type hubSealers struct {
-	kube, proxmox, runbook, notify, esphome, openwrt *kubernetes.Sealer
+	kube, proxmox, runbook, notify, esphome, openwrt, opnsense *kubernetes.Sealer
 }
 
 func newHubSealers(ctx context.Context, ca *pki.CA, log *slog.Logger) (*hubSealers, error) {
@@ -99,6 +100,9 @@ func newHubSealers(ctx context.Context, ca *pki.CA, log *slog.Logger) (*hubSeale
 	if s.openwrt, err = kubernetes.NewPurposeSealer(keys[0], openwrt.SealInfo); err != nil {
 		return nil, err
 	}
+	if s.opnsense, err = kubernetes.NewPurposeSealer(keys[0], opnsense.SealInfo); err != nil {
+		return nil, err
+	}
 	if err := s.rekey(keys); err != nil {
 		return nil, err
 	}
@@ -115,7 +119,7 @@ func newHubSealers(ctx context.Context, ca *pki.CA, log *slog.Logger) (*hubSeale
 }
 
 func (s *hubSealers) rekey(keys [][]byte) error {
-	for _, sealer := range []*kubernetes.Sealer{s.kube, s.proxmox, s.runbook, s.notify, s.esphome, s.openwrt} {
+	for _, sealer := range []*kubernetes.Sealer{s.kube, s.proxmox, s.runbook, s.notify, s.esphome, s.openwrt, s.opnsense} {
 		if err := sealer.SetSecrets(keys...); err != nil {
 			return err
 		}
@@ -136,6 +140,8 @@ func (s *hubSealers) reseal(_ context.Context, secrets []store.SealedSecret) ([]
 			sealer = s.esphome
 		case store.SealedOpenWrtRouters:
 			sealer = s.openwrt
+		case store.SealedOPNsenseFirewalls:
+			sealer = s.opnsense
 		case store.SealedRunbookRuns:
 			sealer, id = s.runbook, automation.RunbookSealID(sec.ID)
 		case store.SealedConfigDocs:

@@ -65,8 +65,10 @@ var globalTables = map[string]bool{
 	"proxmox_servers": true,
 	"esphome_devices": true,
 	"openwrt_routers": true,
-	"network_hosts":   true,
-	"config_docs":     true, // item 5 (ap-config): every member serves the configuration
+	// OPNsense firewalls (#364).
+	"opnsense_firewalls": true,
+	"network_hosts":      true,
+	"config_docs":        true, // item 5 (ap-config): every member serves the configuration
 }
 
 // criticalTables are written with W = min(2, N) acknowledgements.
@@ -383,6 +385,8 @@ func RouteOf(cmd Command) (Route, error) {
 	case AddESPHomeDevice, RemoveESPHomeDevice:
 		return global(false)
 	case AddOpenWrtRouter, RemoveOpenWrtRouter:
+		return global(false)
+	case AddOPNsenseFirewall, RemoveOPNsenseFirewall:
 		return global(false)
 	}
 	return Route{}, fmt.Errorf("%w: %s", ErrNoRoute, cmd.Op())

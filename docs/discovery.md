@@ -145,8 +145,8 @@ The order settles the usual ambiguities, and leaves some:
   from their vendor and name only.
 
 To add names from your Pi-hole or DHCP server, and hosts on VLANs the sweep cannot reach, see
-[Pi-hole and DHCP leases](pihole.md). An adopted [OpenWrt](openwrt.md) router adds its clients the same way, from
-its DHCP leases.
+[Pi-hole and DHCP leases](pihole.md). An adopted [OpenWrt](openwrt.md) router or [OPNsense](opnsense.md) firewall adds its clients
+the same way, from its DHCP leases (and an OPNsense firewall's ARP table).
 
 ## Adopting a host
 

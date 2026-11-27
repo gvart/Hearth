@@ -337,6 +337,8 @@ const (
 	SealedESPHomeDevices = "esphome_devices"
 	// SealedOpenWrtRouters holds the OpenWrt routers' connections.
 	SealedOpenWrtRouters = "openwrt_routers"
+	// SealedOPNsenseFirewalls holds the OPNsense firewalls' connections.
+	SealedOPNsenseFirewalls = "opnsense_firewalls"
 )
 
 // sealedColumns maps each table of sealed secrets to its sealed column.
@@ -347,6 +349,8 @@ var sealedColumns = map[string]string{
 	SealedConfigDocs:     "content",
 	SealedESPHomeDevices: "connection",
 	SealedOpenWrtRouters: "connection",
+	// OPNsense firewalls (#364).
+	SealedOPNsenseFirewalls: "connection",
 }
 
 // sealedWhere narrows a table of sealedColumns to its sealed rows, and
@@ -355,6 +359,7 @@ var (
 	sealedWhere = map[string]string{SealedConfigDocs: ` AND kind = '` + ConfigNotify + `'`}
 	sealedSince = map[string]int64{
 		SealedConfigDocs: configDocsSchema, SealedESPHomeDevices: esphomeDevicesSchema, SealedOpenWrtRouters: openwrtRoutersSchema,
+		SealedOPNsenseFirewalls: opnsenseFirewallsSchema,
 	}
 )
 
@@ -378,7 +383,7 @@ func (r CARotations) Sealed(ctx context.Context) ([]SealedSecret, error) {
 		return readSealed(ctx, r.s.db)
 	}
 	out, err := readSealedTables(ctx, r.s.db, SealedKubeClusters, SealedProxmoxServers, SealedConfigDocs, SealedESPHomeDevices,
-		SealedOpenWrtRouters)
+		SealedOpenWrtRouters, SealedOPNsenseFirewalls)
 	if err != nil {
 		return nil, err
 	}
@@ -419,7 +424,7 @@ func (r CARotations) Sealed(ctx context.Context) ([]SealedSecret, error) {
 // sealedOrder is the order Sealed lists the tables of sealed secrets in.
 var sealedOrder = map[string]int{
 	SealedKubeClusters: 0, SealedProxmoxServers: 1, SealedRunbookRuns: 2, SealedConfigDocs: 3, SealedESPHomeDevices: 4,
-	SealedOpenWrtRouters: 5,
+	SealedOpenWrtRouters: 5, SealedOPNsenseFirewalls: 6,
 }
 
 // SealedDigest is a digest of secrets, as Sealed returns them: finishing a
@@ -447,7 +452,7 @@ type sealedQuerier interface {
 
 func readSealed(ctx context.Context, q sealedQuerier) ([]SealedSecret, error) {
 	return readSealedTables(ctx, q, SealedKubeClusters, SealedProxmoxServers, SealedRunbookRuns, SealedConfigDocs,
-		SealedESPHomeDevices, SealedOpenWrtRouters)
+		SealedESPHomeDevices, SealedOpenWrtRouters, SealedOPNsenseFirewalls)
 }
 
 // readSealedTables reads the sealed secrets of tables, in that order.
