@@ -122,3 +122,17 @@ test('granting a plugin, or raising its class, asks for the password again', asy
   assert.equal(raisesRisky(withPlugin(read, 'pi', 'dangerous'), read), false);
   assert.equal(raisesRisky(read, withoutPlugin(read, 'pi')), false);
 });
+
+test('moving a plugin to a new release asks for the password again; a class change keeps the release', async () => {
+  const { raisesRisky, withPlugin, withPluginRelease, newRelease } = await import('../src/capabilities.ts');
+  const a = 'a'.repeat(64);
+  const b = 'b'.repeat(64);
+  const pinned = { ...emptyCeiling(), plugins: [{ name: 'pi', class: 'safe', digest: a }] };
+  const lower = withPlugin(pinned, 'pi', 'read');
+  assert.deepEqual(lower.plugins, [{ name: 'pi', class: 'read', digest: a }]);
+  assert.equal(raisesRisky(pinned, lower), false);
+  assert.equal(raisesRisky(pinned, withPluginRelease(pinned, 'pi', b)), true);
+  const releases = [{ name: 'pi', version: '2.0.0', digest: b }];
+  assert.equal(newRelease(pinned.plugins[0], releases)?.version, '2.0.0');
+  assert.equal(newRelease({ name: 'pi', class: 'safe', digest: b }, releases), undefined);
+});

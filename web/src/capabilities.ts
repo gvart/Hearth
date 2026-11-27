@@ -18,9 +18,18 @@ export interface Capabilities {
   manageable: boolean;
   /** The agent takes device plugins from the hub (protocol minor 14); an older one must be upgraded first. */
   plugins_manageable: boolean;
+  /** The plugin releases uploaded for the device's platform, one per plugin. */
+  plugin_releases: PluginRelease[];
   agent_version: string;
   updated_at?: string;
   updated_by?: string;
+}
+
+/** A plugin release uploaded for a device's platform. */
+export interface PluginRelease {
+  name: string;
+  version: string;
+  digest: string;
 }
 
 /** "On" for a capability with a list: all of it. The hub's AllLogs, AllRestart and AllScan. */
@@ -266,19 +275,36 @@ export function raisesRisky(old: Ceiling, next: Ceiling): boolean {
 
 export const pluginClasses: PluginGrant['class'][] = ['read', 'safe', 'dangerous'];
 
-/** Whether next grants a plugin old does not, or one at a higher class: the password again. */
+/** Whether next grants a plugin old does not, one at a higher class, or another release of it: the password again. */
 export function raisesPlugin(old: PluginGrant[], next: PluginGrant[]): boolean {
   const rank = (c: PluginGrant['class']) => pluginClasses.indexOf(c);
   return next.some((n) => {
     const o = old.find((g) => g.name === n.name);
-    return !o || rank(n.class) > rank(o.class);
+    return !o || rank(n.class) > rank(o.class) || (n.digest !== undefined && n.digest !== o.digest);
   });
 }
 
-/** c with the plugin name granted up to class, replacing an earlier grant of it. */
+/** c with the plugin name granted up to class, replacing an earlier grant of it but keeping its release. */
 export function withPlugin(c: Ceiling, name: string, cls: PluginGrant['class']): Ceiling {
+  const old = (c.plugins ?? []).find((g) => g.name === name);
   const rest = (c.plugins ?? []).filter((g) => g.name !== name);
-  return { ...emptyCeiling(), ...c, plugins: [...rest, { name, class: cls }] };
+  const grant: PluginGrant = old?.digest ? { name, class: cls, digest: old.digest } : { name, class: cls };
+  return { ...emptyCeiling(), ...c, plugins: [...rest, grant] };
+}
+
+/** c with the grant of the plugin name moved to the release digest: approving a new upload. */
+export function withPluginRelease(c: Ceiling, name: string, digest: string): Ceiling {
+  return {
+    ...emptyCeiling(),
+    ...c,
+    plugins: (c.plugins ?? []).map((g) => (g.name === name ? { ...g, digest } : g)),
+  };
+}
+
+/** The release uploaded for the device that the grant g does not pin yet, if any: one to approve. */
+export function newRelease(g: PluginGrant, releases: PluginRelease[]): PluginRelease | undefined {
+  const r = releases.find((x) => x.name === g.name);
+  return r && g.digest && r.digest !== g.digest ? r : undefined;
 }
 
 /** c without the grant of the plugin name. */
@@ -301,21 +327,25 @@ export function applied(caps: Capabilities): boolean {
   );
 }
 
-/** The grants of a and b together, each plugin at the higher class, as the agent adds them up. */
+/** The grants of a and b together, each plugin release at the higher class, as the agent adds them up. */
 export function unionPlugins(a: PluginGrant[], b: PluginGrant[]): PluginGrant[] {
   const rank = (c: PluginGrant['class']) => pluginClasses.indexOf(c);
   const out = new Map<string, PluginGrant>();
   for (const g of [...a, ...b]) {
-    const o = out.get(g.name);
+    const key = `${g.name}@${g.digest ?? ''}`;
+    const o = out.get(key);
     if (!o || rank(g.class) > rank(o.class)) {
-      out.set(g.name, g);
+      out.set(key, g);
     }
   }
   return [...out.values()];
 }
 
 function samePlugins(a: PluginGrant[], b: PluginGrant[]): boolean {
-  return a.length === b.length && a.every((g) => b.some((x) => x.name === g.name && x.class === g.class));
+  return (
+    a.length === b.length &&
+    a.every((g) => b.some((x) => x.name === g.name && x.class === g.class && (x.digest ?? '') === (g.digest ?? '')))
+  );
 }
 
 /** What the card says about the agent: who manages its capabilities. */

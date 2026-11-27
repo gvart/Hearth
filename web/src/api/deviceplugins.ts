@@ -15,6 +15,8 @@ export interface DevicePlugin {
   version: string;
   sha256: string;
   size: number;
+  /** Pins this release, program and manifest: a device's grant names it. */
+  digest: string;
   capabilities: string[];
   commands: PluginCommandSpec[];
   uploaded_at: string;

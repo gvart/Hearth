@@ -81,8 +81,11 @@ export function DevicePluginsPage() {
                       </td>
                       <td className="small">
                         {formatBytes(p.size)}
-                        <div className="muted mono" title={p.sha256}>
+                        <div className="muted mono" title={`SHA-256 ${p.sha256}`}>
                           {p.sha256.slice(0, 12)}
+                        </div>
+                        <div className="muted mono" title={`Release digest ${p.digest}: --allow-plugin ${p.name}@${p.digest}`}>
+                          @{p.digest.slice(0, 12)}
                         </div>
                       </td>
                       <td>

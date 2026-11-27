@@ -66,6 +66,8 @@ export interface Ceiling {
 export interface PluginGrant {
   name: string;
   class: 'read' | 'safe' | 'dangerous';
+  /** The release (program and manifest) the grant pins; the hub pins the one uploaded now when absent. */
+  digest?: string;
 }
 
 export interface Device {

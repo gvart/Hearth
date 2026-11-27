@@ -8,16 +8,19 @@ import {
   cardMode,
   emptyCeiling,
   isAll,
+  newRelease,
   parseList,
   pluginClasses,
   withoutPlugin,
   withPlugin,
+  withPluginRelease,
   withDocker,
   withList,
   withSwitch,
   type Capabilities,
   type CapState,
   type DockerLevel,
+  type PluginRelease,
 } from '../capabilities.ts';
 import { formatDateTime } from '../format.ts';
 import { AgentVersionLink } from './DeviceUpgrade.tsx';
@@ -145,8 +148,13 @@ function CapsBody({ device, caps, applying }: { device: Device; caps: Capabiliti
         manageable={caps.plugins_manageable}
         readOnly={mode === 'locked' || mode === 'upgrade' || !caps.plugins_manageable}
         busy={set.isPending}
+        releases={caps.plugin_releases}
+        windows={device.os.toLowerCase().includes('windows')}
         onAdd={(name, cls) => {
           change(withPlugin(hub, name, cls));
+        }}
+        onApprove={(name, digest) => {
+          change(withPluginRelease(hub, name, digest));
         }}
         onRemove={(name) => {
           change(withoutPlugin(hub, name));
@@ -440,7 +448,7 @@ function listOfEffective(s: CapState, c: Ceiling | null): string[] {
 const classNote = 'Adding a plugin or raising its class asks for your password again';
 
 function grantText(g: PluginGrant[]): string {
-  return g.map((x) => `${x.name} (${x.class})`).join(', ');
+  return g.map((x) => `${x.name} (${x.class}${x.digest ? ` @${x.digest.slice(0, 12)}` : ''})`).join(', ');
 }
 
 /** A plugin's class, as a segmented control like Containers'. */
@@ -491,7 +499,10 @@ function PluginsSection({
   manageable,
   readOnly,
   busy,
+  releases,
+  windows,
   onAdd,
+  onApprove,
   onRemove,
 }: {
   grants: PluginGrant[];
@@ -501,7 +512,10 @@ function PluginsSection({
   manageable: boolean;
   readOnly: boolean;
   busy: boolean;
+  releases: PluginRelease[];
+  windows: boolean;
   onAdd: (name: string, cls: PluginGrant['class']) => void;
+  onApprove: (name: string, digest: string) => void;
   onRemove: (name: string) => void;
 }) {
   const registry = useDevicePluginRegistry();
@@ -524,7 +538,11 @@ function PluginsSection({
         <span className="muted small">
           Run the commands of device plugins, up to the class set for each.
         </span>
+        <span className="muted small">
+          Any plugin runs code you upload as the agent&apos;s user, whatever its class. Each grant pins one release.
+        </span>
         {!manageable ? <span className="muted small">Plugins need an agent upgrade</span> : null}
+        {windows ? <span className="muted small">Device plugins are not supported on Windows yet</span> : null}
         {local.length ? (
           <span className="caps-local small">
             Set on the device: <span className="mono">{grantText(local)}</span>
@@ -538,31 +556,57 @@ function PluginsSection({
       </div>
       {grants.length ? (
         <ul className="caps-list">
-          {grants.map((g) => (
-            <li key={g.name} className="caps-row">
-              <span className="caps-name mono">{g.name}</span>
-              <div className="caps-control">
-                <ClassLevels
-                  label={`Class of ${g.name}`}
-                  value={g.class}
-                  disabled={disabled}
-                  onChange={(c) => {
-                    onAdd(g.name, c);
-                  }}
-                />
-                <button
-                  type="button"
-                  className="link small"
-                  disabled={disabled}
-                  onClick={() => {
-                    onRemove(g.name);
-                  }}
-                >
-                  Remove
-                </button>
-              </div>
-            </li>
-          ))}
+          {grants.map((g) => {
+            const pinned = releases.find((r) => r.digest === g.digest);
+            const next = newRelease(g, releases);
+            return (
+              <li key={g.name} className="caps-row">
+                <span className="caps-what">
+                  <span className="caps-name mono">{g.name}</span>
+                  <span className="muted small mono" title={g.digest}>
+                    {pinned ? `v${pinned.version} · ` : ''}
+                    {g.digest ? `@${g.digest.slice(0, 12)}` : ''}
+                  </span>
+                  {next ? (
+                    <span className="caps-plugin-update small">
+                      New release v{next.version} available{' '}
+                      <button
+                        type="button"
+                        className="link small"
+                        disabled={disabled}
+                        title="Moving the device to another release asks for your password again"
+                        onClick={() => {
+                          onApprove(g.name, next.digest);
+                        }}
+                      >
+                        Approve
+                      </button>
+                    </span>
+                  ) : null}
+                </span>
+                <div className="caps-control">
+                  <ClassLevels
+                    label={`Class of ${g.name}`}
+                    value={g.class}
+                    disabled={disabled}
+                    onChange={(c) => {
+                      onAdd(g.name, c);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="link small"
+                    disabled={disabled}
+                    onClick={() => {
+                      onRemove(g.name);
+                    }}
+                  >
+                    Remove
+                  </button>
+                </div>
+              </li>
+            );
+          })}
         </ul>
       ) : null}
       {readOnly ? null : (
