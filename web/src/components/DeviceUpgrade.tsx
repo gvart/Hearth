@@ -148,8 +148,8 @@ function UpgradeDialog({ device, version, onClose }: { device: Device; version: 
             <span className="pill pill-bad">dangerous</span>
           </div>
           <p>
-            The agent downloads Hearth <span className="mono">{to}</span> from GitHub, checks the release&apos;s
-            signed checksums, replaces its binary (keeping the old one as <code>hearth.prev</code>) and restarts.
+            The agent downloads Hearth <span className="mono">{to}</span> from GitHub (or the release mirror it
+            was installed with), checks the release&apos;s signed checksums, replaces its binary (keeping the old one as <code>hearth.prev</code>) and restarts.
           </p>
           <p>
             The device is offline for a few seconds while the agent restarts. If the new version reaches no hub, the
