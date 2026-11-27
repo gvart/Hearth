@@ -383,6 +383,44 @@ func TestCommandHostsLANAddress(t *testing.T) {
 	}
 }
 
+// TestLANOrigin: links and snippets for other devices leave hearth.local,
+// loopback and bare hostnames for the stable certificate name at the hub's
+// own port, and keep any other browser origin, a reverse proxy's included.
+func TestLANOrigin(t *testing.T) {
+	lan := []string{"192.168.2.124", "DNP6J4RC7Q", "localhost", "127.0.0.1", "::1", "hearth.local"}
+	for _, tc := range []struct {
+		hosts   []string
+		reqHost string
+		overTLS bool
+		want    string
+	}{
+		{lan, "hearth.local:7080", false, "http://192.168.2.124:7080"},
+		{lan, "HEARTH.LOCAL.:7080", false, "http://192.168.2.124:7080"},
+		{lan, "hearth.local:7443", true, "https://192.168.2.124:7443"},
+		{lan, "hearth.local", false, "http://192.168.2.124:7080"},
+		{lan, "localhost:5173", false, "http://192.168.2.124:7080"},
+		{lan, "[::1]:7080", false, "http://192.168.2.124:7080"},
+		{lan, "127.0.0.1:7443", true, "https://192.168.2.124:7443"},
+		{lan, "DNP6J4RC7Q:7080", false, "http://192.168.2.124:7080"},
+		{[]string{"fd00::10", "hearth.local"}, "hearth.local:7080", false, "http://[fd00::10]:7080"},
+		{[]string{"hub.home.arpa", "192.168.2.124", "hearth.local"}, "hearth.local:7080", false, "http://hub.home.arpa:7080"},
+		// The browser's origin will do.
+		{lan, "192.168.2.124:7080", false, ""},
+		{lan, "hub.example.com", false, ""}, // a reverse proxy, outside the certificate
+		{[]string{"hub", "hearth.local"}, "hub:7080", false, ""},
+		// No stable name, or a Host that is not one.
+		{[]string{"localhost", "127.0.0.1", "hearth.local"}, "hearth.local:7080", false, ""},
+		{nil, "localhost:7080", false, ""},
+		{lan, "", false, ""},
+		{lan, "$(id).local:7080", false, ""},
+	} {
+		a := &api{agentHosts: tc.hosts, httpPort: "7080", agentPort: "7443"}
+		if got := a.lanOrigin(tc.reqHost, tc.overTLS); got != tc.want {
+			t.Errorf("hosts %v: lanOrigin(%q, %v) = %q, want %q", tc.hosts, tc.reqHost, tc.overTLS, got, tc.want)
+		}
+	}
+}
+
 func TestBareHostname(t *testing.T) {
 	for h, want := range map[string]bool{
 		"DNP6J4RC7Q": true, "pi": true, "pi.": true, "mac.local": true, "MAC.LOCAL.": true,

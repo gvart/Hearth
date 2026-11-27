@@ -36,6 +36,7 @@ export const keys = {
   beszelSystems: ['beszel', 'systems'] as const,
   talosNodes: ['talos', 'nodes'] as const,
   tls: ['tls'] as const,
+  shareOrigin: ['tls', 'share-origin'] as const,
   configDrift: ['cluster', 'config-drift'] as const,
   metrics: (id: string, range: MetricsRange) => ['metrics', id, range] as const,
   metricsSparklines: ['metrics-sparklines'] as const,
@@ -225,6 +226,27 @@ export function useSetTelemetry() {
 /** The hub's HTTPS address details, fetched only when enabled. */
 export function useTlsInfo(enabled: boolean) {
   return useQuery({ queryKey: keys.tls, queryFn: api.tlsInfo, staleTime: Infinity, enabled });
+}
+
+/**
+ * The origin for links and snippets other devices use (MCP, Homepage, panel
+ * links): the hub's stable address when this page's host resolves only here
+ * (hearth.local, localhost), else this page's origin. Fetched at each mount,
+ * as another master may answer hearth.local by now; undefined until then, so
+ * a snippet shown once never changes under the user.
+ */
+export function useShareOrigin(): string | undefined {
+  const tls = useQuery({
+    queryKey: keys.shareOrigin,
+    queryFn: api.tlsInfo,
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+    retry: false,
+  });
+  if (tls.isPending) {
+    return undefined;
+  }
+  return tls.data?.lan_origin ?? window.location.origin;
 }
 
 /** Whether the cluster's hubs run the same per-hub configuration, polled while signed in. */
