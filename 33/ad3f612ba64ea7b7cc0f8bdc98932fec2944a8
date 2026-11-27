@@ -1,0 +1,26 @@
+internal/cluster/replicate.go
+  s_18b57982fdff93::t_68b6adf2633bd6 1490
+internal/cluster/antientropy.go
+  s_18b57982fdff93::t_68b6adf2633bd6 425
+internal/cluster/mastertables_test.go
+  s_18b57982fdff93::t_a49c0427cc71b4 265-266,269
+  s_18b57982fdff93::t_68b6adf2633bd6 39
+internal/store/reads_test.go
+  s_18b57982fdff93::t_68b6adf2633bd6 13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "33ad3f612ba64ea7b7cc0f8bdc98932fec2944a8",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
