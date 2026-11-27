@@ -1,0 +1,51 @@
+internal/agent/upgrade_stream_test.go
+  s_18b57982fdff93::t_af53654f0e2936 27,35-36,45-46,60-65
+internal/release/release_test.go
+  s_18b57982fdff93::t_89f8a26da065dc 1-28
+test/e2e/compose.yaml
+  s_18b57982fdff93::t_df5338fd2b82ad 46-49
+internal/agent/export_test.go
+  s_18b57982fdff93::t_35961c0c99d133 25
+  s_18b57982fdff93::t_af53654f0e2936 5-12,21-24,26,30-42
+internal/agent/run.go
+  s_18b57982fdff93::t_35961c0c99d133 200,203-205,374
+cmd/hearth/hub.go
+  s_18b57982fdff93::t_c4ac41fbcae2a0 485-486
+internal/agent/upgrade_test.go
+  s_18b57982fdff93::t_0e3f6d17580fc3 209
+  s_18b57982fdff93::t_4cb392bf589992 8,10,13-15,56-105,107-109,118-119,148-163,167-169,173-175,185-190,199,204-208,210-211,214-215,220-233,235,238-250,252-253,256,258,264,270-274,278,288-290,295-433,447-450,452-458,461,463
+proto/hearth/agent/v1/agent.proto
+  s_18b57982fdff93::t_7a6270d3a3c820 627-634,636-639
+  s_18b57982fdff93::t_673c9ab14c17f8 656-659
+internal/hub/upgrade_test.go
+  s_18b57982fdff93::t_c947a7874fe20f 17,26,29,34,37,96-98,100,124-126,130-131,133-136,176-182,255-256,260-264,266-280,282-300
+web/src/components/DeviceUpgrade.tsx
+  s_18b57982fdff93::t_c000975b5b048a 152
+internal/release/release.go
+  s_18b57982fdff93::t_34bea23ba6233e 1-67
+internal/hub/upgrade.go
+  s_18b57982fdff93::t_f2cda5e320d287 17,22-25,27-29,63,126,129,143-151
+internal/agent/upgrade.go
+  s_18b57982fdff93::t_f98538c950de91 12,16,23,30,33-36,40-52,68-74,77-78,86-89,94-104,108-114,116-121,138-153,159-160,209-211,214-218,223-231,236,240-244,246-249,251-253,255,258-285,291,310,316-318,322,326-327,337-342,344,348-349,352-357,359-363,365,374,379-380,385-413,419-425,432,442,477-569,590-591
+test/e2e/e2e_test.go
+  s_18b57982fdff93::t_da729ce9f0d5eb 144-147
+  s_18b57982fdff93::t_225a21a4aaa9c3 182-185
+internal/proto/hearth/agent/v1/agent.pb.go
+  s_18b57982fdff93::t_a733fff4096dfb 3956-3963,3968,4028-4032,4102-4115,4389,4392,4398-4400
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "04d45c2fe2cd51c5f4423ad2f204d3bfb99afc82",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
