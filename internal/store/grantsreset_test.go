@@ -3,6 +3,7 @@
 package store
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
@@ -64,7 +65,7 @@ func grant(t *testing.T, s *Store) {
 	if err := s.db.QueryRowContext(ctx, `SELECT count(*) FROM panels`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	id := string(rune('a' + n)) // panels are kept
+	id := fmt.Sprintf("g%d", n) // panels are kept
 	if err := s.Admin().CreateSession(ctx, "session-"+id, now, now.Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}

@@ -114,10 +114,13 @@ func (s *Store) ReadLocal(ctx context.Context, query string, args Values) (Rows,
 	return s.readOn(ctx, s.ro, query, args)
 }
 
-// readOn runs query on q and returns its rows.
-func (s *Store) readOn(ctx context.Context, q interface {
+// queryer is what *sql.DB and *sql.Conn have in common for a read.
+type queryer interface {
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
-}, query string, args Values) (Rows, error) {
+}
+
+// readOn runs query on q and returns its rows.
+func (s *Store) readOn(ctx context.Context, q queryer, query string, args Values) (Rows, error) {
 	rows, err := q.QueryContext(ctx, query, args...)
 	if err != nil {
 		return Rows{}, fmt.Errorf("read: %w", err)

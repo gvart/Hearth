@@ -681,14 +681,11 @@ func (r *Replicator) applyHere(ctx context.Context, cmd store.Command, route sto
 			return store.Result{}, fmt.Errorf("apply %s: this member has not found the cluster it joins yet: %w",
 				cmd.Op(), store.ErrUnavailable)
 		}
-		var live []string
-		n := v.n
-		switch {
-		case route.Kind == store.RouteKey:
+		live, _ := v.globals()
+		n := len(v.everyone)
+		if route.Kind == store.RouteKey {
 			live, _ = v.targets(store.BucketOf(store.Token(route.Key)))
-		default:
-			live, _ = v.globals()
-			n = len(v.everyone)
+			n = v.n
 		}
 		if w := writeQuorum(true, n); len(live) < w {
 			return store.Result{}, fmt.Errorf("apply %s: %d of %d replicas reachable, %d needed: %w",
