@@ -149,7 +149,8 @@ triggers:
 
 A check from a device:
 
-- needs the device's agent to allow it: `hearth agent run --allow-probe`. It is off by default:
+- needs the device to allow it: **Checks** in its Capabilities card (or the agent's own
+  `--allow-probe` flag). It is off by default:
   the check only connects and reads, but it lets the hub use the device as a vantage point into
   any network the device can reach. The agent reports the setting with its ceiling; the hub
   refuses to send a check to an agent without it, and the agent refuses it again. Agents older

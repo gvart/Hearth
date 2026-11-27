@@ -19,10 +19,14 @@ Homelab tooling comes in slices: dashboards look, monitors measure, Docker/k8s U
 network mappers discover. Nothing **acts**. Hearth adds the missing layer:
 
 - **Any device in 10 seconds** — one command, and it shows up with facts, metrics, logs and a shell.
+- **Never touch it again** — turn its capabilities on and off and upgrade its agent from the web UI
+  or the CLI: official releases only, checked against their checksums.
 - **Automations that heal** — "Pi-hole stopped answering → restart it → fail over → ping my phone." A
   watchdog can run on the device itself, so it keeps working while the hub is down.
 - **Runbooks as actions** — "Add a Talos node" becomes a guided, repeatable flow.
-- **Adopt, don't replace** — plugs into your kubeconfig, talosconfig, Pi-hole and Prometheus.
+- **Adopt, don't replace** — plugs into your kubeconfig, talosconfig, Pi-hole, Prometheus and Proxmox,
+  and reads ESPHome devices, OpenWrt routers, OPNsense firewalls and UniFi controllers (those four
+  tested against fakes so far, not real hardware).
 - **Agent-native** — a built-in MCP server lets Claude Code and other agents operate your lab, safely.
 - **Deny by default** — every action from the UI, automations, AI or MCP passes one policy engine with an audit log.
 
@@ -44,7 +48,8 @@ both through the API and fails if either is not online within `DeviceVisibleWith
 - [x] Network discovery (ARP, mDNS, Pi-hole/DHCP leases): scan, classify, then add an agent or adopt the host
 - [x] Kubernetes integration (read + safe actions)
 - [x] Automations (YAML in git) + guardrails + audit log
-- [ ] MCP server, built-in Tailscale (tsnet), installable PWA
+- [x] MCP server, installable PWA
+- [ ] Built-in Tailscale (tsnet)
 
 ## Releases
 
