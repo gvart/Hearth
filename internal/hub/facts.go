@@ -77,10 +77,13 @@ type Ceiling struct {
 	Plugins []PluginGrant `json:"plugins"`
 }
 
-// PluginGrant allows an exec plugin on a device, up to a class of command.
+// PluginGrant allows a release of an exec plugin on a device, up to a
+// class of command. Digest pins the release (plugins.Release.Digest); a
+// grant of the agent's own flags may have none until it pins one.
 type PluginGrant struct {
-	Name  string       `json:"name"`
-	Class policy.Class `json:"class"`
+	Name   string       `json:"name"`
+	Class  policy.Class `json:"class"`
+	Digest string       `json:"digest,omitempty"`
 }
 
 // ceilingJSON is c as served, or nil.
@@ -107,7 +110,7 @@ func (c Ceiling) Proto() *agentv1.Ceiling {
 func pluginGrantsJSON(gs []*agentv1.PluginGrant) []PluginGrant {
 	out := []PluginGrant{}
 	for _, g := range gs {
-		out = append(out, PluginGrant{Name: g.GetName(), Class: policy.Class(g.GetMaxClass())})
+		out = append(out, PluginGrant{Name: g.GetName(), Class: policy.Class(g.GetMaxClass()), Digest: g.GetDigest()})
 	}
 	return out
 }
@@ -116,9 +119,14 @@ func pluginGrantsJSON(gs []*agentv1.PluginGrant) []PluginGrant {
 func pluginGrantsProto(gs []PluginGrant) []*agentv1.PluginGrant {
 	var out []*agentv1.PluginGrant
 	for _, g := range gs {
-		out = append(out, &agentv1.PluginGrant{Name: g.Name, MaxClass: string(g.Class)})
+		out = append(out, &agentv1.PluginGrant{Name: g.Name, MaxClass: string(g.Class), Digest: g.Digest})
 	}
-	slices.SortFunc(out, func(a, b *agentv1.PluginGrant) int { return strings.Compare(a.GetName(), b.GetName()) })
+	slices.SortFunc(out, func(a, b *agentv1.PluginGrant) int {
+		if c := strings.Compare(a.GetName(), b.GetName()); c != 0 {
+			return c
+		}
+		return strings.Compare(a.GetDigest(), b.GetDigest())
+	})
 	return out
 }
 

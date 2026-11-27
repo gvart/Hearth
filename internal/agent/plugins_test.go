@@ -179,7 +179,7 @@ func TestPluginSync(t *testing.T) {
 		h := testHost(t, allow)
 		b := binaryOf("lamp", program)
 		b.Arch = "mips"
-		if _, err := h.install(t.Context(), http.DefaultClient, "http://127.0.0.1:1", allow.proto(), b); err == nil ||
+		if _, err := h.install(t.Context(), http.DefaultClient, "http://127.0.0.1:1", allow.proto(), map[string]pluginPin{}, b); err == nil ||
 			!strings.Contains(err.Error(), "not this device's") {
 			t.Fatalf("install = %v", err)
 		}
@@ -291,9 +291,13 @@ func TestParsePluginGrant(t *testing.T) {
 		want PluginGrant
 		ok   bool
 	}{
-		{"lamp", PluginGrant{"lamp", policy.Read}, true},
-		{"lamp:safe", PluginGrant{"lamp", policy.Safe}, true},
-		{"go-lamp:dangerous", PluginGrant{"go-lamp", policy.Dangerous}, true},
+		{"lamp", PluginGrant{"lamp", policy.Read, ""}, true},
+		{"lamp:safe", PluginGrant{"lamp", policy.Safe, ""}, true},
+		{"go-lamp:dangerous", PluginGrant{"go-lamp", policy.Dangerous, ""}, true},
+		{"lamp@" + strings.Repeat("a", 64), PluginGrant{"lamp", policy.Read, strings.Repeat("a", 64)}, true},
+		{"lamp:safe@" + strings.Repeat("a", 64), PluginGrant{"lamp", policy.Safe, strings.Repeat("a", 64)}, true},
+		{"lamp@", PluginGrant{}, false},
+		{"lamp@xyz", PluginGrant{}, false},
 		{"lamp:root", PluginGrant{}, false},
 		{"../x", PluginGrant{}, false},
 		{":safe", PluginGrant{}, false},
@@ -307,10 +311,11 @@ func TestParsePluginGrant(t *testing.T) {
 }
 
 func TestUnionGrants(t *testing.T) {
-	a := []PluginGrant{{"b", policy.Read}, {"a", policy.Dangerous}}
-	b := []PluginGrant{{"b", policy.Safe}, {"c", policy.Read}, {"a", policy.Read}}
+	d := strings.Repeat("d", 64)
+	a := []PluginGrant{{"b", policy.Read, ""}, {"a", policy.Dangerous, ""}}
+	b := []PluginGrant{{"b", policy.Safe, ""}, {"c", policy.Read, ""}, {"a", policy.Read, ""}, {"a", policy.Read, d}}
 	got := unionGrants(a, b)
-	want := []PluginGrant{{"a", policy.Dangerous}, {"b", policy.Safe}, {"c", policy.Read}}
+	want := []PluginGrant{{"a", policy.Dangerous, ""}, {"a", policy.Read, d}, {"b", policy.Safe, ""}, {"c", policy.Read, ""}}
 	if len(got) != len(want) {
 		t.Fatalf("union = %v", got)
 	}
@@ -338,6 +343,124 @@ func TestPluginCommandRelativeDataDir(t *testing.T) {
 	}
 	res := h.command(t.Context(), &agentv1.PluginCommand{Plugin: "go-lamp", Sha256: b.GetSha256(), Command: "turn_on"})
 	if !res.GetOk() || res.GetOutput() != "lamp is on" {
+		t.Fatalf("result = %v", res)
+	}
+}
+
+// TestPluginReleasePinning: a grant allows one release of a plugin, its
+// program and manifest together. A new program, or the same one relabelled,
+// is refused until the ceiling allows it; the release running stays.
+func TestPluginReleasePinning(t *testing.T) {
+	program, other := []byte("#!/bin/sh\nexit 0\n"), []byte("#!/bin/sh\necho new\n")
+	spec := func(class string) *agentv1.PluginCommandSpec {
+		return &agentv1.PluginCommandSpec{Name: "reflash", Class: class}
+	}
+	v1 := binaryOf("lamp", program, spec("dangerous"))
+	relabelled := binaryOf("lamp", program, spec("read"))
+	renewed := binaryOf("lamp", other, spec("dangerous"))
+	digest := releaseOf(v1).Digest()
+	if releaseOf(relabelled).Digest() == digest || releaseOf(renewed).Digest() == digest {
+		t.Fatal("a new manifest or program kept the digest")
+	}
+
+	t.Run("hub pin", func(t *testing.T) {
+		c := &Ceiling{Plugins: []PluginGrant{{Name: "lamp", Class: policy.Dangerous, Digest: digest}}}
+		h, srv := testHost(t, c), newBlobServer(t, program, other)
+		if st := syncOnce(t, h, srv, v1); st.GetPlugins()[0].GetError() != "" || st.GetPlugins()[0].GetRelease().GetSha256() != v1.GetSha256() {
+			t.Fatalf("status = %v", st)
+		}
+		for name, b := range map[string]*agentv1.PluginBinary{"relabelled": relabelled, "new program": renewed} {
+			st := syncOnce(t, h, srv, b)
+			ps := st.GetPlugins()[0]
+			if !strings.Contains(ps.GetError(), "approve it") || ps.GetSha256() != v1.GetSha256() {
+				t.Fatalf("%s: status = %v, want refused and v1 kept", name, st)
+			}
+			h.mu.Lock()
+			inst := h.installed["lamp"]
+			h.mu.Unlock()
+			if inst.digest != digest {
+				t.Fatalf("%s: runs %s", name, inst.digest)
+			}
+		}
+		// The ceiling allows the new one: it replaces the old, whose
+		// commands in flight are cancelled.
+		h.mu.Lock()
+		old := h.installed["lamp"]
+		h.mu.Unlock()
+		*c = Ceiling{Plugins: []PluginGrant{{Name: "lamp", Class: policy.Dangerous, Digest: releaseOf(renewed).Digest()}}}
+		if st := syncOnce(t, h, srv, renewed); st.GetPlugins()[0].GetSha256() != renewed.GetSha256() {
+			t.Fatalf("status = %v", st)
+		}
+		if old.life.Err() == nil {
+			t.Error("the replaced release's commands were not cancelled")
+		}
+	})
+
+	t.Run("pinned on first use", func(t *testing.T) {
+		c := &Ceiling{Plugins: []PluginGrant{{Name: "lamp", Class: policy.Dangerous}}}
+		h, srv := testHost(t, c), newBlobServer(t, program, other)
+		if st := syncOnce(t, h, srv, v1); st.GetPlugins()[0].GetError() != "" {
+			t.Fatalf("status = %v", st)
+		}
+		if pins := h.loadPins(); pins["lamp"].Digest != digest || pins["lamp"].Flag != "lamp:dangerous" {
+			t.Fatalf("pins = %v", pins)
+		}
+		// A restart: the pin holds.
+		h2 := newPluginHost(filepath.Dir(h.dir), slog.New(slog.DiscardHandler), func() Ceiling { return *c })
+		for _, b := range []*agentv1.PluginBinary{relabelled, renewed} {
+			if st := syncOnce(t, h2, srv, b); !strings.Contains(st.GetPlugins()[0].GetError(), "approve it") {
+				t.Fatalf("status = %v, want refused", st)
+			}
+		}
+		// Another flag pins anew.
+		*c = Ceiling{Plugins: []PluginGrant{{Name: "lamp", Class: policy.Safe}}}
+		if st := syncOnce(t, h2, srv, renewed); st.GetPlugins()[0].GetError() != "" {
+			t.Fatalf("status = %v", st)
+		}
+		if pins := h2.loadPins(); pins["lamp"].Digest != releaseOf(renewed).Digest() {
+			t.Fatalf("pins = %v", pins)
+		}
+	})
+
+	t.Run("digest flag", func(t *testing.T) {
+		c := &Ceiling{Plugins: []PluginGrant{{Name: "lamp", Class: policy.Dangerous, Digest: releaseOf(renewed).Digest()}}}
+		h, srv := testHost(t, c), newBlobServer(t, program)
+		if st := syncOnce(t, h, srv, v1); !strings.Contains(st.GetPlugins()[0].GetError(), "approve it") || srv.fetches.Load() != 0 {
+			t.Fatalf("status = %v, fetches %d", st, srv.fetches.Load())
+		}
+	})
+}
+
+// TestPluginsUnsupported: a platform without plugins installs and runs
+// none, as on Windows.
+func TestPluginsUnsupported(t *testing.T) {
+	program := []byte("#!/bin/sh\nexit 0\n")
+	h, srv := testHost(t, &Ceiling{Plugins: []PluginGrant{{Name: "lamp", Class: policy.Safe}}}), newBlobServer(t, program)
+	h.unsupported = "device plugins are not supported on Windows yet"
+	st := syncOnce(t, h, srv, binaryOf("lamp", program))
+	if !strings.Contains(st.GetPlugins()[0].GetError(), "Windows") || srv.fetches.Load() != 0 {
+		t.Fatalf("status = %v", st)
+	}
+	res := h.command(t.Context(), &agentv1.PluginCommand{Plugin: "lamp", Sha256: sum(program), Command: "x"})
+	if !res.GetDenied() || !strings.Contains(res.GetError(), "Windows") {
+		t.Fatalf("result = %v", res)
+	}
+}
+
+// TestPluginCommandSlots: the agent runs a few plugin commands at once and
+// refuses more.
+func TestPluginCommandSlots(t *testing.T) {
+	program := []byte("#!/bin/sh\nexit 0\n")
+	h, srv := testHost(t, &Ceiling{Plugins: []PluginGrant{{Name: "lamp", Class: policy.Safe}}}), newBlobServer(t, program)
+	b := binaryOf("lamp", program, &agentv1.PluginCommandSpec{Name: "on", Class: "read"})
+	if st := syncOnce(t, h, srv, b); st.GetPlugins()[0].GetError() != "" {
+		t.Fatalf("status = %v", st)
+	}
+	for range maxPluginCommands {
+		h.slots <- struct{}{}
+	}
+	res := h.command(t.Context(), &agentv1.PluginCommand{Plugin: "lamp", Sha256: b.GetSha256(), Command: "on"})
+	if !res.GetDenied() || !strings.Contains(res.GetError(), "already run") {
 		t.Fatalf("result = %v", res)
 	}
 }

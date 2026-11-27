@@ -21,6 +21,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/gvart/hearth/internal/plugins"
 	"github.com/gvart/hearth/internal/policy"
 	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
@@ -34,38 +36,66 @@ import (
 // <data>/plugins/<name>/<sha256> only once its SHA-256 is the one pinned.
 // It reports what it installed in a PluginStatus.
 //
+// A ceiling allows a release of a plugin: its digest
+// (plugins.Release.Digest) binds the program and the manifest that says
+// what runs and at what class. A grant the hub sets always pins one; an
+// --allow-plugin flag without @DIGEST pins the first release the agent
+// installs (trust on first use), in <data>/plugin-pins.json, until the flag
+// changes. A new upload under the same name is another release: the agent
+// keeps running the one it has until the ceiling allows the new one.
+//
 // A PluginCommand starts the plugin on a process of its own, runs the
 // command and stops it (plugins.RunOnce), which checks the program's
-// SHA-256 again before the start. The agent refuses a plugin its ceiling
+// SHA-256 again before the start. The agent refuses a release its ceiling
 // does not allow, a command the installed manifest does not declare, and
 // one whose class, from that manifest, is above the class its ceiling
-// allows for the plugin, whatever the hub decided.
+// allows for the release, whatever the hub decided. Device plugins are not
+// supported on Windows yet: there the data dir has no ACL of the agent's
+// own, and another local user could swap a program between its check and
+// its start.
 
 // PluginsDir is the directory of the data dir that holds the plugins.
 const PluginsDir = "plugins"
+
+// PluginPinsFile is the file of the data dir that holds the releases the
+// agent pinned on first use.
+const PluginPinsFile = "plugin-pins.json"
 
 const (
 	// defaultPluginTimeout is a command's timeout when the hub sets none,
 	// and maxPluginTimeout the longest it may set.
 	defaultPluginTimeout = 30 * time.Second
 	maxPluginTimeout     = 5 * time.Minute
+	// maxPluginCommands is how many plugin commands run at once; more are
+	// refused.
+	maxPluginCommands = 4
+	// maxPluginsDisk caps the programs the agent keeps, all plugins
+	// together.
+	maxPluginsDisk = 512 << 20
 )
 
-// PluginGrant allows one exec plugin, up to a class of command.
+// PluginGrant allows one exec plugin, up to a class of command: the release
+// Digest, or, with none, the first release the agent installs.
 type PluginGrant struct {
-	Name  string
-	Class policy.Class
+	Name   string
+	Class  policy.Class
+	Digest string
 }
 
-// ParsePluginGrant parses an --allow-plugin entry: NAME or NAME:CLASS, with
-// CLASS read, safe or dangerous; NAME alone allows read commands only.
+// ParsePluginGrant parses an --allow-plugin entry: NAME[:CLASS][@DIGEST],
+// with CLASS read, safe or dangerous; NAME alone allows read commands only.
+// Without DIGEST, the agent pins the first release it installs.
 func ParsePluginGrant(entry string) (PluginGrant, error) {
-	name, class, ok := strings.Cut(entry, ":")
-	g := PluginGrant{Name: name, Class: policy.Read}
+	rest, digest, _ := strings.Cut(entry, "@")
+	name, class, ok := strings.Cut(rest, ":")
+	g := PluginGrant{Name: name, Class: policy.Read, Digest: digest}
 	if ok {
 		g.Class = policy.Class(class)
 	}
-	if err := policy.CheckPluginGrants([]*agentv1.PluginGrant{{Name: g.Name, MaxClass: string(g.Class)}}); err != nil {
+	if strings.Contains(entry, "@") && digest == "" {
+		return PluginGrant{}, fmt.Errorf("plugin entry %s: empty digest after @", name)
+	}
+	if err := policy.CheckPluginGrants(grantsProto([]PluginGrant{g})); err != nil {
 		return PluginGrant{}, err
 	}
 	return g, nil
@@ -78,26 +108,26 @@ func grantsProto(gs []PluginGrant) []*agentv1.PluginGrant {
 	}
 	out := make([]*agentv1.PluginGrant, 0, len(gs))
 	for _, g := range gs {
-		out = append(out, &agentv1.PluginGrant{Name: g.Name, MaxClass: string(g.Class)})
+		out = append(out, &agentv1.PluginGrant{Name: g.Name, MaxClass: string(g.Class), Digest: g.Digest})
 	}
 	return out
 }
 
-// grantsOf is gs as the agent holds them: sorted by name.
+// grantsOf is gs as the agent holds them: sorted by name and digest.
 func grantsOf(gs []*agentv1.PluginGrant) []PluginGrant {
 	var out []PluginGrant
 	for _, g := range gs {
-		out = append(out, PluginGrant{Name: g.GetName(), Class: policy.Class(g.GetMaxClass())})
+		out = append(out, PluginGrant{Name: g.GetName(), Class: policy.Class(g.GetMaxClass()), Digest: g.GetDigest()})
 	}
 	return sortGrants(out)
 }
 
-// unionGrants is what a or b allows: each plugin of either, at the higher of
-// its classes.
+// unionGrants is what a or b allows: each release of either, at the higher
+// of its classes.
 func unionGrants(a, b []PluginGrant) []PluginGrant {
 	out := slices.Clone(a)
 	for _, g := range b {
-		i := slices.IndexFunc(out, func(o PluginGrant) bool { return o.Name == g.Name })
+		i := slices.IndexFunc(out, func(o PluginGrant) bool { return o.Name == g.Name && o.Digest == g.Digest })
 		switch {
 		case i < 0:
 			out = append(out, g)
@@ -109,17 +139,36 @@ func unionGrants(a, b []PluginGrant) []PluginGrant {
 }
 
 func sortGrants(gs []PluginGrant) []PluginGrant {
-	slices.SortFunc(gs, func(a, b PluginGrant) int { return strings.Compare(a.Name, b.Name) })
+	slices.SortFunc(gs, func(a, b PluginGrant) int {
+		if c := strings.Compare(a.Name, b.Name); c != 0 {
+			return c
+		}
+		return strings.Compare(a.Digest, b.Digest)
+	})
 	return gs
+}
+
+// releaseOf is the release b offers.
+func releaseOf(b *agentv1.PluginBinary) plugins.Release { return plugins.ReleaseOf(b) }
+
+// pluginPin is a release pinned on first use, for the --allow-plugin flag
+// Flag (NAME:CLASS): another flag pins anew.
+type pluginPin struct {
+	Flag   string `json:"flag"`
+	Digest string `json:"digest"`
 }
 
 // pluginHost installs and runs the device's plugins.
 type pluginHost struct {
-	dir     string
-	log     *slog.Logger
-	ceiling func() Ceiling
+	dir, pinsPath string
+	log           *slog.Logger
+	ceiling       func() Ceiling
 	// opts bound a plugin's process; tests shorten them.
 	opts plugins.Options
+	// unsupported, when set, is why this platform runs no plugins.
+	unsupported string
+	// slots bounds the commands running at once.
+	slots chan struct{}
 
 	// gen numbers the configs received; a sync of an older one is
 	// skipped. syncMu runs one sync at a time.
@@ -130,21 +179,87 @@ type pluginHost struct {
 	installed map[string]installedPlugin
 }
 
-// installedPlugin is a plugin whose program is on disk, checked.
+// installedPlugin is a release whose program is on disk, checked.
 type installedPlugin struct {
 	sha256   string
+	digest   string
 	version  string
 	manifest plugins.Manifest
+	release  *agentv1.PluginBinary
+	// life ends when the release is removed or replaced: its commands in
+	// flight are cancelled.
+	life context.Context
+	stop context.CancelFunc
 }
 
 // newPluginHost keeps the plugins under dataDir. The path is made absolute:
 // a plugin's program is named relative to nothing else.
 func newPluginHost(dataDir string, log *slog.Logger, ceiling func() Ceiling) *pluginHost {
-	dir := filepath.Join(dataDir, PluginsDir)
-	if abs, err := filepath.Abs(dir); err == nil {
-		dir = abs
+	if abs, err := filepath.Abs(dataDir); err == nil {
+		dataDir = abs
 	}
-	return &pluginHost{dir: dir, log: log, ceiling: ceiling, installed: map[string]installedPlugin{}}
+	h := &pluginHost{
+		dir: filepath.Join(dataDir, PluginsDir), pinsPath: filepath.Join(dataDir, PluginPinsFile),
+		log: log, ceiling: ceiling, installed: map[string]installedPlugin{}, slots: make(chan struct{}, maxPluginCommands),
+	}
+	if runtime.GOOS == "windows" {
+		h.unsupported = "device plugins are not supported on Windows yet"
+	}
+	return h
+}
+
+// loadPins is the releases pinned on first use, by plugin name.
+func (h *pluginHost) loadPins() map[string]pluginPin {
+	pins := map[string]pluginPin{}
+	b, err := os.ReadFile(h.pinsPath)
+	if err == nil {
+		err = json.Unmarshal(b, &pins)
+	}
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		h.log.Warn("read the plugin pins", "err", err)
+	}
+	return pins
+}
+
+func (h *pluginHost) savePins(pins map[string]pluginPin) error {
+	b, err := json.Marshal(pins)
+	if err != nil {
+		return err
+	}
+	tmp := h.pinsPath + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, h.pinsPath)
+}
+
+// flagOf is the --allow-plugin flag a grant without a digest came from.
+func flagOf(g *agentv1.PluginGrant) string { return g.GetName() + ":" + g.GetMaxClass() }
+
+// resolved is c with each grant without a digest pinned to the release
+// pins hold for its flag; one without a pin stays without a digest.
+func resolved(c *agentv1.Ceiling, pins map[string]pluginPin) *agentv1.Ceiling {
+	out := &agentv1.Ceiling{}
+	for _, g := range c.GetPlugins() {
+		if g.GetDigest() == "" {
+			if p, ok := pins[g.GetName()]; ok && p.Flag == flagOf(g) {
+				g = &agentv1.PluginGrant{Name: g.GetName(), MaxClass: g.GetMaxClass(), Digest: p.Digest}
+			}
+		}
+		out.Plugins = append(out.Plugins, g)
+	}
+	return out
+}
+
+// unpinned is the grant of plugin name without a digest nor a pin yet in
+// c, if any: the first release installed is pinned to it.
+func unpinned(c *agentv1.Ceiling, name string) *agentv1.PluginGrant {
+	for _, g := range c.GetPlugins() {
+		if g.GetName() == name && g.GetDigest() == "" {
+			return g
+		}
+	}
+	return nil
 }
 
 // next numbers a config just received.
@@ -171,35 +286,58 @@ func (h *pluginHost) sync(ctx context.Context, client *http.Client, hub string, 
 		}
 	}
 	slices.Sort(names)
-	c := h.ceiling().proto()
+	pins := h.loadPins()
+	h.mu.Lock()
+	had := h.installed
+	h.mu.Unlock()
 	next := map[string]installedPlugin{}
 	for _, name := range names {
 		state := &agentv1.PluginState{Name: name}
 		st.Plugins = append(st.Plugins, state)
+		if h.unsupported != "" {
+			state.Error = h.unsupported
+			continue
+		}
 		b := mine[name]
 		if b == nil {
 			state.Error = fmt.Sprintf("no program uploaded for this device's platform, %s/%s", runtime.GOOS, runtime.GOARCH)
 			continue
 		}
 		state.Version = b.GetVersion()
-		inst, err := h.install(ctx, client, hub, c, b)
+		c := resolved(h.ceiling().proto(), pins)
+		inst, err := h.install(ctx, client, hub, c, pins, b)
 		if err != nil {
 			h.log.WarnContext(ctx, "plugin not installed", "plugin", name, "err", err)
 			state.Error = err.Error()
-			continue
+			// The release the device runs stays while its ceiling allows it.
+			old, ok := had[name]
+			if !ok || policy.PluginWithinCeiling(c, name, old.digest, "") != nil {
+				continue
+			}
+			inst = old
 		}
-		state.Sha256 = inst.sha256
+		state.Version, state.Sha256, state.Release = inst.version, inst.sha256, inst.release
 		next[name] = inst
 	}
 	h.mu.Lock()
 	h.installed = next
 	h.mu.Unlock()
+	// Commands in flight of a release removed or replaced are cancelled.
+	for name, old := range had {
+		if n, ok := next[name]; (!ok || n.digest != old.digest) && old.stop != nil {
+			old.stop()
+		}
+	}
 	h.prune(ctx, next)
 	return st
 }
 
-// install checks b and makes sure its program is on disk.
-func (h *pluginHost) install(ctx context.Context, client *http.Client, hub string, c *agentv1.Ceiling, b *agentv1.PluginBinary) (installedPlugin, error) {
+// install checks b against c, whose grants without a digest pins resolved,
+// and makes sure its program is on disk. A release installed for a grant
+// without a digest nor a pin is pinned to it.
+func (h *pluginHost) install(ctx context.Context, client *http.Client, hub string, c *agentv1.Ceiling,
+	pins map[string]pluginPin, b *agentv1.PluginBinary,
+) (installedPlugin, error) {
 	switch {
 	case !policy.ValidPluginName(b.GetName()):
 		return installedPlugin{}, fmt.Errorf("invalid plugin name %.64q", b.GetName())
@@ -211,8 +349,14 @@ func (h *pluginHost) install(ctx context.Context, client *http.Client, hub strin
 	case b.GetSize() > plugins.MaxProgramSize:
 		return installedPlugin{}, fmt.Errorf("the program is larger than %d MiB", plugins.MaxProgramSize>>20)
 	}
-	if err := policy.PluginWithinCeiling(c, b.GetName(), ""); err != nil {
-		return installedPlugin{}, err
+	digest := releaseOf(b).Digest()
+	var pin *agentv1.PluginGrant
+	if err := policy.PluginWithinCeiling(c, b.GetName(), digest, ""); err != nil {
+		if pin = unpinned(c, b.GetName()); pin == nil {
+			return installedPlugin{}, fmt.Errorf("release %.12s (%s) is not the one this device allows: "+
+				"approve it in the device's Capabilities, or pin it with --allow-plugin %s@%s: %w",
+				digest, b.GetVersion(), b.GetName(), digest, err)
+		}
 	}
 	dir := filepath.Join(h.dir, b.GetName())
 	path := filepath.Join(dir, b.GetSha256())
@@ -234,13 +378,47 @@ func (h *pluginHost) install(ctx context.Context, client *http.Client, hub strin
 			return installedPlugin{}, err
 		}
 	}
-	if digest, err := fileSHA256(path); err != nil || digest != b.GetSha256() {
+	if sum, err := fileSHA256(path); err != nil || sum != b.GetSha256() {
+		if used := h.diskUsed(); uint64(used)+b.GetSize() > maxPluginsDisk { //nolint:gosec // a sum of file sizes, never negative
+			return installedPlugin{}, fmt.Errorf("the plugins would take more than %d MiB on this device", maxPluginsDisk>>20)
+		}
 		if err := h.download(ctx, client, hub, b.GetSha256(), path); err != nil {
 			return installedPlugin{}, err
 		}
-		h.log.InfoContext(ctx, "plugin installed", "plugin", b.GetName(), "version", b.GetVersion(), "sha256", b.GetSha256())
+		h.log.InfoContext(ctx, "plugin installed", "plugin", b.GetName(), "version", b.GetVersion(), "sha256", b.GetSha256(), "digest", digest)
 	}
-	return installedPlugin{sha256: b.GetSha256(), version: b.GetVersion(), manifest: m}, nil
+	if pin != nil {
+		pins[b.GetName()] = pluginPin{Flag: flagOf(pin), Digest: digest}
+		if err := h.savePins(pins); err != nil {
+			return installedPlugin{}, fmt.Errorf("pin the release: %w", err)
+		}
+		h.log.InfoContext(ctx, "plugin release pinned on first use", "plugin", b.GetName(), "digest", digest)
+	}
+	h.mu.Lock()
+	old, ok := h.installed[b.GetName()]
+	h.mu.Unlock()
+	if ok && old.digest == digest {
+		return old, nil
+	}
+	life, stop := context.WithCancel(context.Background())
+	return installedPlugin{
+		sha256: b.GetSha256(), digest: digest, version: b.GetVersion(), manifest: m,
+		release: proto.CloneOf(b), life: life, stop: stop,
+	}, nil
+}
+
+// diskUsed is the bytes the plugins' files take.
+func (h *pluginHost) diskUsed() int64 {
+	var n int64
+	_ = filepath.WalkDir(h.dir, func(_ string, d os.DirEntry, err error) error {
+		if err == nil && d.Type().IsRegular() {
+			if fi, err := d.Info(); err == nil {
+				n += fi.Size()
+			}
+		}
+		return nil
+	})
+	return n
 }
 
 // download fetches the program of SHA-256 sum from hub into path: streamed
@@ -342,6 +520,9 @@ func (h *pluginHost) command(ctx context.Context, req *agentv1.PluginCommand) *a
 		res.Denied, res.Error = true, err.Error()
 		return res
 	}
+	if h.unsupported != "" {
+		return deny(errors.New(h.unsupported))
+	}
 	if !policy.ValidPluginName(req.GetPlugin()) || !plugins.ValidSHA256(req.GetSha256()) {
 		return deny(errors.New("invalid plugin name or SHA-256"))
 	}
@@ -360,8 +541,21 @@ func (h *pluginHost) command(ctx context.Context, req *agentv1.PluginCommand) *a
 	if !declared {
 		return deny(fmt.Errorf("plugin %s declares no command %.64q", req.GetPlugin(), req.GetCommand()))
 	}
-	if err := policy.PluginWithinCeiling(h.ceiling().proto(), req.GetPlugin(), class); err != nil {
+	if err := policy.PluginWithinCeiling(resolved(h.ceiling().proto(), h.loadPins()), req.GetPlugin(), inst.digest, class); err != nil {
 		return deny(err)
+	}
+	select {
+	case h.slots <- struct{}{}:
+		defer func() { <-h.slots }()
+	default:
+		return deny(fmt.Errorf("%d plugin commands already run on this device", maxPluginCommands))
+	}
+	// Removing or replacing the release cancels the command.
+	if inst.life != nil {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithCancel(ctx)
+		defer cancel()
+		defer context.AfterFunc(inst.life, cancel)()
 	}
 	creq := plugins.CommandRequest{Command: req.GetCommand(), Device: req.GetDevice()}
 	if req.GetArgsJson() != "" {

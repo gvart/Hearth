@@ -215,7 +215,7 @@ func NewHandler(cfg Config) http.Handler {
 		stream.agents.SetMasters(cfg.Masters, cfg.Store.DeviceRoutes())
 	}
 	if cfg.PluginBlobs != nil {
-		stream.agents.SetPlugins(cfg.Store.DevicePlugins(), cfg.PluginBlobs)
+		stream.agents.SetPlugins(cfg.Store, cfg.PluginBlobs)
 		// An agent fetches the programs of its plugins with its certificate.
 		mux.Handle(plugins.BlobPath, requireClientCert(cfg.Store.Certs(), cfg.CA, cfg.Log, nil, stream.agents.pluginBlobHandler()))
 	}

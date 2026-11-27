@@ -33,8 +33,9 @@ import (
 // an agent's stream sends it a PluginConfig, as it sends the ceiling
 // (ceilingpush.go): on connect, an empty one too, and from every heartbeat
 // and facts report when it changed. It holds every plugin uploaded for
-// devices, for every platform, whose name the ceiling the agent reported
-// allows: the agent picks its own platform's and checks the grant again.
+// devices, for every platform, whose name the grants of the device allow
+// (allowedPluginGrants): the agent picks its own platform's and checks the
+// release against its own ceiling again.
 // The agent fetches each program from this hub at plugins.BlobPath, with its
 // client certificate, and answers with a PluginStatus, which the hub keeps
 // for the stream.
@@ -72,19 +73,53 @@ func NewPluginBlobs(dataDir string) *PluginBlobs {
 // returns its SHA-256 and size. A larger one fails with ErrPluginTooLarge and
 // leaves nothing behind.
 func (b *PluginBlobs) Save(r io.Reader) (string, int64, error) {
-	return b.save(r, "")
+	p, err := b.Stage(r)
+	if err != nil {
+		return "", 0, err
+	}
+	if err := p.Commit(); err != nil {
+		return "", 0, err
+	}
+	return p.SHA256, p.Size, nil
 }
 
-// save stores r, refusing it unless its SHA-256 is want, when set.
-func (b *PluginBlobs) save(r io.Reader, want string) (string, int64, error) {
+// StagedProgram is a program read and hashed, not stored yet: Commit stores
+// it under its SHA-256, Discard drops it. An upload is staged until policy
+// decided on it, so a refused one never shows under a SHA-256.
+type StagedProgram struct {
+	SHA256 string
+	Size   int64
+	path   string
+	dir    string
+}
+
+// Commit stores p under its SHA-256. The same program stored meanwhile is
+// the same bytes.
+func (p *StagedProgram) Commit() error {
+	if err := os.Rename(p.path, filepath.Join(p.dir, p.SHA256)); err != nil {
+		return fmt.Errorf("store the program: %w", err)
+	}
+	return nil
+}
+
+// Discard drops p, unless it was committed.
+func (p *StagedProgram) Discard() { _ = os.Remove(p.path) }
+
+// Stage reads the program r reads, at most plugins.MaxProgramSize bytes,
+// into a file of its own; ErrPluginTooLarge leaves nothing behind.
+func (b *PluginBlobs) Stage(r io.Reader) (*StagedProgram, error) {
+	return b.stage(r, "")
+}
+
+// stage stages r, refusing it unless its SHA-256 is want, when set.
+func (b *PluginBlobs) stage(r io.Reader, want string) (*StagedProgram, error) {
 	if err := os.MkdirAll(b.dir, 0o700); err != nil {
-		return "", 0, fmt.Errorf("store the program: %w", err)
+		return nil, fmt.Errorf("store the program: %w", err)
 	}
 	tmp, err := os.CreateTemp(b.dir, ".upload-*")
 	if err != nil {
-		return "", 0, fmt.Errorf("store the program: %w", err)
+		return nil, fmt.Errorf("store the program: %w", err)
 	}
-	defer func() { _ = os.Remove(tmp.Name()) }()
 	h := sha256.New()
 	n, err := io.Copy(io.MultiWriter(tmp, h), io.LimitReader(r, plugins.MaxProgramSize+1))
 	if err == nil {
@@ -93,20 +128,20 @@ func (b *PluginBlobs) save(r io.Reader, want string) (string, int64, error) {
 	if cerr := tmp.Close(); err == nil {
 		err = cerr
 	}
+	sum := hex.EncodeToString(h.Sum(nil))
 	switch {
 	case err != nil:
-		return "", 0, fmt.Errorf("store the program: %w", err)
+		err = fmt.Errorf("store the program: %w", err)
 	case n > plugins.MaxProgramSize:
-		return "", 0, ErrPluginTooLarge
+		err = ErrPluginTooLarge
+	case want != "" && sum != want:
+		err = fmt.Errorf("store the program: its SHA-256 is %s, not %s: %w", sum, want, plugins.ErrPinMismatch)
 	}
-	sum := hex.EncodeToString(h.Sum(nil))
-	if want != "" && sum != want {
-		return "", 0, fmt.Errorf("store the program: its SHA-256 is %s, not %s: %w", sum, want, plugins.ErrPinMismatch)
+	if err != nil {
+		_ = os.Remove(tmp.Name())
+		return nil, err
 	}
-	if err := os.Rename(tmp.Name(), filepath.Join(b.dir, sum)); err != nil {
-		return "", 0, fmt.Errorf("store the program: %w", err)
-	}
-	return sum, n, nil
+	return &StagedProgram{SHA256: sum, Size: n, path: tmp.Name(), dir: b.dir}, nil
 }
 
 // Open opens the program of SHA-256 sum: this hub's copy, or one fetched
@@ -122,6 +157,11 @@ func (b *PluginBlobs) Open(ctx context.Context, sum, holder string) (*os.File, e
 	}
 	if b.masters == nil || holder == "" || holder == b.masters.Self() {
 		return nil, fmt.Errorf("program %.12s is not on this hub: %w", sum, store.ErrNotFound)
+	}
+	// The row naming holder is replicated: never dial a hub that is not a
+	// live master of the cluster.
+	if !b.masters.Live(holder) {
+		return nil, fmt.Errorf("program %.12s: its hub %s is not a live master: %w", sum, holder, store.ErrNotFound)
 	}
 	if err := b.fetch(ctx, sum, holder); err != nil {
 		return nil, err
@@ -143,7 +183,11 @@ func (b *PluginBlobs) fetch(ctx context.Context, sum, master string) error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("fetch program %.12s from hub %s: %s: %w", sum, master, resp.Status, store.ErrNotFound)
 	}
-	if _, _, err := b.save(resp.Body, sum); err != nil {
+	p, err := b.stage(resp.Body, sum)
+	if err == nil {
+		err = p.Commit()
+	}
+	if err != nil {
 		return fmt.Errorf("fetch program %.12s from hub %s: %w", sum, master, err)
 	}
 	return nil
@@ -220,13 +264,86 @@ func pluginBinary(p store.DevicePlugin) (*agentv1.PluginBinary, error) {
 	return b, nil
 }
 
-// SetPlugins makes a hand the plugins of list, with their programs in blobs,
-// to the agents that stream to it.
-func (a *Agents) SetPlugins(list store.DevicePlugins, blobs *PluginBlobs) {
-	a.devicePlugins, a.blobs = &list, blobs
+// SetPlugins makes a hand the plugins uploaded to st, with their programs
+// in blobs, to the agents that stream to it.
+func (a *Agents) SetPlugins(st *store.Store, blobs *PluginBlobs) {
+	list := st.DevicePlugins()
+	a.devicePlugins, a.pluginStore, a.blobs = &list, st, blobs
 	if a.masters != nil && blobs != nil {
 		blobs.masters = a.masters
 	}
+}
+
+// allowedPluginGrants are the grants of reported, the ceiling device d's
+// agent reported, that the hub knows of: one the hub set for d (unless its
+// agent runs --local-ceiling) or one d reported as its own flags, each at
+// the lower of the two classes. A device cannot make the hub hand it a
+// plugin by reporting a grant no one set. The agent checks its own ceiling
+// again.
+func allowedPluginGrants(ctx context.Context, st *store.Store, d store.Device, reported *agentv1.Ceiling) (*agentv1.Ceiling, error) {
+	caps, err := capabilitiesOf(ctx, st, d)
+	if err != nil {
+		return nil, err
+	}
+	var sources []PluginGrant
+	if caps.Local != nil {
+		sources = append(sources, caps.Local.Plugins...)
+	}
+	if !caps.Locked {
+		sources = append(sources, caps.Hub.Plugins...)
+	}
+	out := &agentv1.Ceiling{}
+	for _, g := range reported.GetPlugins() {
+		var known policy.Class
+		for _, s := range sources {
+			if s.Name == g.GetName() && s.Digest == g.GetDigest() && (known == "" || policy.ClassAbove(s.Class, known)) {
+				known = s.Class
+			}
+		}
+		if known == "" {
+			continue
+		}
+		class := policy.Class(g.GetMaxClass())
+		if policy.ClassAbove(class, known) {
+			class = known
+		}
+		out.Plugins = append(out.Plugins, &agentv1.PluginGrant{Name: g.GetName(), MaxClass: string(class), Digest: g.GetDigest()})
+	}
+	return out, nil
+}
+
+// grantedClass is the highest class c allows for the commands of release
+// digest of plugin name: by a grant pinned to it, or by one of the agent's
+// own flags that pins none, for which the agent pinned the first release it
+// installed and checks it.
+func grantedClass(c *agentv1.Ceiling, name, digest string) (policy.Class, bool) {
+	var best policy.Class
+	found := false
+	for _, g := range c.GetPlugins() {
+		if g.GetName() != name || (g.GetDigest() != "" && g.GetDigest() != digest) {
+			continue
+		}
+		if cl := policy.Class(g.GetMaxClass()); !found || policy.ClassAbove(cl, best) {
+			best, found = cl, true
+		}
+	}
+	return best, found
+}
+
+// pluginGrants are the grants allowedPluginGrants keeps of what the agent of
+// device reported on sess.
+func (a *Agents) pluginGrants(ctx context.Context, device string, sess *agentSession) (*agentv1.Ceiling, error) {
+	sess.mu.Lock()
+	reported := sess.ceiling
+	sess.mu.Unlock()
+	if a.pluginStore == nil {
+		return &agentv1.Ceiling{}, nil
+	}
+	d, err := a.pluginStore.Devices().Get(ctx, device)
+	if err != nil {
+		return nil, err
+	}
+	return allowedPluginGrants(ctx, a.pluginStore, d, reported)
 }
 
 // syncPlugins sends sess the plugins its agent may install when they differ
@@ -248,9 +365,10 @@ func (a *Agents) syncPlugins(ctx context.Context, sess *agentSession) error {
 	if err != nil {
 		return fmt.Errorf("read the plugins: %w", err)
 	}
-	sess.mu.Lock()
-	c := sess.ceiling
-	sess.mu.Unlock()
+	c, err := a.pluginGrants(ctx, sess.device, sess)
+	if err != nil {
+		return fmt.Errorf("read the device's plugin grants: %w", err)
+	}
 	cfg := &agentv1.PluginConfig{}
 	for _, p := range list {
 		if _, ok := policy.PluginGrantOf(c, p.Name); !ok {
@@ -313,8 +431,8 @@ func (s *agentSession) pluginEvent(ev *agentv1.PluginEvent) {
 }
 
 // pluginBlobHandler serves an agent the program of a plugin it may install:
-// one uploaded for devices, whose name the ceiling the agent reported on its
-// stream to this hub allows. requireClientCert authenticated the device.
+// one uploaded for devices whose release the device's grants
+// (allowedPluginGrants) allow. requireClientCert authenticated the device.
 func (a *Agents) pluginBlobHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -331,17 +449,26 @@ func (a *Agents) pluginBlobHandler() http.Handler {
 			http.Error(w, "the device has no stream to this hub", http.StatusForbidden)
 			return
 		}
-		sess.mu.Lock()
-		c := sess.ceiling
-		sess.mu.Unlock()
+		c, err := a.pluginGrants(ctx, device, sess)
+		if err != nil {
+			http.Error(w, "cannot read the device's plugin grants", http.StatusServiceUnavailable)
+			return
+		}
 		list, err := a.devicePlugins.List(ctx)
 		if err != nil {
 			http.Error(w, "cannot read the plugins", http.StatusServiceUnavailable)
 			return
 		}
 		i := slices.IndexFunc(list, func(p store.DevicePlugin) bool {
-			_, allowed := policy.PluginGrantOf(c, p.Name)
-			return p.SHA256 == sum && allowed
+			if p.SHA256 != sum {
+				return false
+			}
+			b, err := pluginBinary(p)
+			if err != nil {
+				return false
+			}
+			_, allowed := grantedClass(c, p.Name, plugins.ReleaseOf(b).Digest())
+			return allowed
 		})
 		if i < 0 {
 			http.Error(w, "no plugin program for this device", http.StatusNotFound)
@@ -357,17 +484,23 @@ func (a *Agents) pluginBlobHandler() http.Handler {
 	})
 }
 
-// checkPlugin refuses a command of class of plugin name unless the agent
-// runs plugins and the ceiling it reported allows it.
-func (s *agentSession) checkPlugin(device, name string, class policy.Class) error {
+// checkPlugin refuses a command of class of release digest of plugin name
+// unless the agent runs plugins and its grants (allowedPluginGrants) allow
+// the release up to class.
+func (a *Agents) checkPlugin(ctx context.Context, s *agentSession, device, name, digest string, class policy.Class) error {
 	if s.minor < minPluginMinor {
 		return fmt.Errorf("device %s: %w", device, errPluginsNeedUpgrade)
 	}
-	s.mu.Lock()
-	c := s.ceiling
-	s.mu.Unlock()
-	if err := policy.PluginWithinCeiling(c, name, class); err != nil {
-		return fmt.Errorf("device %s: %w", device, err)
+	c, err := a.pluginGrants(ctx, device, s)
+	if err != nil {
+		return err
+	}
+	limit, ok := grantedClass(c, name, digest)
+	switch {
+	case !ok:
+		return fmt.Errorf("device %s: plugin %s: release %.12s is not allowed there: %w", device, name, digest, policy.ErrBeyondCeiling)
+	case class != "" && !policy.Within(class, limit):
+		return fmt.Errorf("device %s: plugin %s: a %s command is above the %s the device allows: %w", device, name, class, limit, policy.ErrBeyondCeiling)
 	}
 	return nil
 }
@@ -376,22 +509,22 @@ func (s *agentSession) checkPlugin(device, name string, class policy.Class) erro
 // minPluginMinor.
 var errPluginsNeedUpgrade = fmt.Errorf("its agent is too old for plugins; upgrade it: %w", policy.ErrBeyondCeiling)
 
-// CheckPlugin reports whether a command of class of plugin name would be
-// sent to the agent of device: it fails with an error wrapping
-// policy.ErrBeyondCeiling when the agent is too old for plugins or its
-// reported ceiling does not allow the plugin up to class, and with
+// CheckPlugin reports whether a command of class of release digest of
+// plugin name would be sent to the agent of device: it fails with an error
+// wrapping policy.ErrBeyondCeiling when the agent is too old for plugins or
+// its grants do not allow the release up to class, and with
 // ErrAgentNotConnected when it has no open stream to this hub.
-func (a *Agents) CheckPlugin(ctx context.Context, device, name string, class policy.Class) error {
+func (a *Agents) CheckPlugin(ctx context.Context, device, name, digest string, class policy.Class) error {
 	s, err := a.session(ctx, device)
 	if master, id, ok := a.forwardTo(ctx, device, err); ok {
-		_, err := a.call(ctx, master, opPlugin, agentCall{Device: id, CheckOnly: true, Class: string(class)},
+		_, err := a.call(ctx, master, opPlugin, agentCall{Device: id, CheckOnly: true, Class: string(class), Digest: digest},
 			&agentv1.PluginCommand{Plugin: name}, nil)
 		return err
 	}
 	if err != nil {
 		return err
 	}
-	return s.checkPlugin(device, name, class)
+	return a.checkPlugin(ctx, s, device, name, digest, class)
 }
 
 // PluginStatus is the state of the plugins of device's agent, as it last
@@ -416,14 +549,14 @@ func (a *Agents) PluginStatus(ctx context.Context, device string) (*agentv1.Plug
 	return s.pluginStatus, nil
 }
 
-// Plugin sends req, a command of class, to the agent of device, asking it to
-// finish within timeout, and waits for its result, as Exec does. A command
-// the agent's reported ceiling does not allow is never sent.
-func (a *Agents) Plugin(ctx context.Context, device string, class policy.Class, req *agentv1.PluginCommand, timeout time.Duration) (*agentv1.PluginResult, error) {
+// Plugin sends req, a command of class of release digest, to the agent of
+// device, asking it to finish within timeout, and waits for its result, as
+// Exec does. A command the device's grants do not allow is never sent.
+func (a *Agents) Plugin(ctx context.Context, device, digest string, class policy.Class, req *agentv1.PluginCommand, timeout time.Duration) (*agentv1.PluginResult, error) {
 	s, err := a.session(ctx, device)
 	if master, id, ok := a.forwardTo(ctx, device, err); ok {
 		res := &agentv1.PluginResult{}
-		in := agentCall{Device: id, TimeoutMS: timeout.Milliseconds(), Class: string(class)}
+		in := agentCall{Device: id, TimeoutMS: timeout.Milliseconds(), Class: string(class), Digest: digest}
 		if _, err := a.call(ctx, master, opPlugin, in, req, res); err != nil {
 			return nil, err
 		}
@@ -432,7 +565,7 @@ func (a *Agents) Plugin(ctx context.Context, device string, class policy.Class, 
 	if err != nil {
 		return nil, err
 	}
-	if err := s.checkPlugin(device, req.GetPlugin(), class); err != nil {
+	if err := a.checkPlugin(ctx, s, device, req.GetPlugin(), digest, class); err != nil {
 		return nil, err
 	}
 	req.Id = strings.ToLower(rand.Text())
@@ -458,9 +591,9 @@ func pluginOps(a *Agents, mux *http.ServeMux, handle func(op string, fn func(ctx
 			return nil, "", err
 		}
 		if in.CheckOnly {
-			return nil, "", a.CheckPlugin(ctx, in.Device, req.GetPlugin(), policy.Class(in.Class))
+			return nil, "", a.CheckPlugin(ctx, in.Device, req.GetPlugin(), in.Digest, policy.Class(in.Class))
 		}
-		res, err := a.Plugin(ctx, in.Device, policy.Class(in.Class), req, time.Duration(in.TimeoutMS)*time.Millisecond)
+		res, err := a.Plugin(ctx, in.Device, in.Digest, policy.Class(in.Class), req, time.Duration(in.TimeoutMS)*time.Millisecond)
 		return res, "", err
 	})
 	handle(opPluginStatus, func(ctx context.Context, in agentCall) (proto.Message, string, error) {

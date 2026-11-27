@@ -1090,10 +1090,17 @@ func (x *Ceiling) GetPlugins() []*PluginGrant {
 // PluginGrant allows one exec plugin on a device: the hub may install it
 // and run its commands up to max_class, "read", "safe" or "dangerous", the
 // class the plugin's manifest declares for each command.
+//
+// digest pins the plugin's release: the SHA-256 of its program's SHA-256 and
+// of its manifest (plugins.ReleaseDigest). The agent installs and runs only
+// a release whose digest is pinned. A grant the hub sets always has one; an
+// agent's own --allow-plugin without @DIGEST has none, and the agent pins the
+// first release it installs (trust on first use).
 type PluginGrant struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	MaxClass      string                 `protobuf:"bytes,2,opt,name=max_class,json=maxClass,proto3" json:"max_class,omitempty"`
+	Digest        string                 `protobuf:"bytes,3,opt,name=digest,proto3" json:"digest,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1138,6 +1145,13 @@ func (x *PluginGrant) GetName() string {
 func (x *PluginGrant) GetMaxClass() string {
 	if x != nil {
 		return x.MaxClass
+	}
+	return ""
+}
+
+func (x *PluginGrant) GetDigest() string {
+	if x != nil {
+		return x.Digest
 	}
 	return ""
 }
@@ -5500,11 +5514,14 @@ func (x *PluginStatus) GetPlugins() []*PluginState {
 // PluginState is one plugin of a PluginConfig: installed (sha256 set, no
 // error) or not, and why.
 type PluginState struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Version       string                 `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
-	Sha256        string                 `protobuf:"bytes,3,opt,name=sha256,proto3" json:"sha256,omitempty"`
-	Error         string                 `protobuf:"bytes,4,opt,name=error,proto3" json:"error,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Name    string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Version string                 `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
+	Sha256  string                 `protobuf:"bytes,3,opt,name=sha256,proto3" json:"sha256,omitempty"`
+	Error   string                 `protobuf:"bytes,4,opt,name=error,proto3" json:"error,omitempty"`
+	// release is the release installed, its manifest included, for the hub to
+	// take the classes of its commands from once it checked its digest.
+	Release       *PluginBinary `protobuf:"bytes,5,opt,name=release,proto3" json:"release,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5565,6 +5582,13 @@ func (x *PluginState) GetError() string {
 		return x.Error
 	}
 	return ""
+}
+
+func (x *PluginState) GetRelease() *PluginBinary {
+	if x != nil {
+		return x.Release
+	}
+	return nil
 }
 
 // PluginResult answers a PluginCommand. denied is set when the agent
@@ -5735,10 +5759,11 @@ const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"\vdocker_read\x18\t \x01(\bR\n" +
 	"dockerRead\x126\n" +
 	"\aplugins\x18\n" +
-	" \x03(\v2\x1c.hearth.agent.v1.PluginGrantR\aplugins\">\n" +
+	" \x03(\v2\x1c.hearth.agent.v1.PluginGrantR\aplugins\"V\n" +
 	"\vPluginGrant\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1b\n" +
-	"\tmax_class\x18\x02 \x01(\tR\bmaxClass\"\x96\x01\n" +
+	"\tmax_class\x18\x02 \x01(\tR\bmaxClass\x12\x16\n" +
+	"\x06digest\x18\x03 \x01(\tR\x06digest\"\x96\x01\n" +
 	"\x04Disk\x12\x16\n" +
 	"\x06device\x18\x01 \x01(\tR\x06device\x12\x1e\n" +
 	"\n" +
@@ -6027,12 +6052,13 @@ const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"\fPluginStatus\x12\x0e\n" +
 	"\x02os\x18\x01 \x01(\tR\x02os\x12\x12\n" +
 	"\x04arch\x18\x02 \x01(\tR\x04arch\x126\n" +
-	"\aplugins\x18\x03 \x03(\v2\x1c.hearth.agent.v1.PluginStateR\aplugins\"i\n" +
+	"\aplugins\x18\x03 \x03(\v2\x1c.hearth.agent.v1.PluginStateR\aplugins\"\xa2\x01\n" +
 	"\vPluginState\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\tR\aversion\x12\x16\n" +
 	"\x06sha256\x18\x03 \x01(\tR\x06sha256\x12\x14\n" +
-	"\x05error\x18\x04 \x01(\tR\x05error\"t\n" +
+	"\x05error\x18\x04 \x01(\tR\x05error\x127\n" +
+	"\arelease\x18\x05 \x01(\v2\x1d.hearth.agent.v1.PluginBinaryR\arelease\"t\n" +
 	"\fPluginResult\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x0e\n" +
 	"\x02ok\x18\x02 \x01(\bR\x02ok\x12\x16\n" +
@@ -6226,13 +6252,14 @@ var file_hearth_agent_v1_agent_proto_depIdxs = []int32{
 	67, // 90: hearth.agent.v1.PluginEvent.status:type_name -> hearth.agent.v1.PluginStatus
 	69, // 91: hearth.agent.v1.PluginEvent.result:type_name -> hearth.agent.v1.PluginResult
 	68, // 92: hearth.agent.v1.PluginStatus.plugins:type_name -> hearth.agent.v1.PluginState
-	0,  // 93: hearth.agent.v1.AgentService.Connect:input_type -> hearth.agent.v1.AgentMessage
-	1,  // 94: hearth.agent.v1.AgentService.Connect:output_type -> hearth.agent.v1.HubMessage
-	94, // [94:95] is the sub-list for method output_type
-	93, // [93:94] is the sub-list for method input_type
-	93, // [93:93] is the sub-list for extension type_name
-	93, // [93:93] is the sub-list for extension extendee
-	0,  // [0:93] is the sub-list for field type_name
+	63, // 93: hearth.agent.v1.PluginState.release:type_name -> hearth.agent.v1.PluginBinary
+	0,  // 94: hearth.agent.v1.AgentService.Connect:input_type -> hearth.agent.v1.AgentMessage
+	1,  // 95: hearth.agent.v1.AgentService.Connect:output_type -> hearth.agent.v1.HubMessage
+	95, // [95:96] is the sub-list for method output_type
+	94, // [94:95] is the sub-list for method input_type
+	94, // [94:94] is the sub-list for extension type_name
+	94, // [94:94] is the sub-list for extension extendee
+	0,  // [0:94] is the sub-list for field type_name
 }
 
 func init() { file_hearth_agent_v1_agent_proto_init() }

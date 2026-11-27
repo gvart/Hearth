@@ -66,6 +66,7 @@ type Agents struct {
 	// devicePlugins and blobs, when set, are the plugins uploaded for
 	// devices and their programs, handed to the agents (agentplugins.go).
 	devicePlugins *store.DevicePlugins
+	pluginStore   *store.Store
 	blobs         *PluginBlobs
 }
 

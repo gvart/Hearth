@@ -128,6 +128,8 @@ type agentCall struct {
 	Metric string `json:"metric,omitempty"`
 	// Class is the class of a plugin command, from its manifest.
 	Class string `json:"class,omitempty"`
+	// Digest is the release of a plugin command.
+	Digest string `json:"digest,omitempty"`
 	// CheckOnly asks only whether the request would be sent.
 	CheckOnly bool `json:"check_only,omitempty"`
 }

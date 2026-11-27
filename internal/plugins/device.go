@@ -5,18 +5,22 @@ package plugins
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
+	"slices"
 	"sync"
 	"time"
 
 	"go.yaml.in/yaml/v3"
 
 	"github.com/gvart/hearth/internal/policy"
+	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
 )
 
 // Exec plugins on devices (#223): the operator uploads a plugin's program
@@ -35,6 +39,50 @@ const BlobPath = "/hearth.agent.v1.Plugins/blobs/"
 
 // ErrPinMismatch is a program whose SHA-256 is not the one pinned.
 var ErrPinMismatch = errors.New("the program's SHA-256 is not the one pinned")
+
+// Release is what a device runs of a plugin: its program, by SHA-256, and
+// the parts of its manifest that decide what runs and at what class.
+type Release struct {
+	Name         string        `json:"name"`
+	Version      string        `json:"version"`
+	SHA256       string        `json:"sha256"`
+	Args         []string      `json:"args"`
+	Capabilities []string      `json:"capabilities"`
+	Commands     []CommandSpec `json:"commands"`
+}
+
+// Digest pins r: the SHA-256, in hex, of its program's SHA-256 and of the
+// SHA-256 of its manifest in canonical JSON. A new program, or the same one
+// with other args or another class for a command, is another release.
+func (r Release) Digest() string {
+	m := r
+	m.SHA256 = ""
+	if m.Args == nil {
+		m.Args = []string{}
+	}
+	if m.Capabilities == nil {
+		m.Capabilities = []string{}
+	}
+	if m.Commands == nil {
+		m.Commands = []CommandSpec{}
+	}
+	b, _ := json.Marshal(m) // plain strings and slices: it cannot fail
+	mh := sha256.Sum256(b)
+	d := sha256.Sum256([]byte(r.SHA256 + "\n" + hex.EncodeToString(mh[:])))
+	return hex.EncodeToString(d[:])
+}
+
+// ReleaseOf is the release b offers a device.
+func ReleaseOf(b *agentv1.PluginBinary) Release {
+	r := Release{
+		Name: b.GetName(), Version: b.GetVersion(), SHA256: b.GetSha256(),
+		Args: slices.Clone(b.GetArgs()), Capabilities: slices.Clone(b.GetCapabilities()),
+	}
+	for _, c := range b.GetCommands() {
+		r.Commands = append(r.Commands, CommandSpec{Name: c.GetName(), Class: policy.Class(c.GetClass()), Description: c.GetDescription()})
+	}
+	return r
+}
 
 // ValidSHA256 reports whether s is a SHA-256 in lower-case hex.
 func ValidSHA256(s string) bool {
@@ -66,8 +114,8 @@ func ParseManifest(b []byte) (Manifest, error) {
 		return Manifest{}, fmt.Errorf("plugin manifest: %w", err)
 	}
 	if len(m.Env) > 0 {
-		return Manifest{}, errors.New("plugin manifest: env is not allowed for a device plugin: it would be stored on every hub; " +
-			"pass settings in args or in a file on the device")
+		return Manifest{}, errors.New("plugin manifest: env is not allowed for a device plugin: it would be stored on every hub " +
+			"and sent to every device the plugin is allowed on; keep settings in a file on the device")
 	}
 	return m, nil
 }
@@ -105,6 +153,10 @@ func RunOnce(ctx context.Context, m Manifest, pin string, req CommandRequest, o 
 		return CommandResult{}, err
 	}
 	// Checked before every start: what runs is what is on disk now.
+	before, err := os.Stat(path)
+	if err != nil {
+		return CommandResult{}, fmt.Errorf("plugin %s: %w", m.Name, err)
+	}
 	path, digest, err := p.trustedProgram(path)
 	if err != nil {
 		return CommandResult{}, err
@@ -127,6 +179,14 @@ func RunOnce(ctx context.Context, m Manifest, pin string, req CommandRequest, o 
 		pipes = append(pipes, r, w)
 	}
 	inR, inW, outR, outW, errR, errW := pipes[0], pipes[1], pipes[2], pipes[3], pipes[4], pipes[5]
+	// The program is started by path: it must still be the file hashed.
+	if after, err := os.Stat(path); err != nil || !os.SameFile(before, after) ||
+		!after.ModTime().Equal(before.ModTime()) || after.Size() != before.Size() {
+		for _, f := range pipes {
+			_ = f.Close()
+		}
+		return CommandResult{}, fmt.Errorf("plugin %s: %s changed while it was checked: %w", m.Name, path, ErrPinMismatch)
+	}
 	cmd := exec.Command(path, m.Args...)
 	cmd.Dir, cmd.Env = m.Dir, p.env()
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = inR, outW, errW

@@ -65,14 +65,23 @@ func CheckPlatform(os, arch string) error {
 	return nil
 }
 
+// Release is the release u makes: what a grant pins.
+func (u DevicePluginUpload) Release() plugins.Release {
+	return plugins.Release{
+		Name: u.Manifest.Name, Version: u.Manifest.Version, SHA256: u.SHA256,
+		Args: nonNil(u.Manifest.Args), Capabilities: nonNil(u.Manifest.Capabilities), Commands: u.Manifest.Commands,
+	}
+}
+
 // Request is the upload as the policy request plugin.binary.upload: its
-// detail says what would run on devices.
+// detail says what would run on devices, and the release digest a grant
+// would pin.
 func (u DevicePluginUpload) Request() policy.Request {
 	return policy.Request{
 		Action: policy.PluginBinaryUpload, Target: u.Manifest.Name,
 		Detail: map[string]any{
 			"plugin": u.Manifest.Name, "version": u.Manifest.Version, "os": u.OS, "arch": u.Arch,
-			"sha256": u.SHA256, "size": u.Size,
+			"sha256": u.SHA256, "size": u.Size, "digest": u.Release().Digest(),
 		},
 	}
 }
@@ -94,13 +103,15 @@ func (u DevicePluginUpload) Save(ctx context.Context, st *store.Store, holder, b
 
 // DevicePluginJSON is a plugin uploaded for devices, for one platform.
 type DevicePluginJSON struct {
-	ID           string                `json:"id"`
-	Name         string                `json:"name"`
-	OS           string                `json:"os"`
-	Arch         string                `json:"arch"`
-	Version      string                `json:"version"`
-	SHA256       string                `json:"sha256"`
-	Size         int64                 `json:"size"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	OS      string `json:"os"`
+	Arch    string `json:"arch"`
+	Version string `json:"version"`
+	SHA256  string `json:"sha256"`
+	Size    int64  `json:"size"`
+	// Digest pins the release: a device's grant names it.
+	Digest       string                `json:"digest"`
 	Capabilities []string              `json:"capabilities"`
 	Commands     []plugins.CommandSpec `json:"commands"`
 	UploadedAt   time.Time             `json:"uploaded_at"`
@@ -124,8 +135,13 @@ func devicePluginJSON(p store.DevicePlugin) (DevicePluginJSON, error) {
 	if commands == nil {
 		commands = []plugins.CommandSpec{}
 	}
+	b, err := pluginBinary(p)
+	if err != nil {
+		return DevicePluginJSON{}, err
+	}
 	return DevicePluginJSON{
 		ID: p.ID, Name: p.Name, OS: p.OS, Arch: p.Arch, Version: p.Version, SHA256: p.SHA256, Size: p.Size,
+		Digest:       plugins.ReleaseOf(b).Digest(),
 		Capabilities: nonNil(m.Capabilities), Commands: commands, UploadedAt: p.UploadedAt.UTC(), UploadedBy: p.UploadedBy,
 	}, nil
 }
@@ -247,7 +263,7 @@ func (a *api) uploadDevicePlugin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", "the second part must be the program")
 		return
 	}
-	sum, size, err := a.agents.blobs.Save(part)
+	staged, err := a.agents.blobs.Stage(part)
 	switch {
 	case errors.Is(err, ErrPluginTooLarge):
 		writeError(w, http.StatusRequestEntityTooLarge, "too_large", err.Error())
@@ -256,7 +272,10 @@ func (a *api) uploadDevicePlugin(w http.ResponseWriter, r *http.Request) {
 		a.writeActionError(w, r, "store the plugin's program", err)
 		return
 	}
-	u := DevicePluginUpload{Manifest: m, OS: goos, Arch: arch, SHA256: sum, Size: size}
+	// Stored under its SHA-256 only once policy allowed it.
+	defer staged.Discard()
+	sum := staged.SHA256
+	u := DevicePluginUpload{Manifest: m, OS: goos, Arch: arch, SHA256: sum, Size: staged.Size}
 	previous, err := u.Previous(ctx, a.store)
 	if err != nil {
 		a.writeActionError(w, r, "list the device plugins", err)
@@ -266,12 +285,19 @@ func (a *api) uploadDevicePlugin(w http.ResponseWriter, r *http.Request) {
 	if a.masters != nil {
 		holder = a.masters.Self()
 	}
+	committed := false
 	err = a.policy.Do(ctx, actor(u.Request()), func(ctx context.Context) error {
+		if err := staged.Commit(); err != nil {
+			return err
+		}
+		committed = true
 		return u.Save(ctx, a.store, holder, policy.ActorWeb+"/"+remoteHost(r), a.now())
 	})
 	if err != nil {
-		if rerr := RemoveDevicePluginBlob(context.WithoutCancel(ctx), a.store, a.agents.blobs, sum); rerr != nil {
-			a.log.WarnContext(ctx, "remove a refused plugin's program", "sha256", sum, "err", rerr)
+		if committed {
+			if rerr := RemoveDevicePluginBlob(context.WithoutCancel(ctx), a.store, a.agents.blobs, sum); rerr != nil {
+				a.log.WarnContext(ctx, "remove a refused plugin's program", "sha256", sum, "err", rerr)
+			}
 		}
 		if errors.Is(err, store.ErrSchemaTooOld) {
 			writeError(w, http.StatusConflict, "schema_too_old", "the hub cluster's database predates device plugins: upgrade every hub of the cluster first")
@@ -415,24 +441,31 @@ func (p DevicePluginRunner) Device(ctx context.Context, device string) (DeviceDe
 	if err != nil && !errors.Is(err, ErrAgentNotConnected) && !errors.Is(err, ErrStreamElsewhere) {
 		return out, err
 	}
-	list, err := p.Store.DevicePlugins().List(ctx)
-	if err != nil {
-		return out, err
-	}
 	if st != nil {
 		out.Connected, out.OS, out.Arch = true, st.GetOs(), st.GetArch()
 	}
-	var grants []PluginGrant
+	reported := &agentv1.Ceiling{}
 	if f.Ceiling != nil {
-		grants = f.Ceiling.Plugins
+		reported = f.Ceiling.Proto()
 	}
-	for _, g := range grants {
-		s := DevicePluginStateJSON{Name: g.Name, MaxClass: g.Class, Commands: []DevicePluginCommandJSON{}}
+	allowed, err := allowedPluginGrants(ctx, p.Store, d, reported)
+	if err != nil {
+		return out, err
+	}
+	var names []string
+	for _, g := range allowed.GetPlugins() {
+		if !slices.Contains(names, g.GetName()) {
+			names = append(names, g.GetName())
+		}
+	}
+	for _, name := range names {
+		maxClass, _ := policy.PluginGrantOf(allowed, name)
+		s := DevicePluginStateJSON{Name: name, MaxClass: maxClass, Commands: []DevicePluginCommandJSON{}}
 		if st == nil {
 			s.Error = "the agent has not reported its plugins"
 		}
 		for _, ps := range st.GetPlugins() {
-			if ps.GetName() != g.Name {
+			if ps.GetName() != name {
 				continue
 			}
 			s.Version, s.SHA256, s.Error, s.Installed = ps.GetVersion(), ps.GetSha256(), ps.GetError(), ps.GetSha256() != ""
@@ -440,11 +473,11 @@ func (p DevicePluginRunner) Device(ctx context.Context, device string) (DeviceDe
 		if st != nil && s.Version == "" && s.Error == "" && !s.Installed {
 			s.Error = "no plugin of this name was uploaded"
 		}
-		if reg, ok := installedOf(list, st, g.Name); ok {
-			if m, err := decodeManifest(reg); err == nil {
-				for _, c := range m.Commands {
-					s.Commands = append(s.Commands, DevicePluginCommandJSON{CommandSpec: c, Allowed: policy.Within(c.Class, g.Class)})
-				}
+		if r, ok := installedRelease(st, name); ok {
+			limit, allowedRelease := grantedClass(allowed, name, r.Digest())
+			s.Version = r.Version
+			for _, c := range r.Commands {
+				s.Commands = append(s.Commands, DevicePluginCommandJSON{CommandSpec: c, Allowed: allowedRelease && policy.Within(c.Class, limit)})
 			}
 		}
 		out.Plugins = append(out.Plugins, s)
@@ -452,25 +485,18 @@ func (p DevicePluginRunner) Device(ctx context.Context, device string) (DeviceDe
 	return out, nil
 }
 
-// installedOf is the uploaded plugin name whose program the agent that
-// reported st installed.
-func installedOf(list []store.DevicePlugin, st *agentv1.PluginStatus, name string) (store.DevicePlugin, bool) {
-	sum := ""
+// installedRelease is the release of plugin name the agent that reported
+// st installed, as it reported it. Its digest binds its manifest to its
+// program: the caller checks the device's grants allow that digest before
+// it takes the classes of its commands.
+func installedRelease(st *agentv1.PluginStatus, name string) (plugins.Release, bool) {
 	for _, ps := range st.GetPlugins() {
-		if ps.GetName() == name {
-			sum = ps.GetSha256()
+		if ps.GetName() == name && ps.GetRelease() != nil && ps.GetSha256() != "" &&
+			ps.GetRelease().GetName() == name && ps.GetRelease().GetSha256() == ps.GetSha256() {
+			return plugins.ReleaseOf(ps.GetRelease()), true
 		}
 	}
-	if sum == "" {
-		return store.DevicePlugin{}, false
-	}
-	i := slices.IndexFunc(list, func(p store.DevicePlugin) bool {
-		return p.Name == name && p.OS == st.GetOs() && p.Arch == st.GetArch() && p.SHA256 == sum
-	})
-	if i < 0 {
-		return store.DevicePlugin{}, false
-	}
-	return list[i], true
+	return plugins.Release{}, false
 }
 
 // Run runs a command of plugin name on device for actorKind/actorID,
@@ -493,38 +519,33 @@ func (p DevicePluginRunner) Run(ctx context.Context, actorKind, actorID, device,
 	if err != nil {
 		return plugins.CommandResult{}, err
 	}
-	list, err := p.Store.DevicePlugins().List(ctx)
-	if err != nil {
-		return plugins.CommandResult{}, err
-	}
-	reg, ok := installedOf(list, st, name)
+	rel, ok := installedRelease(st, name)
 	if !ok {
 		return plugins.CommandResult{}, fmt.Errorf("device %s: plugin %s: %w", id, name, ErrPluginNotInstalled)
 	}
-	m, err := decodeManifest(reg)
-	if err != nil {
-		return plugins.CommandResult{}, err
-	}
-	i := slices.IndexFunc(m.Commands, func(c plugins.CommandSpec) bool { return c.Name == req.Command })
+	// The classes are those of the release's manifest; CheckPlugin refuses
+	// a release the device's grants do not pin.
+	digest := rel.Digest()
+	i := slices.IndexFunc(rel.Commands, func(c plugins.CommandSpec) bool { return c.Name == req.Command })
 	action, class := policy.DevicePluginCommandDangerous, policy.Dangerous
 	if i >= 0 {
-		if a, ok := devicePluginActions[m.Commands[i].Class]; ok {
-			action, class = a, m.Commands[i].Class
+		if a, ok := devicePluginActions[rel.Commands[i].Class]; ok {
+			action, class = a, rel.Commands[i].Class
 		}
 	}
 	preq := policy.Request{
 		ActorKind: actorKind, ActorID: actorID, Action: action, Target: id,
 		Detail: map[string]any{
-			"plugin": name, "version": reg.Version, "sha256": reg.SHA256, "command": req.Command, "plugin_device": req.Device,
+			"plugin": name, "version": rel.Version, "sha256": rel.SHA256, "digest": digest, "command": req.Command, "plugin_device": req.Device,
 		},
 		Precheck: func(ctx context.Context) error {
 			if i < 0 {
 				return fmt.Errorf("plugin %s declares no command %q: %w", name, req.Command, policy.ErrDenied)
 			}
-			return p.Agents.CheckPlugin(ctx, id, name, class)
+			return p.Agents.CheckPlugin(ctx, id, name, digest, class)
 		},
 	}
-	cmd := &agentv1.PluginCommand{Plugin: name, Sha256: reg.SHA256, Command: req.Command, Device: req.Device}
+	cmd := &agentv1.PluginCommand{Plugin: name, Sha256: rel.SHA256, Command: req.Command, Device: req.Device}
 	if len(req.Args) > 0 {
 		cmd.ArgsJson = string(req.Args)
 	}
@@ -532,7 +553,7 @@ func (p DevicePluginRunner) Run(ctx context.Context, actorKind, actorID, device,
 	err = p.Policy.Do(ctx, preq, func(ctx context.Context) error {
 		ctx, cancel := context.WithTimeout(ctx, devicePluginTimeout+devicePluginGrace)
 		defer cancel()
-		res, err := p.Agents.Plugin(ctx, id, class, cmd, devicePluginTimeout)
+		res, err := p.Agents.Plugin(ctx, id, digest, class, cmd, devicePluginTimeout)
 		switch {
 		case err != nil:
 			return err

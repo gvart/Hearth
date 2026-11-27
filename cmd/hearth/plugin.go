@@ -99,20 +99,28 @@ func runPluginUpload(ctx context.Context, dataDir, program, manifest, goos, arch
 	}
 	defer f.Close()
 	blobs := hub.NewPluginBlobs(dataDir)
-	sum, size, err := blobs.Save(f)
+	staged, err := blobs.Stage(f)
 	if err != nil {
 		return err
 	}
+	// Stored under its SHA-256 only once policy allowed it.
+	defer staged.Discard()
+	sum, size := staged.SHA256, staged.Size
 	u := hub.DevicePluginUpload{Manifest: m, OS: goos, Arch: arch, SHA256: sum, Size: size}
 	previous, err := u.Previous(ctx, st)
 	if err != nil {
 		return err
 	}
 	req := u.Request()
+	committed := false
 	done, err := adminDo(ctx, dataDir, st, out, dryRun, req, func(ctx context.Context) error {
+		if err := staged.Commit(); err != nil {
+			return err
+		}
+		committed = true
 		return u.Save(ctx, st, holder, policy.ActorAdmin+"/"+adminActor(), time.Now())
 	})
-	if !done {
+	if committed && (!done || err != nil) {
 		if rerr := hub.RemoveDevicePluginBlob(context.WithoutCancel(ctx), st, blobs, sum); rerr != nil && err == nil {
 			err = rerr
 		}
@@ -130,8 +138,10 @@ func runPluginUpload(ctx context.Context, dataDir, program, manifest, goos, arch
 			return err
 		}
 	}
-	_, err = fmt.Fprintf(out, "Uploaded plugin %s %s for %s/%s (%d bytes, sha256 %s).\n"+
-		"Devices whose capabilities allow it install it at their next heartbeat.\n", m.Name, m.Version, goos, arch, size, sum)
+	_, err = fmt.Fprintf(out, "Uploaded plugin %s %s for %s/%s (%d bytes, sha256 %s, release digest %s).\n"+
+		"A device installs it once its capabilities allow this release: a new grant pins it; one that pins\n"+
+		"an earlier release moves to it with `hearth device capabilities DEVICE --set plugins=%s:CLASS@latest`.\n",
+		m.Name, m.Version, goos, arch, size, sum, u.Release().Digest(), m.Name)
 	return err
 }
 
@@ -157,13 +167,13 @@ func newPluginListCmd() *cobra.Command {
 				return err
 			}
 			tw := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
-			_, _ = fmt.Fprintln(tw, "PLUGIN\tVERSION\tSIZE\tSHA256\tCOMMANDS")
+			_, _ = fmt.Fprintln(tw, "PLUGIN\tVERSION\tSIZE\tSHA256\tCOMMANDS\tRELEASE DIGEST")
 			for _, p := range list {
 				commands := make([]string, len(p.Commands))
 				for i, c := range p.Commands {
 					commands[i] = c.Name + ":" + string(c.Class)
 				}
-				_, _ = fmt.Fprintf(tw, "%s/%s/%s\t%s\t%d\t%s\t%s\n", p.Name, p.OS, p.Arch, p.Version, p.Size, p.SHA256[:12], strings.Join(commands, ","))
+				_, _ = fmt.Fprintf(tw, "%s/%s/%s\t%s\t%d\t%s\t%s\t%s\n", p.Name, p.OS, p.Arch, p.Version, p.Size, p.SHA256[:12], strings.Join(commands, ","), p.Digest)
 			}
 			return tw.Flush()
 		},

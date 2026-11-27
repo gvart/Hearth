@@ -62,7 +62,7 @@ func NewHTTPHandler(cfg Config) http.Handler {
 
 func newAPI(cfg Config) *api {
 	if cfg.Agents != nil && cfg.PluginBlobs != nil {
-		cfg.Agents.SetPlugins(cfg.Store.DevicePlugins(), cfg.PluginBlobs)
+		cfg.Agents.SetPlugins(cfg.Store, cfg.PluginBlobs)
 	}
 	reg := cfg.Registry
 	if reg == nil {

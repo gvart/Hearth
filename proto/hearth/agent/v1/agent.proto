@@ -191,9 +191,16 @@ message Ceiling {
 // PluginGrant allows one exec plugin on a device: the hub may install it
 // and run its commands up to max_class, "read", "safe" or "dangerous", the
 // class the plugin's manifest declares for each command.
+//
+// digest pins the plugin's release: the SHA-256 of its program's SHA-256 and
+// of its manifest (plugins.ReleaseDigest). The agent installs and runs only
+// a release whose digest is pinned. A grant the hub sets always has one; an
+// agent's own --allow-plugin without @DIGEST has none, and the agent pins the
+// first release it installs (trust on first use).
 message PluginGrant {
   string name = 1;
   string max_class = 2;
+  string digest = 3;
 }
 
 // Disk is a mounted filesystem.
@@ -887,6 +894,9 @@ message PluginState {
   string version = 2;
   string sha256 = 3;
   string error = 4;
+  // release is the release installed, its manifest included, for the hub to
+  // take the classes of its commands from once it checked its digest.
+  PluginBinary release = 5;
 }
 
 // PluginResult answers a PluginCommand. denied is set when the agent

@@ -5,19 +5,27 @@ package hub
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/gvart/hearth/internal/plugins"
 	"github.com/gvart/hearth/internal/policy"
 	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
+	"github.com/gvart/hearth/internal/store"
 )
 
 const lampManifest = `protocol: 1
@@ -29,6 +37,29 @@ commands:
   - name: turn_on
     class: safe
 `
+
+// saveRelease records an upload of plugin name for linux/arm64, its
+// program being program, and returns its release digest.
+func saveRelease(t *testing.T, st *store.Store, name, program string) string {
+	t.Helper()
+	m, err := plugins.ParseManifest([]byte(strings.Replace(lampManifest, "name: go-lamp", "name: "+name, 1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := sha256.Sum256([]byte(program))
+	u := DevicePluginUpload{Manifest: m, OS: "linux", Arch: "arm64", SHA256: hex.EncodeToString(h[:]), Size: int64(len(program))}
+	if err := u.Save(t.Context(), st, "", "test", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	return u.Release().Digest()
+}
+
+// piHello is the hello of an agent on linux/arm64.
+func piHello(minor uint32, locked bool, local *agentv1.Ceiling) *agentv1.Hello {
+	h := agentHello(minor, locked, local)
+	h.Os, h.Arch = "debian 12", "arm64"
+	return h
+}
 
 // withDevicePlugins gives the fixture's API agents and a store of programs.
 func withDevicePlugins(dir string) func(*Config) {
@@ -191,12 +222,13 @@ func (zeros) Read(p []byte) (int, error) {
 // device.capabilities.set; an agent too old for plugins says so.
 func TestCapabilitiesPlugins(t *testing.T) {
 	f := newWebAdminFixture(t, policy.Config{})
-	reportHello(t, f, "pi", agentHello(13, false, &agentv1.Ceiling{}))
+	reportHello(t, f, "pi", piHello(13, false, &agentv1.Ceiling{}))
 	stale := staleSession(t, f)
 	if got := decode[CapabilitiesJSON](t, f.do(t, http.MethodGet, capsPath, "", stale)); got.PluginsManageable || got.Hub.Plugins == nil {
 		t.Fatalf("minor 13 = %+v, want plugins not manageable", got)
 	}
-	reportHello(t, f, "pi", agentHello(14, false, &agentv1.Ceiling{}))
+	reportHello(t, f, "pi", piHello(14, false, &agentv1.Ceiling{}))
+	lampV1, zeta := saveRelease(t, f.st, "go-lamp", "v1"), saveRelease(t, f.st, "zeta", "z")
 
 	resp := f.do(t, http.MethodPut, capsPath, `{"hub":{"plugins":[{"name":"go-lamp","class":"read"}]}}`, stale)
 	if resp.StatusCode != http.StatusForbidden || errorCode(t, resp) != "reauth_required" {
@@ -209,7 +241,9 @@ func TestCapabilitiesPlugins(t *testing.T) {
 	for _, body := range []string{
 		`{"hub":{"plugins":[{"name":"../x","class":"read"}]}}`,
 		`{"hub":{"plugins":[{"name":"lamp","class":"root"}]}}`,
-		`{"hub":{"plugins":[{"name":"lamp","class":"read"},{"name":"lamp","class":"safe"}]}}`,
+		`{"hub":{"plugins":[{"name":"go-lamp","class":"read"},{"name":"go-lamp","class":"safe"}]}}`,
+		`{"hub":{"plugins":[{"name":"nowhere","class":"read"}]}}`,
+		`{"hub":{"plugins":[{"name":"go-lamp","class":"read","digest":"abc"}]}}`,
 	} {
 		if resp := f.do(t, http.MethodPut, capsPath, body, stale); resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("%s = %d, want 400", body, resp.StatusCode)
@@ -223,8 +257,12 @@ func TestCapabilitiesPlugins(t *testing.T) {
 		t.Fatalf("allow after re-auth = %d %s", resp.StatusCode, resp.body)
 	}
 	got := decode[CapabilitiesJSON](t, resp)
-	if !got.PluginsManageable || len(got.Hub.Plugins) != 2 || got.Hub.Plugins[0].Name != "go-lamp" {
-		t.Fatalf("after allow = %+v, want sorted grants", got.Hub.Plugins)
+	if !got.PluginsManageable || len(got.Hub.Plugins) != 2 || got.Hub.Plugins[0].Name != "go-lamp" ||
+		got.Hub.Plugins[0].Digest != lampV1 || got.Hub.Plugins[1].Digest != zeta {
+		t.Fatalf("after allow = %+v, want sorted grants pinned to the uploads", got.Hub.Plugins)
+	}
+	if len(got.PluginReleases) != 2 || got.PluginReleases[0].Digest != lampV1 {
+		t.Fatalf("releases = %+v", got.PluginReleases)
 	}
 	// Lowering a class, or removing one, never asks.
 	other := staleSession(t, f)
@@ -235,8 +273,30 @@ func TestCapabilitiesPlugins(t *testing.T) {
 		t.Fatalf("lower audit = %+v", e)
 	}
 
+	// A new release uploaded: the grant stays on the old one until moved,
+	// and moving it is a raise.
+	lampV2 := saveRelease(t, f.st, "go-lamp", "v2")
+	got = decode[CapabilitiesJSON](t, f.do(t, http.MethodGet, capsPath, "", other))
+	if got.Hub.Plugins[0].Digest != lampV1 || got.PluginReleases[0].Digest != lampV2 {
+		t.Fatalf("after a new upload = %+v / %+v", got.Hub.Plugins, got.PluginReleases)
+	}
+	if resp := f.do(t, http.MethodPut, capsPath, `{"hub":{"plugins":[{"name":"go-lamp","class":"read"}]}}`, other); resp.StatusCode != http.StatusOK ||
+		decode[CapabilitiesJSON](t, resp).Hub.Plugins[0].Digest != lampV1 {
+		t.Fatalf("set without a digest = %d %s, want the release kept", resp.StatusCode, resp.body)
+	}
+	for _, d := range []string{LatestRelease, lampV2} {
+		resp := f.do(t, http.MethodPut, capsPath, `{"hub":{"plugins":[{"name":"go-lamp","class":"read","digest":"`+d+`"}]}}`, other)
+		if resp.StatusCode != http.StatusForbidden || errorCode(t, resp) != "reauth_required" {
+			t.Fatalf("move to %s without re-auth = %d %s", d, resp.StatusCode, resp.body)
+		}
+	}
+	if resp := f.do(t, http.MethodPut, capsPath, `{"hub":{"plugins":[{"name":"go-lamp","class":"read","digest":"latest"}]}}`, stale); resp.StatusCode != http.StatusOK ||
+		decode[CapabilitiesJSON](t, resp).Hub.Plugins[0].Digest != lampV2 {
+		t.Fatalf("approve the new release = %d %s", resp.StatusCode, resp.body)
+	}
+
 	// A device on --local-ceiling refuses them too.
-	reportHello(t, f, "pi", agentHello(14, true, &agentv1.Ceiling{}))
+	reportHello(t, f, "pi", piHello(14, true, &agentv1.Ceiling{}))
 	if resp := f.do(t, http.MethodPut, capsPath, `{"hub":{}}`, other); resp.StatusCode != http.StatusConflict {
 		t.Fatalf("locked = %d", resp.StatusCode)
 	}
@@ -246,8 +306,9 @@ func TestChangeOfPlugins(t *testing.T) {
 	g := func(gs ...string) *agentv1.Ceiling {
 		c := &agentv1.Ceiling{}
 		for _, s := range gs {
-			name, class, _ := strings.Cut(s, ":")
-			c.Plugins = append(c.Plugins, &agentv1.PluginGrant{Name: name, MaxClass: class})
+			rest, digest, _ := strings.Cut(s, "@")
+			name, class, _ := strings.Cut(rest, ":")
+			c.Plugins = append(c.Plugins, &agentv1.PluginGrant{Name: name, MaxClass: class, Digest: strings.Repeat(digest, 64)})
 		}
 		return c
 	}
@@ -255,12 +316,14 @@ func TestChangeOfPlugins(t *testing.T) {
 		old, next *agentv1.Ceiling
 		want      policy.Action
 	}{
-		{g(), g("lamp:read"), policy.DeviceCapabilitiesRaise},
-		{g("lamp:read"), g("lamp:safe"), policy.DeviceCapabilitiesRaise},
-		{g("lamp:safe"), g("lamp:read"), policy.DeviceCapabilitiesSet},
-		{g("lamp:safe"), g(), policy.DeviceCapabilitiesSet},
-		{g("lamp:safe"), g("lamp:safe"), policy.DeviceCapabilitiesSet},
-		{g("lamp:dangerous"), g("lamp:read", "load:read"), policy.DeviceCapabilitiesRaise},
+		{g(), g("lamp:read@a"), policy.DeviceCapabilitiesRaise},
+		{g("lamp:read@a"), g("lamp:safe@a"), policy.DeviceCapabilitiesRaise},
+		{g("lamp:safe@a"), g("lamp:read@a"), policy.DeviceCapabilitiesSet},
+		{g("lamp:safe@a"), g(), policy.DeviceCapabilitiesSet},
+		{g("lamp:safe@a"), g("lamp:safe@a"), policy.DeviceCapabilitiesSet},
+		{g("lamp:dangerous@a"), g("lamp:read@a", "load:read@b"), policy.DeviceCapabilitiesRaise},
+		// Another release, even at a lower class, is a raise.
+		{g("lamp:dangerous@a"), g("lamp:read@b"), policy.DeviceCapabilitiesRaise},
 	} {
 		if got := ChangeOf(tt.old, tt.next); got.Action != tt.want {
 			t.Errorf("ChangeOf(%v, %v) = %+v, want %s", tt.old, tt.next, got, tt.want)
@@ -273,11 +336,26 @@ func TestSetCapabilityPlugins(t *testing.T) {
 	if err := SetCapability(&c, "plugins", "go-lamp:safe, load"); err != nil {
 		t.Fatal(err)
 	}
-	if len(c.Plugins) != 2 || c.Plugins[0] != (PluginGrant{"go-lamp", policy.Safe}) || c.Plugins[1] != (PluginGrant{"load", policy.Read}) {
+	if len(c.Plugins) != 2 || c.Plugins[0] != (PluginGrant{"go-lamp", policy.Safe, ""}) || c.Plugins[1] != (PluginGrant{"load", policy.Read, ""}) {
 		t.Fatalf("plugins = %+v", c.Plugins)
 	}
+	// A grant keeps its release unless @latest moves it.
+	d := strings.Repeat("d", 64)
+	c.Plugins[0].Digest, c.Plugins[1].Digest = d, d
+	if err := SetCapability(&c, "plugins", "go-lamp:read,load@latest"); err != nil {
+		t.Fatal(err)
+	}
+	if c.Plugins[0] != (PluginGrant{"go-lamp", policy.Read, d}) || c.Plugins[1] != (PluginGrant{"load", policy.Read, LatestRelease}) {
+		t.Fatalf("plugins = %+v", c.Plugins)
+	}
+	c.Plugins[1].Digest = d
 	if _, err := NormalizeCeiling(c); err != nil {
 		t.Fatal(err)
+	}
+	// The hub never sets a grant without a release.
+	c.Plugins[1].Digest = ""
+	if _, err := NormalizeCeiling(c); err == nil {
+		t.Error("a grant without a release was taken")
 	}
 	if err := SetCapability(&c, "plugins", "on"); err == nil {
 		t.Error("plugins=on was taken")
@@ -285,7 +363,7 @@ func TestSetCapabilityPlugins(t *testing.T) {
 	if err := SetCapability(&c, "plugins", "off"); err != nil || len(c.Plugins) != 0 {
 		t.Errorf("off = %+v, %v", c.Plugins, err)
 	}
-	c.Plugins = []PluginGrant{{"x", "root"}}
+	c.Plugins = []PluginGrant{{"x", "root", d}}
 	if _, err := NormalizeCeiling(c); err == nil {
 		t.Error("a bad class was taken")
 	}
@@ -306,18 +384,58 @@ func TestDevicePluginsOfOldAgent(t *testing.T) {
 		t.Fatalf("device plugins = %+v", got)
 	}
 	s := &agentSession{minor: 13, ceiling: &agentv1.Ceiling{Plugins: []*agentv1.PluginGrant{{Name: "go-lamp", MaxClass: "safe"}}}}
-	if err := s.checkPlugin("pi", "go-lamp", policy.Read); err == nil || !strings.Contains(err.Error(), "upgrade") {
+	if err := f.api.agents.checkPlugin(t.Context(), s, "pi", "go-lamp", strings.Repeat("a", 64), policy.Read); err == nil || !strings.Contains(err.Error(), "upgrade") {
 		t.Fatalf("old agent check = %v", err)
 	}
-	s.minor = 14
-	if err := s.checkPlugin("pi", "go-lamp", policy.Safe); err != nil {
+}
+
+// TestCheckPlugin: the hub sends a plugin command only for a release the
+// device's grants pin, up to their class, and takes a grant the agent
+// reports only when the hub set it or the agent's own flags hold it.
+func TestCheckPlugin(t *testing.T) {
+	f := newWebAdminFixture(t, policy.Config{})
+	a := NewAgents(f.st.Devices())
+	a.SetPlugins(f.st, nil)
+	dA, dB := strings.Repeat("a", 64), strings.Repeat("b", 64)
+	set := &agentv1.Ceiling{Plugins: []*agentv1.PluginGrant{{Name: "go-lamp", MaxClass: "safe", Digest: dA}}}
+	b, err := protojson.Marshal(set)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.checkPlugin("pi", "go-lamp", policy.Dangerous); err == nil {
-		t.Fatal("a dangerous command passed a safe grant")
+	if err := f.st.DeviceCeilings().Set(t.Context(), "pi", b, "test", time.Now()); err != nil {
+		t.Fatal(err)
 	}
-	if err := s.checkPlugin("pi", "other", policy.Read); err == nil {
-		t.Fatal("a plugin off the ceiling passed")
+	local := &agentv1.Ceiling{Plugins: []*agentv1.PluginGrant{{Name: "own", MaxClass: "read"}}}
+	reportHello(t, f, "pi", piHello(14, false, local))
+	reported := proto.CloneOf(set)
+	reported.Plugins = append(reported.Plugins,
+		&agentv1.PluginGrant{Name: "own", MaxClass: "read"},
+		// Claimed by the device, set by no one.
+		&agentv1.PluginGrant{Name: "stolen", MaxClass: "dangerous", Digest: dB},
+		&agentv1.PluginGrant{Name: "own", MaxClass: "dangerous", Digest: dB})
+	s := &agentSession{minor: 14, ceiling: reported}
+	for _, tt := range []struct {
+		name, plugin, digest string
+		class                policy.Class
+		ok                   bool
+	}{
+		{"pinned release", "go-lamp", dA, policy.Safe, true},
+		{"above the class", "go-lamp", dA, policy.Dangerous, false},
+		{"another release", "go-lamp", dB, policy.Read, false},
+		{"own flag, pinned by the agent", "own", dB, policy.Read, true},
+		{"own flag, above its class", "own", dB, policy.Dangerous, false},
+		{"claimed by the device", "stolen", dB, policy.Read, false},
+		{"off the ceiling", "other", dA, policy.Read, false},
+	} {
+		err := a.checkPlugin(t.Context(), s, "pi", tt.plugin, tt.digest, tt.class)
+		if (err == nil) != tt.ok || (err != nil && !errors.Is(err, policy.ErrBeyondCeiling)) {
+			t.Errorf("%s: %v, want ok %v", tt.name, err, tt.ok)
+		}
+	}
+	// On --local-ceiling, the hub's grants count for nothing.
+	reportHello(t, f, "pi", piHello(14, true, local))
+	if err := a.checkPlugin(t.Context(), s, "pi", "go-lamp", dA, policy.Read); !errors.Is(err, policy.ErrBeyondCeiling) {
+		t.Errorf("locked device: %v", err)
 	}
 }
 
@@ -371,16 +489,30 @@ func TestPluginBlobsFetch(t *testing.T) {
 	if _, err := NewPluginBlobs(t.TempDir()).Open(t.Context(), sum, "hub-a"); err == nil {
 		t.Error("a single hub opened a program it does not hold")
 	}
+	// A holder that is not a live master is never dialled.
+	dialled := false
+	b := NewPluginBlobs(t.TempDir())
+	b.masters = &linkMasters{self: "hub-b", live: []string{"hub-a"}, handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		dialled = true
+		http.NotFound(w, nil)
+	})}
+	if _, err := b.Open(t.Context(), sum, "storage-c"); err == nil || dialled {
+		t.Errorf("fetched from a storage member: %v, dialled %v", err, dialled)
+	}
 }
 
-// linkMasters is a Masters whose link serves handler.
+// linkMasters is a Masters whose link serves handler; live, when set, are
+// the live masters.
 type linkMasters struct {
 	self    string
+	live    []string
 	handler http.Handler
 }
 
-func (m *linkMasters) Self() string                              { return m.self }
-func (m *linkMasters) Live(string) bool                          { return true }
+func (m *linkMasters) Self() string { return m.self }
+func (m *linkMasters) Live(id string) bool {
+	return m.live == nil || slices.Contains(m.live, id)
+}
 func (m *linkMasters) AgentURLOf(context.Context, string) string { return "" }
 func (m *linkMasters) OwnerOf(string) string                     { return m.self }
 func (m *linkMasters) Client() *http.Client {
@@ -395,13 +527,14 @@ func (t handlerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	return rec.Result(), nil
 }
 
-// TestPluginBlobHandler: a device downloads only the program of a plugin
-// its reported ceiling allows, over its own stream's identity.
+// TestPluginBlobHandler: a device downloads only the program of a release
+// its grants allow (the hub's record, not only what it reports), over its
+// own stream's identity.
 func TestPluginBlobHandler(t *testing.T) {
 	st := newTestStore(t)
 	a := NewAgents(st.Devices())
 	blobs := NewPluginBlobs(t.TempDir())
-	a.SetPlugins(st.DevicePlugins(), blobs)
+	a.SetPlugins(st, blobs)
 	sum, size, err := blobs.Save(strings.NewReader("program"))
 	if err != nil {
 		t.Fatal(err)
@@ -418,9 +551,23 @@ func TestPluginBlobHandler(t *testing.T) {
 	if err := u.Save(t.Context(), st, "", "test", time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	grant := &agentv1.Ceiling{Plugins: []*agentv1.PluginGrant{{Name: "go-lamp", MaxClass: "read"}}}
-	a.sessions["pi"] = &agentSession{minor: minPluginMinor, ceiling: grant}
-	a.sessions["nas"] = &agentSession{minor: minPluginMinor, ceiling: &agentv1.Ceiling{}}
+	grantOf := func(digest string) *agentv1.Ceiling {
+		return &agentv1.Ceiling{Plugins: []*agentv1.PluginGrant{{Name: "go-lamp", MaxClass: "read", Digest: digest}}}
+	}
+	digest := u.Release().Digest()
+	for id, c := range map[string]*agentv1.Ceiling{"pi": grantOf(digest), "nas": {}, "liar": {}, "old": grantOf(strings.Repeat("e", 64))} {
+		enrollDevice(t, st, id)
+		b, err := protojson.Marshal(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := st.DeviceCeilings().Set(t.Context(), id, b, "test", time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		a.sessions[id] = &agentSession{minor: minPluginMinor, ceiling: c}
+	}
+	// liar reports a grant the hub never set for it.
+	a.sessions["liar"].ceiling = grantOf(digest)
 	h := a.pluginBlobHandler()
 	for _, tt := range []struct {
 		name, device, sum string
@@ -429,6 +576,8 @@ func TestPluginBlobHandler(t *testing.T) {
 		{"allowed", "pi", sum, http.StatusOK},
 		{"no client certificate", "", sum, http.StatusNotFound},
 		{"not in the ceiling", "nas", sum, http.StatusNotFound},
+		{"claimed, not set", "liar", sum, http.StatusNotFound},
+		{"another release pinned", "old", sum, http.StatusNotFound},
 		{"no stream here", "tv", sum, http.StatusForbidden},
 		{"not in the registry", "pi", other, http.StatusNotFound},
 		{"not a SHA-256", "pi", "..%2Fca.key", http.StatusNotFound},

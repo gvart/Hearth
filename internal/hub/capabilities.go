@@ -14,6 +14,7 @@ import (
 
 	"google.golang.org/protobuf/encoding/protojson"
 
+	"github.com/gvart/hearth/internal/plugins"
 	"github.com/gvart/hearth/internal/policy"
 	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
 	"github.com/gvart/hearth/internal/store"
@@ -54,11 +55,22 @@ type CapabilitiesJSON struct {
 	// PluginsManageable is whether the agent installs and runs exec
 	// plugins (protocol minor 14); an older agent must be upgraded first.
 	PluginsManageable bool `json:"plugins_manageable"`
+	// PluginReleases are the releases uploaded for the device's platform,
+	// one per plugin: a grant pinned to another digest can move to it, a
+	// raise.
+	PluginReleases []PluginReleaseJSON `json:"plugin_releases"`
 	// AgentVersion is the agent's version, as it reported it.
 	AgentVersion string `json:"agent_version"`
 	// UpdatedAt and UpdatedBy say who set Hub last, if anyone did.
 	UpdatedAt *time.Time `json:"updated_at,omitempty"`
 	UpdatedBy string     `json:"updated_by,omitempty"`
+}
+
+// PluginReleaseJSON is the release of a plugin uploaded for a platform.
+type PluginReleaseJSON struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	Digest  string `json:"digest"`
 }
 
 // CapabilitiesRequest is the body of PUT /api/v1/devices/{id}/capabilities:
@@ -90,6 +102,14 @@ func capabilitiesOf(ctx context.Context, st *store.Store, d store.Device) (Capab
 	out.Local, out.Effective, out.Locked = f.LocalCeiling, f.Ceiling, f.CeilingLocked
 	out.Manageable, out.AgentVersion = f.ProtocolMinor >= minCeilingConfigMinor, f.AgentVersion
 	out.PluginsManageable = f.ProtocolMinor >= minPluginMinor
+	releases, err := pluginReleases(ctx, st, f)
+	if err != nil {
+		return out, err
+	}
+	out.PluginReleases = make([]PluginReleaseJSON, 0, len(releases))
+	for _, r := range releases {
+		out.PluginReleases = append(out.PluginReleases, PluginReleaseJSON{Name: r.Name, Version: r.Version, Digest: r.Digest()})
+	}
 	dc, err := st.DeviceCeilings().Get(ctx, d.ID)
 	switch {
 	case errors.Is(err, store.ErrNotFound):
@@ -169,16 +189,17 @@ func ChangeOf(old, next *agentv1.Ceiling) CapabilitiesChange {
 	flag("probe", old.GetProbe(), next.GetProbe(), false)
 	list("scan", old.GetScan(), next.GetScan(), false)
 	flag("net_edges", old.GetNetEdges(), next.GetNetEdges(), false)
-	// Allowing a plugin, or a higher class of its commands, lets the hub
-	// run code it supplies on the device.
+	// Allowing a plugin, a higher class of its commands, or another
+	// release of it lets the hub run code it supplies on the device.
 	for _, n := range next.GetPlugins() {
-		if o, ok := policy.PluginGrantOf(old, n.GetName()); !ok || policy.ClassAbove(policy.Class(n.GetMaxClass()), o) {
+		o, ok := policy.PluginReleaseClass(old, n.GetName(), n.GetDigest())
+		if !ok || policy.ClassAbove(policy.Class(n.GetMaxClass()), o) {
 			c.Raised = append(c.Raised, "plugin:"+n.GetName())
 			risky = true
 		}
 	}
 	for _, o := range old.GetPlugins() {
-		if n, ok := policy.PluginGrantOf(next, o.GetName()); !ok || policy.ClassAbove(policy.Class(o.GetMaxClass()), n) {
+		if n, ok := policy.PluginReleaseClass(next, o.GetName(), o.GetDigest()); !ok || policy.ClassAbove(policy.Class(o.GetMaxClass()), n) {
 			c.Lowered = append(c.Lowered, "plugin:"+o.GetName())
 		}
 	}
@@ -219,11 +240,6 @@ func (a *api) putCapabilities(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, 64<<10, &req, `{"hub": {...}}`) {
 		return
 	}
-	next, err := NormalizeCeiling(req.Hub)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
-		return
-	}
 	d, ok := a.device(w, r)
 	if !ok {
 		return
@@ -234,6 +250,15 @@ func (a *api) putCapabilities(w http.ResponseWriter, r *http.Request) {
 	cur, err := capabilitiesOf(ctx, a.store, d)
 	if err != nil {
 		a.writeActionError(w, r, "read the device's capabilities", err)
+		return
+	}
+	if err := PinPluginGrants(ctx, a.store, d, cur.Hub, &req.Hub); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	next, err := NormalizeCeiling(req.Hub)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
 	change := ChangeOf(cur.Hub.Proto(), next)
@@ -282,6 +307,87 @@ func (a *api) putCapabilities(w http.ResponseWriter, r *http.Request) {
 	at := a.now().UTC()
 	out.Hub, out.UpdatedAt, out.UpdatedBy = *ceilingJSON(next), &at, policy.ActorWeb+"/"+remoteHost(r)
 	writeJSON(w, http.StatusOK, out)
+}
+
+// LatestRelease is the digest that pins a grant to the release of its
+// plugin uploaded for the device's platform now.
+const LatestRelease = "latest"
+
+// PinPluginGrants pins each plugin grant of next, the ceiling the hub is to
+// set for device d, to a release: one with no digest keeps the one cur, the
+// ceiling set now, pins for it, or takes the release uploaded for d's
+// platform, as one of LatestRelease does. Moving a grant to another
+// release is a raise (ChangeOf).
+func PinPluginGrants(ctx context.Context, st *store.Store, d store.Device, cur Ceiling, next *Ceiling) error {
+	var f Facts
+	if len(d.Facts) > 0 {
+		if err := json.Unmarshal(d.Facts, &f); err != nil {
+			return fmt.Errorf("decode the facts of device %s: %w", d.ID, err)
+		}
+	}
+	var releases []plugins.Release
+	for i, g := range next.Plugins {
+		if g.Digest == "" {
+			if j := slices.IndexFunc(cur.Plugins, func(o PluginGrant) bool { return o.Name == g.Name }); j >= 0 {
+				next.Plugins[i].Digest = cur.Plugins[j].Digest
+				continue
+			}
+			g.Digest = LatestRelease
+		}
+		if g.Digest != LatestRelease {
+			continue
+		}
+		if releases == nil {
+			var err error
+			if releases, err = pluginReleases(ctx, st, f); err != nil {
+				return err
+			}
+		}
+		k := slices.IndexFunc(releases, func(r plugins.Release) bool { return r.Name == g.Name })
+		if k < 0 {
+			return fmt.Errorf("plugin %s: none uploaded for this device's platform, %s/%s: upload it first", g.Name, platformOf(f), f.Arch)
+		}
+		next.Plugins[i].Digest = releases[k].Digest()
+	}
+	return nil
+}
+
+// platformOf is the operating system of the device of f, as Go names it,
+// from the platform its agent reported (such as "debian 12" or
+// "darwin 15.1").
+func platformOf(f Facts) string {
+	platform := strings.ToLower(f.OS)
+	for _, goos := range []string{"darwin", "windows", "freebsd", "openbsd", "netbsd", "android"} {
+		if strings.Contains(platform, goos) {
+			return goos
+		}
+	}
+	if strings.Contains(platform, "macos") {
+		return "darwin"
+	}
+	return "linux"
+}
+
+// pluginReleases are the releases uploaded for the platform of the device
+// of f.
+func pluginReleases(ctx context.Context, st *store.Store, f Facts) ([]plugins.Release, error) {
+	list, err := st.DevicePlugins().List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	goos := platformOf(f)
+	var out []plugins.Release
+	for _, p := range list {
+		if p.OS != goos || p.Arch != f.Arch {
+			continue
+		}
+		b, err := pluginBinary(p)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, plugins.ReleaseOf(b))
+	}
+	return out, nil
 }
 
 // ErrCeilingLocked refuses, as an audited denial, a change to the
@@ -355,18 +461,24 @@ func SetCapability(c *Ceiling, key, value string) error {
 	case "exec":
 		return list(&c.Exec, nil)
 	case "plugins":
+		old := c.Plugins
 		c.Plugins = []PluginGrant{}
 		if value == "off" || value == "" {
 			return nil
 		}
 		if value == "on" {
-			return errors.New(`plugins has no "on": list them, comma-separated NAME or NAME:CLASS`)
+			return errors.New(`plugins has no "on": list them, comma-separated NAME[:CLASS][@latest]`)
 		}
 		for _, e := range strings.Split(value, ",") {
-			name, class, ok := strings.Cut(strings.TrimSpace(e), ":")
-			g := PluginGrant{Name: name, Class: policy.Read}
+			rest, digest, _ := strings.Cut(strings.TrimSpace(e), "@")
+			name, class, ok := strings.Cut(rest, ":")
+			g := PluginGrant{Name: name, Class: policy.Read, Digest: digest}
 			if ok {
 				g.Class = policy.Class(class)
+			}
+			// Without @, the release pinned now stays (PinPluginGrants).
+			if j := slices.IndexFunc(old, func(o PluginGrant) bool { return o.Name == name }); j >= 0 && digest == "" {
+				g.Digest = old[j].Digest
 			}
 			c.Plugins = append(c.Plugins, g)
 		}

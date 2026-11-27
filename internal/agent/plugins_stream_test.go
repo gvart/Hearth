@@ -66,8 +66,8 @@ func setCeiling(t *testing.T, h *restartableHub, id string, c *agentv1.Ceiling) 
 	}
 }
 
-func lampGrant(class policy.Class) *agentv1.Ceiling {
-	return &agentv1.Ceiling{Plugins: []*agentv1.PluginGrant{{Name: "go-lamp", MaxClass: string(class)}}}
+func lampGrant(class policy.Class, u hub.DevicePluginUpload) *agentv1.Ceiling {
+	return &agentv1.Ceiling{Plugins: []*agentv1.PluginGrant{{Name: "go-lamp", MaxClass: string(class), Digest: u.Release().Digest()}}}
 }
 
 // TestPluginOnDevice runs the go-lamp example plugin on an agent, end to
@@ -78,7 +78,7 @@ func TestPluginOnDevice(t *testing.T) {
 	h := startRestartableHub(t, 100*time.Millisecond)
 	id, dataDir := h.join(t)
 	u := uploadLamp(t, h, runtime.GOOS, runtime.GOARCH)
-	setCeiling(t, h, id, lampGrant(policy.Safe))
+	setCeiling(t, h, id, lampGrant(policy.Safe, u))
 	startAgentWith(t, agent.Config{DataDir: dataDir, FactsInterval: time.Hour})
 	pol := policy.New(h.st.Audit())
 	runner := hub.DevicePluginRunner{Agents: h.agents, Store: h.st, Policy: pol}
@@ -125,7 +125,7 @@ func TestPluginOnDevice(t *testing.T) {
 
 	// The agent refuses a class above its ceiling even when the hub claims
 	// a lower one: it reads the class from the manifest it installed.
-	setCeiling(t, h, id, lampGrant(policy.Read))
+	setCeiling(t, h, id, lampGrant(policy.Read, u))
 	waitFor(t, 10*time.Second, "the ceiling lowered", func() bool {
 		f := reported(t, h, id)
 		return f.Ceiling != nil && len(f.Ceiling.Plugins) == 1 && f.Ceiling.Plugins[0].Class == policy.Read
@@ -134,7 +134,7 @@ func TestPluginOnDevice(t *testing.T) {
 		plugins.CommandRequest{Command: "turn_on"}); !errors.Is(err, policy.ErrBeyondCeiling) {
 		t.Errorf("safe command under a read ceiling: %v, want beyond the ceiling", err)
 	}
-	r, err := h.agents.Plugin(t.Context(), id, policy.Read,
+	r, err := h.agents.Plugin(t.Context(), id, u.Release().Digest(), policy.Read,
 		&agentv1.PluginCommand{Plugin: "go-lamp", Sha256: u.SHA256, Command: "turn_on"}, 10*time.Second)
 	if err != nil {
 		t.Fatal(err)
@@ -147,7 +147,8 @@ func TestPluginOnDevice(t *testing.T) {
 	setCeiling(t, h, id, &agentv1.Ceiling{})
 	waitFor(t, 10*time.Second, "the plugin removed", func() bool {
 		_, err := os.Stat(filepath.Join(dataDir, agent.PluginsDir, "go-lamp"))
-		return os.IsNotExist(err)
+		st, serr := h.agents.PluginStatus(t.Context(), id)
+		return os.IsNotExist(err) && serr == nil && len(st.GetPlugins()) == 0
 	})
 	if _, err := runner.Run(t.Context(), policy.ActorWeb, "10.0.0.1", id, "go-lamp",
 		plugins.CommandRequest{Command: "turn_on"}); !errors.Is(err, hub.ErrPluginNotInstalled) {
@@ -162,8 +163,8 @@ func TestPluginOnDeviceRefused(t *testing.T) {
 	t.Run("another platform", func(t *testing.T) {
 		h := startRestartableHub(t, 100*time.Millisecond)
 		id, dataDir := h.join(t)
-		uploadLamp(t, h, "plan9", runtime.GOARCH)
-		setCeiling(t, h, id, lampGrant(policy.Safe))
+		u := uploadLamp(t, h, "plan9", runtime.GOARCH)
+		setCeiling(t, h, id, lampGrant(policy.Safe, u))
 		startAgentWith(t, agent.Config{DataDir: dataDir, FactsInterval: time.Hour})
 		runner := hub.DevicePluginRunner{Agents: h.agents, Store: h.st, Policy: policy.New(h.st.Audit())}
 		waitFor(t, 20*time.Second, "the agent's report", func() bool {
@@ -182,7 +183,7 @@ func TestPluginOnDeviceRefused(t *testing.T) {
 		h := startRestartableHub(t, 100*time.Millisecond)
 		id, dataDir := h.join(t)
 		u := uploadLamp(t, h, runtime.GOOS, runtime.GOARCH)
-		setCeiling(t, h, id, lampGrant(policy.Dangerous))
+		setCeiling(t, h, id, lampGrant(policy.Dangerous, u))
 		startAgentWith(t, agent.Config{DataDir: dataDir, LocalCeiling: true, FactsInterval: time.Hour})
 		waitFor(t, 10*time.Second, "the locked agent's facts", func() bool { return reported(t, h, id).CeilingLocked })
 		time.Sleep(500 * time.Millisecond) // a few heartbeats, each pushing the plugins
@@ -190,7 +191,7 @@ func TestPluginOnDeviceRefused(t *testing.T) {
 			t.Errorf("locked agent installed the hub's plugin: %v", err)
 		}
 		// Even sent straight to the agent, past the hub's own check.
-		if _, err := h.agents.Plugin(t.Context(), id, policy.Read,
+		if _, err := h.agents.Plugin(t.Context(), id, u.Release().Digest(), policy.Read,
 			&agentv1.PluginCommand{Plugin: "go-lamp", Sha256: u.SHA256, Command: "turn_on"}, 10*time.Second); !errors.Is(err, policy.ErrBeyondCeiling) {
 			t.Errorf("hub sent a command beyond the reported ceiling: %v", err)
 		}
@@ -213,4 +214,53 @@ func TestPluginOnDeviceRefused(t *testing.T) {
 			t.Fatalf("turn_off: %q, %v", res.Output, err)
 		}
 	})
+}
+
+// TestPluginNewReleaseNeedsApproval: a new release uploaded under the name
+// of one a device runs is not installed until its grant is moved to it; the
+// device keeps running the release it was allowed.
+func TestPluginNewReleaseNeedsApproval(t *testing.T) {
+	h := startRestartableHub(t, 100*time.Millisecond)
+	id, dataDir := h.join(t)
+	v1 := uploadLamp(t, h, runtime.GOOS, runtime.GOARCH)
+	setCeiling(t, h, id, lampGrant(policy.Safe, v1))
+	startAgentWith(t, agent.Config{DataDir: dataDir, FactsInterval: time.Hour})
+	runner := hub.DevicePluginRunner{Agents: h.agents, Store: h.st, Policy: policy.New(h.st.Audit())}
+	installed := func(version string, wantErr bool) func() bool {
+		return func() bool {
+			d, err := runner.Device(t.Context(), id)
+			return err == nil && len(d.Plugins) == 1 && d.Plugins[0].Installed &&
+				d.Plugins[0].Version == version && (d.Plugins[0].Error != "") == wantErr
+		}
+	}
+	waitFor(t, 20*time.Second, "v1 installed", installed(v1.Manifest.Version, false))
+
+	// The same program, relabelled: every command now "read".
+	v2 := v1
+	v2.Manifest.Version = "9.9.9"
+	v2.Manifest.Commands = slices.Clone(v1.Manifest.Commands)
+	for i := range v2.Manifest.Commands {
+		v2.Manifest.Commands[i].Class = policy.Read
+	}
+	if err := v2.Save(t.Context(), h.st, "", "admin/test", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, 10*time.Second, "v2 refused, v1 kept", installed(v1.Manifest.Version, true))
+	// Commands still run v1, at v1's classes.
+	if _, err := runner.Run(t.Context(), policy.ActorWeb, "10.0.0.1", id, "go-lamp", plugins.CommandRequest{Command: "turn_on"}); err != nil {
+		t.Fatal(err)
+	}
+	setCeiling(t, h, id, lampGrant(policy.Read, v1))
+	waitFor(t, 10*time.Second, "the ceiling lowered", func() bool {
+		f := reported(t, h, id)
+		return f.Ceiling != nil && len(f.Ceiling.Plugins) == 1 && f.Ceiling.Plugins[0].Class == policy.Read
+	})
+	if _, err := runner.Run(t.Context(), policy.ActorWeb, "10.0.0.1", id, "go-lamp",
+		plugins.CommandRequest{Command: "turn_on"}); !errors.Is(err, policy.ErrBeyondCeiling) {
+		t.Fatalf("the relabelled manifest's class was taken: %v", err)
+	}
+
+	// Approved: v2 replaces v1.
+	setCeiling(t, h, id, lampGrant(policy.Read, v2))
+	waitFor(t, 10*time.Second, "v2 installed", installed(v2.Manifest.Version, false))
 }
