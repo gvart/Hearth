@@ -101,7 +101,10 @@ token that grants master like the CA key.
 
 Then the hub finds the cluster by gossip. `--cluster-seeds` (env `HEARTH_CLUSTER_SEEDS`) adds
 `host:port` cluster addresses of other members to find it by; the `--join` hub's is added on its own.
-Until a joining or restarted member has found another member, it refuses critical writes (503)
+Each hub also keeps the cluster address of every member it learns (`cluster/gossip-seeds` in its
+data dir) and finds the cluster by them after a restart. An address follows its member when it moves,
+and a removed member's goes; a member that is only down, or stopped, keeps its address, so hubs back
+from a power cut still find each other. Until a joining or restarted member has found another member, it refuses critical writes (503)
 rather than keep their only copy; if none is reached within 30 seconds it starts alone and says so in
 its log. It imports its configuration files only once it has found the cluster and caught up, so it
 takes the cluster's documents instead of its own.
