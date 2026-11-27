@@ -33,6 +33,10 @@ func (n *APNode) Snapshot(ctx context.Context, path string) error {
 	if n.st == nil {
 		return errors.New("snapshot: ap node not bound to a store")
 	}
+	if !n.rep.holdsKey() {
+		// It would miss the rows only masters hold (sessions, tokens, panels).
+		return errors.New("snapshot: this hub is no master: take the backup on a master")
+	}
 	if err := n.st.VacuumInto(ctx, path); err != nil {
 		return err
 	}

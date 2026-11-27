@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -38,6 +39,30 @@ func TestSessionsOnEveryMaster(t *testing.T) {
 	}
 	if n := lacking(t, c["d"], secrets); n != len(secrets) {
 		t.Fatalf("storage-only d holds %d sessions, want none", len(secrets)-n)
+	}
+	// A backup on a master that lost its copies pulls them from the other
+	// masters; one on storage-only d, which holds none, is refused.
+	if _, err := c["a"].st.DropMasterRows(ctx); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(c["a"].dir, "backup.db")
+	if err := c["a"].node.Snapshot(ctx, path); err != nil {
+		t.Fatal(err)
+	}
+	copied, err := store.Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range secrets {
+		if _, err := copied.Admin().CheckSession(ctx, s, time.Now()); err != nil {
+			t.Fatalf("session %s in a's backup: %v", s, err)
+		}
+	}
+	if err := copied.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := c["d"].node.Snapshot(ctx, filepath.Join(c["d"].dir, "backup.db")); err == nil {
+		t.Fatal("a backup on storage-only d was taken")
 	}
 	// A sign-out on another master ends it on every master.
 	for _, s := range secrets {

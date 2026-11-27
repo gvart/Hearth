@@ -53,6 +53,12 @@ func (n *APNode) placeMasterRows(ctx context.Context, st *store.Store) error {
 		if err != nil {
 			return err
 		}
+		// Hints kept from before would bring them back elsewhere.
+		if n.hints != nil {
+			if err := n.hints.DropTables(ctx, grantTables); err != nil {
+				return err
+			}
+		}
 		n.log.InfoContext(ctx, "upgrade: sign-in sessions, MCP and dashboard tokens and panel links now live on masters only; "+
 			"the ones from before are gone: sign in again and create them again", "rows", k)
 	}

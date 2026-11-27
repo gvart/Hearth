@@ -681,6 +681,15 @@ func (r *Replicator) applyHere(ctx context.Context, cmd store.Command, route sto
 			return store.Result{}, fmt.Errorf("apply %s: %d of %d replicas reachable, %d needed: %w",
 				cmd.Op(), len(live), n, w, store.ErrUnavailable)
 		}
+		if _, reset := cmd.(store.SetPasswordHash); reset {
+			// It writes a global row too (the admin password), which every
+			// storage member holds.
+			live, _ := v.globals()
+			if w := writeQuorum(true, len(v.everyone)); len(live) < w {
+				return store.Result{}, fmt.Errorf("apply %s: %d of %d members reachable, %d needed: %w",
+					cmd.Op(), len(live), len(v.everyone), w, store.ErrUnavailable)
+			}
+		}
 		// A global row also needs another master's ack when one is live
 		// (writeGroup.needMaster): such a master is then among live, and
 		// whether it proves the key only its answer tells (shortOf).
@@ -725,8 +734,10 @@ func (r *Replicator) refresh(ctx context.Context, st *store.Store, cmd store.Com
 	case route.Kind == store.RouteKey:
 		peers = v.readOrder(store.BucketOf(store.Token(route.Key)))
 	case route.Master:
-		// The master tables' rows are read on masters only (replauth.go).
+		// The master tables' rows are read on masters only (replauth.go):
+		// one that answered without a proof is not asked.
 		peers, _ = v.mastersHolding()
+		peers = slices.DeleteFunc(peers, r.unproved)
 	default:
 		peers, _ = v.globals()
 	}

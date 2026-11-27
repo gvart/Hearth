@@ -330,14 +330,37 @@ func TestPlaceMasterRows(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			n := &APNode{cfg: APConfig{DataDir: dir, CA: ca, Seeds: tc.seeds}, log: testLogger(t)}
+			hints, err := OpenHints(ctx, filepath.Join(dir, HintsFile), 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = hints.Close() })
+			n := &APNode{cfg: APConfig{DataDir: dir, CA: ca, Seeds: tc.seeds}, log: testLogger(t), hints: hints}
 			st := storetest.Open(t, store.WithDigest())
 			makeGrants(t, &apMember{id: "a", st: st})
+			// A hint kept from before, of a session and a panel.
+			rows, err := st.ReadRows(ctx, []store.RowRef{
+				{Table: "sessions", Key: store.Values{secretHash("real-session")}},
+				{Table: "panels", Key: store.Values{"real"}},
+			})
+			if err != nil || len(rows) != 2 {
+				t.Fatalf("rows for a hint: %v, %v", rows, err)
+			}
+			if err := hints.Add("b", rows); err != nil {
+				t.Fatal(err)
+			}
 			if err := n.placeMasterRows(ctx, st); err != nil {
 				t.Fatal(err)
 			}
 			if got := masterRowCount(t, st); got != tc.want {
 				t.Fatalf("master rows left: %d, want %d", got, tc.want)
+			}
+			_, hinted, err := hints.Take(ctx, "b", 10)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if wantHinted := map[bool]int{true: 2, false: 1}[len(tc.seeds) == 0]; len(hinted) != wantHinted {
+				t.Fatalf("hinted rows left: %d, want %d", len(hinted), wantHinted)
 			}
 			now := time.Now()
 			if err := st.Admin().CreateSession(ctx, "later", now, now.Add(time.Hour)); err != nil {
@@ -350,5 +373,36 @@ func TestPlaceMasterRows(t *testing.T) {
 				t.Fatalf("master rows left after a second start: %d, want %d", got, tc.wantAgain)
 			}
 		})
+	}
+}
+
+// TestOneMasterWithStorageMembersDown: with one master and its storage-only
+// members down, a sign-in, which needs the masters alone, still succeeds;
+// a password reset, which also writes the admin password every storage
+// member holds, is refused before it writes anything.
+func TestOneMasterWithStorageMembersDown(t *testing.T) {
+	an := newGateNet(t)
+	ctx := t.Context()
+	an.mu.Lock()
+	an.roles["s"], an.roles["s2"] = storageOnly, storageOnly
+	an.mu.Unlock()
+	m := an.m("m").st
+	if err := m.Admin().SetPasswordHash(ctx, "h1"); err != nil {
+		t.Fatal(err)
+	}
+	an.setDown("s", true)
+	an.setDown("s2", true)
+	now := time.Now()
+	if err := m.Admin().CreateSession(ctx, "alone", now, now.Add(time.Hour)); err != nil {
+		t.Fatalf("a sign-in on the one master: %v", err)
+	}
+	if err := m.Admin().SetPasswordHash(ctx, "h2"); !errors.Is(err, store.ErrUnavailable) {
+		t.Fatalf("a reset with every storage member down: %v, want unavailable", err)
+	}
+	if h, err := m.Admin().PasswordHash(ctx); err != nil || h != "h1" {
+		t.Fatalf("password hash = %q, %v; want h1 unchanged", h, err)
+	}
+	if _, err := m.Admin().CheckSession(ctx, "alone", time.Now()); err != nil {
+		t.Fatalf("the session after a refused reset: %v", err)
 	}
 }

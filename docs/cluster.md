@@ -212,7 +212,8 @@ dir and join it again.
   documents are **critical**: they need W = min(2, N) replicas and fail at once with 503
   `cluster_unavailable` when fewer are reachable. For a sign-in session, an MCP or dashboard token and a
   panel link, the replicas are the masters: W = min(2, masters), so with three masters a sign-in needs
-  two of them up, and with one master it needs that one. Runbook runs need more: a strict **majority** of the
+  two of them up, with two masters both, whatever storage members are up, and with one master that
+  one. A password reset needs that and the quorum of the global rows too. Runbook runs need more: a strict **majority** of the
   run's N replicas themselves (W = N/2 + 1, a stand-in never counts), both to read the run and to save
   it, so runbooks are consistent rather than available across a split (below). Other writes (presence, facts, scans, automation run
   history) need one replica and reach the others in the background. A replica that is down is replaced by the
@@ -697,8 +698,9 @@ records its node certificate in the cluster, so `cluster remove` can revoke it.
 ## Backups
 
 A backup (`hearth backup`, a scheduled one, or **Settings → Backup** in the UI) taken on a master copies
-the whole cluster store from the live members, every shard included, and is refused while some shard
-has no live replica. A hub restored from a backup forms a new cluster of one, in a new cluster epoch:
+the whole cluster store from the live members, every shard included (the sessions, tokens and panels
+from the masters), and is refused while some shard has no live replica. A storage-only member, which
+holds no sessions, tokens or panels, refuses to take one. A hub restored from a backup forms a new cluster of one, in a new cluster epoch:
 members of the old cluster are refused until they join it again. See
 [Restoring a cluster](backup.md#restoring-a-cluster).
 
