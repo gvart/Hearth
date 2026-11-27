@@ -143,8 +143,10 @@ func TestRefusedDecisionIsNoDecision(t *testing.T) {
 	ctx := t.Context()
 	now := time.Now()
 	m := an.m("m").st
-	if err := m.Approvals().Create(ctx, store.Approval{ID: "closed", CreatedAt: now, ExpiresAt: now.Add(time.Hour),
-		ActorKind: "automation", ActorID: "a", Action: "automation.exec", Class: "dangerous", Target: "pi", Detail: []byte(`{}`)}); err != nil {
+	if err := m.Approvals().Create(ctx, store.Approval{
+		ID: "closed", CreatedAt: now, ExpiresAt: now.Add(time.Hour),
+		ActorKind: "automation", ActorID: "a", Action: "automation.exec", Class: "dangerous", Target: "pi", Detail: []byte(`{}`),
+	}); err != nil {
 		t.Fatal(err)
 	}
 	ref := store.RowRef{Table: "approvals", Key: store.Values{"closed"}}
