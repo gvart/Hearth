@@ -593,12 +593,8 @@ func (u *upgrader) started(ctx context.Context, log *slog.Logger) error {
 	if u == nil || u.dataDir == "" {
 		return nil
 	}
-	if b, err := os.ReadFile(filepath.Join(u.dataDir, upgradeRolledBackFile)); err == nil {
-		if v := strings.TrimSpace(string(b)); release.Tag.MatchString(v) {
-			u.rolledBackFrom = v
-		}
-	}
 	path := filepath.Join(u.dataDir, upgradePendingFile)
+	u.readRollback(ctx, log, path)
 	b, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
@@ -623,6 +619,30 @@ func (u *upgrader) started(ctx context.Context, log *slog.Logger) error {
 		return nil
 	}
 	return u.rollBack(ctx, log, p, strconv.Itoa(maxUpgradeStarts)+" starts")
+}
+
+// readRollback reads the rollback record an earlier rollback left for the
+// hub. A record is stale, and removed, when an upgrade is pending (pending
+// names its marker): a newer upgrade came since, which a binary from before
+// the record existed did not report. So is one naming a release no newer
+// than the one running.
+func (u *upgrader) readRollback(ctx context.Context, log *slog.Logger, pending string) {
+	rec := filepath.Join(u.dataDir, upgradeRolledBackFile)
+	b, err := os.ReadFile(rec)
+	if err != nil {
+		return
+	}
+	v := strings.TrimSpace(string(b))
+	_, perr := os.Stat(pending)
+	stale := !release.Tag.MatchString(v) || perr == nil ||
+		(release.Tag.MatchString(u.current) && release.Compare(v, u.current) <= 0)
+	if !stale {
+		u.rolledBackFrom = v
+		return
+	}
+	if err := os.Remove(rec); err != nil && !errors.Is(err, os.ErrNotExist) {
+		log.WarnContext(ctx, "remove a stale rollback record", "err", err)
+	}
 }
 
 // rollBack removes the marker of the pending upgrade p and moves

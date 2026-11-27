@@ -506,14 +506,14 @@ func TestUpgradeRollback(t *testing.T) {
 	t.Run("welcomed before the timeout", func(t *testing.T) {
 		t.Parallel()
 		u, exe := setup(t)
-		u.noHub = 50 * time.Millisecond
+		u.noHub = time.Second
 		if err := u.started(t.Context(), log); err != nil {
 			t.Fatal(err)
 		}
 		stopped := make(chan error, 1)
 		end := u.watchWelcome(t.Context(), log, func(err error) { stopped <- err })
 		u.welcomed(t.Context(), log)
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(1500 * time.Millisecond)
 		end()
 		select {
 		case err := <-stopped:
@@ -531,6 +531,49 @@ func TestUpgradeRollback(t *testing.T) {
 		end := u.watchWelcome(t.Context(), log, func(err error) { t.Errorf("stop(%v) with no upgrade pending", err) })
 		time.Sleep(20 * time.Millisecond)
 		end()
+	})
+
+	t.Run("stale rollback record", func(t *testing.T) {
+		t.Parallel()
+		record := func(t *testing.T, dataDir, v string) string {
+			t.Helper()
+			path := filepath.Join(dataDir, upgradeRolledBackFile)
+			if err := os.WriteFile(path, []byte(v+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			return path
+		}
+		for _, tt := range []struct {
+			name    string
+			current string
+			pending bool
+		}{
+			// A binary from before the record existed never reported it,
+			// and was upgraded since: the new one does not report it.
+			{name: "an upgrade pending", current: "v1.2.4", pending: true},
+			{name: "no newer than the version running", current: "v1.2.3"},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+				u, _ := setup(t)
+				u.current = tt.current
+				if !tt.pending {
+					_ = os.Remove(filepath.Join(u.dataDir, upgradePendingFile))
+				}
+				path := record(t, u.dataDir, "v1.2.3")
+				if err := u.started(t.Context(), log); err != nil {
+					t.Fatal(err)
+				}
+				h := &agentv1.Hello{}
+				u.hello(h)
+				if h.GetRolledBackFrom() != "" {
+					t.Errorf("Hello.rolled_back_from = %q, want none", h.GetRolledBackFrom())
+				}
+				if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+					t.Errorf("stale record kept: %v", err)
+				}
+			})
+		}
 	})
 
 	t.Run("unreadable marker", func(t *testing.T) {

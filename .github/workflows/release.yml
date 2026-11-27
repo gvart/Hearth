@@ -30,14 +30,6 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # changelog and version come from git history and tags
-      - name: Check the release signing key is set
-        env:
-          HEARTH_RELEASE_SIGNING_KEY: ${{ secrets.HEARTH_RELEASE_SIGNING_KEY }}
-        run: |
-          if [ -z "$HEARTH_RELEASE_SIGNING_KEY" ]; then
-            echo "::error::the secret HEARTH_RELEASE_SIGNING_KEY of the release environment is empty: agents refuse an unsigned release (#359)"
-            exit 1
-          fi
       - name: Check docs name this version
         env:
           TAG: ${{ github.ref_name }}
@@ -50,6 +42,18 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: ${{ env.GO_VERSION }}
+      # Before anything is published: an empty, malformed or untrusted key
+      # fails here rather than after the release is out unsigned (#359).
+      - name: Check the release signing key
+        env:
+          HEARTH_RELEASE_SIGNING_KEY: ${{ secrets.HEARTH_RELEASE_SIGNING_KEY }}
+        run: |
+          if [ -z "$HEARTH_RELEASE_SIGNING_KEY" ]; then
+            echo "::error::the secret HEARTH_RELEASE_SIGNING_KEY of the release environment is empty: agents refuse an unsigned release"
+            exit 1
+          fi
+          echo check >"$RUNNER_TEMP/sign-check.txt"
+          go run ./internal/release/cmd/sign "$RUNNER_TEMP/sign-check.txt"
       - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}

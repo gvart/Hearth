@@ -235,7 +235,7 @@ func Run(ctx context.Context, cfg Config) error {
 			}
 		}
 		if errors.Is(context.Cause(ctx), ErrUpgraded) {
-			log.InfoContext(ctx, "agent upgraded; exiting for the service manager to start the new binary")
+			log.InfoContext(ctx, "binary replaced; exiting for the service manager to start it", "reason", context.Cause(ctx))
 			return ErrUpgraded
 		}
 		if ctx.Err() != nil {
@@ -276,7 +276,7 @@ func Run(ctx context.Context, cfg Config) error {
 			t.Stop()
 			if errors.Is(context.Cause(ctx), ErrUpgraded) {
 				// The upgraded binary reached no hub and was rolled back.
-				log.InfoContext(ctx, "exiting for the service manager to start the previous binary")
+				log.InfoContext(ctx, "binary replaced; exiting for the service manager to start it", "reason", context.Cause(ctx))
 				return ErrUpgraded
 			}
 			log.InfoContext(ctx, "agent stopped")
