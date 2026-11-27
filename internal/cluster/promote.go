@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path/filepath"
 	"slices"
 	"time"
 
@@ -247,7 +248,7 @@ func (n *APNode) sendRoleChange(ctx context.Context, id string, req roleRequest)
 		return "", err
 	}
 	hreq.Header.Set("Content-Type", "application/json")
-	resp, err := n.link.Client().Do(hreq)
+	resp, err := n.link.MemberClient().Do(hreq)
 	if err != nil {
 		return "", fmt.Errorf("reach %s: %w", id, err)
 	}
@@ -368,17 +369,20 @@ func (n *APNode) applyRoleChange(ctx context.Context, req roleRequest) (string, 
 		if err != nil {
 			return "", fmt.Errorf("close this master's tokens and approvals: %w", err)
 		}
+		// Once the key is gone, the other members take no global row from
+		// this one (#382): first the other masters must hold those it does,
+		// its hints' among them.
+		if err := n.pushGlobals(ctx); err != nil {
+			return "", fmt.Errorf("demotion from master: %w; try again", err)
+		}
 		lr.Roles &^= RoleMaster.bit()
 		if err := n.setLocal(lr); err != nil {
 			return "", err
 		}
-		// Once the key is gone, the other members take no global row from
-		// this one (#382): first push those it holds, its hints' among them,
-		// to the other masters. Best effort: a master that misses one gets it
-		// from the masters that have it.
-		n.pushGlobals(ctx)
-		if err := n.cfg.CA.DropKey(); err != nil {
+		if err := dropKey(n.cfg.CA); err != nil {
 			n.log.ErrorContext(ctx, "delete the CA key of a demoted master", "err", err)
+			return "", fmt.Errorf("demoted from master, but the CA key could not be deleted: delete %s by hand: %w",
+				filepath.Join(n.cfg.DataDir, pki.CAKeyFile), err)
 		}
 		n.log.InfoContext(ctx, "demoted from master: CA key deleted, agents move to the other masters",
 			"tokens_spent", closed.Tokens, "join_tokens_spent", closed.JoinTokens, "approvals_expired", closed.Approvals)
@@ -386,20 +390,57 @@ func (n *APNode) applyRoleChange(ctx context.Context, req roleRequest) (string, 
 	}
 }
 
-// pushGlobals runs a round of anti-entropy of the global rows with every
-// live master, while this member still holds the hub CA key.
-func (n *APNode) pushGlobals(ctx context.Context) {
-	if n.membership == nil {
-		return
+// dropKey deletes the CA key, trying a few times.
+func dropKey(ca *pki.CA) error {
+	var err error
+	for i := range 3 {
+		if err = ca.DropKey(); err == nil {
+			return nil
+		}
+		time.Sleep(time.Duration(i+1) * 100 * time.Millisecond)
 	}
+	return err
+}
+
+// pushGlobals delivers this member's hints and runs a round of
+// anti-entropy of the global rows with every live master, while this member
+// still holds the hub CA key. It fails unless at least one other master
+// took part, when there is one, and no hint of a global row is left for a
+// master.
+func (n *APNode) pushGlobals(ctx context.Context) error {
+	if n.membership == nil {
+		return nil
+	}
+	n.rep.deliverHints(ctx)
+	masters, synced := 0, 0
 	for _, m := range n.membership.Members() {
-		if m.ID == n.cfg.NodeID || !m.Roles.Has(RoleMaster) || m.State != MemberAlive {
+		if m.ID == n.cfg.NodeID || !m.Roles.Has(RoleMaster) {
 			continue
 		}
+		// A master that is down or left may come back: its hints count too.
+		if n.hints != nil {
+			_, ms, err := n.hints.Take(ctx, m.ID, 1<<20)
+			if err != nil {
+				return fmt.Errorf("read the hints for %s: %w", m.ID, err)
+			}
+			if hasGlobal(ms) {
+				return fmt.Errorf("global rows still wait in hints for master %s", m.ID)
+			}
+		}
+		if m.State != MemberAlive {
+			continue
+		}
+		masters++
 		if err := n.rep.SyncGlobal(ctx, m.ID); err != nil {
 			n.log.WarnContext(ctx, "demotion from master: copy the global rows to a master", "master", m.ID, "err", err)
+			continue
 		}
+		synced++
 	}
+	if masters > 0 && synced == 0 {
+		return errors.New("no other live master took this one's global rows")
+	}
+	return nil
 }
 
 // setLocal records lr, says it on the gossip and applies it here. The

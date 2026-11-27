@@ -390,6 +390,79 @@ func TestPromotedMemberDropsUnprovedConns(t *testing.T) {
 	}
 }
 
+// TestCriticalGlobalWriteNeedsAnotherMaster: while another master is live,
+// a critical global write needs one's ack, as the storage members never
+// hand a global row on. A member that says it is a master and takes the
+// write without proving the key is no master: it neither counts nor blocks
+// the write. With no other master live, today's quorum holds.
+func TestCriticalGlobalWriteNeedsAnotherMaster(t *testing.T) {
+	an := newAPNetWith(t, 0, func(c *ReplicatorConfig) {
+		if c.NodeID == "s" {
+			c.Master = testMasterKey{}
+		}
+	}, "m1", "m2", "s")
+	ctx := t.Context()
+	set := func() error {
+		return an.m("m1").st.DeviceCeilings().Set(ctx, "pi", []byte(`{"terminal":false}`), "user/admin", time.Now())
+	}
+	if err := set(); err != nil {
+		t.Fatalf("with m2 live: %v", err)
+	}
+	if got := localCeiling(t, an.m("m2")); got == "" {
+		t.Fatal("m2 did not take the write")
+	}
+	// m2 is live on the gossip but cannot be reached: s's ack and m1's make
+	// the quorum, but no master took it.
+	an.mu.Lock()
+	an.crashed["m2"] = true
+	an.mu.Unlock()
+	an.dropConns()
+	if err := set(); !errors.Is(err, store.ErrUnavailable) {
+		t.Fatalf("with master m2 unreachable: %v, want ErrUnavailable", err)
+	}
+	an.mu.Lock()
+	an.crashed["m2"] = false
+	an.mu.Unlock()
+	// m2 down; s, which says it is a master, takes it without a proof.
+	an.setDown("m2", true)
+	if err := set(); err != nil {
+		t.Fatalf("with only s, which proves no key: %v", err)
+	}
+}
+
+// TestDemotionWaitsForTheGlobalRows: a master is not demoted, and keeps its
+// CA key, while global rows it holds may reach no other master: no other
+// master took its global rows, or a hint of one waits for a master.
+func TestDemotionWaitsForTheGlobalRows(t *testing.T) {
+	ctx := t.Context()
+	c := newAPTestCluster(t, 2,
+		apSpec{"a", storageMaster, storageMaster},
+		apSpec{"b", storageMaster, storageMaster},
+		apSpec{"c", storageMaster, storageMaster},
+	)
+	b := c["b"]
+	if err := b.st.DeviceCeilings().Set(ctx, "pi", []byte(`{"terminal":false}`), "user/admin", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	ms, err := b.st.ReadRows(ctx, ceilingRef)
+	if err != nil || len(ms) != 1 {
+		t.Fatalf("read the ceiling: %v, %v", ms, err)
+	}
+	if err := b.node.hints.Add("a", ms); err != nil {
+		t.Fatal(err)
+	}
+	c["a"].stop()
+	waitUntil(t, 10*time.Second, "b to see a down", func() bool {
+		return c["a"].memberOn(b).State != MemberAlive
+	})
+	if _, err := b.node.Demote(ctx, "b", RoleMaster); err == nil || !strings.Contains(err.Error(), "wait in hints for master a") {
+		t.Fatalf("b demoted with a global row waiting for master a: %v", err)
+	}
+	if !b.node.IsMaster() || !b.node.cfg.CA.HasKey() {
+		t.Fatal("b lost the master role or its key")
+	}
+}
+
 // liarKey checks proofs as every member does, and makes up its own.
 type liarKey struct{}
 

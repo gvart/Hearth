@@ -29,9 +29,12 @@ type MasterLink struct {
 	key     MasterKey
 	log     *slog.Logger
 
-	ln        *connListener
-	handler   http.Handler
-	transport *http.Transport
+	ln      *connListener
+	handler http.Handler
+	// transport calls masters only: the member reached must prove it holds
+	// the hub CA key. anyTransport calls any member (a role change goes to
+	// the member changed).
+	transport, anyTransport *http.Transport
 }
 
 // NewMasterLink returns the link of master self: dial opens a gossipMaster
@@ -42,7 +45,14 @@ func NewMasterLink(self string, dial func(ctx context.Context, id string) (net.C
 	members func() []MemberInfo, key MasterKey, h http.Handler, log *slog.Logger,
 ) *MasterLink {
 	l := &MasterLink{self: self, dial: dial, members: members, key: key, handler: h, log: log, ln: newConnListener()}
-	l.transport = &http.Transport{
+	l.transport, l.anyTransport = l.newTransport(true), l.newTransport(false)
+	return l
+}
+
+// newTransport returns a transport over the link; with master, the member
+// reached must prove it holds the hub CA key.
+func (l *MasterLink) newTransport(master bool) *http.Transport {
+	return &http.Transport{
 		DialContext: func(ctx context.Context, _, addr string) (net.Conn, error) {
 			host, _, err := net.SplitHostPort(addr)
 			if err != nil {
@@ -52,7 +62,7 @@ func NewMasterLink(self string, dial func(ctx context.Context, id string) (net.C
 			if err != nil {
 				return nil, err
 			}
-			if err := l.hello(c); err != nil {
+			if err := l.hello(c, master); err != nil {
 				_ = c.Close()
 				return nil, fmt.Errorf("master link to %s: %w", host, err)
 			}
@@ -61,7 +71,6 @@ func NewMasterLink(self string, dial func(ctx context.Context, id string) (net.C
 		MaxIdleConnsPerHost: 4,
 		IdleConnTimeout:     replicaIdle,
 	}
-	return l
 }
 
 // masterPeerKey carries the id of the master a request came from.
@@ -88,8 +97,16 @@ func (l *MasterLink) Accept(c net.Conn, peer string) {
 		return
 	}
 	// The dialer checks this member too: a call meant for a master must
-	// not reach a member that only says it is one.
-	if err := l.sendHello(c, proofMasterLinkServer); err != nil {
+	// not reach a member that only says it is one. A member without the key
+	// answers with no proof, for the calls any member takes (role changes).
+	var h masterHello
+	if b := bindingOf(c); len(b) > 0 {
+		h.Proof, _ = l.key.Prove(append([]byte(proofMasterLinkServer), b...))
+	}
+	_ = c.SetWriteDeadline(time.Now().Add(replicaDialTimeout))
+	err := writeFrame(c, h)
+	_ = c.SetWriteDeadline(time.Time{})
+	if err != nil {
 		_ = c.Close()
 		return
 	}
@@ -111,12 +128,12 @@ type masterHello struct {
 }
 
 // hello sends, on c, the proof that this member holds the hub CA key, and
-// checks the member that answers proves it too.
-func (l *MasterLink) hello(c net.Conn) error {
+// reads the answer; with master, the member that answers must prove it too.
+func (l *MasterLink) hello(c net.Conn, master bool) error {
 	if err := l.sendHello(c, proofMasterLink); err != nil {
 		return err
 	}
-	if !l.readHello(c, proofMasterLinkServer) {
+	if !l.readHello(c, proofMasterLinkServer) && master {
 		return errors.New("the member did not prove it holds the hub CA key: it is no master")
 	}
 	return nil
@@ -145,6 +162,9 @@ func (l *MasterLink) readHello(c net.Conn, side string) bool {
 	defer func() { _ = c.SetReadDeadline(time.Time{}) }()
 	var h masterHello
 	if err := readFrame(c, &h); err != nil {
+		return false
+	}
+	if len(h.Proof) == 0 {
 		return false
 	}
 	b := bindingOf(c)
@@ -189,6 +209,7 @@ func (l *MasterLink) Run(ctx context.Context) error {
 	_ = srv.Shutdown(shutdownCtx)
 	_ = srv.Close()
 	l.transport.CloseIdleConnections()
+	l.anyTransport.CloseIdleConnections()
 	if err := <-errc; err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("master link: %w", err)
 	}
@@ -198,6 +219,10 @@ func (l *MasterLink) Run(ctx context.Context) error {
 // Client returns an HTTP client whose requests to http://<master id>/...
 // go to that master over the link.
 func (l *MasterLink) Client() *http.Client { return &http.Client{Transport: l.transport} }
+
+// MemberClient is Client for a request any member takes (a role change):
+// the member reached need not prove it holds the hub CA key.
+func (l *MasterLink) MemberClient() *http.Client { return &http.Client{Transport: l.anyTransport} }
 
 // Transport is the round tripper of Client.
 func (l *MasterLink) Transport() http.RoundTripper { return l.transport }

@@ -266,6 +266,11 @@ type view struct {
 	// syncing are the storage members still catching up after their
 	// promotion: on the ring for writes, last for reads.
 	syncing map[string]bool
+	// masters are the other members that say they are masters.
+	masters map[string]bool
+	// liveMasters, set by replicate, are the other masters live as a write
+	// began: a critical global row needs one's ack, even if they fail.
+	liveMasters []string
 }
 
 // view returns the current view: the ring over the storage members not
@@ -278,6 +283,7 @@ func (r *Replicator) view() view {
 	everyone := []string{r.cfg.NodeID}
 	live := map[string]bool{r.cfg.NodeID: true}
 	syncing := map[string]bool{}
+	masters := map[string]bool{}
 	if local.storage {
 		ids = append(ids, r.cfg.NodeID)
 		if local.syncing {
@@ -289,6 +295,9 @@ func (r *Replicator) view() view {
 			continue
 		}
 		everyone = append(everyone, m.ID)
+		if m.Roles.Has(RoleMaster) {
+			masters[m.ID] = true
+		}
 		if m.State == MemberAlive || m.State == MemberSuspect {
 			// The gossip found the cluster: the ring is not this member
 			// alone any more.
@@ -322,7 +331,7 @@ func (r *Replicator) view() view {
 		n = 2
 	}
 	n = max(1, min(n, ring.Size()))
-	return view{self: r.cfg.NodeID, ring: ring, live: live, n: n, everyone: everyone, syncing: syncing}
+	return view{self: r.cfg.NodeID, ring: ring, live: live, n: n, everyone: everyone, syncing: syncing, masters: masters}
 }
 
 // N is the replication factor in effect.
@@ -381,6 +390,18 @@ func (v view) placementTargets(p store.Placement) (live, down []string) {
 		return v.globals()
 	}
 	return v.targets(store.BucketOf(store.Token(p.Key)))
+}
+
+// otherLiveMasters are the live members other than this one that say they
+// are masters.
+func (v view) otherLiveMasters() []string {
+	var out []string
+	for m := range v.masters {
+		if m != v.self && v.live[m] {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 // writeQuorum is W for a write to replicas targets: min(2, N) for a
@@ -598,6 +619,9 @@ func (r *Replicator) applyHere(ctx context.Context, cmd store.Command, route sto
 			return store.Result{}, fmt.Errorf("apply %s: %d of %d replicas reachable, %d needed: %w",
 				cmd.Op(), len(live), n, w, store.ErrUnavailable)
 		}
+		// A global row also needs another master's ack when one is live
+		// (writeGroup.needMaster): such a master is then among live, and
+		// whether it proves the key only its answer tells (shortOf).
 	}
 	if route.Majority {
 		if err := r.checkMajority(cmd, route.Key, v); err != nil {
@@ -730,6 +754,7 @@ func (r *Replicator) replicate(ctx context.Context, muts []store.Mutation, route
 		return nil
 	}
 	critical := route.Critical || route.Majority
+	v.liveMasters = v.otherLiveMasters()
 	batches, hinted, groups, err := r.plan(ctx, muts, critical, route.Majority, v)
 	if err != nil {
 		return err
@@ -750,9 +775,12 @@ func (r *Replicator) replicate(ctx context.Context, muts []store.Mutation, route
 	}
 	acked := map[string]bool{v.self: true}
 	failed := map[string]bool{}
+	// masterAcked are the members that took it and proved they hold the
+	// hub CA key.
+	masterAcked := map[string]bool{}
 	for round := 0; ; round++ {
-		r.sendCritical(ctx, batches, acked, failed)
-		err := shortOf(groups, acked)
+		r.sendCritical(ctx, batches, acked, failed, masterAcked)
+		err := shortOf(groups, acked, masterAcked)
 		if err == nil || round == 1 || len(failed) == 0 {
 			return err
 		}
@@ -773,9 +801,15 @@ func (r *Replicator) replicate(ctx context.Context, muts []store.Mutation, route
 	}
 }
 
-// shortOf returns ErrUnavailable if a row has fewer than W acks.
-func shortOf(groups []writeGroup, acked map[string]bool) error {
+// shortOf returns ErrUnavailable if a row has fewer than W acks, or if a
+// global row that needs another master has none (masterAcked) while one of
+// them has not answered.
+func shortOf(groups []writeGroup, acked, masterAcked map[string]bool) error {
 	for _, g := range groups {
+		if len(g.masters) > 0 && !slices.ContainsFunc(g.masters, func(t string) bool { return masterAcked[t] }) &&
+			slices.ContainsFunc(g.masters, func(t string) bool { return !acked[t] }) {
+			return fmt.Errorf("no other master took a critical global write: %w", store.ErrUnavailable)
+		}
 		n := 0
 		for _, t := range g.live {
 			if acked[t] {
@@ -798,6 +832,12 @@ type writeGroup struct {
 	w    int
 	// majority is set for a write that needs a majority of the replicas.
 	majority bool
+	// masters, for a critical global row, are the other members that said
+	// they were masters, live as the write began (view.liveMasters): one of them
+	// must take it and prove it holds the hub CA key, as the storage members
+	// never hand a global row on (replauth.go). One that takes it without a
+	// proof is no master, and does not count.
+	masters []string
 }
 
 // plan returns, for muts written here, the rows to send to each other live
@@ -832,7 +872,11 @@ func (r *Replicator) plan(ctx context.Context, muts []store.Mutation, critical, 
 			owners, _ := v.owners(store.BucketOf(store.Token(p.Key)))
 			groups = append(groups, writeGroup{live: owners, w: majority(n), majority: true})
 		} else {
-			groups = append(groups, writeGroup{live: live, w: writeQuorum(critical, n)})
+			g := writeGroup{live: live, w: writeQuorum(critical, n)}
+			if critical && p.Global {
+				g.masters = v.liveMasters
+			}
+			groups = append(groups, g)
 		}
 		ref, hasParent := m.ParentRef()
 		for _, t := range live {
@@ -860,14 +904,14 @@ func (r *Replicator) plan(ctx context.Context, muts []store.Mutation, critical, 
 
 // sendCritical sends each batch and waits: a member that takes it goes in
 // acked; one that does not gets a hint and goes in failed.
-func (r *Replicator) sendCritical(ctx context.Context, batches map[string][]store.Mutation, acked, failed map[string]bool) {
+func (r *Replicator) sendCritical(ctx context.Context, batches map[string][]store.Mutation, acked, failed, masterAcked map[string]bool) {
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	for t, ms := range batches {
 		wg.Go(func() {
 			qctx, cancel := context.WithTimeout(ctx, r.cfg.QuickTimeout)
 			defer cancel()
-			_, err := r.call(qctx, t, apRequest{Op: opMerge, Muts: ms})
+			resp, err := r.call(qctx, t, apRequest{Op: opMerge, Muts: ms})
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
@@ -877,6 +921,7 @@ func (r *Replicator) sendCritical(ctx context.Context, batches map[string][]stor
 				return
 			}
 			acked[t] = true
+			masterAcked[t] = resp.fromMaster
 		})
 	}
 	wg.Wait()
