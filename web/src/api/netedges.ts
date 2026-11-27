@@ -1,12 +1,12 @@
 // Typed client and hooks for network edges: a device's (/api/v1/devices/{id}/net-edges)
 // and every device's at once, as a graph (/api/v1/net-edges).
 
-import { useQuery } from '@tanstack/react-query';
-import { request } from './client.ts';
+import { useQuery } from "@tanstack/react-query";
+import { request } from "./client.ts";
 
 /** What the hub knows the other end of an edge to be. */
 export interface Peer {
-  kind: 'device' | 'hub' | 'host';
+  kind: "device" | "hub" | "host";
   /** The device's id, or the host's MAC; absent for the hub. */
   id?: string;
   name: string;
@@ -23,6 +23,8 @@ export interface Connection {
   ip: string;
   /** The peer's port of an outbound connection, the device's own of an inbound one. */
   port: number;
+  /** The port's well-known service (22 ssh, 443 https); absent when the hub knows no name for it. */
+  service?: string;
   inbound: boolean;
   count: number;
   peer: Peer | null;
@@ -40,7 +42,7 @@ export interface NetEdges {
 export interface TopologyNode {
   /** "device:<id>", "hub", "host:<mac>" or "ip:<address>". */
   id: string;
-  kind: 'device' | 'hub' | 'host' | 'unknown';
+  kind: "device" | "hub" | "host" | "unknown";
   name: string;
   /** A device's id. */
   device_id?: string;
@@ -52,11 +54,13 @@ export interface TopologyNode {
 
 /** An edge of the topology graph: a connection goes from the client to the server. */
 export interface TopologyEdge {
-  kind: 'neighbor' | 'connection';
+  kind: "neighbor" | "connection";
   from: string;
   to: string;
   /** A connection's server port. */
   port?: number;
+  /** The port's well-known service; absent when the hub knows no name for it. */
+  service?: string;
   count?: number;
 }
 
@@ -70,8 +74,12 @@ export interface Topology {
 }
 
 const netEdgesApi = {
-  get: (device: string) => request<NetEdges>('GET', `/devices/${encodeURIComponent(device)}/net-edges`),
-  topology: () => request<Topology>('GET', '/net-edges'),
+  get: (device: string) =>
+    request<NetEdges>(
+      "GET",
+      `/devices/${encodeURIComponent(device)}/net-edges`,
+    ),
+  topology: () => request<Topology>("GET", "/net-edges"),
 };
 
 /**
@@ -81,7 +89,7 @@ const netEdgesApi = {
  */
 export function useTopology() {
   return useQuery({
-    queryKey: ['net-topology'] as const,
+    queryKey: ["net-topology"] as const,
     queryFn: netEdgesApi.topology,
     staleTime: Infinity,
     gcTime: 0,
@@ -96,7 +104,7 @@ export function useTopology() {
  */
 export function useNetEdges(device: string) {
   return useQuery({
-    queryKey: ['net-edges', device] as const,
+    queryKey: ["net-edges", device] as const,
     queryFn: () => netEdgesApi.get(device),
     staleTime: Infinity,
     gcTime: 0,
