@@ -208,12 +208,17 @@ dir and join it again.
   tables whose rows grant access (sign-in sessions, MCP and dashboard tokens, panels and their share
   links) are on **every master and on no storage-only member**: see
   [Who may write what](#who-may-write-what).
-- **Writes.** Audit entries, certificates, revocations, tokens, sessions, approvals and configuration
+- **Writes.** Audit entries, certificates, revocations, tokens, approvals and configuration
   documents are **critical**: they need W = min(2, N) replicas and fail at once with 503
-  `cluster_unavailable` when fewer are reachable. For a sign-in session, an MCP or dashboard token and a
-  panel link, the replicas are the masters: W = min(2, masters), so with three masters a sign-in needs
-  two of them up, with two masters both, whatever storage members are up, and with one master that
-  one. A password reset needs that and the quorum of the global rows too. Runbook runs need more: a strict **majority** of the
+  `cluster_unavailable` when fewer are reachable. The rows only masters hold need no quorum. A sign-in,
+  a new MCP or dashboard token, a panel or a share link is written on the master that runs it and sent
+  to the other masters, each of them that is down (or left the gossip) getting it from a hint, so any
+  one master signs in alone, one of two included. A sign-in on a master that dies before another has it
+  is lost: sign in again. A sign-out, a token or link revocation and a password reset need no quorum
+  either: each only takes access away, so it is applied on the master at once and hinted to every
+  other master. A password reset also raises a session epoch on the admin row, and a session created
+  before it is ended on every master as the reset reaches it, the sessions that master alone held
+  included; a sign-out of a session the master does not hold writes its deletion all the same. Runbook runs need more: a strict **majority** of the
   run's N replicas themselves (W = N/2 + 1, a stand-in never counts), both to read the run and to save
   it, so runbooks are consistent rather than available across a split (below). Other writes (presence, facts, scans, automation run
   history) need one replica and reach the others in the background. A replica that is down is replaced by the
@@ -222,16 +227,20 @@ dir and join it again.
   the row at all (it missed the write while it was down), a certificate, approval or approval link,
   device or device route is asked of every live replica, and the newest copy wins, a deletion included.
   A master reads a sign-in session, an MCP or dashboard token, a panel and a share link on its own
-  copy, and never asks another member. A list asks every storage member and merges the answers. A stale copy a read sees is repaired.
+  copy, and never asks another member. A master that started, or was just promoted, first compares
+  these rows with the other live masters that prove the hub CA key, so it holds every sign-out and reset
+  they took while it was down: until it has (a moment: it tries as the first check comes, then in the
+  background, backing off), a sign-in check answers 503 `cluster_unavailable`, the session cookie is
+  kept and the UI retries. With no other master live, it reads its own copy at once. A list asks every storage member and merges the answers. A stale copy a read sees is repaired.
   A write that depends on rows it reads first copies their newest version from the other live members. These
   writes are pinning or revoking a device's certificates, revoking hub certificates, consuming a token or
   approval link, deciding an approval, signing out, a password reset, revoking an MCP or dashboard token
-  or a panel link, starting or advancing a CA rotation, the first import or a delete of configuration
+  or a panel link, deleting a panel (its links), starting or advancing a CA rotation, the first import or a delete of configuration
   documents, and saving a runbook run; for the rows only masters hold, the copies are read on the other
   masters only. A member
   that missed a pin, a certificate, a decision or a session while it was down still decides on the newest copy.
   A password reset ends every session: the master running it first reads every session the other live
-  masters hold.
+  masters hold, and the session epoch it raises ends those it still misses.
   A runbook run is saved only from the version it was read at, on the run's first live replica, so of two
   saves from one version (two masters, or a master and an operator) exactly one is taken.
   Members compare digests of the rows
@@ -291,10 +300,15 @@ signs the connection's TLS exporter with it.
   connection and before they go, that it holds the key; a member without the key drops any it is sent,
   and deletes those it holds when it starts or is demoted from master; a master answers a fetch, a read
   that names these tables, or a comparison of their digests only to a master that proved the key; and a
-  master checks a session or a token on its own copy, never asking another member. A storage-only member
+  master checks a session or a token on its own copy, never asking another member. The rows a master
+  withholds from a member that did not prove the key stay in that member's hints, for a connection on
+  which it does. A read another member sends without proving the key runs under an SQLite authorizer
+  that allows only a `SELECT` of the replicated tables that are not these: not the database's raw pages
+  (`sqlite_dbpage`, `dbstat`), its schema or a pragma, however the query is written. Anti-entropy of the
+  sharded rows, the global rows or these takes no row of another kind's tables. A storage-only member
   neither holds nor serves them, so it cannot forge a sign-in, an MCP or dashboard token or a share
-  link, nor answer "yes" to one. A member promoted to master copies them from a master that proves the
-  key; a sign-in on another master in the moments before it has may need to sign in again on it.
+  link, nor answer "yes" to one. A member promoted to master compares them with every live master that
+  proves the key before it reads them.
 - **Sharded rows go through storage members.** They are their replicas: a storage member coordinates
   the writes a master forwards, keeps hints, hands rows off and runs anti-entropy for them.
 
@@ -631,7 +645,7 @@ member that is down for good holds up a demotion whose rows it would own: remove
 
 Open `http://hearth.local:7080` (or `https://hearth.local:7443` once the CA is trusted): one master
 answers mDNS queries for `hearth.local` with its LAN IP, and every master's certificate names it. Logins,
-token creation and everything else work on every master. Sessions are on every master and cookies belong to
+token creation and everything else work on every master, with any other master down. Sessions are on every master and cookies belong to
 the host name, which stays `hearth.local` when another master takes over, so a login survives a
 failover: reload the page.
 
@@ -679,14 +693,16 @@ pending approvals made before the upgrade are refused after it: create new ones.
 [Who may write what](#who-may-write-what).
 
 **Upgrading to the release that keeps access rows on masters
-([#384](https://github.com/gvart/hearth/issues/384)).** Not rolling either: upgrade every hub together,
-in the same step as the one above if you skipped it. As each hub of a cluster first starts the new
-version, it deletes the sign-in sessions, MCP tokens, dashboard tokens and panel share links it holds:
-a copy kept from before may have missed a sign-out or a revocation that only storage-only members held.
-Sign in again, and create the MCP tokens, dashboard tokens and share links you use again. Panels stay
-on the masters that held them; a storage-only member deletes its copies, so in a cluster with
-storage-only members a panel that only they held is gone: create it again. A hub that never had
-another member keeps everything.
+([#384](https://github.com/gvart/hearth/issues/384)).** Not rolling either: stop every hub before you
+start any on the new version, in the same step as the one above if you skipped it. As the new version
+migrates a database that was a cluster's (it holds the hub certificates of more than one hub), it
+deletes the sign-in sessions, MCP tokens, dashboard tokens and panel share links in it, and each hub
+drops its hints of them: a copy kept from before may have missed a sign-out or a revocation that only
+storage-only members held. This happens once per database, and also when you restore a backup taken
+before this version. Sign in again, and create the MCP tokens, dashboard tokens and share links you use
+again. Panels stay on the masters that held them; a storage-only member deletes its copies, so in a
+cluster with storage-only members a panel that only they held is gone: create it again. A hub that
+never had another member keeps everything.
 
 ## Node certificates
 
