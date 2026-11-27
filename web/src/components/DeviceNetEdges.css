@@ -28,6 +28,8 @@
   display: block;
   font-size: var(--type-12);
   color: var(--muted);
+  white-space: normal; /* the port cell does not wrap; home-assistant on a phone does */
+  overflow-wrap: anywhere;
 }
 
 .net-edges-head {
