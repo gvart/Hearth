@@ -390,6 +390,50 @@ func TestPromotedMemberDropsUnprovedConns(t *testing.T) {
 	}
 }
 
+// liarKey checks proofs as every member does, and makes up its own.
+type liarKey struct{}
+
+func (liarKey) Holds() bool { return true }
+
+func (liarKey) Prove([]byte) ([]byte, bool) { return []byte("not a CA signature"), true }
+
+func (liarKey) Verify(msg, sig []byte) bool { return testMasterKey{}.Verify(msg, sig) }
+
+// TestMasterLinkOverTLS: over the members' real mutual TLS, a master calls
+// another master on the master link, but not a storage-only member, which
+// cannot prove it holds the hub CA key (a call forwarded to a device's
+// stream must not reach a member that only says it is a master); and the
+// storage member cannot call a master.
+func TestMasterLinkOverTLS(t *testing.T) {
+	c := newAPTestCluster(t, 2,
+		apSpec{"a", storageMaster, storageMaster},
+		apSpec{"b", storageMaster, storageMaster},
+		apSpec{"c", storageOnly, storageMaster},
+	)
+	get := func(from *apTestNode, to string) error {
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel()
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+to+"/no-such-path", nil)
+		if err != nil {
+			return err
+		}
+		resp, err := from.node.link.Client().Do(req)
+		if err != nil {
+			return err
+		}
+		return resp.Body.Close()
+	}
+	if err := get(c["a"], "b"); err != nil {
+		t.Fatalf("a master calls another: %v", err)
+	}
+	if err := get(c["a"], "c"); err == nil {
+		t.Fatal("a master's call reached a storage-only member")
+	}
+	if err := get(c["c"], "a"); err == nil {
+		t.Fatal("a storage-only member called a master")
+	}
+}
+
 // TestMasterLinkNeedsTheCAKey: a member that announces the master role on
 // the gossip but does not hold the hub CA key cannot call a master over the
 // master link (forwarded agent calls, role changes); a master can.
@@ -433,6 +477,29 @@ func TestMasterLinkNeedsTheCAKey(t *testing.T) {
 	}
 	if _, err := get(testMasterKey{}); err == nil {
 		t.Fatal("a member without the key called a master")
+	}
+	// A member that says it is a master, and answers a master's call with
+	// a proof it cannot make, is not called.
+	liar := NewMasterLink("s", nil, members, liarKey{}, served, testLogger(t))
+	lctx, lcancel := context.WithCancel(t.Context())
+	ldone := make(chan error, 1)
+	go func() { ldone <- liar.Run(lctx) }()
+	t.Cleanup(func() {
+		lcancel()
+		if err := <-ldone; err != nil {
+			t.Error(err)
+		}
+	})
+	toLiar := NewMasterLink("m", func(context.Context, string) (net.Conn, error) {
+		a, b := net.Pipe()
+		binding := []byte(rand.Text())
+		go liar.Accept(boundConn{b, binding}, "m")
+		return boundConn{a, binding}, nil
+	}, members, testMasterKey{holds: true}, nil, testLogger(t))
+	defer toLiar.transport.CloseIdleConnections()
+	if resp, err := toLiar.Client().Get("http://s/x"); err == nil {
+		_ = resp.Body.Close()
+		t.Fatal("a master called a member that could not prove the key")
 	}
 	// One that sends a forged proof anyway is hung up on.
 	c, err := dial(ctx, "m")

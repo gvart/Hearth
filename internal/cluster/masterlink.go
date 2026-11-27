@@ -87,25 +87,46 @@ func (l *MasterLink) Accept(c net.Conn, peer string) {
 		_ = c.Close()
 		return
 	}
+	// The dialer checks this member too: a call meant for a master must
+	// not reach a member that only says it is one.
+	if err := l.sendHello(c, proofMasterLinkServer); err != nil {
+		_ = c.Close()
+		return
+	}
 	if !l.ln.put(peerConn{Conn: c, peer: peer}) {
 		_ = c.Close()
 	}
 }
 
-// proofMasterLink is what the dialer of a master link connection signs,
-// with the connection's binding.
-const proofMasterLink = "hearth ap master link: the dialer holds the hub CA key\x00"
+// What each end of a master link connection signs, with the connection's
+// binding: different labels, so one end cannot hand back the other's proof.
+const (
+	proofMasterLink       = "hearth ap master link: the dialer holds the hub CA key\x00"
+	proofMasterLinkServer = "hearth ap master link: the server holds the hub CA key\x00"
+)
 
 // masterHello is the first frame of a master link connection, before HTTP.
 type masterHello struct {
 	Proof []byte `json:"proof,omitempty"`
 }
 
-// hello sends, on c, the proof that this member holds the hub CA key.
+// hello sends, on c, the proof that this member holds the hub CA key, and
+// checks the member that answers proves it too.
 func (l *MasterLink) hello(c net.Conn) error {
+	if err := l.sendHello(c, proofMasterLink); err != nil {
+		return err
+	}
+	if !l.readHello(c, proofMasterLinkServer) {
+		return errors.New("the member did not prove it holds the hub CA key: it is no master")
+	}
+	return nil
+}
+
+// sendHello sends, on c, this member's proof for side.
+func (l *MasterLink) sendHello(c net.Conn, side string) error {
 	var h masterHello
 	if b := bindingOf(c); len(b) > 0 {
-		h.Proof, _ = l.key.Prove(append([]byte(proofMasterLink), b...))
+		h.Proof, _ = l.key.Prove(append([]byte(side), b...))
 	}
 	if h.Proof == nil {
 		return errors.New("this member does not hold the hub CA key")
@@ -116,7 +137,10 @@ func (l *MasterLink) hello(c net.Conn) error {
 }
 
 // proved reads the dialer's hello from c and checks its proof.
-func (l *MasterLink) proved(c net.Conn) bool {
+func (l *MasterLink) proved(c net.Conn) bool { return l.readHello(c, proofMasterLink) }
+
+// readHello reads a hello from c and checks its proof for side.
+func (l *MasterLink) readHello(c net.Conn, side string) bool {
 	_ = c.SetReadDeadline(time.Now().Add(replicaDialTimeout))
 	defer func() { _ = c.SetReadDeadline(time.Time{}) }()
 	var h masterHello
@@ -124,7 +148,7 @@ func (l *MasterLink) proved(c net.Conn) bool {
 		return false
 	}
 	b := bindingOf(c)
-	return len(b) > 0 && len(h.Proof) > 0 && l.key.Verify(append([]byte(proofMasterLink), b...), h.Proof)
+	return len(b) > 0 && len(h.Proof) > 0 && l.key.Verify(append([]byte(side), b...), h.Proof)
 }
 
 // isMaster reports whether id is a live master other than this one.
