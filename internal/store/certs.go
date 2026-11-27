@@ -4,7 +4,6 @@ package store
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"time"
@@ -44,17 +43,32 @@ func (r Certs) RevokeDevice(ctx context.Context, deviceID string, now time.Time)
 // Check reports whether the certificate with serial may be used by deviceID.
 // It returns ErrNotFound if the hub never issued it to that device and
 // ErrCertRevoked if it was revoked.
+//
+// In a sharded cluster every live replica of the row is asked, and a
+// revocation any one of them holds wins (#387): a storage-only member can
+// rewrite its copy of the row, or answer as it likes, so neither its "not
+// revoked" nor its "no such row" may override a revocation another replica
+// holds. Such a member can still answer "revoked" for a certificate that is
+// not: a device refused, never one let in. With no replica reachable the
+// check fails, with neither ErrNotFound nor ErrCertRevoked.
 func (r Certs) Check(ctx context.Context, serial, deviceID string) error {
-	var revokedAt sql.NullInt64
-	err := r.s.queryRowLive(ctx, "certs", deviceID,
-		`SELECT revoked_at`, ` FROM certs WHERE serial = ? AND device_id = ?`, serial, deviceID).Scan(&revokedAt)
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
-		return fmt.Errorf("check cert %s: %w", serial, ErrNotFound)
-	case err != nil:
+	rows, err := r.s.queryEachReplica(ctx, deviceID,
+		`SELECT revoked_at FROM certs WHERE serial = ? AND device_id = ?`, serial, deviceID)
+	if err != nil {
 		return fmt.Errorf("check cert %s: %w", serial, err)
-	case revokedAt.Valid:
-		return fmt.Errorf("check cert %s: %w", serial, ErrCertRevoked)
+	}
+	found := false
+	for _, row := range rows {
+		if len(row) == 0 {
+			continue // a malformed answer says nothing
+		}
+		if row[0] != nil {
+			return fmt.Errorf("check cert %s: %w", serial, ErrCertRevoked)
+		}
+		found = true
+	}
+	if !found {
+		return fmt.Errorf("check cert %s: %w", serial, ErrNotFound)
 	}
 	return nil
 }

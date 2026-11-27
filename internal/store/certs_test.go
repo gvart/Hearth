@@ -3,6 +3,7 @@
 package store
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -61,5 +62,101 @@ func TestCerts(t *testing.T) {
 				t.Errorf("Check = %v, want %v", err, tt.want)
 			}
 		})
+	}
+}
+
+// unavailableShards answers no read: no replica is reachable.
+type unavailableShards struct{ fakeShards }
+
+func (unavailableShards) ReadReplicas(context.Context, string, string, Values) ([]Rows, error) {
+	return nil, ErrUnavailable
+}
+
+// A certificate check in a sharded cluster asks every replica, and a
+// revocation any one of them holds wins (#387): a replica that answers "not
+// revoked" (stale, or forged with a later version, as a compromised
+// storage-only member may) or has no row at all does not let a revoked
+// device in, whichever replica is asked first.
+func TestCertCheckDenyWins(t *testing.T) {
+	now := time.UnixMilli(1_700_000_000_000)
+	device := UpsertDevice{
+		ID: "pi", Name: "pi", Facts: "{}", Labels: "{}",
+		FirstSeen: toMillis(now), LastSeen: toMillis(now), Status: StatusOnline,
+	}
+	refs := []RowRef{{Table: "devices", Key: Values{"pi"}}, {Table: "certs", Key: Values{"0a"}}}
+	// forge rewrites s's copy of the certificate as not revoked, at a
+	// version newer than any honest one: what a compromised member's
+	// database may hold, written without going through Merge.
+	forge := func(t *testing.T, s *Store) {
+		t.Helper()
+		if _, err := s.db.ExecContext(t.Context(),
+			`UPDATE certs SET revoked_at = NULL, _hlc = _hlc + 1000000, _origin = 'zz' WHERE serial = '0a'`); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cases := []struct {
+		name string
+		// setup leaves rs.x with the revocation, and the other replicas as
+		// the case says.
+		setup func(t *testing.T, rs replicaSet)
+		want  error
+	}{
+		{
+			name: "first replica stale, not revoked",
+			setup: func(t *testing.T, rs replicaSet) {
+				copyRows(t, rs.x, rs.first, refs)
+				copyRows(t, rs.x, rs.y, refs)
+				rs.apply(t, rs.x, RevokeDevice{DeviceID: "pi", Now: toMillis(now)})
+			},
+			want: ErrCertRevoked,
+		},
+		{
+			name: "first replica forged a newer unrevoked version",
+			setup: func(t *testing.T, rs replicaSet) {
+				rs.apply(t, rs.x, RevokeDevice{DeviceID: "pi", Now: toMillis(now)})
+				copyRows(t, rs.x, rs.first, refs)
+				copyRows(t, rs.x, rs.y, refs)
+				forge(t, rs.first)
+				forge(t, rs.y)
+			},
+			want: ErrCertRevoked,
+		},
+		{
+			name: "other replicas have no row",
+			setup: func(t *testing.T, rs replicaSet) {
+				rs.apply(t, rs.x, RevokeDevice{DeviceID: "pi", Now: toMillis(now)})
+			},
+			want: ErrCertRevoked,
+		},
+		{
+			name: "no replica revoked it",
+			setup: func(t *testing.T, rs replicaSet) {
+				copyRows(t, rs.x, rs.first, refs)
+			},
+			want: nil,
+		},
+	}
+	for _, tc := range cases {
+		for _, holder := range []string{"a", "b"} {
+			t.Run(tc.name+"/holder "+holder, func(t *testing.T) {
+				rs := newReplicaSet(t, holder)
+				if err := rs.a.Certs().Check(t.Context(), "0a", "pi"); !errors.Is(err, ErrNotFound) {
+					t.Fatalf("Check with no replica holding the row = %v, want ErrNotFound", err)
+				}
+				rs.apply(t, rs.x, device)
+				rs.apply(t, rs.x, CreateCert{Serial: "0a", DeviceID: "pi", Fingerprint: "f1"})
+				tc.setup(t, rs)
+				if err := rs.a.Certs().Check(t.Context(), "0a", "pi"); !errors.Is(err, tc.want) || (tc.want == nil && err != nil) {
+					t.Fatalf("Check = %v, want %v", err, tc.want)
+				}
+			})
+		}
+	}
+
+	// No replica reachable: the check fails, neither "unknown" nor "revoked".
+	a := openTestWith(t, WithShards(&unavailableShards{fakeShards{self: "a", key: func(string) string { return "b" }}}))
+	err := a.Certs().Check(t.Context(), "0a", "pi")
+	if !errors.Is(err, ErrUnavailable) || errors.Is(err, ErrNotFound) || errors.Is(err, ErrCertRevoked) {
+		t.Fatalf("Check with no replica reachable = %v, want ErrUnavailable", err)
 	}
 }
