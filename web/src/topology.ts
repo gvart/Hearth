@@ -393,7 +393,7 @@ export function portsLabel(
     }
   }
   return names.length > 1
-    ? `${names[0]} +${String(names.length - 1)}`
+    ? `${names[0] ?? ""} +${String(names.length - 1)}`
     : names.join("");
 }
 

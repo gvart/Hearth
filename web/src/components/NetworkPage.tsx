@@ -1,21 +1,28 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { fit, panBy, transformOf, zoomAt, type View } from '../panzoom.ts';
-import { useTopology, type Topology } from '../api/netedges.ts';
-import { formatDateTime } from '../format.ts';
-import { deviceHash } from '../nav.ts';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
+import { fit, panBy, transformOf, zoomAt, type View } from "../panzoom.ts";
+import { useTopology, type Topology } from "../api/netedges.ts";
+import { formatDateTime } from "../format.ts";
+import { deviceHash } from "../nav.ts";
 import {
   buildGraph,
   layout,
   portsLabel,
+  portWithService,
   tierLabel,
   tiers,
   type GraphLink,
   type GraphNode,
   type GraphOptions,
   type TierRow,
-} from '../topology.ts';
-import './NetworkPage.css';
-import { Tip } from './Tip.tsx';
+} from "../topology.ts";
+import "./NetworkPage.css";
+import { Tip } from "./Tip.tsx";
 
 const width = 1000;
 const height = 640;
@@ -24,7 +31,7 @@ const height = 640;
 export function NetworkPage() {
   const topology = useTopology();
   // Tiers reads as a drawing, top to bottom; Web pulls nodes that talk together close.
-  const [mode, setMode] = useState<MapLayout>('tiers');
+  const [mode, setMode] = useState<MapLayout>("tiers");
   const [opts, setOpts] = useState<GraphOptions>({
     neighbors: true,
     unknown: true,
@@ -41,8 +48,8 @@ export function NetworkPage() {
             </h1>
             <p className="muted">
               {t && t.reporting > 0
-                ? `Neighbours and connections, as ${String(t.reporting)} ${t.reporting === 1 ? 'agent reports' : 'agents report'} them${t.updated_at ? `; last changed ${formatDateTime(t.updated_at)}` : ''}`
-                : 'Neighbours and connections, as agents report them'}
+                ? `Neighbours and connections, as ${String(t.reporting)} ${t.reporting === 1 ? "agent reports" : "agents report"} them${t.updated_at ? `; last changed ${formatDateTime(t.updated_at)}` : ""}`
+                : "Neighbours and connections, as agents report them"}
             </p>
           </div>
           <button
@@ -66,14 +73,16 @@ export function NetworkPage() {
           <div className="empty">
             <h2>No agent reports edges</h2>
             <p className="muted">
-              Turn Neighbors on in a device&apos;s Capabilities card, on its page (Linux), to see its neighbours and
-              connections here.
+              Turn Neighbors on in a device&apos;s Capabilities card, on its
+              page (Linux), to see its neighbours and connections here.
             </p>
           </div>
         ) : t.edges.length === 0 ? (
           <div className="empty">
             <h2>Nothing reported yet</h2>
-            <p className="muted">Agents report their edges every minute. Refresh in a moment.</p>
+            <p className="muted">
+              Agents report their edges every minute. Refresh in a moment.
+            </p>
           </div>
         ) : (
           <>
@@ -99,7 +108,7 @@ export function NetworkPage() {
                 Unknown addresses
               </label>
               <div className="range-picker" role="group" aria-label="Layout">
-                {(['tiers', 'web'] as const).map((m) => (
+                {(["tiers", "web"] as const).map((m) => (
                   <button
                     key={m}
                     type="button"
@@ -109,15 +118,20 @@ export function NetworkPage() {
                       setMode(m);
                     }}
                   >
-                    {m === 'tiers' ? 'Tiers' : 'Web'}
+                    {m === "tiers" ? "Tiers" : "Web"}
                   </button>
                 ))}
               </div>
               <Legend />
             </div>
-            <TopologyGraph topology={t} opts={opts} mode={mode} onDevice={(id) => {
+            <TopologyGraph
+              topology={t}
+              opts={opts}
+              mode={mode}
+              onDevice={(id) => {
                 window.location.hash = deviceHash(id);
-              }} />
+              }}
+            />
           </>
         )}
       </main>
@@ -128,9 +142,14 @@ export function NetworkPage() {
 function Legend() {
   return (
     <span className="topo-legend muted small">
-      {(['hub', 'device', 'host', 'unknown'] as const).map((kind) => (
+      {(["hub", "device", "host", "unknown"] as const).map((kind) => (
         <span key={kind}>
-          <svg width="30" height="22" viewBox="-15 -11 30 22" aria-hidden="true">
+          <svg
+            width="30"
+            height="22"
+            viewBox="-15 -11 30 22"
+            aria-hidden="true"
+          >
             <g transform="scale(0.7)">
               <Glyph kind={kind} reports />
             </g>
@@ -155,7 +174,7 @@ function Legend() {
 }
 
 /** How far a node's mark reaches from its middle: where an arrow stops and its label starts. */
-const radius: Record<GraphNode['kind'], number> = {
+const radius: Record<GraphNode["kind"], number> = {
   hub: 15,
   device: 13,
   host: 8,
@@ -166,31 +185,51 @@ const radius: Record<GraphNode['kind'], number> = {
  * A node's mark, drawn around 0,0: the hub a filled tile, a device a board with
  * two rules, a host a small square and an unknown address a dashed ring.
  */
-function Glyph({ kind, reports }: { kind: GraphNode['kind']; reports?: boolean }) {
+function Glyph({
+  kind,
+  reports,
+}: {
+  kind: GraphNode["kind"];
+  reports?: boolean;
+}) {
   switch (kind) {
-    case 'hub':
+    case "hub":
       return (
         <>
-          <rect className="topo-node hub" x={-14} y={-14} width={28} height={28} />
+          <rect
+            className="topo-node hub"
+            x={-14}
+            y={-14}
+            width={28}
+            height={28}
+          />
           <rect className="topo-cut" x={-5} y={-5} width={10} height={10} />
         </>
       );
-    case 'device':
+    case "device":
       return (
         <>
-          <rect className={`topo-node device${reports ? ' reports' : ''}`} x={-13} y={-10} width={26} height={20} />
+          <rect
+            className={`topo-node device${reports ? " reports" : ""}`}
+            x={-13}
+            y={-10}
+            width={26}
+            height={20}
+          />
           <line className="topo-rule" x1={-7} y1={-3} x2={7} y2={-3} />
           <line className="topo-rule" x1={-7} y1={3} x2={1} y2={3} />
         </>
       );
-    case 'host':
-      return <rect className="topo-node host" x={-7} y={-7} width={14} height={14} />;
-    case 'unknown':
+    case "host":
+      return (
+        <rect className="topo-node host" x={-7} y={-7} width={14} height={14} />
+      );
+    case "unknown":
       return <circle className="topo-node unknown" r={5} />;
   }
 }
 
-type MapLayout = 'tiers' | 'web';
+type MapLayout = "tiers" | "web";
 
 function TopologyGraph({
   topology,
@@ -229,11 +268,13 @@ function TopologyGraph({
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       const p = toBox(e.clientX, e.clientY);
-      setView((v) => zoomAt(v, e.deltaY < 0 ? 1.15 : 1 / 1.15, p.x, p.y, width, height));
+      setView((v) =>
+        zoomAt(v, e.deltaY < 0 ? 1.15 : 1 / 1.15, p.x, p.y, width, height),
+      );
     };
-    el.addEventListener('wheel', onWheel, { passive: false });
+    el.addEventListener("wheel", onWheel, { passive: false });
     return () => {
-      el.removeEventListener('wheel', onWheel);
+      el.removeEventListener("wheel", onWheel);
     };
   }, []);
 
@@ -247,14 +288,25 @@ function TopologyGraph({
       return;
     }
     const now = toBox(e.clientX, e.clientY);
-    const others = [...pointers.current.entries()].filter(([id]) => id !== e.pointerId).map(([, p]) => p);
+    const others = [...pointers.current.entries()]
+      .filter(([id]) => id !== e.pointerId)
+      .map(([, p]) => p);
     const other = others[0];
     if (other) {
       // Pinch: zoom by how much the two fingers moved apart, around the point between them.
       const was = Math.hypot(before.x - other.x, before.y - other.y) || 1;
       const is = Math.hypot(now.x - other.x, now.y - other.y) || 1;
       dragged.current = true;
-      setView((v) => zoomAt(v, is / was, (now.x + other.x) / 2, (now.y + other.y) / 2, width, height));
+      setView((v) =>
+        zoomAt(
+          v,
+          is / was,
+          (now.x + other.x) / 2,
+          (now.y + other.y) / 2,
+          width,
+          height,
+        ),
+      );
     } else {
       const dx = now.x - before.x;
       const dy = now.y - before.y;
@@ -274,14 +326,22 @@ function TopologyGraph({
   };
   const { nodes, links, rows } = useMemo(() => {
     const g = buildGraph(topology, opts);
-    if (mode === 'web') {
-      return { nodes: layout(g.nodes, g.links, width, height), links: g.links, rows: [] as TierRow[] };
+    if (mode === "web") {
+      return {
+        nodes: layout(g.nodes, g.links, width, height),
+        links: g.links,
+        rows: [] as TierRow[],
+      };
     }
     return { ...tiers(g.nodes, g.links, width, height), links: g.links };
   }, [topology, opts, mode]);
   const at = new Map(nodes.map((n) => [n.id, n]));
-  const near = (l: GraphLink) => hover === undefined || l.a === hover || l.b === hover;
-  const nearNode = (id: string) => hover === undefined || id === hover || links.some((l) => near(l) && (l.a === id || l.b === id));
+  const near = (l: GraphLink) =>
+    hover === undefined || l.a === hover || l.b === hover;
+  const nearNode = (id: string) =>
+    hover === undefined ||
+    id === hover ||
+    links.some((l) => near(l) && (l.a === id || l.b === id));
 
   return (
     <div className="topo-wrap">
@@ -329,7 +389,15 @@ function TopologyGraph({
         onPointerLeave={onPointerEnd}
       >
         <defs>
-          <marker id="topo-arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <marker
+            id="topo-arrow"
+            viewBox="0 0 10 10"
+            refX="10"
+            refY="5"
+            markerWidth="7"
+            markerHeight="7"
+            orient="auto"
+          >
             <path d="M0,0 L10,5 L0,10 z" className="topo-arrow" />
           </marker>
         </defs>
@@ -355,13 +423,16 @@ function TopologyGraph({
             const [from, to] = l.server === l.a ? [b, a] : [a, b];
             const end = l.server ? radius[to.kind] + 3 : 0;
             const title =
-              l.kind === 'connection'
-                ? `${from.name} → ${to.name}: port ${l.ports.join(', ')} (${String(l.count)} connection${l.count === 1 ? '' : 's'})`
+              l.kind === "connection"
+                ? `${from.name} → ${to.name}: port ${l.ports.map((p) => portWithService(p, l.services[p])).join(", ")} (${String(l.count)} connection${l.count === 1 ? "" : "s"})`
                 : `${a.name} and ${b.name} are neighbours`;
             // In tiers, a link along a row that would run through a node between its ends arcs over it.
             const lo = Math.min(from.x, to.x);
             const hi = Math.max(from.x, to.x);
-            const over = rows.length > 0 && from.y === to.y && nodes.some((n) => n.y === from.y && n.x > lo && n.x < hi);
+            const over =
+              rows.length > 0 &&
+              from.y === to.y &&
+              nodes.some((n) => n.y === from.y && n.x > lo && n.x < hi);
             if (over) {
               const rise = Math.min(70, 24 + (hi - lo) * 0.08);
               const cx = (from.x + to.x) / 2;
@@ -370,16 +441,26 @@ function TopologyGraph({
               const x2 = to.x - ((to.x - cx) / d) * end;
               const y2 = to.y - ((to.y - cy) / d) * end;
               return (
-                <g key={`${l.a}|${l.b}`} className={near(l) ? undefined : 'dim'}>
+                <g
+                  key={`${l.a}|${l.b}`}
+                  className={near(l) ? undefined : "dim"}
+                >
                   <path
                     className={`topo-link ${l.kind}`}
                     d={`M${String(from.x)},${String(from.y)} Q${String(cx)},${String(cy)} ${String(x2)},${String(y2)}`}
-                    markerEnd={l.server ? 'url(#topo-arrow)' : undefined}
+                    markerEnd={l.server ? "url(#topo-arrow)" : undefined}
                   >
                     <title>{title}</title>
                   </path>
                   {l.ports.length ? (
-                    <PortLabel x1={lo} y1={from.y - rise} x2={hi} y2={from.y - rise} ports={l.ports} />
+                    <PortLabel
+                      x1={lo}
+                      y1={from.y - rise}
+                      x2={hi}
+                      y2={from.y - rise}
+                      ports={l.ports}
+                      services={l.services}
+                    />
                   ) : null}
                 </g>
               );
@@ -388,23 +469,32 @@ function TopologyGraph({
             const x2 = to.x - ((to.x - from.x) / d) * end;
             const y2 = to.y - ((to.y - from.y) / d) * end;
             return (
-              <g key={`${l.a}|${l.b}`} className={near(l) ? undefined : 'dim'}>
+              <g key={`${l.a}|${l.b}`} className={near(l) ? undefined : "dim"}>
                 <line
                   className={`topo-link ${l.kind}`}
                   x1={from.x}
                   y1={from.y}
                   x2={x2}
                   y2={y2}
-                  markerEnd={l.server ? 'url(#topo-arrow)' : undefined}
+                  markerEnd={l.server ? "url(#topo-arrow)" : undefined}
                 >
                   <title>{title}</title>
                 </line>
-                {l.ports.length ? <PortLabel x1={from.x} y1={from.y} x2={to.x} y2={to.y} ports={l.ports} /> : null}
+                {l.ports.length ? (
+                  <PortLabel
+                    x1={from.x}
+                    y1={from.y}
+                    x2={to.x}
+                    y2={to.y}
+                    ports={l.ports}
+                    services={l.services}
+                  />
+                ) : null}
               </g>
             );
           })}
           {nodes.map((n) => {
-            const device = n.kind === 'device' ? n.device_id : undefined;
+            const device = n.kind === "device" ? n.device_id : undefined;
             const open = device
               ? () => {
                   // The click that ends a drag moves the map; it does not open a device.
@@ -418,14 +508,14 @@ function TopologyGraph({
             return (
               <g
                 key={n.id}
-                className={`topo-item${device ? ' clickable' : ''}${nearNode(n.id) ? '' : ' dim'}`}
+                className={`topo-item${device ? " clickable" : ""}${nearNode(n.id) ? "" : " dim"}`}
                 transform={`translate(${String(n.x)} ${String(n.y)})`}
                 tabIndex={device ? 0 : undefined}
-                role={device ? 'button' : undefined}
+                role={device ? "button" : undefined}
                 aria-label={device ? `Open ${n.name}` : undefined}
                 onClick={open}
                 onKeyDown={(e) => {
-                  if (open && (e.key === 'Enter' || e.key === ' ')) {
+                  if (open && (e.key === "Enter" || e.key === " ")) {
                     e.preventDefault();
                     open();
                   }
@@ -438,7 +528,10 @@ function TopologyGraph({
                 }}
               >
                 <Glyph kind={n.kind} reports={n.reports} />
-                <text className={`topo-label ${n.kind}`} y={radius[n.kind] + 14}>
+                <text
+                  className={`topo-label ${n.kind}`}
+                  y={radius[n.kind] + 14}
+                >
                   {n.name.length > 22 ? `${n.name.slice(0, 21)}…` : n.name}
                 </text>
                 {hover === n.id && n.ip && n.ip !== n.name ? (
@@ -446,7 +539,7 @@ function TopologyGraph({
                     {n.ip}
                   </text>
                 ) : null}
-                <title>{`${n.name} (${n.kind}${n.ip ? `, ${n.ip}` : ''})`}</title>
+                <title>{`${n.name} (${n.kind}${n.ip ? `, ${n.ip}` : ""})`}</title>
               </g>
             );
           })}
@@ -457,7 +550,21 @@ function TopologyGraph({
 }
 
 /** A link's ports, at its middle and along it, kept upright. */
-function PortLabel({ x1, y1, x2, y2, ports }: { x1: number; y1: number; x2: number; y2: number; ports: number[] }) {
+function PortLabel({
+  x1,
+  y1,
+  x2,
+  y2,
+  ports,
+  services,
+}: {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  ports: number[];
+  services: Record<number, string>;
+}) {
   let angle = (Math.atan2(y2 - y1, x2 - x1) * 180) / Math.PI;
   if (angle > 90) {
     angle -= 180;
@@ -469,8 +576,14 @@ function PortLabel({ x1, y1, x2, y2, ports }: { x1: number; y1: number; x2: numb
   // As many ports as fit between the two nodes' circles and labels (about 7px a character).
   const room = Math.hypot(x2 - x1, y2 - y1) - 60;
   return (
-    <text className="topo-port" x={x} y={y} dy="-4" transform={`rotate(${angle.toFixed(1)} ${x.toFixed(1)} ${y.toFixed(1)})`}>
-      {portsLabel(ports, Math.floor(room / 7))}
+    <text
+      className="topo-port"
+      x={x}
+      y={y}
+      dy="-4"
+      transform={`rotate(${angle.toFixed(1)} ${x.toFixed(1)} ${y.toFixed(1)})`}
+    >
+      {portsLabel(ports, Math.floor(room / 7), services)}
     </text>
   );
 }

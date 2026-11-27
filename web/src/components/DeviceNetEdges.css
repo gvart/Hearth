@@ -20,6 +20,14 @@
   font-family: var(--font-mono);
   font-size: var(--type-12);
   color: var(--muted);
+  overflow-wrap: anywhere; /* an IPv6 address on a phone */
+}
+
+/* A port's well-known service, below the port. */
+.net-edges .svc {
+  display: block;
+  font-size: var(--type-12);
+  color: var(--muted);
 }
 
 .net-edges-head {
