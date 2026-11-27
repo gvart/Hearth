@@ -270,6 +270,9 @@ func (a *api) putCapabilities(w http.ResponseWriter, r *http.Request) {
 			if cur.Locked {
 				return ErrCeilingLocked
 			}
+			if err := CeilingKnown(cur); err != nil {
+				return err
+			}
 			if change.Action == policy.DeviceCapabilitiesRaise {
 				return reauth(ctx)
 			}
@@ -288,6 +291,9 @@ func (a *api) putCapabilities(w http.ResponseWriter, r *http.Request) {
 	case err == nil:
 	case errors.Is(err, ErrCeilingLocked):
 		writeError(w, http.StatusConflict, "locked", ErrCeilingLocked.Error())
+		return
+	case errors.Is(err, ErrCeilingUnknown):
+		writeError(w, http.StatusConflict, "ceiling_unknown", ErrCeilingUnknown.Error())
 		return
 	case errors.Is(err, store.ErrSchemaTooOld):
 		writeError(w, http.StatusConflict, "schema_too_old", "the hub cluster's database predates managed capabilities: upgrade every hub of the cluster first")
@@ -388,6 +394,23 @@ func pluginReleases(ctx context.Context, st *store.Store, f Facts) ([]plugins.Re
 		out = append(out, plugins.ReleaseOf(b))
 	}
 	return out, nil
+}
+
+// ErrCeilingUnknown refuses, as an audited denial, a change to the ceiling
+// of a device this hub has no record of a ceiling for while its agent has
+// reported none either: one may have been set before the ceilings were
+// cluster-wide that this master never got (#382), and the change would be
+// measured from nothing.
+var ErrCeilingUnknown = fmt.Errorf("this hub has no record of the device's capabilities and its agent has not reported "+
+	"them yet: wait for the agent to connect: %w", policy.ErrDenied)
+
+// CeilingKnown returns ErrCeilingUnknown unless a ceiling is recorded for
+// the device of cur, or its agent reported the one it holds.
+func CeilingKnown(cur CapabilitiesJSON) error {
+	if cur.UpdatedAt == nil && cur.Effective == nil {
+		return ErrCeilingUnknown
+	}
+	return nil
 }
 
 // ErrCeilingLocked refuses, as an audited denial, a change to the
