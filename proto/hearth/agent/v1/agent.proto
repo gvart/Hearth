@@ -493,7 +493,9 @@ message ScannedHost {
 // resolves the peers to devices and network hosts.
 message NetEdges {
   // neighbors are the complete entries of the device's IPv4 neighbour (ARP)
-  // table.
+  // table, then the resolved unicast entries of its IPv6 one (NDP), a
+  // link-local address without its zone. Hubs before IPv6 neighbours skip
+  // the IPv6 entries.
   repeated Neighbor neighbors = 1;
   // connections summarise the device's established TCP connections, one per
   // peer address, port and direction, loopback excluded.

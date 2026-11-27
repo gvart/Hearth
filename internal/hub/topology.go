@@ -63,6 +63,9 @@ type TopologyEdgeJSON struct {
 	To   string `json:"to"`
 	// Port is a connection's server port.
 	Port uint16 `json:"port,omitempty"`
+	// Service names the port's well-known service (22 ssh, 443 https);
+	// empty when the hub knows no name for it.
+	Service string `json:"service,omitempty"`
 	// Count is how many connections the edge holds: the most either end
 	// reported.
 	Count uint32 `json:"count,omitempty"`
@@ -156,6 +159,7 @@ func (a *api) readTopology(ctx context.Context) (TopologyJSON, error) {
 	slices.SortFunc(out.Nodes, func(a, b TopologyNodeJSON) int { return strings.Compare(a.ID, b.ID) })
 	for k, count := range edges {
 		k.Count = count
+		k.Service = serviceName(k.Port)
 		out.Edges = append(out.Edges, k)
 	}
 	slices.SortFunc(out.Edges, func(a, b TopologyEdgeJSON) int {

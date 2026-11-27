@@ -40,6 +40,8 @@ func TestAPINetTopology(t *testing.T) {
 		{Kind: EdgeConnection, IP: "192.0.2.6", Port: 445, Count: 2},
 		{Kind: EdgeConnection, IP: "192.0.2.5", Port: 22, Inbound: true, Count: 1}, // itself: dropped
 		{Kind: EdgeConnection, IP: "198.51.100.9", Port: 443, Count: 1},
+		{Kind: EdgeConnection, IP: "198.51.100.9", Port: 9999, Count: 1}, // no service name
+		{Kind: EdgeNeighbor, IP: "fe80::1", MAC: "aa:bb:cc:00:00:01"},    // the router's IPv6 address: its one edge
 	})
 	later := now.Add(time.Minute)
 	f.api.netEdges.set("nas", later, []NetEdge{
@@ -78,11 +80,12 @@ func TestAPINetTopology(t *testing.T) {
 	}
 	var edges []string
 	for _, e := range got.Edges {
-		edges = append(edges, fmt.Sprintf("%s %s>%s %d x%d", e.Kind, e.From, e.To, e.Port, e.Count))
+		edges = append(edges, fmt.Sprintf("%s %s>%s %d%s x%d", e.Kind, e.From, e.To, e.Port, e.Service, e.Count))
 	}
 	wantEdges := []string{
-		"connection device:pi>device:nas 445 x3", // both ends reported it: one edge, the larger count
-		"connection device:pi>ip:198.51.100.9 443 x1",
+		"connection device:pi>device:nas 445smb x3", // both ends reported it: one edge, the larger count
+		"connection device:pi>ip:198.51.100.9 443https x1",
+		"connection device:pi>ip:198.51.100.9 9999 x1",
 		"neighbor device:nas>device:pi 0 x0", // both ends: one edge
 		"neighbor device:pi>host:aa:bb:cc:00:00:01 0 x0",
 	}

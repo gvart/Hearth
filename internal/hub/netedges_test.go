@@ -115,7 +115,7 @@ func TestRecordNetEdges(t *testing.T) {
 }
 
 // Addresses with a zone, which may be of any length, and neighbours that
-// are not IPv4 are dropped.
+// are not unicast IPv4 or IPv6 are dropped.
 func TestNetEdgesFromRejects(t *testing.T) {
 	zone := strings.Repeat("z", 100<<10)
 	got := netEdgesFrom(&agentv1.NetEdges{
@@ -124,6 +124,11 @@ func TestNetEdgesFromRejects(t *testing.T) {
 			{Ip: "2001:db8::1", Mac: "aa:bb:cc:00:00:02"},
 			{Ip: "::ffff:192.0.2.3", Mac: "aa:bb:cc:00:00:03"},
 			{Ip: "192.0.2.4", Mac: "aa:bb:cc:00:00:04"},
+			{Ip: "fe80::5", Mac: "aa:bb:cc:00:00:05"},
+			{Ip: "ff02::1", Mac: "aa:bb:cc:00:00:06"},
+			{Ip: "::1", Mac: "aa:bb:cc:00:00:07"},
+			{Ip: "::", Mac: "aa:bb:cc:00:00:08"},
+			{Ip: "fe80::9", Mac: "33:33:00:00:00:01"},
 		},
 		Connections: []*agentv1.Connection{
 			{PeerIp: "fe80::1%" + zone, Port: 22, Count: 1},
@@ -131,7 +136,9 @@ func TestNetEdgesFromRejects(t *testing.T) {
 		},
 	})
 	want := []NetEdge{
+		{Kind: EdgeNeighbor, IP: "2001:db8::1", MAC: "aa:bb:cc:00:00:02"},
 		{Kind: EdgeNeighbor, IP: "192.0.2.4", MAC: "aa:bb:cc:00:00:04"},
+		{Kind: EdgeNeighbor, IP: "fe80::5", MAC: "aa:bb:cc:00:00:05"},
 		{Kind: EdgeConnection, IP: "fe80::1", Port: 22, Count: 1},
 	}
 	if !slices.Equal(got, want) {
@@ -248,7 +255,7 @@ func TestAPIDeviceNetEdges(t *testing.T) {
 		}
 	}
 	device("pi", `{"ceiling":{"net_edges":true},"interfaces":[{"name":"eth0","mac":"aa:bb:cc:00:00:05","ips":["192.0.2.5"]}]}`)
-	device("nas", `{"interfaces":[{"name":"eth0","mac":"AA:BB:CC:00:00:06","ips":["192.0.2.6/24"]}]}`)
+	device("nas", `{"interfaces":[{"name":"eth0","mac":"AA:BB:CC:00:00:06","ips":["192.0.2.6/24","fe80::6/64"]}]}`)
 	device("off", `{"ceiling":{"net_edges":false}}`)
 	if _, err := f.st.NetworkHosts().RecordScan(ctx, now, time.Hour, []store.NetworkHost{
 		{MAC: "aa:bb:cc:00:00:01", IP: "192.0.2.1", Hostname: "router"},
@@ -259,6 +266,8 @@ func TestAPIDeviceNetEdges(t *testing.T) {
 	edges := []NetEdge{
 		{Kind: EdgeNeighbor, IP: "192.0.2.1", MAC: "aa:bb:cc:00:00:01"},  // a host, by MAC
 		{Kind: EdgeNeighbor, IP: "192.0.2.66", MAC: "aa:bb:cc:00:00:06"}, // the NAS, by MAC
+		{Kind: EdgeNeighbor, IP: "fe80::1", MAC: "aa:bb:cc:00:00:01"},    // the router's IPv6 address, by MAC
+		{Kind: EdgeNeighbor, IP: "fe80::6", MAC: "aa:bb:cc:00:00:09"},    // the NAS's link-local address, on another link: unknown
 		{Kind: EdgeConnection, IP: "192.0.2.6", Port: 445, Count: 2},     // the NAS, by IP
 		{Kind: EdgeConnection, IP: "192.0.2.7", Port: 22, Inbound: true, Count: 1},
 		{Kind: EdgeConnection, IP: "198.51.100.9", Port: 443, Count: 1}, // unknown
@@ -279,7 +288,7 @@ func TestAPIDeviceNetEdges(t *testing.T) {
 		t.Fatalf("status %d", resp.StatusCode)
 	}
 	got := decode[NetEdgesJSON](t, resp)
-	if !got.Enabled || got.UpdatedAt == nil || !got.UpdatedAt.Equal(now) || len(got.Neighbors) != 2 || len(got.Connections) != 3 {
+	if !got.Enabled || got.UpdatedAt == nil || !got.UpdatedAt.Equal(now) || len(got.Neighbors) != 4 || len(got.Connections) != 3 {
 		t.Fatalf("edges = %+v", got)
 	}
 	peer := func(p *PeerJSON) string {
@@ -288,7 +297,7 @@ func TestAPIDeviceNetEdges(t *testing.T) {
 		}
 		return p.Kind + ":" + p.ID + ":" + p.Name
 	}
-	for i, want := range []string{"host:aa:bb:cc:00:00:01:router", "device:nas:nas"} {
+	for i, want := range []string{"host:aa:bb:cc:00:00:01:router", "device:nas:nas", "host:aa:bb:cc:00:00:01:router", "-"} {
 		if g := peer(got.Neighbors[i].Peer); g != want {
 			t.Errorf("neighbour %s = %s, want %s", got.Neighbors[i].IP, g, want)
 		}
@@ -300,6 +309,11 @@ func TestAPIDeviceNetEdges(t *testing.T) {
 	}
 	if c := got.Connections[1]; c.Port != 22 || !c.Inbound || c.Count != 1 {
 		t.Errorf("inbound connection = %+v", c)
+	}
+	for i, want := range []string{"smb", "ssh", "https"} {
+		if g := got.Connections[i].Service; g != want {
+			t.Errorf("connection %s:%d service = %q, want %q", got.Connections[i].IP, got.Connections[i].Port, g, want)
+		}
 	}
 
 	// An agent no longer started with --allow-net-edges lists nothing, whatever it reported before.

@@ -75,14 +75,16 @@ func (s *AgentStream) forgetNetEdges(deviceID string, c *agentv1.Ceiling) {
 }
 
 // netEdgesFrom validates a report: addresses must parse without a zone,
-// neighbours must be IPv4 with a unicast Ethernet MAC, ports must be ports.
+// neighbours must be unicast IPv4 or IPv6 with a unicast Ethernet MAC, ports
+// must be ports.
 func netEdgesFrom(e *agentv1.NetEdges) []NetEdge {
 	var out []NetEdge
 	n := 0
 	for _, nb := range e.GetNeighbors() {
 		ip, err := netip.ParseAddr(nb.GetIp())
 		hw, merr := net.ParseMAC(nb.GetMac())
-		if err != nil || !ip.Is4() || merr != nil || len(hw) != 6 || hw[0]&0x01 != 0 {
+		if err != nil || ip.Zone() != "" || ip.Is4In6() || ip.IsMulticast() || ip.IsUnspecified() || ip.IsLoopback() ||
+			merr != nil || len(hw) != 6 || hw[0]&0x01 != 0 {
 			continue
 		}
 		if n++; n > maxNetEdges {
@@ -118,7 +120,8 @@ type NetEdgesJSON struct {
 	Connections []ConnectionJSON `json:"connections"`
 }
 
-// NeighborJSON is an entry of a device's neighbour table.
+// NeighborJSON is an entry of a device's IPv4 (ARP) or IPv6 (NDP) neighbour
+// table.
 type NeighborJSON struct {
 	IP   string    `json:"ip"`
 	MAC  string    `json:"mac"`
@@ -131,7 +134,10 @@ type ConnectionJSON struct {
 	IP string `json:"ip"`
 	// Port is the peer's port of an outbound connection, the device's own
 	// of an inbound one.
-	Port    uint16    `json:"port"`
+	Port uint16 `json:"port"`
+	// Service names the port's well-known service (22 ssh, 443 https);
+	// empty when the hub knows no name for it.
+	Service string    `json:"service,omitempty"`
 	Inbound bool      `json:"inbound"`
 	Count   uint32    `json:"count"`
 	Peer    *PeerJSON `json:"peer"`
@@ -218,7 +224,7 @@ func (a *api) readNetEdges(ctx context.Context, d store.Device) (NetEdgesJSON, e
 			continue
 		}
 		out.Connections = append(out.Connections, ConnectionJSON{
-			IP: e.IP, Port: e.Port, Inbound: e.Inbound, Count: e.Count, Peer: peers.resolve("", e.IP),
+			IP: e.IP, Port: e.Port, Service: serviceName(e.Port), Inbound: e.Inbound, Count: e.Count, Peer: peers.resolve("", e.IP),
 		})
 	}
 	return out, nil
@@ -279,10 +285,18 @@ func (a *api) peerIndex(ctx context.Context) (peerIndex, error) {
 }
 
 // resolve finds the peer of mac (if known) and ip: an enrolled device first,
-// then this hub, then a discovered host; nil if none.
+// then this hub, then a discovered host; nil if none. An IPv6 link-local
+// address names a host on one link only (every host may have fe80::1), so
+// it is resolved by MAC alone.
 func (p peerIndex) resolve(mac, ip string) *PeerJSON {
 	if d := p.deviceByMAC[mac]; mac != "" && d != nil {
 		return d
+	}
+	if a, err := netip.ParseAddr(ip); err == nil && a.Is6() && a.IsLinkLocalUnicast() {
+		if h := p.hostByMAC[mac]; mac != "" && h != nil {
+			return h
+		}
+		return nil
 	}
 	if d := p.deviceByIP[ip]; d != nil {
 		return d

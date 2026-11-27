@@ -13,8 +13,9 @@ import (
 // network edges (Ceiling.NetEdges).
 const NetEdgesSupported = true
 
-// readNetEdges reads the neighbour table and the TCP connections from /proc,
-// which any user may read: no privileges, no conntrack.
+// readNetEdges reads the IPv4 and IPv6 neighbour tables (/proc/net/arp and
+// netlink) and the TCP connections from /proc, which any user may read: no
+// privileges, no conntrack.
 func readNetEdges() (*agentv1.NetEdges, error) {
-	return collectNetEdges(os.DirFS("/proc/net"), discovery.ReadNeighbors)
+	return collectNetEdges(os.DirFS("/proc/net"), bothNeighbors(discovery.ReadNeighbors, discovery.ReadNeighbors6))
 }
