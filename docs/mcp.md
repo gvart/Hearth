@@ -76,11 +76,15 @@ Over plain HTTP the token crosses the LAN in the clear, as the web session does.
 | `apply_automation`  | dangerous    | `automation.apply`                         |
 | `list_plugins`      | read         | `device.read` (target `plugins`)           |
 | `plugin_command`    | the manifest's | `plugin.command.read`, `.safe` or `.dangerous` |
+| `list_device_plugins` | read       | `device.read` (target the device)          |
+| `device_plugin_command` | the manifest's | `device.plugin.command.read`, `.safe` or `.dangerous` |
 
 `list_plugins` and `plugin_command` are offered only by a hub that runs [exec plugins](plugins.md).
 `list_plugins` shows each plugin's state, devices, entities and commands, but not its stderr.
 `plugin_command` runs with the class the plugin's manifest declares for the command, capped by the
-token's scope: a read token runs only read commands.
+token's scope: a read token runs only read commands. `list_device_plugins` and
+`device_plugin_command` do the same for [plugins on devices](plugins.md#plugins-on-devices), within
+the device's capability ceiling.
 
 `restart_service` and `exec_command` reach the device through its agent, within the agent's own
 ceiling (**Restart services** and **Run programs** in its Capabilities, see [guardrails.md](guardrails.md#device-capability-ceiling)): a service or

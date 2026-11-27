@@ -16,9 +16,10 @@ between Hearth processes is mutually authenticated TLS.
    headers, command arguments) never reach the audit log or the hub log.
 3. **The device has the last word.** An agent runs only what its capability ceiling allows, and
    nothing by default: the programs, restarts, checks, logs, subnets, terminal, neighbours and
-   containers it lets the hub use. The ceiling is its own `--allow-*` flags plus what an admin turns
-   on in the device's **Capabilities** card (or `hearth device capabilities`). Turning on a terminal,
-   programs, restarts or container control is `dangerous` and asks for the admin password again;
+   containers and plugins it lets the hub use. The ceiling is its own `--allow-*` flags plus what an
+   admin turns on in the device's **Capabilities** card (or `hearth device capabilities`). Turning on
+   a terminal, programs, restarts, container control or a plugin is `dangerous` and asks for the
+   admin password again;
    every change is audited, refusals too. The agent checks each ceiling the hub sends, saves it, and
    checks every request against the ceiling it holds, whatever the hub decided. An agent installed
    with `--local-ceiling` ignores the hub's settings: then nothing on the hub can raise its ceiling.
@@ -283,6 +284,25 @@ automation or an MCP client.
   the transport: the end-to-end image is built with a test key in place of the release key.
 - The audit entry of an upgrade records the version asked for, the version the agent ran, and the
   archive URL and SHA-256 the agent reports.
+
+### Plugins on devices
+
+An agent runs an [exec plugin](plugins.md#plugins-on-devices) only when its ceiling names it, with
+the highest class of command the hub may send.
+
+- Uploading a plugin's program is `plugin.binary.upload` (dangerous, the password again); allowing it
+  on a device, or raising its class, is `device.capabilities.raise` (dangerous, the password again).
+  Both are audited, with the program's SHA-256.
+- The agent downloads the program over mTLS with its own certificate, only for a plugin its ceiling
+  allows and only for its own platform, at most 64 MB, streamed to disk. It checks the SHA-256 the hub
+  pinned before it keeps the file (0700, in its data directory) and again before every start. It runs
+  the program with `exec`, no shell, a clean environment and its own process group.
+- The agent takes each command's class from the manifest it installed, not from the hub, and refuses
+  a command above the plugin's class in its own ceiling or one the manifest does not declare.
+- Allowing a plugin trusts the hub with code: it supplies the program and the manifest, and the
+  program runs as the agent's user. A class limits the commands the hub may send, not what the
+  program does. An agent with `--local-ceiling` takes plugins only from its own `--allow-plugin`
+  flags, but the program still comes from the hub, pinned by the hash the hub sends.
 
 ## Integrations
 

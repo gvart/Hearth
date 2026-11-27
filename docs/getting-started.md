@@ -271,6 +271,8 @@ On the hub, the log says `device enrolled` and then `agent connected` for each d
 - [Automations](automations.md): restart a service when a check fails, also [on the device while
   the hub is down](automations.md#running-on-the-device).
 - [Prometheus](prometheus.md) and [Kubernetes](kubernetes.md): bring in what you already run.
+- [Plugins on devices](plugins.md#plugins-on-devices): your own program for a GPIO relay or a USB
+  sensor, uploaded once and run on the device within its **Capabilities**.
 - [Cluster mode](cluster.md): several hubs, no leader, that keep working when one dies. Started on a
   laptop? Before you stop it, its Cluster page (or `hearth cluster status`) says whether it is
   [safe to stop](cluster.md#is-it-safe-to-stop-this-hub).

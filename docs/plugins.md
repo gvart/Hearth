@@ -9,7 +9,8 @@ pushes their state, and offers commands. Every command goes through Hearth's pol
 its manifest declares, and lands in the audit log.
 
 Plugins are off unless you turn them on: the hub runs a plugin only when you name its manifest with
-`--plugin`.
+`--plugin`. A plugin can also run on a device, through its agent, within the device's capability
+ceiling: see [Plugins on devices](#plugins-on-devices).
 
 Two examples live in the repository:
 
@@ -218,6 +219,75 @@ the same `id` within 30 seconds: `ok` and an `output` of up to 64 KiB, or an `er
 
 A plugin may handle commands one at a time or several at once: replies are matched by `id`.
 
+## Plugins on devices
+
+A plugin can run on a device instead of the hub: a GPIO relay on a Raspberry Pi, a USB sensor, a
+program that must run where the hardware is. The hub keeps the plugin's programs, one per platform,
+and hands each device the one for its OS and architecture. The device's agent runs it as a child
+process speaking the same protocol, one process per command.
+
+1. **Upload it** to the hub, once per platform: the web UI under **Settings → Device plugins**, or on
+   a hub host:
+
+   ```sh
+   GOOS=linux GOARCH=arm64 go build -o lamp ./examples/plugins/go-lamp
+   hearth plugin upload lamp --manifest examples/plugins/go-lamp/plugin.yaml --os linux --arch arm64
+   hearth plugin list
+   hearth plugin delete go-lamp/linux/arm64
+   ```
+
+   An upload is the dangerous policy action `plugin.binary.upload` and asks for the admin password
+   again in the web UI; the audit entry holds the program's SHA-256. A program may be at most 64 MB.
+   A device manifest may not set `env`: the agent starts the program with a clean environment.
+2. **Allow it on the device**, in its **Capabilities** card (**Plugins**), with the highest class of
+   command the hub may run there: `read` (the default), `safe` or `dangerous`. Or on a hub host:
+
+   ```sh
+   hearth device capabilities pi --set plugins=go-lamp:safe
+   ```
+
+   Allowing a plugin, or raising its class, is `device.capabilities.raise` (dangerous, asks for the
+   password again); lowering or removing it is `device.capabilities.set`. A device installed with
+   `--local-ceiling` ignores the hub's grants: allow plugins there with the agent's own flag,
+   `--allow-plugin NAME[:CLASS]`, repeatable.
+3. **The agent installs it.** At its next heartbeat it downloads the program for its platform from
+   the hub over mTLS, with its own certificate, and checks its SHA-256 against the one the hub pinned
+   before it writes it, 0700, to `<data-dir>/plugins/<name>/<sha256>`. It checks the hash again
+   before each start. It refuses a program bigger than 64 MB, one for another platform, one whose
+   hash differs, and any plugin its ceiling does not allow. Taken off the ceiling, or deleted on the
+   hub, the plugin is removed from the device.
+4. **Run its commands** from the device page's **Plugins** card, or with MCP's `device_plugin_command`
+   tool. Each one goes through policy as `device.plugin.command.read`, `.safe` or `.dangerous`, after
+   the class the manifest declares, with the device as target; a command the manifest does not declare
+   is denied as a dangerous one. The hub denies a command above the plugin's class in the device's
+   ceiling before it is held for approval or sent, and the agent checks it again against the manifest
+   it installed and the ceiling it holds, whatever the hub decided.
+
+| Action | Class | Actors |
+| --- | --- | --- |
+| `plugin.binary.upload` | dangerous | `admin`, `web` |
+| `plugin.binary.delete` | safe | `admin`, `web` |
+| `device.plugin.command.read` | read | `web`, `mcp` |
+| `device.plugin.command.safe` | safe | `web`, `mcp` |
+| `device.plugin.command.dangerous` | dangerous | `web`, `mcp` |
+
+Allowing a plugin trusts the hub with what it runs: the hub supplies the program and its manifest,
+and the agent runs it as its own user, so a class bounds which commands the hub may send, not what
+the program does. Allow only plugins you built or read. Agents older than this release (protocol
+minor 14) take no plugins: the device's cards ask to upgrade them.
+
+On a device a plugin's discover and state messages are not relayed to the hub yet; it serves
+commands only.
+
+| | |
+| --- | --- |
+| `GET /api/v1/device-plugins` | The uploaded plugins, each for one platform, and `max_size`. |
+| `POST /api/v1/device-plugins?os=linux&arch=arm64` | Uploads one: a multipart form, the `manifest` part first, then the `program`. Needs the password again. |
+| `DELETE /api/v1/device-plugins/{id}` | Removes one. |
+| `GET /api/v1/devices/{id}/plugins` | The plugins the device's ceiling allows, whether its agent installed each, their commands and what policy decides for each class. |
+| `POST /api/v1/devices/{id}/plugins/{name}/commands` | Runs a command: `{"command": "turn_on", "device": "lamp", "args": {}}`. 409 when the plugin is not installed, 502 when it reports it failed. |
+
 ## Not yet
 
-- Plugins on agents, within the device's capability ceiling ([#223](https://github.com/gvart/hearth/issues/223)).
+- A device plugin's devices and entities on the hub, and `plugin_command` steps for device plugins
+  in automations.
