@@ -1,0 +1,22 @@
+web/src/components/DeviceUpgrade.tsx
+  s_18b57982fdff93::t_279dc24fe389a9 11-28,47
+web/src/components/DeviceCapabilities.tsx
+  s_18b57982fdff93::t_61704bcf0e8c04 19
+  s_18b57982fdff93::t_279dc24fe389a9 113
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6263c1cfce7fe127214be73c7cda62fadd6b743b",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}

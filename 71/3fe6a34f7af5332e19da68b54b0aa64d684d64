@@ -1,0 +1,34 @@
+proto/hearth/agent/v1/agent.proto
+  s_18b57982fdff93::t_5fa5aee17d3396 32,53,106-113,625-653
+cmd/hearth/main.go
+  s_18b57982fdff93::t_1b0883b221f0cb 47-49
+internal/agent/run.go
+  s_18b57982fdff93::t_0b973f76f90fa8 14,34,79-83,113-117,160-161,163,198-201,222-225,433,529-530
+  s_18b57982fdff93::t_4ee7b685ae6fda 33
+internal/agent/upgrade.go
+  s_18b57982fdff93::t_dcaf0abf897840 1-23,25-139,141,145-339
+  s_18b57982fdff93::t_30e34a00c1ab44 24
+  s_18b57982fdff93::t_e1237d632247f8 340-370
+  s_18b57982fdff93::t_309e5b5fb7cf6a 140,142-144
+internal/agent/upgrade_test.go
+  s_18b57982fdff93::t_5c9ee9aee9d876 139-140,160-161
+  s_18b57982fdff93::t_90e17302fe039d 1-138,141-159,162-256
+internal/proto/hearth/agent/v1/agent.pb.go
+  s_18b57982fdff93::t_ecf1b4b9be155e 44,186-194,244-247,270-271,288,430-438,490-493,516-517,653,662-669,816-829,3955-3975,3977-3987,3989-4000,4002-4049,4051-4061,4063-4074,4076-4112,4117,4133-4134,4152,4180,4386-4397,4566,4580
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "713fe6a34f7af5332e19da68b54b0aa64d684d64",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
