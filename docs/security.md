@@ -229,11 +229,17 @@ automation or an MCP client.
   `checksums.txt.sig` and checks the signature before it trusts any hash in it; a missing, malformed
   or wrong signature refuses the upgrade, with the reason in the upgrade's result and its audit entry.
   So whoever can change a release's assets on GitHub, without the signing key, cannot make agents
-  install their code. The release workflow signs with the private seed (the secret
-  `HEARTH_RELEASE_SIGNING_KEY` of the `release` environment, which needs the maintainer's approval)
-  through `internal/release/cmd/sign`, a separate program not in the `hearth` binary, which never
-  prints the key and refuses one whose public half agents do not trust. Releases up to v0.0.1-rc.11
-  are unsigned, and agents refuse them.
+  install their code. goreleaser leaves the GitHub release a draft, in a job that never holds the
+  key (it runs npm and other third-party code). A separate job, the only one with the secret
+  `HEARTH_RELEASE_SIGNING_KEY` of the `release` environment (which needs the maintainer's approval),
+  checks out the tag afresh, builds `internal/release/cmd/sign` (a program not in the `hearth`
+  binary, which never prints the key and refuses one whose public half agents do not trust) with Go
+  alone, downloads the draft, checks every archive against `checksums.txt`, signs it, uploads the
+  `.sig` and only then publishes the release. That check catches an archive changed after
+  goreleaser hashed it, not an archive and `checksums.txt` changed together in the goreleaser job.
+  Only a build with the `e2etestkey` tag (the end-to-end tests' image) trusts another key; a release
+  build has no variable an `-ldflags -X` could set. Releases up to v0.0.1-rc.11 are unsigned, and
+  agents refuse them.
 - The agent builds both URLs itself, from its compiled-in release base
   (`https://github.com/gvart/hearth/releases/download/<tag>/`) and its own platform: it reads the
   release's `checksums.txt`, then downloads its archive with a plain HTTPS client (not its device
@@ -254,8 +260,12 @@ automation or an MCP client.
   its service manager to start the old one. The old binary tells the hub in its next Hello
   (`rolled_back_from`, kept in `upgrade-rolled-back` in the data directory until a hub welcomes it):
   the hub records it in the audit log (`agent.upgrade.rolled_back`) and the device's page says the
-  upgrade was rolled back, until the agent reports another version. A binary that crashes before the
-  agent even starts counting is not covered.
+  upgrade was rolled back, until the agent reports another version. The hub keeps a reported
+  version only if it is a release tag of at most 64 bytes, audits it only when it differs from the
+  one it holds, and puts it in the entry's detail. A binary that crashes before the agent even
+  starts counting is not covered. By design, whoever can keep the upgraded agent from every hub for
+  5 minutes (blocking the network, say) makes it go back to the previous release: it is still a
+  release the agent ran, never an older one than that.
 - An upgrade replaces the program that enforces the device's capability ceiling: it is above the
   ceiling, as re-running the installer is. That is why it is dangerous and takes the password. An
   agent started with `--local-ceiling` refuses every upgrade, as it refuses the hub's ceiling: upgrade
@@ -268,8 +278,9 @@ automation or an MCP client.
   hubs of a cluster first.
 - `HEARTH_RELEASE_BASE_URL` in an agent's environment replaces its release base, as it does for
   `install.sh`. It is for the end-to-end tests only, not a supported setting; whoever sets an agent's
-  environment owns its host already. It does not skip the signature: the end-to-end image is built
-  with a test key in place of the release key.
+  environment owns its host already. It may be plain `http://` (the end-to-end tests' release
+  server is), and it does not skip the signature, which is what makes a release trusted, whatever
+  the transport: the end-to-end image is built with a test key in place of the release key.
 - The audit entry of an upgrade records the version asked for, the version the agent ran, and the
   archive URL and SHA-256 the agent reports.
 

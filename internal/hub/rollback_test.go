@@ -92,14 +92,31 @@ func TestRollbackReported(t *testing.T) {
 		return out
 	}
 
+	// Anything but a release tag of at most 64 bytes is dropped, unaudited.
+	for _, bad := range []string{"not a version", "v1.2.0\nforged log line", "v1.2.0-" + strings.Repeat("a", 64)} {
+		session("v1.0.0", bad)
+		if got := rolledBackFrom(); got != "" {
+			t.Fatalf("rolled_back_from %q kept as %q, want it dropped", bad, got)
+		}
+	}
+	if n := len(audited()); n != 0 {
+		t.Fatalf("%d rollback audit entries for invalid reports, want none", n)
+	}
+
 	session("v1.0.0", "v1.2.0")
 	if got := rolledBackFrom(); got != "v1.2.0" {
 		t.Fatalf("rolled_back_from after the Hello and a Facts = %q, want v1.2.0", got)
 	}
 	entries := audited()
 	if len(entries) != 1 || entries[0].ActorID != "dev-1" || entries[0].Target != "dev-1" || entries[0].Decision != policy.Allow ||
-		!strings.Contains(entries[0].Result, "v1.2.0") || !strings.Contains(string(entries[0].Detail), `"rolled_back_from":"v1.2.0"`) {
-		t.Fatalf("audit = %+v, want one rollback entry for dev-1", entries)
+		strings.Contains(entries[0].Result, "v1.2.0") || !strings.Contains(string(entries[0].Detail), `"rolled_back_from":"v1.2.0"`) {
+		t.Fatalf("audit = %+v, want one rollback entry for dev-1, the version in its detail only", entries)
+	}
+
+	// The same report again (a lost Welcome) audits nothing more.
+	session("v1.0.0", "v1.2.0")
+	if n := len(audited()); n != 1 {
+		t.Errorf("%d rollback audit entries after the same report again, want 1", n)
 	}
 
 	// A reconnect that no longer says it keeps it, and audits nothing more.

@@ -525,6 +525,43 @@ func TestUpgradeRollback(t *testing.T) {
 		}
 	})
 
+	t.Run("welcomed but the marker cannot be removed", func(t *testing.T) {
+		t.Parallel()
+		if os.Geteuid() == 0 {
+			t.Skip("root removes files from a read-only directory")
+		}
+		u, exe := setup(t)
+		u.noHub = 50 * time.Millisecond
+		if err := u.started(t.Context(), log); err != nil {
+			t.Fatal(err)
+		}
+		stopped := make(chan error, 1)
+		end := u.watchWelcome(t.Context(), log, func(err error) { stopped <- err })
+		if err := os.Chmod(u.dataDir, 0o500); err != nil { //nolint:gosec // a directory the agent cannot write
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(u.dataDir, 0o700) }) //nolint:gosec // a directory, writable again
+		u.welcomed(t.Context(), log)
+		time.Sleep(300 * time.Millisecond)
+		end()
+		select {
+		case err := <-stopped:
+			t.Fatalf("stop(%v) after a Welcome", err)
+		default:
+		}
+		if got := readFile(t, exe); got != "new" {
+			t.Errorf("executable = %q, want the upgraded one kept", got)
+		}
+		// The next Welcome retries the removal.
+		if err := os.Chmod(u.dataDir, 0o700); err != nil { //nolint:gosec // a directory, writable again
+			t.Fatal(err)
+		}
+		u.welcomed(t.Context(), log)
+		if _, ok := readPending(t, u.dataDir); ok {
+			t.Error("marker kept after a Welcome that could remove it")
+		}
+	})
+
 	t.Run("nothing pending", func(t *testing.T) {
 		t.Parallel()
 		u := &upgrader{dataDir: t.TempDir(), noHub: time.Millisecond}

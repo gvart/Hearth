@@ -124,10 +124,12 @@ type upgrader struct {
 
 	// mu guards what follows: a Welcome and the no-hub rollback race.
 	mu sync.Mutex
-	// pending is set while the upgrade-pending marker exists: the next
-	// Welcome removes it. marker is its content.
-	pending bool
-	marker  pendingUpgrade
+	// pending is set while an upgrade of this binary waits for a Welcome,
+	// which clears it and removes the upgrade-pending marker. marker is its
+	// content; markerLeft is set when that removal failed, to retry it.
+	pending    bool
+	marker     pendingUpgrade
+	markerLeft bool
 	// rolledBackFrom is the release a rollback put this binary back from,
 	// told the hub in Hello until one welcomes the agent.
 	rolledBackFrom string
@@ -401,6 +403,11 @@ func (u *upgrader) install(ctx context.Context, version, url, sum string) (strin
 	if err := os.Link(u.exe, prev); err != nil {
 		return "", fmt.Errorf("keep the current binary as %s: %w", prev, err)
 	}
+	// No rollback of this binary's own upgrade may run past this point: it
+	// would put an older binary over the one going in.
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.pending = false
 	// The marker goes first: a new binary that never reaches a hub is
 	// rolled back, and one written over a binary still the old changes
 	// nothing.
@@ -722,15 +729,22 @@ func (u *upgrader) welcomed(ctx context.Context, log *slog.Logger) {
 			u.rolledBackFrom = ""
 		}
 	}
-	if !u.pending {
+	if !u.pending && !u.markerLeft {
 		return
 	}
-	if err := os.Remove(filepath.Join(u.dataDir, upgradePendingFile)); err != nil && !errors.Is(err, os.ErrNotExist) {
-		log.WarnContext(ctx, "remove the upgrade marker", "err", err)
-		return
-	}
+	// Confirmed, whether or not the marker goes: a hub welcomed this
+	// binary, so the no-hub rollback must not put the old one back.
+	confirmed := u.pending
 	u.pending = false
-	log.InfoContext(ctx, "upgrade confirmed: a hub welcomed the new binary")
+	if err := os.Remove(filepath.Join(u.dataDir, upgradePendingFile)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		u.markerLeft = true
+		log.WarnContext(ctx, "remove the upgrade marker; retrying at the next Welcome", "err", err)
+	} else {
+		u.markerLeft = false
+	}
+	if confirmed {
+		log.InfoContext(ctx, "upgrade confirmed: a hub welcomed the new binary")
+	}
 }
 
 // handleUpgrade runs req on its own goroutine in execs, one upgrade at a

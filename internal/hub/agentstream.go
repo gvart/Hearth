@@ -110,14 +110,18 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 		log.WarnContext(ctx, "ignoring device_id claimed in Hello", "claimed_device_id", claimed)
 	}
 	log.InfoContext(ctx, "agent connected", "hostname", hello.GetHostname(), "agent_version", hello.GetAgentVersion())
-	if err := s.registry.ReportFacts(ctx, deviceID, hello); err != nil {
+	rollback, err := s.registry.ReportHello(ctx, deviceID, hello)
+	if err != nil {
 		log.ErrorContext(ctx, "record hello", "err", err)
 		return connect.NewError(connect.CodeUnavailable, errors.New("cannot record device facts"))
 	}
-	if from := hello.GetRolledBackFrom(); from != "" {
-		s.auditRollback(ctx, log, deviceID, from, hello.GetAgentVersion())
+	if hello.GetRolledBackFrom() != "" && reportedRollback(hello) == "" {
+		log.WarnContext(ctx, "ignoring a rolled_back_from that names no release", "length", len(hello.GetRolledBackFrom()))
 	}
 	pinned := s.pinCert(ctx, log, deviceID)
+	if rollback != "" {
+		s.auditRollback(ctx, log, deviceID, rollback, hello.GetAgentVersion())
+	}
 	// The rotation state is read before the renewal: a rotation that moves
 	// on in between then ends the stream on its next heartbeat, rather than
 	// passing as seen by a Welcome that did not carry it.
@@ -326,8 +330,10 @@ const ActionCertMismatch = "agent.cert_mismatch"
 const ActionUpgradeRolledBack = "agent.upgrade.rolled_back"
 
 // auditRollback records that the agent of deviceID, now running version,
-// was rolled back from release from. An agent says it in each Hello until a
-// hub welcomes it, so a lost Welcome can record it twice.
+// says it was rolled back from release from. Connect calls it only for a
+// rollback the device's facts did not hold yet, so a reconnect that says it
+// again records nothing. Both versions are the agent's word, so they go in
+// the entry's detail only.
 func (s *AgentStream) auditRollback(ctx context.Context, log *slog.Logger, deviceID, from, version string) {
 	log.WarnContext(ctx, "the agent's upgrade was rolled back: the new binary reached no hub",
 		"rolled_back_from", from, "agent_version", version)
@@ -340,8 +346,7 @@ func (s *AgentStream) auditRollback(ctx context.Context, log *slog.Logger, devic
 	}
 	if _, err := s.audit.Append(ctx, store.AuditEntry{
 		TS: s.now(), ActorKind: "agent", ActorID: deviceID, Action: ActionUpgradeRolledBack, Target: deviceID,
-		Decision: policy.Allow, Result: "upgrade to " + from + " rolled back: the new version did not reach a hub; runs " + version,
-		Detail: detail,
+		Decision: policy.Allow, Result: "upgrade rolled back: the new version did not reach a hub", Detail: detail,
 	}); err != nil {
 		log.WarnContext(ctx, "audit an upgrade rollback", "err", err)
 	}

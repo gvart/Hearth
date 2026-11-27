@@ -20,18 +20,16 @@ import (
 // releases.
 const PublicKey = "abVwO44ZL8113oIxlfmwu4cCx28LGqrHkkBJNLg0wvs="
 
-// publicKey is the key an agent checks releases against: PublicKey, unless
-// a build links in another with -ldflags -X (the end-to-end tests' image
-// only, whose releases are signed with a test key). Nothing at run time,
-// neither a flag nor the environment, can change it.
-var publicKey = PublicKey
-
 // SignatureSuffix is appended to checksums.txt to name its signature asset.
 const SignatureSuffix = ".sig"
 
-// TrustedKey is the public key releases are checked against.
+// TrustedKey is the public key releases are checked against: PublicKey,
+// except in a build with the e2etestkey tag (the end-to-end tests' image
+// only, whose releases are signed with a test key; see key_e2e.go). There
+// is no variable a plain -ldflags -X could set, and nothing at run time,
+// neither a flag nor the environment, changes it.
 func TrustedKey() (ed25519.PublicKey, error) {
-	return ParsePublicKey(publicKey)
+	return ParsePublicKey(trustedKey())
 }
 
 // ParsePublicKey decodes the base64 of a raw Ed25519 public key.

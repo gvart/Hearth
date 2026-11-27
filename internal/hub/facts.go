@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
+	"github.com/gvart/hearth/internal/release"
 	"github.com/gvart/hearth/internal/store"
 )
 
@@ -107,6 +108,20 @@ type Interface struct {
 	IPs  []string `json:"ips"`
 }
 
+// maxRolledBackFrom bounds the Hello.rolled_back_from the hub keeps.
+const maxRolledBackFrom = 64
+
+// reportedRollback is the release h says an upgrade was rolled back from,
+// if it is a release tag of at most maxRolledBackFrom bytes; "" otherwise.
+// The agent's word only: it is shown and audited as such.
+func reportedRollback(h *agentv1.Hello) string {
+	v := h.GetRolledBackFrom()
+	if len(v) > maxRolledBackFrom || !release.Tag.MatchString(v) {
+		return ""
+	}
+	return v
+}
+
 // factsFromHello is the facts h reports. prev, the facts stored before, if
 // any, keeps a rollback the agent told of while it reports the same
 // version.
@@ -126,7 +141,7 @@ func factsFromHello(h *agentv1.Hello, prev json.RawMessage) (store.DeviceFacts, 
 		ReleaseTarget: h.GetReleaseTarget(),
 		NoSelfUpgrade: h.GetNoSelfUpgrade(),
 
-		RolledBackFrom: h.GetRolledBackFrom(),
+		RolledBackFrom: reportedRollback(h),
 	}
 	if f.RolledBackFrom == "" && len(prev) > 0 {
 		var p Facts
