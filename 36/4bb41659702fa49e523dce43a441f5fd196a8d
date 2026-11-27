@@ -22,10 +22,12 @@ internal/integrations/unifi/unifimock/unifimock.go
 internal/store/reads_test.go
   s_18b57982fdff93::t_d9e3851dff8b66 38-40
   s_18b57982fdff93::t_d6ac832c220297 37
+  s_18b57982fdff93::t_b70fc2a5f42e04 36
 internal/store/partition.go
   s_18b57982fdff93::t_d9e3851dff8b66 72-73
   s_18b57982fdff93::t_d6ac832c220297 71,393
   s_18b57982fdff93::t_75b0e5b831ac80 394
+  s_18b57982fdff93::t_b70fc2a5f42e04 70
 internal/policy/policy.go
   s_18b57982fdff93::t_08be78b381f01b 317-324,667-673
 internal/store/naturalid.go
@@ -34,16 +36,21 @@ internal/store/command.go
   s_18b57982fdff93::t_d6ac832c220297 866-869
 internal/store/command_test.go
   s_18b57982fdff93::t_d6ac832c220297 117,451-454
+  s_18b57982fdff93::t_b70fc2a5f42e04 116
 internal/store/networkhosts.go
   s_18b57982fdff93::t_d6ac832c220297 76-77
 internal/store/carotation_test.go
   s_18b57982fdff93::t_d6ac832c220297 129
+  s_18b57982fdff93::t_b70fc2a5f42e04 104,107,109,113,130
 internal/integrations/unifi/client_test.go
   s_18b57982fdff93::t_35661437655174 1-341
 internal/integrations/unifi/manager_test.go
   s_18b57982fdff93::t_7959a02a04f14e 1-432
 internal/store/carotation.go
   s_18b57982fdff93::t_d6ac832c220297 342-343,357
+  s_18b57982fdff93::t_b70fc2a5f42e04 356,367,391,432,460
+internal/store/store_test.go
+  s_18b57982fdff93::t_b70fc2a5f42e04 86
 ---
 {
   "schema_version": "authorship/3.0.0",
