@@ -132,9 +132,11 @@ func (r *Replicator) compareMasterRows(ctx context.Context) (done bool, masters 
 			r.log.WarnContext(ctx, "compare the rows only masters hold", "err", err)
 			return false, nil
 		}
-		if !clustered {
-			// A hub that was never in a cluster with another: no other
-			// master holds a row it lacks.
+		others := append(slices.Clone(v.masterSet), v.leftMasters...)
+		knownMaster := slices.ContainsFunc(others, func(m string) bool { return m != v.self && !r.unproved(m) })
+		if !clustered || (len(v.live) > 1 && !knownMaster) {
+			// A hub alone, or one whose gossip found its cluster and no
+			// other master in it: no other master holds a row it lacks.
 			r.masterRowsSynced.Store(true)
 			return true, nil
 		}

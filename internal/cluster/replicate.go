@@ -1106,7 +1106,10 @@ func (r *Replicator) replicateRevocation(ctx context.Context, muts []store.Mutat
 	batches, hinted, _, err := r.plan(ctx, muts, false, false, v)
 	if err != nil {
 		r.log.WarnContext(ctx, "replicate a revocation: kept here, the others get it by anti-entropy", "err", err)
-		return &store.Reach{Applied: 1, Of: 1}
+		masters := slices.Compact(slices.Sorted(slices.Values(slices.Concat(v.masterSet, v.leftMasters))))
+		return &store.Reach{Applied: 1, Of: max(1, len(slices.DeleteFunc(masters, func(m string) bool {
+			return m != v.self && r.unproved(m)
+		})))}
 	}
 	for t, ms := range hinted {
 		r.hint(t, ms)

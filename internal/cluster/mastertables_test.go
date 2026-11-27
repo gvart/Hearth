@@ -549,6 +549,35 @@ func TestMasterRowsGate(t *testing.T) {
 			t.Fatal("a hub alone from the start says it could not compare")
 		}
 	})
+	t.Run("the only master, with storage members", func(t *testing.T) {
+		// The gossip found the cluster, and no other master in it: no wait,
+		// no banner, though the hubs' certificates say it is a cluster.
+		an := newAPNetWith(t, 0, func(c *ReplicatorConfig) {
+			c.LoneMasterWait = time.Hour
+			if c.NodeID != "m" {
+				c.Master = testMasterKey{}
+			}
+		}, "m", "s", "s2")
+		an.mu.Lock()
+		an.roles["s"], an.roles["s2"] = storageOnly, storageOnly
+		an.mu.Unlock()
+		m := an.m("m")
+		for _, id := range []string{"m", "s", "s2"} {
+			if err := m.st.Hubs().RecordCert(ctx, "serial-"+id, id); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := m.st.Admin().CreateSession(ctx, "s", time.Now(), time.Now().Add(time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+		m.rep.closeMasterRows()
+		if _, err := m.st.Admin().CheckSession(ctx, "s", time.Now()); err != nil {
+			t.Fatalf("session on the only master: %v", err)
+		}
+		if m.rep.Uncompared() {
+			t.Fatal("the only master says it could not compare")
+		}
+	})
 	t.Run("every live master", func(t *testing.T) {
 		// Compared with one master of two live: not yet.
 		an := newAPNet(t, 3, "a", "b", "c")

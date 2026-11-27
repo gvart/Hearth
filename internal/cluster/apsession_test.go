@@ -160,6 +160,11 @@ func TestMasterRowsFollowTheRole(t *testing.T) {
 	waitUntil(t, 10*time.Second, "c, promoted, to hold every session", func() bool {
 		return lacking(t, c["c"], secrets) == 0
 	})
+	// c reads them once it compared them with every master (503 before).
+	waitUntil(t, 10*time.Second, "c, promoted, to compare with the masters", func() bool {
+		_, err := c["c"].st.Admin().CheckSession(ctx, secrets[0], time.Now())
+		return err == nil
+	})
 	for _, s := range secrets {
 		if _, err := c["c"].st.Admin().CheckSession(ctx, s, time.Now()); err != nil {
 			t.Fatalf("session %s on c: %v", s, err)
