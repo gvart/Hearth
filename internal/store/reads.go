@@ -71,6 +71,9 @@ func ReadsOf(cmd Command) []Read {
 	case DeleteSession:
 		// A missing copy writes no tombstone: the session stays valid.
 		return []Read{key("sessions", c.Hash)}
+	case SetPasswordHash:
+		// Every session ends: one this master missed would stay valid.
+		return []Read{{Table: "sessions", Where: `1 = 1`}}
 	case CreateMCPToken:
 		// Its name is the key: a missed token would be replaced, not
 		// refused as existing.

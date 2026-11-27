@@ -290,6 +290,9 @@ func (n *APNode) Bind(ctx context.Context, st *store.Store) error {
 			"hearth version or a newer one", supported, h)
 	}
 	n.schema.bind(supported)
+	if err := n.placeMasterRows(ctx, st); err != nil {
+		return err
+	}
 	n.st = st
 	// Before any peer is checked: during a rotation only pinned
 	// certificates of the old CA pass.

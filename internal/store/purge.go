@@ -16,13 +16,43 @@ import (
 // elsewhere may be gone, so copying them back could revive deleted rows.
 // It returns how many rows it deleted.
 func (s *Store) DropShardRows(ctx context.Context) (n int, err error) {
-	here, err := s.TablesHere(ctx)
+	n, err = s.dropRows(ctx, func(table string) bool { return table != auditTable && !globalTables[table] })
 	if err != nil {
 		return 0, fmt.Errorf("drop shard rows: %w", err)
 	}
+	return n, nil
+}
+
+// DropMasterRows deletes from this member's own database, and from its
+// digests, every row of the master tables named, of every master table if
+// none is, tombstones included (#384). Nothing is replicated. A member that
+// holds no hub CA key, a storage-only member or a demoted master, holds none
+// of their rows. It returns how many rows it deleted.
+func (s *Store) DropMasterRows(ctx context.Context, tables ...string) (n int, err error) {
+	for _, t := range tables {
+		if !masterTables[t] {
+			return 0, fmt.Errorf("drop master rows: %s is no master table", t)
+		}
+	}
+	n, err = s.dropRows(ctx, func(table string) bool {
+		return masterTables[table] && (len(tables) == 0 || slices.Contains(tables, table))
+	})
+	if err != nil {
+		return 0, fmt.Errorf("drop master rows: %w", err)
+	}
+	return n, nil
+}
+
+// dropRows deletes from this member's own database the rows of the tables
+// drop accepts, tombstones included, and takes them out of the digests.
+func (s *Store) dropRows(ctx context.Context, drop func(table string) bool) (n int, err error) {
+	here, err := s.TablesHere(ctx)
+	if err != nil {
+		return 0, err
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return 0, fmt.Errorf("drop shard rows: %w", err)
+		return 0, err
 	}
 	defer func() {
 		if err != nil {
@@ -32,7 +62,7 @@ func (s *Store) DropShardRows(ctx context.Context) (n int, err error) {
 	dt := s.newDigestTx()
 	// Children before their parents.
 	for _, table := range slices.Backward(here) {
-		if table == auditTable || globalTables[table] {
+		if !drop(table) {
 			continue
 		}
 		var keys [][]any
@@ -41,23 +71,23 @@ func (s *Store) DropShardRows(ctx context.Context) (n int, err error) {
 			return nil
 		})
 		if err != nil {
-			return n, fmt.Errorf("drop shard rows of %s: %w", table, err)
+			return n, fmt.Errorf("%s: %w", table, err)
 		}
 		for _, key := range keys {
 			m, ok, err := s.readRow(ctx, tx, RowRef{Table: table, Key: key})
 			if err != nil {
-				return n, fmt.Errorf("drop shard rows of %s: %w", table, err)
+				return n, fmt.Errorf("%s: %w", table, err)
 			}
 			if !ok {
 				continue // deleted with its parent
 			}
 			st, _, err := dt.state(ctx, tx, table, key)
 			if err != nil {
-				return n, fmt.Errorf("drop shard rows of %s: %w", table, err)
+				return n, fmt.Errorf("%s: %w", table, err)
 			}
 			// Identifiers are constants of the tables spec.
 			if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE `+pkWhere(keyCols(table)), key...); err != nil { //nolint:gosec // table and columns from the store's own list
-				return n, fmt.Errorf("drop shard rows of %s: %w", table, err)
+				return n, fmt.Errorf("%s: %w", table, err)
 			}
 			if err := dt.dropped(table, key, st, m.Row); err != nil {
 				return n, err
@@ -66,7 +96,7 @@ func (s *Store) DropShardRows(ctx context.Context) (n int, err error) {
 		}
 	}
 	if err := tx.Commit(); err != nil {
-		return 0, fmt.Errorf("drop shard rows: %w", err)
+		return 0, err
 	}
 	dt.commit()
 	return n, nil

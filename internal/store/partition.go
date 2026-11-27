@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -24,7 +26,9 @@ import (
 // entry's operation (so an action's entry and its outcome stay together),
 // and otherwise the primary key. Small tables that every member needs, and
 // tables whose commands read all their rows, are global: every storage
-// member holds all of them.
+// member holds all of them. The global tables whose rows grant access (sign-in
+// sessions, MCP and dashboard tokens, shared panels and their links) are
+// master tables: only masters hold them (#384).
 
 // ShardBuckets is the number of digest buckets of the sharded rows, and of
 // the positions on the hash ring: a row's bucket is the top 16 bits of the
@@ -37,20 +41,15 @@ const GlobalBuckets = 1 << 8
 
 // partitionCols are the partition key columns of the sharded tables.
 var partitionCols = map[string]string{
-	"devices":          "id",
-	"certs":            "device_id",
-	"tokens":           "hash",
-	"sessions":         "hash",
-	"join_tokens":      "hash",
-	"automation_runs":  "automation_id",
-	"approvals":        "id",
-	"approval_links":   "hash",
-	"mcp_tokens":       "name",
-	"runbook_runs":     "runbook_id",
-	"panels":           "id",
-	"panel_links":      "panel_id",
-	"dashboard_tokens": "id",
-	"device_routes":    "device_id",
+	"devices":         "id",
+	"certs":           "device_id",
+	"tokens":          "hash",
+	"join_tokens":     "hash",
+	"automation_runs": "automation_id",
+	"approvals":       "id",
+	"approval_links":  "hash",
+	"runbook_runs":    "runbook_id",
+	"device_routes":   "device_id",
 }
 
 // globalTables are replicated to every storage member.
@@ -74,6 +73,26 @@ var globalTables = map[string]bool{
 	"device_ceilings": true,
 	"network_hosts":   true,
 	"config_docs":     true, // item 5 (ap-config): every member serves the configuration
+	// The master tables (#384).
+	"sessions":         true,
+	"mcp_tokens":       true,
+	"dashboard_tokens": true,
+	"panels":           true,
+	"panel_links":      true,
+}
+
+// masterTables are the global tables only masters hold (#384): their rows
+// grant access (a sign-in, an MCP or dashboard token, a panel's share link,
+// and the panel it shows), so a storage-only member, which could forge a row
+// it holds or answer a read of one as it likes, neither holds nor serves
+// them. Masters write them, replicate them to each other only, and read them
+// on their own copy.
+var masterTables = map[string]bool{
+	"sessions":         true,
+	"mcp_tokens":       true,
+	"dashboard_tokens": true,
+	"panels":           true,
+	"panel_links":      true,
 }
 
 // criticalTables are written with W = min(2, N) acknowledgements.
@@ -96,8 +115,16 @@ var criticalTables = map[string]bool{
 	"device_ceilings":  true,
 }
 
-// GlobalTable reports whether table is replicated to every storage member.
+// GlobalTable reports whether table is global: only masters write its rows.
+// A master table is global too.
 func GlobalTable(table string) bool { return globalTables[table] }
+
+// MasterTable reports whether table is a master table: only masters hold
+// it.
+func MasterTable(table string) bool { return masterTables[table] }
+
+// MasterTables are the master tables, sorted.
+func MasterTables() []string { return slices.Sorted(maps.Keys(masterTables)) }
 
 // CriticalTable reports whether writes to table wait for W = min(2, N)
 // replicas.
@@ -129,10 +156,12 @@ var tableRank = func() map[string]int {
 // it to merge parents first.
 func TableRank(table string) int { return tableRank[table] }
 
-// Placement is where a row lives: on every storage member (Global), or on
-// the replicas of its partition Key.
+// Placement is where a row lives: on every storage member and master
+// (Global), on every master only (Global and Master), or on the replicas of
+// its partition Key.
 type Placement struct {
 	Global bool
+	Master bool
 	Key    string
 }
 
@@ -163,6 +192,9 @@ func keyString(v any) string {
 
 // PlacementOf returns where the row of table with columns r lives.
 func PlacementOf(table string, r map[string]any) (Placement, error) {
+	if masterTables[table] {
+		return Placement{Global: true, Master: true}, nil
+	}
 	if globalTables[table] {
 		return Placement{Global: true}, nil
 	}
@@ -252,8 +284,9 @@ const (
 	// RouteKey runs the command on one replica of Route.Key, which copies
 	// the rows it wrote to the other replicas.
 	RouteKey RouteKind = iota
-	// RouteGlobal runs the command on one storage member, which copies the
-	// rows it wrote to every other: it writes global tables only.
+	// RouteGlobal runs the command on this member, a master, which copies
+	// the rows it wrote to every other member holding them: it writes global
+	// tables only.
 	RouteGlobal
 	// RouteEvery runs the command on every storage member, each on the rows
 	// it holds; their results merge with MergeResults.
@@ -279,6 +312,9 @@ type Route struct {
 	// key, even on a member that is another replica: of two such commands
 	// that read and write one row, one replica runs both, in turn.
 	First bool
+	// Master commands of a RouteGlobal write master tables: the masters
+	// are their replicas, and the rows they read are read on masters only.
+	Master bool
 }
 
 // ErrNoRoute refuses a command that has no place in a sharded cluster.
@@ -293,6 +329,9 @@ func RouteOf(cmd Command) (Route, error) {
 		return Route{Kind: RouteKey, Key: k, Critical: critical}, nil
 	}
 	global := func(critical bool) (Route, error) { return Route{Kind: RouteGlobal, Critical: critical}, nil }
+	master := func(critical bool) (Route, error) {
+		return Route{Kind: RouteGlobal, Critical: critical, Master: true}, nil
+	}
 	switch c := cmd.(type) {
 	case UpsertDevice:
 		return key(c.ID, false)
@@ -315,9 +354,9 @@ func RouteOf(cmd Command) (Route, error) {
 	case RecordHubCert, RevokeHubCerts, PutConfigDocs, DeleteConfigDoc:
 		return global(true)
 	case SetPasswordHash:
-		// It ends every session, and each storage member holds only its
-		// share of them: each ends the ones it holds.
-		return Route{Kind: RouteEvery, Critical: true}, nil
+		// It ends every session: the masters hold them, and the master that
+		// runs it reads first every session the other live masters hold.
+		return master(true)
 	case StartCARotation, AdvanceCARotation:
 		return global(true)
 	case RevokeCACerts:
@@ -352,18 +391,8 @@ func RouteOf(cmd Command) (Route, error) {
 		return key(auditPartition(c.row("")), true)
 	case AppendAuditOnce:
 		return key(auditPartition(c.row(c.Key)), true)
-	case CreateSession:
-		return key(keyString(c.Hash), true)
-	case DeleteSession:
-		return key(keyString(c.Hash), true)
-	case CreateDashboardToken:
-		return key(c.ID, true)
-	case RevokeDashboardToken:
-		return key(c.ID, true)
-	case CreateMCPToken:
-		return key(c.Name, true)
-	case RevokeMCPToken:
-		return key(c.Name, true)
+	case CreateSession, DeleteSession, CreateDashboardToken, RevokeDashboardToken, CreateMCPToken, RevokeMCPToken:
+		return master(true)
 	case CreateApproval:
 		return key(c.ID, true)
 	case DecideApproval:
@@ -372,16 +401,10 @@ func RouteOf(cmd Command) (Route, error) {
 		return key(keyString(c.Hash), true)
 	case UseApprovalLink:
 		return key(keyString(c.Hash), true)
-	case CreatePanel:
-		return key(c.ID, false)
-	case UpdatePanel:
-		return key(c.ID, false)
-	case DeletePanel:
-		return key(c.ID, false)
-	case CreatePanelLink:
-		return key(c.PanelID, true)
-	case RevokePanelLink:
-		return key(c.PanelID, true)
+	case CreatePanel, UpdatePanel, DeletePanel:
+		return master(false)
+	case CreatePanelLink, RevokePanelLink:
+		return master(true)
 	case RecordAutomationRun:
 		return key(c.AutomationID, false)
 	case CreateRunbookRun:

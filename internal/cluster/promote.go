@@ -363,6 +363,9 @@ func (n *APNode) applyRoleChange(ctx context.Context, req roleRequest) (string, 
 			return "", err
 		}
 		n.log.InfoContext(ctx, "promoted to master")
+		// The rows only masters hold (#384): from the other masters, once
+		// they take this member for one.
+		n.rep.enqueue(n.rep.pullMasterRows, nil)
 		return RoleDone, nil
 	case req.Role == RoleStorage:
 		if lr.Draining {
@@ -394,6 +397,10 @@ func (n *APNode) applyRoleChange(ctx context.Context, req roleRequest) (string, 
 			n.log.ErrorContext(ctx, "delete the CA key of a demoted master", "err", err)
 			return "", fmt.Errorf("demoted from master, but the CA key could not be deleted: delete %s by hand: %w",
 				filepath.Join(n.cfg.DataDir, pki.CAKeyFile), err)
+		}
+		// The other masters hold them now (pushGlobals).
+		if err := n.dropMasterRows(ctx); err != nil {
+			return "", fmt.Errorf("demoted from master, but the rows only masters hold could not be deleted: %w", err)
 		}
 		n.log.InfoContext(ctx, "demoted from master: CA key deleted, agents move to the other masters",
 			"tokens_spent", closed.Tokens, "join_tokens_spent", closed.JoinTokens, "approvals_expired", closed.Approvals)

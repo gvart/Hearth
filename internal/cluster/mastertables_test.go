@@ -1,0 +1,354 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package cluster
+
+import (
+	"crypto/sha256"
+	"errors"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/gvart/hearth/internal/hlc"
+	"github.com/gvart/hearth/internal/store"
+	"github.com/gvart/hearth/internal/store/storetest"
+)
+
+// The secrets of the rows forgeGrants writes.
+const (
+	forgedSession = "forged-session"
+	forgedMCP     = "forged-mcp-token"
+	forgedDash    = "forged-dashboard-token"
+	forgedLink    = "forged-panel-link"
+)
+
+func secretHash(s string) []byte {
+	h := sha256.Sum256([]byte(s))
+	return h[:]
+}
+
+// forgeGrants writes, on mem's own database only, a sign-in session, an MCP
+// token, a dashboard token, a panel and its share link, stamped as if
+// master m wrote them, and returns their rows: what a compromised storage
+// member would send, or answer with.
+func forgeGrants(t *testing.T, mem *apMember) []store.Mutation {
+	t.Helper()
+	now := time.Now()
+	ms := now.UnixMilli()
+	st := func(i int) store.Stamp { return store.Stamp{HLC: hlc.New(now) + hlc.Timestamp(i), Origin: "m"} }
+	var out []store.Mutation
+	for _, cmd := range []store.Command{
+		store.CreateSession{Stamp: st(0), Hash: secretHash(forgedSession), Now: ms, ExpiresAt: ms + time.Hour.Milliseconds()},
+		store.CreateMCPToken{Stamp: st(1), Name: "evil", Hash: secretHash(forgedMCP), Scope: "write", CreatedAt: ms},
+		store.CreateDashboardToken{Stamp: st(2), ID: "evil", Name: "evil", Hash: secretHash(forgedDash), CreatedAt: ms},
+		store.CreatePanel{Stamp: st(3), ID: "evil", Name: "evil", Widgets: "[]", At: ms},
+		store.CreatePanelLink{Stamp: st(4), ID: "evil", PanelID: "evil", Hash: secretHash(forgedLink), CreatedAt: ms},
+	} {
+		_, muts, err := mem.st.ApplyLocalMutations(t.Context(), cmd)
+		if err != nil {
+			t.Fatalf("forge %s: %v", cmd.Op(), err)
+		}
+		out = append(out, muts...)
+	}
+	for _, m := range out {
+		if !store.MasterTable(m.Table) {
+			t.Fatalf("forged a row of %s, not a master table", m.Table)
+		}
+	}
+	return out
+}
+
+// masterRowCount counts the rows of the master tables in st's own
+// database, tombstones included.
+func masterRowCount(t *testing.T, st *store.Store) int {
+	t.Helper()
+	n := 0
+	for _, table := range store.MasterTables() {
+		rows, err := st.ReadLocal(t.Context(), `SELECT COUNT(*) FROM `+table, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c, _ := rows.Vals[0][0].(int64)
+		n += int(c)
+	}
+	return n
+}
+
+// grantsRefused fails unless none of the forged secrets grants anything on
+// st: the session, the MCP and dashboard tokens and the panel link.
+func grantsRefused(t *testing.T, who string, st *store.Store) {
+	t.Helper()
+	ctx, now := t.Context(), time.Now()
+	if _, err := st.Admin().CheckSession(ctx, forgedSession, now); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("%s: forged session: %v, want not found", who, err)
+	}
+	if _, err := st.MCPTokens().Check(ctx, forgedMCP); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("%s: forged MCP token: %v, want not found", who, err)
+	}
+	if _, err := st.DashboardTokens().Check(ctx, forgedDash, now); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("%s: forged dashboard token: %v, want not found", who, err)
+	}
+	if _, _, err := st.Panels().CheckLink(ctx, forgedLink, now); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("%s: forged panel link: %v, want not found", who, err)
+	}
+}
+
+// makeGrants writes, on master mem through its store, a session, an MCP and
+// a dashboard token, a panel and a share link.
+func makeGrants(t *testing.T, mem *apMember) {
+	t.Helper()
+	ctx, now := t.Context(), time.Now()
+	if err := mem.st.Admin().CreateSession(ctx, "real-session", now, now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.st.MCPTokens().Create(ctx, "real", "real-mcp", "write", now); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.st.DashboardTokens().Create(ctx, store.DashboardToken{ID: "real", Name: "real", CreatedAt: now}, "real-dash"); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.st.Panels().Create(ctx, store.Panel{ID: "real", Name: "real", Widgets: "[]", CreatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.st.Panels().CreateLink(ctx, store.PanelLink{ID: "real", PanelID: "real", CreatedAt: now}, "real-link"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestMasterRowsStayOnMasters: the rows only masters hold, written on a
+// master, reach no storage-only member, by the write's copies or by
+// anti-entropy, though both say on the gossip that they are masters; the
+// master's critical writes of them still succeed, and it reads them on its
+// own copy.
+func TestMasterRowsStayOnMasters(t *testing.T) {
+	an := newGateNet(t)
+	ctx := t.Context()
+	makeGrants(t, an.m("m"))
+	for _, p := range [][2]string{{"m", "s"}, {"m", "s2"}, {"s", "m"}, {"s2", "m"}} {
+		if err := an.m(p[0]).rep.SyncWith(ctx, p[1]); err != nil {
+			t.Fatalf("anti-entropy of %s with %s: %v", p[0], p[1], err)
+		}
+	}
+	an.m("m").rep.deliverHints(ctx)
+	for _, id := range []string{"s", "s2"} {
+		if n := masterRowCount(t, an.m(id).st); n != 0 {
+			t.Fatalf("storage-only %s holds %d master rows", id, n)
+		}
+		if n, err := an.m("m").hints.Count(ctx, id); err != nil || n != 0 {
+			t.Fatalf("hints for %s: %d, %v", id, n, err)
+		}
+	}
+	m := an.m("m").st
+	if _, err := m.Admin().CheckSession(ctx, "real-session", time.Now()); err != nil {
+		t.Fatalf("the master's session: %v", err)
+	}
+	if _, err := m.MCPTokens().Check(ctx, "real-mcp"); err != nil {
+		t.Fatalf("the master's MCP token: %v", err)
+	}
+	if _, err := m.DashboardTokens().Check(ctx, "real-dash", time.Now()); err != nil {
+		t.Fatalf("the master's dashboard token: %v", err)
+	}
+	if _, _, err := m.Panels().CheckLink(ctx, "real-link", time.Now()); err != nil {
+		t.Fatalf("the master's panel link: %v", err)
+	}
+	// A master off the ring, the only one: every master row is its alone,
+	// and its writes still succeed.
+	an.mu.Lock()
+	an.roles["m"] = masterOnly
+	an.mu.Unlock()
+	an.m("m").rep.SetLocal(false, false)
+	if err := m.Admin().DeleteSession(ctx, "real-session"); err != nil {
+		t.Fatalf("sign out on a master off the ring: %v", err)
+	}
+}
+
+// TestForgedMasterRowsRefused: rows of the master tables a storage-only
+// member forged never reach a master, nor another storage member, by any
+// path, and a master never asks a storage member for them: a merge, a
+// command to coordinate, a hint, anti-entropy (also of the master rows'
+// own digests), a fetch, a read, a read repair, a revocation, a backup.
+func TestForgedMasterRowsRefused(t *testing.T) {
+	an := newGateNet(t)
+	ctx := t.Context()
+	forged := forgeGrants(t, an.m("s"))
+	refs := []store.RowRef{
+		{Table: "sessions", Key: store.Values{secretHash(forgedSession)}},
+		{Table: "mcp_tokens", Key: store.Values{"evil"}},
+		{Table: "dashboard_tokens", Key: store.Values{"evil"}},
+		{Table: "panels", Key: store.Values{"evil"}},
+		{Table: "panel_links", Key: store.Values{"evil"}},
+	}
+	if got, err := an.m("s").st.ReadRows(ctx, refs); err != nil || len(got) != len(refs) {
+		t.Fatalf("the forged rows on s: %d, %v", len(got), err)
+	}
+
+	// A merge (a write's copy, a hand-off and a read repair arrive so): m
+	// refuses it. s2 does too, sent past the check of s's own calls, which
+	// send master rows to no member that did not prove the key.
+	if _, err := an.m("s").rep.call(ctx, "m", apRequest{Op: opMerge, Muts: forged}); !errors.Is(err, errNotMaster) {
+		t.Fatalf("merge of forged master rows into m: %v, want errNotMaster", err)
+	}
+	if resp := an.m("s2").rep.handle(ctx, "s", false, apRequest{Op: opMerge, Muts: forged}); resp.Error == nil ||
+		!errors.Is(apError(resp.Error), errNotMaster) {
+		t.Fatalf("merge of forged master rows into s2: %+v, want errNotMaster", resp.Error)
+	}
+	if _, err := an.m("s").rep.call(ctx, "s2", apRequest{Op: opMerge, Muts: forged}); err != nil {
+		t.Fatalf("merge into s2 through s's calls: %v, want nothing sent", err)
+	}
+	// A command to coordinate.
+	b, err := store.EncodeCommand(store.CreateSession{Hash: secretHash(forgedSession), Now: 1, ExpiresAt: 1 << 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := an.m("s").rep.call(ctx, "m", apRequest{Op: opApply, Cmd: b}); !errors.Is(err, errNotMaster) {
+		t.Fatalf("a session for m to coordinate: %v, want errNotMaster", err)
+	}
+	// Its own store writes none either.
+	if err := an.m("s").st.Admin().CreateSession(ctx, "s-session", time.Now(), time.Now().Add(time.Hour)); !errors.Is(err, errNotMaster) {
+		t.Fatalf("a sign-in on a storage member: %v, want errNotMaster", err)
+	}
+	// A hint.
+	if err := an.m("s").hints.Add("m", forged); err != nil {
+		t.Fatal(err)
+	}
+	an.m("s").rep.deliverHints(ctx)
+	// Anti-entropy, both ways and through a promotion's catch-up.
+	for _, p := range [][2]string{{"m", "s"}, {"s", "m"}, {"s2", "s"}, {"s", "s2"}} {
+		if err := an.m(p[0]).rep.SyncWith(ctx, p[1]); err != nil {
+			t.Fatalf("anti-entropy of %s with %s: %v", p[0], p[1], err)
+		}
+	}
+	an.m("s2").rep.SetLocal(true, true)
+	an.m("s2").rep.CatchUp(ctx)
+	// The master rows' digests are compared with masters only.
+	all := []bucketRange{{0, store.GlobalBuckets}}
+	for _, op := range []string{opTree, opLeaves} {
+		if _, err := an.m("s").rep.call(ctx, "m", apRequest{Op: op, Space: store.SpaceMaster, Ranges: all}); !errors.Is(err, errNotMaster) {
+			t.Fatalf("%s of the master rows from s: %v, want errNotMaster", op, err)
+		}
+	}
+	if err := an.m("m").rep.syncSpace(ctx, "s", store.SpaceMaster, all, false); err != nil {
+		t.Fatalf("a sync of the master rows with s: %v", err)
+	}
+	// A fetch, a read repair and a revocation naming s as the writer.
+	if ms, err := an.m("m").rep.fetch(ctx, "s", refs); err != nil || len(ms) != 0 {
+		t.Fatalf("fetch from s: %d rows, %v; want none", len(ms), err)
+	}
+	if err := an.m("m").rep.repair(ctx, refs); err != nil {
+		t.Fatal(err)
+	}
+	if err := an.m("m").rep.takeRevocation(ctx, revocationMsg{Kind: msgRevoked, From: "s", Refs: refs}); err != nil {
+		t.Fatal(err)
+	}
+	// A backup.
+	dst := storetest.Open(t, store.WithDigest())
+	if err := an.m("m").rep.PullAll(ctx, dst); err != nil {
+		t.Fatalf("backup: %v", err)
+	}
+	if n := masterRowCount(t, dst); n != 0 {
+		t.Fatalf("the backup took %d forged master rows", n)
+	}
+
+	for _, id := range []string{"m", "s2"} {
+		if n := masterRowCount(t, an.m(id).st); n != 0 {
+			t.Fatalf("%s took %d forged master rows", id, n)
+		}
+	}
+	// The master checks every grant on its own copy: s, which holds the
+	// forged rows, is not asked.
+	grantsRefused(t, "m", an.m("m").st)
+
+	// Nor does a master serve its master rows to s: not by a fetch, a read
+	// naming them, however spelled, or the master rows' digests.
+	makeGrants(t, an.m("m"))
+	real := []store.RowRef{{Table: "sessions", Key: store.Values{secretHash("real-session")}}}
+	if mine, err := an.m("m").st.ReadRows(ctx, real); err != nil || len(mine) != 1 {
+		t.Fatalf("m's session: %v, %v", mine, err)
+	}
+	resp, err := an.m("s").rep.call(ctx, "m", apRequest{Op: opFetch, Refs: real})
+	if err != nil || len(resp.Muts) != 0 {
+		t.Fatalf("s fetched %d of m's master rows, %v; want none", len(resp.Muts), err)
+	}
+	for _, q := range []string{`SELECT hash FROM sessions`, `SELECT * FROM "MCP_Tokens"`, `SELECT id FROM [panel_links]`} {
+		if _, err := an.m("s").rep.call(ctx, "m", apRequest{Op: opRead, Query: q}); !errors.Is(err, errNotMaster) {
+			t.Fatalf("s read %q on m: %v, want errNotMaster", q, err)
+		}
+	}
+	if _, err := an.m("s").rep.call(ctx, "m", apRequest{Op: opRows, Space: store.SpaceMaster, Buckets: []int{0}}); !errors.Is(err, errNotMaster) {
+		t.Fatalf("s read the master rows' digests on m: %v, want errNotMaster", err)
+	}
+}
+
+// TestKeylessMemberHoldsNoMasterRows: a member without the hub CA key drops
+// master rows it is sent, even by a master (one that took it for a master
+// on the gossip).
+func TestKeylessMemberHoldsNoMasterRows(t *testing.T) {
+	an := newGateNet(t)
+	ctx := t.Context()
+	makeGrants(t, an.m("m"))
+	rows, err := an.m("m").st.ReadRows(ctx, []store.RowRef{{Table: "sessions", Key: store.Values{secretHash("real-session")}}})
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("m's session: %v, %v", rows, err)
+	}
+	if resp := an.m("s").rep.handle(ctx, "m", true, apRequest{Op: opMerge, Muts: rows}); resp.Error != nil {
+		t.Fatal(resp.Error)
+	}
+	if n := masterRowCount(t, an.m("s").st); n != 0 {
+		t.Fatalf("keyless s took %d master rows from a master", n)
+	}
+}
+
+// TestPlaceMasterRows: as its store is bound, a member without the hub CA
+// key deletes every master row; a member of a cluster that first runs this
+// version deletes the sessions, MCP and dashboard tokens and panel links it
+// held (a copy may be stale: it missed a revocation that only storage-only
+// members held), keeps the panels, and does it once; a hub that never had
+// another member keeps them all.
+func TestPlaceMasterRows(t *testing.T) {
+	ctx := t.Context()
+	cases := []struct {
+		name      string
+		key       bool
+		seeds     []string
+		want      int // master rows left: makeGrants writes five
+		wantAgain int // after a session and a second start
+	}{
+		{"single hub", true, nil, 5, 6},
+		{"master of a cluster", true, []string{"127.0.0.1:1"}, 1, 2},
+		{"storage-only member", false, []string{"127.0.0.1:1"}, 0, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(dir, StateDir), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			ca := newTestCA(t)
+			if !tc.key {
+				if err := ca.DropKey(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			n := &APNode{cfg: APConfig{DataDir: dir, CA: ca, Seeds: tc.seeds}, log: testLogger(t)}
+			st := storetest.Open(t, store.WithDigest())
+			makeGrants(t, &apMember{id: "a", st: st})
+			if err := n.placeMasterRows(ctx, st); err != nil {
+				t.Fatal(err)
+			}
+			if got := masterRowCount(t, st); got != tc.want {
+				t.Fatalf("master rows left: %d, want %d", got, tc.want)
+			}
+			now := time.Now()
+			if err := st.Admin().CreateSession(ctx, "later", now, now.Add(time.Hour)); err != nil {
+				t.Fatal(err)
+			}
+			if err := n.placeMasterRows(ctx, st); err != nil {
+				t.Fatal(err)
+			}
+			if got := masterRowCount(t, st); got != tc.wantAgain {
+				t.Fatalf("master rows left after a second start: %d, want %d", got, tc.wantAgain)
+			}
+		})
+	}
+}

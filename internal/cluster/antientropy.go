@@ -65,7 +65,7 @@ func bucketsOf(ranges []bucketRange) []int {
 
 // checkRanges refuses ranges outside sp.
 func checkRanges(sp store.Space, ranges []bucketRange) error {
-	if sp != store.SpaceShard && sp != store.SpaceGlobal {
+	if !sp.Valid() {
 		return fmt.Errorf("unknown digest space %d", sp)
 	}
 	for _, rg := range ranges {
@@ -258,13 +258,27 @@ func (r *Replicator) SyncGlobal(ctx context.Context, peer string) error {
 }
 
 // syncGlobal is SyncGlobal, and reports whether peer proved it holds the
-// hub CA key: whether the rows were compared with a master's.
+// hub CA key: whether the rows were compared with a master's. Between two
+// masters it compares the master tables' rows too.
 func (r *Replicator) syncGlobal(ctx context.Context, peer string) (bool, error) {
 	proved, err := r.syncSpaceProved(ctx, r.store(), peer, store.SpaceGlobal, []bucketRange{{0, store.GlobalBuckets}}, false)
+	if err == nil && proved {
+		err = r.syncMasterRows(ctx, r.store(), peer, false)
+	}
 	if err == nil && proved {
 		r.masterSynced.Store(true)
 	}
 	return proved, err
+}
+
+// syncMasterRows compares the master tables' rows of st with peer's, if
+// both are masters that proved the hub CA key: they are compared with no
+// other member (replauth.go).
+func (r *Replicator) syncMasterRows(ctx context.Context, st *store.Store, peer string, pullOnly bool) error {
+	if !r.holdsKey() || !r.saysMaster(peer) || !r.provedLast(peer) {
+		return nil
+	}
+	return r.syncSpaceOf(ctx, st, peer, store.SpaceMaster, []bucketRange{{0, store.GlobalBuckets}}, pullOnly)
 }
 
 // SyncedWithAMaster reports whether this member compared the global rows
@@ -404,10 +418,15 @@ func (r *Replicator) syncSpaceProved(ctx context.Context, st *store.Store, peer 
 	}
 	// Global rows go from masters only (replauth.go): none is taken from a
 	// peer that did not prove it holds the hub CA key, and a member that
-	// holds none sends none.
+	// holds none sends none. The master tables' rows go between masters
+	// only.
+	global := sp == store.SpaceGlobal || sp == store.SpaceMaster
 	pullGlobal, pushGlobal := resp.fromMaster, r.holdsKey()
-	proved = sp == store.SpaceGlobal && resp.fromMaster
-	if sp == store.SpaceGlobal && !pullGlobal && (!pushGlobal || pullOnly) {
+	if sp == store.SpaceMaster && !(pullGlobal && pushGlobal) {
+		return false, nil
+	}
+	proved = global && resp.fromMaster
+	if global && !pullGlobal && (!pushGlobal || pullOnly) {
 		return proved, nil
 	}
 	mine := chunkHashes(st, sp, cs)
@@ -451,10 +470,10 @@ func (r *Replicator) syncSpaceProved(ctx context.Context, st *store.Store, peer 
 		return false, err
 	}
 	pull, push := diffRows(ours, resp.Digests)
-	if pullOnly || (sp == store.SpaceGlobal && !pushGlobal) {
+	if pullOnly || (global && !pushGlobal) {
 		push = nil
 	}
-	if sp == store.SpaceGlobal && !pullGlobal {
+	if global && !pullGlobal {
 		pull = nil
 	}
 	cutoff := hlc.New(r.cfg.Now().Add(-store.TombstoneTTL))

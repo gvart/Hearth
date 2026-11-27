@@ -19,7 +19,6 @@ var readsExempt = map[string]string{ //nolint:gosec // op names and reasons, no 
 	"mark_devices_offline":   "presence is soft: last writer wins",
 	"set_hub_url":            "soft: each hub writes its own row",
 	"record_hub_cert":        "only fills in missing values; revoked_at is set-once",
-	"set_password_hash":      "runs on every storage member, each ending the sessions it holds",
 	"create_session":         "reads only to prune expired sessions",
 	"record_automation_run":  "reads only to prune old runs",
 	"record_network_scan":    "discovery state is soft: last writer wins",

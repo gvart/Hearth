@@ -340,8 +340,13 @@ func (s *Store) queryAll(ctx context.Context, g gather, query string, args ...an
 
 // list runs `sel + rest`, a query of g.table's rows (sel the SELECT list,
 // rest from FROM on): with key set, all of partition key, as queryKey;
-// without, as queryAll, merged by g.
+// without, as queryAll, merged by g. A global table, which this member
+// holds whole, is read here: a master table's rows are never read on
+// another member (#384).
 func (s *Store) list(ctx context.Context, key string, g gather, sel, rest string, args ...any) (rowIter, error) {
+	if globalTables[g.table] {
+		return s.db.QueryContext(ctx, sel+rest, args...)
+	}
 	if key != "" {
 		return s.queryKey(ctx, key, sel+rest, args...)
 	}

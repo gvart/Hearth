@@ -28,33 +28,52 @@ import (
 //
 // Sharded rows fall in ShardBuckets buckets by the token of their partition
 // key, the unit the hash ring places; global rows in GlobalBuckets buckets
-// by the token of their table and key.
+// by the token of their table and key, the rows of the master tables in a
+// space of their own, which only masters compare.
 
-// Space is a digest space: the sharded rows or the global ones.
+// Space is a digest space: the sharded rows, the global ones, or those of
+// the master tables.
 type Space int
 
 // The digest spaces.
 const (
 	SpaceShard Space = iota
 	SpaceGlobal
+	SpaceMaster
 )
 
 // Buckets is the number of buckets of sp.
 func (sp Space) Buckets() int {
-	if sp == SpaceGlobal {
+	if sp == SpaceGlobal || sp == SpaceMaster {
 		return GlobalBuckets
 	}
 	return ShardBuckets
 }
 
+// Valid reports whether sp is a digest space.
+func (sp Space) Valid() bool { return sp >= SpaceShard && sp <= SpaceMaster }
+
+// spaceOf is the digest space of table's rows.
+func spaceOf(table string) Space {
+	switch {
+	case masterTables[table]:
+		return SpaceMaster
+	case globalTables[table]:
+		return SpaceGlobal
+	}
+	return SpaceShard
+}
+
 // digest holds the bucket digests.
 type digest struct {
 	mu    sync.Mutex
-	space [2][]uint64
+	space [3][]uint64
 }
 
 func newDigest() *digest {
-	return &digest{space: [2][]uint64{make([]uint64, ShardBuckets), make([]uint64, GlobalBuckets)}}
+	return &digest{space: [3][]uint64{
+		make([]uint64, ShardBuckets), make([]uint64, GlobalBuckets), make([]uint64, GlobalBuckets),
+	}}
 }
 
 // rowState is what a row's hash covers besides its table and key.
@@ -109,7 +128,11 @@ func placeRow(table, pk string, r map[string]any) (Space, int, error) {
 		return 0, 0, err
 	}
 	if p.Global {
-		return SpaceGlobal, int(Token(table+"\x00"+pk) >> 56), nil
+		sp := SpaceGlobal
+		if p.Master {
+			sp = SpaceMaster
+		}
+		return sp, int(Token(table+"\x00"+pk) >> 56), nil
 	}
 	return SpaceShard, BucketOf(Token(p.Key)), nil
 }
@@ -310,7 +333,7 @@ func (s *Store) BucketRows(ctx context.Context, sp Space, want func(bucket int) 
 		return nil, err
 	}
 	for _, table := range here {
-		if (sp == SpaceGlobal) != globalTables[table] {
+		if spaceOf(table) != sp {
 			continue
 		}
 		err := scanDigests(ctx, s.db, table, func(key []any, rsp Space, b int, st rowState) error {

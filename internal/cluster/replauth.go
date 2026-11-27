@@ -4,6 +4,8 @@ package cluster
 
 import (
 	"net"
+	"slices"
+	"strings"
 
 	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/store"
@@ -137,11 +139,42 @@ func withoutGlobal(ms []store.Mutation) []store.Mutation {
 	if !hasGlobal(ms) {
 		return ms
 	}
-	out := make([]store.Mutation, 0, len(ms))
-	for _, m := range ms {
-		if !store.GlobalTable(m.Table) {
-			out = append(out, m)
-		}
+	return slices.DeleteFunc(slices.Clone(ms), func(m store.Mutation) bool { return store.GlobalTable(m.Table) })
+}
+
+// Master tables (#384).
+//
+// The rows of the master tables (sign-in sessions, MCP and dashboard tokens,
+// panels and their share links) grant access, so only masters hold them: a
+// storage-only member could forge a row it holds, or answer a read of one as
+// it likes. They are global rows, so everything above holds for them; and:
+//
+//   - a master writes them, and sends them only to a peer that proved on the
+//     connection, before they go, that it holds the hub CA key; to any other
+//     they are not sent (call);
+//   - a member that holds no key drops the ones it is sent (merge), and
+//     deletes those it holds when it starts or is demoted;
+//   - a master answers a fetch, a read naming them, or a comparison of their
+//     digests (SpaceMaster), only to a peer that proved the key;
+//   - masters read them on their own copy, never on another member.
+
+// hasMaster reports whether ms holds a row of a master table.
+func hasMaster(ms []store.Mutation) bool {
+	return slices.ContainsFunc(ms, func(m store.Mutation) bool { return store.MasterTable(m.Table) })
+}
+
+// withoutMaster returns ms without its master rows.
+func withoutMaster(ms []store.Mutation) []store.Mutation {
+	if !hasMaster(ms) {
+		return ms
 	}
-	return out
+	return slices.DeleteFunc(slices.Clone(ms), func(m store.Mutation) bool { return store.MasterTable(m.Table) })
+}
+
+// namesMasterTable reports whether query, a read another member sent, names
+// a master table. SQL identifiers are case-insensitive, and however one is
+// quoted it spells the table's name.
+func namesMasterTable(query string) bool {
+	q := strings.ToLower(query)
+	return slices.ContainsFunc(store.MasterTables(), func(t string) bool { return strings.Contains(q, t) })
 }

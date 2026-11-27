@@ -209,7 +209,7 @@ func TestDigestIncremental(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, s := range []*Store{a, b} {
-		for _, sp := range []Space{SpaceShard, SpaceGlobal} {
+		for _, sp := range []Space{SpaceShard, SpaceGlobal, SpaceMaster} {
 			buckets := make([]int, sp.Buckets())
 			for i := range buckets {
 				buckets[i] = i
@@ -223,13 +223,14 @@ func TestDigestIncremental(t *testing.T) {
 			}
 		}
 	}
-	// a dropped its tombstones, b has them: their shard digests differ,
-	// and BucketRows finds the rows of a differing bucket.
-	buckets := make([]int, ShardBuckets)
+	// a dropped its tombstones, b has them: their digests differ (a
+	// session's tombstone is a master row), and BucketRows finds the rows of
+	// a differing bucket.
+	buckets := make([]int, SpaceMaster.Buckets())
 	for i := range buckets {
 		buckets[i] = i
 	}
-	da, db := a.BucketDigests(SpaceShard, buckets), b.BucketDigests(SpaceShard, buckets)
+	da, db := a.BucketDigests(SpaceMaster, buckets), b.BucketDigests(SpaceMaster, buckets)
 	var diff []int
 	for i := range da {
 		if da[i] != db[i] {
@@ -239,7 +240,7 @@ func TestDigestIncremental(t *testing.T) {
 	if len(diff) == 0 {
 		t.Fatal("no bucket differs after a GC on one side")
 	}
-	rows, err := b.BucketRows(ctx, SpaceShard, func(bk int) bool { return slices.Contains(diff, bk) })
+	rows, err := b.BucketRows(ctx, SpaceMaster, func(bk int) bool { return slices.Contains(diff, bk) })
 	if err != nil || len(rows) == 0 {
 		t.Fatalf("BucketRows = %v, %v", rows, err)
 	}
