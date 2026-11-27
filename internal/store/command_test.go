@@ -113,6 +113,8 @@ func allCommands() []Command {
 		RemoveOpenWrtRouter{ID: "o1"},
 		AddOPNsenseFirewall{ID: "f1", Name: "edge", Sealed: []byte{6}, CreatedAt: 40},
 		RemoveOPNsenseFirewall{ID: "f1"},
+		AddUniFiController{ID: "u1", Name: "console", Sealed: []byte{6}, CreatedAt: 41},
+		RemoveUniFiController{ID: "u1"},
 		CreateRunbookRun{
 			ID: "rr1", RunbookID: "rb", Status: "running", StartedBy: "admin/root", StartedAt: 35,
 			Source: []byte("steps: []"), State: `{"step":0}`, Keep: 100,
@@ -446,6 +448,10 @@ func runScenario(t *testing.T, s *Store) {
 	must(s.OPNsenseFirewalls().Add(ctx, OPNsenseFirewall{ID: "f2", Name: "lab", Sealed: []byte{2}, CreatedAt: at(5 * time.Hour)}))
 	must(s.OPNsenseFirewalls().Remove(ctx, "f2"))
 	wantErr(s.OPNsenseFirewalls().Remove(ctx, "f2"), ErrNotFound)
+	must(s.UniFiControllers().Add(ctx, UniFiController{ID: "u1", Name: "console", Sealed: []byte{1}, CreatedAt: at(5 * time.Hour)}))
+	must(s.UniFiControllers().Add(ctx, UniFiController{ID: "u2", Name: "office", Sealed: []byte{2}, CreatedAt: at(5 * time.Hour)}))
+	must(s.UniFiControllers().Remove(ctx, "u2"))
+	wantErr(s.UniFiControllers().Remove(ctx, "u2"), ErrNotFound)
 
 	// A hub CA rotation: started, a second refused, cut over, its secrets
 	// re-sealed (a stale one refused), finished.

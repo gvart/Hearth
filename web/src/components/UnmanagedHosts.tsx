@@ -28,6 +28,7 @@ const sourceLabels: Record<NetworkHostSource, { label: string; title: string }> 
   netalertx: { label: 'NetAlertX', title: 'Known to NetAlertX' },
   openwrt: { label: 'OpenWrt', title: 'A client of an OpenWrt router' },
   opnsense: { label: 'OPNsense', title: 'A client of an OPNsense firewall' },
+  unifi: { label: 'UniFi', title: 'A client of a UniFi site' },
 };
 
 function byIP(a: NetworkHost, b: NetworkHost) {

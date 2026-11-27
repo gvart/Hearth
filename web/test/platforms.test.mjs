@@ -85,3 +85,14 @@ test('an OPNsense firewall is a platform card counting its clients', () => {
   );
   assert.deepEqual(platformOfHash('#/platforms/opnsense/f1'), { kind: 'opnsense', id: 'f1' });
 });
+
+test('a UniFi controller is a platform card counting its devices and clients', () => {
+  const cards = platformCards([], [], [], [], [], [
+    { id: 'u1', name: 'home', url: 'https://192.168.1.1:443', state: 'connected', error: '', devices: 4, clients: 1 },
+  ]);
+  assert.deepEqual(
+    cards.map((c) => [c.name, c.state, c.line, c.hash]),
+    [['home', 'connected', '4 devices · 1 client', '#/platforms/unifi/u1']],
+  );
+  assert.deepEqual(platformOfHash('#/platforms/unifi/u1'), { kind: 'unifi', id: 'u1' });
+});

@@ -159,6 +159,9 @@ var tables = map[string]tableSpec{
 	"opnsense_firewalls": {pk: []string{"id"}, deletable: true, since: opnsenseFirewallsSchema, tombstone: func(r row) {
 		r["connection"], r["name"] = []byte{}, deletedName(r["id"])
 	}},
+	"unifi_controllers": {pk: []string{"id"}, deletable: true, since: unifiControllersSchema, tombstone: func(r row) {
+		r["connection"], r["name"] = []byte{}, deletedName(r["id"])
+	}},
 	"runbook_runs": {pk: []string{"id"}, deletable: true, tombstone: func(r row) {
 		r["source"] = []byte{}
 	}},

@@ -21,6 +21,7 @@ import { ESPHomePage } from './ESPHomePage.tsx';
 import { OpenWrtPage } from './OpenWrtPage.tsx';
 import { OPNsensePage } from './OPNsensePage.tsx';
 import { ProxmoxPage } from './ProxmoxPage.tsx';
+import { UniFiPage } from './UniFiPage.tsx';
 import { ReauthHost } from './ReauthDialog.tsx';
 import { RunbooksPage } from './RunbooksPage.tsx';
 import { SettingsPage } from './SettingsPage.tsx';
@@ -155,6 +156,8 @@ export function Shell() {
               <OpenWrtPage id={platform.id} />
             ) : platform?.kind === 'opnsense' ? (
               <OPNsensePage id={platform.id} />
+            ) : platform?.kind === 'unifi' ? (
+              <UniFiPage id={platform.id} />
             ) : (
               <PlatformsPage />
             )

@@ -17,6 +17,7 @@ test('with nothing set up, every integration is off or only known on the hub', (
       'esphome:off',
       'openwrt:off',
       'opnsense:off',
+      'unifi:off',
       'talos:off',
       'beszel:off',
       'plugins:off',

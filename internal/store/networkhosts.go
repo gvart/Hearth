@@ -73,6 +73,8 @@ const (
 	SourceOpenWrt = "openwrt"
 	// SourceOPNsense is an OPNsense firewall's DHCP leases and ARP table.
 	SourceOPNsense = "opnsense"
+	// SourceUniFi is a UniFi controller's connected clients.
+	SourceUniFi = "unifi"
 )
 
 // NetworkHost is a host network discovery found, keyed by its MAC address.

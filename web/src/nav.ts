@@ -234,7 +234,7 @@ export function findCommands(query: string, src: CommandSources): Command[] {
   }
   const runs: Command[] = [
     { kind: 'Run', label: 'Add a device', hint: 'Enrollment command', hash: addDeviceHash },
-    { kind: 'Run', label: 'Connect a platform', hint: 'Kubernetes, Proxmox, ESPHome, OpenWrt or OPNsense', hash: connectPlatformHash },
+    { kind: 'Run', label: 'Connect a platform', hint: 'Kubernetes, Proxmox, ESPHome, OpenWrt, OPNsense or UniFi', hash: connectPlatformHash },
     { kind: 'Run', label: 'New automation', hint: 'Editor', hash: '#/automations/new' },
   ];
   if (src.editable) {

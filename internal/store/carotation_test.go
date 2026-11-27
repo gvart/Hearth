@@ -101,15 +101,16 @@ func TestCARotations(t *testing.T) {
 	must(s.ESPHomeDevices().Add(ctx, ESPHomeDevice{ID: "e1", Name: "kitchen", Sealed: []byte{3}, CreatedAt: now}))
 	must(s.OpenWrtRouters().Add(ctx, OpenWrtRouter{ID: "o1", Name: "gateway", Sealed: []byte{4}, CreatedAt: now}))
 	must(s.OPNsenseFirewalls().Add(ctx, OPNsenseFirewall{ID: "f1", Name: "edge", Sealed: []byte{5}, CreatedAt: now}))
+	must(s.UniFiControllers().Add(ctx, UniFiController{ID: "u1", Name: "console", Sealed: []byte{6}, CreatedAt: now}))
 	sealed, err := rots.Sealed(ctx)
 	must(err)
-	if len(sealed) != 5 || sealed[0].Table != SealedKubeClusters || sealed[1].Table != SealedProxmoxServers ||
+	if len(sealed) != 6 || sealed[0].Table != SealedKubeClusters || sealed[1].Table != SealedProxmoxServers ||
 		sealed[2].Table != SealedESPHomeDevices || sealed[3].Table != SealedOpenWrtRouters ||
-		sealed[4].Table != SealedOPNsenseFirewalls {
+		sealed[4].Table != SealedOPNsenseFirewalls || sealed[5].Table != SealedUniFiControllers {
 		t.Fatalf("Sealed = %+v", sealed)
 	}
 	sealed[0].Resealed, sealed[1].Resealed, sealed[2].Resealed, sealed[3].Resealed = []byte{11}, []byte{12}, []byte{13}, []byte{14}
-	sealed[4].Resealed = []byte{15}
+	sealed[4].Resealed, sealed[5].Resealed = []byte{15}, []byte{16}
 	stale := append([]SealedSecret{}, sealed...)
 	stale[1].Sealed = []byte{9}
 	if err := rots.Reseal(ctx, "new", stale); !errors.Is(err, ErrCARotationConflict) {
@@ -126,7 +127,7 @@ func TestCARotations(t *testing.T) {
 	must(err)
 	if string(again[0].Sealed) != string([]byte{11}) || string(again[1].Sealed) != string([]byte{12}) ||
 		string(again[2].Sealed) != string([]byte{13}) || string(again[3].Sealed) != string([]byte{14}) ||
-		string(again[4].Sealed) != string([]byte{15}) {
+		string(again[4].Sealed) != string([]byte{15}) || string(again[5].Sealed) != string([]byte{16}) {
 		t.Errorf("after Reseal: %+v", again)
 	}
 

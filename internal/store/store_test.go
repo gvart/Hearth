@@ -83,7 +83,7 @@ func tableNames(ctx context.Context, t *testing.T, db *sql.DB) []string {
 func TestMigrationsUpDownUp(t *testing.T) {
 	ctx := t.Context()
 	s := openTest(t) // Open runs all migrations up.
-	want := []string{"admin", "approval_links", "approvals", "audit_log", "automation_runs", "ca_rotations", "certs", "cluster_hubs", "config_docs", "dashboard_tokens", "device_ceilings", "device_routes", "devices", "esphome_devices", "hub_certs", "join_tokens", "kube_clusters", "mcp_tokens", "network_hosts", "openwrt_routers", "opnsense_firewalls", "panel_links", "panels", "proxmox_servers", "runbook_runs", "sessions", "telemetry", "tokens"}
+	want := []string{"admin", "approval_links", "approvals", "audit_log", "automation_runs", "ca_rotations", "certs", "cluster_hubs", "config_docs", "dashboard_tokens", "device_ceilings", "device_routes", "devices", "esphome_devices", "hub_certs", "join_tokens", "kube_clusters", "mcp_tokens", "network_hosts", "openwrt_routers", "opnsense_firewalls", "panel_links", "panels", "proxmox_servers", "runbook_runs", "sessions", "telemetry", "tokens", "unifi_controllers"}
 	if got := tableNames(ctx, t, s.db); !reflect.DeepEqual(got, want) {
 		t.Fatalf("after up: tables = %v, want %v", got, want)
 	}

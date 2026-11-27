@@ -41,6 +41,7 @@ export interface IntegrationInputs {
   esphome?: { state: string }[];
   openwrt?: { state: string }[];
   opnsense?: { state: string }[];
+  unifi?: { state: string }[];
   talos?: Read & { nodes: unknown[] };
   beszel?: Read & { systems: unknown[] };
   plugins?: { state: string }[];
@@ -125,6 +126,14 @@ export function integrations(x: IntegrationInputs): Integration[] {
       ...connected(x.opnsense, 'unavailable', 'firewall', 'Connect a firewall on the Platforms page.'),
       where: { label: 'Platforms', hash: '#/platforms' },
       docs: 'opnsense.md',
+    },
+    {
+      id: 'unifi',
+      name: 'UniFi',
+      gives: 'Gateways, switches, access points, clients and WAN health of a UniFi Network site. Its clients feed discovery.',
+      ...connected(x.unifi, 'unavailable', 'controller', 'Connect a controller on the Platforms page.'),
+      where: { label: 'Platforms', hash: '#/platforms' },
+      docs: 'unifi.md',
     },
     {
       id: 'talos',

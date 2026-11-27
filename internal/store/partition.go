@@ -67,8 +67,10 @@ var globalTables = map[string]bool{
 	"openwrt_routers": true,
 	// OPNsense firewalls (#364).
 	"opnsense_firewalls": true,
-	"network_hosts":      true,
-	"config_docs":        true, // item 5 (ap-config): every member serves the configuration
+	// UniFi controllers (#365).
+	"unifi_controllers": true,
+	"network_hosts":     true,
+	"config_docs":       true, // item 5 (ap-config): every member serves the configuration
 }
 
 // criticalTables are written with W = min(2, N) acknowledgements.
@@ -387,6 +389,8 @@ func RouteOf(cmd Command) (Route, error) {
 	case AddOpenWrtRouter, RemoveOpenWrtRouter:
 		return global(false)
 	case AddOPNsenseFirewall, RemoveOPNsenseFirewall:
+		return global(false)
+	case AddUniFiController, RemoveUniFiController:
 		return global(false)
 	}
 	return Route{}, fmt.Errorf("%w: %s", ErrNoRoute, cmd.Op())

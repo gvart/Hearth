@@ -224,6 +224,9 @@ var expected = map[Action]struct {
 	OPNsenseFirewallAdd:     {Safe, []string{ActorWeb}, false},
 	OPNsenseFirewallRemove:  {Safe, []string{ActorWeb}, false},
 	OPNsenseUnboundRestart:  {Dangerous, []string{ActorWeb}, false},
+	UniFiControllerAdd:      {Safe, []string{ActorWeb}, false},
+	UniFiControllerRemove:   {Safe, []string{ActorWeb}, false},
+	UniFiAPRestart:          {Dangerous, []string{ActorWeb}, false},
 	DeviceCapabilitiesSet:   {Safe, []string{ActorAdmin, ActorWeb}, false},
 	DeviceCapabilitiesRaise: {Dangerous, []string{ActorAdmin, ActorWeb}, false},
 }

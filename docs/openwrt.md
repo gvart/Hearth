@@ -13,7 +13,7 @@ dnsmasq, and only when you ask, with your password, through policy.
 > from the sources of uhttpd, rpcd, procd, netifd and LuCI's rpcd module. It has not been run against a
 > real OpenWrt yet.
 
-OPNsense firewalls are covered in [OPNsense](opnsense.md); UniFi ([#365](https://github.com/gvart/hearth/issues/365)) is tracked separately.
+OPNsense firewalls are covered in [OPNsense](opnsense.md); UniFi controllers in [UniFi](unifi.md).
 
 ## What the router needs
 
