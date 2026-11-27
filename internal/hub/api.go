@@ -160,6 +160,8 @@ func (a *api) routes() http.Handler {
 	mux.Handle("POST /api/v1/network/scan", a.auth(a.scanNetwork))
 	mux.Handle("GET /api/v1/events", a.auth(a.events))
 	mux.Handle("POST /api/v1/tokens", a.auth(a.createToken))
+	mux.Handle("GET /api/v1/tokens", a.auth(a.listTokens))
+	mux.Handle("DELETE /api/v1/tokens/{id}", a.auth(a.revokeToken))
 	a.kubeRoutes(mux)
 	a.proxmoxRoutes(mux)
 	a.pluginRoutes(mux)

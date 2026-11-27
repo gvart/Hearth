@@ -195,6 +195,85 @@ func (a *api) createToken(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// PendingTokenJSON is an enrollment token not used yet, without its secret.
+// ID is the handle the audit log names it by (actor token/<id>).
+type PendingTokenJSON struct {
+	ID        string            `json:"id"`
+	Name      string            `json:"name,omitempty"`
+	Labels    map[string]string `json:"labels"`
+	Hub       bool              `json:"hub"`
+	ExpiresAt time.Time         `json:"expires_at"`
+}
+
+// listTokens lists the enrollment tokens neither used nor expired, as
+// `hearth token list` does.
+func (a *api) listTokens(w http.ResponseWriter, r *http.Request) {
+	toks, err := a.store.Tokens().ListUnused(r.Context(), a.now())
+	if err != nil {
+		a.writeActionError(w, r, "list enrollment tokens", err)
+		return
+	}
+	out := make([]PendingTokenJSON, 0, len(toks))
+	for _, t := range toks {
+		labels := t.Labels
+		if labels == nil {
+			labels = map[string]string{}
+		}
+		out = append(out, PendingTokenJSON{ID: t.ID, Name: t.Name, Labels: labels, Hub: t.HubEligible, ExpiresAt: t.ExpiresAt.UTC()})
+	}
+	writeJSON(w, http.StatusOK, struct {
+		Tokens []PendingTokenJSON `json:"tokens"`
+	}{Tokens: out})
+}
+
+// revokeToken revokes an unused enrollment token, as `hearth token revoke`
+// does: no device can enroll with it. A hub-eligible token needs the
+// password again, as creating it did. Every attempt is decided and audited,
+// one for an unknown token too.
+func (a *api) revokeToken(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	now := a.now()
+	tok, found := a.store.Tokens().Unused(r.Context(), id, now)
+	req := policy.Request{
+		ActorKind: policy.ActorWeb, ActorID: remoteHost(r), Action: policy.TokenRevoke, Target: id,
+		Detail: RevokeTokenDetail(tok),
+	}
+	if found == nil && tok.HubEligible {
+		req.Precheck = a.recentAuth(r)
+	}
+	err := a.policy.Do(r.Context(), req, func(ctx context.Context) error {
+		if found != nil {
+			return found
+		}
+		return a.store.Tokens().Revoke(ctx, id, now)
+	})
+	switch {
+	case err == nil:
+		a.log.InfoContext(r.Context(), "enrollment token revoked", "remote", remoteHost(r), "token", id)
+		w.WriteHeader(http.StatusNoContent)
+	case errors.Is(err, store.ErrNotFound):
+		writeError(w, http.StatusNotFound, "not_found", "no enrollment token has this ID")
+	case errors.Is(err, store.ErrTokenUsed):
+		writeError(w, http.StatusConflict, "token_used", "the token was used or revoked already")
+	case errors.Is(err, store.ErrTokenExpired):
+		writeError(w, http.StatusConflict, "token_expired", "the token has expired already")
+	case errors.Is(err, store.ErrNotOwner):
+		a.writeNotOwner(r.Context(), w, err)
+	default:
+		a.writeActionError(w, r, "revoke the enrollment token", err)
+	}
+}
+
+// RevokeTokenDetail is the audited detail of an enrollment token's
+// revocation: whether it was hub-eligible, and the device name it gives.
+func RevokeTokenDetail(t store.PendingToken) map[string]any {
+	d := map[string]any{"hub": t.HubEligible}
+	if t.Name != "" {
+		d["name"] = t.Name
+	}
+	return d
+}
+
 // installScriptURL is where a release hub's install command fetches
 // install.sh: the script of its own release tag, over HTTPS from GitHub.
 const installScriptURL = "https://raw.githubusercontent.com/gvart/Hearth/"

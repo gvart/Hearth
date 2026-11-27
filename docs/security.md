@@ -49,9 +49,11 @@ a device you do not trust with the CA key; a plain enrollment token never leads 
 The mint is audited and refused while the master is cut off, but your policy cannot deny it: the
 decision for a `token` actor is fixed, so a hub-eligible token that is not yet used still mints its
 device's join token after you change the policy, even to one that denies dangerous actions.
-Enrollment tokens cannot be revoked yet: an unused one stays usable until its TTL ends (15 minutes
-by default), so give a hub-eligible token a short TTL and do not keep one around. The `device.enroll` audit entry says
-whether the join token was minted, with its roles, or refused and why.
+Revoking it is the way to stop it: revoke a hub-eligible token you no longer mean to use
+([Revoking an enrollment token](#revoking-an-enrollment-token)), and give it a short TTL. The join
+token is minted only when a device enrolls with the token, so a revoked token has minted none and
+never will. The `device.enroll` audit entry says whether the join token was minted, with its roles,
+or refused and why.
 
 A hub-eligible device also counts as consent to a later promotion. A device that joined as storage
 only (3 masters existed then) may be promoted to master, and receive the CA key, when a master is
@@ -130,6 +132,22 @@ the admin password entered again, audited. What it does and does not protect aga
   the CA pin there, before the secret is sent. `--hub` gives another address to use.
 - **Kept out of argv**: pass it as `HEARTH_TOKEN=<token>` or on stdin, never as an argument, which
   any local user can read with `ps`. The installer passes it to `hearth agent join` on stdin.
+- **Revocable** until it is used: see below.
+
+### Revoking an enrollment token
+
+`hearth token list` on the hub host, or **Unused enrollment tokens** on the web UI's **Devices**
+page, lists the tokens no device has used yet and that have not expired: an ID (the handle the
+audit log names the token by, actor `token/<id>`), the device name and labels it gives, whether it
+is hub-eligible, and when it expires. Never the token itself. `hearth token revoke <id>` or
+**Revoke** spends the token: a device that tries it is refused (`enrollment token already used`).
+
+Revoking is the policy action `token.revoke` (safe, by `admin` or `web`), audited with the token's
+ID, refusals included. Revoking a hub-eligible token in the web UI asks for the admin password
+again, as creating it did. A token already used, or expired, cannot be revoked: remove the device
+that enrolled with it instead (`hearth device revoke`). In a cluster, a token belongs to the master
+that created it, and only that master revokes it: elsewhere the revocation is refused and names
+it.
 
 The install command of a release hub fetches `install.sh` of the hub's own release tag from GitHub
 over HTTPS; the installer then checks the binary's SHA-256 (and, with cosign, the release
@@ -155,7 +173,7 @@ proxy every login comes from the proxy's address and shares one limit.
 ### Sensitive actions ask for the password again
 
 A signed-in session is not enough for the most sensitive actions of the web UI: revoking a device,
-creating or revoking an MCP token, saving the policy, changing a notification channel, downloading
+creating or revoking a hub-eligible enrollment token, creating or revoking an MCP token, saving the policy, changing a notification channel, downloading
 a backup, creating a cluster join token (**Add hub**) and starting, finishing or aborting a hub CA
 rotation. Each asks for the admin password again, then goes through policy like any other action.
 

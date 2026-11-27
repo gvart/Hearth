@@ -115,7 +115,10 @@ You rarely need a join token by hand. **Add device** with **This device may beco
 (the default; `POST /api/v1/tokens` with `{"hub": true}`, or `hearth token create --hub`) makes an
 enrollment token that also lets the device join the cluster. Ticking it asks for the admin password
 again, and is the policy action `cluster.token.create` (by `web` or `admin`), audited with the roles
-it may grant; the token also creates the device as usual (`token.create`).
+it may grant; the token also creates the device as usual (`token.create`). Until a device uses
+it, revoking it (`hearth token revoke <id>`, or **Revoke** under **Unused enrollment tokens**, with
+the password again) stops it for good: see
+[Revoking an enrollment token](security.md#revoking-an-enrollment-token).
 
 When such a device enrolls, its installer says what it is: its OS, architecture, memory and free disk.
 Only Linux on amd64 or arm64, with at least 1.5 GiB of memory and 2 GiB free on the disk of the hub's
@@ -704,7 +707,7 @@ agent again.
 
 ## CLI on a member's host
 
-`hearth token create`, `hearth device revoke`, `hearth device hub`, `hearth admin set-password`, `hearth cluster token
+`hearth token create`, `hearth token revoke`, `hearth device revoke`, `hearth device hub`, `hearth admin set-password`, `hearth cluster token
 create`, `hearth cluster status`, `hearth cluster promote|demote|remove` and `hearth cluster ca
 rotate|finish|abort|status` work on a member's host while its hub runs: they go through the hub's
 local control socket, and the running hub decides them. With the hub stopped they refuse, since

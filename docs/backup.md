@@ -268,7 +268,8 @@ The hub returns to the moment of the backup. Whatever happened after it is gone:
 - **A device revoked after the backup is trusted again.** Run `hearth device revoke` for it once more.
 - **A device enrolled after the backup is unknown.** Enroll it again: remove its agent data dir and
   run `hearth agent join` with a new token.
-- **Enrollment tokens** created before the backup and not yet expired are valid again until they expire.
+- **Enrollment tokens** created before the backup and not yet expired are valid again until they expire,
+  revoked ones too. Check `hearth token list` and run `hearth token revoke <id>` for each one once more.
 - **MCP tokens revoked after the backup work again.** Run `hearth mcp token revoke <name>` for each one
   once more, and check the list with `hearth mcp token list`.
 - **Web sessions that ended after the backup work again** until they expire, including sessions you logged

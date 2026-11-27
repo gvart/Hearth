@@ -54,7 +54,9 @@ A device is a machine the hub knows, identified by a device id. It becomes one b
 
 1. You create an **enrollment token** on the hub, in the UI (**Add device**) or with
    `hearth token create`. A token is single use, expires (15 minutes by default) and is stored only
-   as a hash. It also carries the hub's address and the fingerprint of the hub CA.
+   as a hash. It also carries the hub's address and the fingerprint of the hub CA. Until a device
+   uses it, it is listed (**Devices** page, `hearth token list`) and you can revoke it
+   (`hearth token revoke <id>`).
 2. On the device, `hearth agent join` (or the installer, which runs it) connects to that address,
    checks the hub's certificate against that fingerprint *before* sending the token, creates a private key
    that never leaves the device, and sends a certificate request.
