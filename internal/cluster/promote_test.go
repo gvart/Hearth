@@ -184,6 +184,7 @@ func (tn *apTestNode) start(t *testing.T, n int, seed string) {
 		MemberDeadAfter:  tn.deadAfter, KeepMasters: tn.keepMasters, deadEvery: 50 * time.Millisecond,
 		Gossip: ReplicatorConfig{
 			RequestTimeout: 2 * time.Second, AntiEntropyEvery: time.Hour, HintsEvery: time.Hour, GCEvery: time.Hour,
+			LoneMasterWait: time.Nanosecond,
 		},
 		tuneGossip: func(c *MembershipConfig) {
 			c.ProbeInterval, c.ProbeTimeout = 100*time.Millisecond, 80*time.Millisecond

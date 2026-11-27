@@ -209,6 +209,11 @@ func (a *api) writeGuestLinkError(w http.ResponseWriter, r *http.Request, err er
 		writeError(w, http.StatusNotFound, "not_found", "this panel link is invalid, revoked or expired")
 		return
 	}
+	if errors.Is(err, store.ErrUnavailable) {
+		// A master still comparing links with the others (#384).
+		writeUnavailable(w)
+		return
+	}
 	a.log.ErrorContext(r.Context(), "check panel link", "err", err)
 	writeError(w, http.StatusInternalServerError, "internal", "cannot open the panel")
 }

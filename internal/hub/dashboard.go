@@ -201,14 +201,15 @@ func (a *api) revokeDashboardToken(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "no such dashboard token in use")
 		return
 	}
-	err := a.policy.Do(r.Context(), policy.Request{
+	ctx, reach := store.WithReach(r.Context())
+	err := a.policy.Do(ctx, policy.Request{
 		ActorKind: policy.ActorWeb, ActorID: remoteHost(r), Action: policy.DashboardTokenRevoke, Target: "token/" + id,
 	}, func(ctx context.Context) error { return a.store.DashboardTokens().Revoke(ctx, id, a.now()) })
 	if err != nil {
 		a.writeDashboardTokenError(w, r, "revoke dashboard token", err)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	writeReach(w, *reach)
 }
 
 // writeDashboardTokenError answers a failed token request of the admin.
@@ -255,6 +256,10 @@ func (a *api) dashboardSummary(w http.ResponseWriter, r *http.Request) {
 			reason = "dashboard token revoked"
 		case errors.Is(err, store.ErrTokenExpired):
 			reason = "dashboard token expired"
+		case errors.Is(err, store.ErrUnavailable):
+			// A master still comparing tokens with the others (#384).
+			writeUnavailable(w)
+			return
 		default:
 			a.log.ErrorContext(ctx, "check dashboard token", "err", err)
 			writeError(w, http.StatusServiceUnavailable, "internal", "cannot check the token")

@@ -192,5 +192,7 @@ func (RevokeDashboardToken) Op() string { return "revoke_dashboard_token" }
 func (RevokeDashboardToken) minSchema() int64 { return dashboardTokensSchema }
 
 func (c RevokeDashboardToken) apply(ctx context.Context, w *writer) (Result, error) {
-	return revokeOne(ctx, w, "dashboard_tokens", `id = ?`, c.At, c.ID)
+	return revokeOrStub(ctx, w, "dashboard_tokens", `id = ?`, c.At, row{
+		"id": c.ID, "name": c.ID, "created_at": c.At,
+	}, c.ID)
 }

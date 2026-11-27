@@ -517,6 +517,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	cfg.Ready = ready
 	cfg.Leadership = node
 	cfg.ConfigDrift = func(context.Context) (any, error) { return node.Status().HostFlagDrift(), nil }
+	cfg.Uncompared = node.Replicator().Uncompared
 	cfg.Masters = node
 	cfg.ClusterAdmin = apClusterAdmin{node}
 	cfg.ClusterCA = apClusterCA{node}

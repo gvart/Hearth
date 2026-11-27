@@ -99,6 +99,7 @@ func newAPI(cfg Config) *api {
 		logins:           newLoginLimiter(time.Now, loginBurst, loginEvery),
 		metrics:          cfg.Metrics,
 		drift:            cfg.ConfigDrift,
+		uncompared:       cfg.Uncompared,
 		runbooks:         cfg.Runbooks,
 		leadership:       leadershipOf(cfg),
 		masters:          cfg.Masters,
@@ -287,6 +288,8 @@ type api struct {
 	plugins *plugins.Manager
 	// notify is Config.Notify; nil when notification channels are not served.
 	notify *notify.Notifier
+	// uncompared is Config.Uncompared.
+	uncompared func() bool
 	// drift is Config.ConfigDrift; nil on a standalone hub.
 	drift func(context.Context) (any, error)
 	// runbooks is Config.Runbooks; nil when runbooks are not served.
@@ -418,6 +421,36 @@ type SessionJSON struct {
 	ReauthUntil *time.Time `json:"reauth_until,omitempty"`
 	// Version is the hub's build version.
 	Version string `json:"version"`
+	// Uncompared is set on a master of a cluster that reads sign-ins and
+	// tokens it could not compare with another master since it started
+	// (#384): one it cannot reach may have ended some.
+	Uncompared bool `json:"sign_ins_uncompared,omitempty"`
+}
+
+// ReachJSON answers a write that takes access away (a sign-out, a
+// revocation, a password change) that some master of the cluster has not
+// taken yet: it is in force on Applied masters of Of, and the others take
+// it when they are back (#384).
+type ReachJSON struct {
+	Applied int    `json:"applied"`
+	Of      int    `json:"of"`
+	Message string `json:"message"`
+}
+
+// writeReach answers a write that takes access away: 204, or, when some
+// master has not taken it yet, 200 with how many did.
+func writeReach(w http.ResponseWriter, reach store.Reach) {
+	if !reach.Partial() {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	writeJSON(w, http.StatusOK, ReachJSON{Applied: reach.Applied, Of: reach.Of, Message: reachMessage(reach)})
+}
+
+// reachMessage tells how many masters a write that takes access away
+// reached.
+func reachMessage(reach store.Reach) string {
+	return fmt.Sprintf("applied on %d of %d masters; the others get it when they are back", reach.Applied, reach.Of)
 }
 
 // ErrorJSON is the body of every API error.
@@ -538,9 +571,10 @@ func (a *api) checkAdminPassword(ctx context.Context, password string) error {
 }
 
 func (a *api) logout(w http.ResponseWriter, r *http.Request) {
+	ctx, reach := store.WithReach(r.Context())
 	if c, err := r.Cookie(sessionCookieName(r)); err == nil {
 		a.reauths.forget(c.Value)
-		if err := a.store.Admin().DeleteSession(r.Context(), c.Value); errors.Is(err, store.ErrUnavailable) {
+		if err := a.store.Admin().DeleteSession(ctx, c.Value); errors.Is(err, store.ErrUnavailable) {
 			writeUnavailable(w)
 			return
 		} else if err != nil {
@@ -553,12 +587,12 @@ func (a *api) logout(w http.ResponseWriter, r *http.Request) {
 		Name: sessionCookieName(r), Value: "", Path: "/", MaxAge: -1,
 		Secure: r.TLS != nil, HttpOnly: true, SameSite: http.SameSiteStrictMode,
 	})
-	w.WriteHeader(http.StatusNoContent)
+	writeReach(w, *reach)
 }
 
 func (a *api) session(w http.ResponseWriter, r *http.Request) {
 	exp, _ := r.Context().Value(sessionExpiryKey{}).(time.Time)
-	out := SessionJSON{User: adminUser, ExpiresAt: exp, Version: a.version}
+	out := SessionJSON{User: adminUser, ExpiresAt: exp, Version: a.version, Uncompared: a.uncompared != nil && a.uncompared()}
 	if until := a.reauthUntil(r); !until.IsZero() {
 		until = until.UTC()
 		out.ReauthUntil = &until
@@ -704,6 +738,11 @@ func (a *api) auth(next http.HandlerFunc) http.Handler {
 		switch {
 		case errors.Is(err, store.ErrNotFound), errors.Is(err, store.ErrSessionExpired), errors.Is(err, http.ErrNoCookie):
 			writeError(w, http.StatusUnauthorized, "unauthenticated", "not logged in")
+			return
+		case errors.Is(err, store.ErrUnavailable):
+			// A master still comparing sessions with the others (#384): the
+			// session may be valid, so the client keeps it and retries.
+			writeUnavailable(w)
 			return
 		case err != nil:
 			a.log.ErrorContext(r.Context(), "check session", "err", err)

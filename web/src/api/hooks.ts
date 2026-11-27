@@ -30,6 +30,8 @@ import { applyScanDone, scanInterrupted, scanStarted, scanTimeoutMs, type Networ
 
 export const keys = {
   session: ['session'] as const,
+  /** Set by a sign-out or a password change some master has not taken yet. */
+  signOutNotice: ['sign-out-notice'] as const,
   devices: ['devices'] as const,
   networkHosts: ['network', 'hosts'] as const,
   networkScan: ['network', 'scan'] as const,
@@ -77,7 +79,18 @@ const networkHostsRefreshMs = 60_000;
 const reconnectDelayMs = 2000;
 
 export function useSession() {
-  return useQuery({ queryKey: keys.session, queryFn: api.session, staleTime: Infinity });
+  return useQuery({
+    queryKey: keys.session,
+    queryFn: api.session,
+    staleTime: Infinity,
+    // The banner of a hub that could not compare sign-ins goes once it has.
+    refetchInterval: (q) => (q.state.data?.sign_ins_uncompared ? 30_000 : false),
+  });
+}
+
+/** What the last sign-out or password change left to tell, if anything. */
+export function useSignOutNotice() {
+  return useQuery<string | null>({ queryKey: keys.signOutNotice, queryFn: () => null, staleTime: Infinity });
 }
 
 export function useLogin() {
@@ -94,6 +107,9 @@ export function useLogout() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: api.logout,
+    onSuccess: (reach) => {
+      qc.setQueryData(keys.signOutNotice, reach?.message ?? null);
+    },
     onSettled: () => {
       qc.removeQueries({ queryKey: keys.devices });
       qc.removeQueries({ queryKey: ['network'] });

@@ -82,7 +82,11 @@ type ReplicatorConfig struct {
 	AntiEntropyEvery time.Duration
 	HintsEvery       time.Duration
 	GCEvery          time.Duration
-	Now              func() time.Time
+	// LoneMasterWait is how long a master that started or was promoted
+	// keeps the master tables' rows closed while it finds no other master
+	// live to compare them with (compareMasterRows).
+	LoneMasterWait time.Duration
+	Now            func() time.Time
 	// OnSynced, if set, is called once a member promoted to storage has
 	// copied the rows of every bucket it owns (see SetLocal).
 	OnSynced func()
@@ -95,6 +99,11 @@ const (
 	defaultAntiEntropyEvery = 30 * time.Second
 	defaultHintsEvery       = 5 * time.Second
 	defaultGCEvery          = time.Hour
+	// defaultLoneMasterWait is the time the gossip takes to find a
+	// cluster; after it, a master alone reads its own copy of the rows
+	// only masters hold, which may lack a sign-out or a reset made on a
+	// master it cannot reach (an AP trade-off, docs/cluster.md).
+	defaultLoneMasterWait = 30 * time.Second
 	// replicaIdle closes a served replication connection after this long
 	// without a request.
 	replicaIdle = 2 * time.Minute
@@ -151,9 +160,27 @@ type Replicator struct {
 	// masters a critical global write or a sync waits for.
 	provedMu sync.Mutex
 	proved   map[string]bool
+	// strikes counts, per member, the answers without a proof of the hub
+	// CA key to a merge that held master rows, since its last proof
+	// (hintWithheld).
+	strikesMu sync.Mutex
+	strikes   map[string]int
 	// masterSynced is set once this member compared the global rows with a
 	// master that proved the hub CA key.
 	masterSynced atomic.Bool
+	// masterRowsSynced is set once this master compared the master tables'
+	// rows with every other live master that proved the key, since it
+	// started or was promoted, or once it found none for LoneMasterWait:
+	// until then it reads none of them (MasterRowsReady). pullMaster asks
+	// for that comparison now. gateSince is when it started or was
+	// promoted (unix nanoseconds); lone is set while it opened with no
+	// other master to compare with (Uncompared).
+	masterRowsSynced atomic.Bool
+	pullMaster       chan struct{}
+	gateSince        atomic.Int64
+	lone             atomic.Bool
+	// pullMu runs one comparison of the master tables' rows at a time.
+	pullMu sync.Mutex
 
 	// local is this member's own part in the storage ring (SetLocal).
 	local atomic.Pointer[replicaLocal]
@@ -202,6 +229,7 @@ func NewReplicator(cfg ReplicatorConfig) (*Replicator, error) {
 	setIfZero(&cfg.AntiEntropyEvery, defaultAntiEntropyEvery)
 	setIfZero(&cfg.HintsEvery, defaultHintsEvery)
 	setIfZero(&cfg.GCEvery, defaultGCEvery)
+	setIfZero(&cfg.LoneMasterWait, defaultLoneMasterWait)
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
@@ -213,6 +241,8 @@ func NewReplicator(cfg ReplicatorConfig) (*Replicator, error) {
 		cfg: cfg, log: cfg.Log.With("component", "replication"),
 		pool: map[string][]*replConn{}, jobs: make(chan func(context.Context), asyncQueue),
 		suspect: map[string]time.Time{}, handed: map[int]uint64{}, uses: uses,
+		pullMaster: make(chan struct{}, 1),
+		strikes:    map[string]int{},
 	}
 	bg := context.Background()
 	r.ctx.Store(&bg)
@@ -272,6 +302,14 @@ type view struct {
 	// everyone are the members holding the global rows: the storage
 	// members and the masters, live or not.
 	everyone []string
+	// masterSet are the members holding the master tables' rows: this one
+	// if it holds the hub CA key, and the others that say they are
+	// masters, live or not. A row goes to one only once it proved the key
+	// (call).
+	masterSet []string
+	// leftMasters are the masters that left the gossip, still members: the
+	// master rows are hinted to them.
+	leftMasters []string
 	// syncing are the storage members still catching up after their
 	// promotion: on the ring for writes, last for reads.
 	syncing map[string]bool
@@ -290,9 +328,14 @@ func (r *Replicator) view() view {
 	local := r.local.Load()
 	var ids []string
 	everyone := []string{r.cfg.NodeID}
+	var masterSet []string
+	if r.holdsKey() {
+		masterSet = append(masterSet, r.cfg.NodeID)
+	}
 	live := map[string]bool{r.cfg.NodeID: true}
 	syncing := map[string]bool{}
 	masters := map[string]bool{}
+	var leftMasters []string
 	if local.storage {
 		ids = append(ids, r.cfg.NodeID)
 		if local.syncing {
@@ -300,12 +343,19 @@ func (r *Replicator) view() view {
 		}
 	}
 	for _, m := range members {
-		if m.ID == r.cfg.NodeID || !m.Roles.Gossips() || m.State == MemberLeft {
+		if m.ID == r.cfg.NodeID || !m.Roles.Gossips() {
+			continue
+		}
+		if m.State == MemberLeft {
+			if m.Roles.Has(RoleMaster) {
+				leftMasters = append(leftMasters, m.ID)
+			}
 			continue
 		}
 		everyone = append(everyone, m.ID)
 		if m.Roles.Has(RoleMaster) {
 			masters[m.ID] = true
+			masterSet = append(masterSet, m.ID)
 		}
 		if m.State == MemberAlive || m.State == MemberSuspect {
 			// The gossip found the cluster: the ring is not this member
@@ -325,6 +375,8 @@ func (r *Replicator) view() view {
 	}
 	slices.Sort(everyone)
 	everyone = slices.Compact(everyone)
+	slices.Sort(masterSet)
+	masterSet = slices.Compact(masterSet)
 	slices.Sort(ids)
 	ids = slices.Compact(ids)
 	key := strings.Join(ids, ",")
@@ -340,7 +392,10 @@ func (r *Replicator) view() view {
 		n = 2
 	}
 	n = max(1, min(n, ring.Size()))
-	return view{self: r.cfg.NodeID, ring: ring, live: live, n: n, everyone: everyone, syncing: syncing, masters: masters}
+	return view{
+		self: r.cfg.NodeID, ring: ring, live: live, n: n, everyone: everyone, masterSet: masterSet,
+		syncing: syncing, masters: masters, leftMasters: leftMasters,
+	}
 }
 
 // N is the replication factor in effect.
@@ -393,8 +448,17 @@ func (v view) split(ms []string) (live, down []string) {
 	return live, down
 }
 
+// mastersHolding returns every member holding the master tables' rows,
+// live and down (view.masterSet).
+func (v view) mastersHolding() (live, down []string) {
+	return v.split(v.masterSet)
+}
+
 // placementTargets returns the targets of a row placed at p.
 func (v view) placementTargets(p store.Placement) (live, down []string) {
+	if p.Master {
+		return v.mastersHolding()
+	}
 	if p.Global {
 		return v.globals()
 	}
@@ -416,6 +480,15 @@ func (r *Replicator) noteProved(peer string, proved bool) {
 // only says it is one neither counts nor holds anything back.
 func (r *Replicator) provenMasters(v view) []string {
 	return slices.DeleteFunc(v.otherLiveMasters(), func(m string) bool { return !r.provedLast(m) })
+}
+
+// unproved reports whether peer answered on the last connection to it
+// without proving the hub CA key.
+func (r *Replicator) unproved(peer string) bool {
+	r.provedMu.Lock()
+	defer r.provedMu.Unlock()
+	proved, known := r.proved[peer]
+	return known && !proved
 }
 
 // provedLast reports whether peer proved the hub CA key on the last
@@ -496,11 +569,6 @@ func (r *Replicator) applyRouted(ctx context.Context, cmd store.Command) (store.
 	v := r.view()
 	switch route.Kind {
 	case store.RouteEvery:
-		_, reset := cmd.(store.SetPasswordHash)
-		if reset && !r.holdsKey() {
-			// Its global rows are taken from masters only.
-			return store.Result{}, fmt.Errorf("apply %s: this member does not hold the hub CA key: %w", cmd.Op(), errNotMaster)
-		}
 		live, _ := v.all()
 		results := make([]store.Result, len(live))
 		errs := make([]error, len(live))
@@ -515,18 +583,6 @@ func (r *Replicator) applyRouted(ctx context.Context, cmd store.Command) (store.
 		// A critical one is not done until some member applied it.
 		if route.Critical && !slices.Contains(errs, nil) {
 			return store.Result{}, fmt.Errorf("apply %s: no storage member reachable: %w", cmd.Op(), store.ErrUnavailable)
-		}
-		// The storage members do not send the global rows a password reset
-		// writes unless they are masters too (replauth.go): a master off the
-		// ring writes them itself. It is the one such command that writes
-		// global rows; the others touch only sharded ones, of which this
-		// member may still hold stale copies from before its demotion.
-		if reset && !slices.Contains(live, v.self) {
-			res, err := r.applyHere(ctx, cmd, route, v)
-			if err != nil {
-				return store.Result{}, err
-			}
-			results = append(results, res)
 		}
 		return store.MergeResults(cmd, results), nil
 	case store.RouteSplit:
@@ -646,13 +702,11 @@ func (r *Replicator) applyHere(ctx context.Context, cmd store.Command, route sto
 			return store.Result{}, fmt.Errorf("apply %s: this member has not found the cluster it joins yet: %w",
 				cmd.Op(), store.ErrUnavailable)
 		}
-		var live []string
-		n := v.n
+		live, _ := v.globals()
+		n := len(v.everyone)
 		if route.Kind == store.RouteKey {
 			live, _ = v.targets(store.BucketOf(store.Token(route.Key)))
-		} else {
-			live, _ = v.globals()
-			n = len(v.everyone)
+			n = v.n
 		}
 		if w := writeQuorum(true, n); len(live) < w {
 			return store.Result{}, fmt.Errorf("apply %s: %d of %d replicas reachable, %d needed: %w",
@@ -680,6 +734,11 @@ func (r *Replicator) applyHere(ctx context.Context, cmd store.Command, route sto
 	if store.Revokes(cmd) {
 		r.announceRevocation(muts)
 	}
+	if route.Master && store.TakesAccess(cmd) {
+		// Never refused: it reports how many masters took it.
+		res.Reach = r.replicateRevocation(ctx, muts, v)
+		return res, nil
+	}
 	if err := r.replicate(ctx, muts, route, v); err != nil {
 		return store.Result{}, fmt.Errorf("apply %s: %w", cmd.Op(), err)
 	}
@@ -698,9 +757,15 @@ func (r *Replicator) refresh(ctx context.Context, st *store.Store, cmd store.Com
 		return nil
 	}
 	var peers []string
-	if route.Kind == store.RouteKey {
+	switch {
+	case route.Kind == store.RouteKey:
 		peers = v.readOrder(store.BucketOf(store.Token(route.Key)))
-	} else {
+	case route.Master:
+		// The master tables' rows are read on masters only (replauth.go):
+		// one that answered without a proof is not asked.
+		peers, _ = v.mastersHolding()
+		peers = slices.DeleteFunc(peers, r.unproved)
+	default:
 		peers, _ = v.globals()
 	}
 	peers = slices.DeleteFunc(slices.Clone(peers), func(m string) bool { return m == v.self })
@@ -801,13 +866,20 @@ func (r *Replicator) replicate(ctx context.Context, muts []store.Mutation, route
 	for t, ms := range hinted {
 		r.hint(t, ms)
 	}
+	if route.Master {
+		r.sendMaster(ctx, batches, 0)
+		return nil
+	}
 	if !critical {
 		for t, ms := range batches {
 			r.enqueue(func(ctx context.Context) {
-				if _, err := r.call(ctx, t, apRequest{Op: opMerge, Muts: ms}); err != nil {
+				resp, err := r.call(ctx, t, apRequest{Op: opMerge, Muts: ms})
+				if err != nil {
 					r.log.DebugContext(ctx, "replicate: hinted", "member", t, "err", err)
 					r.hint(t, ms)
+					return
 				}
+				r.hintWithheld(t, resp)
 			}, func() { r.hint(t, ms) })
 		}
 		return nil
@@ -816,7 +888,7 @@ func (r *Replicator) replicate(ctx context.Context, muts []store.Mutation, route
 	failed := map[string]bool{}
 	// masterAcked are the members that took it and proved they hold the
 	// hub CA key.
-	masterAcked := map[string]bool{}
+	masterAcked := map[string]bool{v.self: true}
 	for round := 0; ; round++ {
 		r.sendCritical(ctx, batches, acked, failed, masterAcked)
 		err := shortOf(groups, acked, masterAcked)
@@ -896,15 +968,16 @@ func (r *Replicator) plan(ctx context.Context, muts []store.Mutation, critical, 
 			return nil, nil, nil, err
 		}
 		if p.Global && !master {
-			// A command a master runs on every storage member (a password
-			// reset) writes them here too, with the master's stamp: the
-			// master sends them, and the others would refuse them from
-			// this member (replauth.go).
+			// A member without the key sends no global row: the others
+			// would refuse them from it (replauth.go).
 			continue
 		}
 		live, down := v.placementTargets(p)
 		n := v.n
-		if p.Global {
+		switch {
+		case p.Master:
+			n = len(v.masterSet)
+		case p.Global:
 			n = len(v.everyone)
 		}
 		if maj && !p.Global {
@@ -929,6 +1002,13 @@ func (r *Replicator) plan(ctx context.Context, muts []store.Mutation, critical, 
 		}
 		for _, t := range down {
 			hinted[t] = append(hinted[t], m)
+		}
+		if p.Master {
+			// A master that left the gossip is still one: it gets them
+			// when it is back.
+			for _, t := range v.leftMasters {
+				hinted[t] = append(hinted[t], m)
+			}
 		}
 	}
 	for t, refs := range parents {
@@ -961,9 +1041,148 @@ func (r *Replicator) sendCritical(ctx context.Context, batches map[string][]stor
 			}
 			acked[t] = true
 			masterAcked[t] = resp.fromMaster
+			r.hintWithheld(t, resp)
 		})
 	}
 	wg.Wait()
+}
+
+// sendMaster sends each batch of a master command's rows and waits a quick
+// timeout for the answers, so the other live masters have them by the time
+// it returns; it needs no ack (#384). A member that does not take them, or
+// is sent none for want of a proof, gets a hint.
+//
+// A member that fails is tried again, every revokeRetry, for up to retry:
+// a revocation is worth a few seconds of waiting before it lives on fewer
+// masters. It returns the members that took the rows and proved the key.
+func (r *Replicator) sendMaster(ctx context.Context, batches map[string][]store.Mutation, retry time.Duration) map[string]bool {
+	var mu sync.Mutex
+	took := map[string]bool{}
+	deadline := time.Now().Add(retry)
+	var wg sync.WaitGroup
+	for t, ms := range batches {
+		wg.Go(func() {
+			for {
+				qctx, cancel := context.WithTimeout(ctx, r.cfg.QuickTimeout)
+				resp, err := r.call(qctx, t, apRequest{Op: opMerge, Muts: ms})
+				cancel()
+				if err == nil {
+					r.hintWithheld(t, resp)
+					mu.Lock()
+					took[t] = resp.fromMaster && len(resp.withheld) == 0
+					mu.Unlock()
+					return
+				}
+				if ctx.Err() != nil || time.Now().Add(revokeRetry).After(deadline) {
+					r.log.DebugContext(ctx, "replicate a master write: hinted", "member", t, "err", err)
+					r.hint(t, ms)
+					return
+				}
+				select {
+				case <-ctx.Done():
+				case <-time.After(revokeRetry):
+				}
+			}
+		})
+	}
+	wg.Wait()
+	return took
+}
+
+// revokeWait is how long a write that takes access away tries the masters
+// that do not take it at once; revokeRetry how often.
+const (
+	revokeWait  = 3 * time.Second
+	revokeRetry = 250 * time.Millisecond
+)
+
+// replicateRevocation sends a write that takes access away (a sign-out, a
+// revocation, a password reset) to the other members holding its rows,
+// waiting up to revokeWait for the masters, and hints it to the others. It
+// is never refused (#384): it returns how many masters, this one included,
+// hold it now, of how many masters there are (those down or that left the
+// gossip included, not those that answered without a proof).
+func (r *Replicator) replicateRevocation(ctx context.Context, muts []store.Mutation, v view) *store.Reach {
+	batches, hinted, _, err := r.plan(ctx, muts, false, false, v)
+	if err != nil {
+		r.log.WarnContext(ctx, "replicate a revocation: kept here, the others get it by anti-entropy", "err", err)
+		masters := slices.Compact(slices.Sorted(slices.Values(slices.Concat(v.masterSet, v.leftMasters))))
+		return &store.Reach{Applied: 1, Of: max(1, len(slices.DeleteFunc(masters, func(m string) bool {
+			return m != v.self && r.unproved(m)
+		})))}
+	}
+	for t, ms := range hinted {
+		r.hint(t, ms)
+	}
+	took := r.sendMaster(ctx, batches, revokeWait)
+	masters := slices.Concat(v.masterSet, v.leftMasters)
+	reach := &store.Reach{}
+	for _, m := range slices.Compact(slices.Sorted(slices.Values(masters))) {
+		switch {
+		case m == v.self:
+			reach.Applied++
+		case r.unproved(m):
+			continue // no master: it said it was one, and proved nothing
+		case took[m]:
+			reach.Applied++
+		}
+		reach.Of++
+	}
+	return reach
+}
+
+// Bounds of the master rows kept for a member that does not prove the hub
+// CA key: past maxStrikes answers without a proof since its last one, none
+// is kept for it any more; and no more than maxWithheldHints hints, or
+// maxWithheldBytes of them, wait for it. A master that proves the key
+// again gets the rows dropped by anti-entropy.
+const (
+	maxStrikes       = 20
+	maxWithheldHints = 1000
+	maxWithheldBytes = 8 << 20
+)
+
+// hintWithheld keeps for member t the master rows call did not send it, as
+// it did not prove the hub CA key: they are not delivered. It keeps them
+// within the bounds above.
+func (r *Replicator) hintWithheld(t string, resp apResponse) {
+	if len(resp.withheld) == 0 || !r.keepWithheld(t) {
+		return
+	}
+	r.hint(t, resp.withheld)
+}
+
+// keepWithheld counts an answer without a proof from t, and reports
+// whether master rows withheld from t are still kept for it.
+func (r *Replicator) keepWithheld(t string) bool {
+	r.strikesMu.Lock()
+	r.strikes[t]++
+	k := r.strikes[t]
+	r.strikesMu.Unlock()
+	if k > maxStrikes {
+		if k == maxStrikes+1 {
+			r.log.Warn("a member answers as no master again and again: the rows only masters hold are kept for it no more",
+				"member", t, "answers", k)
+		}
+		return false
+	}
+	if r.cfg.Hints == nil {
+		return false
+	}
+	n, size, err := r.cfg.Hints.Usage(context.Background(), t)
+	if err != nil || n >= maxWithheldHints || size >= maxWithheldBytes {
+		r.log.Warn("too many hints wait for a member that did not prove the hub CA key: the rows only masters hold are not kept",
+			"member", t, "hints", n, "bytes", size, "err", err)
+		return false
+	}
+	return true
+}
+
+// clearStrikes forgets t's answers without a proof: it proved the key.
+func (r *Replicator) clearStrikes(t string) {
+	r.strikesMu.Lock()
+	delete(r.strikes, t)
+	r.strikesMu.Unlock()
 }
 
 // hint keeps ms for member t.
@@ -1184,18 +1403,31 @@ func (r *Replicator) mergeOn(ctx context.Context, m string, ms []store.Mutation)
 		return nil
 	}
 	if m == r.cfg.NodeID {
-		ms = slices.Clone(ms)
-		store.SortMutations(ms)
-		return r.store().Merge(ctx, ms)
+		return r.mergeHere(ctx, ms)
 	}
 	_, err := r.call(ctx, m, apRequest{Op: opMerge, Muts: ms})
 	return err
+}
+
+// mergeHere merges ms into this member's database. A member that holds no
+// hub CA key holds no master rows: it drops them.
+func (r *Replicator) mergeHere(ctx context.Context, ms []store.Mutation) error {
+	if !r.holdsKey() {
+		ms = withoutMaster(ms)
+	}
+	if len(ms) == 0 {
+		return nil
+	}
+	ms = slices.Clone(ms)
+	store.SortMutations(ms)
+	return r.store().Merge(ctx, ms)
 }
 
 // Run delivers hints, runs anti-entropy and the tombstone GC, and works the
 // background jobs until ctx ends.
 func (r *Replicator) Run(ctx context.Context) error {
 	r.ctx.Store(&ctx)
+	r.closeMasterRows()
 	var wg sync.WaitGroup
 	for range 2 {
 		wg.Go(func() {
@@ -1211,6 +1443,19 @@ func (r *Replicator) Run(ctx context.Context) error {
 			}
 		})
 	}
+	wg.Go(func() {
+		// At the start, and each time it is asked (promotion, a read kept
+		// waiting): a master compares the rows only masters hold with the
+		// others before it reads its own.
+		for {
+			r.pullMasterRows(ctx)
+			select {
+			case <-ctx.Done():
+				return
+			case <-r.pullMaster:
+			}
+		}
+	})
 	wg.Go(func() { r.every(ctx, r.cfg.HintsEvery, r.deliverHints) })
 	wg.Go(func() { r.every(ctx, r.cfg.AntiEntropyEvery, r.antiEntropy) })
 	wg.Go(func() { r.every(ctx, r.cfg.GCEvery, r.gc) })
@@ -1275,8 +1520,22 @@ func (r *Replicator) deliverHints(ctx context.Context) {
 				// global rows from masters only, and have them from one.
 				ms = withoutGlobal(ms)
 			}
-			if _, err := r.call(ctx, m, apRequest{Op: opMerge, Muts: ms}); err != nil {
+			resp, err := r.call(ctx, m, apRequest{Op: opMerge, Muts: ms})
+			if err != nil {
 				r.log.DebugContext(ctx, "deliver hints", "member", m, "err", err)
+				break
+			}
+			if len(resp.withheld) > 0 {
+				// m did not prove the hub CA key: its master rows wait, in
+				// place, for a connection on which it does, unless it
+				// answered so too often.
+				kept := resp.withheld
+				if !r.keepWithheld(m) {
+					kept = nil
+				}
+				if err := h.Replace(ctx, ids, kept); err != nil {
+					r.log.WarnContext(ctx, "keep the hints not delivered", "err", err)
+				}
 				break
 			}
 			if err := h.Delete(ctx, ids); err != nil {
@@ -1297,6 +1556,9 @@ const (
 	opLeaves = "leaves"
 	opRows   = "rows"
 	opFetch  = "fetch"
+	// opHello carries the proofs of a new connection and nothing else: sent
+	// before master rows, which go only to a peer that proved the key.
+	opHello = "hello"
 )
 
 type apRequest struct {
@@ -1327,6 +1589,9 @@ type apResponse struct {
 	// fromMaster is set by call when the member that answered is this one
 	// or proved it holds the hub CA key.
 	fromMaster bool
+	// withheld, set by call, are the master rows of a merge it did not send
+	// to a member that did not prove the key: the caller keeps them.
+	withheld []store.Mutation
 }
 
 // The store errors a member's answer carries beyond those of wireKinds.
@@ -1397,8 +1662,9 @@ func (r *Replicator) call(ctx context.Context, m string, req apRequest) (apRespo
 	// member cut off a moment ago costs that, not the request's timeout,
 	// before the next target is tried.
 	var (
-		c    *replConn
-		resp apResponse
+		c        *replConn
+		resp     apResponse
+		withheld []store.Mutation
 	)
 	// A pooled connection may have been closed since it was pooled (a hub
 	// CA rotation closes the connections of the old CA's certificates): its
@@ -1419,21 +1685,35 @@ func (r *Replicator) call(ctx context.Context, m string, req apRequest) (apRespo
 		_ = c.SetDeadline(d)
 		sent := false
 		out := req
-		if !c.proved {
-			out.Master = r.proveMaster(proofDialer, bindingOf(c.Conn))
-			c.keyed = out.Master != nil
-		}
-		if err = writeFrame(c, out); err == nil {
-			sent = true
-			err = readFrame(c, &resp)
+		if hasMaster(out.Muts) {
+			// Master rows go only to a peer that proved the key (replauth.go):
+			// on a new connection, the proofs go first.
+			if !c.proved {
+				var hello apResponse
+				if _, err = r.roundTrip(c, m, apRequest{Op: opHello}, &hello); err == nil && hello.Error != nil {
+					err = apError(hello.Error)
+				}
+			}
+			if err == nil && (!c.peerMaster || !r.saysMaster(m)) {
+				r.log.DebugContext(ctx, "master rows not sent to a member that did not prove it holds the hub CA key", "member", m)
+				withheld = onlyMaster(out.Muts)
+				out.Muts = withoutMaster(out.Muts)
+				if len(out.Muts) == 0 {
+					_ = c.SetDeadline(time.Time{})
+					r.putConn(m, c)
+					return apResponse{withheld: withheld}, nil
+				}
+			}
 		}
 		if err == nil {
-			if !c.proved {
-				c.proved = true
-				c.peerMaster = r.verifyMaster(proofServer, bindingOf(c.Conn), resp.Master)
-				r.noteProved(m, c.peerMaster)
-			}
+			sent, err = r.roundTrip(c, m, out, &resp)
+		}
+		if err == nil {
 			resp.fromMaster = c.peerMaster && r.saysMaster(m)
+			resp.withheld = withheld
+			if resp.fromMaster {
+				r.clearStrikes(m)
+			}
 			break
 		}
 		_ = c.Close()
@@ -1456,6 +1736,28 @@ func (r *Replicator) call(ctx context.Context, m string, req apRequest) (apRespo
 		return resp, apError(resp.Error)
 	}
 	return resp, nil
+}
+
+// roundTrip sends req to member m on c and reads the answer into resp. The
+// first request and answer on c carry the proofs of the hub CA key. sent
+// reports whether req went.
+func (r *Replicator) roundTrip(c *replConn, m string, req apRequest, resp *apResponse) (sent bool, err error) {
+	if !c.proved {
+		req.Master = r.proveMaster(proofDialer, bindingOf(c.Conn))
+		c.keyed = req.Master != nil
+	}
+	if err := writeFrame(c, req); err != nil {
+		return false, err
+	}
+	if err := readFrame(c, resp); err != nil {
+		return true, err
+	}
+	if !c.proved {
+		c.proved = true
+		c.peerMaster = r.verifyMaster(proofServer, bindingOf(c.Conn), resp.Master)
+		r.noteProved(m, c.peerMaster)
+	}
+	return true, nil
 }
 
 // markSuspect takes m as down for SuspectFor and drops its pooled
@@ -1649,14 +1951,14 @@ func (r *Replicator) handle(ctx context.Context, peer string, master bool, req a
 			return fail(err)
 		}
 		return apResponse{Result: &res}
+	case opHello:
+		return apResponse{}
 	case opMerge:
 		if !master && hasGlobal(req.Muts) {
 			r.log.WarnContext(ctx, "refused global rows from a member that did not prove it holds the hub CA key", "peer", peer)
 			return fail(fmt.Errorf("%s: merge global rows: %w", peer, errNotMaster))
 		}
-		ms := slices.Clone(req.Muts)
-		store.SortMutations(ms)
-		if err := st.Merge(ctx, ms); err != nil {
+		if err := r.mergeHere(ctx, req.Muts); err != nil {
 			if errors.Is(err, hlc.ErrSkew) {
 				r.log.WarnContext(ctx, "refused rows stamped too far ahead of this clock", "peer", peer, "err", err)
 			}
@@ -1664,8 +1966,22 @@ func (r *Replicator) handle(ctx context.Context, peer string, master bool, req a
 		}
 		return apResponse{}
 	case opRead:
-		rows, err := st.ReadLocal(ctx, req.Query, req.Args)
+		if !master && namesMasterTable(req.Query) {
+			r.log.WarnContext(ctx, "refused a read of master rows from a member that did not prove it holds the hub CA key", "peer", peer)
+			return fail(fmt.Errorf("%s: read master rows: %w", peer, errNotMaster))
+		}
+		read := st.ReadLocal
+		if !master {
+			// SQLite refuses it the master tables and the raw pages, whatever
+			// the query's text (store.ReadLocalUnproven); the check above is
+			// a first, cheaper refusal.
+			read = st.ReadLocalUnproven
+		}
+		rows, err := read(ctx, req.Query, req.Args)
 		if err != nil {
+			if errors.Is(err, store.ErrReadRefused) {
+				r.log.WarnContext(ctx, "refused a read from a member that did not prove it holds the hub CA key", "peer", peer, "err", err)
+			}
 			return fail(err)
 		}
 		return apResponse{Rows: &rows}
@@ -1674,8 +1990,15 @@ func (r *Replicator) handle(ctx context.Context, peer string, master bool, req a
 		if err != nil {
 			return fail(err)
 		}
+		if !master {
+			ms = withoutMaster(ms)
+		}
 		return apResponse{Muts: ms}
 	case opTree, opLeaves, opRows:
+		if req.Space == store.SpaceMaster && !master {
+			r.log.WarnContext(ctx, "refused to compare master rows with a member that did not prove it holds the hub CA key", "peer", peer)
+			return fail(fmt.Errorf("%s: compare master rows: %w", peer, errNotMaster))
+		}
 		return r.handleAntiEntropy(ctx, st, req)
 	}
 	return fail(fmt.Errorf("unknown request %q", req.Op))

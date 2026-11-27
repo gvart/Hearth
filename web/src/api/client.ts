@@ -110,6 +110,23 @@ export interface Session {
   reauth_until?: string;
   /** The hub's build version. */
   version?: string;
+  /**
+   * Set on a master of a cluster that found no other master to compare
+   * sign-ins and tokens with since it started: one it cannot reach may have
+   * ended some.
+   */
+  sign_ins_uncompared?: boolean;
+}
+
+/**
+ * The answer to a sign-out, a revocation or a password change that some
+ * master of the cluster has not taken yet; none when every master did.
+ */
+export interface Reach {
+  applied: number;
+  of: number;
+  /** "applied on 1 of 2 masters; the others get it when they are back" */
+  message: string;
 }
 
 export interface CreateTokenOptions {
@@ -756,7 +773,7 @@ export async function request<T>(method: string, path: string, body?: unknown): 
 
 export const api = {
   login: (password: string) => request<Session>('POST', '/login', { password }),
-  logout: () => request<undefined>('POST', '/logout'),
+  logout: () => request<Reach | undefined>('POST', '/logout'),
   /** The current session, or null when not logged in. */
   session: async (): Promise<Session | null> => {
     try {
@@ -855,17 +872,18 @@ export const api = {
   panels: async () => (await request<{ panels: Panel[] }>('GET', '/panels')).panels,
   createPanel: (p: PanelInput) => request<Panel>('POST', '/panels', p),
   updatePanel: (id: string, p: PanelInput) => request<Panel>('PUT', `/panels/${encodeURIComponent(id)}`, p),
-  deletePanel: (id: string) => request<undefined>('DELETE', `/panels/${encodeURIComponent(id)}`),
+  deletePanel: (id: string) => request<Reach | undefined>('DELETE', `/panels/${encodeURIComponent(id)}`),
   /** expiresIn is a duration such as "24h"; empty for a link that never expires. */
   createPanelLink: (id: string, expiresIn: string) =>
     request<CreatedPanelLink>('POST', `/panels/${encodeURIComponent(id)}/links`, expiresIn ? { expires_in: expiresIn } : {}),
   revokePanelLink: (id: string, link: string) =>
-    request<undefined>('DELETE', `/panels/${encodeURIComponent(id)}/links/${encodeURIComponent(link)}`),
+    request<Reach | undefined>('DELETE', `/panels/${encodeURIComponent(id)}/links/${encodeURIComponent(link)}`),
   dashboardTokens: async () => (await request<{ tokens: DashboardToken[] }>('GET', '/dashboard/tokens')).tokens,
   /** expiresIn is a duration such as "720h"; empty for a token that never expires. */
   createDashboardToken: (name: string, expiresIn: string) =>
     request<CreatedDashboardToken>('POST', '/dashboard/tokens', expiresIn ? { name, expires_in: expiresIn } : { name }),
-  revokeDashboardToken: (id: string) => request<undefined>('DELETE', `/dashboard/tokens/${encodeURIComponent(id)}`),
+  revokeDashboardToken: (id: string) =>
+    request<Reach | undefined>('DELETE', `/dashboard/tokens/${encodeURIComponent(id)}`),
   /** A panel through its share link; needs no session. */
   guestPanel: (token: string) => request<GuestPanel>('GET', `/guest/${encodeURIComponent(token)}`),
   guestAction: (token: string, widget: string, action: string) =>

@@ -228,28 +228,6 @@ func TestKeyedReadsAskEveryReplicaOnAMiss(t *testing.T) {
 				}
 			},
 		},
-		{
-			// The update deletes the panel: its tombstone on x wins over
-			// y's older live copy. (A read that ignored tombstones would
-			// bring the panel back.)
-			name: "panel",
-			seed: func(t *testing.T, rs replicaSet, s *Store) {
-				rs.apply(t, s, CreatePanel{ID: "p1", Name: "Lab", Widgets: "[]", At: toMillis(now)})
-			},
-			update: func(t *testing.T, rs replicaSet, s *Store) { rs.apply(t, s, DeletePanel{ID: "p1"}) },
-			refs:   []RowRef{{Table: "panels", Key: Values{"p1"}}},
-			check: func(t *testing.T, a *Store, found, newest bool) {
-				p, err := a.Panels().Get(t.Context(), "p1")
-				switch {
-				case !found || newest:
-					if !errors.Is(err, ErrNotFound) {
-						t.Fatalf("Get = %+v, %v, want not found", p, err)
-					}
-				case err != nil || p.Name != "Lab" || !p.CreatedAt.Equal(now):
-					t.Fatalf("Get = %+v, %v, want Lab", p, err)
-				}
-			},
-		},
 	}
 	for _, tc := range cases {
 		for _, holder := range []string{"a", "b"} {

@@ -1,6 +1,6 @@
 import { Fragment, lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { isNotAPCluster, useClusterMembers } from '../api/cluster.ts';
-import { useApprovals, useDeviceEvents, useLogout } from '../api/hooks.ts';
+import { useApprovals, useDeviceEvents, useLogout, useSession } from '../api/hooks.ts';
 import { ApprovalsPage } from './ApprovalsPage.tsx';
 import { AuditPage } from './AuditPage.tsx';
 import { deviceOfHash, pageOf, pagesOf, sheetHash, sheetOf, sheets } from '../nav.ts';
@@ -62,6 +62,26 @@ function Waiting({ count }: { count: number }) {
  * bottom, the open sheet's pages are links above the page, and the command bar
  * sits at the thumb.
  */
+/**
+ * Warns on a master of a cluster that reads sign-ins and tokens it could
+ * not compare with another master since it started: a sign-out, a
+ * revocation or a password change made on a master it cannot reach may not
+ * be in force here yet.
+ */
+function UncomparedBanner() {
+  if (!useSession().data?.sign_ins_uncompared) {
+    return null;
+  }
+  return (
+    <aside className="drift-banner" role="alert" aria-label="Sign-ins not compared">
+      <p>
+        <strong>This hub could not compare sign-ins with another master.</strong> A sign-out, a revoked token or a
+        password change made on a master it cannot reach may not be in force here until that master is back.
+      </p>
+    </aside>
+  );
+}
+
 export function Shell() {
   useDeviceEvents();
   const logout = useLogout();
@@ -141,6 +161,7 @@ export function Shell() {
             </nav>
           ) : null}
           <ConfigDriftBanner />
+          <UncomparedBanner />
           <TelemetryPrompt />
           {page === 'approvals' ? (
             <ApprovalsPage />

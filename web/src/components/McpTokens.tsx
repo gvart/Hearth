@@ -109,7 +109,15 @@ function RevokeDialog({ token, onClose }: { token: McpToken; onClose: () => void
       pendingLabel="Revoking…"
       pending={revoke.isPending}
       error={revoke.isError ? revoke.error.message : undefined}
-      done={revoke.isSuccess ? <>Revoked. The hub refuses the token from its next request.</> : undefined}
+      done={
+        revoke.isSuccess ? (
+          revoke.data ? (
+            <>Revoked: {revoke.data.message}.</>
+          ) : (
+            <>Revoked. The hub refuses the token from its next request.</>
+          )
+        ) : undefined
+      }
       asksPassword
       onConfirm={() => {
         revoke.mutate(token.name);

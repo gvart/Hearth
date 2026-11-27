@@ -18,8 +18,9 @@ import (
 // Backups of an AP cluster. A member holds only the shards the ring gives
 // it, so a copy of its database file is not the cluster's store. Snapshot
 // copies it, then pulls into the copy every row it lacks from the live
-// members: the global rows, and every shard bucket from every live storage
-// member (stand-ins included). It refuses, rather than writing a partial
+// members: the global rows, the master tables' rows from the masters, and
+// every shard bucket from every live storage member (stand-ins included).
+// It refuses, rather than writing a partial
 // copy, when some bucket has no replica that answered.
 
 // ErrIncompleteSnapshot refuses a backup that would miss rows: no live
@@ -31,6 +32,10 @@ var ErrIncompleteSnapshot = errors.New("not every shard of the cluster could be 
 func (n *APNode) Snapshot(ctx context.Context, path string) error {
 	if n.st == nil {
 		return errors.New("snapshot: ap node not bound to a store")
+	}
+	if !n.rep.holdsKey() {
+		// It would miss the rows only masters hold (sessions, tokens, panels).
+		return errors.New("snapshot: this hub is no master: take the backup on a master")
 	}
 	if err := n.st.VacuumInto(ctx, path); err != nil {
 		return err
@@ -67,6 +72,11 @@ func (r *Replicator) PullAll(ctx context.Context, dst *store.Store) error {
 			continue
 		}
 		if err := r.syncSpaceOf(ctx, dst, p, store.SpaceGlobal, []bucketRange{{0, store.GlobalBuckets}}, true); err != nil {
+			problems = append(problems, fmt.Sprintf("%s (%v)", p, err))
+			continue
+		}
+		// The master tables' rows, from masters only.
+		if _, err := r.syncMasterRows(ctx, dst, p, true); err != nil {
 			problems = append(problems, fmt.Sprintf("%s (%v)", p, err))
 			continue
 		}

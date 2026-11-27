@@ -392,5 +392,15 @@ func (RevokePanelLink) Op() string { return "revoke_panel_link" }
 func (RevokePanelLink) minSchema() int64 { return panelsSchema }
 
 func (c RevokePanelLink) apply(ctx context.Context, w *writer) (Result, error) {
-	return revokeOne(ctx, w, "panel_links", `id = ? AND panel_id = ?`, c.At, c.ID, c.PanelID)
+	if p, err := w.get(ctx, "panels", c.PanelID); err != nil || p == nil {
+		// A link's stub needs its panel; a master without the panel
+		// refuses the link too (CheckLink).
+		if err == nil {
+			err = ErrNotFound
+		}
+		return Result{}, err
+	}
+	return revokeOrStub(ctx, w, "panel_links", `id = ? AND panel_id = ?`, c.At, row{
+		"id": c.ID, "panel_id": c.PanelID, "created_at": c.At,
+	}, c.ID, c.PanelID)
 }

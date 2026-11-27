@@ -33,6 +33,7 @@ func newSeekingNode(t *testing.T, ca *pki.CA, id, seed string) (*APNode, *store.
 		Log: testLogger(t),
 		Gossip: ReplicatorConfig{
 			RequestTimeout: 2 * time.Second, AntiEntropyEvery: time.Hour, HintsEvery: time.Hour, GCEvery: time.Hour,
+			LoneMasterWait: time.Nanosecond,
 		},
 		tuneGossip: func(c *MembershipConfig) {
 			c.ProbeInterval, c.ProbeTimeout = 100*time.Millisecond, 80*time.Millisecond

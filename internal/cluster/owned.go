@@ -313,7 +313,7 @@ func (r *Replicator) takeRevocation(ctx context.Context, msg revocationMsg) erro
 		if err != nil {
 			continue
 		}
-		if p.Global || r.Holds(p.Key) {
+		if (p.Global && (!p.Master || r.holdsKey())) || (!p.Global && r.Holds(p.Key)) {
 			mine = append(mine, m)
 		}
 	}

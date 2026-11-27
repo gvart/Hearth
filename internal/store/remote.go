@@ -53,6 +53,23 @@ type Shards interface {
 	Repair(refs []RowRef)
 }
 
+// MasterRowsGate is implemented by a Shards whose master may hold a stale
+// copy of the master tables' rows (#384): until it compared them with
+// another master since it started or was promoted, MasterRowsReady fails
+// with ErrUnavailable, and the store reads none of them.
+type MasterRowsGate interface {
+	MasterRowsReady() error
+}
+
+// masterRowsReady is nil when this member may read its copy of the master
+// tables' rows (MasterRowsGate).
+func (s *Store) masterRowsReady() error {
+	if g, ok := s.shards.(MasterRowsGate); ok {
+		return g.MasterRowsReady()
+	}
+	return nil
+}
+
 // Rows are the rows a read returned on one member.
 type Rows struct {
 	Member string   `json:"member"`
@@ -94,7 +111,17 @@ func (s *Store) ReadLocal(ctx context.Context, query string, args Values) (Rows,
 	if s.ro == nil {
 		return Rows{}, fmt.Errorf("read: %w", ErrNoRoute)
 	}
-	rows, err := s.ro.QueryContext(ctx, query, args...)
+	return s.readOn(ctx, s.ro, query, args)
+}
+
+// queryer is what *sql.DB and *sql.Conn have in common for a read.
+type queryer interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+// readOn runs query on q and returns its rows.
+func (s *Store) readOn(ctx context.Context, q queryer, query string, args Values) (Rows, error) {
+	rows, err := q.QueryContext(ctx, query, args...)
 	if err != nil {
 		return Rows{}, fmt.Errorf("read: %w", err)
 	}
@@ -267,6 +294,11 @@ func (s *Store) queryRowNewest(ctx context.Context, table, key, query string, ar
 // live. On a store that holds every row, and for a global table, which every
 // member holds, it is the plain read, live rows of a deletable table only.
 func (s *Store) queryRowLive(ctx context.Context, table, key, sel, rest string, args ...any) rowScanner {
+	if masterTables[table] {
+		if err := s.masterRowsReady(); err != nil {
+			return memRow{err: err}
+		}
+	}
 	if s.shards == nil || globalTables[table] {
 		if tables[table].deletable {
 			versioned, err := isVersioned(ctx, s.db)
@@ -340,8 +372,18 @@ func (s *Store) queryAll(ctx context.Context, g gather, query string, args ...an
 
 // list runs `sel + rest`, a query of g.table's rows (sel the SELECT list,
 // rest from FROM on): with key set, all of partition key, as queryKey;
-// without, as queryAll, merged by g.
+// without, as queryAll, merged by g. A global table, which this member
+// holds whole, is read here: a master table's rows are never read on
+// another member (#384).
 func (s *Store) list(ctx context.Context, key string, g gather, sel, rest string, args ...any) (rowIter, error) {
+	if masterTables[g.table] {
+		if err := s.masterRowsReady(); err != nil {
+			return nil, err
+		}
+	}
+	if globalTables[g.table] {
+		return s.db.QueryContext(ctx, sel+rest, args...)
+	}
 	if key != "" {
 		return s.queryKey(ctx, key, sel+rest, args...)
 	}

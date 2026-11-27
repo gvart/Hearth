@@ -157,5 +157,7 @@ func (RevokeMCPToken) Op() string { return "revoke_mcp_token" }
 func (RevokeMCPToken) minSchema() int64 { return mcpTokensSchema }
 
 func (c RevokeMCPToken) apply(ctx context.Context, w *writer) (Result, error) {
-	return revokeOne(ctx, w, "mcp_tokens", `name = ?`, c.At, c.Name)
+	return revokeOrStub(ctx, w, "mcp_tokens", `name = ?`, c.At, row{
+		"name": c.Name, "scope": "read", "created_at": c.At,
+	}, c.Name)
 }

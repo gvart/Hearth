@@ -54,6 +54,9 @@ type Result struct {
 	// the first time, and back after an absence.
 	NewHosts      []NetworkHost
 	ReturnedHosts []NetworkHost
+	// Reach, for a write that takes access away in a cluster, is how many
+	// masters took it (TakesAccess).
+	Reach *Reach `json:",omitempty"`
 	// PinMismatch is true when PinCert recorded a mismatch.
 	PinMismatch bool
 	// Roles are the cluster roles of the join token consumed by
@@ -621,17 +624,29 @@ func (c AppendAuditOnce) apply(ctx context.Context, w *writer) (Result, error) {
 	return Result{ID: id}, err
 }
 
-// SetPasswordHash sets the admin password hash and ends every session.
+// SetPasswordHash sets the admin password hash and ends every session: it
+// deletes those here, and raises the session epoch past Now, the reset's
+// time, which ends on every master those it misses (#384).
 type SetPasswordHash struct {
 	Stamp
 	Hash string `json:"hash"`
+	Now  int64  `json:"now"`
 }
 
 // Op implements Command.
 func (SetPasswordHash) Op() string { return "set_password_hash" }
 
 func (c SetPasswordHash) apply(ctx context.Context, w *writer) (Result, error) {
-	if err := w.put(ctx, "admin", row{"id": int64(1), "password_hash": c.Hash}); err != nil {
+	admin := row{"id": int64(1), "password_hash": c.Hash}
+	if w.schema >= sessionEpochSchema {
+		epoch, err := sessionEpoch(ctx, w)
+		if err != nil {
+			return Result{}, err
+		}
+		// Past the one before, whatever this master's clock says.
+		admin["session_epoch"] = max(c.Now, epoch+1)
+	}
+	if err := w.put(ctx, "admin", admin); err != nil {
 		return Result{}, err
 	}
 	if err := deleteWhere(ctx, w, "sessions", `1 = 1`); err != nil {
@@ -670,22 +685,56 @@ func (c CreateSession) apply(ctx context.Context, w *writer) (Result, error) {
 	if err := deleteWhere(ctx, w, "sessions", `expires_at <= ?`, c.Now); err != nil {
 		return Result{}, fmt.Errorf("prune: %w", err)
 	}
-	return Result{}, w.insert(ctx, "sessions", row{"hash": c.Hash, "created_at": c.Now, "expires_at": c.ExpiresAt})
+	r := row{"hash": c.Hash, "created_at": c.Now, "expires_at": c.ExpiresAt}
+	if w.schema >= sessionEpochSchema {
+		// The epoch it is created under: a reset this master has not seen
+		// yet ends it once it has.
+		epoch, err := sessionEpoch(ctx, w)
+		if err != nil {
+			return Result{}, err
+		}
+		r["epoch"] = epoch
+	}
+	return Result{}, w.insert(ctx, "sessions", r)
 }
 
-// DeleteSession ends a session; an unknown session is not an error.
+// sessionEpochSchema is the schema version whose migration (00041) added
+// the session epochs.
+const sessionEpochSchema = 41
+
+// sessionEpoch is the admin row's session epoch, 0 without one.
+func sessionEpoch(ctx context.Context, w *writer) (int64, error) {
+	a, err := w.get(ctx, "admin", int64(1))
+	if err != nil || a == nil {
+		return 0, err
+	}
+	e, _ := a["session_epoch"].(int64)
+	return e, nil
+}
+
+// DeleteSession ends a session; an unknown session is not an error. At is
+// when (#384: a tombstone of a session this master does not hold beats the
+// session's row, created before).
 type DeleteSession struct {
 	Stamp
 	Hash []byte `json:"hash"`
+	At   int64  `json:"at,omitempty"`
 }
 
 // Op implements Command.
 func (DeleteSession) Op() string { return "delete_session" }
 
 func (c DeleteSession) apply(ctx context.Context, w *writer) (Result, error) {
-	r, err := w.get(ctx, "sessions", c.Hash)
-	if err != nil || r == nil {
+	r, err := w.getAny(ctx, "sessions", c.Hash)
+	switch {
+	case err != nil:
 		return Result{}, err
+	case r == nil && w.versioned:
+		// A master that does not hold it writes its tombstone all the same:
+		// another master may (#384).
+		return Result{}, w.write(ctx, "sessions", row{"hash": c.Hash, "created_at": c.At, "expires_at": int64(0)}, nil, true)
+	case r == nil || r.deleted():
+		return Result{}, nil
 	}
 	return Result{}, w.delete(ctx, "sessions", r)
 }

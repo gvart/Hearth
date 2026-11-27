@@ -4,6 +4,7 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -111,6 +112,9 @@ type tableSpec struct {
 	// setOnce are the columns that, once set, are never cleared: the merged
 	// row keeps the earliest value any version had (deny wins).
 	setOnce []string
+	// maxOf are the columns that only rise: the merged row keeps the
+	// highest value any version had (a session epoch, #384).
+	maxOf []string
 	// deletable tables have tombstones; their reads skip rows with
 	// _deleted. A tombstone for any other table is refused.
 	deletable bool
@@ -134,7 +138,7 @@ var tables = map[string]tableSpec{
 	"devices":         {pk: []string{"id"}},
 	"tokens":          {pk: []string{"hash"}, setOnce: []string{"used_at"}},
 	"certs":           {pk: []string{"serial"}, setOnce: []string{"revoked_at", "pin_mismatch_at"}},
-	"admin":           {pk: []string{"id"}},
+	"admin":           {pk: []string{"id"}, maxOf: []string{"session_epoch"}},
 	"sessions":        {pk: []string{"hash"}, deletable: true},
 	"join_tokens":     {pk: []string{"hash"}, setOnce: []string{"used_at"}},
 	"cluster_hubs":    {pk: []string{"node_id"}},
@@ -593,6 +597,10 @@ func upsertSQL(table string, spec tableSpec, cols []string, versioned bool) stri
 			sets = append(sets, c+` = CASE WHEN `+old+` IS NULL THEN `+in+` WHEN `+in+` IS NULL THEN `+old+
 				` ELSE MIN(`+old+`, `+in+`) END`)
 			improves = append(improves, `(`+in+` IS NOT NULL AND (`+old+` IS NULL OR `+in+` < `+old+`))`)
+		case slices.Contains(spec.maxOf, c):
+			old, in := table+`.`+c, `excluded.`+c
+			sets = append(sets, c+` = MAX(`+old+`, `+in+`)`)
+			improves = append(improves, `(`+in+` > `+old+`)`)
 		case versioned:
 			sets = append(sets, c+` = CASE WHEN `+newer+` THEN excluded.`+c+` ELSE `+table+`.`+c+` END`)
 		default:
@@ -673,6 +681,33 @@ func revokeOne(ctx context.Context, w *writer, table, where string, now int64, a
 		return Result{}, ErrNotFound
 	}
 	return Result{Count: n}, nil
+}
+
+// revokeOrStub is revokeOne, but for a row this master does not hold at
+// all: it writes a stub of it, revoked at now, so the row's own copy, from
+// a master that has it, merges into a revoked one (revoked_at is set-once)
+// (#384). stub holds the key (the first of args) and placeholders for the
+// columns that must be set; its hash, which must be unique, is derived from
+// the table and the key, and matches no secret.
+func revokeOrStub(ctx context.Context, w *writer, table, where string, now int64, stub row, args ...any) (Result, error) {
+	res, err := revokeOne(ctx, w, table, where, now, args...)
+	if !errors.Is(err, ErrNotFound) || !w.versioned || !w.s.Sharded() {
+		// A hub alone holds every row: one it lacks does not exist.
+		return res, err
+	}
+	old, err := w.getAny(ctx, table, args[0])
+	switch {
+	case err != nil:
+		return Result{}, err
+	case old != nil:
+		return Result{}, ErrNotFound // revoked or deleted already
+	}
+	h := sha256.Sum256([]byte("revoked " + table + " " + fmt.Sprint(args[0])))
+	stub["hash"], stub["revoked_at"] = h[:], now
+	if err := w.write(ctx, table, stub, nil, false); err != nil {
+		return Result{}, err
+	}
+	return Result{Count: 1}, nil
 }
 
 // pruneRuns deletes the live rows of table matching where but the newest

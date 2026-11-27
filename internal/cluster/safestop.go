@@ -272,10 +272,12 @@ func (r *Replicator) safeStopInput(ctx context.Context, members []MemberInfo) (s
 		}
 		r.handedMu.Unlock()
 		in.HandedOff = func(b int) bool { return digests[b] != 0 && handed[b] == digests[b] }
-		for _, d := range st.BucketDigests(store.SpaceGlobal, all[:store.GlobalBuckets]) {
-			if d != 0 {
-				in.HoldsGlobal = true
-				break
+		for _, sp := range []store.Space{store.SpaceGlobal, store.SpaceMaster} {
+			for _, d := range st.BucketDigests(sp, all[:store.GlobalBuckets]) {
+				if d != 0 {
+					in.HoldsGlobal = true
+					break
+				}
 			}
 		}
 	}

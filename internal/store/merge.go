@@ -60,6 +60,11 @@ func (s *Store) Merge(ctx context.Context, muts []Mutation) (err error) {
 		}
 	}
 	for _, m := range muts {
+		if m.Table == "sessions" {
+			if m, err = s.finalSessionDelete(ctx, tx, m); err != nil {
+				return fmt.Errorf("merge sessions: %w", err)
+			}
+		}
 		err = dt.merge(ctx, tx, m, func() error {
 			if m.Table == auditTable {
 				return mergeAudit(ctx, tx, m)
@@ -82,6 +87,45 @@ func (s *Store) Merge(ctx context.Context, muts []Mutation) (err error) {
 		(*fn)(took)
 	}
 	return nil
+}
+
+// finalSessionDelete makes a session's deletion final (#384): a tombstone
+// wins over a version of the session created no later than it (its
+// created_at: the session's own, or, for one the deleting master did not
+// hold, the time of the sign-out), whatever their HLCs. m is the version
+// merged: turned into the tombstone, stamped past both versions so
+// anti-entropy carries it, when it would revive a deleted session or when
+// it is a tombstone older than the live session it ends.
+func (s *Store) finalSessionDelete(ctx context.Context, tx *sql.Tx, m Mutation) (Mutation, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT * FROM sessions WHERE hash = ?`, m.Row["hash"])
+	if err != nil {
+		return m, err
+	}
+	stored, err := scanRows(rows)
+	if err != nil || len(stored) == 0 {
+		return m, err
+	}
+	old := stored[0]
+	oldHLC, _ := old.version()
+	created := func(r map[string]any) int64 { c, _ := r["created_at"].(int64); return c }
+	past := func() hlc.Timestamp { return max(s.clock.Now(), m.HLC+1, oldHLC+1) }
+	switch {
+	case old.deleted() && !m.Deleted && created(m.Row) <= created(old):
+		// A deleted session's row, late: the tombstone stays, and wins.
+		return Mutation{Table: "sessions", Row: old.data(), Deleted: true, HLC: past(), Origin: s.origin}, nil
+	case !old.deleted() && m.Deleted && !m.newerThan(oldHLC, old) && created(old) <= created(m.Row):
+		// A tombstone older than the session it ends: it ends it all the
+		// same.
+		return Mutation{Table: "sessions", Row: m.Row, Deleted: true, HLC: past(), Origin: s.origin}, nil
+	}
+	return m, nil
+}
+
+// newerThan reports whether m's version is newer than the stored row's,
+// of HLC oldHLC.
+func (m Mutation) newerThan(oldHLC hlc.Timestamp, old row) bool {
+	_, origin := old.version()
+	return m.HLC > oldHLC || (m.HLC == oldHLC && m.Origin > origin)
 }
 
 // MergedRow is a row a Merge took from another member: its table, primary

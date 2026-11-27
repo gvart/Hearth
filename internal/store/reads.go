@@ -69,8 +69,16 @@ func ReadsOf(cmd Command) []Read {
 		// decision.
 		return []Read{key("approvals", c.ID)}
 	case DeleteSession:
-		// A missing copy writes no tombstone: the session stays valid.
+		// The newest copy is deleted (a missing one gets a tombstone all
+		// the same).
 		return []Read{key("sessions", c.Hash)}
+	case SetPasswordHash:
+		// Every session ends, and the epoch rises past the newest one (a
+		// session this master missed ends by the epoch all the same).
+		return []Read{{Table: "admin", Where: `id = 1`}, {Table: "sessions", Where: `1 = 1`}}
+	case DeletePanel:
+		// Its links go with it, those another master holds too.
+		return []Read{key("panels", c.ID), {Table: "panel_links", Where: `panel_id = ?`, Args: Values{c.ID}}}
 	case CreateMCPToken:
 		// Its name is the key: a missed token would be replaced, not
 		// refused as existing.
