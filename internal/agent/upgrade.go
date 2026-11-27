@@ -527,7 +527,21 @@ func (u *upgrader) extract(ctx context.Context, archive io.Reader, out io.Writer
 func binaryVersion(ctx context.Context, path string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, upgradeVersionTimeout)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, path, "version").Output()
+	var out []byte
+	var err error
+	// A child another goroutine forked while the new binary was still open
+	// for writing holds that fd until it execs, and exec then fails with
+	// ETXTBSY (golang/go#22315): try again shortly.
+	for try := 0; ; try++ {
+		out, err = exec.CommandContext(ctx, path, "version").Output()
+		if !errors.Is(err, syscall.ETXTBSY) || try == 4 {
+			break
+		}
+		select {
+		case <-ctx.Done():
+		case <-time.After(time.Duration(try+1) * 50 * time.Millisecond):
+		}
+	}
 	if err != nil {
 		return "", fmt.Errorf("the new binary does not run on this device (%s/%s): %w", runtime.GOOS, runtime.GOARCH, err)
 	}
