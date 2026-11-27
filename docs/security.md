@@ -220,27 +220,40 @@ An admin upgrades a device's agent from its page or with `hearth device upgrade`
 (signing in counts, for the CLI), and audited with the versions, refusals and failures too. Never an
 automation or an MCP client.
 
-- The hub reads the archive's SHA-256 from the release's `checksums.txt` on GitHub, over HTTPS, and
-  sends the agent the archive's URL and that hash over the agent's mutual-TLS stream. The hub does not
-  check the release's Sigstore signature.
-- The agent takes an upgrade only on that stream from its hub. It downloads the archive with a plain
-  HTTPS client (not its device certificate), at most 128 MiB within 5 minutes, refuses it if the
-  SHA-256 differs, runs the new `hearth version` and refuses it unless it names the version asked
-  for. Only then does it rename the new binary over its own, keeping the old one as `hearth.prev`,
-  and exit with status 75 for systemd (`Restart=always`) or launchd (`KeepAlive`) to start the new
-  one. Nothing changes on a failed check.
-- An upgrade replaces the program that enforces the device's capability ceiling, with whatever the
-  release holds: it is above the ceiling, as re-running the installer is. That is why it is dangerous
-  and takes the password. An agent with `HEARTH_NO_SELF_UPGRADE` set, or in a Kubernetes pod (upgrade
-  its image), refuses every upgrade.
+- The hub sends the agent a release version and nothing else, over the agent's mutual-TLS stream.
+  It cannot name a server, a file or a hash: **a hub, even a compromised one, can only make an agent
+  install an official Hearth release, verified against that release's own checksums.**
+- The agent builds both URLs itself, from its compiled-in release base
+  (`https://github.com/gvart/hearth/releases/download/<tag>/`) and its own platform: it reads the
+  release's `checksums.txt`, then downloads its archive with a plain HTTPS client (not its device
+  certificate), following redirects only while they stay HTTPS (GitHub sends assets on to its object
+  storage), at most 128 MiB within 5 minutes. It refuses the archive if its SHA-256 differs from
+  `checksums.txt`, reads at most 512 MiB out of it, runs the new `hearth version` and refuses it
+  unless it names the version asked for. Only then does it rename the new binary over its own
+  (synced to disk first), keeping the old one as `hearth.prev`, and exit with status 75 for systemd
+  (`Restart=always`) or launchd (`KeepAlive`) to start the new one. Nothing changes on a failed check.
+  Neither the hub nor the agent checks the release's Sigstore signature: the trust is GitHub's HTTPS
+  and the release's checksums.
+- The agent refuses a release older than the one it runs: no downgrades, so no way back to a release
+  with a known flaw.
+- If the new binary does not reach a hub, it does not stay: until a hub welcomes it, a marker in the
+  agent's data directory (`upgrade-pending`) counts its starts, and on the fourth start without a
+  welcome the agent puts `hearth.prev` back and exits for its service manager to start the old one.
+- An upgrade replaces the program that enforces the device's capability ceiling: it is above the
+  ceiling, as re-running the installer is. That is why it is dangerous and takes the password. An
+  agent started with `--local-ceiling` refuses every upgrade, as it refuses the hub's ceiling: upgrade
+  it on the device with the installer. So does an agent with `HEARTH_NO_SELF_UPGRADE` set, or in a
+  Kubernetes pod (upgrade its image).
 - To replace its binary, the agent's systemd unit has `ReadWritePaths=/usr/local/bin` on top of
   `ProtectSystem=full`; the rest of its hardening stays.
 - On a device that is also a hub, the hub runs the same `/usr/local/bin/hearth`: it keeps running the
-  old version until its service restarts, and then runs the one the agent installed, an older one
-  too when the admin named an older release. Upgrade the hubs of a cluster first.
-- `HEARTH_RELEASE_BASE_URL` in a hub's environment makes it read releases from another server, as
-  it does for `install.sh`. It is for the end-to-end tests only, not a supported setting: a release
-  server you do not control could hand your agents any binary its `checksums.txt` names.
+  old version until its service restarts, and then runs the one the agent installed. Upgrade the
+  hubs of a cluster first.
+- `HEARTH_RELEASE_BASE_URL` in an agent's environment replaces its release base, as it does for
+  `install.sh`. It is for the end-to-end tests only, not a supported setting; whoever sets an agent's
+  environment owns its host already.
+- The audit entry of an upgrade records the version asked for, the version the agent ran, and the
+  archive URL and SHA-256 the agent reports.
 
 ## Integrations
 

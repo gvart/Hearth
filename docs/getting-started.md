@@ -239,8 +239,11 @@ hearth device upgrade <device-id> --hub-url http://<hub>:7080   # --version v0.1
 An agent from before remote upgrades (older than this release) cannot upgrade itself: its card shows
 the installer's command instead. Run it on the device once; it keeps the device's identity, and
 writes the service unit that lets the agent replace its binary. Every upgrade after that is remote.
-An agent in a Kubernetes pod refuses: upgrade its image in the DaemonSet. The hub needs to reach
-GitHub to read the release's checksums; a local mirror is not supported yet.
+An agent in a Kubernetes pod refuses: upgrade its image in the DaemonSet. So does one started with
+`--local-ceiling`: re-run the installer on the device. An agent never goes back to an older release,
+and if the new one does not reach a hub after three restarts it puts the old one back. The hub only
+names the version: the device itself downloads the official release from GitHub, so it needs to
+reach GitHub; a local mirror is not supported yet.
 
 ## If it does not show up
 
