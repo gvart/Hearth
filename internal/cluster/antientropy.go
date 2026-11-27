@@ -332,6 +332,13 @@ func (r *Replicator) syncSpaceOf(ctx context.Context, st *store.Store, peer stri
 	if err != nil {
 		return err
 	}
+	// Global rows go from masters only (replauth.go): none is taken from a
+	// peer that did not prove it holds the hub CA key, and a member that
+	// holds none sends none.
+	pullGlobal, pushGlobal := resp.fromMaster, r.holdsKey()
+	if sp == store.SpaceGlobal && !pullGlobal && (!pushGlobal || pullOnly) {
+		return nil
+	}
 	mine := chunkHashes(st, sp, cs)
 	if len(resp.Hashes) != len(cs) {
 		return errors.New("anti-entropy: the peer cut the ranges differently")
@@ -373,8 +380,11 @@ func (r *Replicator) syncSpaceOf(ctx context.Context, st *store.Store, peer stri
 		return err
 	}
 	pull, push := diffRows(ours, resp.Digests)
-	if pullOnly {
+	if pullOnly || (sp == store.SpaceGlobal && !pushGlobal) {
 		push = nil
+	}
+	if sp == store.SpaceGlobal && !pullGlobal {
+		pull = nil
 	}
 	cutoff := hlc.New(r.cfg.Now().Add(-store.TombstoneTTL))
 	for refs := range slices.Chunk(pull, refBatch) {

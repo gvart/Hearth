@@ -9,11 +9,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -89,11 +91,30 @@ func newAPTestCluster(t *testing.T, n int, specs ...apSpec) map[string]*apTestNo
 		})
 	}
 	for _, tn := range out {
-		if err := tn.node.RecordNodeCert(t.Context()); err != nil {
+		if err := recordNodeCert(t.Context(), tn, slices.Collect(maps.Values(out))...); err != nil {
 			t.Fatal(err)
 		}
 	}
 	return out
+}
+
+// recordNodeCert records tn's node certificate: tn records its own as a
+// master; else a master of nodes does, as the master that lets a hub join
+// does (only a master writes global rows, #382).
+func recordNodeCert(ctx context.Context, tn *apTestNode, nodes ...*apTestNode) error {
+	if tn.node.IsMaster() {
+		return tn.node.RecordNodeCert(ctx)
+	}
+	leaf := tn.node.cert.Load().Leaf
+	for _, m := range nodes {
+		if m.node.IsMaster() {
+			return m.st.Hubs().Record(ctx, store.HubCert{
+				Serial: pki.SerialString(leaf), NodeID: tn.id,
+				Fingerprint: pki.FingerprintHex(leaf), CAFP: pki.FingerprintHex(m.node.cfg.CA.Cert()),
+			})
+		}
+	}
+	return errors.New("no master to record the node certificate of " + tn.id)
 }
 
 func startAPTestNode(t *testing.T, ca *pki.CA, s apSpec, n int, seed string) *apTestNode {
@@ -493,10 +514,9 @@ func TestDemoteMaster(t *testing.T) {
 	waitUntil(t, 5*time.Second, "a to see b demoted", func() bool {
 		return !c["b"].memberOn(c["a"]).Roles.Has(RoleMaster)
 	})
-	for _, m := range []*apTestNode{c["a"], b} {
-		if err := m.st.Hubs().SetAgentURL(ctx, m.id, m.node.cfg.AgentURL); err != nil {
-			t.Fatal(err)
-		}
+	// Only a master records its agent URL (and writes global rows, #382).
+	if err := c["a"].st.Hubs().SetAgentURL(ctx, "a", c["a"].node.cfg.AgentURL); err != nil {
+		t.Fatal(err)
 	}
 	// a's URL reaches b's copy of the global rows in the background.
 	var urls []string

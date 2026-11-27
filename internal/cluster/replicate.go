@@ -40,7 +40,8 @@ import (
 // connections, one request after another, each a length-prefixed JSON
 // frame), so replication is authenticated like gossip: a peer must present
 // the hub node certificate of a current storage member. No CA key material
-// is ever sent.
+// is ever sent. Global rows, and commands to coordinate, are taken only from
+// a member that proves it holds the hub CA key, a master (replauth.go).
 
 // APPeers is the cluster as the replicator reaches it.
 type APPeers interface {
@@ -60,6 +61,9 @@ type ReplicatorConfig struct {
 	Replicas int
 	// Hints keeps the writes for replicas that are down; nil keeps none.
 	Hints *Hints
+	// Master proves that this member holds the hub CA key, and checks the
+	// proofs of its peers (replauth.go): required.
+	Master MasterKey
 	// LastContact is the file that records when this member last reached
 	// the cluster (see CheckRejoin); empty records nothing.
 	LastContact string
@@ -109,7 +113,7 @@ type Replicator struct {
 	st  atomic.Pointer[store.Store]
 
 	poolMu sync.Mutex
-	pool   map[string][]net.Conn
+	pool   map[string][]*replConn
 
 	ringMu  sync.Mutex
 	ringKey string
@@ -174,6 +178,9 @@ func NewReplicator(cfg ReplicatorConfig) (*Replicator, error) {
 	if cfg.Peers == nil {
 		return nil, errors.New("replicator: no peers")
 	}
+	if cfg.Master == nil {
+		return nil, errors.New("replicator: no hub CA key check")
+	}
 	if cfg.Replicas < 0 {
 		return nil, errors.New("replicator: replicas must be at least 1")
 	}
@@ -195,7 +202,7 @@ func NewReplicator(cfg ReplicatorConfig) (*Replicator, error) {
 	}
 	r := &Replicator{
 		cfg: cfg, log: cfg.Log.With("component", "replication"),
-		pool: map[string][]net.Conn{}, jobs: make(chan func(context.Context), asyncQueue),
+		pool: map[string][]*replConn{}, jobs: make(chan func(context.Context), asyncQueue),
 		suspect: map[string]time.Time{}, handed: map[int]uint64{}, uses: uses,
 	}
 	bg := context.Background()
@@ -443,6 +450,16 @@ func (r *Replicator) applyRouted(ctx context.Context, cmd store.Command) (store.
 		if route.Critical && !slices.Contains(errs, nil) {
 			return store.Result{}, fmt.Errorf("apply %s: no storage member reachable: %w", cmd.Op(), store.ErrUnavailable)
 		}
+		// The storage members do not send the global rows it writes unless
+		// they are masters too (replauth.go): a master off the ring writes
+		// them itself.
+		if !slices.Contains(live, v.self) && r.holdsKey() {
+			res, err := r.applyHere(ctx, cmd, route, v)
+			if err != nil {
+				return store.Result{}, err
+			}
+			results = append(results, res)
+		}
 		return store.MergeResults(cmd, results), nil
 	case store.RouteSplit:
 		parts, err := store.SplitCommand(cmd, func(key string) string {
@@ -551,6 +568,10 @@ func (r *Replicator) applyHere(ctx context.Context, cmd store.Command, route sto
 	st := r.store()
 	if st == nil {
 		return store.Result{}, errors.New("replicator: no store bound")
+	}
+	if route.Kind == store.RouteGlobal && !r.holdsKey() {
+		return store.Result{}, fmt.Errorf("apply %s: this member does not hold the hub CA key, and only a master writes "+
+			"global rows: %w", cmd.Op(), errNotMaster)
 	}
 	if route.Critical {
 		if r.seeking.Load() {
@@ -781,10 +802,18 @@ type writeGroup struct {
 func (r *Replicator) plan(ctx context.Context, muts []store.Mutation, critical, maj bool, v view) (batches, hinted map[string][]store.Mutation, groups []writeGroup, err error) {
 	batches, hinted = map[string][]store.Mutation{}, map[string][]store.Mutation{}
 	parents := map[string][]store.RowRef{}
+	master := r.holdsKey()
 	for _, m := range muts {
 		p, err := m.Placement()
 		if err != nil {
 			return nil, nil, nil, err
+		}
+		if p.Global && !master {
+			// A command a master runs on every storage member (a password
+			// reset) writes them here too, with the master's stamp: the
+			// master sends them, and the others would refuse them from
+			// this member (replauth.go).
+			continue
 		}
 		live, down := v.placementTargets(p)
 		n := v.n
@@ -1017,6 +1046,9 @@ func (r *Replicator) repair(ctx context.Context, refs []store.RowRef) error {
 		}
 		muts = append(muts, ms...)
 	}
+	if !r.holdsKey() {
+		muts = withoutGlobal(muts)
+	}
 	batches := map[string][]store.Mutation{}
 	for _, m := range muts {
 		p, err := m.Placement()
@@ -1044,6 +1076,12 @@ func (r *Replicator) fetch(ctx context.Context, m string, refs []store.RowRef) (
 	resp, err := r.call(ctx, m, apRequest{Op: opFetch, Refs: refs})
 	if err != nil {
 		return nil, err
+	}
+	if !resp.fromMaster && hasGlobal(resp.Muts) {
+		// Only a master writes them: another member's copy is not taken,
+		// whatever its version (replauth.go).
+		r.log.DebugContext(ctx, "dropped the global rows of a member that did not prove it holds the hub CA key", "member", m)
+		return withoutGlobal(resp.Muts), nil
 	}
 	return resp.Muts, nil
 }
@@ -1140,6 +1178,11 @@ func (r *Replicator) deliverHints(ctx context.Context) {
 			if err != nil || len(ids) == 0 {
 				break
 			}
+			if !r.holdsKey() {
+				// Kept while this member was a master: the others take
+				// global rows from masters only, and have them from one.
+				ms = withoutGlobal(ms)
+			}
 			if _, err := r.call(ctx, m, apRequest{Op: opMerge, Muts: ms}); err != nil {
 				r.log.DebugContext(ctx, "deliver hints", "member", m, "err", err)
 				break
@@ -1174,6 +1217,9 @@ type apRequest struct {
 	Ranges  []bucketRange    `json:"ranges,omitempty"`
 	Buckets []int            `json:"buckets,omitempty"`
 	Refs    []store.RowRef   `json:"refs,omitempty"`
+	// Master, on the first request of a connection, proves the sender holds
+	// the hub CA key (replauth.go).
+	Master []byte `json:"master,omitempty"`
 }
 
 type apResponse struct {
@@ -1183,6 +1229,12 @@ type apResponse struct {
 	Hashes  []uint64          `json:"hashes,omitempty"`
 	Digests []store.RowDigest `json:"digests,omitempty"`
 	Muts    []store.Mutation  `json:"muts,omitempty"`
+	// Master, on the first answer on a connection, proves the member that
+	// answers holds the hub CA key (replauth.go).
+	Master []byte `json:"master,omitempty"`
+	// fromMaster is set by call when the member that answered is this one
+	// or proved it holds the hub CA key.
+	fromMaster bool
 }
 
 // The store errors a member's answer carries beyond those of wireKinds.
@@ -1191,12 +1243,19 @@ var apKinds = map[string]error{
 	"skew":         hlc.ErrSkew,
 	"no_route":     store.ErrNoRoute,
 	"not_member":   errNotMember,
+	"not_master":   errNotMaster,
 	"cert_revoked": store.ErrCertRevoked,
 }
 
 // errNotMember refuses a replication request from a hub that is not a
 // storage member or a master.
 var errNotMember = errors.New("not a member of this cluster")
+
+// errNotMaster refuses global rows, or a command to coordinate, from a
+// member that did not prove it holds the hub CA key: only a master sends
+// them (replauth.go). A member of a version before #382 proves nothing.
+var errNotMaster = errors.New("only a master that proves it holds the hub CA key may send this " +
+	"(a member of an older version proves nothing: upgrade it)")
 
 func apWireError(err error) *wireError {
 	for kind, target := range apKinds {
@@ -1219,7 +1278,8 @@ func apError(e *wireError) error {
 // the store error it carries.
 func (r *Replicator) call(ctx context.Context, m string, req apRequest) (apResponse, error) {
 	if m == r.cfg.NodeID {
-		resp := r.handle(ctx, m, req)
+		resp := r.handle(ctx, m, true, req)
+		resp.fromMaster = true
 		if resp.Error != nil {
 			return resp, apError(resp.Error)
 		}
@@ -1245,7 +1305,7 @@ func (r *Replicator) call(ctx context.Context, m string, req apRequest) (apRespo
 	// member cut off a moment ago costs that, not the request's timeout,
 	// before the next target is tried.
 	var (
-		c    net.Conn
+		c    *replConn
 		resp apResponse
 	)
 	// A pooled connection may have been closed since it was pooled (a hub
@@ -1266,11 +1326,21 @@ func (r *Replicator) call(ctx context.Context, m string, req apRequest) (apRespo
 		d, _ := ctx.Deadline()
 		_ = c.SetDeadline(d)
 		sent := false
-		if err = writeFrame(c, req); err == nil {
+		out := req
+		if !c.proved {
+			out.Master = r.proveMaster(proofDialer, bindingOf(c.Conn))
+			c.keyed = out.Master != nil
+		}
+		if err = writeFrame(c, out); err == nil {
 			sent = true
 			err = readFrame(c, &resp)
 		}
 		if err == nil {
+			if !c.proved {
+				c.proved = true
+				c.peerMaster = r.verifyMaster(proofServer, bindingOf(c.Conn), resp.Master)
+			}
+			resp.fromMaster = c.peerMaster
 			break
 		}
 		_ = c.Close()
@@ -1329,24 +1399,45 @@ func (r *Replicator) suspected(m string) bool {
 	return ok
 }
 
+// replConn is a replication connection this member dialed.
+type replConn struct {
+	net.Conn
+	// proved is set once the first request and answer, which carry the
+	// proofs of the hub CA key, went; peerMaster if the member that answers
+	// proved it holds the key.
+	proved, peerMaster bool
+	// keyed is set if this member proved it holds the hub CA key on it.
+	keyed bool
+}
+
 // conn returns a connection to m: a pooled one if pool and there is one
 // (pooled is then true), else a new one.
-func (r *Replicator) conn(ctx context.Context, m string, pool bool) (c net.Conn, pooled bool, err error) {
+func (r *Replicator) conn(ctx context.Context, m string, pool bool) (c *replConn, pooled bool, err error) {
 	if pool {
 		r.poolMu.Lock()
-		if cs := r.pool[m]; len(cs) > 0 {
+		keyed := r.holdsKey()
+		for cs := r.pool[m]; len(cs) > 0; cs = r.pool[m] {
 			c := cs[len(cs)-1]
 			r.pool[m] = cs[:len(cs)-1]
+			if c.keyed != keyed {
+				// Pooled before this member was promoted to master, or
+				// demoted: the peer still takes it for what it was then.
+				_ = c.Close()
+				continue
+			}
 			r.poolMu.Unlock()
 			return c, true, nil
 		}
 		r.poolMu.Unlock()
 	}
-	c, err = r.cfg.Peers.DialReplica(ctx, m)
-	return c, false, err
+	nc, err := r.cfg.Peers.DialReplica(ctx, m)
+	if err != nil {
+		return nil, false, err
+	}
+	return &replConn{Conn: nc}, false, nil
 }
 
-func (r *Replicator) putConn(m string, c net.Conn) {
+func (r *Replicator) putConn(m string, c *replConn) {
 	r.poolMu.Lock()
 	defer r.poolMu.Unlock()
 	if len(r.pool[m]) >= poolSize {
@@ -1373,6 +1464,8 @@ func (r *Replicator) closePool() {
 func (r *Replicator) ServeConn(c net.Conn, peer string) {
 	defer func() { _ = c.Close() }()
 	ctx := *r.ctx.Load()
+	binding := bindingOf(c)
+	var peerMaster, proved bool
 	for ctx.Err() == nil {
 		_ = c.SetReadDeadline(time.Now().Add(replicaIdle))
 		var req apRequest
@@ -1382,14 +1475,20 @@ func (r *Replicator) ServeConn(c net.Conn, peer string) {
 		_ = c.SetReadDeadline(time.Time{})
 		rctx, cancel := context.WithTimeout(ctx, r.cfg.RequestTimeout)
 		var resp apResponse
+		if !peerMaster && len(req.Master) > 0 {
+			peerMaster = r.verifyMaster(proofDialer, binding, req.Master)
+		}
 		if r.isMember(peer) {
 			r.clearSuspect(peer) // it reached this member: it is up
-			resp = r.handle(rctx, peer, req)
+			resp = r.handle(rctx, peer, peerMaster, req)
 		} else {
 			r.log.Warn("refused a replication request from a non-member", "peer", peer, "op", req.Op)
 			resp = apResponse{Error: apWireError(fmt.Errorf("%s: %w", peer, errNotMember))}
 		}
 		cancel()
+		if !proved {
+			resp.Master, proved = r.proveMaster(proofServer, binding), true
+		}
 		_ = c.SetWriteDeadline(time.Now().Add(r.cfg.RequestTimeout))
 		if err := writeFrame(c, resp); err != nil {
 			return
@@ -1415,8 +1514,9 @@ func (r *Replicator) isMember(peer string) bool {
 	return false
 }
 
-// handle answers one request.
-func (r *Replicator) handle(ctx context.Context, peer string, req apRequest) apResponse {
+// handle answers one request of peer; master is set if peer proved it holds
+// the hub CA key, or is this member.
+func (r *Replicator) handle(ctx context.Context, peer string, master bool, req apRequest) apResponse {
 	st := r.store()
 	if st == nil {
 		return apResponse{Error: apWireError(errors.New("replicator: no store bound"))}
@@ -1424,6 +1524,12 @@ func (r *Replicator) handle(ctx context.Context, peer string, req apRequest) apR
 	fail := func(err error) apResponse { return apResponse{Error: apWireError(err)} }
 	switch req.Op {
 	case opApply:
+		// Only a master originates a command: one coordinated here is
+		// written in this member's name, global rows included.
+		if !master {
+			r.log.WarnContext(ctx, "refused a command from a member that did not prove it holds the hub CA key", "peer", peer)
+			return fail(fmt.Errorf("%s: coordinate a command: %w", peer, errNotMaster))
+		}
 		cmd, err := store.DecodeCommand(req.Cmd)
 		if err != nil {
 			return fail(err)
@@ -1438,6 +1544,10 @@ func (r *Replicator) handle(ctx context.Context, peer string, req apRequest) apR
 		}
 		return apResponse{Result: &res}
 	case opMerge:
+		if !master && hasGlobal(req.Muts) {
+			r.log.WarnContext(ctx, "refused global rows from a member that did not prove it holds the hub CA key", "peer", peer)
+			return fail(fmt.Errorf("%s: merge global rows: %w", peer, errNotMaster))
+		}
 		ms := slices.Clone(req.Muts)
 		store.SortMutations(ms)
 		if err := st.Merge(ctx, ms); err != nil {

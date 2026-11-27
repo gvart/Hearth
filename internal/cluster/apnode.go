@@ -224,6 +224,7 @@ func NewAPNode(ctx context.Context, cfg APConfig) (*APNode, error) {
 	rc := cfg.Gossip
 	rc.OnSynced = n.onSynced
 	rc.NodeID, rc.Peers, rc.Replicas, rc.Hints, rc.Log = cfg.NodeID, apNodePeers{n}, cfg.Replicas, hints, cfg.Log
+	rc.Master = CAMasterKey(cfg.CA)
 	rc.LastContact = filepath.Join(dir, lastContactFile)
 	rc.Broadcast = func(b []byte) {
 		if m := n.membership; m != nil {

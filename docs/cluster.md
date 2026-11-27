@@ -203,8 +203,8 @@ dir and join it again.
   members (env `HEARTH_REPLICAS`, default min(2, storage members), never below 1). Rows that belong
   together stay together: a device's certificates with the device, runs with their automation or
   runbook, an action's audit entries with each other. Small global tables (the admin password, hub
-  certificates, configuration documents, Kubernetes and Proxmox connections, network hosts, telemetry
-  settings) are on every storage member.
+  certificates, configuration documents, device capability ceilings and plugins, Kubernetes and Proxmox
+  connections, network hosts, telemetry settings) are on every storage member and every master.
 - **Writes.** Audit entries, certificates, revocations, tokens, sessions, approvals and configuration
   documents are **critical**: they need W = min(2, N) replicas and fail at once with 503
   `cluster_unavailable` when fewer are reachable. Runbook runs need more: a strict **majority** of the
@@ -248,6 +248,36 @@ dir and join it again.
   decided only by the master that owns it (below).
 - **Clocks.** A member refuses a stamp more than 60 seconds ahead of its own clock, so a host with a
   wrong clock cannot win every conflict. Keep the hosts' clocks in sync (NTP).
+
+### Who may write what
+
+Members send each other rows in a few ways: the coordinator of a write sends the rows it wrote to the
+other replicas, or keeps them as hints for one that is down; a master that is not a replica of a key
+asks a replica to coordinate the command (`apply`); anti-entropy and a promoted member's catch-up pull
+and push the rows that differ; a storage member being demoted hands its rows off; a read repairs the
+stale copies it saw; and a revocation is fetched from the member the gossip names.
+
+The roles a member announces on the gossip are its own word, so they decide nothing here. What decides
+is the hub CA key, which only masters hold: on each replication connection, each end that holds it
+signs the connection's TLS exporter with it.
+
+- **Global rows come from masters only.** A member refuses a merge with a global row from a peer that
+  did not prove it holds the key, and drops the global rows it fetches from one (anti-entropy, catch-up,
+  read repair, a revocation, a backup's pull). A member without the key writes no global row and sends
+  none: it takes them from the masters. A password reset still runs on every storage member, each with
+  the master's stamp, and a master that is not a storage member writes its global part itself.
+- **Commands are coordinated for masters only.** A member refuses `apply` from a peer that did not
+  prove it holds the key: what it coordinates is written in its own name.
+- **Sharded rows go through storage members.** They are their replicas: a storage member coordinates
+  the writes a master forwards, keeps hints, hands rows off and runs anti-entropy for them.
+
+So a storage-only member, compromised, cannot change the admin password, the configuration (policy,
+automations, runbooks), a device's capability ceiling or plugins, the hub certificates or the
+integrations. It can still change the sharded rows it holds, and answer reads of them as it likes:
+sessions, tokens, enrollment and join tokens, approvals, devices and their certificates, audit
+entries. Treat a storage member as able to sign in as the admin (a forged session) until those rows are
+signed by the master that wrote them ([#384](https://github.com/gvart/hearth/issues/384)). A member of
+a version from before this check proves nothing: upgrade every hub together.
 
 ## Masters
 

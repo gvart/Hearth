@@ -3,7 +3,10 @@
 package cluster
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -44,6 +47,8 @@ type apNet struct {
 	unknown map[[2]string]bool
 	// tune, if set, changes each member's replicator configuration.
 	tune func(*ReplicatorConfig)
+	// roles are the roles a member announces, HubRoles if not set.
+	roles map[string]RoleSet
 }
 
 type apMember struct {
@@ -70,7 +75,11 @@ func (p apPeers) Members() []MemberInfo {
 		if p.net.down[id] || p.net.cut[[2]string{p.self, id}] {
 			state = MemberDead
 		}
-		out = append(out, MemberInfo{ID: id, Roles: HubRoles, State: state})
+		roles, ok := p.net.roles[id]
+		if !ok {
+			roles = HubRoles
+		}
+		out = append(out, MemberInfo{ID: id, Roles: roles, State: state})
 	}
 	return out
 }
@@ -94,8 +103,38 @@ func (p apPeers) DialReplica(ctx context.Context, id string) (net.Conn, error) {
 		go func() { _, _ = io.Copy(io.Discard, b) }()
 		return a, nil
 	}
-	go m.rep.ServeConn(b, p.self)
-	return a, nil
+	// Both ends share a binding, as a TLS connection's exporter.
+	binding := []byte(rand.Text())
+	go m.rep.ServeConn(boundConn{b, binding}, p.self)
+	return boundConn{a, binding}, nil
+}
+
+// boundConn is a pipe end with the binding both ends share.
+type boundConn struct {
+	net.Conn
+	b []byte
+}
+
+func (c boundConn) Binding() []byte { return c.b }
+
+// testMasterKey stands for the hub CA key: a member holds it or not, and
+// every member checks proofs alike.
+type testMasterKey struct{ holds bool }
+
+func (k testMasterKey) Holds() bool { return k.holds }
+
+func (k testMasterKey) Prove(msg []byte) ([]byte, bool) {
+	if !k.holds {
+		return nil, false
+	}
+	return testProof(msg), true
+}
+
+func (testMasterKey) Verify(msg, sig []byte) bool { return bytes.Equal(sig, testProof(msg)) }
+
+func testProof(msg []byte) []byte {
+	h := sha256.Sum256(append([]byte("test hub CA key\x00"), msg...))
+	return h[:]
 }
 
 // newAPNet starts members ids with replication factor n (0: default).
@@ -108,7 +147,7 @@ func newAPNet(t testing.TB, n int, ids ...string) *apNet {
 // replicators' configuration changed by tune.
 func newAPNetWith(t testing.TB, n int, tune func(*ReplicatorConfig), ids ...string) *apNet {
 	t.Helper()
-	an := &apNet{tune: tune, members: map[string]*apMember{}, down: map[string]bool{}, crashed: map[string]bool{}, hung: map[string]bool{}, unroutable: map[[2]string]bool{}, cut: map[[2]string]bool{}, unknown: map[[2]string]bool{}}
+	an := &apNet{tune: tune, members: map[string]*apMember{}, down: map[string]bool{}, crashed: map[string]bool{}, hung: map[string]bool{}, unroutable: map[[2]string]bool{}, cut: map[[2]string]bool{}, unknown: map[[2]string]bool{}, roles: map[string]RoleSet{}}
 	for _, id := range ids {
 		an.add(t, n, id)
 	}
@@ -131,6 +170,7 @@ func (an *apNet) add(t testing.TB, n int, id string) *apMember {
 	cfg := ReplicatorConfig{
 		NodeID: id, Peers: apPeers{net: an, self: id}, Replicas: n, Hints: hints,
 		RequestTimeout: 2 * time.Second, AntiEntropyEvery: time.Hour, HintsEvery: time.Hour, GCEvery: time.Hour,
+		Master: testMasterKey{holds: true},
 	}
 	if an.tune != nil {
 		an.tune(&cfg)

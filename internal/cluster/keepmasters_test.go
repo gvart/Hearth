@@ -5,6 +5,7 @@ package cluster
 import (
 	"context"
 	"errors"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -144,7 +145,7 @@ func keepCluster(t *testing.T, eligible bool, polCfg policy.Config) (map[string]
 	// unreachable for a moment, so the setup's writes are tried again.
 	for _, tn := range c {
 		waitUntil(t, 15*time.Second, "the node certificate of "+tn.id+" recorded", func() bool {
-			return tn.node.RecordNodeCert(t.Context()) == nil
+			return recordNodeCert(t.Context(), tn, slices.Collect(maps.Values(c))...) == nil
 		})
 	}
 	// c joined with a join token: minted for it as a device, or an admin's.

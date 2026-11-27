@@ -264,10 +264,10 @@ func (s *Store) queryRowNewest(ctx context.Context, table, key, query string, ar
 // queryRowNewest, so a replica that missed the row's write does not answer
 // "no row" for it, and the newest version among the replicas, a tombstone
 // included, decides. The row scans as sql.ErrNoRows unless that version is
-// live. On a store that holds every row it is the plain read, live rows of a
-// deletable table only.
+// live. On a store that holds every row, and for a global table, which every
+// member holds, it is the plain read, live rows of a deletable table only.
 func (s *Store) queryRowLive(ctx context.Context, table, key, sel, rest string, args ...any) rowScanner {
-	if s.shards == nil {
+	if s.shards == nil || globalTables[table] {
 		if tables[table].deletable {
 			versioned, err := isVersioned(ctx, s.db)
 			if err != nil {

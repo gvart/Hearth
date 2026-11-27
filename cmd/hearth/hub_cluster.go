@@ -421,11 +421,15 @@ func runClusterMember(ctx context.Context, node *cluster.APNode, setup func(cont
 		return nil
 	}
 	caughtUp.Store(found && synced)
-	if err := node.RecordNodeCert(ctx); err != nil {
-		log.WarnContext(ctx, "record this hub's node certificate", "err", err)
-	}
-	if err := setup(ctx); err != nil {
-		log.ErrorContext(ctx, "HEARTH_ADMIN_PASSWORD not applied", "err", err)
+	// Both write global rows, which only a master writes (#382): the master
+	// that let a storage-only member join recorded its certificate.
+	if node.IsMaster() {
+		if err := node.RecordNodeCert(ctx); err != nil {
+			log.WarnContext(ctx, "record this hub's node certificate", "err", err)
+		}
+		if err := setup(ctx); err != nil {
+			log.ErrorContext(ctx, "HEARTH_ADMIN_PASSWORD not applied", "err", err)
+		}
 	}
 	close(ready)
 	st := node.Status()
