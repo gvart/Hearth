@@ -1,0 +1,20 @@
+docs/design/pro-edition.md
+  s_18b57982fdff93::t_f0046b8fd0f4c4 1-7,9-17,19-95,97-99,101-119
+  s_18b57982fdff93::t_c334099d46cf77 8,18,96,100
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "fc7676d455ff83046ce3bf37c9405c5083fa8f0f",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
