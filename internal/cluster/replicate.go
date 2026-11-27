@@ -684,8 +684,10 @@ type writeGroup struct {
 
 // plan returns, for muts written here, the rows to send to each other live
 // target, the rows to hint to each replica that is down, and each row's
-// targets and W. A stand-in, which may lack the parent row of a child
-// (a certificate's device), gets the parent first.
+// targets and W. Every target of a child row (a certificate) gets its
+// parent (the device) first: a stand-in may never have held it, and an
+// owner may not hold it yet, its copy still in a hint or in the
+// background replication of the parent's write (#370).
 func (r *Replicator) plan(ctx context.Context, muts []store.Mutation, critical bool, v view) (batches, hinted map[string][]store.Mutation, groups []writeGroup, err error) {
 	batches, hinted = map[string][]store.Mutation{}, map[string][]store.Mutation{}
 	parents := map[string][]store.RowRef{}
@@ -701,16 +703,12 @@ func (r *Replicator) plan(ctx context.Context, muts []store.Mutation, critical b
 		}
 		groups = append(groups, writeGroup{live: live, w: writeQuorum(critical, n)})
 		ref, hasParent := m.ParentRef()
-		var owners []string
-		if hasParent && !p.Global {
-			owners = v.ring.Owners(store.BucketOf(store.Token(p.Key)), v.n)
-		}
 		for _, t := range live {
 			if t == v.self {
 				continue
 			}
 			batches[t] = append(batches[t], m)
-			if hasParent && !slices.Contains(owners, t) {
+			if hasParent {
 				parents[t] = append(parents[t], ref)
 			}
 		}

@@ -421,6 +421,34 @@ func TestHintedHandoff(t *testing.T) {
 	}
 }
 
+// A replica that does not hold a certificate's device yet (its copy went
+// to a hint, or the device's background replication has not reached it)
+// still takes the certificate: it gets the device first (#370). With two
+// members there is no stand-in, so without it the write fails.
+func TestCriticalChildReachesAnOwnerMissingTheParent(t *testing.T) {
+	for _, ids := range [][]string{{"a", "b"}, {"a", "b", "c"}} {
+		t.Run(strconv.Itoa(len(ids)), func(t *testing.T) {
+			ctx := t.Context()
+			an := newAPNet(t, 2, ids...)
+			id := keyOwnedBy(t, ids, 2, "dev", "a", "b")
+			an.setDown("b", true)
+			if err := an.m("a").st.Devices().Upsert(ctx, device(id, "d")); err != nil {
+				t.Fatal(err)
+			}
+			an.setDown("b", false)
+			if _, ok := localDevice(t, an.m("b"), id); ok {
+				t.Fatal("b holds the device; the test needs it missing")
+			}
+			if err := an.m("a").st.Certs().Create(ctx, "s1", id); err != nil {
+				t.Fatalf("create on a = %v", err)
+			}
+			if n := localRows(t, an.m("b"), `SELECT count(*) FROM certs WHERE serial = 's1'`); n != 1 {
+				t.Errorf("b holds %d copies of s1, want 1", n)
+			}
+		})
+	}
+}
+
 // A list that sees two versions of a row repairs the stale replica.
 func TestReadRepair(t *testing.T) {
 	ctx := t.Context()
