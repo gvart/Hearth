@@ -231,16 +231,30 @@ func (c *client) session(ctx context.Context) (string, bool, error) {
 	return sid, true, nil
 }
 
+// batch is a run of calls (one read, one action) that may log in again once
+// between them.
+type batch struct {
+	c *client
+	// relogged says the batch already logged in, or logged in again.
+	relogged bool
+}
+
+func (c *client) batch() *batch { return &batch{c: c} }
+
 // call calls object.method with args and decodes its data into out, if not
-// nil. A call refused with access denied logs in again once, as the
-// router answers so for an expired session too; refused again, the session's
-// ACL lacks it.
-func (c *client) call(ctx context.Context, object, method string, args, out any) error {
+// nil. The first call of a batch refused with access denied logs in again,
+// as the router answers so for an expired session too; after a login in the
+// batch, a refusal means the session's ACL lacks the call, and the session
+// remembers it. So a login whose ACL lacks several calls costs one login,
+// not one per call and per read.
+func (b *batch) call(ctx context.Context, object, method string, args, out any) error {
+	c := b.c
 	key := object + "." + method
 	sid, fresh, err := c.session(ctx)
 	if err != nil {
 		return err
 	}
+	b.relogged = b.relogged || fresh
 	c.mu.Lock()
 	known := c.sid == sid && c.denied[key]
 	c.mu.Unlock()
@@ -248,7 +262,8 @@ func (c *client) call(ctx context.Context, object, method string, args, out any)
 		return fmt.Errorf("%s: %w", key, errDenied)
 	}
 	data, err := c.rawCall(ctx, sid, object, method, args)
-	if isAccessDenied(err) && !fresh {
+	if isAccessDenied(err) && !b.relogged {
+		b.relogged = true
 		c.mu.Lock()
 		if c.sid == sid {
 			c.sid = ""

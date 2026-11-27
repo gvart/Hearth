@@ -396,7 +396,7 @@ func (m *Manager) RestartDNS(ctx context.Context, actorKind, actorID, id string,
 		if err != nil {
 			return err
 		}
-		return r.client.call(ctx, "rc", "init", map[string]any{"name": "dnsmasq", "action": "restart"}, nil)
+		return r.client.batch().call(ctx, "rc", "init", map[string]any{"name": "dnsmasq", "action": "restart"}, nil)
 	})
 	if err != nil {
 		return ActionResult{}, fmt.Errorf("restart %s: %w", target, err)

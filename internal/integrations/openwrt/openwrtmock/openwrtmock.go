@@ -2,8 +2,9 @@
 
 // Package openwrtmock is a fake OpenWrt router: the part of uhttpd's /ubus
 // JSON-RPC Hearth uses, for tests. It is written from the sources of uhttpd
-// (ubus.c), rpcd (session.c, iwinfo.c), procd (system.c), netifd and LuCI's
-// rpcd-mod-luci: the null-session login, the legacy [status, data] result
+// (ubus.c), rpcd (session.c, iwinfo.c, rc.c), procd (system.c) and LuCI's
+// rpcd-mod-luci (luci.c), and netifd's network.device status fields as
+// LuCI reads them: the null-session login, the legacy [status, data] result
 // form, JSON-RPC error -32002 for a session that is unknown, expired or whose
 // ACL lacks the call, -32000 for an object that is not there, and the reply
 // fields of system board and info, network.device status, luci-rpc
@@ -59,7 +60,8 @@ func New(user, password string) *Server {
 		leases: []map[string]any{
 			{"expires": 43000, "hostname": "nas", "macaddr": "2c:cf:67:00:00:01", "ipaddr": "192.168.1.10"},
 			{"expires": 39000, "hostname": "pixel-8", "macaddr": "a4:5e:60:00:00:02", "ipaddr": "192.168.1.23"},
-			{"expires": 0, "hostname": "printer", "macaddr": "00:1b:a9:00:00:03", "ipaddr": "192.168.1.5"},
+			// A static lease: rpcd-mod-luci sends expires as a u8 0, false in JSON.
+			{"expires": false, "hostname": "printer", "macaddr": "00:1b:a9:00:00:03", "ipaddr": "192.168.1.5"},
 			{"expires": 12000, "hostname": "*", "macaddr": "de:ad:be:00:00:04", "ipaddr": "192.168.1.77"},
 		},
 		assoc: map[string][]map[string]any{

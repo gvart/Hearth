@@ -124,15 +124,19 @@ func TestSessionExpiryLogsInAgain(t *testing.T) {
 
 func TestACLDeniedIsMissingWithoutLoginLoop(t *testing.T) {
 	c, mock := newMockClient(t)
+	if _, err := c.read(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	// The ACL changes under a live session: two calls are refused.
 	mock.Deny("luci-rpc", "getDHCPLeases")
-	mock.Remove("iwinfo")
+	mock.Deny("iwinfo", "devices")
 	for range 3 {
 		r, err := c.read(t.Context())
 		if err != nil {
 			t.Fatalf("read = %v, want the leases and wireless clients missing only", err)
 		}
 		if len(r.missing) != 2 || !strings.Contains(r.missing[0], "DHCP leases") || !strings.Contains(r.missing[0], "ACL") ||
-			!strings.Contains(r.missing[1], "wireless clients") || !strings.Contains(r.missing[1], "not on this router") {
+			!strings.Contains(r.missing[1], "wireless clients") || !strings.Contains(r.missing[1], "ACL") {
 			t.Errorf("missing = %v", r.missing)
 		}
 		if len(r.clients) != 0 || r.system.Hostname != "gateway" || len(r.interfaces) == 0 {
@@ -140,9 +144,21 @@ func TestACLDeniedIsMissingWithoutLoginLoop(t *testing.T) {
 		}
 	}
 	// The first denial logs in once more, in case the session expired; the
-	// same session is not asked again.
+	// second denial of that read, and every later read, log in no more.
 	if mock.Logins() != 2 {
 		t.Errorf("logins = %d, want 2", mock.Logins())
+	}
+}
+
+func TestMissingPackage(t *testing.T) {
+	c, mock := newMockClient(t)
+	mock.Remove("iwinfo")
+	r, err := c.read(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.missing) != 1 || !strings.Contains(r.missing[0], "not on this router") || len(r.clients) != 4 {
+		t.Errorf("read = %+v", r)
 	}
 }
 

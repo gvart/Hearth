@@ -169,12 +169,13 @@ type assocReply struct {
 // router may not have, and are listed as missing instead.
 func (c *client) read(ctx context.Context) (reading, error) {
 	var r reading
+	b := c.batch()
 	var board boardReply
-	if err := c.call(ctx, "system", "board", nil, &board); err != nil {
+	if err := b.call(ctx, "system", "board", nil, &board); err != nil {
 		return reading{}, err
 	}
 	var info infoReply
-	if err := c.call(ctx, "system", "info", nil, &info); err != nil {
+	if err := b.call(ctx, "system", "info", nil, &info); err != nil {
 		return reading{}, err
 	}
 	r.system = System{
@@ -199,7 +200,7 @@ func (c *client) read(ctx context.Context) (reading, error) {
 	}
 
 	var devs map[string]deviceStatus
-	err := c.call(ctx, "network.device", "status", nil, &devs)
+	err := b.call(ctx, "network.device", "status", nil, &devs)
 	if err = optional("interfaces", err); err != nil {
 		return reading{}, err
 	}
@@ -215,7 +216,7 @@ func (c *client) read(ctx context.Context) (reading, error) {
 		return cl
 	}
 	var leases leasesReply
-	err = c.call(ctx, "luci-rpc", "getDHCPLeases", map[string]any{"family": 4}, &leases)
+	err = b.call(ctx, "luci-rpc", "getDHCPLeases", map[string]any{"family": 4}, &leases)
 	if err = optional("DHCP leases", err); err != nil {
 		return reading{}, err
 	}
@@ -236,7 +237,7 @@ func (c *client) read(ctx context.Context) (reading, error) {
 	var radios struct {
 		Devices []string `json:"devices"`
 	}
-	err = c.call(ctx, "iwinfo", "devices", nil, &radios)
+	err = b.call(ctx, "iwinfo", "devices", nil, &radios)
 	if err = optional("wireless clients", err); err != nil {
 		return reading{}, err
 	}
@@ -245,7 +246,7 @@ func (c *client) read(ctx context.Context) (reading, error) {
 			continue
 		}
 		var assoc assocReply
-		err := c.call(ctx, "iwinfo", "assoclist", map[string]any{"device": radio}, &assoc)
+		err := b.call(ctx, "iwinfo", "assoclist", map[string]any{"device": radio}, &assoc)
 		if err = optional("wireless clients of "+radio, err); err != nil {
 			return reading{}, err
 		}
