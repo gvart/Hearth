@@ -111,6 +111,8 @@ func allCommands() []Command {
 		RemoveESPHomeDevice{ID: "e1"},
 		AddOpenWrtRouter{ID: "o1", Name: "gateway", Sealed: []byte{7}, CreatedAt: 39},
 		RemoveOpenWrtRouter{ID: "o1"},
+		AddOPNsenseFirewall{ID: "f1", Name: "edge", Sealed: []byte{6}, CreatedAt: 40},
+		RemoveOPNsenseFirewall{ID: "f1"},
 		CreateRunbookRun{
 			ID: "rr1", RunbookID: "rb", Status: "running", StartedBy: "admin/root", StartedAt: 35,
 			Source: []byte("steps: []"), State: `{"step":0}`, Keep: 100,
@@ -440,6 +442,10 @@ func runScenario(t *testing.T, s *Store) {
 	must(s.OpenWrtRouters().Add(ctx, OpenWrtRouter{ID: "o2", Name: "attic", Sealed: []byte{2}, CreatedAt: at(5 * time.Hour)}))
 	must(s.OpenWrtRouters().Remove(ctx, "o2"))
 	wantErr(s.OpenWrtRouters().Remove(ctx, "o2"), ErrNotFound)
+	must(s.OPNsenseFirewalls().Add(ctx, OPNsenseFirewall{ID: "f1", Name: "edge", Sealed: []byte{1}, CreatedAt: at(5 * time.Hour)}))
+	must(s.OPNsenseFirewalls().Add(ctx, OPNsenseFirewall{ID: "f2", Name: "lab", Sealed: []byte{2}, CreatedAt: at(5 * time.Hour)}))
+	must(s.OPNsenseFirewalls().Remove(ctx, "f2"))
+	wantErr(s.OPNsenseFirewalls().Remove(ctx, "f2"), ErrNotFound)
 
 	// A hub CA rotation: started, a second refused, cut over, its secrets
 	// re-sealed (a stale one refused), finished.

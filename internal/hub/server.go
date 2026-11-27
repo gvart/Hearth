@@ -19,6 +19,7 @@ import (
 	"github.com/gvart/hearth/internal/integrations/esphome"
 	"github.com/gvart/hearth/internal/integrations/kubernetes"
 	"github.com/gvart/hearth/internal/integrations/openwrt"
+	"github.com/gvart/hearth/internal/integrations/opnsense"
 	"github.com/gvart/hearth/internal/integrations/prometheus"
 	"github.com/gvart/hearth/internal/integrations/proxmox"
 	"github.com/gvart/hearth/internal/metrics"
@@ -104,6 +105,9 @@ type Config struct {
 	// OpenWrt serves adopted OpenWrt routers under /api/v1/openwrt. Nil
 	// disables it.
 	OpenWrt *openwrt.Manager
+	// OPNsense serves adopted OPNsense firewalls under /api/v1/opnsense. Nil
+	// disables it.
+	OPNsense *opnsense.Manager
 	// Plugins serves the hub's exec plugins under /api/v1/plugins. Nil
 	// disables it.
 	Plugins *plugins.Manager

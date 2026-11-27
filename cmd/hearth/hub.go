@@ -33,6 +33,7 @@ import (
 	"github.com/gvart/hearth/internal/integrations/esphome"
 	"github.com/gvart/hearth/internal/integrations/kubernetes"
 	"github.com/gvart/hearth/internal/integrations/openwrt"
+	"github.com/gvart/hearth/internal/integrations/opnsense"
 	"github.com/gvart/hearth/internal/integrations/prometheus"
 	"github.com/gvart/hearth/internal/integrations/proxmox"
 	"github.com/gvart/hearth/internal/integrations/talos"
@@ -419,6 +420,9 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	// The routers' clients feed network discovery; the importer leaves them
 	// out while no router is read.
 	importSources = append(importSources, owrt)
+	// So do the OPNsense firewalls' leases and ARP tables.
+	opn := opnsense.NewManager(opnsense.Config{Store: st, Sealer: sealers.opnsense, Policy: pol, Log: log})
+	importSources = append(importSources, opn)
 	if opts.newDeviceAlerts != "" && !notifier.Has(opts.newDeviceAlerts) {
 		return fmt.Errorf("--new-device-alerts: no notification channel %q (see --notify-config)", opts.newDeviceAlerts)
 	}
@@ -485,6 +489,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		Proxmox:           pve,
 		ESPHome:           esp,
 		OpenWrt:           owrt,
+		OPNsense:          opn,
 		Plugins:           pluginMgr,
 		Notify:            notifier,
 		NetworkScans:      networkScans,
@@ -691,6 +696,8 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	g.Go(func() error { return esp.Run(gctx) })
 	// And reads the OpenWrt routers itself.
 	g.Go(func() error { return owrt.Run(gctx) })
+	// And the OPNsense firewalls.
+	g.Go(func() error { return opn.Run(gctx) })
 	// And runs the exec plugins itself, if any: commands may reach any hub.
 	if pluginMgr != nil {
 		g.Go(func() error { return pluginMgr.Run(gctx) })

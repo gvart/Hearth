@@ -71,6 +71,8 @@ const (
 	SourceNetAlertX = "netalertx"
 	// SourceOpenWrt is an OpenWrt router's DHCP leases and wireless clients.
 	SourceOpenWrt = "openwrt"
+	// SourceOPNsense is an OPNsense firewall's DHCP leases and ARP table.
+	SourceOPNsense = "opnsense"
 )
 
 // NetworkHost is a host network discovery found, keyed by its MAC address.

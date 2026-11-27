@@ -156,6 +156,9 @@ var tables = map[string]tableSpec{
 	"openwrt_routers": {pk: []string{"id"}, deletable: true, since: openwrtRoutersSchema, tombstone: func(r row) {
 		r["connection"], r["name"] = []byte{}, deletedName(r["id"])
 	}},
+	"opnsense_firewalls": {pk: []string{"id"}, deletable: true, since: opnsenseFirewallsSchema, tombstone: func(r row) {
+		r["connection"], r["name"] = []byte{}, deletedName(r["id"])
+	}},
 	"runbook_runs": {pk: []string{"id"}, deletable: true, tombstone: func(r row) {
 		r["source"] = []byte{}
 	}},
