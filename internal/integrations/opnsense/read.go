@@ -25,7 +25,7 @@ const (
 )
 
 // The API endpoints Hearth reads, in the snake_case form OPNsense's ACLs
-// match (24.7 and later).
+// match (25.7 and later).
 const (
 	pathSystemInfo  = "/api/diagnostics/system/system_information"
 	pathSystemTime  = "/api/diagnostics/system/system_time"

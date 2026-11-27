@@ -11,8 +11,9 @@ the DNS resolver, and only when you ask, with your password, through policy.
 
 > **Not yet tested on a real firewall.** This integration has been tested against a fake firewall
 > written from the sources of OPNsense core (the API controllers, their configd scripts and the ACLs)
-> and of its os-isc-dhcp plugin. It has not been run against a real OPNsense yet. It needs OPNsense
-> 24.7 or later, whose API paths it uses.
+> and of its os-isc-dhcp plugin. It has not been run against a real OPNsense yet. It is written
+> for OPNsense 25.7 or later: the first release whose privileges match the API paths it uses (with an
+> older release, a key with limited privileges may be refused).
 
 OpenWrt routers are covered in [OpenWrt](openwrt.md); UniFi is tracked in [#365](https://github.com/gvart/hearth/issues/365).
 
