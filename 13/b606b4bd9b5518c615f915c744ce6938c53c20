@@ -1,0 +1,23 @@
+docs/getting-started.md
+  s_18b57982fdff93::t_8c3503515569c4 254-288
+docs/security.md
+  s_18b57982fdff93::t_0fd7e065e6b526 280-289
+web/src/components/DeviceUpgrade.tsx
+  s_18b57982fdff93::t_d573ab68e55f05 151-152
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "13b606b4bd9b5518c615f915c744ce6938c53c20",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "unknown"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
