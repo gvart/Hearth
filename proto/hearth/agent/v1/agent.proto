@@ -59,6 +59,11 @@ message HubMessage {
 // ceiling grants nothing beyond the flags.
 message CeilingConfig {
   Ceiling ceiling = 1;
+  // version orders the configs of a device: the hybrid logical clock of the
+  // stored row, 0 when none was set. The hub never sends one older than the
+  // last it sent on the stream, and the agent ignores one older than the one
+  // it applied and saved, so a stale push cannot undo a lowering.
+  uint64 version = 2;
 }
 
 // ProtocolVersion is the agent<->hub protocol version. A major bump is incompatible;

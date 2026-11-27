@@ -18,17 +18,46 @@ import (
 // saved in dataDir.
 func hubRunner(t *testing.T, dataDir string, local Ceiling, locked bool) *runner {
 	t.Helper()
-	hub, err := readCeilingFile(dataDir)
+	hub, version, err := readCeilingFile(dataDir)
 	if err != nil {
-		hub = Ceiling{}
+		hub, version = Ceiling{}, 0
 	}
 	return &runner{
 		cfg: Config{DataDir: dataDir, Ceiling: local, LocalCeiling: locked}, log: slog.New(slog.DiscardHandler), id: &identity{deviceID: "d"},
-		ceilings: newCeilings(local, hub, locked), ceilingChanged: make(chan struct{}, 1),
+		ceilings: newCeilings(local, hub, version, locked), ceilingChanged: make(chan struct{}, 1),
 	}
 }
 
 func push(c *agentv1.Ceiling) *agentv1.CeilingConfig { return &agentv1.CeilingConfig{Ceiling: c} }
+
+// TestOlderCeilingIgnored: a config older than the one applied, as a stale
+// heartbeat push on the hub may send after a lowering, changes nothing, and
+// still not after a restart, since the version is saved with the ceiling.
+func TestOlderCeilingIgnored(t *testing.T) {
+	dir := t.TempDir()
+	r := hubRunner(t, dir, Ceiling{}, false)
+	r.applyCeiling(t.Context(), &agentv1.CeilingConfig{Ceiling: &agentv1.Ceiling{Shell: true}, Version: 5})
+	// The lowering.
+	r.applyCeiling(t.Context(), &agentv1.CeilingConfig{Ceiling: &agentv1.Ceiling{}, Version: 6})
+	if r.ceiling().Shell {
+		t.Fatal("lowering not applied")
+	}
+	// The stale push that read version 5 before the lowering.
+	if r.applyCeiling(t.Context(), &agentv1.CeilingConfig{Ceiling: &agentv1.Ceiling{Shell: true}, Version: 5}) || r.ceiling().Shell {
+		t.Fatal("an older ceiling turned the shell back on")
+	}
+	restarted := hubRunner(t, dir, Ceiling{}, false)
+	if restarted.ceilings.version != 6 {
+		t.Fatalf("saved version %d, want 6", restarted.ceilings.version)
+	}
+	if restarted.applyCeiling(t.Context(), &agentv1.CeilingConfig{Ceiling: &agentv1.Ceiling{Shell: true}, Version: 5}) || restarted.ceiling().Shell {
+		t.Fatal("after a restart, an older ceiling turned the shell back on")
+	}
+	// A newer one applies.
+	if !restarted.applyCeiling(t.Context(), &agentv1.CeilingConfig{Ceiling: &agentv1.Ceiling{Shell: true}, Version: 7}) || !restarted.ceiling().Shell {
+		t.Fatal("a newer ceiling was not applied")
+	}
+}
 
 // TestApplyCeiling is the ceiling the hub sets: added to the flags, saved,
 // reported at once; a lower one takes back only what the hub granted.
@@ -75,7 +104,7 @@ func TestApplyCeiling(t *testing.T) {
 // saved ceiling.
 func TestApplyCeilingLocked(t *testing.T) {
 	dir := t.TempDir()
-	if err := writeCeilingFile(dir, Ceiling{Shell: true, Exec: []string{"/bin/sh"}}); err != nil {
+	if err := writeCeilingFile(dir, Ceiling{Shell: true, Exec: []string{"/bin/sh"}}, 0); err != nil {
 		t.Fatal(err)
 	}
 	flags := Ceiling{Probe: true}
@@ -136,7 +165,7 @@ func TestCorruptCeilingFile(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(dir, CeilingFile), []byte(body), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := readCeilingFile(dir); err == nil {
+			if _, _, err := readCeilingFile(dir); err == nil {
 				t.Fatal("readCeilingFile accepted a corrupt file")
 			}
 			flags := Ceiling{Logs: []string{"systemd:*"}}

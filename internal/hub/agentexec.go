@@ -105,7 +105,7 @@ type agentSession struct {
 	// ceilingMu serialises CeilingConfig pushes; sentCeiling is the ceiling
 	// the agent last got (ceilingpush.go).
 	ceilingMu   sync.Mutex
-	sentCeiling *agentv1.Ceiling
+	sentCeiling *agentv1.CeilingConfig
 	// hubs is the hub list the agent last got, in Welcome or Hubs.
 	hubs []string
 }

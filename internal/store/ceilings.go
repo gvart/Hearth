@@ -24,6 +24,9 @@ type DeviceCeiling struct {
 	UpdatedAt time.Time
 	// UpdatedBy is the actor that set it, as kind/id.
 	UpdatedBy string
+	// Version is the row's hybrid logical clock: a later write has a higher
+	// one, and the replicas keep the highest.
+	Version uint64
 }
 
 // DeviceCeilings is the repository of the ceilings the hub sets.
@@ -55,17 +58,20 @@ func (r DeviceCeilings) Get(ctx context.Context, device string) (DeviceCeiling, 
 	}
 	var (
 		ceiling, by string
-		at          int64
+		at, hlc     int64
 	)
 	err := r.s.queryRowLive(ctx, "device_ceilings", device,
-		`SELECT ceiling, updated_at, updated_by`, ` FROM device_ceilings WHERE device_id = ?`, device).Scan(&ceiling, &at, &by)
+		`SELECT ceiling, updated_at, updated_by, _hlc`, ` FROM device_ceilings WHERE device_id = ?`, device).Scan(&ceiling, &at, &by, &hlc)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return DeviceCeiling{}, fmt.Errorf("ceiling of device %s: %w", device, ErrNotFound)
 		}
 		return DeviceCeiling{}, fmt.Errorf("ceiling of device %s: %w", device, err)
 	}
-	return DeviceCeiling{DeviceID: device, Ceiling: json.RawMessage(ceiling), UpdatedAt: fromMillis(at), UpdatedBy: by}, nil
+	return DeviceCeiling{
+		DeviceID: device, Ceiling: json.RawMessage(ceiling), UpdatedAt: fromMillis(at), UpdatedBy: by,
+		Version: uint64(hlc), //nolint:gosec // an HLC is never negative
+	}, nil
 }
 
 // SetDeviceCeiling records the capability ceiling the hub sets for a

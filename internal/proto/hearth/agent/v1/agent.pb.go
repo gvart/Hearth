@@ -489,8 +489,13 @@ func (*HubMessage_CeilingConfig) isHubMessage_Payload() {}
 // longer allows. An agent started with --local-ceiling ignores it. An empty
 // ceiling grants nothing beyond the flags.
 type CeilingConfig struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ceiling       *Ceiling               `protobuf:"bytes,1,opt,name=ceiling,proto3" json:"ceiling,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Ceiling *Ceiling               `protobuf:"bytes,1,opt,name=ceiling,proto3" json:"ceiling,omitempty"`
+	// version orders the configs of a device: the hybrid logical clock of the
+	// stored row, 0 when none was set. The hub never sends one older than the
+	// last it sent on the stream, and the agent ignores one older than the one
+	// it applied and saved, so a stale push cannot undo a lowering.
+	Version       uint64 `protobuf:"varint,2,opt,name=version,proto3" json:"version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -530,6 +535,13 @@ func (x *CeilingConfig) GetCeiling() *Ceiling {
 		return x.Ceiling
 	}
 	return nil
+}
+
+func (x *CeilingConfig) GetVersion() uint64 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
 }
 
 // ProtocolVersion is the agent<->hub protocol version. A major bump is incompatible;
@@ -3922,9 +3934,10 @@ const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"\x04hubs\x18\n" +
 	" \x01(\v2\x15.hearth.agent.v1.HubsH\x00R\x04hubs\x12G\n" +
 	"\x0eceiling_config\x18\v \x01(\v2\x1e.hearth.agent.v1.CeilingConfigH\x00R\rceilingConfigB\t\n" +
-	"\apayload\"C\n" +
+	"\apayload\"]\n" +
 	"\rCeilingConfig\x122\n" +
-	"\aceiling\x18\x01 \x01(\v2\x18.hearth.agent.v1.CeilingR\aceiling\"=\n" +
+	"\aceiling\x18\x01 \x01(\v2\x18.hearth.agent.v1.CeilingR\aceiling\x12\x18\n" +
+	"\aversion\x18\x02 \x01(\x04R\aversion\"=\n" +
 	"\x0fProtocolVersion\x12\x14\n" +
 	"\x05major\x18\x01 \x01(\rR\x05major\x12\x14\n" +
 	"\x05minor\x18\x02 \x01(\rR\x05minor\"\xfe\x04\n" +

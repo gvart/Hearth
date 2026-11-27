@@ -21,6 +21,11 @@ import (
 // the stream at once; and from every heartbeat, which compares the stored
 // ceiling with the one the stream last got, so a change made on another
 // master or by the CLI arrives within a heartbeat interval.
+//
+// Each config carries the stored row's version (its HLC). A session never
+// sends one older than the last it sent, and the agent ignores one older
+// than the one it applied, so a heartbeat that read the store before an
+// admin lowered the ceiling cannot raise it again after the lowering.
 
 // minCeilingConfigMinor is the first agent protocol minor version that takes
 // a CeilingConfig.
@@ -31,11 +36,12 @@ type ceilingReader interface {
 	Get(ctx context.Context, device string) (store.DeviceCeiling, error)
 }
 
-// storedCeiling is the ceiling set for device, or an empty one if none was.
-func storedCeiling(ctx context.Context, r ceilingReader, device string) (*agentv1.Ceiling, error) {
+// storedCeiling is the ceiling set for device and its version, or an empty
+// one of version 0 if none was.
+func storedCeiling(ctx context.Context, r ceilingReader, device string) (*agentv1.CeilingConfig, error) {
 	dc, err := r.Get(ctx, device)
 	if errors.Is(err, store.ErrNotFound) {
-		return &agentv1.Ceiling{}, nil
+		return &agentv1.CeilingConfig{Ceiling: &agentv1.Ceiling{}}, nil
 	}
 	if err != nil {
 		return nil, err
@@ -44,51 +50,64 @@ func storedCeiling(ctx context.Context, r ceilingReader, device string) (*agentv
 	if err := protojson.Unmarshal(dc.Ceiling, c); err != nil {
 		return nil, fmt.Errorf("decode the ceiling of device %s: %w", device, err)
 	}
-	return c, nil
+	return &agentv1.CeilingConfig{Ceiling: c, Version: dc.Version}, nil
 }
 
 // syncCeiling sends sess the ceiling stored for its device when it differs
 // from the one it last got. A failed read or send is logged: the next
 // heartbeat tries again.
 func (s *AgentStream) syncCeiling(ctx context.Context, log *slog.Logger, sess *agentSession) {
-	if s.ceilings == nil || sess.minor < minCeilingConfigMinor {
+	if s.ceilings == nil {
 		return
 	}
-	c, err := storedCeiling(ctx, s.ceilings, sess.device)
-	if err != nil {
-		log.WarnContext(ctx, "read the device's capability ceiling", "err", err)
-		return
-	}
-	if err := sess.pushCeiling(c); err != nil {
+	if err := sess.syncCeiling(ctx, s.ceilings); err != nil {
 		log.WarnContext(ctx, "send the device's capability ceiling", "err", err)
 	}
 }
 
-// pushCeiling sends c in a CeilingConfig unless the stream's agent got it
-// last.
-func (s *agentSession) pushCeiling(c *agentv1.Ceiling) error {
-	s.ceilingMu.Lock()
-	defer s.ceilingMu.Unlock()
-	if s.sentCeiling != nil && proto.Equal(s.sentCeiling, c) {
+// syncCeiling reads the stored ceiling and sends it, both under ceilingMu,
+// so that no other push of the session runs between the read and the send.
+func (s *agentSession) syncCeiling(ctx context.Context, r ceilingReader) error {
+	if s.minor < minCeilingConfigMinor {
 		return nil
 	}
-	msg := &agentv1.HubMessage{Payload: &agentv1.HubMessage_CeilingConfig{CeilingConfig: &agentv1.CeilingConfig{Ceiling: c}}}
+	s.ceilingMu.Lock()
+	defer s.ceilingMu.Unlock()
+	cfg, err := storedCeiling(ctx, r, s.device)
+	if err != nil {
+		return fmt.Errorf("read the device's capability ceiling: %w", err)
+	}
+	return s.pushCeilingLocked(cfg)
+}
+
+// pushCeilingLocked sends cfg unless the stream's agent got it, or a later
+// one, already. The caller holds ceilingMu.
+func (s *agentSession) pushCeilingLocked(cfg *agentv1.CeilingConfig) error {
+	if s.sentCeiling != nil {
+		if cfg.GetVersion() < s.sentCeiling.GetVersion() {
+			return nil
+		}
+		if cfg.GetVersion() == s.sentCeiling.GetVersion() && proto.Equal(cfg.GetCeiling(), s.sentCeiling.GetCeiling()) {
+			return nil
+		}
+	}
+	msg := &agentv1.HubMessage{Payload: &agentv1.HubMessage_CeilingConfig{CeilingConfig: cfg}}
 	if err := s.sendMsg(msg); err != nil {
 		return err
 	}
-	s.sentCeiling = proto.CloneOf(c)
+	s.sentCeiling = proto.CloneOf(cfg)
 	return nil
 }
 
-// PushCeiling sends c, the ceiling just set for device, to its agent if it
-// streams to this hub and takes one. Agents streaming elsewhere get it from
-// their next heartbeat there.
-func (a *Agents) PushCeiling(device string, c *agentv1.Ceiling) error {
+// PushCeiling sends the ceiling just stored for device, read again from r
+// with its version, to its agent if it streams to this hub and takes one.
+// Agents streaming elsewhere get it from their next heartbeat there.
+func (a *Agents) PushCeiling(ctx context.Context, r ceilingReader, device string) error {
 	a.mu.Lock()
 	sess := a.sessions[device]
 	a.mu.Unlock()
-	if sess == nil || sess.minor < minCeilingConfigMinor {
+	if sess == nil {
 		return nil
 	}
-	return sess.pushCeiling(c)
+	return sess.syncCeiling(ctx, r)
 }

@@ -253,7 +253,7 @@ func (a *api) putCapabilities(w http.ResponseWriter, r *http.Request) {
 	}
 	a.log.InfoContext(ctx, "device capabilities set", "device_id", d.ID, "raised", change.Raised, "lowered", change.Lowered)
 	if a.agents != nil {
-		if err := a.agents.PushCeiling(d.ID, next); err != nil {
+		if err := a.agents.PushCeiling(ctx, a.store.DeviceCeilings(), d.ID); err != nil {
 			// The next heartbeat sends it again.
 			a.log.WarnContext(ctx, "send the device's capabilities", "device_id", d.ID, "err", err)
 		}

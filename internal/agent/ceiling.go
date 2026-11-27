@@ -81,36 +81,36 @@ func checkHubCeiling(c Ceiling) (Ceiling, error) {
 
 // readCeilingFile returns the ceiling saved in dataDir, checked, or the
 // zero Ceiling if there is none.
-func readCeilingFile(dataDir string) (Ceiling, error) {
+func readCeilingFile(dataDir string) (Ceiling, uint64, error) {
 	f, err := os.Open(filepath.Join(dataDir, CeilingFile))
 	if errors.Is(err, os.ErrNotExist) {
-		return Ceiling{}, nil
+		return Ceiling{}, 0, nil
 	}
 	if err != nil {
-		return Ceiling{}, fmt.Errorf("read %s: %w", CeilingFile, err)
+		return Ceiling{}, 0, fmt.Errorf("read %s: %w", CeilingFile, err)
 	}
 	defer f.Close()
 	b, err := io.ReadAll(io.LimitReader(f, maxCeilingFile+1))
 	if err != nil {
-		return Ceiling{}, fmt.Errorf("read %s: %w", CeilingFile, err)
+		return Ceiling{}, 0, fmt.Errorf("read %s: %w", CeilingFile, err)
 	}
 	if len(b) > maxCeilingFile {
-		return Ceiling{}, fmt.Errorf("read %s: larger than %d bytes", CeilingFile, maxCeilingFile)
+		return Ceiling{}, 0, fmt.Errorf("read %s: larger than %d bytes", CeilingFile, maxCeilingFile)
 	}
-	var pc agentv1.Ceiling
-	if err := protojson.Unmarshal(b, &pc); err != nil {
-		return Ceiling{}, fmt.Errorf("read %s: %w", CeilingFile, err)
+	var cfg agentv1.CeilingConfig
+	if err := protojson.Unmarshal(b, &cfg); err != nil {
+		return Ceiling{}, 0, fmt.Errorf("read %s: %w", CeilingFile, err)
 	}
-	c, err := checkHubCeiling(ceilingOf(&pc))
+	c, err := checkHubCeiling(ceilingOf(cfg.GetCeiling()))
 	if err != nil {
-		return Ceiling{}, fmt.Errorf("read %s: %w", CeilingFile, err)
+		return Ceiling{}, 0, fmt.Errorf("read %s: %w", CeilingFile, err)
 	}
-	return c, nil
+	return c, cfg.GetVersion(), nil
 }
 
 // writeCeilingFile replaces the ceiling saved in dataDir (0600) atomically.
-func writeCeilingFile(dataDir string, c Ceiling) error {
-	b, err := protojson.Marshal(c.proto())
+func writeCeilingFile(dataDir string, c Ceiling, version uint64) error {
+	b, err := protojson.Marshal(&agentv1.CeilingConfig{Ceiling: c.proto(), Version: version})
 	if err != nil {
 		return fmt.Errorf("write %s: %w", CeilingFile, err)
 	}
@@ -126,17 +126,19 @@ func writeCeilingFile(dataDir string, c Ceiling) error {
 type ceilings struct {
 	local  Ceiling
 	locked bool
-	// hub is the hub's part; only the session's receiving goroutine sets it.
-	hub Ceiling
-	eff atomic.Pointer[Ceiling]
+	// hub is the hub's part, and version its CeilingConfig's; only the
+	// session's receiving goroutine sets them.
+	hub     Ceiling
+	version uint64
+	eff     atomic.Pointer[Ceiling]
 }
 
-func newCeilings(local, hub Ceiling, locked bool) *ceilings {
+func newCeilings(local, hub Ceiling, version uint64, locked bool) *ceilings {
 	c := &ceilings{local: local, locked: locked}
 	if locked {
-		hub = Ceiling{}
+		hub, version = Ceiling{}, 0
 	}
-	c.hub = hub
+	c.hub, c.version = hub, version
 	eff := local.union(hub)
 	c.eff.Store(&eff)
 	return c
@@ -145,9 +147,14 @@ func newCeilings(local, hub Ceiling, locked bool) *ceilings {
 // get is the effective ceiling.
 func (c *ceilings) get() Ceiling { return *c.eff.Load() }
 
-// setHub makes hub the hub's part and reports whether that changed it.
-func (c *ceilings) setHub(hub Ceiling) bool {
-	if c.locked || hub.equal(c.hub) {
+// setHub makes hub, of version, the hub's part and reports whether that
+// changed it.
+func (c *ceilings) setHub(hub Ceiling, version uint64) bool {
+	if c.locked {
+		return false
+	}
+	c.version = version
+	if hub.equal(c.hub) {
 		return false
 	}
 	c.hub = hub

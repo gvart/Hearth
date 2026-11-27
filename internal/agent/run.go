@@ -165,16 +165,19 @@ func Run(ctx context.Context, cfg Config) error {
 
 		ceilingChanged: make(chan struct{}, 1),
 	}
-	var hubCeiling Ceiling
+	var (
+		hubCeiling Ceiling
+		version    uint64
+	)
 	if !cfg.LocalCeiling {
 		// A file that cannot be read leaves the flags alone: the hub sends
 		// its ceiling again on connect.
-		if hubCeiling, err = readCeilingFile(cfg.DataDir); err != nil {
+		if hubCeiling, version, err = readCeilingFile(cfg.DataDir); err != nil {
 			log.WarnContext(ctx, "ignoring the saved capability ceiling; using the flags only", "err", err)
-			hubCeiling = Ceiling{}
+			hubCeiling, version = Ceiling{}, 0
 		}
 	}
-	r.ceilings = newCeilings(cfg.Ceiling, hubCeiling, cfg.LocalCeiling)
+	r.ceilings = newCeilings(cfg.Ceiling, hubCeiling, version, cfg.LocalCeiling)
 	if cfg.readNetEdges != nil {
 		r.netEdges = cfg.readNetEdges
 	}
@@ -593,22 +596,31 @@ func (r *runner) applyCeiling(ctx context.Context, cfg *agentv1.CeilingConfig) b
 		r.log.InfoContext(ctx, "capability ceiling from the hub ignored: the agent runs with --local-ceiling")
 		return false
 	}
+	if v := cfg.GetVersion(); v < r.ceilings.version {
+		// A hub read it before a later change this agent already applied:
+		// taking it would undo that change, a lowering included.
+		r.log.InfoContext(ctx, "older capability ceiling from the hub ignored", "version", v, "applied", r.ceilings.version)
+		return false
+	}
 	c, err := checkHubCeiling(ceilingOf(cfg.GetCeiling()))
 	if err != nil {
 		r.log.WarnContext(ctx, "capability ceiling from the hub refused", "err", err)
 		return false
 	}
-	before := r.ceiling()
-	if !r.ceilings.setHub(c) {
+	before, beforeVersion := r.ceiling(), r.ceilings.version
+	changed := r.ceilings.setHub(c, cfg.GetVersion())
+	if !changed && r.ceilings.version == beforeVersion {
 		return false
 	}
-	if err := writeCeilingFile(r.cfg.DataDir, c); err != nil {
+	// Saved with its version even when only that moved, so that after a
+	// restart an older config is still refused.
+	if err := writeCeilingFile(r.cfg.DataDir, c, cfg.GetVersion()); err != nil {
 		// Not fatal: the ceiling in memory applies, and the hub sends it
 		// again on the next connect.
 		r.log.WarnContext(ctx, "save the capability ceiling", "err", err)
 	}
 	after := r.ceiling()
-	if after.equal(before) {
+	if !changed || after.equal(before) {
 		return false
 	}
 	r.log.InfoContext(ctx, "capability ceiling changed by the hub", "exec", len(after.Exec), "restart", len(after.Restart),
