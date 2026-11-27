@@ -190,11 +190,10 @@ actions:
     service: systemd:pihole-FTL.service
   - id: verify
     type: check              # fails the run if DNS still does not answer
-    check:
-      type: dns
-      name: example.com
-      server: 127.0.0.1
-      from: pi4
+    check: dns
+    name: example.com
+    server: 127.0.0.1
+    from: pi4
 ```
 
 In the web editor this is **Run on the device (works when the hub is down)** in the General card.
@@ -360,9 +359,10 @@ actions:
     timeout: 10s                 # optional, default 10s, at most 1m
 ```
 
-A `check` action takes a `check` mapping written as a [check trigger](#synthetic-checks-http-dns-tcp)
-(`type`, its fields, `from`, `timeout`), without `every` and `for`: it runs once, as `automation.probe`,
-to verify that a restart worked.
+A `check` action names its kind in `check` (`http`, `tcp` or `dns`) and takes that
+[check trigger](#synthetic-checks-http-dns-tcp)'s fields (`url`, `status`, `address`, `name`, `server`,
+`from`, `timeout`), without `every` and `for`: it runs once, as `automation.probe`, to verify that a
+restart worked.
 
 Two gates stand before anything runs on a device, and both must agree:
 

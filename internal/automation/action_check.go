@@ -19,37 +19,43 @@ type probeAction struct {
 	c *checkTrigger
 }
 
-// buildCheckAction builds a check action from its check field, a mapping
-// with the check's type and fields, as a runbook's check step takes it.
+// buildCheckAction builds a check action: check names the kind (http, tcp
+// or dns) and the other fields are that check trigger's, without every and
+// for, so that the editor gives it a form as flat as a trigger's.
 func buildCheckAction(p Params, probers Probers) (Action, error) {
-	var cfg struct {
-		Check yaml.Node `yaml:"check"`
-	}
-	if err := p.Decode(&cfg); err != nil {
-		return nil, err
-	}
-	n := &cfg.Check
-	if n.Kind != yaml.MappingNode {
-		return nil, errors.New("check is required: a mapping with the check's type (http, tcp or dns) and fields")
-	}
-	for i := 0; i+1 < len(n.Content); i += 2 {
-		if k := n.Content[i]; k.Value == "every" || k.Value == "for" {
+	kind, line := "", 0
+	rest := &yaml.Node{Kind: yaml.MappingNode, Line: p.node.Line}
+	for i := 0; i+1 < len(p.node.Content); i += 2 {
+		k, v := p.node.Content[i], p.node.Content[i+1]
+		switch k.Value {
+		case "check":
+			if v.Kind != yaml.ScalarNode {
+				return nil, lineError(v.Line, "check must be http, tcp or dns")
+			}
+			kind, line = v.Value, v.Line
+		case "every", "for":
 			return nil, lineError(k.Line, "a check action runs once: %s is for check triggers", k.Value)
+		case "url", "status", "address", "name", "server", "from", "timeout":
+			rest.Content = append(rest.Content, k, v)
+		default:
+			return nil, lineError(k.Line, "unknown field %q", k.Value)
 		}
 	}
-	deps := TriggerDeps{Probers: probers}
-	builders := map[string]Builder[Trigger]{
-		"http": func(p Params) (Trigger, error) { return buildHTTPCheck(p, deps) },
-		"tcp":  func(p Params) (Trigger, error) { return buildTCPCheck(p, deps) },
-		"dns":  func(p Params) (Trigger, error) { return buildDNSCheck(p, deps) },
+	builders := map[string]func(Params, TriggerDeps) (Trigger, error){
+		"http": buildHTTPCheck, "tcp": buildTCPCheck, "dns": buildDNSCheck,
 	}
-	var errs []error
-	list := &yaml.Node{Kind: yaml.SequenceNode, Line: n.Line, Content: []*yaml.Node{n}}
-	built := buildSteps(list, "check", builders, &errs)
-	if len(errs) > 0 {
-		return nil, errs[0]
+	build := builders[kind]
+	switch {
+	case kind == "":
+		return nil, errors.New("check is required: http, tcp or dns")
+	case build == nil:
+		return nil, lineError(line, "check must be http, tcp or dns, not %q", kind)
 	}
-	c, ok := built[0].Impl.(*checkTrigger)
+	t, err := build(Params{node: rest}, TriggerDeps{Probers: probers})
+	if err != nil {
+		return nil, err
+	}
+	c, ok := t.(*checkTrigger)
 	if !ok {
 		return nil, errors.New("check must be an http, tcp or dns check")
 	}

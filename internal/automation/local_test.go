@@ -44,11 +44,10 @@ actions:
     timeout: 30s
   - id: verify
     type: check
-    check:
-      type: tcp
-      address: 127.0.0.1:53
-      from: pi4
-      timeout: 2s
+    check: tcp
+    address: 127.0.0.1:53
+    from: pi4
+    timeout: 2s
 `
 
 func TestLocalAutomationLoads(t *testing.T) {
@@ -133,7 +132,7 @@ func TestLocalAutomationRefused(t *testing.T) {
 			"not log",
 		},
 		{
-			"check from the hub", "id: a\nlocal: true\n" + trigger + "actions:\n  - type: check\n    check:\n      type: tcp\n      address: 127.0.0.1:53\n",
+			"check from the hub", "id: a\nlocal: true\n" + trigger + "actions:\n  - type: check\n    check: tcp\n    address: 127.0.0.1:53\n",
 			"from must be pi4",
 		},
 		{"queued", "id: a\nlocal: true\nmode: queued\n" + trigger + restart, "mode must be single"},
@@ -156,7 +155,7 @@ func TestLocalAutomationRefused(t *testing.T) {
 
 func TestCheckActionRefusesTriggerFields(t *testing.T) {
 	for _, field := range []string{"every: 5s", "for: 5s"} {
-		src := "id: a\ntriggers:\n  - type: manual\nactions:\n  - type: check\n    check:\n      type: tcp\n      address: 127.0.0.1:53\n      " + field + "\n"
+		src := "id: a\ntriggers:\n  - type: manual\nactions:\n  - type: check\n    check: tcp\n    address: 127.0.0.1:53\n    " + field + "\n"
 		if _, err := Parse("a.yaml", []byte(src), localKinds(nil)); err == nil || !strings.Contains(err.Error(), "runs once") {
 			t.Errorf("%s: Parse = %v, want refused", field, err)
 		}
@@ -164,6 +163,15 @@ func TestCheckActionRefusesTriggerFields(t *testing.T) {
 	src := "id: a\ntriggers:\n  - type: manual\nactions:\n  - type: check\n"
 	if _, err := Parse("a.yaml", []byte(src), localKinds(nil)); err == nil || !strings.Contains(err.Error(), "check is required") {
 		t.Errorf("no check: Parse = %v", err)
+	}
+	for src, want := range map[string]string{
+		"check: icmp\n    address: 127.0.0.1:53\n": "must be http, tcp or dns",
+		"check: tcp\n    url: http://x/\n":         `unknown field "url"`,
+	} {
+		src = "id: a\ntriggers:\n  - type: manual\nactions:\n  - type: check\n    " + src
+		if _, err := Parse("a.yaml", []byte(src), localKinds(nil)); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("Parse(%q) = %v, want %q", src, err, want)
+		}
 	}
 }
 
@@ -181,7 +189,7 @@ func TestCheckActionRuns(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			pr := &fakeProbers{answer: tt.answer}
-			src := "id: a\ntriggers:\n  - type: manual\nactions:\n  - type: check\n    check:\n      type: tcp\n      address: 127.0.0.1:53\n      from: pi\n"
+			src := "id: a\ntriggers:\n  - type: manual\nactions:\n  - type: check\n    check: tcp\n    address: 127.0.0.1:53\n    from: pi\n"
 			a, err := Parse("a.yaml", []byte(src), localKinds(pr))
 			if err != nil {
 				t.Fatal(err)
@@ -203,7 +211,7 @@ func TestCheckActionRuns(t *testing.T) {
 
 func TestCheckActionPrecheck(t *testing.T) {
 	pr := &fakeProbers{answer: up, check: policy.ErrBeyondCeiling}
-	src := "id: a\ntriggers:\n  - type: manual\nactions:\n  - type: check\n    check:\n      type: tcp\n      address: 127.0.0.1:53\n      from: pi\n"
+	src := "id: a\ntriggers:\n  - type: manual\nactions:\n  - type: check\n    check: tcp\n    address: 127.0.0.1:53\n    from: pi\n"
 	a, err := Parse("a.yaml", []byte(src), localKinds(pr))
 	if err != nil {
 		t.Fatal(err)
