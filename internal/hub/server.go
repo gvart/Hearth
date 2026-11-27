@@ -18,6 +18,7 @@ import (
 	"github.com/gvart/hearth/internal/hubconfig"
 	"github.com/gvart/hearth/internal/integrations/esphome"
 	"github.com/gvart/hearth/internal/integrations/kubernetes"
+	"github.com/gvart/hearth/internal/integrations/openwrt"
 	"github.com/gvart/hearth/internal/integrations/prometheus"
 	"github.com/gvart/hearth/internal/integrations/proxmox"
 	"github.com/gvart/hearth/internal/metrics"
@@ -100,6 +101,9 @@ type Config struct {
 	// ESPHome serves adopted ESPHome devices under /api/v1/esphome. Nil
 	// disables it.
 	ESPHome *esphome.Manager
+	// OpenWrt serves adopted OpenWrt routers under /api/v1/openwrt. Nil
+	// disables it.
+	OpenWrt *openwrt.Manager
 	// Plugins serves the hub's exec plugins under /api/v1/plugins. Nil
 	// disables it.
 	Plugins *plugins.Manager
