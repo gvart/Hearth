@@ -92,7 +92,7 @@ func Mirror(ctx context.Context, client *http.Client, key ed25519.PublicKey, bas
 		return fmt.Errorf("%s/%s: %w", src, ChecksumsFile, err)
 	}
 	out := filepath.Join(dir, tag)
-	if err := os.MkdirAll(out, 0o755); err != nil {
+	if err := os.MkdirAll(out, 0o755); err != nil { //nolint:gosec // a web server serves the mirror
 		return fmt.Errorf("create %s: %w", out, err)
 	}
 	for _, a := range assets {

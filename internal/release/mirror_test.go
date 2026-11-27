@@ -147,12 +147,18 @@ func TestMirrorRefused(t *testing.T) {
 		{"no release", fakeUpstream{tag: "v9.9.9", assets: assets}, "v1.2.3", "is v1.2.3 a release?"},
 		{"signed with another key", fakeUpstream{tag: "v1.2.3", assets: assets, sig: Sign(other, []byte("x"))}, "v1.2.3", "does not verify"},
 		{"malformed signature", fakeUpstream{tag: "v1.2.3", assets: assets, sig: []byte("nope")}, "v1.2.3", "malformed"},
-		{"path in a signed name", fakeUpstream{tag: "v1.2.3", assets: assets,
-			checksums: strings.Repeat("a", 64) + "  ../../etc/passwd\n"}, "v1.2.3", "refused the asset name"},
-		{"a signed name over checksums.txt", fakeUpstream{tag: "v1.2.3", assets: assets,
-			checksums: strings.Repeat("a", 64) + "  checksums.txt.sig\n"}, "v1.2.3", "refused the asset name"},
-		{"asset not matching its checksum", fakeUpstream{tag: "v1.2.3", assets: assets,
-			corrupt: "hearth_1.2.3_linux_arm64.tar.gz"}, "v1.2.3", "checksum mismatch"},
+		{"path in a signed name", fakeUpstream{
+			tag: "v1.2.3", assets: assets,
+			checksums: strings.Repeat("a", 64) + "  ../../etc/passwd\n",
+		}, "v1.2.3", "refused the asset name"},
+		{"a signed name over checksums.txt", fakeUpstream{
+			tag: "v1.2.3", assets: assets,
+			checksums: strings.Repeat("a", 64) + "  checksums.txt.sig\n",
+		}, "v1.2.3", "refused the asset name"},
+		{"asset not matching its checksum", fakeUpstream{
+			tag: "v1.2.3", assets: assets,
+			corrupt: "hearth_1.2.3_linux_arm64.tar.gz",
+		}, "v1.2.3", "checksum mismatch"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
