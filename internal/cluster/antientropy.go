@@ -422,7 +422,7 @@ func (r *Replicator) syncSpaceProved(ctx context.Context, st *store.Store, peer 
 	// only.
 	global := sp == store.SpaceGlobal || sp == store.SpaceMaster
 	pullGlobal, pushGlobal := resp.fromMaster, r.holdsKey()
-	if sp == store.SpaceMaster && !(pullGlobal && pushGlobal) {
+	if sp == store.SpaceMaster && (!pullGlobal || !pushGlobal) {
 		return false, nil
 	}
 	proved = global && resp.fromMaster

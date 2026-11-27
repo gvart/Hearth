@@ -1487,7 +1487,7 @@ func (r *Replicator) call(ctx context.Context, m string, req apRequest) (apRespo
 					err = apError(hello.Error)
 				}
 			}
-			if err == nil && !(c.peerMaster && r.saysMaster(m)) {
+			if err == nil && (!c.peerMaster || !r.saysMaster(m)) {
 				r.log.DebugContext(ctx, "master rows not sent to a member that did not prove it holds the hub CA key", "member", m)
 				out.Muts = withoutMaster(out.Muts)
 				if len(out.Muts) == 0 {

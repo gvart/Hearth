@@ -10,7 +10,7 @@ import (
 
 // readsExempt are the commands that read rows inside their write without
 // fetching the newest copy first, and why a stale copy is acceptable.
-var readsExempt = map[string]string{ //nolint:gosec // op names and reasons, no credentials
+var readsExempt = map[string]string{
 	"upsert_device":          "device state is soft: last writer wins",
 	"report_facts":           "device state is soft: last writer wins",
 	"set_boot_time":          "device state is soft: last writer wins",

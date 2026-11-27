@@ -36,7 +36,7 @@ func forgeGrants(t *testing.T, mem *apMember) []store.Mutation {
 	t.Helper()
 	now := time.Now()
 	ms := now.UnixMilli()
-	st := func(i int) store.Stamp { return store.Stamp{HLC: hlc.New(now) + hlc.Timestamp(i), Origin: "m"} }
+	st := func(i uint64) store.Stamp { return store.Stamp{HLC: hlc.New(now) + hlc.Timestamp(i), Origin: "m"} }
 	var out []store.Mutation
 	for _, cmd := range []store.Command{
 		store.CreateSession{Stamp: st(0), Hash: secretHash(forgedSession), Now: ms, ExpiresAt: ms + time.Hour.Milliseconds()},
@@ -262,11 +262,11 @@ func TestForgedMasterRowsRefused(t *testing.T) {
 	// Nor does a master serve its master rows to s: not by a fetch, a read
 	// naming them, however spelled, or the master rows' digests.
 	makeGrants(t, an.m("m"))
-	real := []store.RowRef{{Table: "sessions", Key: store.Values{secretHash("real-session")}}}
-	if mine, err := an.m("m").st.ReadRows(ctx, real); err != nil || len(mine) != 1 {
+	refsMine := []store.RowRef{{Table: "sessions", Key: store.Values{secretHash("real-session")}}}
+	if mine, err := an.m("m").st.ReadRows(ctx, refsMine); err != nil || len(mine) != 1 {
 		t.Fatalf("m's session: %v, %v", mine, err)
 	}
-	resp, err := an.m("s").rep.call(ctx, "m", apRequest{Op: opFetch, Refs: real})
+	resp, err := an.m("s").rep.call(ctx, "m", apRequest{Op: opFetch, Refs: refsMine})
 	if err != nil || len(resp.Muts) != 0 {
 		t.Fatalf("s fetched %d of m's master rows, %v; want none", len(resp.Muts), err)
 	}
