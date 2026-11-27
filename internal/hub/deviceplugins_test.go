@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gvart/hearth/internal/plugins"
 	"github.com/gvart/hearth/internal/policy"
@@ -383,4 +384,59 @@ func (t handlerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	rec := httptest.NewRecorder()
 	t.h.ServeHTTP(rec, r)
 	return rec.Result(), nil
+}
+
+// TestPluginBlobHandler: a device downloads only the program of a plugin
+// its reported ceiling allows, over its own stream's identity.
+func TestPluginBlobHandler(t *testing.T) {
+	st := newTestStore(t)
+	a := NewAgents(st.Devices())
+	blobs := NewPluginBlobs(t.TempDir())
+	a.SetPlugins(st.DevicePlugins(), blobs)
+	sum, size, err := blobs.Save(strings.NewReader("program"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, _, err := blobs.Save(strings.NewReader("stray"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := plugins.ParseManifest([]byte(lampManifest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	u := DevicePluginUpload{Manifest: m, OS: "linux", Arch: "arm64", SHA256: sum, Size: size}
+	if err := u.Save(t.Context(), st, "", "test", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	grant := &agentv1.Ceiling{Plugins: []*agentv1.PluginGrant{{Name: "go-lamp", MaxClass: "read"}}}
+	a.sessions["pi"] = &agentSession{minor: minPluginMinor, ceiling: grant}
+	a.sessions["nas"] = &agentSession{minor: minPluginMinor, ceiling: &agentv1.Ceiling{}}
+	h := a.pluginBlobHandler()
+	for _, tt := range []struct {
+		name, device, sum string
+		status            int
+	}{
+		{"allowed", "pi", sum, http.StatusOK},
+		{"no client certificate", "", sum, http.StatusNotFound},
+		{"not in the ceiling", "nas", sum, http.StatusNotFound},
+		{"no stream here", "tv", sum, http.StatusForbidden},
+		{"not in the registry", "pi", other, http.StatusNotFound},
+		{"not a SHA-256", "pi", "..%2Fca.key", http.StatusNotFound},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, plugins.BlobPath+tt.sum, nil)
+			if tt.device != "" {
+				r = r.WithContext(withDeviceID(r.Context(), tt.device))
+			}
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+			if w.Code != tt.status {
+				t.Fatalf("= %d %s, want %d", w.Code, w.Body, tt.status)
+			}
+			if tt.status == http.StatusOK && w.Body.String() != "program" {
+				t.Fatalf("body = %q", w.Body)
+			}
+		})
+	}
 }
