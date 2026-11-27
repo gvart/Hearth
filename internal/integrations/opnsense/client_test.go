@@ -78,7 +78,7 @@ func TestReadsSystemLeasesARPAndTraffic(t *testing.T) {
 	}
 	phone := byMAC["a4:5e:60:00:00:02"]
 	if !phone.Lease || phone.LeaseSource != "dnsmasq" || phone.IP != "192.168.1.23" || phone.Hostname != "pixel-8" ||
-		!phone.ARP || phone.Vendor != "Google, Inc." || phone.LeaseEnds != 1795000200 || phone.Static ||
+		!phone.ARP || phone.Vendor != "Google, Inc." || phone.LeaseEnds != 1990000200 || phone.Static ||
 		strings.Join(phone.IPv6, ",") != "fd00::23,fe80::a65e:60ff:fe00:2" {
 		t.Errorf("phone = %+v: want its lease, ARP entry and NDP addresses merged", phone)
 	}
@@ -88,7 +88,7 @@ func TestReadsSystemLeasesARPAndTraffic(t *testing.T) {
 	if p := byMAC["00:1b:a9:00:00:03"]; p.LeaseSource != "isc" || !p.Static || p.LeaseEnds != 0 || p.IP != "192.168.1.5" {
 		t.Errorf("ISC lease = %+v", p)
 	}
-	if pi := byMAC["b8:27:eb:00:00:06"]; pi.LeaseSource != "kea" || pi.Hostname != "pi-iot" || pi.LeaseEnds != 1795000000 ||
+	if pi := byMAC["b8:27:eb:00:00:06"]; pi.LeaseSource != "kea" || pi.Hostname != "pi-iot" || pi.LeaseEnds != 1990000000 ||
 		pi.Interface != "IOT" {
 		t.Errorf("Kea lease = %+v: want the trailing dot of its FQDN dropped", pi)
 	}

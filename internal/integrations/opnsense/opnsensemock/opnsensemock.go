@@ -171,7 +171,7 @@ func (s *Server) answer(path string) (any, bool) {
 		return rows([]map[string]any{
 			{
 				"address": "10.0.20.31", "hwaddr": "b8:27:eb:00:00:06", "valid_lifetime": 4000,
-				"expire": 1795000000, "hostname": "pi-iot.", "state": 0, "lease_type": "dynamic",
+				"expire": 1990000000, "hostname": "pi-iot.", "state": 0, "lease_type": "dynamic",
 				"if": "igb2", "if_descr": "IOT", "if_name": "opt1", "mac_info": "Raspberry Pi Foundation",
 			},
 			// An expired-reclaimed lease: Kea state 2.
@@ -184,24 +184,24 @@ func (s *Server) answer(path string) (any, bool) {
 	case "/api/dnsmasq/leases/search":
 		return rows([]map[string]any{
 			{
-				"expire": 1795000100, "hwaddr": "2c:cf:67:00:00:01", "address": "192.168.1.10", "hostname": "nas",
+				"expire": 1990000100, "hwaddr": "2c:cf:67:00:00:01", "address": "192.168.1.10", "hostname": "nas",
 				"client_id": "01:2c:cf:67:00:00:01", "if": "igb1", "if_descr": "LAN", "if_name": "lan",
 				"is_reserved": []string{"hwaddr"}, "lease_type": "static",
 			},
 			{
-				"expire": 1795000200, "hwaddr": "a4:5e:60:00:00:02", "address": "192.168.1.23", "hostname": "pixel-8",
+				"expire": 1990000200, "hwaddr": "a4:5e:60:00:00:02", "address": "192.168.1.23", "hostname": "pixel-8",
 				"client_id": "", "if": "igb1", "if_descr": "LAN", "if_name": "lan", "is_reserved": []string{},
 				"lease_type": "dynamic",
 			},
 			// dnsmasq writes * for a client that sent no name.
 			{
-				"expire": 1795000300, "hwaddr": "de:ad:be:00:00:04", "address": "192.168.1.77", "hostname": "*",
+				"expire": 1990000300, "hwaddr": "de:ad:be:00:00:04", "address": "192.168.1.77", "hostname": "*",
 				"client_id": "", "if": "igb1", "if_descr": "LAN", "if_name": "lan", "is_reserved": []string{},
 				"lease_type": "dynamic",
 			},
 			// An IPv6 lease: discovery and the IPv4 column leave it out.
 			{
-				"expire": 1795000400, "hwaddr": "a4:5e:60:00:00:02", "address": "fd00::23", "hostname": "pixel-8",
+				"expire": 1990000400, "hwaddr": "a4:5e:60:00:00:02", "address": "fd00::23", "hostname": "pixel-8",
 				"client_id": "", "if": "igb1", "if_descr": "LAN", "if_name": "lan", "is_reserved": []string{},
 				"lease_type": "dynamic",
 			},
