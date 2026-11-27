@@ -22,6 +22,7 @@ import (
 	"github.com/gvart/hearth/internal/integrations/opnsense"
 	"github.com/gvart/hearth/internal/integrations/prometheus"
 	"github.com/gvart/hearth/internal/integrations/proxmox"
+	"github.com/gvart/hearth/internal/integrations/unifi"
 	"github.com/gvart/hearth/internal/metrics"
 	"github.com/gvart/hearth/internal/notify"
 	"github.com/gvart/hearth/internal/pki"
@@ -108,6 +109,9 @@ type Config struct {
 	// OPNsense serves adopted OPNsense firewalls under /api/v1/opnsense. Nil
 	// disables it.
 	OPNsense *opnsense.Manager
+	// UniFi serves adopted UniFi controllers under /api/v1/unifi. Nil
+	// disables it.
+	UniFi *unifi.Manager
 	// Plugins serves the hub's exec plugins under /api/v1/plugins. Nil
 	// disables it.
 	Plugins *plugins.Manager
