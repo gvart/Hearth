@@ -431,8 +431,9 @@ func (n *APNode) pushGlobals(ctx context.Context) error {
 			continue
 		}
 		masters++
-		if err := n.rep.SyncGlobal(ctx, m.ID); err != nil {
-			n.log.WarnContext(ctx, "demotion from master: copy the global rows to a master", "master", m.ID, "err", err)
+		proved, err := n.rep.syncGlobal(ctx, m.ID)
+		if err != nil || !proved {
+			n.log.WarnContext(ctx, "demotion from master: copy the global rows to a master", "master", m.ID, "proved", proved, "err", err)
 			continue
 		}
 		synced++

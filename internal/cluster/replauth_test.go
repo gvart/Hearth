@@ -484,6 +484,33 @@ func TestCriticalGlobalWriteNeedsAnotherMaster(t *testing.T) {
 	}
 }
 
+// TestCatchUpNeedsAMaster: a member promoted to storage has caught up only
+// once it compared the global rows with a master, even one without the
+// storage role (so off the ring): the storage members hand none on.
+func TestCatchUpNeedsAMaster(t *testing.T) {
+	an := newAPNetWith(t, 0, func(c *ReplicatorConfig) {
+		if c.NodeID != "m" {
+			c.Master = testMasterKey{}
+		}
+	}, "m", "s", "p")
+	an.mu.Lock()
+	an.roles["m"], an.roles["s"], an.roles["p"] = masterOnly, storageOnly, storageOnly
+	an.mu.Unlock()
+	ctx := t.Context()
+	an.setDown("p", true)
+	if err := an.m("m").st.DeviceCeilings().Set(ctx, "pi", []byte(`{"terminal":false}`), "user/admin", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	an.setDown("p", false)
+	an.m("p").rep.SetLocal(true, true)
+	if !an.m("p").rep.CatchUp(ctx) {
+		t.Fatal("p did not catch up")
+	}
+	if got := localCeiling(t, an.m("p")); got != `{"terminal":false}` {
+		t.Fatalf("p caught up without the master's ceiling: %q", got)
+	}
+}
+
 // TestDemotionWaitsForTheGlobalRows: a master is not demoted, and keeps its
 // CA key, while global rows it holds may reach no other master: no other
 // master took its global rows, or a hint of one waits for a master.

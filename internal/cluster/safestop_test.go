@@ -61,6 +61,22 @@ func TestSafeToStop(t *testing.T) {
 			safe: true,
 		},
 		{
+			name: "a master's global rows: a caught-up storage member does not hold them for the other master",
+			in: safeStopInput{
+				Self: "a", Ring: NewRing([]string{"a", "c"}), N: 2, Held: allBuckets, HoldsGlobal: true, KeyHolder: true,
+				Peers: []safeStopPeer{caughtUp("c", false), {ID: "b", Master: true, Live: true}},
+			},
+			kinds: []string{SafeStopBehind}, member: "b", says: "cluster-wide rows",
+		},
+		{
+			name: "a master's global rows: held by another caught-up master",
+			in: safeStopInput{
+				Self: "a", Ring: NewRing([]string{"a", "c"}), N: 2, Held: allBuckets, HoldsGlobal: true, KeyHolder: true,
+				Peers: []safeStopPeer{caughtUp("c", false), caughtUp("b", true)},
+			},
+			safe: true,
+		},
+		{
 			name: "replica behind: no anti-entropy round yet (just joined)",
 			in: safeStopInput{
 				Self: "a", Ring: NewRing([]string{"a", "b"}), N: 2, Held: []int{7}, HoldsGlobal: true,

@@ -122,11 +122,13 @@ func (r *Replicator) antiEntropy(ctx context.Context) {
 			continue
 		}
 		peers++
-		err := r.SyncWith(ctx, p)
+		proved, err := r.syncWith(ctx, p)
 		if err != nil {
 			r.log.DebugContext(ctx, "anti-entropy", "peer", p, "err", err)
 		}
-		r.noteSynced(p, key, err == nil)
+		// A member that says it is a master holds the global rows only if
+		// it proved it: then they were compared with it (safe stop).
+		r.noteSynced(p, key, err == nil && (proved || !v.masters[p]))
 	}
 	if peers == 0 && len(v.everyone) == 1 {
 		// Alone in the cluster: in contact with all of it.
@@ -231,19 +233,58 @@ func (r *Replicator) handOff(ctx context.Context, v view) error {
 // SyncWith runs one anti-entropy round with peer: the global rows, and the
 // shard buckets both hold.
 func (r *Replicator) SyncWith(ctx context.Context, peer string) error {
+	_, err := r.syncWith(ctx, peer)
+	return err
+}
+
+// syncWith is SyncWith, and reports whether peer proved it holds the hub CA
+// key, so the global rows were compared with a master.
+func (r *Replicator) syncWith(ctx context.Context, peer string) (bool, error) {
 	v := r.view()
-	if err := r.SyncGlobal(ctx, peer); err != nil {
-		return err
+	proved, err := r.syncGlobal(ctx, peer)
+	if err != nil {
+		return false, err
 	}
 	if ranges := v.sharedRanges(peer); len(ranges) > 0 {
-		return r.syncSpace(ctx, peer, store.SpaceShard, ranges, false)
+		return proved, r.syncSpace(ctx, peer, store.SpaceShard, ranges, false)
 	}
-	return nil
+	return proved, nil
 }
 
 // SyncGlobal runs one anti-entropy round of the global rows with peer.
 func (r *Replicator) SyncGlobal(ctx context.Context, peer string) error {
-	return r.syncSpace(ctx, peer, store.SpaceGlobal, []bucketRange{{0, store.GlobalBuckets}}, false)
+	_, err := r.syncGlobal(ctx, peer)
+	return err
+}
+
+// syncGlobal is SyncGlobal, and reports whether peer proved it holds the
+// hub CA key: whether the rows were compared with a master's.
+func (r *Replicator) syncGlobal(ctx context.Context, peer string) (bool, error) {
+	return r.syncSpaceProved(ctx, r.store(), peer, store.SpaceGlobal, []bucketRange{{0, store.GlobalBuckets}}, false)
+}
+
+// errNoMasterSynced fails a sync of the global rows that reached no master
+// proving the hub CA key while one is live: global rows come from masters
+// only.
+var errNoMasterSynced = errors.New("no master that proves the hub CA key took part")
+
+// syncGlobalWithAMaster compares the global rows with one live master that
+// proves it holds the hub CA key, if any other master is live (a master
+// without storage is no member of the ring). It fails if none does while
+// one did not answer; one that answers without a proof is no master.
+func (r *Replicator) syncGlobalWithAMaster(ctx context.Context, v view) error {
+	unanswered := false
+	for _, m := range v.otherLiveMasters() {
+		proved, err := r.syncGlobal(ctx, m)
+		if err == nil && proved {
+			return nil
+		}
+		unanswered = unanswered || err != nil
+	}
+	if unanswered {
+		return fmt.Errorf("global rows: %w", errNoMasterSynced)
+	}
+	return nil
 }
 
 // ownedRanges are the shard buckets this member owns.
@@ -279,6 +320,7 @@ func (r *Replicator) CatchUp(ctx context.Context) bool {
 	v := r.view()
 	ranges := v.ownedRanges()
 	ok := true
+	masterSynced := false
 	for _, p := range v.ring.Members() {
 		if p == v.self {
 			continue
@@ -289,16 +331,24 @@ func (r *Replicator) CatchUp(ctx context.Context) bool {
 			ok = false
 			continue
 		}
-		if err := r.syncSpace(ctx, p, store.SpaceGlobal, []bucketRange{{0, store.GlobalBuckets}}, false); err != nil {
+		proved, err := r.syncGlobal(ctx, p)
+		if err != nil {
 			r.log.DebugContext(ctx, "catch up after the promotion", "peer", p, "err", err)
 			ok = false
 			continue
 		}
+		masterSynced = masterSynced || proved
 		if len(ranges) == 0 {
 			continue
 		}
 		if err := r.syncSpace(ctx, p, store.SpaceShard, ranges, true); err != nil {
 			r.log.DebugContext(ctx, "catch up after the promotion", "peer", p, "err", err)
+			ok = false
+		}
+	}
+	if ok && !masterSynced {
+		if err := r.syncGlobalWithAMaster(ctx, v); err != nil {
+			r.log.DebugContext(ctx, "catch up after the promotion", "err", err)
 			ok = false
 		}
 	}
@@ -325,23 +375,34 @@ func (r *Replicator) syncSpace(ctx context.Context, peer string, sp store.Space,
 func (r *Replicator) syncSpaceOf(ctx context.Context, st *store.Store, peer string, sp store.Space, ranges []bucketRange,
 	pullOnly bool,
 ) error {
+	_, err := r.syncSpaceProved(ctx, st, peer, sp, ranges, pullOnly)
+	return err
+}
+
+// syncSpaceProved is syncSpaceOf, and reports, for the global rows, whether
+// they were compared with a master that proved it holds the hub CA key: the
+// only members global rows come from.
+func (r *Replicator) syncSpaceProved(ctx context.Context, st *store.Store, peer string, sp store.Space, ranges []bucketRange,
+	pullOnly bool,
+) (proved bool, err error) {
 	own := st == r.store()
 	pullOnly = pullOnly || !own
 	cs := chunks(ranges)
 	resp, err := r.call(ctx, peer, apRequest{Op: opTree, Space: sp, Ranges: ranges})
 	if err != nil {
-		return err
+		return false, err
 	}
 	// Global rows go from masters only (replauth.go): none is taken from a
 	// peer that did not prove it holds the hub CA key, and a member that
 	// holds none sends none.
 	pullGlobal, pushGlobal := resp.fromMaster, r.holdsKey()
+	proved = sp == store.SpaceGlobal && resp.fromMaster
 	if sp == store.SpaceGlobal && !pullGlobal && (!pushGlobal || pullOnly) {
-		return nil
+		return proved, nil
 	}
 	mine := chunkHashes(st, sp, cs)
 	if len(resp.Hashes) != len(cs) {
-		return errors.New("anti-entropy: the peer cut the ranges differently")
+		return false, errors.New("anti-entropy: the peer cut the ranges differently")
 	}
 	var diffChunks []bucketRange
 	for i := range cs {
@@ -350,16 +411,16 @@ func (r *Replicator) syncSpaceOf(ctx context.Context, st *store.Store, peer stri
 		}
 	}
 	if len(diffChunks) == 0 {
-		return nil
+		return proved, nil
 	}
 	resp, err = r.call(ctx, peer, apRequest{Op: opLeaves, Space: sp, Ranges: diffChunks})
 	if err != nil {
-		return err
+		return false, err
 	}
 	buckets := bucketsOf(diffChunks)
 	leaves := st.BucketDigests(sp, buckets)
 	if len(resp.Hashes) != len(buckets) {
-		return errors.New("anti-entropy: leaf count differs")
+		return false, errors.New("anti-entropy: leaf count differs")
 	}
 	var diff []int
 	for i, b := range buckets {
@@ -368,16 +429,16 @@ func (r *Replicator) syncSpaceOf(ctx context.Context, st *store.Store, peer stri
 		}
 	}
 	if len(diff) == 0 {
-		return nil
+		return proved, nil
 	}
 	resp, err = r.call(ctx, peer, apRequest{Op: opRows, Space: sp, Buckets: diff})
 	if err != nil {
-		return err
+		return false, err
 	}
 	in := func(b int) bool { _, ok := slices.BinarySearch(diff, b); return ok }
 	ours, err := st.BucketRows(ctx, sp, in)
 	if err != nil {
-		return err
+		return false, err
 	}
 	pull, push := diffRows(ours, resp.Digests)
 	if pullOnly || (sp == store.SpaceGlobal && !pushGlobal) {
@@ -390,7 +451,7 @@ func (r *Replicator) syncSpaceOf(ctx context.Context, st *store.Store, peer stri
 	for refs := range slices.Chunk(pull, refBatch) {
 		ms, err := r.fetch(ctx, peer, refs)
 		if err != nil {
-			return err
+			return false, err
 		}
 		ms = liveOrRecent(ms, cutoff)
 		if own {
@@ -401,22 +462,22 @@ func (r *Replicator) syncSpaceOf(ctx context.Context, st *store.Store, peer stri
 			err = st.Merge(ctx, ms)
 		}
 		if err != nil {
-			return fmt.Errorf("anti-entropy: merge from %s: %w", peer, err)
+			return false, fmt.Errorf("anti-entropy: merge from %s: %w", peer, err)
 		}
 	}
 	for refs := range slices.Chunk(push, refBatch) {
 		ms, err := st.ReadRows(ctx, refs)
 		if err != nil {
-			return err
+			return false, err
 		}
 		if err := r.mergeOn(ctx, peer, liveOrRecent(ms, cutoff)); err != nil {
-			return fmt.Errorf("anti-entropy: merge into %s: %w", peer, err)
+			return false, fmt.Errorf("anti-entropy: merge into %s: %w", peer, err)
 		}
 	}
 	if len(pull)+len(push) > 0 {
 		r.log.DebugContext(ctx, "anti-entropy copied rows", "peer", peer, "space", sp, "pulled", len(pull), "pushed", len(push))
 	}
-	return nil
+	return proved, nil
 }
 
 // liveOrRecent drops the tombstones older than cutoff: the GC drops them
@@ -496,12 +557,22 @@ func (r *Replicator) WaitSynced(ctx context.Context, limit time.Duration) error 
 	defer cancel()
 	for {
 		v := r.view()
-		ok := true
+		ok, masterSynced := true, false
 		for _, p := range v.everyone {
 			if p == v.self || !v.live[p] {
 				continue
 			}
-			if err := r.SyncWith(ctx, p); err != nil {
+			proved, err := r.syncWith(ctx, p)
+			if err != nil {
+				ok = false
+			}
+			masterSynced = masterSynced || proved
+		}
+		if ok && !masterSynced {
+			// The global rows come from masters only: a sync with storage
+			// members alone does not catch up on them.
+			if err := r.syncGlobalWithAMaster(ctx, v); err != nil {
+				r.log.DebugContext(ctx, "wait to be in sync", "err", err)
 				ok = false
 			}
 		}
