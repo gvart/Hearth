@@ -199,6 +199,7 @@ func (a *api) routes() http.Handler {
 	a.dashboardRoutes(mux)
 	a.webAdminRoutes(mux)
 	a.capabilitiesRoutes(mux)
+	a.devicePluginRoutes(mux)
 	a.configEditRoutes(mux)
 	a.backupRoutes(mux)
 	mux.Handle("/api/v1/", a.auth(func(w http.ResponseWriter, _ *http.Request) {

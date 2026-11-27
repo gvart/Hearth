@@ -548,6 +548,8 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	}
 	// A backup from the web UI is the one `hearth backup` writes.
 	cfg.Backup, cfg.BackupDir = webBackup(opts, st, clustered, snapshot), opts.dataDir
+	// Exec plugins for devices keep their programs in the data dir.
+	cfg.PluginBlobs = hub.NewPluginBlobs(opts.dataDir)
 	// The web editor and MCP write the same directory under one lock.
 	var automationsMu sync.Mutex
 	cfg.AutomationsLock = &automationsMu

@@ -51,6 +51,9 @@ type CapabilitiesJSON struct {
 	// Manageable is whether the agent takes a ceiling from the hub
 	// (protocol minor 10); an older agent must be upgraded first.
 	Manageable bool `json:"manageable"`
+	// PluginsManageable is whether the agent installs and runs exec
+	// plugins (protocol minor 14); an older agent must be upgraded first.
+	PluginsManageable bool `json:"plugins_manageable"`
 	// AgentVersion is the agent's version, as it reported it.
 	AgentVersion string `json:"agent_version"`
 	// UpdatedAt and UpdatedBy say who set Hub last, if anyone did.
@@ -86,6 +89,7 @@ func capabilitiesOf(ctx context.Context, st *store.Store, d store.Device) (Capab
 	}
 	out.Local, out.Effective, out.Locked = f.LocalCeiling, f.Ceiling, f.CeilingLocked
 	out.Manageable, out.AgentVersion = f.ProtocolMinor >= minCeilingConfigMinor, f.AgentVersion
+	out.PluginsManageable = f.ProtocolMinor >= minPluginMinor
 	dc, err := st.DeviceCeilings().Get(ctx, d.ID)
 	switch {
 	case errors.Is(err, store.ErrNotFound):
@@ -132,9 +136,9 @@ func (c CapabilitiesChange) Detail(device string) map[string]any {
 }
 
 // ChangeOf is the change from the ceiling old to next: a raise of shell,
-// exec, restart or Docker control (an entry or a switch next has and old
-// lacks) is device.capabilities.raise, anything else
-// device.capabilities.set.
+// exec, restart, Docker control or a plugin (an entry or a switch next has
+// and old lacks, or a plugin allowed a higher class) is
+// device.capabilities.raise, anything else device.capabilities.set.
 func ChangeOf(old, next *agentv1.Ceiling) CapabilitiesChange {
 	var c CapabilitiesChange
 	risky := false
@@ -165,6 +169,19 @@ func ChangeOf(old, next *agentv1.Ceiling) CapabilitiesChange {
 	flag("probe", old.GetProbe(), next.GetProbe(), false)
 	list("scan", old.GetScan(), next.GetScan(), false)
 	flag("net_edges", old.GetNetEdges(), next.GetNetEdges(), false)
+	// Allowing a plugin, or a higher class of its commands, lets the hub
+	// run code it supplies on the device.
+	for _, n := range next.GetPlugins() {
+		if o, ok := policy.PluginGrantOf(old, n.GetName()); !ok || policy.ClassAbove(policy.Class(n.GetMaxClass()), o) {
+			c.Raised = append(c.Raised, "plugin:"+n.GetName())
+			risky = true
+		}
+	}
+	for _, o := range old.GetPlugins() {
+		if n, ok := policy.PluginGrantOf(next, o.GetName()); !ok || policy.ClassAbove(policy.Class(o.GetMaxClass()), n) {
+			c.Lowered = append(c.Lowered, "plugin:"+o.GetName())
+		}
+	}
 	c.Action = policy.DeviceCapabilitiesSet
 	if risky {
 		c.Action = policy.DeviceCapabilitiesRaise
@@ -185,6 +202,9 @@ func NormalizeCeiling(c Ceiling) (*agentv1.Ceiling, error) {
 		return out
 	}
 	c.Exec, c.Restart, c.Logs, c.Scan = dedupe(c.Exec), dedupe(c.Restart), dedupe(c.Logs), dedupe(c.Scan)
+	for i := range c.Plugins {
+		c.Plugins[i].Name = strings.TrimSpace(c.Plugins[i].Name)
+	}
 	p := c.Proto()
 	if err := policy.CheckHubCeiling(p); err != nil {
 		return nil, err
@@ -270,14 +290,16 @@ var ErrCeilingLocked = fmt.Errorf("this device's agent runs with --local-ceiling
 
 // CapabilityKeys are the capabilities SetCapability takes, in the order the
 // web UI and the CLI show them.
-var CapabilityKeys = []string{"logs", "docker", "net-edges", "probe", "scan", "restart", "exec", "shell"}
+var CapabilityKeys = []string{"logs", "docker", "net-edges", "probe", "scan", "restart", "exec", "shell", "plugins"}
 
 // SetCapability changes capability key of c to value, as `hearth device
 // capabilities --set key=value` does: "on" or "off" for shell, probe and
 // net-edges; "off", "read" or "on" (read and control) for docker; "on" (all
 // of it), "off" or a comma-separated list for logs (manager:name), restart
 // (manager:name) and scan (IPv4 subnets); "off" or a comma-separated list of
-// absolute paths for exec, which has no "on".
+// absolute paths for exec, which has no "on"; "off" or a comma-separated
+// list of NAME or NAME:CLASS (read, the default, safe or dangerous) for
+// plugins, which has no "on" either.
 func SetCapability(c *Ceiling, key, value string) error {
 	value = strings.TrimSpace(value)
 	onOff := func(set *bool) error {
@@ -332,6 +354,23 @@ func SetCapability(c *Ceiling, key, value string) error {
 		return list(&c.Scan, AllScan)
 	case "exec":
 		return list(&c.Exec, nil)
+	case "plugins":
+		c.Plugins = []PluginGrant{}
+		if value == "off" || value == "" {
+			return nil
+		}
+		if value == "on" {
+			return errors.New(`plugins has no "on": list them, comma-separated NAME or NAME:CLASS`)
+		}
+		for _, e := range strings.Split(value, ",") {
+			name, class, ok := strings.Cut(strings.TrimSpace(e), ":")
+			g := PluginGrant{Name: name, Class: policy.Read}
+			if ok {
+				g.Class = policy.Class(class)
+			}
+			c.Plugins = append(c.Plugins, g)
+		}
+		return nil
 	}
 	return fmt.Errorf("unknown capability %q: want one of %s", key, strings.Join(CapabilityKeys, ", "))
 }

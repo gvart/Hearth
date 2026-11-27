@@ -5,7 +5,10 @@ package hub
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
+	"strings"
 
+	"github.com/gvart/hearth/internal/policy"
 	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
 	"github.com/gvart/hearth/internal/release"
 	"github.com/gvart/hearth/internal/store"
@@ -69,6 +72,15 @@ type Ceiling struct {
 	// DockerRead is whether the hub may list the device's containers and
 	// read their logs, without acting on them. Docker implies it.
 	DockerRead bool `json:"docker_read,omitempty"`
+	// Plugins are the exec plugins the hub may install and run on the
+	// device, each with the highest class of its commands it may run.
+	Plugins []PluginGrant `json:"plugins"`
+}
+
+// PluginGrant allows an exec plugin on a device, up to a class of command.
+type PluginGrant struct {
+	Name  string       `json:"name"`
+	Class policy.Class `json:"class"`
 }
 
 // ceilingJSON is c as served, or nil.
@@ -79,6 +91,7 @@ func ceilingJSON(c *agentv1.Ceiling) *Ceiling {
 	return &Ceiling{
 		Exec: nonNil(c.GetExec()), Restart: nonNil(c.GetRestart()), Probe: c.GetProbe(), Logs: nonNil(c.GetLogs()),
 		Shell: c.GetShell(), Scan: nonNil(c.GetScan()), NetEdges: c.GetNetEdges(), Docker: c.GetDocker(), DockerRead: c.GetDockerRead(),
+		Plugins: pluginGrantsJSON(c.GetPlugins()),
 	}
 }
 
@@ -86,8 +99,27 @@ func ceilingJSON(c *agentv1.Ceiling) *Ceiling {
 func (c Ceiling) Proto() *agentv1.Ceiling {
 	return &agentv1.Ceiling{
 		Exec: c.Exec, Restart: c.Restart, Probe: c.Probe, Logs: c.Logs, Shell: c.Shell, Scan: c.Scan,
-		NetEdges: c.NetEdges, Docker: c.Docker, DockerRead: c.DockerRead,
+		NetEdges: c.NetEdges, Docker: c.Docker, DockerRead: c.DockerRead, Plugins: pluginGrantsProto(c.Plugins),
 	}
+}
+
+// pluginGrantsJSON is gs as served, never nil.
+func pluginGrantsJSON(gs []*agentv1.PluginGrant) []PluginGrant {
+	out := []PluginGrant{}
+	for _, g := range gs {
+		out = append(out, PluginGrant{Name: g.GetName(), Class: policy.Class(g.GetMaxClass())})
+	}
+	return out
+}
+
+// pluginGrantsProto is gs as sent, sorted by name.
+func pluginGrantsProto(gs []PluginGrant) []*agentv1.PluginGrant {
+	var out []*agentv1.PluginGrant
+	for _, g := range gs {
+		out = append(out, &agentv1.PluginGrant{Name: g.Name, MaxClass: string(g.Class)})
+	}
+	slices.SortFunc(out, func(a, b *agentv1.PluginGrant) int { return strings.Compare(a.GetName(), b.GetName()) })
+	return out
 }
 
 // Disk is a mounted filesystem.

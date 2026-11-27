@@ -179,6 +179,9 @@ type Config struct {
 	// BackupDir, the hub's data dir, holds the file until it is sent.
 	Backup    func(ctx context.Context, output, passphrase string) error
 	BackupDir string
+	// PluginBlobs holds the programs of the exec plugins uploaded for
+	// devices (#223), in the hub's data dir; nil disables device plugins.
+	PluginBlobs *PluginBlobs
 }
 
 // NewHandler serves EnrollService to anyone (the token is the credential) and
@@ -211,6 +214,11 @@ func NewHandler(cfg Config) http.Handler {
 		stream.masters, stream.routes = cfg.Masters, cfg.Store.DeviceRoutes()
 		stream.agents.SetMasters(cfg.Masters, cfg.Store.DeviceRoutes())
 	}
+	if cfg.PluginBlobs != nil {
+		stream.agents.SetPlugins(cfg.Store.DevicePlugins(), cfg.PluginBlobs)
+		// An agent fetches the programs of its plugins with its certificate.
+		mux.Handle(plugins.BlobPath, requireClientCert(cfg.Store.Certs(), cfg.CA, cfg.Log, nil, stream.agents.pluginBlobHandler()))
+	}
 	path, h := agentServiceHandler(stream)
 	mux.Handle(path, requireClientCert(cfg.Store.Certs(), cfg.CA, cfg.Log, stream.revokedConnect,
 		EndOnStop(cfg.Stopping, abortableStream(h))))
@@ -238,6 +246,7 @@ func NewTLSHandler(cfg Config, web http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/"+agentv1connect.EnrollServiceName+"/", agents)
 	mux.Handle("/"+agentv1connect.AgentServiceName+"/", agents)
+	mux.Handle(plugins.BlobPath, agents)
 	mux.Handle("/", web)
 	return mux
 }

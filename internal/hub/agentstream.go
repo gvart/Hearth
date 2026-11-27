@@ -153,6 +153,7 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 	s.route(ctx, log, deviceID, &routed)
 	s.syncCeiling(ctx, log, sess)
 	s.syncLocalRules(ctx, log, sess)
+	s.syncPlugins(ctx, log, sess)
 
 	for {
 		msg, err := stream.Receive()
@@ -192,6 +193,7 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 			}
 			s.syncCeiling(ctx, log, sess)
 			s.syncLocalRules(ctx, log, sess)
+			s.syncPlugins(ctx, log, sess)
 		case *agentv1.AgentMessage_Facts:
 			log.DebugContext(ctx, "facts")
 			sess.setCeiling(p.Facts.GetCeiling())
@@ -200,8 +202,12 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 			if err := s.registry.ReportFacts(ctx, deviceID, p.Facts); err != nil {
 				log.WarnContext(ctx, "record facts", "err", err)
 			}
+			// A new ceiling may allow other plugins.
+			s.syncPlugins(ctx, log, sess)
 		case *agentv1.AgentMessage_ExecResult:
 			sess.deliver(p.ExecResult)
+		case *agentv1.AgentMessage_PluginEvent:
+			sess.pluginEvent(p.PluginEvent)
 		case *agentv1.AgentMessage_ProbeResult:
 			sess.deliverProbe(p.ProbeResult)
 		case *agentv1.AgentMessage_ScanResult:
