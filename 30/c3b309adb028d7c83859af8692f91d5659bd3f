@@ -1,0 +1,58 @@
+internal/hub/netedgestore.go
+  s_18b57982fdff93::t_ae1ab422370fe4 15-16
+internal/hub/topology_test.go
+  s_18b57982fdff93::t_d0d859ebc681b5 83,86-87
+  s_18b57982fdff93::t_2a54dc9a410e36 43,88
+  s_18b57982fdff93::t_cc7ae03d8c2baf 44
+internal/discovery/neigh6_test.go
+  s_18b57982fdff93::t_f6acad32ed8b48 1-40,46,48-66
+  s_18b57982fdff93::t_fd8f44514a651c 41-45,47
+internal/discovery/neigh6.go
+  s_18b57982fdff93::t_9476064d13c3fd 1-79
+internal/hub/services.go
+  s_18b57982fdff93::t_3614f80a4bae36 1-63
+internal/hub/netedges_test.go
+  s_18b57982fdff93::t_d0d859ebc681b5 118,127-131,139,141,269,313-316
+  s_18b57982fdff93::t_5fced31f579b48 258,270,291,300
+  s_18b57982fdff93::t_6668a3b2b2c01f 317
+internal/discovery/neigh6_linux.go
+  s_18b57982fdff93::t_c087478e7f31b0 1-18
+internal/discovery/neigh6_other.go
+  s_18b57982fdff93::t_9c2a72d2276510 1-8
+internal/agent/netedges.go
+  s_18b57982fdff93::t_5c7bd1cc8adfec 262-277
+internal/agent/netedges_test.go
+  s_18b57982fdff93::t_b8584b1ef24951 123-145
+docs/net-edges.md
+  s_18b57982fdff93::t_905bb3f91d8cf3 6-7,30-34,44,53-56,70,94,102-103
+internal/agent/netedges_linux.go
+  s_18b57982fdff93::t_5c7bd1cc8adfec 16-18,20
+proto/hearth/agent/v1/agent.proto
+  s_18b57982fdff93::t_f82e53f2ebb71e 496-498
+internal/hub/netedges.go
+  s_18b57982fdff93::t_cc7ae03d8c2baf 288-290,295-299
+  s_18b57982fdff93::t_5797f068ced3ce 78-79,86-87,123-124,137-140,227
+  s_18b57982fdff93::t_737fe93411219c 300
+internal/hub/topology.go
+  s_18b57982fdff93::t_5797f068ced3ce 66-68,162
+internal/discovery/neigh.go
+  s_18b57982fdff93::t_49fd27edf0afe4 14-15
+internal/proto/hearth/agent/v1/agent.pb.go
+  s_18b57982fdff93::t_b54a96c70a5124 3156-3158
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "30c3b309adb028d7c83859af8692f91d5659bd3f",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
