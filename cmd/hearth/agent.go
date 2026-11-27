@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -31,6 +32,7 @@ func newAgentRunCmd() *cobra.Command {
 		ceiling      agent.Ceiling
 		dockerSocket string
 		localCeiling bool
+		allowPlugins []string
 	)
 	cmd := &cobra.Command{
 		Use:   "run",
@@ -55,6 +57,9 @@ func newAgentRunCmd() *cobra.Command {
 			"every minute (Linux); connections say who talks to whom, so nothing is reported without it.\n" +
 			"--allow-docker lets the hub list this device's Docker or Podman containers and images, read the last\n" +
 			"lines of a container's log, and start, stop and restart containers; nothing else of the engine.\n" +
+			"--allow-plugin NAME[:CLASS] lets the hub install the exec plugin NAME uploaded to it for this\n" +
+			"device's platform, and run its commands of class CLASS (read, the default, safe or dangerous) or\n" +
+			"lower. The hub supplies the plugin's program, pinned by its SHA-256, which runs as this agent's user.\n" +
 			"--local-ceiling ignores the capabilities the hub sets for this device, and any it saved before.",
 		Example: "  hearth agent run --allow-restart systemd:pihole-FTL.service --allow-restart docker:jellyfin \\\n" +
 			"    --allow-exec /usr/bin/df --allow-logs 'systemd:pihole-FTL.service' --allow-logs 'docker:*'",
@@ -74,6 +79,16 @@ func newAgentRunCmd() *cobra.Command {
 				if err := agent.ParseRestart(e); err != nil {
 					return fmt.Errorf("--allow-restart: %w", err)
 				}
+			}
+			for _, e := range allowPlugins {
+				g, err := agent.ParsePluginGrant(e)
+				if err != nil {
+					return fmt.Errorf("--allow-plugin: %w", err)
+				}
+				if slices.ContainsFunc(ceiling.Plugins, func(o agent.PluginGrant) bool { return o.Name == g.Name }) {
+					return fmt.Errorf("--allow-plugin: %s given twice", g.Name)
+				}
+				ceiling.Plugins = append(ceiling.Plugins, g)
 			}
 			if ceiling.NetEdges && !agent.NetEdgesSupported {
 				return errors.New("--allow-net-edges: network edges are only reported on Linux")
@@ -115,6 +130,9 @@ func newAgentRunCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&ceiling.Docker, "allow-docker", false,
 		"let the hub list Docker or Podman containers and images here, read a container's last log lines, and\n"+
 			"start, stop and restart containers")
+	cmd.Flags().StringArrayVar(&allowPlugins, "allow-plugin", nil,
+		"exec plugin the hub may install and run here, as NAME or NAME:CLASS, where CLASS (read, safe or\n"+
+			"dangerous; default read) is the highest class of its commands the hub may run; repeatable")
 	cmd.Flags().BoolVar(&localCeiling, "local-ceiling", false,
 		"make the --allow-* flags this device's whole capability ceiling: ignore the capabilities the hub sets")
 	cmd.Flags().StringVar(&dockerSocket, "docker-socket", "",

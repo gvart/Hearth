@@ -53,6 +53,10 @@ type Ceiling struct {
 	// DockerRead lets the hub list the containers and images and read a
 	// container's log, but not start, stop or restart one. Docker implies it.
 	DockerRead bool
+	// Plugins are the exec plugins the hub may install and run here, each
+	// with the highest class of command it may run (see plugins.go), sorted
+	// by name.
+	Plugins []PluginGrant
 }
 
 // Service managers a restart may name.
@@ -85,6 +89,7 @@ func (c Ceiling) proto() *agentv1.Ceiling {
 	return &agentv1.Ceiling{
 		Exec: slices.Clone(c.Exec), Restart: slices.Clone(c.Restart), Probe: c.Probe, Logs: slices.Clone(c.Logs),
 		Shell: c.Shell, Scan: slices.Clone(c.Scan), NetEdges: c.NetEdges, Docker: c.Docker, DockerRead: c.DockerRead,
+		Plugins: grantsProto(c.Plugins),
 	}
 }
 

@@ -23,6 +23,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/gvart/hearth/internal/plugins"
 	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
 	"github.com/gvart/hearth/internal/proto/hearth/agent/v1/agentv1connect"
 )
@@ -30,8 +31,8 @@ import (
 // Protocol version this agent speaks.
 const (
 	ProtocolMajor = 1
-	// 1: answers ExecRequest; 2: reports its capability ceiling; 3: answers ProbeRequest; 4: sends MetricsBatch; 5: streams logs (LogRequest); 6: answers ShellRequest; 7: answers ScanRequest; 8: sends NetEdges; 9: answers DockerRequest; 10: takes CeilingConfig; 11: answers UpgradeRequest; 12: runs LocalRules, sends LocalRuns; 13: reports Hello.rolled_back_from
-	ProtocolMinor = 13
+	// 1: answers ExecRequest; 2: reports its capability ceiling; 3: answers ProbeRequest; 4: sends MetricsBatch; 5: streams logs (LogRequest); 6: answers ShellRequest; 7: answers ScanRequest; 8: sends NetEdges; 9: answers DockerRequest; 10: takes CeilingConfig; 11: answers UpgradeRequest; 12: runs LocalRules, sends LocalRuns; 13: reports Hello.rolled_back_from; 14: installs and runs exec plugins (PluginRequest)
+	ProtocolMinor = 14
 )
 
 const (
@@ -81,6 +82,8 @@ type Config struct {
 	Executable string
 	// upgrader, set by tests, replaces the upgrader Run makes.
 	upgrader *upgrader
+	// pluginOptions, set by tests, bound the plugins' processes.
+	pluginOptions plugins.Options
 }
 
 type runner struct {
@@ -121,6 +124,9 @@ type runner struct {
 	rules     *rules
 	runs      *runLog
 	connected atomic.Bool
+
+	// plugins installs and runs the device's exec plugins (plugins.go).
+	plugins *pluginHost
 }
 
 // ceiling is the effective capability ceiling.
@@ -207,6 +213,8 @@ func Run(ctx context.Context, cfg Config) error {
 		}
 	}
 	r.ceilings = newCeilings(cfg.Ceiling, hubCeiling, version, cfg.LocalCeiling)
+	r.plugins = newPluginHost(cfg.DataDir, log, r.ceiling)
+	r.plugins.opts = cfg.pluginOptions
 	r.startRules(ctx)
 	defer r.rules.stop()
 	if cfg.readNetEdges != nil {
@@ -562,6 +570,8 @@ func (r *runner) receive(ctx context.Context, hub string, stream *connect.BidiSt
 			})
 		case *agentv1.HubMessage_UpgradeRequest:
 			r.handleUpgrade(ctx, p.UpgradeRequest, execs, send)
+		case *agentv1.HubMessage_PluginRequest:
+			r.handlePlugin(ctx, hub, p.PluginRequest, execs, reply)
 		default:
 			// Ping needs no answer: any traffic keeps the stream alive.
 			r.log.DebugContext(ctx, "hub message ignored", "type", fmt.Sprintf("%T", msg.GetPayload()))
@@ -696,7 +706,7 @@ func (r *runner) applyCeiling(ctx context.Context, cfg *agentv1.CeilingConfig) b
 	}
 	r.log.InfoContext(ctx, "capability ceiling changed by the hub", "exec", len(after.Exec), "restart", len(after.Restart),
 		"probe", after.Probe, "logs", len(after.Logs), "shell", after.Shell, "scan", len(after.Scan),
-		"net_edges", after.NetEdges, "docker", after.Docker, "docker_read", after.DockerRead)
+		"net_edges", after.NetEdges, "docker", after.Docker, "docker_read", after.DockerRead, "plugins", len(after.Plugins))
 	select {
 	case r.ceilingChanged <- struct{}{}:
 	default:

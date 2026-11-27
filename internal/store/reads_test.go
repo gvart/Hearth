@@ -35,8 +35,10 @@ var readsExempt = map[string]string{ //nolint:gosec // op names and reasons, no 
 	"remove_opnsense_firewall": "a missed row is refused with not found, retried; the delete is a tombstone",
 	// UniFi controllers (#365).
 	"remove_unifi_controller": "a missed row is refused with not found, retried; the delete is a tombstone",
-	"mark_telemetry_sent":     "telemetry state is soft",
-	"revoke_ca_certs":         "runs on every storage member, each on the rows it holds",
+	// Exec plugins for devices (#223).
+	"remove_device_plugin": "a missed row is refused with not found, retried; the delete is a tombstone",
+	"mark_telemetry_sent":  "telemetry state is soft",
+	"revoke_ca_certs":      "runs on every storage member, each on the rows it holds",
 }
 
 // Every command that reads rows inside its write either names them in
