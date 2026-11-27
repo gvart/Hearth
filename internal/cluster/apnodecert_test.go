@@ -43,7 +43,7 @@ func TestAPNodeCertRenewal(t *testing.T) {
 		return c.memberOn(a).State == MemberAlive && a.memberOn(c).State == MemberAlive
 	})
 	for _, tn := range []*apTestNode{a, c} {
-		if err := tn.node.RecordNodeCert(ctx); err != nil {
+		if err := recordNodeCert(ctx, tn, a); err != nil {
 			t.Fatal(err)
 		}
 	}

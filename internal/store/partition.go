@@ -51,7 +51,6 @@ var partitionCols = map[string]string{
 	"panel_links":      "panel_id",
 	"dashboard_tokens": "id",
 	"device_routes":    "device_id",
-	"device_ceilings":  "device_id",
 }
 
 // globalTables are replicated to every storage member.
@@ -71,8 +70,10 @@ var globalTables = map[string]bool{
 	"unifi_controllers": true,
 	// Exec plugins for devices (#223): every master hands them to its agents.
 	"device_plugins": true,
-	"network_hosts":  true,
-	"config_docs":    true, // item 5 (ap-config): every member serves the configuration
+	// Capability ceilings (#346): global, so only masters write them (#382).
+	"device_ceilings": true,
+	"network_hosts":   true,
+	"config_docs":     true, // item 5 (ap-config): every member serves the configuration
 }
 
 // criticalTables are written with W = min(2, N) acknowledgements.
@@ -302,7 +303,7 @@ func RouteOf(cmd Command) (Route, error) {
 	case SetBootTime:
 		return key(c.ID, false)
 	case SetDeviceCeiling:
-		return key(c.DeviceID, true)
+		return global(true)
 	case SetDeviceRoute:
 		return key(c.DeviceID, false)
 	case MarkOffline:

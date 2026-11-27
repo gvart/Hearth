@@ -119,7 +119,7 @@ func runDeviceCapabilities(ctx context.Context, dataDir, deviceID string, sets [
 			if caps.Locked {
 				return hub.ErrCeilingLocked
 			}
-			return nil
+			return hub.CeilingKnown(caps)
 		},
 	}, func(ctx context.Context) error {
 		return st.DeviceCeilings().Set(ctx, deviceID, body, policy.ActorAdmin+"/"+adminActor(), time.Now())

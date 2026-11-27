@@ -100,6 +100,9 @@ type safeStopInput struct {
 	HandedOff func(bucket int) bool
 	// HoldsGlobal: this hub holds global rows.
 	HoldsGlobal bool
+	// KeyHolder: this hub holds the hub CA key, so other members take its
+	// global rows; with other masters, only they hand them on.
+	KeyHolder bool
 	// InFlight counts the background writes not yet sent.
 	InFlight int
 	// Peers are the other members that have not left.
@@ -150,14 +153,20 @@ func safeToStop(in safeStopInput) SafeStop {
 		}
 	}
 	// The global rows (users, settings, policy) are on every member: one
-	// other caught-up member holds them.
+	// other caught-up member holds them. A storage member hands none on
+	// (replauth.go): a master's are held once another master is caught up,
+	// if there is one.
 	globalBehind := false
-	if in.HoldsGlobal && !slices.ContainsFunc(in.Peers, safeStopPeer.caughtUp) {
-		if len(in.Peers) == 0 {
+	holders := in.Peers
+	if in.KeyHolder && slices.ContainsFunc(in.Peers, func(p safeStopPeer) bool { return p.Master }) {
+		holders = slices.DeleteFunc(slices.Clone(in.Peers), func(p safeStopPeer) bool { return !p.Master })
+	}
+	if in.HoldsGlobal && !slices.ContainsFunc(holders, safeStopPeer.caughtUp) {
+		if len(holders) == 0 {
 			onlyCopy = max(onlyCopy, 1)
 		} else if len(behind) == 0 {
 			globalBehind = true
-			for _, p := range in.Peers {
+			for _, p := range holders {
 				behind[p.ID] = 0
 			}
 		}
@@ -282,6 +291,7 @@ func (r *Replicator) safeStopInput(ctx context.Context, members []MemberInfo) (s
 			}
 		}
 	}
+	in.KeyHolder = r.holdsKey()
 	key := ringKeyOf(v.ring)
 	for _, m := range members {
 		if m.ID == v.self || !m.Roles.Gossips() || m.State == MemberLeft {

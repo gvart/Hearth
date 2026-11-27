@@ -203,8 +203,8 @@ dir and join it again.
   members (env `HEARTH_REPLICAS`, default min(2, storage members), never below 1). Rows that belong
   together stay together: a device's certificates with the device, runs with their automation or
   runbook, an action's audit entries with each other. Small global tables (the admin password, hub
-  certificates, configuration documents, Kubernetes and Proxmox connections, network hosts, telemetry
-  settings) are on every storage member.
+  certificates, configuration documents, device capability ceilings and plugins, Kubernetes and Proxmox
+  connections, network hosts, telemetry settings) are on every storage member and every master.
 - **Writes.** Audit entries, certificates, revocations, tokens, sessions, approvals and configuration
   documents are **critical**: they need W = min(2, N) replicas and fail at once with 503
   `cluster_unavailable` when fewer are reachable. Runbook runs need more: a strict **majority** of the
@@ -248,6 +248,65 @@ dir and join it again.
   decided only by the master that owns it (below).
 - **Clocks.** A member refuses a stamp more than 60 seconds ahead of its own clock, so a host with a
   wrong clock cannot win every conflict. Keep the hosts' clocks in sync (NTP).
+
+### Who may write what
+
+Members send each other rows in a few ways: the coordinator of a write sends the rows it wrote to the
+other replicas, or keeps them as hints for one that is down; a master that is not a replica of a key
+asks a replica to coordinate the command (`apply`); anti-entropy and a promoted member's catch-up pull
+and push the rows that differ; a storage member being demoted hands its rows off; a read repairs the
+stale copies it saw; and a revocation is fetched from the member the gossip names.
+
+The roles a member announces on the gossip are its own word, so they decide nothing here. What decides
+is the hub CA key, which only masters hold: on each replication connection, each end that holds it
+signs the connection's TLS exporter with it.
+
+- **Global rows come from masters only.** A member refuses a merge with a global row from a peer that
+  did not prove it holds the key, and drops the global rows it fetches from one (anti-entropy, catch-up,
+  read repair, a revocation, a backup's pull). A member without the key writes no global row and sends
+  none: it takes them from the masters. A password reset still runs on every storage member, each with
+  the master's stamp, and a master that is not a storage member writes its global part itself.
+- **Commands are coordinated for masters only.** A member refuses `apply` from a peer that did not
+  prove it holds the key: what it coordinates is written in its own name.
+- **Masters call masters only.** The HTTP calls between masters (an agent call forwarded to the master
+  holding the device's stream, a role change) are served only to a live master that proved the key
+  on the connection, and a master sends one only to a member that proves it too, so a member that
+  says it is a master cannot take a device's terminal or exec. A role change goes to the member
+  changed, which need not hold the key.
+- **Trust follows the gossip.** A proof counts while the gossip says the member is a master: a
+  connection opened before a demotion carries no master's call or row after it, and one opened before
+  a promotion is replaced.
+- **Sharded rows go through storage members.** They are their replicas: a storage member coordinates
+  the writes a master forwards, keeps hints, hands rows off and runs anti-entropy for them.
+
+So a storage-only member, compromised, cannot change the admin password, the configuration (policy,
+automations, runbooks), a device's capability ceiling or plugins, the hub certificates or the
+integrations. It can still change the sharded rows it holds, and answer reads of them as it likes:
+sessions, devices and their certificates, audit entries. Treat a storage member as able to sign in as
+the admin (a forged session) until those rows are signed by the master that wrote them
+([#384](https://github.com/gvart/hearth/issues/384)).
+
+Tokens and approvals are sharded too, but the master that creates one keeps a record of it in its own
+data dir: it refuses a token, join token, approval or approval link it has no record of, and what a use
+grants (a join token's roles, an enrollment token's hub roles and labels, a link's approval) comes from
+the record, not the row. A held action acts on an approval only if its owner approved it. So a storage
+member cannot mint a join token that grants master (and so the CA key) or approve an action.
+
+A critical global write (the admin password, the configuration, a ceiling, a certificate) needs, while
+another master is live, the ack of a master that proves the key: the storage members never hand a
+global row on. A member that acks it without a proof is no master and does not count. A master is
+demoted, and deletes its key, only once another master took its global rows and no hint of one waits
+for a master. A master is safe to stop, as to the global rows, once another master is caught up; and a
+hub starting, or catching up after a promotion to storage, compares the global rows with a live master
+before it counts as in sync. `HEARTH_ADMIN_PASSWORD` is applied only once a master is in sync.
+
+**Upgrading.** A member of a version from before these checks proves nothing: upgrade every hub
+together. The owners' records start empty, so enrollment tokens, join tokens and pending approvals made
+before the upgrade are refused: create new ones. Device ceilings were sharded before; a master may lack
+one that only storage-only members hold. A change of such a device's ceiling is measured from none, so
+any raise asks for the password again, and it is refused until the device's agent reports its ceiling.
+Admin commands (`hearth admin set-password --data-dir` and the others) refuse to run on a storage-only
+member's host, before anything is written: run them on a master's.
 
 ## Masters
 
@@ -582,6 +641,12 @@ member supports it, so during a rolling upgrade the cluster writes at the oldest
 The newest schema the cluster has written is kept in each member's `cluster/schema-written` and never
 goes back: a member, or a joining hub, whose Hearth supports less is refused. Upgrade before you bring
 an old member back. Downgrades are not supported.
+
+**Upgrading to the release with master proofs ([#382](https://github.com/gvart/hearth/issues/382)).**
+This one is not rolling: a member of an earlier version proves nothing, so its global writes and its
+requests to coordinate are refused. Upgrade every hub together. Enrollment tokens, join tokens and
+pending approvals made before the upgrade are refused after it: create new ones. See
+[Who may write what](#who-may-write-what).
 
 ## Node certificates
 

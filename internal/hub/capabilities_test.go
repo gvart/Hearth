@@ -177,6 +177,29 @@ func TestChangeOf(t *testing.T) {
 	}
 }
 
+// TestCapabilitiesWithNoRecord: with no ceiling recorded for a device (one
+// set before the ceilings were cluster-wide may not have reached this
+// master, #382), the change is measured from nothing, so a raise still
+// needs the password again; and with no ceiling the agent reported either,
+// the change is refused, audited as a denial.
+func TestCapabilitiesWithNoRecord(t *testing.T) {
+	f := newWebAdminFixture(t, policy.Config{})
+	stale := staleSession(t, f)
+	reportHello(t, f, "pi", agentHello(10, false, nil))
+	if resp := f.do(t, http.MethodPut, capsPath, `{"hub":{"probe":true}}`, stale); resp.StatusCode != http.StatusConflict ||
+		errorCode(t, resp) != "ceiling_unknown" {
+		t.Fatalf("no record, nothing reported = %d %s, want 409 ceiling_unknown", resp.StatusCode, resp.body)
+	}
+	if e := auditOf(t, f, policy.DeviceCapabilitiesSet); len(e) != 1 || e[0].Decision != policy.Deny {
+		t.Fatalf("the refusal is not audited as a denial: %+v", e)
+	}
+	reportHello(t, f, "pi", agentHello(10, false, &agentv1.Ceiling{}))
+	if resp := f.do(t, http.MethodPut, capsPath, `{"hub":{"shell":true}}`, stale); resp.StatusCode != http.StatusForbidden ||
+		errorCode(t, resp) != "reauth_required" {
+		t.Fatalf("raise with no record = %d %s, want 403 reauth_required", resp.StatusCode, resp.body)
+	}
+}
+
 // TestCapabilitiesLocked: a device installed with --local-ceiling is managed
 // on the device; the hub refuses a change, audited as a denial, and stores
 // nothing.

@@ -120,6 +120,9 @@ Keep this list in sync with `Taskfile.yml`. If you add a task, document it here.
   runs, and during a hub CA rotation only to a master that proves it holds the current CA key (policy-checked
   and audited, refusals too). A demoted master deletes its copy. A CA key never goes into the store, the
   replication stream, a snapshot or the gossip.
+- Roles on the gossip are a member's own word: never gate on them alone. A member takes global rows,
+  `apply` requests and master-link calls only from a peer that proved, on that connection, that it holds
+  the hub CA key (`internal/cluster/replauth.go`); a member without the key writes and sends no global row.
 - The hub may manage a device's capability ceiling through policy (`device.capabilities.raise` is Dangerous and
   needs the admin password again to raise a terminal, exec, restart or Docker control, or to allow a device plugin, raise its class or move it
   to a new release; every change is audited),

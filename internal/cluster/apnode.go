@@ -224,6 +224,7 @@ func NewAPNode(ctx context.Context, cfg APConfig) (*APNode, error) {
 	rc := cfg.Gossip
 	rc.OnSynced = n.onSynced
 	rc.NodeID, rc.Peers, rc.Replicas, rc.Hints, rc.Log = cfg.NodeID, apNodePeers{n}, cfg.Replicas, hints, cfg.Log
+	rc.Master = CAMasterKey(cfg.CA)
 	rc.LastContact = filepath.Join(dir, lastContactFile)
 	rc.Broadcast = func(b []byte) {
 		if m := n.membership; m != nil {
@@ -327,7 +328,7 @@ func (n *APNode) Bind(ctx context.Context, st *store.Store) error {
 	n.membership = m
 	n.masters = NewMasterRing(n.cfg.NodeID, m.Members, time.Now)
 	n.masters.SelfMaster(n.IsMaster)
-	n.link = NewMasterLink(n.cfg.NodeID, m.DialMaster, m.Members, http.HandlerFunc(n.serveMaster), n.log)
+	n.link = NewMasterLink(n.cfg.NodeID, m.DialMaster, m.Members, CAMasterKey(n.cfg.CA), http.HandlerFunc(n.serveMaster), n.log)
 	n.isolated = Isolation{
 		LastContact: m.LastContact, Now: time.Now, Bound: IsolationBound,
 		Others: func() bool {
