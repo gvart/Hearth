@@ -1,0 +1,27 @@
+cmd/hearth/device_caps.go
+  s_18b57982fdff93::t_30468425e4910c 43-47,52-53,200-208
+cmd/hearth/root.go
+  s_18b57982fdff93::t_30468425e4910c 18
+cmd/hearth/plugin_test.go
+  s_18b57982fdff93::t_f822ca1b2ca5e5 22
+  s_18b57982fdff93::t_559b5e91745980 1-21,23-75
+cmd/hearth/plugin.go
+  s_18b57982fdff93::t_19a202f1b06e5a 142,148,163,165,176-179,191,206
+  s_18b57982fdff93::t_604f84d190be6c 1-141,143-147,149-162,164,166-175,180-190,192-205,207-208
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "f5f097598edeeee9975ae46be9167ed8e61a767b",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
