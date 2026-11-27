@@ -98,9 +98,12 @@ type Automation struct {
 	ID          string
 	Description string
 	Mode        Mode
-	Triggers    []Step[Trigger]
-	Conditions  []Step[Condition]
-	Actions     []Step[Action]
+	// Local makes the device its checks run from run it, by its agent,
+	// also while no hub is reachable (local.go).
+	Local      bool
+	Triggers   []Step[Trigger]
+	Conditions []Step[Condition]
+	Actions    []Step[Action]
 	// File is the file it was loaded from.
 	File string
 	// Warnings are templates over the render limits for their sample event.

@@ -42,6 +42,7 @@ type AgentMessage struct {
 	//	*AgentMessage_NetEdges
 	//	*AgentMessage_DockerResult
 	//	*AgentMessage_UpgradeResult
+	//	*AgentMessage_LocalRuns
 	Payload       isAgentMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -192,6 +193,15 @@ func (x *AgentMessage) GetUpgradeResult() *UpgradeResult {
 	return nil
 }
 
+func (x *AgentMessage) GetLocalRuns() *LocalRuns {
+	if x != nil {
+		if x, ok := x.Payload.(*AgentMessage_LocalRuns); ok {
+			return x.LocalRuns
+		}
+	}
+	return nil
+}
+
 type isAgentMessage_Payload interface {
 	isAgentMessage_Payload()
 }
@@ -245,6 +255,13 @@ type AgentMessage_UpgradeResult struct {
 	UpgradeResult *UpgradeResult `protobuf:"bytes,12,opt,name=upgrade_result,json=upgradeResult,proto3,oneof"`
 }
 
+type AgentMessage_LocalRuns struct {
+	// local_runs reports what the device's local rules did (#70), from
+	// agents of protocol minor 12 and later. The hub answers each with a
+	// LocalRunsAck once it recorded them.
+	LocalRuns *LocalRuns `protobuf:"bytes,13,opt,name=local_runs,json=localRuns,proto3,oneof"`
+}
+
 func (*AgentMessage_Hello) isAgentMessage_Payload() {}
 
 func (*AgentMessage_Heartbeat) isAgentMessage_Payload() {}
@@ -269,6 +286,8 @@ func (*AgentMessage_DockerResult) isAgentMessage_Payload() {}
 
 func (*AgentMessage_UpgradeResult) isAgentMessage_Payload() {}
 
+func (*AgentMessage_LocalRuns) isAgentMessage_Payload() {}
+
 // HubMessage is anything the hub sends to an agent.
 type HubMessage struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -286,6 +305,8 @@ type HubMessage struct {
 	//	*HubMessage_Hubs
 	//	*HubMessage_CeilingConfig
 	//	*HubMessage_UpgradeRequest
+	//	*HubMessage_LocalRules
+	//	*HubMessage_LocalRunsAck
 	Payload       isHubMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -436,6 +457,24 @@ func (x *HubMessage) GetUpgradeRequest() *UpgradeRequest {
 	return nil
 }
 
+func (x *HubMessage) GetLocalRules() *LocalRules {
+	if x != nil {
+		if x, ok := x.Payload.(*HubMessage_LocalRules); ok {
+			return x.LocalRules
+		}
+	}
+	return nil
+}
+
+func (x *HubMessage) GetLocalRunsAck() *LocalRunsAck {
+	if x != nil {
+		if x, ok := x.Payload.(*HubMessage_LocalRunsAck); ok {
+			return x.LocalRunsAck
+		}
+	}
+	return nil
+}
+
 type isHubMessage_Payload interface {
 	isHubMessage_Payload()
 }
@@ -491,6 +530,19 @@ type HubMessage_UpgradeRequest struct {
 	UpgradeRequest *UpgradeRequest `protobuf:"bytes,12,opt,name=upgrade_request,json=upgradeRequest,proto3,oneof"`
 }
 
+type HubMessage_LocalRules struct {
+	// local_rules are the automations the device runs itself (#70), sent to
+	// agents of protocol minor 12 and later on every connect and on every
+	// change.
+	LocalRules *LocalRules `protobuf:"bytes,13,opt,name=local_rules,json=localRules,proto3,oneof"`
+}
+
+type HubMessage_LocalRunsAck struct {
+	// local_runs_ack tells the agent which of its reported local runs are
+	// recorded, so it can drop them.
+	LocalRunsAck *LocalRunsAck `protobuf:"bytes,14,opt,name=local_runs_ack,json=localRunsAck,proto3,oneof"`
+}
+
 func (*HubMessage_Welcome) isHubMessage_Payload() {}
 
 func (*HubMessage_ExecRequest) isHubMessage_Payload() {}
@@ -514,6 +566,10 @@ func (*HubMessage_Hubs) isHubMessage_Payload() {}
 func (*HubMessage_CeilingConfig) isHubMessage_Payload() {}
 
 func (*HubMessage_UpgradeRequest) isHubMessage_Payload() {}
+
+func (*HubMessage_LocalRules) isHubMessage_Payload() {}
+
+func (*HubMessage_LocalRunsAck) isHubMessage_Payload() {}
 
 // CeilingConfig is the capability ceiling the hub sets for a device: the
 // agent adds it to its own flags (the effective ceiling is their union),
@@ -4113,11 +4169,667 @@ func (x *UpgradeResult) GetSha256() string {
 	return ""
 }
 
+// LocalRules are the automations marked `local: true` whose checks run from
+// this device (#70): the agent runs them itself, also while no hub is
+// reachable, saves them, and reports what they did with LocalRuns. Every
+// rule was allowed by the hub's policy when it was sent; the agent still
+// checks each probe and restart against its effective capability ceiling
+// when it runs. An empty list removes every rule.
+type LocalRules struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Rules []*LocalRule           `protobuf:"bytes,1,rep,name=rules,proto3" json:"rules,omitempty"`
+	// version orders the rule sets of a device: the hybrid logical clock of
+	// the newest automation document write (deletes included) the hub had
+	// seen. The agent ignores a set older than the one it applied and saved.
+	Version       uint64 `protobuf:"varint,2,opt,name=version,proto3" json:"version,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LocalRules) Reset() {
+	*x = LocalRules{}
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[52]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LocalRules) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LocalRules) ProtoMessage() {}
+
+func (x *LocalRules) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[52]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LocalRules.ProtoReflect.Descriptor instead.
+func (*LocalRules) Descriptor() ([]byte, []int) {
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{52}
+}
+
+func (x *LocalRules) GetRules() []*LocalRule {
+	if x != nil {
+		return x.Rules
+	}
+	return nil
+}
+
+func (x *LocalRules) GetVersion() uint64 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+// LocalRule is one automation the device runs: its checks fire it, and its
+// actions run in order, the first failure ending the run. A run in progress
+// ignores the checks.
+type LocalRule struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// id is the automation's id.
+	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// digest identifies the automation's file: a rule whose digest did not
+	// change keeps running across a new LocalRules.
+	Digest        string          `protobuf:"bytes,2,opt,name=digest,proto3" json:"digest,omitempty"`
+	Triggers      []*LocalTrigger `protobuf:"bytes,3,rep,name=triggers,proto3" json:"triggers,omitempty"`
+	Actions       []*LocalAction  `protobuf:"bytes,4,rep,name=actions,proto3" json:"actions,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LocalRule) Reset() {
+	*x = LocalRule{}
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[53]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LocalRule) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LocalRule) ProtoMessage() {}
+
+func (x *LocalRule) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[53]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LocalRule.ProtoReflect.Descriptor instead.
+func (*LocalRule) Descriptor() ([]byte, []int) {
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{53}
+}
+
+func (x *LocalRule) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *LocalRule) GetDigest() string {
+	if x != nil {
+		return x.Digest
+	}
+	return ""
+}
+
+func (x *LocalRule) GetTriggers() []*LocalTrigger {
+	if x != nil {
+		return x.Triggers
+	}
+	return nil
+}
+
+func (x *LocalRule) GetActions() []*LocalAction {
+	if x != nil {
+		return x.Actions
+	}
+	return nil
+}
+
+// LocalTrigger is a check that fires its rule once it has failed for hold,
+// checked every every. It fires once per outage: again only after it passed.
+type LocalTrigger struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// id is the trigger's step id, type its type: http, tcp or dns.
+	Id   string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Type string `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"`
+	// probe is the check; its timeout bounds each run of it.
+	Probe *ProbeRequest        `protobuf:"bytes,3,opt,name=probe,proto3" json:"probe,omitempty"`
+	Every *durationpb.Duration `protobuf:"bytes,4,opt,name=every,proto3" json:"every,omitempty"`
+	Hold  *durationpb.Duration `protobuf:"bytes,5,opt,name=hold,proto3" json:"hold,omitempty"`
+	// target is what is checked, as it may be shown: a URL with its password
+	// and query values redacted. Runs report it; the probe's URL is never
+	// logged or reported.
+	Target        string `protobuf:"bytes,6,opt,name=target,proto3" json:"target,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LocalTrigger) Reset() {
+	*x = LocalTrigger{}
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[54]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LocalTrigger) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LocalTrigger) ProtoMessage() {}
+
+func (x *LocalTrigger) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[54]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LocalTrigger.ProtoReflect.Descriptor instead.
+func (*LocalTrigger) Descriptor() ([]byte, []int) {
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{54}
+}
+
+func (x *LocalTrigger) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *LocalTrigger) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *LocalTrigger) GetProbe() *ProbeRequest {
+	if x != nil {
+		return x.Probe
+	}
+	return nil
+}
+
+func (x *LocalTrigger) GetEvery() *durationpb.Duration {
+	if x != nil {
+		return x.Every
+	}
+	return nil
+}
+
+func (x *LocalTrigger) GetHold() *durationpb.Duration {
+	if x != nil {
+		return x.Hold
+	}
+	return nil
+}
+
+func (x *LocalTrigger) GetTarget() string {
+	if x != nil {
+		return x.Target
+	}
+	return ""
+}
+
+// LocalAction is one step of a rule's run.
+type LocalAction struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// id is the action's step id, type its type: restart or check.
+	Id   string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Type string `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"`
+	// timeout bounds the step.
+	Timeout *durationpb.Duration `protobuf:"bytes,3,opt,name=timeout,proto3" json:"timeout,omitempty"`
+	// Types that are valid to be assigned to Action:
+	//
+	//	*LocalAction_Restart
+	//	*LocalAction_Check
+	Action        isLocalAction_Action `protobuf_oneof:"action"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LocalAction) Reset() {
+	*x = LocalAction{}
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[55]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LocalAction) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LocalAction) ProtoMessage() {}
+
+func (x *LocalAction) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[55]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LocalAction.ProtoReflect.Descriptor instead.
+func (*LocalAction) Descriptor() ([]byte, []int) {
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{55}
+}
+
+func (x *LocalAction) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *LocalAction) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *LocalAction) GetTimeout() *durationpb.Duration {
+	if x != nil {
+		return x.Timeout
+	}
+	return nil
+}
+
+func (x *LocalAction) GetAction() isLocalAction_Action {
+	if x != nil {
+		return x.Action
+	}
+	return nil
+}
+
+func (x *LocalAction) GetRestart() *RestartService {
+	if x != nil {
+		if x, ok := x.Action.(*LocalAction_Restart); ok {
+			return x.Restart
+		}
+	}
+	return nil
+}
+
+func (x *LocalAction) GetCheck() *ProbeRequest {
+	if x != nil {
+		if x, ok := x.Action.(*LocalAction_Check); ok {
+			return x.Check
+		}
+	}
+	return nil
+}
+
+type isLocalAction_Action interface {
+	isLocalAction_Action()
+}
+
+type LocalAction_Restart struct {
+	Restart *RestartService `protobuf:"bytes,4,opt,name=restart,proto3,oneof"`
+}
+
+type LocalAction_Check struct {
+	Check *ProbeRequest `protobuf:"bytes,5,opt,name=check,proto3,oneof"`
+}
+
+func (*LocalAction_Restart) isLocalAction_Action() {}
+
+func (*LocalAction_Check) isLocalAction_Action() {}
+
+// LocalRuns are runs of local rules the hub has not acknowledged yet, oldest
+// first.
+type LocalRuns struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Runs  []*LocalRun            `protobuf:"bytes,1,rep,name=runs,proto3" json:"runs,omitempty"`
+	// dropped counts the runs the agent's bounded log let go, oldest first,
+	// before any hub recorded them.
+	Dropped       uint64 `protobuf:"varint,2,opt,name=dropped,proto3" json:"dropped,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LocalRuns) Reset() {
+	*x = LocalRuns{}
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[56]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LocalRuns) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LocalRuns) ProtoMessage() {}
+
+func (x *LocalRuns) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[56]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LocalRuns.ProtoReflect.Descriptor instead.
+func (*LocalRuns) Descriptor() ([]byte, []int) {
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{56}
+}
+
+func (x *LocalRuns) GetRuns() []*LocalRun {
+	if x != nil {
+		return x.Runs
+	}
+	return nil
+}
+
+func (x *LocalRuns) GetDropped() uint64 {
+	if x != nil {
+		return x.Dropped
+	}
+	return 0
+}
+
+// LocalRun is one run of a local rule.
+type LocalRun struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// seq orders the runs of a device; LocalRunsAck names the last recorded.
+	Seq uint64 `protobuf:"varint,1,opt,name=seq,proto3" json:"seq,omitempty"`
+	// id is the run's id in the run history.
+	Id string `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
+	// rule is the automation's id; trigger and trigger_type the trigger that
+	// fired.
+	Rule        string `protobuf:"bytes,3,opt,name=rule,proto3" json:"rule,omitempty"`
+	Trigger     string `protobuf:"bytes,4,opt,name=trigger,proto3" json:"trigger,omitempty"`
+	TriggerType string `protobuf:"bytes,5,opt,name=trigger_type,json=triggerType,proto3" json:"trigger_type,omitempty"`
+	// target and trigger_error are what the failed check tells: its redacted
+	// target and why it failed.
+	Target       string                 `protobuf:"bytes,6,opt,name=target,proto3" json:"target,omitempty"`
+	TriggerError string                 `protobuf:"bytes,7,opt,name=trigger_error,json=triggerError,proto3" json:"trigger_error,omitempty"`
+	Started      *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=started,proto3" json:"started,omitempty"`
+	Finished     *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=finished,proto3" json:"finished,omitempty"`
+	// status is succeeded, failed or denied; error says why when not succeeded.
+	Status string       `protobuf:"bytes,10,opt,name=status,proto3" json:"status,omitempty"`
+	Error  string       `protobuf:"bytes,11,opt,name=error,proto3" json:"error,omitempty"`
+	Steps  []*LocalStep `protobuf:"bytes,12,rep,name=steps,proto3" json:"steps,omitempty"`
+	// hub_connected says whether the agent had a hub stream when the rule
+	// fired.
+	HubConnected  bool `protobuf:"varint,13,opt,name=hub_connected,json=hubConnected,proto3" json:"hub_connected,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LocalRun) Reset() {
+	*x = LocalRun{}
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[57]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LocalRun) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LocalRun) ProtoMessage() {}
+
+func (x *LocalRun) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[57]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LocalRun.ProtoReflect.Descriptor instead.
+func (*LocalRun) Descriptor() ([]byte, []int) {
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{57}
+}
+
+func (x *LocalRun) GetSeq() uint64 {
+	if x != nil {
+		return x.Seq
+	}
+	return 0
+}
+
+func (x *LocalRun) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *LocalRun) GetRule() string {
+	if x != nil {
+		return x.Rule
+	}
+	return ""
+}
+
+func (x *LocalRun) GetTrigger() string {
+	if x != nil {
+		return x.Trigger
+	}
+	return ""
+}
+
+func (x *LocalRun) GetTriggerType() string {
+	if x != nil {
+		return x.TriggerType
+	}
+	return ""
+}
+
+func (x *LocalRun) GetTarget() string {
+	if x != nil {
+		return x.Target
+	}
+	return ""
+}
+
+func (x *LocalRun) GetTriggerError() string {
+	if x != nil {
+		return x.TriggerError
+	}
+	return ""
+}
+
+func (x *LocalRun) GetStarted() *timestamppb.Timestamp {
+	if x != nil {
+		return x.Started
+	}
+	return nil
+}
+
+func (x *LocalRun) GetFinished() *timestamppb.Timestamp {
+	if x != nil {
+		return x.Finished
+	}
+	return nil
+}
+
+func (x *LocalRun) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *LocalRun) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *LocalRun) GetSteps() []*LocalStep {
+	if x != nil {
+		return x.Steps
+	}
+	return nil
+}
+
+func (x *LocalRun) GetHubConnected() bool {
+	if x != nil {
+		return x.HubConnected
+	}
+	return false
+}
+
+// LocalStep is the outcome of one action of a LocalRun.
+type LocalStep struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Type  string                 `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"`
+	// status is ok, failed or denied (beyond the capability ceiling).
+	Status        string `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
+	Error         string `protobuf:"bytes,4,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LocalStep) Reset() {
+	*x = LocalStep{}
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[58]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LocalStep) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LocalStep) ProtoMessage() {}
+
+func (x *LocalStep) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[58]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LocalStep.ProtoReflect.Descriptor instead.
+func (*LocalStep) Descriptor() ([]byte, []int) {
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{58}
+}
+
+func (x *LocalStep) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *LocalStep) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *LocalStep) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *LocalStep) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+// LocalRunsAck acknowledges every LocalRun up to seq.
+type LocalRunsAck struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Seq           uint64                 `protobuf:"varint,1,opt,name=seq,proto3" json:"seq,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LocalRunsAck) Reset() {
+	*x = LocalRunsAck{}
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[59]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LocalRunsAck) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LocalRunsAck) ProtoMessage() {}
+
+func (x *LocalRunsAck) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[59]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LocalRunsAck.ProtoReflect.Descriptor instead.
+func (*LocalRunsAck) Descriptor() ([]byte, []int) {
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{59}
+}
+
+func (x *LocalRunsAck) GetSeq() uint64 {
+	if x != nil {
+		return x.Seq
+	}
+	return 0
+}
+
 var File_hearth_agent_v1_agent_proto protoreflect.FileDescriptor
 
 const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"\n" +
-	"\x1bhearth/agent/v1/agent.proto\x12\x0fhearth.agent.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x81\x06\n" +
+	"\x1bhearth/agent/v1/agent.proto\x12\x0fhearth.agent.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xbe\x06\n" +
 	"\fAgentMessage\x12.\n" +
 	"\x05hello\x18\x01 \x01(\v2\x16.hearth.agent.v1.HelloH\x00R\x05hello\x12:\n" +
 	"\theartbeat\x18\x02 \x01(\v2\x1a.hearth.agent.v1.HeartbeatH\x00R\theartbeat\x12D\n" +
@@ -4134,8 +4846,10 @@ const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"\tnet_edges\x18\n" +
 	" \x01(\v2\x19.hearth.agent.v1.NetEdgesH\x00R\bnetEdges\x12D\n" +
 	"\rdocker_result\x18\v \x01(\v2\x1d.hearth.agent.v1.DockerResultH\x00R\fdockerResult\x12G\n" +
-	"\x0eupgrade_result\x18\f \x01(\v2\x1e.hearth.agent.v1.UpgradeResultH\x00R\rupgradeResultB\t\n" +
-	"\apayload\"\x94\x06\n" +
+	"\x0eupgrade_result\x18\f \x01(\v2\x1e.hearth.agent.v1.UpgradeResultH\x00R\rupgradeResult\x12;\n" +
+	"\n" +
+	"local_runs\x18\r \x01(\v2\x1a.hearth.agent.v1.LocalRunsH\x00R\tlocalRunsB\t\n" +
+	"\apayload\"\x9b\a\n" +
 	"\n" +
 	"HubMessage\x124\n" +
 	"\awelcome\x18\x01 \x01(\v2\x18.hearth.agent.v1.WelcomeH\x00R\awelcome\x12A\n" +
@@ -4152,7 +4866,10 @@ const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"\x04hubs\x18\n" +
 	" \x01(\v2\x15.hearth.agent.v1.HubsH\x00R\x04hubs\x12G\n" +
 	"\x0eceiling_config\x18\v \x01(\v2\x1e.hearth.agent.v1.CeilingConfigH\x00R\rceilingConfig\x12J\n" +
-	"\x0fupgrade_request\x18\f \x01(\v2\x1f.hearth.agent.v1.UpgradeRequestH\x00R\x0eupgradeRequestB\t\n" +
+	"\x0fupgrade_request\x18\f \x01(\v2\x1f.hearth.agent.v1.UpgradeRequestH\x00R\x0eupgradeRequest\x12>\n" +
+	"\vlocal_rules\x18\r \x01(\v2\x1b.hearth.agent.v1.LocalRulesH\x00R\n" +
+	"localRules\x12E\n" +
+	"\x0elocal_runs_ack\x18\x0e \x01(\v2\x1d.hearth.agent.v1.LocalRunsAckH\x00R\flocalRunsAckB\t\n" +
 	"\apayload\"]\n" +
 	"\rCeilingConfig\x122\n" +
 	"\aceiling\x18\x01 \x01(\v2\x18.hearth.agent.v1.CeilingR\aceiling\x12\x18\n" +
@@ -4397,7 +5114,55 @@ const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"\x05error\x18\x04 \x01(\tR\x05error\x12\x18\n" +
 	"\aversion\x18\x05 \x01(\tR\aversion\x12\x10\n" +
 	"\x03url\x18\x06 \x01(\tR\x03url\x12\x16\n" +
-	"\x06sha256\x18\a \x01(\tR\x06sha2562Y\n" +
+	"\x06sha256\x18\a \x01(\tR\x06sha256\"X\n" +
+	"\n" +
+	"LocalRules\x120\n" +
+	"\x05rules\x18\x01 \x03(\v2\x1a.hearth.agent.v1.LocalRuleR\x05rules\x12\x18\n" +
+	"\aversion\x18\x02 \x01(\x04R\aversion\"\xa6\x01\n" +
+	"\tLocalRule\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
+	"\x06digest\x18\x02 \x01(\tR\x06digest\x129\n" +
+	"\btriggers\x18\x03 \x03(\v2\x1d.hearth.agent.v1.LocalTriggerR\btriggers\x126\n" +
+	"\aactions\x18\x04 \x03(\v2\x1c.hearth.agent.v1.LocalActionR\aactions\"\xdf\x01\n" +
+	"\fLocalTrigger\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04type\x18\x02 \x01(\tR\x04type\x123\n" +
+	"\x05probe\x18\x03 \x01(\v2\x1d.hearth.agent.v1.ProbeRequestR\x05probe\x12/\n" +
+	"\x05every\x18\x04 \x01(\v2\x19.google.protobuf.DurationR\x05every\x12-\n" +
+	"\x04hold\x18\x05 \x01(\v2\x19.google.protobuf.DurationR\x04hold\x12\x16\n" +
+	"\x06target\x18\x06 \x01(\tR\x06target\"\xe4\x01\n" +
+	"\vLocalAction\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04type\x18\x02 \x01(\tR\x04type\x123\n" +
+	"\atimeout\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\atimeout\x12;\n" +
+	"\arestart\x18\x04 \x01(\v2\x1f.hearth.agent.v1.RestartServiceH\x00R\arestart\x125\n" +
+	"\x05check\x18\x05 \x01(\v2\x1d.hearth.agent.v1.ProbeRequestH\x00R\x05checkB\b\n" +
+	"\x06action\"T\n" +
+	"\tLocalRuns\x12-\n" +
+	"\x04runs\x18\x01 \x03(\v2\x19.hearth.agent.v1.LocalRunR\x04runs\x12\x18\n" +
+	"\adropped\x18\x02 \x01(\x04R\adropped\"\xad\x03\n" +
+	"\bLocalRun\x12\x10\n" +
+	"\x03seq\x18\x01 \x01(\x04R\x03seq\x12\x0e\n" +
+	"\x02id\x18\x02 \x01(\tR\x02id\x12\x12\n" +
+	"\x04rule\x18\x03 \x01(\tR\x04rule\x12\x18\n" +
+	"\atrigger\x18\x04 \x01(\tR\atrigger\x12!\n" +
+	"\ftrigger_type\x18\x05 \x01(\tR\vtriggerType\x12\x16\n" +
+	"\x06target\x18\x06 \x01(\tR\x06target\x12#\n" +
+	"\rtrigger_error\x18\a \x01(\tR\ftriggerError\x124\n" +
+	"\astarted\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\astarted\x126\n" +
+	"\bfinished\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\bfinished\x12\x16\n" +
+	"\x06status\x18\n" +
+	" \x01(\tR\x06status\x12\x14\n" +
+	"\x05error\x18\v \x01(\tR\x05error\x120\n" +
+	"\x05steps\x18\f \x03(\v2\x1a.hearth.agent.v1.LocalStepR\x05steps\x12#\n" +
+	"\rhub_connected\x18\r \x01(\bR\fhubConnected\"]\n" +
+	"\tLocalStep\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04type\x18\x02 \x01(\tR\x04type\x12\x16\n" +
+	"\x06status\x18\x03 \x01(\tR\x06status\x12\x14\n" +
+	"\x05error\x18\x04 \x01(\tR\x05error\" \n" +
+	"\fLocalRunsAck\x12\x10\n" +
+	"\x03seq\x18\x01 \x01(\x04R\x03seq2Y\n" +
 	"\fAgentService\x12I\n" +
 	"\aConnect\x12\x1d.hearth.agent.v1.AgentMessage\x1a\x1b.hearth.agent.v1.HubMessage(\x010\x01B\xbf\x01\n" +
 	"\x13com.hearth.agent.v1B\n" +
@@ -4415,7 +5180,7 @@ func file_hearth_agent_v1_agent_proto_rawDescGZIP() []byte {
 	return file_hearth_agent_v1_agent_proto_rawDescData
 }
 
-var file_hearth_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 53)
+var file_hearth_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 61)
 var file_hearth_agent_v1_agent_proto_goTypes = []any{
 	(*AgentMessage)(nil),          // 0: hearth.agent.v1.AgentMessage
 	(*HubMessage)(nil),            // 1: hearth.agent.v1.HubMessage
@@ -4469,9 +5234,17 @@ var file_hearth_agent_v1_agent_proto_goTypes = []any{
 	(*DockerImage)(nil),           // 49: hearth.agent.v1.DockerImage
 	(*UpgradeRequest)(nil),        // 50: hearth.agent.v1.UpgradeRequest
 	(*UpgradeResult)(nil),         // 51: hearth.agent.v1.UpgradeResult
-	nil,                           // 52: hearth.agent.v1.MetricSample.LabelsEntry
-	(*timestamppb.Timestamp)(nil), // 53: google.protobuf.Timestamp
-	(*durationpb.Duration)(nil),   // 54: google.protobuf.Duration
+	(*LocalRules)(nil),            // 52: hearth.agent.v1.LocalRules
+	(*LocalRule)(nil),             // 53: hearth.agent.v1.LocalRule
+	(*LocalTrigger)(nil),          // 54: hearth.agent.v1.LocalTrigger
+	(*LocalAction)(nil),           // 55: hearth.agent.v1.LocalAction
+	(*LocalRuns)(nil),             // 56: hearth.agent.v1.LocalRuns
+	(*LocalRun)(nil),              // 57: hearth.agent.v1.LocalRun
+	(*LocalStep)(nil),             // 58: hearth.agent.v1.LocalStep
+	(*LocalRunsAck)(nil),          // 59: hearth.agent.v1.LocalRunsAck
+	nil,                           // 60: hearth.agent.v1.MetricSample.LabelsEntry
+	(*timestamppb.Timestamp)(nil), // 61: google.protobuf.Timestamp
+	(*durationpb.Duration)(nil),   // 62: google.protobuf.Duration
 }
 var file_hearth_agent_v1_agent_proto_depIdxs = []int32{
 	4,  // 0: hearth.agent.v1.AgentMessage.hello:type_name -> hearth.agent.v1.Hello
@@ -4486,67 +5259,83 @@ var file_hearth_agent_v1_agent_proto_depIdxs = []int32{
 	40, // 9: hearth.agent.v1.AgentMessage.net_edges:type_name -> hearth.agent.v1.NetEdges
 	47, // 10: hearth.agent.v1.AgentMessage.docker_result:type_name -> hearth.agent.v1.DockerResult
 	51, // 11: hearth.agent.v1.AgentMessage.upgrade_result:type_name -> hearth.agent.v1.UpgradeResult
-	12, // 12: hearth.agent.v1.HubMessage.welcome:type_name -> hearth.agent.v1.Welcome
-	16, // 13: hearth.agent.v1.HubMessage.exec_request:type_name -> hearth.agent.v1.ExecRequest
-	29, // 14: hearth.agent.v1.HubMessage.ping:type_name -> hearth.agent.v1.Ping
-	19, // 15: hearth.agent.v1.HubMessage.probe_request:type_name -> hearth.agent.v1.ProbeRequest
-	24, // 16: hearth.agent.v1.HubMessage.log_request:type_name -> hearth.agent.v1.LogRequest
-	26, // 17: hearth.agent.v1.HubMessage.log_cancel:type_name -> hearth.agent.v1.LogCancel
-	30, // 18: hearth.agent.v1.HubMessage.shell_request:type_name -> hearth.agent.v1.ShellRequest
-	37, // 19: hearth.agent.v1.HubMessage.scan_request:type_name -> hearth.agent.v1.ScanRequest
-	43, // 20: hearth.agent.v1.HubMessage.docker_request:type_name -> hearth.agent.v1.DockerRequest
-	13, // 21: hearth.agent.v1.HubMessage.hubs:type_name -> hearth.agent.v1.Hubs
-	2,  // 22: hearth.agent.v1.HubMessage.ceiling_config:type_name -> hearth.agent.v1.CeilingConfig
-	50, // 23: hearth.agent.v1.HubMessage.upgrade_request:type_name -> hearth.agent.v1.UpgradeRequest
-	5,  // 24: hearth.agent.v1.CeilingConfig.ceiling:type_name -> hearth.agent.v1.Ceiling
-	3,  // 25: hearth.agent.v1.Hello.protocol_version:type_name -> hearth.agent.v1.ProtocolVersion
-	6,  // 26: hearth.agent.v1.Hello.disks:type_name -> hearth.agent.v1.Disk
-	7,  // 27: hearth.agent.v1.Hello.interfaces:type_name -> hearth.agent.v1.NetworkInterface
-	5,  // 28: hearth.agent.v1.Hello.ceiling:type_name -> hearth.agent.v1.Ceiling
-	5,  // 29: hearth.agent.v1.Hello.local_ceiling:type_name -> hearth.agent.v1.Ceiling
-	53, // 30: hearth.agent.v1.Heartbeat.ts:type_name -> google.protobuf.Timestamp
-	54, // 31: hearth.agent.v1.Heartbeat.uptime:type_name -> google.protobuf.Duration
-	10, // 32: hearth.agent.v1.MetricsBatch.samples:type_name -> hearth.agent.v1.MetricSample
-	52, // 33: hearth.agent.v1.MetricSample.labels:type_name -> hearth.agent.v1.MetricSample.LabelsEntry
-	53, // 34: hearth.agent.v1.MetricSample.ts:type_name -> google.protobuf.Timestamp
-	53, // 35: hearth.agent.v1.Welcome.server_time:type_name -> google.protobuf.Timestamp
-	54, // 36: hearth.agent.v1.Welcome.heartbeat_interval:type_name -> google.protobuf.Duration
-	54, // 37: hearth.agent.v1.ExecRequest.timeout:type_name -> google.protobuf.Duration
-	17, // 38: hearth.agent.v1.ExecRequest.command:type_name -> hearth.agent.v1.Command
-	18, // 39: hearth.agent.v1.ExecRequest.restart:type_name -> hearth.agent.v1.RestartService
-	54, // 40: hearth.agent.v1.ProbeRequest.timeout:type_name -> google.protobuf.Duration
-	20, // 41: hearth.agent.v1.ProbeRequest.http:type_name -> hearth.agent.v1.HTTPProbe
-	21, // 42: hearth.agent.v1.ProbeRequest.tcp:type_name -> hearth.agent.v1.TCPProbe
-	22, // 43: hearth.agent.v1.ProbeRequest.dns:type_name -> hearth.agent.v1.DNSProbe
-	25, // 44: hearth.agent.v1.LogRequest.source:type_name -> hearth.agent.v1.LogSource
-	28, // 45: hearth.agent.v1.LogLines.lines:type_name -> hearth.agent.v1.LogLine
-	53, // 46: hearth.agent.v1.LogLine.ts:type_name -> google.protobuf.Timestamp
-	31, // 47: hearth.agent.v1.ShellRequest.open:type_name -> hearth.agent.v1.ShellOpen
-	32, // 48: hearth.agent.v1.ShellRequest.resize:type_name -> hearth.agent.v1.TerminalSize
-	33, // 49: hearth.agent.v1.ShellRequest.close:type_name -> hearth.agent.v1.ShellClose
-	32, // 50: hearth.agent.v1.ShellOpen.size:type_name -> hearth.agent.v1.TerminalSize
-	35, // 51: hearth.agent.v1.ShellEvent.started:type_name -> hearth.agent.v1.ShellStarted
-	36, // 52: hearth.agent.v1.ShellEvent.exited:type_name -> hearth.agent.v1.ShellExited
-	54, // 53: hearth.agent.v1.ScanRequest.timeout:type_name -> google.protobuf.Duration
-	39, // 54: hearth.agent.v1.ScanResult.hosts:type_name -> hearth.agent.v1.ScannedHost
-	41, // 55: hearth.agent.v1.NetEdges.neighbors:type_name -> hearth.agent.v1.Neighbor
-	42, // 56: hearth.agent.v1.NetEdges.connections:type_name -> hearth.agent.v1.Connection
-	54, // 57: hearth.agent.v1.DockerRequest.timeout:type_name -> google.protobuf.Duration
-	44, // 58: hearth.agent.v1.DockerRequest.list:type_name -> hearth.agent.v1.DockerList
-	45, // 59: hearth.agent.v1.DockerRequest.action:type_name -> hearth.agent.v1.DockerAction
-	46, // 60: hearth.agent.v1.DockerRequest.logs:type_name -> hearth.agent.v1.DockerLogs
-	48, // 61: hearth.agent.v1.DockerResult.containers:type_name -> hearth.agent.v1.DockerContainer
-	49, // 62: hearth.agent.v1.DockerResult.images:type_name -> hearth.agent.v1.DockerImage
-	28, // 63: hearth.agent.v1.DockerResult.lines:type_name -> hearth.agent.v1.LogLine
-	53, // 64: hearth.agent.v1.DockerContainer.created:type_name -> google.protobuf.Timestamp
-	53, // 65: hearth.agent.v1.DockerImage.created:type_name -> google.protobuf.Timestamp
-	0,  // 66: hearth.agent.v1.AgentService.Connect:input_type -> hearth.agent.v1.AgentMessage
-	1,  // 67: hearth.agent.v1.AgentService.Connect:output_type -> hearth.agent.v1.HubMessage
-	67, // [67:68] is the sub-list for method output_type
-	66, // [66:67] is the sub-list for method input_type
-	66, // [66:66] is the sub-list for extension type_name
-	66, // [66:66] is the sub-list for extension extendee
-	0,  // [0:66] is the sub-list for field type_name
+	56, // 12: hearth.agent.v1.AgentMessage.local_runs:type_name -> hearth.agent.v1.LocalRuns
+	12, // 13: hearth.agent.v1.HubMessage.welcome:type_name -> hearth.agent.v1.Welcome
+	16, // 14: hearth.agent.v1.HubMessage.exec_request:type_name -> hearth.agent.v1.ExecRequest
+	29, // 15: hearth.agent.v1.HubMessage.ping:type_name -> hearth.agent.v1.Ping
+	19, // 16: hearth.agent.v1.HubMessage.probe_request:type_name -> hearth.agent.v1.ProbeRequest
+	24, // 17: hearth.agent.v1.HubMessage.log_request:type_name -> hearth.agent.v1.LogRequest
+	26, // 18: hearth.agent.v1.HubMessage.log_cancel:type_name -> hearth.agent.v1.LogCancel
+	30, // 19: hearth.agent.v1.HubMessage.shell_request:type_name -> hearth.agent.v1.ShellRequest
+	37, // 20: hearth.agent.v1.HubMessage.scan_request:type_name -> hearth.agent.v1.ScanRequest
+	43, // 21: hearth.agent.v1.HubMessage.docker_request:type_name -> hearth.agent.v1.DockerRequest
+	13, // 22: hearth.agent.v1.HubMessage.hubs:type_name -> hearth.agent.v1.Hubs
+	2,  // 23: hearth.agent.v1.HubMessage.ceiling_config:type_name -> hearth.agent.v1.CeilingConfig
+	50, // 24: hearth.agent.v1.HubMessage.upgrade_request:type_name -> hearth.agent.v1.UpgradeRequest
+	52, // 25: hearth.agent.v1.HubMessage.local_rules:type_name -> hearth.agent.v1.LocalRules
+	59, // 26: hearth.agent.v1.HubMessage.local_runs_ack:type_name -> hearth.agent.v1.LocalRunsAck
+	5,  // 27: hearth.agent.v1.CeilingConfig.ceiling:type_name -> hearth.agent.v1.Ceiling
+	3,  // 28: hearth.agent.v1.Hello.protocol_version:type_name -> hearth.agent.v1.ProtocolVersion
+	6,  // 29: hearth.agent.v1.Hello.disks:type_name -> hearth.agent.v1.Disk
+	7,  // 30: hearth.agent.v1.Hello.interfaces:type_name -> hearth.agent.v1.NetworkInterface
+	5,  // 31: hearth.agent.v1.Hello.ceiling:type_name -> hearth.agent.v1.Ceiling
+	5,  // 32: hearth.agent.v1.Hello.local_ceiling:type_name -> hearth.agent.v1.Ceiling
+	61, // 33: hearth.agent.v1.Heartbeat.ts:type_name -> google.protobuf.Timestamp
+	62, // 34: hearth.agent.v1.Heartbeat.uptime:type_name -> google.protobuf.Duration
+	10, // 35: hearth.agent.v1.MetricsBatch.samples:type_name -> hearth.agent.v1.MetricSample
+	60, // 36: hearth.agent.v1.MetricSample.labels:type_name -> hearth.agent.v1.MetricSample.LabelsEntry
+	61, // 37: hearth.agent.v1.MetricSample.ts:type_name -> google.protobuf.Timestamp
+	61, // 38: hearth.agent.v1.Welcome.server_time:type_name -> google.protobuf.Timestamp
+	62, // 39: hearth.agent.v1.Welcome.heartbeat_interval:type_name -> google.protobuf.Duration
+	62, // 40: hearth.agent.v1.ExecRequest.timeout:type_name -> google.protobuf.Duration
+	17, // 41: hearth.agent.v1.ExecRequest.command:type_name -> hearth.agent.v1.Command
+	18, // 42: hearth.agent.v1.ExecRequest.restart:type_name -> hearth.agent.v1.RestartService
+	62, // 43: hearth.agent.v1.ProbeRequest.timeout:type_name -> google.protobuf.Duration
+	20, // 44: hearth.agent.v1.ProbeRequest.http:type_name -> hearth.agent.v1.HTTPProbe
+	21, // 45: hearth.agent.v1.ProbeRequest.tcp:type_name -> hearth.agent.v1.TCPProbe
+	22, // 46: hearth.agent.v1.ProbeRequest.dns:type_name -> hearth.agent.v1.DNSProbe
+	25, // 47: hearth.agent.v1.LogRequest.source:type_name -> hearth.agent.v1.LogSource
+	28, // 48: hearth.agent.v1.LogLines.lines:type_name -> hearth.agent.v1.LogLine
+	61, // 49: hearth.agent.v1.LogLine.ts:type_name -> google.protobuf.Timestamp
+	31, // 50: hearth.agent.v1.ShellRequest.open:type_name -> hearth.agent.v1.ShellOpen
+	32, // 51: hearth.agent.v1.ShellRequest.resize:type_name -> hearth.agent.v1.TerminalSize
+	33, // 52: hearth.agent.v1.ShellRequest.close:type_name -> hearth.agent.v1.ShellClose
+	32, // 53: hearth.agent.v1.ShellOpen.size:type_name -> hearth.agent.v1.TerminalSize
+	35, // 54: hearth.agent.v1.ShellEvent.started:type_name -> hearth.agent.v1.ShellStarted
+	36, // 55: hearth.agent.v1.ShellEvent.exited:type_name -> hearth.agent.v1.ShellExited
+	62, // 56: hearth.agent.v1.ScanRequest.timeout:type_name -> google.protobuf.Duration
+	39, // 57: hearth.agent.v1.ScanResult.hosts:type_name -> hearth.agent.v1.ScannedHost
+	41, // 58: hearth.agent.v1.NetEdges.neighbors:type_name -> hearth.agent.v1.Neighbor
+	42, // 59: hearth.agent.v1.NetEdges.connections:type_name -> hearth.agent.v1.Connection
+	62, // 60: hearth.agent.v1.DockerRequest.timeout:type_name -> google.protobuf.Duration
+	44, // 61: hearth.agent.v1.DockerRequest.list:type_name -> hearth.agent.v1.DockerList
+	45, // 62: hearth.agent.v1.DockerRequest.action:type_name -> hearth.agent.v1.DockerAction
+	46, // 63: hearth.agent.v1.DockerRequest.logs:type_name -> hearth.agent.v1.DockerLogs
+	48, // 64: hearth.agent.v1.DockerResult.containers:type_name -> hearth.agent.v1.DockerContainer
+	49, // 65: hearth.agent.v1.DockerResult.images:type_name -> hearth.agent.v1.DockerImage
+	28, // 66: hearth.agent.v1.DockerResult.lines:type_name -> hearth.agent.v1.LogLine
+	61, // 67: hearth.agent.v1.DockerContainer.created:type_name -> google.protobuf.Timestamp
+	61, // 68: hearth.agent.v1.DockerImage.created:type_name -> google.protobuf.Timestamp
+	53, // 69: hearth.agent.v1.LocalRules.rules:type_name -> hearth.agent.v1.LocalRule
+	54, // 70: hearth.agent.v1.LocalRule.triggers:type_name -> hearth.agent.v1.LocalTrigger
+	55, // 71: hearth.agent.v1.LocalRule.actions:type_name -> hearth.agent.v1.LocalAction
+	19, // 72: hearth.agent.v1.LocalTrigger.probe:type_name -> hearth.agent.v1.ProbeRequest
+	62, // 73: hearth.agent.v1.LocalTrigger.every:type_name -> google.protobuf.Duration
+	62, // 74: hearth.agent.v1.LocalTrigger.hold:type_name -> google.protobuf.Duration
+	62, // 75: hearth.agent.v1.LocalAction.timeout:type_name -> google.protobuf.Duration
+	18, // 76: hearth.agent.v1.LocalAction.restart:type_name -> hearth.agent.v1.RestartService
+	19, // 77: hearth.agent.v1.LocalAction.check:type_name -> hearth.agent.v1.ProbeRequest
+	57, // 78: hearth.agent.v1.LocalRuns.runs:type_name -> hearth.agent.v1.LocalRun
+	61, // 79: hearth.agent.v1.LocalRun.started:type_name -> google.protobuf.Timestamp
+	61, // 80: hearth.agent.v1.LocalRun.finished:type_name -> google.protobuf.Timestamp
+	58, // 81: hearth.agent.v1.LocalRun.steps:type_name -> hearth.agent.v1.LocalStep
+	0,  // 82: hearth.agent.v1.AgentService.Connect:input_type -> hearth.agent.v1.AgentMessage
+	1,  // 83: hearth.agent.v1.AgentService.Connect:output_type -> hearth.agent.v1.HubMessage
+	83, // [83:84] is the sub-list for method output_type
+	82, // [82:83] is the sub-list for method input_type
+	82, // [82:82] is the sub-list for extension type_name
+	82, // [82:82] is the sub-list for extension extendee
+	0,  // [0:82] is the sub-list for field type_name
 }
 
 func init() { file_hearth_agent_v1_agent_proto_init() }
@@ -4567,6 +5356,7 @@ func file_hearth_agent_v1_agent_proto_init() {
 		(*AgentMessage_NetEdges)(nil),
 		(*AgentMessage_DockerResult)(nil),
 		(*AgentMessage_UpgradeResult)(nil),
+		(*AgentMessage_LocalRuns)(nil),
 	}
 	file_hearth_agent_v1_agent_proto_msgTypes[1].OneofWrappers = []any{
 		(*HubMessage_Welcome)(nil),
@@ -4581,6 +5371,8 @@ func file_hearth_agent_v1_agent_proto_init() {
 		(*HubMessage_Hubs)(nil),
 		(*HubMessage_CeilingConfig)(nil),
 		(*HubMessage_UpgradeRequest)(nil),
+		(*HubMessage_LocalRules)(nil),
+		(*HubMessage_LocalRunsAck)(nil),
 	}
 	file_hearth_agent_v1_agent_proto_msgTypes[16].OneofWrappers = []any{
 		(*ExecRequest_Command)(nil),
@@ -4608,13 +5400,17 @@ func file_hearth_agent_v1_agent_proto_init() {
 		(*DockerRequest_Action)(nil),
 		(*DockerRequest_Logs)(nil),
 	}
+	file_hearth_agent_v1_agent_proto_msgTypes[55].OneofWrappers = []any{
+		(*LocalAction_Restart)(nil),
+		(*LocalAction_Check)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_hearth_agent_v1_agent_proto_rawDesc), len(file_hearth_agent_v1_agent_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   53,
+			NumMessages:   61,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

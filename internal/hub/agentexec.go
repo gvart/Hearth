@@ -51,6 +51,9 @@ type Agents struct {
 	sendTimeout time.Duration
 	// hubsDebounce and hubsRecheck pace RunHubsPush; shorter in tests.
 	hubsDebounce, hubsRecheck time.Duration
+	// local, when set, pushes local rules and records their runs
+	// (localrules.go).
+	local atomic.Pointer[LocalRulesConfig]
 
 	mu       sync.Mutex
 	sessions map[string]*agentSession
@@ -112,6 +115,8 @@ type agentSession struct {
 	sentCeiling *agentv1.CeilingConfig
 	// hubs is the hub list the agent last got, in Welcome or Hubs.
 	hubs []string
+	// rules are the local rules the agent last got (localrules.go).
+	rules localRulesState
 }
 
 // attach records the stream of deviceID. A newer stream of the same device

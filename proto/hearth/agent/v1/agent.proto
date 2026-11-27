@@ -30,6 +30,10 @@ message AgentMessage {
     NetEdges net_edges = 10;
     DockerResult docker_result = 11;
     UpgradeResult upgrade_result = 12;
+    // local_runs reports what the device's local rules did (#70), from
+    // agents of protocol minor 12 and later. The hub answers each with a
+    // LocalRunsAck once it recorded them.
+    LocalRuns local_runs = 13;
   }
 }
 
@@ -51,6 +55,13 @@ message HubMessage {
     // connect and on every change.
     CeilingConfig ceiling_config = 11;
     UpgradeRequest upgrade_request = 12;
+    // local_rules are the automations the device runs itself (#70), sent to
+    // agents of protocol minor 12 and later on every connect and on every
+    // change.
+    LocalRules local_rules = 13;
+    // local_runs_ack tells the agent which of its reported local runs are
+    // recorded, so it can drop them.
+    LocalRunsAck local_runs_ack = 14;
   }
 }
 
@@ -657,4 +668,109 @@ message UpgradeResult {
   // release's checksums.txt, for the audit log; empty when it got no further.
   string url = 6;
   string sha256 = 7;
+}
+
+// LocalRules are the automations marked `local: true` whose checks run from
+// this device (#70): the agent runs them itself, also while no hub is
+// reachable, saves them, and reports what they did with LocalRuns. Every
+// rule was allowed by the hub's policy when it was sent; the agent still
+// checks each probe and restart against its effective capability ceiling
+// when it runs. An empty list removes every rule.
+message LocalRules {
+  repeated LocalRule rules = 1;
+  // version orders the rule sets of a device: the hybrid logical clock of
+  // the newest automation document write (deletes included) the hub had
+  // seen. The agent ignores a set older than the one it applied and saved.
+  uint64 version = 2;
+}
+
+// LocalRule is one automation the device runs: its checks fire it, and its
+// actions run in order, the first failure ending the run. A run in progress
+// ignores the checks.
+message LocalRule {
+  // id is the automation's id.
+  string id = 1;
+  // digest identifies the automation's file: a rule whose digest did not
+  // change keeps running across a new LocalRules.
+  string digest = 2;
+  repeated LocalTrigger triggers = 3;
+  repeated LocalAction actions = 4;
+}
+
+// LocalTrigger is a check that fires its rule once it has failed for hold,
+// checked every every. It fires once per outage: again only after it passed.
+message LocalTrigger {
+  // id is the trigger's step id, type its type: http, tcp or dns.
+  string id = 1;
+  string type = 2;
+  // probe is the check; its timeout bounds each run of it.
+  ProbeRequest probe = 3;
+  google.protobuf.Duration every = 4;
+  google.protobuf.Duration hold = 5;
+  // target is what is checked, as it may be shown: a URL with its password
+  // and query values redacted. Runs report it; the probe's URL is never
+  // logged or reported.
+  string target = 6;
+}
+
+// LocalAction is one step of a rule's run.
+message LocalAction {
+  // id is the action's step id, type its type: restart or check.
+  string id = 1;
+  string type = 2;
+  // timeout bounds the step.
+  google.protobuf.Duration timeout = 3;
+  oneof action {
+    RestartService restart = 4;
+    ProbeRequest check = 5;
+  }
+}
+
+// LocalRuns are runs of local rules the hub has not acknowledged yet, oldest
+// first.
+message LocalRuns {
+  repeated LocalRun runs = 1;
+  // dropped counts the runs the agent's bounded log let go, oldest first,
+  // before any hub recorded them.
+  uint64 dropped = 2;
+}
+
+// LocalRun is one run of a local rule.
+message LocalRun {
+  // seq orders the runs of a device; LocalRunsAck names the last recorded.
+  uint64 seq = 1;
+  // id is the run's id in the run history.
+  string id = 2;
+  // rule is the automation's id; trigger and trigger_type the trigger that
+  // fired.
+  string rule = 3;
+  string trigger = 4;
+  string trigger_type = 5;
+  // target and trigger_error are what the failed check tells: its redacted
+  // target and why it failed.
+  string target = 6;
+  string trigger_error = 7;
+  google.protobuf.Timestamp started = 8;
+  google.protobuf.Timestamp finished = 9;
+  // status is succeeded, failed or denied; error says why when not succeeded.
+  string status = 10;
+  string error = 11;
+  repeated LocalStep steps = 12;
+  // hub_connected says whether the agent had a hub stream when the rule
+  // fired.
+  bool hub_connected = 13;
+}
+
+// LocalStep is the outcome of one action of a LocalRun.
+message LocalStep {
+  string id = 1;
+  string type = 2;
+  // status is ok, failed or denied (beyond the capability ceiling).
+  string status = 3;
+  string error = 4;
+}
+
+// LocalRunsAck acknowledges every LocalRun up to seq.
+message LocalRunsAck {
+  uint64 seq = 1;
 }
