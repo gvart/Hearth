@@ -80,13 +80,16 @@ func TestSchemaGateAcrossVersions(t *testing.T) {
 	}
 	// Also when the cluster cannot take the audit entry: an older binary is
 	// told to upgrade, not to try again.
-	for name, audit := range map[string]policy.Auditor{"": b.st.Audit(), " with the cluster unavailable": unavailableAudit{}} {
-		srv := NewAPJoinServer(b.node, b.st, b.ca, policy.New(audit), testLogger(t))
+	for _, tc := range []struct {
+		name  string
+		audit policy.Auditor
+	}{{"", b.st.Audit()}, {" with the cluster unavailable", unavailableAudit{}}} {
+		srv := NewAPJoinServer(b.node, b.st, b.ca, policy.New(tc.audit), testLogger(t))
 		_, err = srv.Join(ctx, connect.NewRequest(&clusterv1.JoinRequest{
 			TokenSecret: "any", NodeId: "c", Csr: csr, Address: "c:7444", SchemaVersion: old,
 		}))
 		if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "has written") {
-			t.Fatalf("join of an older binary%s: %v, want failed precondition", name, err)
+			t.Fatalf("join of an older binary%s: %v, want failed precondition", tc.name, err)
 		}
 	}
 	// The gossip check itself.
