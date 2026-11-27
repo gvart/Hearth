@@ -779,20 +779,26 @@ func (s *APJoinServer) Join(ctx context.Context, req *connect.Request[clusterv1.
 	detail := map[string]any{
 		"address": msg.GetAddress(), "schema_version": msg.GetSchemaVersion(), "allowed_roles": allowed.String(),
 	}
+	// A joiner needs the schema the cluster has written, not this master's:
+	// during a rolling upgrade an older binary still joins. It is decided
+	// before the audit entry is written, so a binary too old is told to
+	// upgrade even when the cluster cannot take the entry, not to try
+	// again; the denial is audited when it can be.
+	var schemaErr error
+	if have := s.node.WrittenSchema(); msg.GetSchemaVersion() < have {
+		refused = fmt.Sprintf("this hub's binary supports store schema up to %d but the cluster has written %d; "+
+			"run the cluster's hearth version or a newer one", msg.GetSchemaVersion(), have)
+		schemaErr = fmt.Errorf("%w: %w: joining binary supports %d, cluster wrote %d",
+			policy.ErrDenied, errSchema, msg.GetSchemaVersion(), have)
+	}
 	err = s.policy.Do(ctx, policy.Request{
 		ActorKind: policy.ActorJoinToken,
 		ActorID:   tokenActorID(msg.GetTokenSecret()),
 		Action:    policy.ClusterJoin,
 		Target:    msg.GetNodeId(),
 		Detail:    detail,
+		Precheck:  func(context.Context) error { return schemaErr },
 	}, func(ctx context.Context) error {
-		// A joiner needs the schema the cluster has written, not this
-		// master's: during a rolling upgrade an older binary still joins.
-		if have := s.node.WrittenSchema(); msg.GetSchemaVersion() < have {
-			refused = fmt.Sprintf("this hub's binary supports store schema up to %d but the cluster has written %d; "+
-				"run the cluster's hearth version or a newer one", msg.GetSchemaVersion(), have)
-			return fmt.Errorf("%w: joining binary supports %d, cluster wrote %d", errSchema, msg.GetSchemaVersion(), have)
-		}
 		for _, m := range s.node.Status().Members {
 			if m.ID == msg.GetNodeId() && m.State != MemberLeft {
 				return errNodeTaken
