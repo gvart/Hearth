@@ -271,6 +271,7 @@ func TestAPIDeviceNetEdges(t *testing.T) {
 		{Kind: EdgeConnection, IP: "192.0.2.6", Port: 445, Count: 2},     // the NAS, by IP
 		{Kind: EdgeConnection, IP: "192.0.2.7", Port: 22, Inbound: true, Count: 1},
 		{Kind: EdgeConnection, IP: "198.51.100.9", Port: 443, Count: 1}, // unknown
+		{Kind: EdgeConnection, IP: "fe80::6", Port: 445, Count: 1},      // the NAS by its link-local address: a connection has no MAC
 	}
 	for _, id := range []string{"pi", "off"} {
 		f.api.netEdges.set(id, now, edges)
@@ -288,7 +289,7 @@ func TestAPIDeviceNetEdges(t *testing.T) {
 		t.Fatalf("status %d", resp.StatusCode)
 	}
 	got := decode[NetEdgesJSON](t, resp)
-	if !got.Enabled || got.UpdatedAt == nil || !got.UpdatedAt.Equal(now) || len(got.Neighbors) != 4 || len(got.Connections) != 3 {
+	if !got.Enabled || got.UpdatedAt == nil || !got.UpdatedAt.Equal(now) || len(got.Neighbors) != 4 || len(got.Connections) != 4 {
 		t.Fatalf("edges = %+v", got)
 	}
 	peer := func(p *PeerJSON) string {
@@ -302,7 +303,7 @@ func TestAPIDeviceNetEdges(t *testing.T) {
 			t.Errorf("neighbour %s = %s, want %s", got.Neighbors[i].IP, g, want)
 		}
 	}
-	for i, want := range []string{"device:nas:nas", "host:aa:bb:cc:00:00:07:Synology", "-"} {
+	for i, want := range []string{"device:nas:nas", "host:aa:bb:cc:00:00:07:Synology", "-", "device:nas:nas"} {
 		if g := peer(got.Connections[i].Peer); g != want {
 			t.Errorf("connection %s = %s, want %s", got.Connections[i].IP, g, want)
 		}

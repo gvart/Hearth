@@ -285,18 +285,15 @@ func (a *api) peerIndex(ctx context.Context) (peerIndex, error) {
 }
 
 // resolve finds the peer of mac (if known) and ip: an enrolled device first,
-// then this hub, then a discovered host; nil if none. An IPv6 link-local
-// address names a host on one link only (every host may have fe80::1), so
-// it is resolved by MAC alone.
+// then this hub, then a discovered host; nil if none. A neighbour's IPv6
+// link-local address names a host on its link only (any host may have
+// fe80::1), so a neighbour at one is resolved by MAC alone.
 func (p peerIndex) resolve(mac, ip string) *PeerJSON {
 	if d := p.deviceByMAC[mac]; mac != "" && d != nil {
 		return d
 	}
-	if a, err := netip.ParseAddr(ip); err == nil && a.Is6() && a.IsLinkLocalUnicast() {
-		if h := p.hostByMAC[mac]; mac != "" && h != nil {
-			return h
-		}
-		return nil
+	if a, err := netip.ParseAddr(ip); mac != "" && err == nil && a.Is6() && a.IsLinkLocalUnicast() {
+		return p.hostByMAC[mac]
 	}
 	if d := p.deviceByIP[ip]; d != nil {
 		return d
