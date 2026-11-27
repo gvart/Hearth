@@ -1,0 +1,53 @@
+web/src/components/DevicePage.tsx
+  s_18b57982fdff93::t_e73ec18bc46575 250
+  s_18b57982fdff93::t_70f8112160bd1f 23
+  s_18b57982fdff93::t_429f5c0f6b4891 251
+web/src/components/Shell.tsx
+  s_18b57982fdff93::t_5bd5df9ae63601 13,181-182
+web/src/nav.ts
+  s_18b57982fdff93::t_5bd5df9ae63601 19-20,81
+web/src/api/deviceplugins.ts
+  s_18b57982fdff93::t_4b9e0a812a2b9a 1-132
+web/src/components/DevicePlugins.tsx
+  s_18b57982fdff93::t_859b9cc5e70d65 1-4,6-212
+  s_18b57982fdff93::t_fd5e2084bcb487 5
+web/src/api/client.ts
+  s_18b57982fdff93::t_4b9e0a812a2b9a 61-68
+web/test/capabilities.test.mjs
+  s_18b57982fdff93::t_ba4f258881558c 101-110
+web/src/plugincommands.ts
+  s_18b57982fdff93::t_240887e65280a6 1-23
+web/src/capabilities.ts
+  s_18b57982fdff93::t_4b9e0a812a2b9a 5,19-20,74,262-263,267-287
+  s_18b57982fdff93::t_7746b38fa44794 288
+web/src/components/DeviceCapabilities.css
+  s_18b57982fdff93::t_6a7d0ec3f3681d 180-192
+web/src/tips.ts
+  s_18b57982fdff93::t_5bd5df9ae63601 20,141-147
+  s_18b57982fdff93::t_ca210d5380c2e7 148
+web/src/components/DevicePluginsPage.tsx
+  s_18b57982fdff93::t_fd5e2084bcb487 1,11,136
+  s_18b57982fdff93::t_2037f386d3205d 2-10,12-135,137-244
+web/test/nav.test.mjs
+  s_18b57982fdff93::t_d21b6cabd2a1d1 53
+web/src/components/PluginCommandDialog.tsx
+  s_18b57982fdff93::t_fd5e2084bcb487 3
+web/src/components/DeviceCapabilities.tsx
+  s_18b57982fdff93::t_6a7d0ec3f3681d 3-4,12-14,140-154,439-580
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "5e50429b94b55dc4e8a58f3072c40764fe9976d7",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}

@@ -1,0 +1,20 @@
+internal/hub/deviceplugins_test.go
+  s_18b57982fdff93::t_d318513213d202 16,388-441
+  s_18b57982fdff93::t_e6654b9cca25f7 442
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "ca9403f4af5b06ef7fa9185da288315150d9a3ca",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
