@@ -1,0 +1,44 @@
+internal/agent/plugins_stream_test.go
+  s_18b57982fdff93::t_c33897a5fb9fec 1-22,24-113,115-216
+  s_18b57982fdff93::t_d70abe28bdfda3 23,114
+internal/hub/deviceplugins.go
+  s_18b57982fdff93::t_a9dffac62762fd 1-576
+internal/hub/agentexec.go
+  s_18b57982fdff93::t_c485bf45007ef9 65-69,125-132,145
+internal/hub/facts.go
+  s_18b57982fdff93::t_2d75baca610e99 8-9,96-113,115-116
+  s_18b57982fdff93::t_03deea35e6d71f 11,69-77,88
+internal/hub/capabilities.go
+  s_18b57982fdff93::t_dcef62b2094a29 54-56,92,139-141,172-184,205-207,293,300-302,357-373
+internal/hub/api.go
+  s_18b57982fdff93::t_24cff3f4b3cf20 202
+cmd/hearth/hub.go
+  s_18b57982fdff93::t_4a9439eca177b2 551-552
+internal/hub/agentstream.go
+  s_18b57982fdff93::t_c485bf45007ef9 149,189,198-199,202-203
+internal/hub/forward.go
+  s_18b57982fdff93::t_c485bf45007ef9 126-127,359
+internal/hub/agentplugins.go
+  s_18b57982fdff93::t_11a79150fad8b2 22,457
+  s_18b57982fdff93::t_766a7fe8fdf894 1-21,23-456,458-480
+internal/agent/run_test.go
+  s_18b57982fdff93::t_574f2683f3876d 53-54,105,111,114
+internal/hub/server.go
+  s_18b57982fdff93::t_f776710e11529a 182-184,217-221,249
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "2efdd9c373bd80a30a84380f357975aa38f28aad",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
