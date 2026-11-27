@@ -62,6 +62,12 @@ type Agents struct {
 	// device streaming to another master (forward.go).
 	masters Masters
 	routes  store.DeviceRoutes
+
+	// devicePlugins and blobs, when set, are the plugins uploaded for
+	// devices and their programs, handed to the agents (agentplugins.go).
+	devicePlugins *store.DevicePlugins
+	pluginStore   *store.Store
+	blobs         *PluginBlobs
 }
 
 // NewAgents returns an Agents that resolves device references in devices.
@@ -117,6 +123,14 @@ type agentSession struct {
 	hubs []string
 	// rules are the local rules the agent last got (localrules.go).
 	rules localRulesState
+	// pluginRuns wait for PluginResults; pluginStatus is the state of the
+	// agent's plugins as it last reported it (agentplugins.go).
+	pluginRuns   map[string]chan *agentv1.PluginResult
+	pluginStatus *agentv1.PluginStatus
+	// pluginMu serialises PluginConfig pushes; sentPlugins is the config
+	// the agent last got.
+	pluginMu    sync.Mutex
+	sentPlugins *agentv1.PluginConfig
 }
 
 // attach records the stream of deviceID. A newer stream of the same device
@@ -129,6 +143,7 @@ func (a *Agents) attach(deviceID string, hello *agentv1.Hello, send func(*agentv
 		scans: map[string]chan *agentv1.ScanResult{}, dockers: map[string]chan *agentv1.DockerResult{},
 		upgrades: map[string]chan *agentv1.UpgradeResult{}, noUpgrade: hello.GetNoSelfUpgrade(),
 		logs: map[string]*logQueue{}, shells: map[string]*Shell{}, ceiling: hello.GetCeiling(),
+		pluginRuns: map[string]chan *agentv1.PluginResult{},
 	}
 	a.mu.Lock()
 	a.sessions[deviceID] = s

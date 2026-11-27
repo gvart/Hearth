@@ -2,7 +2,7 @@
 // hub may do there, on or off, set here or by a flag on the device. Kept apart
 // from the components so node --test can check it (web/test/capabilities.test.mjs).
 
-import type { Ceiling } from './api/client.ts';
+import type { Ceiling, PluginGrant } from './api/client.ts';
 
 /** A device's capabilities, as GET /api/v1/devices/{id}/capabilities answers. */
 export interface Capabilities {
@@ -16,9 +16,20 @@ export interface Capabilities {
   locked: boolean;
   /** The agent takes capabilities from the hub; an older one must be upgraded first. */
   manageable: boolean;
+  /** The agent takes device plugins from the hub (protocol minor 14); an older one must be upgraded first. */
+  plugins_manageable: boolean;
+  /** The plugin releases uploaded for the device's platform, one per plugin. */
+  plugin_releases: PluginRelease[];
   agent_version: string;
   updated_at?: string;
   updated_by?: string;
+}
+
+/** A plugin release uploaded for a device's platform. */
+export interface PluginRelease {
+  name: string;
+  version: string;
+  digest: string;
 }
 
 /** "On" for a capability with a list: all of it. The hub's AllLogs, AllRestart and AllScan. */
@@ -69,6 +80,7 @@ export const emptyCeiling = (): Ceiling => ({
   net_edges: false,
   docker: false,
   docker_read: false,
+  plugins: [],
 });
 
 function listOf(c: Ceiling | null | undefined, key: CapKey): string[] {
@@ -256,8 +268,48 @@ export function raisesRisky(old: Ceiling, next: Ceiling): boolean {
     ((next.shell ?? false) && !(old.shell ?? false)) ||
     added(old.exec, next.exec) ||
     added(old.restart, next.restart) ||
-    ((next.docker ?? false) && !(old.docker ?? false))
+    ((next.docker ?? false) && !(old.docker ?? false)) ||
+    raisesPlugin(old.plugins ?? [], next.plugins ?? [])
   );
+}
+
+export const pluginClasses: PluginGrant['class'][] = ['read', 'safe', 'dangerous'];
+
+/** Whether next grants a plugin old does not, one at a higher class, or another release of it: the password again. */
+export function raisesPlugin(old: PluginGrant[], next: PluginGrant[]): boolean {
+  const rank = (c: PluginGrant['class']) => pluginClasses.indexOf(c);
+  return next.some((n) => {
+    const o = old.find((g) => g.name === n.name);
+    return !o || rank(n.class) > rank(o.class) || (n.digest !== undefined && n.digest !== o.digest);
+  });
+}
+
+/** c with the plugin name granted up to class, replacing an earlier grant of it but keeping its release. */
+export function withPlugin(c: Ceiling, name: string, cls: PluginGrant['class']): Ceiling {
+  const old = (c.plugins ?? []).find((g) => g.name === name);
+  const rest = (c.plugins ?? []).filter((g) => g.name !== name);
+  const grant: PluginGrant = old?.digest ? { name, class: cls, digest: old.digest } : { name, class: cls };
+  return { ...emptyCeiling(), ...c, plugins: [...rest, grant] };
+}
+
+/** c with the grant of the plugin name moved to the release digest: approving a new upload. */
+export function withPluginRelease(c: Ceiling, name: string, digest: string): Ceiling {
+  return {
+    ...emptyCeiling(),
+    ...c,
+    plugins: (c.plugins ?? []).map((g) => (g.name === name ? { ...g, digest } : g)),
+  };
+}
+
+/** The release uploaded for the device that the grant g does not pin yet, if any: one to approve. */
+export function newRelease(g: PluginGrant, releases: PluginRelease[]): PluginRelease | undefined {
+  const r = releases.find((x) => x.name === g.name);
+  return r && g.digest && r.digest !== g.digest ? r : undefined;
+}
+
+/** c without the grant of the plugin name. */
+export function withoutPlugin(c: Ceiling, name: string): Ceiling {
+  return { ...emptyCeiling(), ...c, plugins: (c.plugins ?? []).filter((g) => g.name !== name) };
 }
 
 /** Whether the agent reports what the hub and its flags add up to: false while it has not applied a change yet. */
@@ -265,10 +317,35 @@ export function applied(caps: Capabilities): boolean {
   if (!caps.effective || caps.locked || !caps.manageable) {
     return true;
   }
-  return capInfo.every((i) => {
-    const want = flagOf(caps.hub, i.key) || flagOf(caps.local, i.key);
-    return i.key === 'shell' || i.key === 'net_edges' ? true : want === flagOf(caps.effective, i.key);
-  });
+  const effective = caps.effective;
+  return (
+    capInfo.every((i) => {
+      const want = flagOf(caps.hub, i.key) || flagOf(caps.local, i.key);
+      return i.key === 'shell' || i.key === 'net_edges' ? true : want === flagOf(effective, i.key);
+    }) &&
+    (!caps.plugins_manageable || samePlugins(unionPlugins(caps.hub.plugins ?? [], caps.local?.plugins ?? []), effective.plugins ?? []))
+  );
+}
+
+/** The grants of a and b together, each plugin release at the higher class, as the agent adds them up. */
+export function unionPlugins(a: PluginGrant[], b: PluginGrant[]): PluginGrant[] {
+  const rank = (c: PluginGrant['class']) => pluginClasses.indexOf(c);
+  const out = new Map<string, PluginGrant>();
+  for (const g of [...a, ...b]) {
+    const key = `${g.name}@${g.digest ?? ''}`;
+    const o = out.get(key);
+    if (!o || rank(g.class) > rank(o.class)) {
+      out.set(key, g);
+    }
+  }
+  return [...out.values()];
+}
+
+function samePlugins(a: PluginGrant[], b: PluginGrant[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every((g) => b.some((x) => x.name === g.name && x.class === g.class && (x.digest ?? '') === (g.digest ?? '')))
+  );
 }
 
 /** What the card says about the agent: who manages its capabilities. */

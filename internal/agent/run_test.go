@@ -50,6 +50,8 @@ type restartableHub struct {
 	metrics *metrics.Store
 	// netEdges keeps the agents' network edges.
 	netEdges *hub.NetEdges
+	// blobs holds the programs of the plugins uploaded for devices.
+	blobs *hub.PluginBlobs
 }
 
 func startRestartableHub(t *testing.T, heartbeat time.Duration) *restartableHub {
@@ -100,14 +102,16 @@ func startClusterHub(t *testing.T, heartbeat time.Duration, peer *restartableHub
 	}
 	t.Cleanup(func() { _ = ms.Close() })
 	netEdges := hub.NewNetEdges()
+	blobs := hub.NewPluginBlobs(t.TempDir())
 	h := &restartableHub{
 		t:        t,
 		agents:   agents,
 		metrics:  ms,
 		netEdges: netEdges,
+		blobs:    blobs,
 		handler: hub.NewHandler(hub.Config{
 			Store: st, CA: ca, Policy: policy.New(st.Audit()), Log: log, HeartbeatInterval: heartbeat,
-			Leadership: lead, Agents: agents, Metrics: ms, NetEdges: netEdges,
+			Leadership: lead, Agents: agents, Metrics: ms, NetEdges: netEdges, PluginBlobs: blobs,
 		}),
 		tls:  hub.TLSConfigFunc(ca, cert.Load),
 		st:   st,

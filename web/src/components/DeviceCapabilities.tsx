@@ -1,19 +1,26 @@
 import { useState } from 'react';
 import { useCapabilities, useSetCapabilities } from '../api/capabilities.ts';
-import { ApiError, type Ceiling, type Device } from '../api/client.ts';
+import { ApiError, type Ceiling, type Device, type PluginGrant } from '../api/client.ts';
+import { useDevicePluginRegistry } from '../api/deviceplugins.ts';
 import {
   applied,
   capStates,
   cardMode,
   emptyCeiling,
   isAll,
+  newRelease,
   parseList,
+  pluginClasses,
+  withoutPlugin,
+  withPlugin,
+  withPluginRelease,
   withDocker,
   withList,
   withSwitch,
   type Capabilities,
   type CapState,
   type DockerLevel,
+  type PluginRelease,
 } from '../capabilities.ts';
 import { formatDateTime } from '../format.ts';
 import { AgentVersionLink } from './DeviceUpgrade.tsx';
@@ -133,6 +140,26 @@ function CapsBody({ device, caps, applying }: { device: Device; caps: Capabiliti
           />
         ))}
       </ul>
+      <PluginsSection
+        grants={hub.plugins ?? []}
+        local={caps.local?.plugins ?? []}
+        effective={caps.effective?.plugins ?? []}
+        reported={caps.effective !== null}
+        manageable={caps.plugins_manageable}
+        readOnly={mode === 'locked' || mode === 'upgrade' || !caps.plugins_manageable}
+        busy={set.isPending}
+        releases={caps.plugin_releases}
+        windows={device.os.toLowerCase().includes('windows')}
+        onAdd={(name, cls) => {
+          change(withPlugin(hub, name, cls));
+        }}
+        onApprove={(name, digest) => {
+          change(withPluginRelease(hub, name, digest));
+        }}
+        onRemove={(name) => {
+          change(withoutPlugin(hub, name));
+        }}
+      />
       {set.isError && !(set.error instanceof ApiError && set.error.code === 'reauth_cancelled') ? (
         <div className="error-box" role="alert">
           {set.error instanceof ApiError && set.error.code === 'forbidden'
@@ -416,4 +443,219 @@ function listOfEffective(s: CapState, c: Ceiling | null): string[] {
     default:
       return [];
   }
+}
+
+const classNote = 'Adding a plugin or raising its class asks for your password again';
+
+function grantText(g: PluginGrant[]): string {
+  return g.map((x) => `${x.name} (${x.class}${x.digest ? ` @${x.digest.slice(0, 12)}` : ''})`).join(', ');
+}
+
+/** A plugin's class, as a segmented control like Containers'. */
+function ClassLevels({
+  label,
+  value,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: PluginGrant['class'];
+  disabled: boolean;
+  onChange: (cls: PluginGrant['class']) => void;
+}) {
+  return (
+    <div className="caps-levels" role="radiogroup" aria-label={label}>
+      {pluginClasses.map((c) => (
+        <button
+          key={c}
+          type="button"
+          role="radio"
+          aria-checked={value === c}
+          className={value === c ? 'is-on' : ''}
+          disabled={disabled}
+          title={c === 'read' ? undefined : `Up to ${c} commands: raising it asks for your password`}
+          onClick={() => {
+            if (c !== value) {
+              onChange(c);
+            }
+          }}
+        >
+          {c.charAt(0).toUpperCase() + c.slice(1)}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The device plugins the hub may run commands of there, each up to a class.
+ * Granting one, or raising its class, is dangerous: the password again.
+ */
+function PluginsSection({
+  grants,
+  local,
+  effective,
+  reported,
+  manageable,
+  readOnly,
+  busy,
+  releases,
+  windows,
+  onAdd,
+  onApprove,
+  onRemove,
+}: {
+  grants: PluginGrant[];
+  local: PluginGrant[];
+  effective: PluginGrant[];
+  reported: boolean;
+  manageable: boolean;
+  readOnly: boolean;
+  busy: boolean;
+  releases: PluginRelease[];
+  windows: boolean;
+  onAdd: (name: string, cls: PluginGrant['class']) => void;
+  onApprove: (name: string, digest: string) => void;
+  onRemove: (name: string) => void;
+}) {
+  const registry = useDevicePluginRegistry();
+  const [name, setName] = useState('');
+  const [cls, setCls] = useState<PluginGrant['class']>('read');
+  const disabled = readOnly || busy;
+  // Uploaded plugins not granted yet: one click picks the name.
+  const known = [...new Set((registry.data?.plugins ?? []).map((p) => p.name))].filter(
+    (n) => !grants.some((g) => g.name === n),
+  );
+  return (
+    <div className="caps-plugins">
+      <div className="caps-what">
+        <span className="caps-name">
+          Plugins
+          <span className="caps-risk small" title={classNote}>
+            dangerous
+          </span>
+        </span>
+        <span className="muted small">
+          Run the commands of device plugins, up to the class set for each.
+        </span>
+        <span className="muted small">
+          Any plugin runs code you upload as the agent&apos;s user, whatever its class. Each grant pins one release.
+        </span>
+        {!manageable ? <span className="muted small">Plugins need an agent upgrade</span> : null}
+        {windows ? <span className="muted small">Device plugins are not supported on Windows yet</span> : null}
+        {local.length ? (
+          <span className="caps-local small">
+            Set on the device: <span className="mono">{grantText(local)}</span>
+          </span>
+        ) : null}
+        {reported ? (
+          <span className="muted small">
+            In effect: <span className="mono">{effective.length ? grantText(effective) : 'none'}</span>
+          </span>
+        ) : null}
+      </div>
+      {grants.length ? (
+        <ul className="caps-list">
+          {grants.map((g) => {
+            const pinned = releases.find((r) => r.digest === g.digest);
+            const next = newRelease(g, releases);
+            return (
+              <li key={g.name} className="caps-row">
+                <span className="caps-what">
+                  <span className="caps-name mono">{g.name}</span>
+                  <span className="muted small mono" title={g.digest}>
+                    {pinned ? `v${pinned.version} · ` : ''}
+                    {g.digest ? `@${g.digest.slice(0, 12)}` : ''}
+                  </span>
+                  {next ? (
+                    <span className="caps-plugin-update small">
+                      New release v{next.version} available{' '}
+                      <button
+                        type="button"
+                        className="link small"
+                        disabled={disabled}
+                        title="Moving the device to another release asks for your password again"
+                        onClick={() => {
+                          onApprove(g.name, next.digest);
+                        }}
+                      >
+                        Approve
+                      </button>
+                    </span>
+                  ) : null}
+                </span>
+                <div className="caps-control">
+                  <ClassLevels
+                    label={`Class of ${g.name}`}
+                    value={g.class}
+                    disabled={disabled}
+                    onChange={(c) => {
+                      onAdd(g.name, c);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="link small"
+                    disabled={disabled}
+                    onClick={() => {
+                      onRemove(g.name);
+                    }}
+                  >
+                    Remove
+                  </button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+      {readOnly ? null : (
+        <form
+          className="caps-plugin-add"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const n = name.trim();
+            if (n) {
+              onAdd(n, cls);
+              setName('');
+            }
+          }}
+        >
+          <input
+            className="mono"
+            aria-label="Plugin name"
+            value={name}
+            placeholder="plugin name"
+            autoComplete="off"
+            disabled={busy}
+            onChange={(e) => {
+              setName(e.target.value);
+            }}
+          />
+          <ClassLevels label="Class of the new plugin" value={cls} disabled={busy} onChange={setCls} />
+          <button type="submit" className="btn btn-primary btn-small" disabled={busy || name.trim() === ''} title={classNote}>
+            Add plugin
+          </button>
+          {known.length ? (
+            <span className="muted small caps-plugin-known">
+              Uploaded:{' '}
+              {known.map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  className="link small mono"
+                  disabled={busy}
+                  onClick={() => {
+                    setName(n);
+                  }}
+                >
+                  {n}
+                </button>
+              ))}
+            </span>
+          ) : null}
+        </form>
+      )}
+    </div>
+  );
 }

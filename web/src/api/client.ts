@@ -58,6 +58,16 @@ export interface Ceiling {
   docker?: boolean;
   /** Whether the hub may list its containers and read their logs, without acting on them. */
   docker_read?: boolean;
+  /** The device plugins the hub may run commands of, each up to a class. */
+  plugins?: PluginGrant[];
+}
+
+/** One plugin of a ceiling: the highest class of its commands the hub may run. */
+export interface PluginGrant {
+  name: string;
+  class: 'read' | 'safe' | 'dangerous';
+  /** The release (program and manifest) the grant pins; the hub pins the one uploaded now when absent. */
+  digest?: string;
 }
 
 export interface Device {

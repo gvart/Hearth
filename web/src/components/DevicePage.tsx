@@ -20,6 +20,7 @@ import {
 import { DeviceCapabilities } from './DeviceCapabilities.tsx';
 import { DeviceCharts } from './DeviceCharts.tsx';
 import { DeviceContainers } from './DeviceContainers.tsx';
+import { DevicePlugins } from './DevicePlugins.tsx';
 import { DeviceHubSection } from './DeviceHub.tsx';
 import { DeviceLogSources } from './DeviceLogSources.tsx';
 import { DeviceNetEdges } from './DeviceNetEdges.tsx';
@@ -245,6 +246,8 @@ export function DevicePage({ id }: { id: string }) {
             <DeviceNetEdges device={device} />
           </Section>
         )}
+
+        <DevicePlugins device={device} />
 
         <DeviceCapabilities device={device} />
 

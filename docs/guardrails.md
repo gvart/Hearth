@@ -238,6 +238,7 @@ parts, and the agent uses both:
   hearth device capabilities <device-id> --set restart=docker:jellyfin,systemd:pihole-FTL.service
   hearth device capabilities <device-id> --set exec=/usr/bin/df --set shell=on
   hearth device capabilities <device-id> --set shell=off
+  hearth device capabilities <device-id> --set plugins=go-lamp:safe
   ```
 
   Each capability is on or off. On is all of it (every log source, every service, the private IPv4
@@ -248,14 +249,15 @@ parts, and the agent uses both:
   `<data-dir>/ceiling.json` (0600), reports its new facts, and ends a terminal or a log stream it no
   longer allows.
 - **Set on the device.** The agent's own flags (`--allow-exec`, `--allow-restart`, `--allow-probe`,
-  `--allow-logs`, `--allow-shell`, `--allow-scan`, `--allow-net-edges`, `--allow-docker`, see
+  `--allow-logs`, `--allow-shell`, `--allow-scan`, `--allow-net-edges`, `--allow-docker`,
+  `--allow-plugin`, see
   [automations.md](automations.md)) add to what the hub sets. The card shows them as **set on the
   device**: the hub cannot take them away.
 
 Changing it is the policy action `device.capabilities.set` (`safe`: lowering anything, and raising
 logs, checks, a scan, neighbours or reading containers) or `device.capabilities.raise` (`dangerous`:
-raising a terminal, programs, restarts or container control, which also asks for the admin password
-again). Only an admin, from the web UI or a hub host, may take either; every change is audited,
+raising a terminal, programs, restarts, container control or a [plugin](plugins.md#plugins-on-devices),
+which also asks for the admin password again). Only an admin, from the web UI or a hub host, may take either; every change is audited,
 refusals too. The agent checks each ceiling the hub sends (absolute program paths, valid globs and
 subnets) and refuses a bad one whole.
 
@@ -271,7 +273,7 @@ their card asks to upgrade them first.
 
 ## Dry runs
 
-- CLI: `--dry-run` on `token create`, `device revoke`, `device capabilities --set`, `mcp token create|revoke` and the `cluster`
+- CLI: `--dry-run` on `token create`, `device revoke`, `device capabilities --set`, `plugin upload|delete`, `mcp token create|revoke` and the `cluster`
   commands that change something. The decision is audited with the result `dry-run` and printed; nothing is done.
 - API: `POST /api/v1/tokens` with `"dry_run": true` answers `{"dry_run": true, "decision": ...}`.
 - Kubernetes actions: `"dry_run": true` plans the action (see [kubernetes.md](kubernetes.md)) and

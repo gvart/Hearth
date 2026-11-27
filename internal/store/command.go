@@ -867,6 +867,10 @@ func DecodeCommand(b []byte) (Command, error) {
 		cmd, err = decodeAs[AddUniFiController](env.Cmd)
 	case RemoveUniFiController{}.Op():
 		cmd, err = decodeAs[RemoveUniFiController](env.Cmd)
+	case SetDevicePlugin{}.Op():
+		cmd, err = decodeAs[SetDevicePlugin](env.Cmd)
+	case RemoveDevicePlugin{}.Op():
+		cmd, err = decodeAs[RemoveDevicePlugin](env.Cmd)
 	case SetDeviceRoute{}.Op():
 		cmd, err = decodeAs[SetDeviceRoute](env.Cmd)
 	default:

@@ -231,5 +231,117 @@ func CheckHubCeiling(c *agentv1.Ceiling) error {
 			return fmt.Errorf("scan entry %q: want an IPv4 subnet such as 192.168.1.0/24", e)
 		}
 	}
+	if err := CheckPluginGrants(c.GetPlugins()); err != nil {
+		return err
+	}
+	// The hub pins every release it allows: none is trusted on first use.
+	for _, g := range c.GetPlugins() {
+		if g.GetDigest() == "" {
+			return fmt.Errorf("plugin entry %s: no release digest", g.GetName())
+		}
+	}
 	return nil
 }
+
+// CheckPluginGrants checks a ceiling's plugin grants: each names a plugin
+// (letters, digits, '.', '_' and '-'; up to 64) once, with a class of read,
+// safe or dangerous.
+func CheckPluginGrants(grants []*agentv1.PluginGrant) error {
+	seen := map[string]bool{}
+	for _, g := range grants {
+		if !ValidPluginName(g.GetName()) {
+			return fmt.Errorf("plugin entry %q: want 1-64 letters, digits, '.', '_' or '-'", g.GetName())
+		}
+		if _, ok := classRank[Class(g.GetMaxClass())]; !ok {
+			return fmt.Errorf("plugin entry %s: class %q: want read, safe or dangerous", g.GetName(), g.GetMaxClass())
+		}
+		if d := g.GetDigest(); d != "" && !validDigest(d) {
+			return fmt.Errorf("plugin entry %s: digest %.64q: want a SHA-256 in lower-case hex", g.GetName(), d)
+		}
+		if seen[g.GetName()] {
+			return fmt.Errorf("plugin entry %s: listed twice", g.GetName())
+		}
+		seen[g.GetName()] = true
+	}
+	return nil
+}
+
+// ValidPluginName reports whether name may name an exec plugin: 1-64
+// letters, digits, '.', '_' and '-', starting with a letter or digit. A
+// plugin's name becomes a directory on the device, so nothing else is.
+func ValidPluginName(name string) bool {
+	if name == "" || len(name) > 64 {
+		return false
+	}
+	for i, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case i > 0 && (r == '_' || r == '.' || r == '-'):
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// PluginGrantOf is the highest class c allows for plugin name's commands,
+// in any release, and whether c allows it at all.
+func PluginGrantOf(c *agentv1.Ceiling, name string) (Class, bool) {
+	return pluginClass(c, func(g *agentv1.PluginGrant) bool { return g.GetName() == name })
+}
+
+// PluginReleaseClass is the highest class c allows for the commands of the
+// release digest of plugin name, and whether c allows that release. A grant
+// without a digest, which an agent pins on first use, allows none here.
+func PluginReleaseClass(c *agentv1.Ceiling, name, digest string) (Class, bool) {
+	return pluginClass(c, func(g *agentv1.PluginGrant) bool {
+		return g.GetName() == name && digest != "" && g.GetDigest() == digest
+	})
+}
+
+func pluginClass(c *agentv1.Ceiling, match func(*agentv1.PluginGrant) bool) (Class, bool) {
+	var best Class
+	found := false
+	for _, g := range c.GetPlugins() {
+		if !match(g) {
+			continue
+		}
+		if _, ok := classRank[Class(g.GetMaxClass())]; !ok {
+			continue
+		}
+		if !found || ClassAbove(Class(g.GetMaxClass()), best) {
+			best, found = Class(g.GetMaxClass()), true
+		}
+	}
+	return best, found
+}
+
+// PluginWithinCeiling checks a command of class of release digest of plugin
+// name against a ceiling. An empty class checks only that c allows the
+// release. Its errors wrap ErrBeyondCeiling.
+func PluginWithinCeiling(c *agentv1.Ceiling, name, digest string, class Class) error {
+	limit, ok := PluginReleaseClass(c, name, digest)
+	if !ok {
+		return fmt.Errorf("plugin %s: release %.12s is not allowed on this device: %w", name, digest, ErrBeyondCeiling)
+	}
+	if class != "" && !Within(class, limit) {
+		return fmt.Errorf("plugin %s: a %s command is above the %s the device allows: %w", name, class, limit, ErrBeyondCeiling)
+	}
+	return nil
+}
+
+// validDigest reports whether s is a SHA-256 in lower-case hex.
+func validDigest(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for _, r := range s {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+// ClassAbove reports whether class a ranks above class b.
+func ClassAbove(a, b Class) bool { return classRank[a] > classRank[b] }

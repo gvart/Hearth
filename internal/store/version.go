@@ -175,6 +175,7 @@ var tables = map[string]tableSpec{
 	}},
 	"device_routes":   {pk: []string{"device_id"}, since: mastersSchema},
 	"device_ceilings": {pk: []string{"device_id"}, since: deviceCeilingsSchema},
+	"device_plugins":  {pk: []string{"id"}, deletable: true, since: devicePluginsSchema},
 }
 
 // deletedName is the name a tombstone of a table with a UNIQUE name holds:

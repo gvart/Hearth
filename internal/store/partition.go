@@ -69,8 +69,10 @@ var globalTables = map[string]bool{
 	"opnsense_firewalls": true,
 	// UniFi controllers (#365).
 	"unifi_controllers": true,
-	"network_hosts":     true,
-	"config_docs":       true, // item 5 (ap-config): every member serves the configuration
+	// Exec plugins for devices (#223): every master hands them to its agents.
+	"device_plugins": true,
+	"network_hosts":  true,
+	"config_docs":    true, // item 5 (ap-config): every member serves the configuration
 }
 
 // criticalTables are written with W = min(2, N) acknowledgements.
@@ -403,6 +405,8 @@ func RouteOf(cmd Command) (Route, error) {
 	case AddOPNsenseFirewall, RemoveOPNsenseFirewall:
 		return global(false)
 	case AddUniFiController, RemoveUniFiController:
+		return global(false)
+	case SetDevicePlugin, RemoveDevicePlugin:
 		return global(false)
 	}
 	return Route{}, fmt.Errorf("%w: %s", ErrNoRoute, cmd.Op())

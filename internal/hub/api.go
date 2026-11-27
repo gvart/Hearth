@@ -61,6 +61,9 @@ func NewHTTPHandler(cfg Config) http.Handler {
 }
 
 func newAPI(cfg Config) *api {
+	if cfg.Agents != nil && cfg.PluginBlobs != nil {
+		cfg.Agents.SetPlugins(cfg.Store, cfg.PluginBlobs)
+	}
 	reg := cfg.Registry
 	if reg == nil {
 		reg = NewRegistry(RegistryConfig{Store: cfg.Store, Log: cfg.Log})
@@ -199,6 +202,7 @@ func (a *api) routes() http.Handler {
 	a.dashboardRoutes(mux)
 	a.webAdminRoutes(mux)
 	a.capabilitiesRoutes(mux)
+	a.devicePluginRoutes(mux)
 	a.configEditRoutes(mux)
 	a.backupRoutes(mux)
 	mux.Handle("/api/v1/", a.auth(func(w http.ResponseWriter, _ *http.Request) {

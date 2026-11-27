@@ -16,7 +16,8 @@ export type Page =
   | 'access'
   | 'policy'
   | 'backup'
-  | 'integrations';
+  | 'integrations'
+  | 'deviceplugins';
 
 export type SheetId = 'lab' | 'automate' | 'activity' | 'settings';
 
@@ -77,6 +78,7 @@ export const sheets: Sheet[] = [
       { id: 'notifications', label: 'Notifications', hash: '#/notifications' },
       { id: 'backup', label: 'Backup', hash: '#/settings/backup' },
       { id: 'integrations', label: 'Integrations', hash: '#/settings/integrations' },
+      { id: 'deviceplugins', label: 'Device plugins', hash: '#/settings/device-plugins' },
       { id: 'cluster', label: 'Cluster', hash: '#/cluster' },
     ],
   },

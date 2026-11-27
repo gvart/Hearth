@@ -115,6 +115,11 @@ func allCommands() []Command {
 		RemoveOPNsenseFirewall{ID: "f1"},
 		AddUniFiController{ID: "u1", Name: "console", Sealed: []byte{6}, CreatedAt: 41},
 		RemoveUniFiController{ID: "u1"},
+		SetDevicePlugin{
+			ID: "p1", Name: "lamp", OS: "linux", Arch: "arm64", Version: "1", SHA256: "ab", Size: 3,
+			Manifest: `{}`, Holder: "hub-a", UploadedAt: 42, UploadedBy: "web/10.0.0.1",
+		},
+		RemoveDevicePlugin{ID: "p1"},
 		CreateRunbookRun{
 			ID: "rr1", RunbookID: "rb", Status: "running", StartedBy: "admin/root", StartedAt: 35,
 			Source: []byte("steps: []"), State: `{"step":0}`, Keep: 100,
@@ -452,6 +457,12 @@ func runScenario(t *testing.T, s *Store) {
 	must(s.UniFiControllers().Add(ctx, UniFiController{ID: "u2", Name: "office", Sealed: []byte{2}, CreatedAt: at(5 * time.Hour)}))
 	must(s.UniFiControllers().Remove(ctx, "u2"))
 	wantErr(s.UniFiControllers().Remove(ctx, "u2"), ErrNotFound)
+	lamp := DevicePlugin{Name: "lamp", OS: "linux", Arch: "arm64", Version: "1", SHA256: "ab", Size: 3, Manifest: []byte(`{}`), UploadedAt: at(5 * time.Hour)}
+	must(s.DevicePlugins().Set(ctx, lamp))
+	lamp.Arch = "amd64"
+	must(s.DevicePlugins().Set(ctx, lamp))
+	must(s.DevicePlugins().Remove(ctx, DevicePluginID("lamp", "linux", "amd64")))
+	wantErr(s.DevicePlugins().Remove(ctx, DevicePluginID("lamp", "linux", "amd64")), ErrNotFound)
 
 	// A hub CA rotation: started, a second refused, cut over, its secrets
 	// re-sealed (a stale one refused), finished.

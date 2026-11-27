@@ -548,6 +548,8 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	}
 	// A backup from the web UI is the one `hearth backup` writes.
 	cfg.Backup, cfg.BackupDir = webBackup(opts, st, clustered, snapshot), opts.dataDir
+	// Exec plugins for devices keep their programs in the data dir.
+	cfg.PluginBlobs = hub.NewPluginBlobs(opts.dataDir)
 	// The web editor and MCP write the same directory under one lock.
 	var automationsMu sync.Mutex
 	cfg.AutomationsLock = &automationsMu
@@ -579,7 +581,8 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	}
 	uiMux.Handle(mcpserver.Path, hub.EndOnStop(stopping, mcpserver.Handler(mcpserver.Config{
 		Devices: st.Devices(), Tokens: st.MCPTokens(), Policy: pol, Agents: agents, Kube: kube, Plugins: mcpPlugins,
-		Metrics: hub.AutomationMetrics(st, prom, ms, agents), AutomationsDir: automationsDir, AutomationDocs: automationDocs, AutomationKinds: kinds, AutomationsLock: &automationsMu,
+		DevicePlugins: hub.DevicePluginRunner{Agents: agents, Store: st, Policy: pol},
+		Metrics:       hub.AutomationMetrics(st, prom, ms, agents), AutomationsDir: automationsDir, AutomationDocs: automationDocs, AutomationKinds: kinds, AutomationsLock: &automationsMu,
 		Version: opts.version, Log: log,
 	})))
 	tlsCfg := hub.TLSConfigFunc(ca, serverCert.Load)

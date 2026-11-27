@@ -16,9 +16,10 @@ between Hearth processes is mutually authenticated TLS.
    headers, command arguments) never reach the audit log or the hub log.
 3. **The device has the last word.** An agent runs only what its capability ceiling allows, and
    nothing by default: the programs, restarts, checks, logs, subnets, terminal, neighbours and
-   containers it lets the hub use. The ceiling is its own `--allow-*` flags plus what an admin turns
-   on in the device's **Capabilities** card (or `hearth device capabilities`). Turning on a terminal,
-   programs, restarts or container control is `dangerous` and asks for the admin password again;
+   containers and plugins it lets the hub use. The ceiling is its own `--allow-*` flags plus what an
+   admin turns on in the device's **Capabilities** card (or `hearth device capabilities`). Turning on
+   a terminal, programs, restarts, container control or a plugin is `dangerous` and asks for the
+   admin password again;
    every change is audited, refusals too. The agent checks each ceiling the hub sends, saves it, and
    checks every request against the ceiling it holds, whatever the hub decided. An agent installed
    with `--local-ceiling` ignores the hub's settings: then nothing on the hub can raise its ceiling.
@@ -283,6 +284,50 @@ automation or an MCP client.
   the transport: the end-to-end image is built with a test key in place of the release key.
 - The audit entry of an upgrade records the version asked for, the version the agent ran, and the
   archive URL and SHA-256 the agent reports.
+
+### Plugins on devices
+
+An agent runs an [exec plugin](plugins.md#plugins-on-devices) only when its ceiling names it, with
+the highest class of command the hub may send, and only the release the grant pins.
+
+**Any plugin grant lets whoever can upload plugins run arbitrary code on the device as the agent's
+user, whatever the class.** A class limits which commands the hub may send, not what the program does
+once it runs. Allow only plugins you built or read, on devices where that user may do what the program
+does.
+
+- A release is a program and its manifest together, named by a digest: the SHA-256 of the program's
+  SHA-256 and the manifest's. A grant the hub sets pins one release; the agent installs only that one
+  and takes each command's class only from its manifest. Uploading a new program, or the same program
+  with another manifest (other classes, arguments), makes a new release that no device runs until its
+  grant is moved to it. The device keeps running the release it was allowed meanwhile, until its agent
+  restarts: the hub offers only the latest release of each plugin, and a re-upload drops the program
+  it replaces, so a restarted agent runs the plugin again only once its grant is moved to the new
+  release (a known gap).
+- Uploading a plugin's program is `plugin.binary.upload` (dangerous, the password again); its audit
+  entry holds the program's SHA-256 and the release digest. Allowing a plugin on a device, raising its
+  class, or moving it to another release ("approve" in the Capabilities card, `@latest` in the CLI) is
+  `device.capabilities.raise` (dangerous, the password again). All are audited.
+- An agent's own `--allow-plugin NAME[:CLASS]@DIGEST` pins a release on the device. Without `@DIGEST`
+  the agent pins the first release it installs (trust on first use) by plugin name, keeps the pin in
+  `<data-dir>/plugin-pins.json`, and refuses any other release while the flag stays, whatever its
+  class; dropping the flag drops the pin. The hub is still trusted for that first release. If the pins
+  file cannot be read, the agent installs and runs no plugin until it is fixed or removed. An agent
+  with `--local-ceiling` takes plugins only from its own flags.
+- The hub hands a device only the releases its grants allow: those the hub set for it (not on
+  `--local-ceiling`) and those its own flags hold. The hub cannot verify an agent's own flags, which
+  the agent reports itself, so any enrolled device can obtain any plugin's program and manifest. It
+  cannot make the hub run that plugin anywhere else: commands go to a device only through policy.
+- The agent downloads the program over mTLS with its own certificate, only for its own platform, at
+  most 64 MB, streamed to disk, up to 512 MB of plugins in all. It checks the SHA-256 the release pins
+  before it keeps the file (0700, in its data directory) and again before every start, and makes sure
+  the file it starts is the one it checked. It runs the program with `exec`, no shell, a clean
+  environment and its own process group, at most 4 commands at once; removing or replacing a release
+  cancels its commands in flight.
+- The agent refuses a command above the plugin's class in its own ceiling or one the manifest does
+  not declare.
+- A plugin's program, manifest and arguments are not secret: they are stored on every hub, and any
+  enrolled device can fetch them. Keep settings and credentials in a file on the device.
+- Device plugins do not run on Windows yet: the agent refuses them there.
 
 ## Integrations
 

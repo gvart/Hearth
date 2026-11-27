@@ -77,6 +77,9 @@ var ErrStreamElsewhere = errors.New("the device's agent streams to another hub, 
 // another master of an AP cluster (routes says which).
 func (a *Agents) SetMasters(m Masters, routes store.DeviceRoutes) {
 	a.masters, a.routes = m, routes
+	if a.blobs != nil {
+		a.blobs.masters = m
+	}
 }
 
 // Local reports whether device id's agent streams to this hub.
@@ -123,6 +126,10 @@ type agentCall struct {
 	Subnets   []string        `json:"subnets,omitempty"`
 	// Metric is the built-in metric a metric read asks for.
 	Metric string `json:"metric,omitempty"`
+	// Class is the class of a plugin command, from its manifest.
+	Class string `json:"class,omitempty"`
+	// Digest is the release of a plugin command.
+	Digest string `json:"digest,omitempty"`
 	// CheckOnly asks only whether the request would be sent.
 	CheckOnly bool `json:"check_only,omitempty"`
 }
@@ -354,6 +361,7 @@ func AgentsHandler(a *Agents, ms *metrics.Store, log *slog.Logger) http.Handler 
 		res, err := a.Upgrade(ctx, in.Device, req)
 		return res, "", err
 	})
+	pluginOps(a, mux, handle)
 	handle(opMetric, func(ctx context.Context, in agentCall) (proto.Message, string, error) {
 		if !metrics.IsKnown(in.Metric) {
 			return nil, "", fmt.Errorf("unknown metric %q", in.Metric)

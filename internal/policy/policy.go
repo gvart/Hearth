@@ -290,6 +290,18 @@ const (
 	PluginCommandRead      Action = "plugin.command.read"
 	PluginCommandSafe      Action = "plugin.command.safe"
 	PluginCommandDangerous Action = "plugin.command.dangerous"
+	// PluginBinaryUpload adds or replaces an exec plugin for devices (#223):
+	// its program for one platform, pinned by SHA-256, and its manifest.
+	PluginBinaryUpload Action = "plugin.binary.upload"
+	// PluginBinaryDelete removes an exec plugin for devices, for one
+	// platform: the agents remove it at their next sync.
+	PluginBinaryDelete Action = "plugin.binary.delete"
+	// DevicePluginCommandRead, DevicePluginCommandSafe and
+	// DevicePluginCommandDangerous run a command of an exec plugin on a
+	// device, through its agent, of the class the plugin's manifest declares.
+	DevicePluginCommandRead      Action = "device.plugin.command.read"
+	DevicePluginCommandSafe      Action = "device.plugin.command.safe"
+	DevicePluginCommandDangerous Action = "device.plugin.command.dangerous"
 	// ESPHomeDeviceAdd adopts an ESPHome device: the hub stores its address
 	// and API encryption key, sealed, and starts reading its entities.
 	ESPHomeDeviceAdd Action = "esphome.device.add"
@@ -642,6 +654,18 @@ var rules = map[Action]rule{
 	PluginCommandRead:      {class: Read, actors: []string{ActorWeb, ActorAutomation, ActorMCP}},
 	PluginCommandSafe:      {class: Safe, actors: []string{ActorWeb, ActorAutomation, ActorMCP}},
 	PluginCommandDangerous: {class: Dangerous, actors: []string{ActorWeb, ActorAutomation, ActorMCP}},
+	// A plugin uploaded for devices runs as the agent's user on every device
+	// whose ceiling allows its name: replacing its program changes what
+	// runs there without any ceiling change, so an upload is dangerous, and
+	// the web UI asks for the password again. Removing one only takes away.
+	PluginBinaryUpload: {class: Dangerous, actors: []string{ActorAdmin, ActorWeb}},
+	PluginBinaryDelete: {class: Safe, actors: []string{ActorAdmin, ActorWeb}},
+	// A device plugin command is as risky as the class its manifest
+	// declares; the device's agent also refuses one above the class its
+	// ceiling allows for the plugin.
+	DevicePluginCommandRead:      {class: Read, actors: []string{ActorWeb, ActorMCP}},
+	DevicePluginCommandSafe:      {class: Safe, actors: []string{ActorWeb, ActorMCP}},
+	DevicePluginCommandDangerous: {class: Dangerous, actors: []string{ActorWeb, ActorMCP}},
 	// Adopting an ESPHome device hands the hub its key; the hub only reads
 	// with it, except for esphome.call, decided and audited on its own.
 	ESPHomeDeviceAdd:    {class: Safe, actors: []string{ActorWeb}},

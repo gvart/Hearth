@@ -10,6 +10,7 @@ import { CommandBar } from './CommandBar.tsx';
 import { ConfigDriftBanner } from './ConfigDriftBanner.tsx';
 import { DevicePage } from './DevicePage.tsx';
 import { DevicesPage } from './DevicesPage.tsx';
+import { DevicePluginsPage } from './DevicePluginsPage.tsx';
 import { IntegrationsPage } from './IntegrationsPage.tsx';
 import { KubernetesPage } from './KubernetesPage.tsx';
 import { Logo } from './Logo.tsx';
@@ -177,6 +178,8 @@ export function Shell() {
             <ClusterPage />
           ) : page === 'integrations' ? (
             <IntegrationsPage />
+          ) : page === 'deviceplugins' ? (
+            <DevicePluginsPage />
           ) : page === 'settings' || page === 'access' || page === 'policy' || page === 'backup' ? (
             <SettingsPage section={page} />
           ) : deviceId !== undefined ? (

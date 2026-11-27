@@ -98,6 +98,7 @@ func (s *session) tools() []tool {
 				s.kubeAction),
 		)
 	}
+	out = append(out, s.devicePluginTools()...)
 	return append(out, s.pluginTools()...)
 }
 
