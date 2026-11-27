@@ -1,0 +1,26 @@
+internal/cluster/mastertables_test.go
+  s_18b57982fdff93::t_cc13ea975cac28 10,495-510
+  s_18b57982fdff93::t_17e82d860bb79a 511
+internal/cluster/antientropy.go
+  s_18b57982fdff93::t_328be9921ae79c 476-478
+  s_18b57982fdff93::t_89baf26b33dc17 479,492,519-527
+  s_18b57982fdff93::t_1b0277dcde51a5 528
+internal/store/digest.go
+  s_18b57982fdff93::t_328be9921ae79c 67-69
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "c3f17d8067d59a604bcb0eaeb5b2ea9eb5a5004a",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
