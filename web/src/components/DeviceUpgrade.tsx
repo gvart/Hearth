@@ -8,6 +8,24 @@ import { Tip } from './Tip.tsx';
 /** How long the dialog waits for the upgraded agent to come back before it says to look at the device. */
 const backWithin = 90_000;
 
+/** The id of the Agent version card, for links from elsewhere on the device page. */
+const agentVersionAnchor = 'agent-version';
+
+/** Scrolls to the Agent version card, where an out-of-date agent is upgraded. */
+export function AgentVersionLink({ children }: { children: string }) {
+  return (
+    <button
+      type="button"
+      className="link"
+      onClick={() => {
+        document.getElementById(agentVersionAnchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
 /**
  * The agent's version next to the hub's, and the way to bring it up to the
  * hub's (#347): "Upgrade agent" for an agent that upgrades itself, the
@@ -26,7 +44,7 @@ export function DeviceUpgrade({ device }: { device: Device }) {
   const online = device.status === 'online';
 
   return (
-    <section className="panel-card" aria-label="Agent version">
+    <section className="panel-card" id={agentVersionAnchor} aria-label="Agent version">
       <div className="panel-card-head">
         <h2 className="card-label">
           Agent version <Tip id="upgrade" />
