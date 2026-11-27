@@ -37,3 +37,7 @@ COPY --from=build /out/hearth /usr/bin/hearth
 # systemd. It prints one entry in journalctl's export format, then follows.
 RUN printf '#!/bin/sh\nprintf "__REALTIME_TIMESTAMP=1700000000000000\\nMESSAGE=hearth e2e log line\\n\\n"\nexec sleep 3600\n' >/usr/bin/journalctl && \
     chmod 0755 /usr/bin/journalctl
+# A systemctl stand-in for the local rule step (localrules_test.go): it
+# records what it was asked to do.
+RUN printf '#!/bin/sh\necho "$@" >>/tmp/hearth-e2e-restarts\n' >/usr/bin/systemctl && \
+    chmod 0755 /usr/bin/systemctl
