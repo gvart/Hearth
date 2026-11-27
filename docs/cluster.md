@@ -225,19 +225,22 @@ dir and join it again.
   A password reset runs on every storage member, so it ends every session, wherever the session is stored.
   A runbook run is saved only from the version it was read at, on the run's first live replica, so of two
   saves from one version (two masters, or a master and an operator) exactly one is taken.
-- **Runbook runs across a split.** Everything else keeps writing on both sides of a split; runbook runs
-  do not. Starting a run and recording each step (as running before it runs, then its outcome) need a
-  majority of the run's replicas, and two majorities always share a replica, so at most one side of a
-  split records a step and no step runs twice. On the side without that majority the start, or the
-  step, is refused before anything runs, with 503 `cluster_split`: "cluster split: runbook steps need a
-  majority of replicas; retry when the cluster heals". A run under way there stays where it is (its
-  master logs the same reason) and goes on by itself once the split heals. A hub that started without
-  reaching any member it knows also refuses runbook runs until it finds one. With the default
-  `--replicas` 2 the majority is both replicas, so one of them down stops the runs of the runbooks it
-  holds; run three replicas (`--replicas 3`, with three storage members or more) for runbooks that
-  keep going with one storage member down.
   Members compare digests of the rows
   they share and copy what differs (anti-entropy), so replicas converge after an outage or a split.
+- **Runbook runs across a split.** Everything else keeps writing on both sides of a split; runbook runs
+  do not. Starting a run and recording each step (as running before it runs, then its outcome) need a
+  majority of the run's replicas to read the run and to take the save, and two majorities always share
+  a replica, so at most one side of a split records a step and no step runs twice. On the side without
+  that majority the start, or the step, is refused before anything runs or is written, with 503
+  `cluster_split`: "cluster split: runbook steps need a majority of replicas; retry when the cluster
+  heals". A run there waits (its master logs the same reason) and goes on once the split heals; a step
+  already running when the split came, whose outcome could not be recorded, stops the run as `unknown`
+  for an operator to decide, as when its master dies. A hub that started without reaching any member
+  it knows also refuses runbook runs until it finds one. With the default `--replicas` 2 the majority
+  is both replicas, so one of them down stops the runs of the runbooks it holds; run three replicas
+  (`--replicas 3`, with three storage members or more) for runbooks that keep going with one storage
+  member down. The re-sealing of runs during a [hub CA rotation](#rotating-the-hub-ca) needs the same
+  majority: `hearth cluster ca finish` fails until it is reachable, and can be run again.
 - **Conflicts.** Every row carries a hybrid logical clock (HLC) stamp and the member that wrote it.
   Two writes to the same row merge by **last writer wins** on that stamp. Some rows do not merge this
   way: the audit log is append-only (entries are only ever added); a revocation, once any replica has
@@ -778,7 +781,9 @@ the time it was made and lands only once. If a spooled entry cannot be read back
 - **Runbooks need a majority.** A runbook run starts and moves on only where a majority of its
   replicas is reachable ([Runbook runs across a split](#how-data-is-kept)). The other side of a split,
   and a run whose replicas are mostly down, waits until they are back. With `--replicas` 2 that means
-  both replicas.
+  both replicas. The majority is counted on the members a hub knows: one restarted during a split
+  knows only those it reaches, and a member that is stopped (not crashed) leaves the gossip and is
+  off the ring until it is back. Avoid restarting or stopping hubs during a split.
 - An approval link opens on the master that owns the approval. With `approval_notify.url` set to one
   fixed address, a link for an approval owned by another master answers 409 `not_owner`, naming the
   master to open it on.

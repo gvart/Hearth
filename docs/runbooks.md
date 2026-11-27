@@ -328,8 +328,9 @@ cluster of one): a step is recorded as running on a majority before it runs, so 
 the next owner finds it running and stops the run as `unknown` instead of running the step again. On
 the side of a network split without that majority nothing runs: a start, retry or answer there is
 refused with "cluster split: runbook steps need a majority of replicas; retry when the cluster heals",
-and a run under way waits, then goes on once the split heals
-([Runbook runs across a split](cluster.md#how-data-is-kept)). Runbook files are documents of the replicated
+and a run under way waits, then goes on once the split heals (a step already running when the split
+came stops the run as `unknown`, as when its master dies;
+[Runbook runs across a split](cluster.md#how-data-is-kept)). Runbook files are documents of the replicated
 store, so every hub starts a run from the same file.
 
 ## Commands

@@ -362,3 +362,36 @@ func TestRunbookMinorityRefusesAcrossASplit(t *testing.T) {
 		})
 	}
 }
+
+// A split the gossip has not noticed yet: b and c still look alive to a but
+// cannot be reached. a refuses to start a run or record a step, and writes
+// neither, as its read from a majority of the replicas fails first.
+func TestRunbookMinorityRefusesBeforeTheGossipNotices(t *testing.T) {
+	ids := []string{"a", "b", "c"}
+	an := newAPNet(t, 3, ids...)
+	rb := runbookPreferring(t, ids, "a", "b", "c")
+	run := createRun(t, an.m("b"), "run1", rb)
+	apEventually(t, "a to hold the run", func() bool {
+		_, _, ok := localRun(t, an.m("a"), "run1")
+		return ok
+	})
+
+	an.mu.Lock()
+	an.crashed["b"], an.crashed["c"] = true, true
+	an.mu.Unlock()
+	an.dropConns()
+	other := run
+	other.ID = "run2"
+	if err := an.m("a").st.RunbookRuns().Create(t.Context(), other); !errors.Is(err, store.ErrNoMajority) {
+		t.Fatalf("start a run with b and c unreachable = %v, want ErrNoMajority", err)
+	}
+	if _, _, ok := localRun(t, an.m("a"), "run2"); ok {
+		t.Fatal("a stored the run it refused to start")
+	}
+	if _, err := saveRun(t, an.m("a"), run, 1, 1); !errors.Is(err, store.ErrNoMajority) {
+		t.Fatalf("save with b and c unreachable = %v, want ErrNoMajority", err)
+	}
+	if v, _, _ := localRun(t, an.m("a"), "run1"); v != 1 {
+		t.Fatalf("a holds version %d after the refusal, want 1", v)
+	}
+}

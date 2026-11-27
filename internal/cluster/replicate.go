@@ -753,7 +753,10 @@ func shortOf(groups []writeGroup, acked map[string]bool) error {
 				n++
 			}
 		}
-		if n < g.w {
+		switch {
+		case n < g.w && g.majority:
+			return fmt.Errorf("%d of %d replicas took a majority write: %w", n, g.w, store.ErrNoMajority)
+		case n < g.w:
 			return fmt.Errorf("%d of %d replicas took a critical write: %w", n, g.w, store.ErrUnavailable)
 		}
 	}
@@ -764,6 +767,8 @@ func shortOf(groups []writeGroup, acked map[string]bool) error {
 type writeGroup struct {
 	live []string
 	w    int
+	// majority is set for a write that needs a majority of the replicas.
+	majority bool
 }
 
 // plan returns, for muts written here, the rows to send to each other live
@@ -788,7 +793,7 @@ func (r *Replicator) plan(ctx context.Context, muts []store.Mutation, critical, 
 		}
 		if maj && !p.Global {
 			owners, _ := v.owners(store.BucketOf(store.Token(p.Key)))
-			groups = append(groups, writeGroup{live: owners, w: majority(n)})
+			groups = append(groups, writeGroup{live: owners, w: majority(n), majority: true})
 		} else {
 			groups = append(groups, writeGroup{live: live, w: writeQuorum(critical, n)})
 		}
