@@ -534,8 +534,9 @@ func (n *APNode) WaitPeers(ctx context.Context, limit time.Duration) error {
 
 // StartAlone lets a member that found none of the cluster its seeds name
 // (WaitPeers gave up) take critical writes alone, on a ring of itself:
-// until another member turns up, each has one copy.
-func (n *APNode) StartAlone() { n.rep.SetSeeking(false) }
+// until another member turns up, each has one copy. Runbook runs, which need
+// a majority of their replicas, are refused until then.
+func (n *APNode) StartAlone() { n.rep.StartAlone() }
 
 // Replicator returns the node's replicator.
 func (n *APNode) Replicator() *Replicator { return n.rep }

@@ -37,6 +37,19 @@ var ErrRunbookRunConflict = errors.New("runbook run changed since it was read")
 // already has RunbookRunsKept runs only an operator can resolve.
 var ErrRunbookRunsUnresolved = errors.New("too many runs of this runbook await an operator's decision")
 
+// ErrNoMajority refuses a runbook run's save on a cluster member that reaches
+// no strict majority of the run's replicas: on the minority side of a split
+// (#307). Nothing is written, so no step runs. It is also ErrUnavailable.
+var ErrNoMajority error = noMajority{}
+
+type noMajority struct{}
+
+func (noMajority) Error() string {
+	return "cluster split: runbook steps need a majority of replicas; retry when the cluster heals"
+}
+
+func (noMajority) Is(target error) bool { return target == ErrUnavailable }
+
 // RunbookRun is one run of a runbook.
 type RunbookRun struct {
 	ID        string
