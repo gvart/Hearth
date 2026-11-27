@@ -429,6 +429,11 @@ func runClusterMember(ctx context.Context, node *cluster.APNode, setup func(cont
 		}
 		// Not before this master compared the global rows with another
 		// master's (#382): it would take the cluster's password for unset.
+		if synced && !node.Replicator().SyncedWithAMaster() && node.OtherMasters() {
+			// Its sponsor may have died before this master compared the
+			// global rows with any master: none was live.
+			synced = false
+		}
 		if !synced {
 			log.ErrorContext(ctx, "HEARTH_ADMIN_PASSWORD not applied: this master is not in sync with the cluster's "+
 				"other masters yet; restart once it is, or run `hearth admin set-password`")

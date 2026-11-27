@@ -182,6 +182,17 @@ func (n *APNode) count(role Role, but string) int {
 	return c
 }
 
+// OtherMasters reports whether the gossip lists another master that has
+// not left, live or not.
+func (n *APNode) OtherMasters() bool {
+	if n.membership == nil {
+		return false
+	}
+	return slices.ContainsFunc(n.membership.Members(), func(m MemberInfo) bool {
+		return m.ID != n.cfg.NodeID && m.State != MemberLeft && m.Roles.Has(RoleMaster)
+	})
+}
+
 // Promote gives member id role: the member must allow it (--allow-roles).
 // This hub must be a master.
 func (n *APNode) Promote(ctx context.Context, id string, role Role) (RoleChange, error) {

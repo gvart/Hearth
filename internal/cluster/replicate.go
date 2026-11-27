@@ -151,6 +151,9 @@ type Replicator struct {
 	// masters a critical global write or a sync waits for.
 	provedMu sync.Mutex
 	proved   map[string]bool
+	// masterSynced is set once this member compared the global rows with a
+	// master that proved the hub CA key.
+	masterSynced atomic.Bool
 
 	// local is this member's own part in the storage ring (SetLocal).
 	local atomic.Pointer[replicaLocal]

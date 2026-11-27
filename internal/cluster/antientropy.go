@@ -260,8 +260,16 @@ func (r *Replicator) SyncGlobal(ctx context.Context, peer string) error {
 // syncGlobal is SyncGlobal, and reports whether peer proved it holds the
 // hub CA key: whether the rows were compared with a master's.
 func (r *Replicator) syncGlobal(ctx context.Context, peer string) (bool, error) {
-	return r.syncSpaceProved(ctx, r.store(), peer, store.SpaceGlobal, []bucketRange{{0, store.GlobalBuckets}}, false)
+	proved, err := r.syncSpaceProved(ctx, r.store(), peer, store.SpaceGlobal, []bucketRange{{0, store.GlobalBuckets}}, false)
+	if err == nil && proved {
+		r.masterSynced.Store(true)
+	}
+	return proved, err
 }
+
+// SyncedWithAMaster reports whether this member compared the global rows
+// with a master that proved the hub CA key since it started.
+func (r *Replicator) SyncedWithAMaster() bool { return r.masterSynced.Load() }
 
 // errNoMasterSynced fails a sync of the global rows that reached no master
 // proving the hub CA key while one is live: global rows come from masters

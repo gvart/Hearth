@@ -515,6 +515,31 @@ func TestCatchUpNeedsAMaster(t *testing.T) {
 	}
 }
 
+// TestSyncedWithAMaster: a member has synced with a master only once it
+// compared the global rows with one that proved the hub CA key; a sync with
+// storage members alone does not count.
+func TestSyncedWithAMaster(t *testing.T) {
+	an := newAPNetWith(t, 0, func(c *ReplicatorConfig) {
+		if c.NodeID != "m" {
+			c.Master = testMasterKey{}
+		}
+	}, "s", "s2")
+	ctx := t.Context()
+	if err := an.m("s").rep.SyncWith(ctx, "s2"); err != nil {
+		t.Fatal(err)
+	}
+	if an.m("s").rep.SyncedWithAMaster() {
+		t.Fatal("a sync with a storage member counted as one with a master")
+	}
+	an.add(t, 0, "m")
+	if err := an.m("s").rep.SyncWith(ctx, "m"); err != nil {
+		t.Fatal(err)
+	}
+	if !an.m("s").rep.SyncedWithAMaster() {
+		t.Fatal("a sync with master m did not count")
+	}
+}
+
 // TestHungClaimantBlocksNothing: a member that says it is a master but
 // never proved the hub CA key, and never answers, holds back neither a
 // critical global write of the only real master nor its first sync.

@@ -642,6 +642,12 @@ The newest schema the cluster has written is kept in each member's `cluster/sche
 goes back: a member, or a joining hub, whose Hearth supports less is refused. Upgrade before you bring
 an old member back. Downgrades are not supported.
 
+**Upgrading to the release with master proofs ([#382](https://github.com/gvart/hearth/issues/382)).**
+This one is not rolling: a member of an earlier version proves nothing, so its global writes and its
+requests to coordinate are refused. Upgrade every hub together. Enrollment tokens, join tokens and
+pending approvals made before the upgrade are refused after it: create new ones. See
+[Who may write what](#who-may-write-what).
+
 ## Node certificates
 
 A hub node certificate is valid for a year. A master renews its own with the CA key, at start; a member
