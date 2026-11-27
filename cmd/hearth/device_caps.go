@@ -40,13 +40,17 @@ func newDeviceCapabilitiesCmd() *cobra.Command {
 			"  logs, restart            on (every source or service) | off | manager:name,... (systemd,\n" +
 			"                           systemd-user or docker; a name may be a glob such as docker:*)\n" +
 			"  scan                     on (the private IPv4 ranges) | off | CIDR,...\n" +
-			"  exec                     off | /absolute/path,... (no on: name each program)\n\n" +
-			"Raising shell, exec, restart or Docker control is the dangerous policy action\n" +
+			"  exec                     off | /absolute/path,... (no on: name each program)\n" +
+			"  plugins                  off | name[:class],... (the plugins uploaded with `hearth plugin upload`\n" +
+			"                           it may install and run, each up to a class of command: read (the\n" +
+			"                           default), safe or dangerous)\n\n" +
+			"Raising shell, exec, restart, Docker control or a plugin is the dangerous policy action\n" +
 			"device.capabilities.raise; anything else is device.capabilities.set. Both are audited. A device\n" +
 			"whose agent runs with --local-ceiling ignores what the hub sets.",
 		Example: "  hearth device capabilities pi\n" +
 			"  hearth device capabilities pi --set logs=on --set docker=read\n" +
-			"  hearth device capabilities pi --set exec=/usr/bin/df,/usr/sbin/reboot --set shell=off",
+			"  hearth device capabilities pi --set exec=/usr/bin/df,/usr/sbin/reboot --set shell=off\n" +
+			"  hearth device capabilities pi --set plugins=go-lamp:safe",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDeviceCapabilities(cmd.Context(), dataDir, args[0], sets, dryRun, cmd.OutOrStdout())
@@ -193,6 +197,15 @@ func capValue(c *hub.Ceiling, k string) string {
 		return list(c.Scan, hub.AllScan)
 	case "exec":
 		return list(c.Exec, nil)
+	case "plugins":
+		if len(c.Plugins) == 0 {
+			return "off"
+		}
+		grants := make([]string, len(c.Plugins))
+		for i, g := range c.Plugins {
+			grants[i] = g.Name + ":" + string(g.Class)
+		}
+		return strings.Join(grants, ",")
 	}
 	return "?"
 }
