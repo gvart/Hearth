@@ -1,0 +1,68 @@
+internal/integrations/unifi/read.go
+  s_18b57982fdff93::t_7613b967802129 1-262,272-301
+  s_18b57982fdff93::t_fcab89ee6dbacf 263-271
+internal/store/version.go
+  s_18b57982fdff93::t_d6ac832c220297 159-161
+internal/policy/guardrails_test.go
+  s_18b57982fdff93::t_08be78b381f01b 224-226
+internal/integrations/unifi/client.go
+  s_18b57982fdff93::t_8b602b786fca26 1-302
+internal/integrations/unifi/connection.go
+  s_18b57982fdff93::t_dc5afed903aafb 1-188
+internal/store/schema_test.go
+  s_18b57982fdff93::t_37d1e30d445380 81-85,93
+internal/store/migrations/00039_unifi_controllers.sql
+  s_18b57982fdff93::t_dd8d1d45be1b41 1-20
+internal/store/unifi.go
+  s_18b57982fdff93::t_ad2a8e8939823e 18
+  s_18b57982fdff93::t_dd8d1d45be1b41 1-17,19-146
+internal/integrations/unifi/manager.go
+  s_18b57982fdff93::t_2734aac5db267e 1-587
+internal/integrations/unifi/unifimock/unifimock.go
+  s_18b57982fdff93::t_cb54339f4a8c7b 1-40,42-246,248-253,270-271,288,293-295,300-321
+  s_18b57982fdff93::t_99cf8246ca6338 41,247,254-269,272-287,289-292,296-299
+internal/store/reads_test.go
+  s_18b57982fdff93::t_d9e3851dff8b66 14-33,35-37
+  s_18b57982fdff93::t_d6ac832c220297 34
+internal/store/partition.go
+  s_18b57982fdff93::t_d9e3851dff8b66 59-67,69-70
+  s_18b57982fdff93::t_d6ac832c220297 68,388
+  s_18b57982fdff93::t_75b0e5b831ac80 389
+internal/store/store_test.go
+  s_18b57982fdff93::t_d6ac832c220297 86
+internal/policy/policy.go
+  s_18b57982fdff93::t_08be78b381f01b 309-316,652-658
+internal/store/naturalid.go
+  s_18b57982fdff93::t_d6ac832c220297 28-30
+internal/store/command.go
+  s_18b57982fdff93::t_d6ac832c220297 862-865
+internal/store/command_test.go
+  s_18b57982fdff93::t_d6ac832c220297 114-115,445-448
+internal/store/networkhosts.go
+  s_18b57982fdff93::t_d6ac832c220297 74-75
+internal/store/carotation_test.go
+  s_18b57982fdff93::t_d6ac832c220297 103,106-107,110,126-127
+internal/integrations/unifi/client_test.go
+  s_18b57982fdff93::t_35661437655174 1-341
+internal/integrations/unifi/manager_test.go
+  s_18b57982fdff93::t_7959a02a04f14e 1-432
+internal/store/carotation.go
+  s_18b57982fdff93::t_d6ac832c220297 340-341,352,361,385,426,454
+  s_18b57982fdff93::t_d9e3851dff8b66 346-351
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ae0b226275044c4d052d520dd0c24efb1d73d4e9",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
