@@ -1,0 +1,31 @@
+docs/openwrt.md
+  s_18b57982fdff93::t_3bfc8ca2c63986 16
+docs/security.md
+  s_18b57982fdff93::t_3bfc8ca2c63986 121,277-281
+docs/unifi.md
+  s_18b57982fdff93::t_315097a1db7033 1-103
+docs/discovery.md
+  s_18b57982fdff93::t_3bfc8ca2c63986 149
+docs/backup.md
+  s_18b57982fdff93::t_3bfc8ca2c63986 224
+docs/pihole.md
+  s_18b57982fdff93::t_3bfc8ca2c63986 98
+site/src/pages.mjs
+  s_18b57982fdff93::t_3bfc8ca2c63986 11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0d7bf8da42f09b77b031ca067c36511693339e5e",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
