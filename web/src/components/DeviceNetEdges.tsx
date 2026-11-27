@@ -1,15 +1,16 @@
-import type { Device } from '../api/client.ts';
-import { useNetEdges, type Peer } from '../api/netedges.ts';
-import { formatDateTime } from '../format.ts';
-import { CapabilitiesLink } from './DeviceCapabilities.tsx';
-import './DeviceNetEdges.css';
+import type { Device } from "../api/client.ts";
+import { useNetEdges, type Peer } from "../api/netedges.ts";
+import { formatDateTime } from "../format.ts";
+import { CapabilitiesLink } from "./DeviceCapabilities.tsx";
+import "./DeviceNetEdges.css";
 
 /** Who the device sees on its network and holds TCP connections with, as its agent reports. */
 export function DeviceNetEdges({ device }: { device: Device }) {
   if (!device.facts.ceiling?.net_edges) {
     return (
       <p className="muted small">
-        Not reported. Turn Neighbors on in <CapabilitiesLink>Capabilities</CapabilitiesLink> (Linux) to see its
+        Not reported. Turn Neighbors on in{" "}
+        <CapabilitiesLink>Capabilities</CapabilitiesLink> (Linux) to see its
         neighbours and connections here.
       </p>
     );
@@ -23,7 +24,9 @@ function NetEdgesTables({ deviceId }: { deviceId: string }) {
     return <p className="muted small">Loading…</p>;
   }
   if (q.isError) {
-    return <p className="muted small">Cannot read the edges: {q.error.message}</p>;
+    return (
+      <p className="muted small">Cannot read the edges: {q.error.message}</p>
+    );
   }
   const e = q.data;
   const refresh = (
@@ -41,7 +44,9 @@ function NetEdgesTables({ deviceId }: { deviceId: string }) {
   if (!e.enabled || (e.neighbors.length === 0 && e.connections.length === 0)) {
     return (
       <div className="net-edges-head">
-        <p className="muted small">Nothing reported yet; the agent reports every minute.</p>
+        <p className="muted small">
+          Nothing reported yet; the agent reports every minute.
+        </p>
         {refresh}
       </div>
     );
@@ -49,7 +54,9 @@ function NetEdgesTables({ deviceId }: { deviceId: string }) {
   return (
     <div className="net-edges">
       <div className="net-edges-head">
-        <span className="muted small">Last changed {formatDateTime(e.updated_at)}</span>
+        <span className="muted small">
+          Last changed {formatDateTime(e.updated_at)}
+        </span>
         {refresh}
       </div>
       <div className="net-edges-head">
@@ -71,10 +78,19 @@ function NetEdgesTables({ deviceId }: { deviceId: string }) {
                 <td>
                   <PeerName peer={c.peer} ip={c.ip} />
                 </td>
-                <td title={c.inbound ? 'The peer connected to this port here' : 'This device connected to the peer’s port'}>
-                  {c.inbound ? '← inbound' : '→ outbound'}
+                <td
+                  title={
+                    c.inbound
+                      ? "The peer connected to this port here"
+                      : "This device connected to the peer’s port"
+                  }
+                >
+                  {c.inbound ? "← inbound" : "→ outbound"}
                 </td>
-                <td className="num mono">{c.port}</td>
+                <td className="num">
+                  <span className="mono">{c.port}</span>
+                  {c.service ? <span className="svc">{c.service}</span> : null}
+                </td>
                 <td className="num">{c.count}</td>
               </tr>
             ))}

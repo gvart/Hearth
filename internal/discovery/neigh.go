@@ -11,8 +11,8 @@ import (
 	"strings"
 )
 
-// Neighbor is a resolved entry of the operating system's IPv4 neighbour
-// (ARP) table.
+// Neighbor is a resolved entry of the operating system's IPv4 (ARP) or IPv6
+// (NDP) neighbour table.
 type Neighbor struct {
 	IP  netip.Addr
 	MAC net.HardwareAddr

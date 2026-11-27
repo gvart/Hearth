@@ -3153,7 +3153,9 @@ func (x *ScannedHost) GetHostname() string {
 type NetEdges struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// neighbors are the complete entries of the device's IPv4 neighbour (ARP)
-	// table.
+	// table, then the resolved unicast entries of its IPv6 one (NDP), a
+	// link-local address without its zone. Hubs before IPv6 neighbours skip
+	// the IPv6 entries.
 	Neighbors []*Neighbor `protobuf:"bytes,1,rep,name=neighbors,proto3" json:"neighbors,omitempty"`
 	// connections summarise the device's established TCP connections, one per
 	// peer address, port and direction, loopback excluded.

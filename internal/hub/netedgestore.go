@@ -12,7 +12,8 @@ import (
 
 // Kinds of network edge (NetEdge.Kind).
 const (
-	// EdgeNeighbor is an entry of the device's neighbour (ARP) table.
+	// EdgeNeighbor is an entry of the device's IPv4 (ARP) or IPv6 (NDP)
+	// neighbour table.
 	EdgeNeighbor = "neighbor"
 	// EdgeConnection is a group of the device's established TCP
 	// connections with one peer.

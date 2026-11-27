@@ -3,8 +3,8 @@ title: Neighbors and connections
 description: See who each device talks to, from the device itself, without router access.
 ---
 
-An agent can report what its device sees of the network: the entries of its neighbour (ARP) table,
-and a summary of its established TCP connections. The hub turns each address into the enrolled
+An agent can report what its device sees of the network: the entries of its IPv4 (ARP) and IPv6
+(NDP) neighbour tables, and a summary of its established TCP connections. The hub turns each address into the enrolled
 device, the hub itself or the [discovered host](discovery.md) it belongs to, and shows them in the
 device's page under **Neighbors and connections**. No router, switch or conntrack access needed.
 
@@ -27,8 +27,11 @@ Only Linux agents report edges for now; on other systems the agent refuses the f
 
 Shortly after the agent connects, then every minute:
 
-- **Neighbors**: the complete entries of `/proc/net/arp`, as IP and MAC. A neighbour's MAC is how
-  the hub tells which device or host it is, even when its address changed.
+- **Neighbors**: the complete entries of `/proc/net/arp`, then the resolved unicast entries of the
+  IPv6 neighbour table (what `ip -6 neigh` shows, read over netlink), as IP and MAC. A neighbour's
+  MAC is how the hub tells which device or host it is, even when its address changed. A link-local
+  IPv6 address (`fe80::`) is sent without its zone and resolved by MAC only: any host may use the
+  same one on its own link.
 - **Connections**: the established TCP connections of `/proc/net/tcp` and `/proc/net/tcp6`, loopback
   excluded, grouped by peer, port and direction with a count. A connection to a port the device
   listens on (on that address, or on every address) is *inbound* and keyed by that port (sshd's
@@ -38,8 +41,7 @@ Shortly after the agent connects, then every minute:
 Each report is capped at 512 neighbours and 512 connection groups; a host with more groups says how
 many connections were left out. The agent reads the files any user may read, needs no privilege,
 groups connections as it reads them, so a host with many sockets costs it no more, and keeps nothing
-between reports. IPv6 neighbours (NDP) are not
-reported yet.
+between reports. A host with IPv6 turned off still reports its IPv4 neighbours.
 
 The hub keeps each device's latest set in its own memory, as it keeps host metrics on its own: edges
 never go into the replicated store. After a hub restart or a failover to another hub, the agents
@@ -48,7 +50,10 @@ refill them within a minute. The hub takes at most one report every 30 seconds f
 ## Reading them
 
 Open a device and scroll to **Neighbors and connections**. Each peer shows as a device, `hub` (an
-address of the hub's own interfaces) or a host network discovery found, or as unknown. The panel
+address of the hub's own interfaces) or a host network discovery found, or as unknown. A
+connection's port carries the name of its well-known service when the hub knows one (22 ssh, 443
+https, 7443 hearth, 8123 home-assistant, ...), from a small table built into the hub: a label, not a
+probe of what actually listens there. The panel
 reads once when the device's page opens; **Refresh** reads again.
 
 Every read is the policy action `device.net_edges` (class `read`) and is audited, as opening a log
@@ -62,7 +67,7 @@ stream is. The API is `GET /api/v1/devices/{id}/net-edges`.
   found and, unless you untick **Unknown addresses**, addresses the hub knows nothing of (internet
   peers, mostly).
 - **Connections**: a solid line from client to server, the arrow at the server, labelled with the
-  server's ports. When both ends report the same connection (both run with `--allow-net-edges`),
+  server's ports, by service name when the hub knows one (`ssh`, `https`). When both ends report the same connection (both run with `--allow-net-edges`),
   it is drawn once.
 - **Neighbours**: a dashed, lighter line between a device and an entry of its neighbour table. Untick
   **Neighbours** to see only who talks to whom.
@@ -86,7 +91,7 @@ The API is `GET /api/v1/net-edges`:
     {"id": "ip:198.51.100.9", "kind": "unknown", "name": "198.51.100.9", "ip": "198.51.100.9"}
   ],
   "edges": [
-    {"kind": "connection", "from": "device:4f1c", "to": "hub", "port": 7443, "count": 1},
+    {"kind": "connection", "from": "device:4f1c", "to": "hub", "port": 7443, "service": "hearth", "count": 1},
     {"kind": "neighbor", "from": "device:4f1c", "to": "host:aa:bb:cc:00:00:01"}
   ]
 }
@@ -94,4 +99,5 @@ The API is `GET /api/v1/net-edges`:
 
 `reporting` is how many agents report edges; with none, the page says how to turn them on. A
 connection's `from` is the client and `to` the server, whose `port` it is; `count` is the most either
-end reported.
+end reported; `service` names the port's well-known service and is absent when the hub knows no
+name for it. The device API's connections carry the same `service`.

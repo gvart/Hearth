@@ -120,6 +120,29 @@ func TestCollectNetEdgesWithoutIPv6(t *testing.T) {
 	}
 }
 
+func TestBothNeighbors(t *testing.T) {
+	v4 := []discovery.Neighbor{{IP: netip.MustParseAddr("192.0.2.1"), MAC: net.HardwareAddr{0xaa, 0xbb, 0xcc, 0, 0, 1}}}
+	v6 := []discovery.Neighbor{{IP: netip.MustParseAddr("fe80::1"), MAC: net.HardwareAddr{0xaa, 0xbb, 0xcc, 0, 0, 1}}}
+	ok := func(n []discovery.Neighbor) func() ([]discovery.Neighbor, error) {
+		return func() ([]discovery.Neighbor, error) { return n, nil }
+	}
+	fail := func() ([]discovery.Neighbor, error) { return nil, errors.New("no table") }
+	fsys := fstest.MapFS{"tcp": {Data: []byte(tcpHeader)}}
+
+	got, err := collectNetEdges(fsys, bothNeighbors(ok(v4), ok(v6)))
+	want := []*agentv1.Neighbor{{Ip: "192.0.2.1", Mac: "aa:bb:cc:00:00:01"}, {Ip: "fe80::1", Mac: "aa:bb:cc:00:00:01"}}
+	if err != nil || len(got.GetNeighbors()) != 2 || !proto.Equal(got.GetNeighbors()[1], want[1]) || !proto.Equal(got.GetNeighbors()[0], want[0]) {
+		t.Fatalf("collectNetEdges = %v, %v; want the IPv4 then the IPv6 neighbour", got, err)
+	}
+	// IPv6 off: the IPv4 neighbours are still reported.
+	if got, err := bothNeighbors(ok(v4), fail)(); err != nil || len(got) != 1 {
+		t.Errorf("bothNeighbors without IPv6 = %v, %v; want the IPv4 neighbour", got, err)
+	}
+	if _, err := bothNeighbors(fail, ok(v6))(); err == nil {
+		t.Error("bothNeighbors with a failing IPv4 table succeeded")
+	}
+}
+
 // One report never grows past its caps, however many sockets the device
 // holds.
 func TestCollectNetEdgesCaps(t *testing.T) {

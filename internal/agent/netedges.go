@@ -259,6 +259,22 @@ func (t *tcpTable) connections() []*agentv1.Connection {
 	return out
 }
 
+// bothNeighbors reads the IPv4 neighbours of v4, then the IPv6 ones of v6.
+// A host whose IPv6 table cannot be read (IPv6 off) still reports its IPv4
+// neighbours.
+func bothNeighbors(v4, v6 func() ([]discovery.Neighbor, error)) func() ([]discovery.Neighbor, error) {
+	return func() ([]discovery.Neighbor, error) {
+		nb, err := v4()
+		if err != nil {
+			return nil, err
+		}
+		if nb6, err := v6(); err == nil {
+			nb = append(nb, nb6...)
+		}
+		return nb, nil
+	}
+}
+
 // collectNetEdges reads the device's network edges: the neighbours
 // neighbors returns and the connections of tcp and tcp6 in procNet (Linux's
 // /proc/net). Nothing is kept between calls.
