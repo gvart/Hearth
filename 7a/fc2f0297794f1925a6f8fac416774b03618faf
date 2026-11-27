@@ -1,0 +1,14 @@
+CLAUDE.md
+  h_bdd87144da84ba 124-125
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "7afc2f0297794f1925a6f8fac416774b03618faf",
+  "prompts": {},
+  "humans": {
+    "h_bdd87144da84ba": {
+      "author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
