@@ -19,7 +19,8 @@ Homelab tooling comes in slices: dashboards look, monitors measure, Docker/k8s U
 network mappers discover. Nothing **acts**. Hearth adds the missing layer:
 
 - **Any device in 10 seconds** — one command, and it shows up with facts, metrics, logs and a shell.
-- **Automations that heal** — "Pi-hole stopped answering → restart it → fail over → ping my phone."
+- **Automations that heal** — "Pi-hole stopped answering → restart it → fail over → ping my phone." A
+  watchdog can run on the device itself, so it keeps working while the hub is down.
 - **Runbooks as actions** — "Add a Talos node" becomes a guided, repeatable flow.
 - **Adopt, don't replace** — plugs into your kubeconfig, talosconfig, Pi-hole and Prometheus.
 - **Agent-native** — a built-in MCP server lets Claude Code and other agents operate your lab, safely.

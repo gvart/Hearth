@@ -93,7 +93,7 @@ func readRunLog(dataDir string) (*agentv1.LocalRuns, error) {
 		return nil, fmt.Errorf("read %s: %w", RunLogFile, err)
 	}
 	if len(out.Runs) > maxRunLog {
-		out.Dropped += uint64(len(out.Runs) - maxRunLog)
+		out.Dropped += uint64(len(out.Runs) - maxRunLog) //nolint:gosec // positive: more runs than maxRunLog
 		out.Runs = out.Runs[len(out.Runs)-maxRunLog:]
 	}
 	return out, nil
@@ -123,12 +123,12 @@ func (l *runLog) add(ctx context.Context, run *agentv1.LocalRun) {
 	l.mu.Lock()
 	// Sequence numbers grow across restarts too: an acknowledgement for
 	// the runs of an earlier process never covers a new one.
-	l.lastSeq = max(l.lastSeq+1, uint64(time.Now().UnixNano())) //nolint:gosec // after 1970
+	l.lastSeq = max(l.lastSeq+1, uint64(time.Now().UnixNano()))
 	run.Seq = l.lastSeq
 	l.runs = append(l.runs, run)
 	if n := len(l.runs) - maxRunLog; n > 0 {
 		l.runs = slices.Delete(l.runs, 0, n)
-		l.dropped += uint64(n) //nolint:gosec // positive
+		l.dropped += uint64(n)
 	}
 	l.saveLocked(ctx)
 	l.mu.Unlock()

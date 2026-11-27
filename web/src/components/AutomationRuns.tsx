@@ -46,6 +46,11 @@ export function AutomationRuns({ id }: { id: string }) {
                 </span>
                 <span className={`pill ${pillOf(r.status)}`}>{r.status}</span>
               </div>
+              {r.steps[0]?.ran_on ? (
+                <span className="muted small">
+                  Ran on the device{r.steps[0].hub_unreachable ? ' while the hub was unreachable' : ''}
+                </span>
+              ) : null}
               {r.error ? <span className="error small">{r.error}</span> : null}
               {r.steps.length > 0 ? (
                 <div className="auto-run-steps">

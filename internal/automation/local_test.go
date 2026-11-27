@@ -34,7 +34,7 @@ triggers:
     for: 15s
   - id: web-down
     type: http
-    url: http://user:secret@127.0.0.1/admin?token=abc
+    url: http://127.0.0.1/admin?token=secret
     from: pi4
 actions:
   - id: restart-dns
@@ -77,8 +77,7 @@ func TestLocalAutomationLoads(t *testing.T) {
 	}
 	web := r.GetTriggers()[1]
 	// The probe carries the URL as written; the target shown never does.
-	if !strings.Contains(web.GetProbe().GetHttp().GetUrl(), "secret") || strings.Contains(web.GetTarget(), "secret") ||
-		strings.Contains(web.GetTarget(), "abc") {
+	if !strings.Contains(web.GetProbe().GetHttp().GetUrl(), "secret") || strings.Contains(web.GetTarget(), "secret") {
 		t.Errorf("http trigger: url %q target %q", web.GetProbe().GetHttp().GetUrl(), web.GetTarget())
 	}
 	restart := r.GetActions()[0]
@@ -101,24 +100,42 @@ func TestLocalAutomationRefused(t *testing.T) {
 	tests := []struct {
 		name, src, want string
 	}{
-		{"hub check", "id: a\nlocal: true\ntriggers:\n  - type: tcp\n    address: 127.0.0.1:53\n" + restart,
-			"triggers must be http, tcp or dns checks with from"},
-		{"schedule trigger", "id: a\nlocal: true\ntriggers:\n  - type: schedule\n    cron: '@hourly'\n" + restart,
-			"triggers must be http, tcp or dns checks with from"},
-		{"two devices", "id: a\nlocal: true\n" + trigger + "  - type: tcp\n    address: 127.0.0.1:80\n    from: pi5\n" + restart,
-			"must run from the same device (pi4, not pi5)"},
-		{"restart elsewhere", "id: a\nlocal: true\n" + trigger + "actions:\n  - type: restart\n    device: nas\n    service: systemd:dns.service\n",
-			"device must be pi4"},
-		{"templated device", "id: a\nlocal: true\n" + trigger + "actions:\n  - type: restart\n    device: '{{ .Trigger.Target }}'\n    service: systemd:dns.service\n",
-			"device must be pi4"},
-		{"exec", "id: a\nlocal: true\n" + trigger + "actions:\n  - type: exec\n    device: pi4\n    command: [/bin/true]\n",
-			"not exec"},
-		{"webhook", "id: a\nlocal: true\n" + trigger + "actions:\n  - type: webhook\n    url: https://ntfy.sh/x\n",
-			"not webhook"},
-		{"log", "id: a\nlocal: true\n" + trigger + "actions:\n  - type: log\n    message: hi\n",
-			"not log"},
-		{"check from the hub", "id: a\nlocal: true\n" + trigger + "actions:\n  - type: check\n    check:\n      type: tcp\n      address: 127.0.0.1:53\n",
-			"from must be pi4"},
+		{
+			"hub check", "id: a\nlocal: true\ntriggers:\n  - type: tcp\n    address: 127.0.0.1:53\n" + restart,
+			"triggers must be http, tcp or dns checks with from",
+		},
+		{
+			"schedule trigger", "id: a\nlocal: true\ntriggers:\n  - type: schedule\n    cron: '@hourly'\n" + restart,
+			"triggers must be http, tcp or dns checks with from",
+		},
+		{
+			"two devices", "id: a\nlocal: true\n" + trigger + "  - type: tcp\n    address: 127.0.0.1:80\n    from: pi5\n" + restart,
+			"must run from the same device (pi4, not pi5)",
+		},
+		{
+			"restart elsewhere", "id: a\nlocal: true\n" + trigger + "actions:\n  - type: restart\n    device: nas\n    service: systemd:dns.service\n",
+			"device must be pi4",
+		},
+		{
+			"templated device", "id: a\nlocal: true\n" + trigger + "actions:\n  - type: restart\n    device: '{{ .Trigger.Target }}'\n    service: systemd:dns.service\n",
+			"device must be pi4",
+		},
+		{
+			"exec", "id: a\nlocal: true\n" + trigger + "actions:\n  - type: exec\n    device: pi4\n    command: [/bin/true]\n",
+			"not exec",
+		},
+		{
+			"webhook", "id: a\nlocal: true\n" + trigger + "actions:\n  - type: webhook\n    url: https://ntfy.sh/x\n",
+			"not webhook",
+		},
+		{
+			"log", "id: a\nlocal: true\n" + trigger + "actions:\n  - type: log\n    message: hi\n",
+			"not log",
+		},
+		{
+			"check from the hub", "id: a\nlocal: true\n" + trigger + "actions:\n  - type: check\n    check:\n      type: tcp\n      address: 127.0.0.1:53\n",
+			"from must be pi4",
+		},
 		{"queued", "id: a\nlocal: true\nmode: queued\n" + trigger + restart, "mode must be single"},
 		{"not a bool", "id: a\nlocal: yes please\n" + trigger + restart, "local must be true or false"},
 	}

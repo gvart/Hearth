@@ -166,6 +166,66 @@ A check from a device:
 
 The agent never logs the URL it checks.
 
+### Running on the device
+
+A check from a device needs a hub to watch it. A watchdog for the service the hub itself depends on,
+such as the Pi-hole every host resolves through, should not: mark the automation `local: true`, and the
+device its checks run `from` runs it itself, also while no hub is reachable.
+
+```yaml
+id: dns-watchdog
+local: true                  # the device in from runs it
+triggers:
+  - id: dns-down
+    type: dns
+    name: example.com
+    server: 127.0.0.1
+    from: pi4
+    every: 5s                # check every 5 s
+    for: 15s                 # fire after 15 s of failures: 3 checks in a row
+actions:
+  - id: restart-dns
+    type: restart
+    device: pi4              # its own device, written as from is
+    service: systemd:pihole-FTL.service
+  - id: verify
+    type: check              # fails the run if DNS still does not answer
+    check:
+      type: dns
+      name: example.com
+      server: 127.0.0.1
+      from: pi4
+```
+
+In the web editor this is **Run on the device (works when the hub is down)** in the General card.
+
+- **Only a narrow subset qualifies**, checked when the file loads, so a save or an import of anything
+  else is refused with the line of the problem: triggers that are `http`, `tcp` or `dns` checks, all
+  `from` the same device; actions that `restart` a service on that device (`device` written as `from`
+  is, not a template) or run a `check` from it; `mode: single` (the default), and no conditions.
+  "Fail N times in a row" is `for`: N checks `every` apart fail for `(N-1) × every`.
+- **The hub never watches it.** It runs on the device only, so its actions are never taken twice.
+- **Pushed with policy.** The hub holding the device's stream sends the agent its local automations on
+  every connect, and within a heartbeat (10 s) of a change. Before it sends one it asks policy, as
+  `automation/<id>`, about the checks (`automation.probe`, read) and each restart (`automation.restart`,
+  safe), with the device's reported ceiling as the precheck. These decisions are audited, marked
+  `"local": "pushed to the device"`, when the automation or what would be decided changes. An
+  automation with any step denied, beyond the ceiling or held for approval is not sent: it runs while
+  the hub is down, so it cannot wait for anyone to approve it.
+- **The device's ceiling still rules.** The agent checks every probe and restart against its effective
+  [capability ceiling](guardrails.md#device-capability-ceiling) when it runs it: turn **Checks** and the
+  restart on in the device's **Capabilities** card. A restart beyond it ends the run `denied`.
+- **Kept on the device.** The agent saves its local automations in `<data-dir>/rules.json` (0600) and
+  runs them from the moment it starts, before any hub connects. A set older than the one it has is
+  ignored; a file that cannot be read runs none until a hub sends them again. Agents older than this
+  release get none, and the editor says so.
+- **Results come back.** Each run goes to a log of the newest 100 runs in `<data-dir>/localruns.json`
+  (0600), which the agent sends to a hub as soon as it has one, until the hub acknowledges it. The hub
+  writes an audit entry for each action, by `automation/<id>` with the device as target and
+  `"local": "ran on the device while the hub was unreachable"` (or `"ran on the device"`), and the run
+  to the run history, where the web UI marks it. A device can only report runs of its own local
+  automations. The log keeps the check's target with its password and query values redacted.
+
 ### Schedule
 
 ```yaml
@@ -276,6 +336,7 @@ The MCP `apply_automation` tool writes the same store.
 | `webhook` | sends one HTTP request                            | safe         | hub     |
 | `notify`  | sends a notification (ntfy, Telegram)             | safe         | hub     |
 | `restart` | restarts a systemd unit or Docker container       | safe         | device  |
+| `check`   | runs an http, tcp or dns check once; fails if it fails | read    | hub or device |
 | `exec`    | runs a command                                    | dangerous    | device  |
 
 ```yaml
@@ -298,6 +359,10 @@ actions:
     body: pi4 restarted pihole-FTL
     timeout: 10s                 # optional, default 10s, at most 1m
 ```
+
+A `check` action takes a `check` mapping written as a [check trigger](#synthetic-checks-http-dns-tcp)
+(`type`, its fields, `from`, `timeout`), without `every` and `for`: it runs once, as `automation.probe`,
+to verify that a restart worked.
 
 Two gates stand before anything runs on a device, and both must agree:
 

@@ -60,6 +60,7 @@ export const tips: Record<TipId, TipText> = {
     lines: [
       "An automation is a trigger, conditions and actions in one YAML file: when this happens and that holds, do these.",
       "Every action goes through policy. By default a dangerous action of an automation is denied.",
+      "Run on the device: a check from one device and a restart there keep working while the hub is down.",
     ],
     docs: "automations.md",
   },

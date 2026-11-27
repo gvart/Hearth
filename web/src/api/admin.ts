@@ -71,6 +71,10 @@ export interface AutomationStep {
   type: string;
   status: string;
   error?: string;
+  /** On the trigger step of a run a local automation's device reported: that device's id. */
+  ran_on?: string;
+  /** The device had no hub connection when the run started. */
+  hub_unreachable?: boolean;
 }
 
 export interface AutomationRun {

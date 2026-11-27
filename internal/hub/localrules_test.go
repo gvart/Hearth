@@ -185,10 +185,16 @@ func TestLocalRulesNotPushed(t *testing.T) {
 	}{
 		{"no probes", &agentv1.Ceiling{Restart: []string{"systemd:*"}}, policy.Config{}, "beyond"},
 		{"restart beyond the ceiling", &agentv1.Ceiling{Probe: true, Restart: []string{"docker:x"}}, policy.Config{}, "beyond"},
-		{"denied by policy", allowsWatchdog,
-			policy.Config{Actors: map[string]map[policy.Class]policy.Mode{policy.ActorAutomation: {policy.Safe: policy.ModeDeny}}}, "denied"},
-		{"needs approval", allowsWatchdog,
-			policy.Config{Actors: map[string]map[policy.Class]policy.Mode{policy.ActorAutomation: {policy.Safe: policy.ModeConfirm}}}, "cannot wait for approval"},
+		{
+			"denied by policy", allowsWatchdog,
+			policy.Config{Actors: map[string]map[policy.Class]policy.Mode{policy.ActorAutomation: {policy.Safe: policy.ModeDeny}}},
+			"denied",
+		},
+		{
+			"needs approval", allowsWatchdog,
+			policy.Config{Actors: map[string]map[policy.Class]policy.Mode{policy.ActorAutomation: {policy.Safe: policy.ModeConfirm}}},
+			"cannot wait for approval",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
