@@ -1,0 +1,28 @@
+cmd/hearth/hub.go
+  s_18b57982fdff93::t_1a34b4ed3bf96f 35,418-421,487,687-688
+internal/hub/openwrt.go
+  s_18b57982fdff93::t_fb786bb245105b 1-112
+internal/hub/openwrt_test.go
+  s_18b57982fdff93::t_744239f65c69c6 18,151
+  s_18b57982fdff93::t_2031ff50dab472 1-17,19-150,152-172
+internal/hub/api.go
+  s_18b57982fdff93::t_a14acb2d9f6541 26,88,173,270-271
+internal/hub/server.go
+  s_18b57982fdff93::t_a14acb2d9f6541 21,104-106
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0a6e13614daea5d8c43b2d12a831a905c34b9681",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}

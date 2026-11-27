@@ -1,0 +1,81 @@
+internal/integrations/openwrt/client_test.go
+  s_18b57982fdff93::t_1d2bf2814dd6e6 1-247
+internal/integrations/openwrt/client.go
+  s_18b57982fdff93::t_945ae870fc9080 1-297
+internal/integrations/openwrt/manager.go
+  s_18b57982fdff93::t_4ef2591d79a8d4 1-550
+internal/store/partition.go
+  s_18b57982fdff93::t_0104a0aa6fe294 67,385
+  s_18b57982fdff93::t_bf770409f717a7 386
+cmd/hearth/carotation.go
+  s_18b57982fdff93::t_1494033829ce5d 17,71,75,99-101,118,137-138
+internal/store/networkhosts.go
+  s_18b57982fdff93::t_8873535720edb4 72-73
+internal/integrations/openwrt/openwrtmock/openwrtmock.go
+  s_18b57982fdff93::t_4becdc67829d85 1-258
+internal/store/carotation.go
+  s_18b57982fdff93::t_0a7a02eea88b51 380-381
+  s_18b57982fdff93::t_eff4a67307bd5c 422
+  s_18b57982fdff93::t_2b8d0bbd013d32 450
+  s_18b57982fdff93::t_f46101086b0847 349
+  s_18b57982fdff93::t_2be50aded50f6e 338-339
+  s_18b57982fdff93::t_527959c055d84a 356-358
+internal/integrations/openwrt/connection.go
+  s_18b57982fdff93::t_11729176874037 1-141
+internal/store/naturalid.go
+  s_18b57982fdff93::t_d42b717a110b73 25-27
+internal/store/command.go
+  s_18b57982fdff93::t_3b051084cab13d 858-861
+internal/integrations/openwrt/manager_test.go
+  s_18b57982fdff93::t_f1961644379cb3 222
+  s_18b57982fdff93::t_c02a278514e1ec 1-9,11-14,16-32,34-49,51-52,54-221,223-227,229-282,287-371
+  s_18b57982fdff93::t_521173bb564985 10,228,283-286
+  s_18b57982fdff93::t_f106fc578fc8df 15,33,50,53
+  s_18b57982fdff93::t_3e188cf020376a 372-389
+internal/store/store_test.go
+  s_18b57982fdff93::t_701639def1d064 86
+internal/discovery/import.go
+  s_18b57982fdff93::t_0e95ee387896a7 58-65
+  s_18b57982fdff93::t_6c72eacfd061ca 122-133
+  s_18b57982fdff93::t_82523bd229a8cf 151
+internal/integrations/openwrt/read.go
+  s_18b57982fdff93::t_a4336314fc5e24 8,15-16,95,309
+  s_18b57982fdff93::t_96b388300233d2 1-7,9-14,17-94,96-266,268-269,278-308
+  s_18b57982fdff93::t_531854c3ba22a5 267,270-277
+internal/store/carotation_test.go
+  s_18b57982fdff93::t_8567b0151df2f5 102,105-106,109
+  s_18b57982fdff93::t_71798280dc4839 125
+internal/store/openwrt.go
+  s_18b57982fdff93::t_2a18c30ba9a1ac 1-17,19-146
+  s_18b57982fdff93::t_698f1f5c1fab20 18
+cmd/hearth/backup.go
+  s_18b57982fdff93::t_1494033829ce5d 191
+internal/store/command_test.go
+  s_18b57982fdff93::t_fff880fc97d3cd 112-113,439-442
+internal/store/version.go
+  s_18b57982fdff93::t_9761b1f4169290 156-158
+internal/store/migrations/00037_openwrt_routers.sql
+  s_18b57982fdff93::t_2a18c30ba9a1ac 1-19
+internal/store/reads_test.go
+  s_18b57982fdff93::t_14e68545d66d75 33
+internal/policy/guardrails_test.go
+  s_18b57982fdff93::t_2c5ccf877e7673 221-223
+internal/policy/policy.go
+  s_18b57982fdff93::t_9532d1d8abb348 301-308,637-643
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "91536e82d178d806c79a78aa4cba124ba1594195",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
