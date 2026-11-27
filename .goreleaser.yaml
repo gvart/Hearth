@@ -153,3 +153,6 @@ release:
     name: Hearth
   # vX.Y.Z-rc.N (any semver pre-release suffix) is published as a pre-release.
   prerelease: auto
+  # Created as a draft: release.yml publishes it only once checksums.txt.sig,
+  # which agents need to upgrade (#359), is uploaded next to it.
+  draft: true

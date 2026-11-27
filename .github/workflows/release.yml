@@ -74,9 +74,15 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # goreleaser leaves the GitHub release a draft (.goreleaser.yaml
+      # release.draft): it is published below only once checksums.txt.sig is
+      # on it, so no published release lacks the signature agents need
+      # (#359). If a step fails in between, the release stays an unpublished
+      # draft: fix the cause and re-run, or publish it by hand after
+      # uploading the .sig. The images are pushed by goreleaser already.
       # Agents trust a release's checksums.txt only with this Ed25519
-      # signature (#359). The tool refuses a key agents do not trust, and
-      # never prints it.
+      # signature. The tool refuses a key agents do not trust, and never
+      # prints it.
       - name: Sign checksums.txt for the agents
         env:
           HEARTH_RELEASE_SIGNING_KEY: ${{ secrets.HEARTH_RELEASE_SIGNING_KEY }}
@@ -86,3 +92,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
         run: gh release upload "$TAG" dist/checksums.txt.sig
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # A pre-release (vX.Y.Z-rc.N) is never "latest"; a release is.
+          case "$TAG" in
+            *-*) gh release edit "$TAG" --draft=false ;;
+            *) gh release edit "$TAG" --draft=false --latest ;;
+          esac
