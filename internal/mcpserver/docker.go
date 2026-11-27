@@ -37,14 +37,14 @@ func (s *session) dockerTools() []tool {
 	return []tool{
 		newTool(policy.Read, "list_containers",
 			"List a device's Docker containers (with their Compose project and service) and images, through its agent; "+
-				"the device's agent must allow Docker (--allow-docker).",
+				"the device must have Containers on (read or control) in its Capabilities.",
 			s.listContainers),
 		newTool(policy.Read, "container_logs",
 			fmt.Sprintf("Read the last lines of a Docker container's log on a device, through its agent; at most %d lines.",
 				policy.MaxDockerLogTail),
 			s.containerLogs),
 		newTool(policy.Safe, "container_action",
-			"Start, stop or restart a Docker container on a device, through its agent; the device's agent must allow Docker (--allow-docker).",
+			"Start, stop or restart a Docker container on a device, through its agent; the device must have Containers on, at control, in its Capabilities.",
 			s.containerAction),
 	}
 }

@@ -124,7 +124,7 @@ only reachable from inside the device's network or on its localhost:
     every: 5s
 ```
 
-- The device's agent must allow it: `hearth agent run --allow-probe`, as for an
+- The device's agent must allow it: **Checks** on in its Capabilities card, as for an
   [automation check from a device](automations.md). The hub never sends a check beyond the ceiling
   the agent reports, and the agent refuses it again.
 - `timeout` is at most 1m.

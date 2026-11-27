@@ -238,6 +238,14 @@ const (
 	// DeviceShell opens an interactive shell on a device, on a terminal in
 	// the web UI, through its agent.
 	DeviceShell Action = "device.shell"
+	// DeviceCapabilitiesSet changes the capability ceiling the hub manages
+	// for a device (#346) without raising shell, exec, restart or Docker
+	// control: lowering anything, or raising logs, network edges, probes,
+	// scans or Docker reads.
+	DeviceCapabilitiesSet Action = "device.capabilities.set"
+	// DeviceCapabilitiesRaise is a change of that ceiling that raises shell,
+	// exec, restart or Docker control.
+	DeviceCapabilitiesRaise Action = "device.capabilities.raise"
 	// PanelSave creates or changes a guest or kiosk panel: its widgets and
 	// the actions they allow its guests.
 	PanelSave Action = "panel.save"
@@ -560,6 +568,14 @@ var rules = map[Action]rule{
 	// web UI, behind an admin session, may open one: never an automation
 	// or an MCP client.
 	DeviceShell: {class: Dangerous, actors: []string{ActorWeb}},
+	// A device's agent adds the ceiling the hub sets to its own flags, unless
+	// it runs with --local-ceiling, and enforces it itself. Lowering takes
+	// access away; logs, network edges, probes, scans and Docker reads only
+	// read. Raising a shell, exec, restart or Docker control lets the hub
+	// change the device: dangerous, and the web UI asks for the password
+	// again. Only an admin, on the hub host or behind the admin session.
+	DeviceCapabilitiesSet:   {class: Safe, actors: []string{ActorAdmin, ActorWeb}},
+	DeviceCapabilitiesRaise: {class: Dangerous, actors: []string{ActorAdmin, ActorWeb}},
 	// A panel shows a few entities and allows only read and safe actions on
 	// them, each decided again when a guest takes it. Sharing it hands out
 	// that much, and revoking or deleting only takes it away.

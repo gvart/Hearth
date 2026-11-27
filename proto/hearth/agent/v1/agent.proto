@@ -45,7 +45,25 @@ message HubMessage {
     ScanRequest scan_request = 8;
     DockerRequest docker_request = 9;
     Hubs hubs = 10;
+    // ceiling_config is the capability ceiling the hub manages for the
+    // device (#346), sent to agents of protocol minor 10 and later on every
+    // connect and on every change.
+    CeilingConfig ceiling_config = 11;
   }
+}
+
+// CeilingConfig is the capability ceiling the hub sets for a device: the
+// agent adds it to its own flags (the effective ceiling is their union),
+// saves it, and applies it at once, ending the shells and log streams it no
+// longer allows. An agent started with --local-ceiling ignores it. An empty
+// ceiling grants nothing beyond the flags.
+message CeilingConfig {
+  Ceiling ceiling = 1;
+  // version orders the configs of a device: the hybrid logical clock of the
+  // stored row, 0 when none was set. The hub never sends one older than the
+  // last it sent on the stream, and the agent ignores one older than the one
+  // it applied and saved, so a stale push cannot undo a lowering.
+  uint64 version = 2;
 }
 
 // ProtocolVersion is the agent<->hub protocol version. A major bump is incompatible;
@@ -75,16 +93,27 @@ message Hello {
   // ExecRequest beyond it, and to send any to an agent that does not report
   // it; the agent refuses again what is beyond it.
   Ceiling ceiling = 14;
+  // local_ceiling is the part of the ceiling the agent's own flags grant,
+  // which the hub cannot take away. Sent by agents of protocol minor 10 and
+  // later.
+  Ceiling local_ceiling = 15;
+  // ceiling_locked is set when the agent runs with --local-ceiling: it
+  // ignores the hub's CeilingConfig, so its flags are its whole ceiling.
+  // Sent by agents of protocol minor 10 and later.
+  bool ceiling_locked = 16;
 }
 
-// Ceiling is what a device's agent lets the hub run: its own configuration,
-// which the hub can never raise. An empty Ceiling allows nothing.
+// Ceiling is what a device's agent lets the hub run: its flags, and from
+// protocol minor 10 the CeilingConfig the hub set, unless the agent runs with
+// --local-ceiling. The agent enforces it itself. An empty Ceiling allows
+// nothing.
 message Ceiling {
   // exec are the programs the hub may run, matched exactly against
   // Command.argv[0], with any arguments.
   repeated string exec = 1;
   // restart are the services the hub may restart, as manager:name (see
-  // RestartService).
+  // RestartService), where name may be a glob (path.Match) such as "*" from
+  // protocol minor 10.
   repeated string restart = 2;
   // probe allows ProbeRequests: the hub may run HTTP, TCP and DNS checks
   // from this device. Reported by agents of protocol minor 3 and later.
@@ -113,6 +142,10 @@ message Ceiling {
   // a container's log, and start, stop and restart containers; nothing else
   // of the engine's API. Reported by agents of protocol minor 9 and later.
   bool docker = 8;
+  // docker_read allows the read DockerRequests only: listing containers and
+  // images and reading a container's log tail, no start, stop or restart.
+  // docker implies it. Reported by agents of protocol minor 10 and later.
+  bool docker_read = 9;
 }
 
 // Disk is a mounted filesystem.

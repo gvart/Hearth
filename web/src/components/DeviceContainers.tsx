@@ -2,31 +2,33 @@ import { useState } from 'react';
 import type { Device } from '../api/client.ts';
 import { useDocker, type DockerActionName, type DockerContainer } from '../api/docker.ts';
 import { formatBytes } from '../format.ts';
+import { CapabilitiesLink } from './DeviceCapabilities.tsx';
 import { DockerActionDialog } from './DockerActionDialog.tsx';
 import { DockerLogsDialog } from './DockerLogsDialog.tsx';
 import './DeviceContainers.css';
 
 /** The device's Docker or Podman stacks, containers and images, as its agent reads them now. */
 export function DeviceContainers({ device }: { device: Device }) {
-  if (!device.facts.ceiling?.docker) {
+  if (!device.facts.ceiling?.docker && !device.facts.ceiling?.docker_read) {
     return (
       <p className="muted small">
-        Not allowed. Start the agent with <code>--allow-docker</code> to list, start, stop and restart its Docker or
-        Podman containers here.
+        Off. Turn Containers on in <CapabilitiesLink>Capabilities</CapabilitiesLink> to list, start, stop and restart
+        its Docker or Podman containers here.
       </p>
     );
   }
   if (device.status !== 'online') {
     return <p className="muted small">The device is not online.</p>;
   }
-  return <ContainerTables deviceId={device.id} />;
+  return <ContainerTables deviceId={device.id} control={device.facts.ceiling.docker ?? false} />;
 }
 
 type Pending =
   | { kind: 'action'; action: DockerActionName; container: DockerContainer }
   | { kind: 'logs'; container: DockerContainer };
 
-function ContainerTables({ deviceId }: { deviceId: string }) {
+/** control: the agent allows start, stop and restart, not only reading. */
+function ContainerTables({ deviceId, control }: { deviceId: string; control: boolean }) {
   const q = useDocker(deviceId);
   const [pending, setPending] = useState<Pending | null>(null);
   const refresh = (
@@ -83,7 +85,7 @@ function ContainerTables({ deviceId }: { deviceId: string }) {
               </span>
             </h4>
           </div>
-          <ContainerTable containers={s.containers} onAction={onAction} onLogs={onLogs} />
+          <ContainerTable containers={s.containers} onAction={control ? onAction : undefined} onLogs={onLogs} />
         </div>
       ))}
       {d.containers.length ? (
@@ -93,7 +95,7 @@ function ContainerTables({ deviceId }: { deviceId: string }) {
               <h4 className="small">Other containers</h4>
             </div>
           ) : null}
-          <ContainerTable containers={d.containers} onAction={onAction} onLogs={onLogs} />
+          <ContainerTable containers={d.containers} onAction={control ? onAction : undefined} onLogs={onLogs} />
         </div>
       ) : null}
       {total === 0 ? <p className="muted small">No containers.</p> : null}
@@ -138,7 +140,8 @@ function ContainerTable({
   onLogs,
 }: {
   containers: DockerContainer[];
-  onAction: (action: DockerActionName, c: DockerContainer) => void;
+  /** Absent when the agent allows reading only. */
+  onAction?: (action: DockerActionName, c: DockerContainer) => void;
   onLogs: (c: DockerContainer) => void;
 }) {
   return (
@@ -164,7 +167,7 @@ function ContainerTable({
               <span className="sub">{c.status}</span>
             </td>
             <td className="row-actions">
-              {c.state === 'running' ? (
+              {!onAction ? null : c.state === 'running' ? (
                 <>
                   <ActionButton
                     label="Stop"

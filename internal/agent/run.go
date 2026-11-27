@@ -29,8 +29,8 @@ import (
 // Protocol version this agent speaks.
 const (
 	ProtocolMajor = 1
-	// 1: answers ExecRequest; 2: reports its capability ceiling; 3: answers ProbeRequest; 4: sends MetricsBatch; 5: streams logs (LogRequest); 6: answers ShellRequest; 7: answers ScanRequest; 8: sends NetEdges; 9: answers DockerRequest
-	ProtocolMinor = 9
+	// 1: answers ExecRequest; 2: reports its capability ceiling; 3: answers ProbeRequest; 4: sends MetricsBatch; 5: streams logs (LogRequest); 6: answers ShellRequest; 7: answers ScanRequest; 8: sends NetEdges; 9: answers DockerRequest; 10: takes CeilingConfig
+	ProtocolMinor = 10
 )
 
 const (
@@ -62,9 +62,12 @@ type Config struct {
 	NetEdgesInterval time.Duration
 	// readNetEdges, set by tests, replaces the platform's readNetEdges.
 	readNetEdges func() (*agentv1.NetEdges, error)
-	// Ceiling is what the hub may run on this device; the zero value allows
-	// nothing.
+	// Ceiling is what the agent's flags let the hub run on this device; the
+	// zero value allows nothing. The hub may add to it (ceiling.go).
 	Ceiling Ceiling
+	// LocalCeiling makes Ceiling the whole ceiling: the agent ignores the
+	// ceiling the hub sets, and a saved one (--local-ceiling).
+	LocalCeiling bool
 	// DockerSocket is the Docker or Podman engine's unix socket, for
 	// Ceiling.Docker; empty tries DefaultDockerSocket, then Podman's.
 	DockerSocket string
@@ -97,6 +100,18 @@ type runner struct {
 	scanning atomic.Bool
 	// docker reaches the container engine, for DockerRequests.
 	docker dockerEngine
+	// ceilings is the effective ceiling, read by every request.
+	ceilings *ceilings
+	// ceilingChanged wakes sendLoop to report a new ceiling at once.
+	ceilingChanged chan struct{}
+}
+
+// ceiling is the effective capability ceiling.
+func (r *runner) ceiling() Ceiling {
+	if r.ceilings == nil { // a runner a test made
+		return r.cfg.Ceiling
+	}
+	return r.ceilings.get()
 }
 
 // ErrRevoked is returned by Run when a hub that can vouch for it says this
@@ -147,7 +162,22 @@ func Run(ctx context.Context, cfg Config) error {
 		netEdgesInterval: cmp.Or(cfg.NetEdgesInterval, defaultNetEdgesInterval),
 
 		docker: dockerEngine{sockets: dockerSockets(cfg.DockerSocket)},
+
+		ceilingChanged: make(chan struct{}, 1),
 	}
+	var (
+		hubCeiling Ceiling
+		version    uint64
+	)
+	if !cfg.LocalCeiling {
+		// A file that cannot be read leaves the flags alone: the hub sends
+		// its ceiling again on connect.
+		if hubCeiling, version, err = readCeilingFile(cfg.DataDir); err != nil {
+			log.WarnContext(ctx, "ignoring the saved capability ceiling; using the flags only", "err", err)
+			hubCeiling, version = Ceiling{}, 0
+		}
+	}
+	r.ceilings = newCeilings(cfg.Ceiling, hubCeiling, version, cfg.LocalCeiling)
 	if cfg.readNetEdges != nil {
 		r.netEdges = cfg.readNetEdges
 	}
@@ -375,7 +405,9 @@ func (r *runner) hello(ctx context.Context) *agentv1.Hello {
 	h.ProtocolVersion = &agentv1.ProtocolVersion{Major: ProtocolMajor, Minor: ProtocolMinor}
 	h.DeviceId = r.id.deviceID // informational; the hub uses the certificate
 	h.AgentVersion = r.cfg.Version
-	h.Ceiling = r.cfg.Ceiling.proto()
+	h.Ceiling = r.ceiling().proto()
+	h.LocalCeiling = r.ceilings.local.proto()
+	h.CeilingLocked = r.ceilings.locked
 	return h
 }
 
@@ -403,7 +435,7 @@ func (r *runner) receive(ctx context.Context, hub string, stream *connect.BidiSt
 	}
 	reply := func(msg *agentv1.AgentMessage) { send(ctx, msg) }
 	// Every shell of the stream ends with it.
-	shells := newShellHost(r.cfg.Ceiling, r.log, execs, reply)
+	shells := newShellHost(r.ceiling(), r.log, execs, reply)
 	defer shells.closeAll()
 	for {
 		msg, err := stream.Receive()
@@ -414,7 +446,7 @@ func (r *runner) receive(ctx context.Context, hub string, stream *connect.BidiSt
 		case *agentv1.HubMessage_ExecRequest:
 			req := p.ExecRequest
 			execs.Go(func() {
-				res := r.cfg.Ceiling.execute(ctx, req)
+				res := r.ceiling().execute(ctx, req)
 				// Never log the arguments: they may carry secrets.
 				r.log.InfoContext(ctx, "exec request", "id", req.GetId(), "action", fmt.Sprintf("%T", req.GetAction()),
 					"denied", res.GetDenied(), "exit_code", res.GetExitCode())
@@ -423,7 +455,7 @@ func (r *runner) receive(ctx context.Context, hub string, stream *connect.BidiSt
 		case *agentv1.HubMessage_ProbeRequest:
 			req := p.ProbeRequest
 			execs.Go(func() {
-				res := r.cfg.Ceiling.probe(ctx, req)
+				res := r.ceiling().probe(ctx, req)
 				// Never log the target: a URL may carry credentials.
 				r.log.DebugContext(ctx, "probe request", "id", req.GetId(), "probe", fmt.Sprintf("%T", req.GetProbe()),
 					"denied", res.GetDenied(), "failed", res.GetError() != "")
@@ -432,7 +464,7 @@ func (r *runner) receive(ctx context.Context, hub string, stream *connect.BidiSt
 		case *agentv1.HubMessage_LogRequest:
 			req := p.LogRequest
 			if *logs == nil {
-				*logs = newLogStreams(r.cfg.Ceiling, r.log)
+				*logs = newLogStreams(r.ceiling(), r.log)
 			}
 			l := *logs
 			execs.Go(func() { l.stream(ctx, req, send) })
@@ -445,6 +477,16 @@ func (r *runner) receive(ctx context.Context, hub string, stream *connect.BidiSt
 		case *agentv1.HubMessage_Hubs:
 			// The masters changed since the Welcome.
 			r.learnHubs(ctx, hub, p.Hubs.GetUrls())
+		case *agentv1.HubMessage_CeilingConfig:
+			// Applied inline, so a request after it meets the new ceiling;
+			// what the new one no longer allows ends now.
+			if r.applyCeiling(ctx, p.CeilingConfig) {
+				c := r.ceiling()
+				shells.setCeiling(ctx, c)
+				if *logs != nil {
+					(*logs).setCeiling(ctx, c)
+				}
+			}
 		case *agentv1.HubMessage_ScanRequest:
 			req := p.ScanRequest
 			execs.Go(func() {
@@ -456,7 +498,7 @@ func (r *runner) receive(ctx context.Context, hub string, stream *connect.BidiSt
 		case *agentv1.HubMessage_DockerRequest:
 			req := p.DockerRequest
 			execs.Go(func() {
-				res := r.docker.docker(ctx, r.cfg.Ceiling, req)
+				res := r.docker.docker(ctx, r.ceiling(), req)
 				r.log.InfoContext(ctx, "docker request", "id", req.GetId(), "op", dockerOp(req),
 					"denied", res.GetDenied(), "error", res.GetError())
 				reply(&agentv1.AgentMessage{Payload: &agentv1.AgentMessage_DockerResult{DockerResult: res}})
@@ -484,7 +526,7 @@ func (r *runner) sendLoop(ctx context.Context, stream *connect.BidiStreamForClie
 	var edgesC <-chan time.Time
 	edges := time.NewTimer(min(netEdgesFirst, r.netEdgesInterval))
 	defer edges.Stop()
-	if r.cfg.Ceiling.NetEdges {
+	if r.ceiling().NetEdges {
 		edgesC = edges.C
 	}
 	for {
@@ -496,6 +538,16 @@ func (r *runner) sendLoop(ctx context.Context, stream *connect.BidiStreamForClie
 			msg = &agentv1.AgentMessage{Payload: &agentv1.AgentMessage_Heartbeat{Heartbeat: r.heartbeat(now)}}
 		case <-facts.C:
 			msg = &agentv1.AgentMessage{Payload: &agentv1.AgentMessage_Facts{Facts: r.hello(ctx)}}
+		case <-r.ceilingChanged:
+			// Report the new ceiling at once: the hub checks against it.
+			msg = &agentv1.AgentMessage{Payload: &agentv1.AgentMessage_Facts{Facts: r.hello(ctx)}}
+			switch on := r.ceiling().NetEdges; {
+			case on && edgesC == nil:
+				edges.Reset(min(netEdgesFirst, r.netEdgesInterval))
+				edgesC = edges.C
+			case !on:
+				edgesC = nil
+			}
 		case now := <-metrics.C:
 			samples := r.metrics.collect(ctx, now)
 			if len(samples) == 0 {
@@ -504,6 +556,9 @@ func (r *runner) sendLoop(ctx context.Context, stream *connect.BidiStreamForClie
 			msg = &agentv1.AgentMessage{Payload: &agentv1.AgentMessage_MetricsBatch{MetricsBatch: &agentv1.MetricsBatch{Samples: samples}}}
 		case <-edgesC:
 			edges.Reset(r.netEdgesInterval)
+			if !r.ceiling().NetEdges {
+				continue
+			}
 			e, err := r.netEdges()
 			if err != nil {
 				r.log.WarnContext(ctx, "read network edges", "err", err)
@@ -530,4 +585,50 @@ func (r *runner) heartbeat(now time.Time) *agentv1.Heartbeat {
 		hb.Uptime = durationpb.New(now.Sub(r.boot))
 	}
 	return hb
+}
+
+// applyCeiling takes the ceiling the hub set for this device: unless the
+// agent runs with --local-ceiling, it checks it, saves it and makes it the
+// hub's part of the effective ceiling. It reports whether the effective
+// ceiling changed, and then wakes sendLoop to report it.
+func (r *runner) applyCeiling(ctx context.Context, cfg *agentv1.CeilingConfig) bool {
+	if r.ceilings.locked {
+		r.log.InfoContext(ctx, "capability ceiling from the hub ignored: the agent runs with --local-ceiling")
+		return false
+	}
+	if v := cfg.GetVersion(); v < r.ceilings.version {
+		// A hub read it before a later change this agent already applied:
+		// taking it would undo that change, a lowering included.
+		r.log.InfoContext(ctx, "older capability ceiling from the hub ignored", "version", v, "applied", r.ceilings.version)
+		return false
+	}
+	c, err := checkHubCeiling(ceilingOf(cfg.GetCeiling()))
+	if err != nil {
+		r.log.WarnContext(ctx, "capability ceiling from the hub refused", "err", err)
+		return false
+	}
+	before, beforeVersion := r.ceiling(), r.ceilings.version
+	changed := r.ceilings.setHub(c, cfg.GetVersion())
+	if !changed && r.ceilings.version == beforeVersion {
+		return false
+	}
+	// Saved with its version even when only that moved, so that after a
+	// restart an older config is still refused.
+	if err := writeCeilingFile(r.cfg.DataDir, c, cfg.GetVersion()); err != nil {
+		// Not fatal: the ceiling in memory applies, and the hub sends it
+		// again on the next connect.
+		r.log.WarnContext(ctx, "save the capability ceiling", "err", err)
+	}
+	after := r.ceiling()
+	if !changed || after.equal(before) {
+		return false
+	}
+	r.log.InfoContext(ctx, "capability ceiling changed by the hub", "exec", len(after.Exec), "restart", len(after.Restart),
+		"probe", after.Probe, "logs", len(after.Logs), "shell", after.Shell, "scan", len(after.Scan),
+		"net_edges", after.NetEdges, "docker", after.Docker, "docker_read", after.DockerRead)
+	select {
+	case r.ceilingChanged <- struct{}{}:
+	default:
+	}
+	return true
 }

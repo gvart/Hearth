@@ -183,8 +183,8 @@ it, but an enrolled device on that network can. Name the device after the subnet
 the same scan (ARP sweep, mDNS, LAN reverse DNS) there and sends the hosts it found to the hub:
 
 ```sh
-# on the device on 10.0.5.0/24: let the hub sweep that subnet from here
-hearth agent run --allow-scan 10.0.5.0/24
+# let the hub sweep that subnet from the device nas (Network scan in its Capabilities card, or:)
+hearth device capabilities <device-id> --set scan=10.0.5.0/24
 # on the hub: the LAN from the hub itself, the VLAN from the device named nas
 hearth hub --discover-subnet 192.168.1.0/24 --discover-subnet 10.0.5.0/24@nas
 ```
@@ -192,9 +192,11 @@ hearth hub --discover-subnet 192.168.1.0/24 --discover-subnet 10.0.5.0/24@nas
 `CIDR@device` names the device by id, name or hostname. Each subnet has one scanner, the hub or a
 device; a device's subnets are limited to 1024 addresses, as the hub's are.
 
-**The device has the last word.** Scanning is off on every agent until `--allow-scan` names a
-subnet (repeatable). A scan is sent only if each of its subnets lies within one the agent allows:
-`--allow-scan 10.0.0.0/16` allows `10.0.5.0/24`, `--allow-scan 10.0.5.0/25` does not. The hub checks
+**The device has the last word.** Scanning is off on every agent until its
+[capability ceiling](guardrails.md#device-capability-ceiling) names a subnet: **Network scan** in its
+Capabilities card (on is the private ranges, or **Restrict to…** some), or the agent's own
+`--allow-scan` flag (repeatable). A scan is sent only if each of its subnets lies within one the
+agent allows: `10.0.0.0/16` allows `10.0.5.0/24`, `10.0.5.0/25` does not. The hub checks
 the ceiling the agent reported before sending, and the agent checks again before it sends a single
 datagram. A scan beyond the ceiling is denied and audited, like any other action beyond it.
 The agent takes any IPv4 CIDR, `--allow-scan 0.0.0.0/0` included, which lets the hub choose any

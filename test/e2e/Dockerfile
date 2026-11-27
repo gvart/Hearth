@@ -25,3 +25,7 @@ RUN set -e; case "$(uname -m)" in aarch64) arch=arm64 ;; x86_64) arch=amd64 ;; *
 # hub healthcheck needs `nc`.
 FROM alpine:3.22
 COPY --from=build /out/hearth /usr/bin/hearth
+# A journalctl stand-in for the logs step (capabilities_test.go): alpine has no
+# systemd. It prints one entry in journalctl's export format, then follows.
+RUN printf '#!/bin/sh\nprintf "__REALTIME_TIMESTAMP=1700000000000000\\nMESSAGE=hearth e2e log line\\n\\n"\nexec sleep 3600\n' >/usr/bin/journalctl && \
+    chmod 0755 /usr/bin/journalctl

@@ -30,13 +30,45 @@ func WithinCeiling(c *agentv1.Ceiling, req *agentv1.ExecRequest) error {
 		return nil
 	case *agentv1.ExecRequest_Restart:
 		service := a.Restart.GetManager() + ":" + a.Restart.GetName()
-		if !slices.Contains(c.GetRestart(), service) {
+		if a.Restart.GetName() == "" || !matchEntry(c.GetRestart(), a.Restart.GetManager(), a.Restart.GetName()) {
 			return fmt.Errorf("restart %s: %w", service, ErrBeyondCeiling)
 		}
 		return nil
 	}
 	return errors.New("unknown action")
 }
+
+// matchEntry reports whether one of entries, each manager:pattern, allows
+// name of manager: the pattern is a name or a glob (path.Match, so "*"
+// allows every name). A requested name with a glob character of its own is
+// never allowed: systemctl and journalctl expand it, so web*.service would
+// reach every unit a grant of web?.service matched.
+func matchEntry(entries []string, manager, name string) bool {
+	if strings.ContainsAny(name, globChars) {
+		return false
+	}
+	for _, e := range entries {
+		m, pattern, ok := strings.Cut(e, ":")
+		if !ok || m != manager {
+			continue
+		}
+		if ok, err := path.Match(pattern, name); err == nil && ok {
+			return true
+		}
+	}
+	return false
+}
+
+// IsPattern reports whether a manager:pattern ceiling entry is a glob rather
+// than one name: it allows a set of names, and names no one service.
+func IsPattern(entry string) bool {
+	_, pattern, _ := strings.Cut(entry, ":")
+	return strings.ContainsAny(pattern, globChars)
+}
+
+// globChars are the characters that make a name a glob (path.Match), and
+// that systemctl and journalctl expand.
+const globChars = `*?[\`
 
 // ProbeWithinCeiling checks a ProbeRequest against a device's capability
 // ceiling c, as the hub does before it sends one and the agent does again
@@ -59,14 +91,8 @@ func LogsWithinCeiling(c *agentv1.Ceiling, src *agentv1.LogSource) error {
 	if src.GetManager() == "" || src.GetName() == "" {
 		return errors.New("empty log source")
 	}
-	for _, e := range c.GetLogs() {
-		manager, pattern, ok := strings.Cut(e, ":")
-		if !ok || manager != src.GetManager() {
-			continue
-		}
-		if m, err := path.Match(pattern, src.GetName()); err == nil && m {
-			return nil
-		}
+	if matchEntry(c.GetLogs(), src.GetManager(), src.GetName()) {
+		return nil
 	}
 	return fmt.Errorf("logs %s:%s: %w", src.GetManager(), src.GetName(), ErrBeyondCeiling)
 }
@@ -135,12 +161,13 @@ func ValidContainer(ref string) bool {
 
 // DockerWithinCeiling checks a DockerRequest against a device's capability
 // ceiling c, as the hub does before it sends one and the agent does again
-// before it asks the engine. It returns an error wrapping ErrBeyondCeiling
-// unless c allows docker, and one wrapping ErrDenied for a request no agent
-// takes: an unknown operation or verb, or an invalid container. A nil c
-// allows nothing.
+// before it asks the engine. Listing and reading a log need docker or
+// docker_read; a start, stop or restart needs docker. It returns an error
+// wrapping ErrBeyondCeiling unless c allows req, and one wrapping ErrDenied
+// for a request no agent takes: an unknown operation or verb, or an invalid
+// container. A nil c allows nothing.
 func DockerWithinCeiling(c *agentv1.Ceiling, req *agentv1.DockerRequest) error {
-	if !c.GetDocker() {
+	if !c.GetDocker() && !c.GetDockerRead() {
 		return fmt.Errorf("docker: %w", ErrBeyondCeiling)
 	}
 	var container string
@@ -148,6 +175,9 @@ func DockerWithinCeiling(c *agentv1.Ceiling, req *agentv1.DockerRequest) error {
 	case *agentv1.DockerRequest_List:
 		return nil
 	case *agentv1.DockerRequest_Action:
+		if !c.GetDocker() {
+			return fmt.Errorf("docker %s: read only: %w", op.Action.GetVerb(), ErrBeyondCeiling)
+		}
 		if !slices.Contains(DockerVerbs, op.Action.GetVerb()) {
 			return fmt.Errorf("docker %q: not a container action (start, stop, restart): %w", op.Action.GetVerb(), ErrDenied)
 		}
@@ -159,6 +189,47 @@ func DockerWithinCeiling(c *agentv1.Ceiling, req *agentv1.DockerRequest) error {
 	}
 	if !ValidContainer(container) {
 		return fmt.Errorf("docker: invalid container %q: %w", container, ErrDenied)
+	}
+	return nil
+}
+
+// ceilingManagers are the service managers a logs or restart entry names.
+var ceilingManagers = []string{"systemd", "systemd-user", "docker"}
+
+// CheckHubCeiling checks a ceiling the hub sets for a device (#346), entry
+// by entry, as the agent checks its flags: programs are absolute paths,
+// matched exactly; logs and restart entries are manager:pattern with
+// manager systemd, systemd-user or docker and pattern a name or a glob; scan
+// entries are IPv4 subnets. The hub checks it before it stores it, and the
+// agent again before it applies it.
+func CheckHubCeiling(c *agentv1.Ceiling) error {
+	for _, e := range c.GetExec() {
+		if !strings.HasPrefix(e, "/") || path.Clean(e) != e {
+			return fmt.Errorf("exec entry %q: want an absolute path", e)
+		}
+	}
+	entries := func(what string, list []string) error {
+		for _, e := range list {
+			manager, pattern, ok := strings.Cut(e, ":")
+			if !ok || pattern == "" || !slices.Contains(ceilingManagers, manager) {
+				return fmt.Errorf("%s entry %q: want manager:name with manager one of %s", what, e, strings.Join(ceilingManagers, ", "))
+			}
+			if _, err := path.Match(pattern, ""); err != nil {
+				return fmt.Errorf("%s entry %q: %w", what, e, err)
+			}
+		}
+		return nil
+	}
+	if err := entries("logs", c.GetLogs()); err != nil {
+		return err
+	}
+	if err := entries("restart", c.GetRestart()); err != nil {
+		return err
+	}
+	for _, e := range c.GetScan() {
+		if p, err := netip.ParsePrefix(e); err != nil || !p.Addr().Is4() {
+			return fmt.Errorf("scan entry %q: want an IPv4 subnet such as 192.168.1.0/24", e)
+		}
 	}
 	return nil
 }

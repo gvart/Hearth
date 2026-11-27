@@ -306,20 +306,22 @@ Two gates stand before anything runs on a device, and both must agree:
   `dangerous_automations` in the policy file; in a cluster, give every hub the same). Without the
   grant the action is denied, or held for approval if the policy file says `confirm` (see
   [guardrails.md](guardrails.md)).
-- **The device's capability ceiling.** An agent runs only what its own flags allow, and nothing by
+- **The device's capability ceiling.** An agent runs only what its ceiling allows, and nothing by
   default. It reports its ceiling to the hub, which refuses anything beyond it before sending it
-  (and denies it in policy), and the agent refuses it again. The hub can never raise it:
+  (and denies it in policy), and the agent refuses it again. Turn on what an automation needs in the
+  device's **Capabilities** card, or from a hub host:
 
   ```sh
-  hearth agent run --allow-restart systemd:pihole-FTL.service --allow-restart docker:jellyfin \
-    --allow-exec /usr/bin/df
+  hearth device capabilities <device-id> --set restart=systemd:pihole-FTL.service,docker:jellyfin \
+    --set exec=/usr/bin/df
   ```
 
-  `--allow-exec` matches the command's first word exactly as the automation writes it, with any
-  arguments. `--allow-restart` takes `systemd:UNIT`, `systemd-user:UNIT` or `docker:CONTAINER`.
-  `--allow-probe` lets checks run from the device (see above), and
-  [runbook](runbooks.md) check steps that set `from` too. On
-  a systemd install, add the flags to `ExecStart=` with `systemctl edit hearth-agent`.
+  **Run programs** matches the command's first word exactly as the automation writes it, with any
+  arguments. **Restart services** takes `systemd:UNIT`, `systemd-user:UNIT` or `docker:CONTAINER`, a
+  glob in the name included. **Checks** lets checks run from the device (see above), and
+  [runbook](runbooks.md) check steps that set `from` too. The agent's own flags (`--allow-exec`,
+  `--allow-restart`, `--allow-probe`) add the same from the device; see
+  [Guardrails](guardrails.md#device-capability-ceiling).
 
 A denial by either gate stops the run with status `denied`, shown in `hearth automation runs`, and
 is in the audit log with actor `automation/<id>`. A failed action (non-zero exit, a non-2xx answer,

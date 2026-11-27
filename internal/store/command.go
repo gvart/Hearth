@@ -849,6 +849,8 @@ func DecodeCommand(b []byte) (Command, error) {
 		cmd, err = decodeAs[PutConfigDocs](env.Cmd)
 	case DeleteConfigDoc{}.Op():
 		cmd, err = decodeAs[DeleteConfigDoc](env.Cmd)
+	case SetDeviceCeiling{}.Op():
+		cmd, err = decodeAs[SetDeviceCeiling](env.Cmd)
 	case SetDeviceRoute{}.Op():
 		cmd, err = decodeAs[SetDeviceRoute](env.Cmd)
 	default:

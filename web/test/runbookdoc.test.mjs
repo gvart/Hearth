@@ -122,7 +122,7 @@ test('a file that is not YAML says where, and has no steps', () => {
 
 test('what a device does not allow is a warning, not an error', () => {
   assert.deepEqual(errors(starter.replace('docker:pihole', 'docker:jellyfin')), [
-    "warning L17 pi5's agent does not allow this restart. Start it with --allow-restart docker:jellyfin.",
+    "warning L17 pi5's agent does not allow this restart. Turn Restart services on in its Capabilities.",
   ]);
   assert.deepEqual(errors(starter, []), [
     'warning L16 No device called "pi5" is enrolled on this hub. Steps that name it are denied until one is.',
@@ -131,7 +131,7 @@ test('what a device does not allow is a warning, not an error', () => {
     .replace('type: restart', 'type: exec')
     .replace('service: docker:pihole', 'command: [/bin/sh, -c, "echo hi"]');
   assert.deepEqual(errors(exec), [
-    "warning L17 pi5's agent does not allow /bin/sh. Start it with --allow-exec /bin/sh.",
+    "warning L17 pi5's agent does not allow /bin/sh. Add it to Run programs in its Capabilities.",
   ]);
   const a = analyze(exec, [pi5]);
   assert.equal(a.steps[1].dangerous, true);

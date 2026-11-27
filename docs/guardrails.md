@@ -7,7 +7,7 @@ Every action, from the CLI, the web UI, an automation or an MCP client, goes thr
 the audit log. Three guardrails sit on top of the built-in action table:
 
 - a per-class **policy file**: allow, hold for approval (`confirm`), or deny;
-- the device's **capability ceiling**, which the hub can never raise;
+- the device's **capability ceiling**, which the agent enforces itself;
 - a **dry run** for every action.
 
 ## Policy file
@@ -227,15 +227,51 @@ approval waits as it would anyway.
 
 ## Device capability ceiling
 
-An agent runs only what its own flags allow (`--allow-exec`, `--allow-restart`, `--allow-probe`, `--allow-shell`, `--allow-scan`, `--allow-net-edges`, `--allow-docker`, see
-[automations.md](automations.md)) and reports that ceiling to the hub with its facts. The hub
-denies an action beyond the reported ceiling in policy, before it could be held for approval, and
-never sends it; the agent checks again before running anything. Agents older than this release
-report no ceiling, and the hub sends them no actions until they are upgraded.
+An agent runs only what its capability ceiling allows, and nothing by default. The ceiling has two
+parts, and the agent uses both:
+
+- **Set on the hub.** Open the device and use its **Capabilities** card, or the CLI on a hub host:
+
+  ```sh
+  hearth device capabilities <device-id>               # what is on, and where it is set
+  hearth device capabilities <device-id> --set logs=on --set docker=read
+  hearth device capabilities <device-id> --set restart=docker:jellyfin,systemd:pihole-FTL.service
+  hearth device capabilities <device-id> --set exec=/usr/bin/df --set shell=on
+  hearth device capabilities <device-id> --set shell=off
+  ```
+
+  Each capability is on or off. On is all of it (every log source, every service, the private IPv4
+  ranges for a scan); **Restrict to…** names only some, and a name may be a glob (`docker:*`,
+  `systemd:pihole-*`). Programs have no "all": each is an absolute path, run with any arguments.
+  Containers are off, **read** (list them and read their logs) or **control** (start, stop and
+  restart too). The agent applies a change at once, with no restart: it saves it to
+  `<data-dir>/ceiling.json` (0600), reports its new facts, and ends a terminal or a log stream it no
+  longer allows.
+- **Set on the device.** The agent's own flags (`--allow-exec`, `--allow-restart`, `--allow-probe`,
+  `--allow-logs`, `--allow-shell`, `--allow-scan`, `--allow-net-edges`, `--allow-docker`, see
+  [automations.md](automations.md)) add to what the hub sets. The card shows them as **set on the
+  device**: the hub cannot take them away.
+
+Changing it is the policy action `device.capabilities.set` (`safe`: lowering anything, and raising
+logs, checks, a scan, neighbours or reading containers) or `device.capabilities.raise` (`dangerous`:
+raising a terminal, programs, restarts or container control, which also asks for the admin password
+again). Only an admin, from the web UI or a hub host, may take either; every change is audited,
+refusals too. The agent checks each ceiling the hub sends (absolute program paths, valid globs and
+subnets) and refuses a bad one whole.
+
+Install a device with `--local-ceiling` (`install.sh --local-ceiling`, or `hearth agent run
+--local-ceiling`) and its agent ignores what the hub sets: its flags are its whole ceiling, and its
+card is read-only. Use it where nothing on the hub should ever raise what the device allows; the
+[Talos DaemonSet](talos.md) runs this way.
+
+The agent reports its ceiling to the hub with its facts. The hub denies an action beyond the
+reported ceiling in policy, before it could be held for approval, and never sends it; the agent
+checks again before running anything. Agents older than this release take no ceiling from the hub:
+their card asks to upgrade them first.
 
 ## Dry runs
 
-- CLI: `--dry-run` on `token create`, `device revoke`, `mcp token create|revoke` and the `cluster`
+- CLI: `--dry-run` on `token create`, `device revoke`, `device capabilities --set`, `mcp token create|revoke` and the `cluster`
   commands that change something. The decision is audited with the result `dry-run` and printed; nothing is done.
 - API: `POST /api/v1/tokens` with `"dry_run": true` answers `{"dry_run": true, "decision": ...}`.
 - Kubernetes actions: `"dry_run": true` plans the action (see [kubernetes.md](kubernetes.md)) and

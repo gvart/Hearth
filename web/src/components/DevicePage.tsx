@@ -17,6 +17,7 @@ import {
   relativeTime,
   statusLabel,
 } from '../format.ts';
+import { DeviceCapabilities } from './DeviceCapabilities.tsx';
 import { DeviceCharts } from './DeviceCharts.tsx';
 import { DeviceContainers } from './DeviceContainers.tsx';
 import { DeviceHubSection } from './DeviceHub.tsx';
@@ -42,7 +43,7 @@ function useNow(intervalMs: number) {
 /**
  * One device on a page of its own (#/devices/<id>): what it is doing now, what
  * it is, and what its agent lets the hub do. A part the agent does not allow is
- * not given a card; one card at the end names those and the flag that turns each on.
+ * not given a card; the Capabilities card turns each on.
  */
 export function DevicePage({ id }: { id: string }) {
   const devices = useDevices();
@@ -243,14 +244,7 @@ export function DevicePage({ id }: { id: string }) {
           </Section>
         )}
 
-        {off.flags.length > 0 ? (
-          <Section title="Not turned on">
-            <p className="muted small">The agent on this device does not allow these. Start it with the flag to turn one on.</p>
-            {off.flags.map((x) => (
-              <Row key={x.flag} k={x.what} v={<code>{x.flag}</code>} />
-            ))}
-          </Section>
-        ) : null}
+        <DeviceCapabilities device={device} />
 
         <DeviceHubSection device={device} />
 
@@ -325,7 +319,7 @@ function TerminalButton({ device }: { device: Device }) {
     device.status !== 'online'
       ? 'The device is not online'
       : !device.facts.ceiling?.shell
-        ? 'Its agent does not allow shells: start it with --allow-shell'
+        ? 'The terminal is off: turn it on in Capabilities below'
         : !terminalTransportAllowed()
           ? 'Terminals need HTTPS, or a browser on the hub itself'
           : '';

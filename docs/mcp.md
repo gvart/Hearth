@@ -83,14 +83,14 @@ Over plain HTTP the token crosses the LAN in the clear, as the web session does.
 token's scope: a read token runs only read commands.
 
 `restart_service` and `exec_command` reach the device through its agent, within the agent's own
-ceiling (`--allow-restart`, `--allow-exec`, see [automations.md](automations.md)): a service or
+ceiling (**Restart services** and **Run programs** in its Capabilities, see [guardrails.md](guardrails.md#device-capability-ceiling)): a service or
 program the agent does not allow is denied before anything is sent. `exec_command` answers with the
 exit code, not the output. The command it runs is in the approval and the audit log, so the
 operator sees what they approve: keep secrets out of commands.
 
 `list_containers`, `container_logs` and `container_action` reach the device's Docker or Podman
 engine through its agent, as the device page's **Containers** does (see [docker.md](docker.md)), and
-only when its ceiling allows Docker (`--allow-docker`): otherwise they are denied before anything is
+only when its ceiling allows Docker (**Containers** in its Capabilities card; `container_action` needs control): otherwise they are denied before anything is
 sent. `list_containers` shows each container with its Compose project and service, and the images.
 `container_logs` reads the last lines of a container's log, 100 by default and at most 200; every
 read is audited, as a log may carry secrets. `container_action` starts, stops or restarts one

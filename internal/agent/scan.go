@@ -51,7 +51,7 @@ func (r *runner) scan(ctx context.Context, req *agentv1.ScanRequest) *agentv1.Sc
 		res.Error = err.Error()
 		return res
 	}
-	if err := policy.ScanWithinCeiling(r.cfg.Ceiling.proto(), subnets); err != nil {
+	if err := policy.ScanWithinCeiling(r.ceiling().proto(), subnets); err != nil {
 		res.Denied, res.Error = true, err.Error()
 		return res
 	}

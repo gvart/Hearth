@@ -73,7 +73,7 @@ func (s *agentSession) checkShell(device string) error {
 	c := s.ceiling
 	s.mu.Unlock()
 	if err := policy.ShellWithinCeiling(c); err != nil {
-		return fmt.Errorf("device %s: %w (start its agent with --allow-shell)", device, err)
+		return fmt.Errorf("device %s: %w (turn Terminal on in its Capabilities)", device, err)
 	}
 	return nil
 }

@@ -3,6 +3,7 @@
 // (web/test/panels.test.mjs). See docs/panels.md.
 
 import type { Device, Panel, PanelInput } from './api/client.ts';
+import { isPattern } from './capabilities.ts';
 
 /** The path of a share link; the token follows. */
 export const panelRoute = '/p/';
@@ -29,10 +30,12 @@ export function shareURL(origin: string, path: string, kiosk: boolean): string {
 
 /**
  * The services a panel may offer to restart on a device: those its agent
- * allows (--allow-restart). The hub checks the ceiling again on every action.
+ * allows by name (Restart services in its Capabilities); a glob such as
+ * docker:* names no one service. The hub checks the ceiling again on every
+ * action.
  */
 export function restartServices(d: Device | undefined): string[] {
-  return [...(d?.facts.ceiling?.restart ?? [])].sort();
+  return (d?.facts.ceiling?.restart ?? []).filter((e) => !isPattern(e)).sort();
 }
 
 /** How long a new share link lasts. */

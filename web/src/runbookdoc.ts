@@ -5,6 +5,7 @@
 // See docs/runbooks.md and docs/automations.md for the rules it mirrors.
 
 import { isMap, isScalar, isSeq, LineCounter, parseDocument, type Node } from 'yaml';
+import { allowsService } from './capabilities.ts';
 
 export interface Problem {
   line: number;
@@ -331,7 +332,7 @@ export function analyze(source: string, devices: DeviceCeiling[]): Analysis {
         return undefined;
       }
       if (need === 'probe' && !dv.probe) {
-        flag(o, k, `${name}'s agent does not run checks. Start it with --allow-probe.`, 'warning');
+        flag(o, k, `${name}'s agent does not run checks. Turn Checks on in its Capabilities.`, 'warning');
       }
       return dv;
     };
@@ -375,11 +376,11 @@ export function analyze(source: string, devices: DeviceCeiling[]): Analysis {
       if ((kind === 'restart' || kind === 'exec') && ac.device) {
         const dv = device(ac, 'device');
         const name = fill(ac.device);
-        if (dv && kind === 'restart' && ac.service && !dv.restart.includes(fill(ac.service))) {
+        if (dv && kind === 'restart' && ac.service && !allowsService(dv.restart, fill(ac.service))) {
           flag(
             ac,
             'service',
-            `${name}'s agent does not allow this restart. Start it with --allow-restart ${fill(ac.service)}.`,
+            `${name}'s agent does not allow this restart. Turn Restart services on in its Capabilities.`,
             'warning',
           );
         }
@@ -388,7 +389,7 @@ export function analyze(source: string, devices: DeviceCeiling[]): Analysis {
           flag(
             ac,
             'command',
-            `${name}'s agent does not allow ${program}. Start it with --allow-exec ${program}.`,
+            `${name}'s agent does not allow ${program}. Add it to Run programs in its Capabilities.`,
             'warning',
           );
         }
@@ -910,7 +911,7 @@ export const guide: Record<GuideKey, GuideEntry> = {
       ['timeout', 'Optional: 1m, at most 10m.'],
     ],
     notes: [
-      'The device has the last word. Its agent restarts only what it was started with, such as --allow-restart docker:pihole.',
+      'The device has the last word. Its agent restarts only what Restart services allows in its Capabilities.',
     ],
   },
   exec: {
@@ -923,7 +924,7 @@ export const guide: Record<GuideKey, GuideEntry> = {
       ['timeout', 'Optional: 1m, at most 10m.'],
     ],
     notes: [
-      'Allow the program on the device first: hearth agent run --allow-exec /usr/local/bin/backup.sh. The path must match exactly.',
+      'Allow the program first: add its path, such as /usr/local/bin/backup.sh, to Run programs in the device\'s Capabilities. The path must match exactly.',
       grant,
       'The step fails when the program exits with a non-zero code.',
     ],
@@ -938,7 +939,7 @@ export const guide: Record<GuideKey, GuideEntry> = {
       ['timeout', 'Optional: 1m, at most 10m.'],
     ],
     notes: [
-      'The agent must allow /bin/sh, and an agent that may run sh may run anything. Remove --allow-exec /bin/sh again after the run, or keep the script as a file and allow only that file.',
+      'The agent must allow /bin/sh, and an agent that may run sh may run anything. Take /bin/sh out of Run programs again after the run, or keep the script as a file and allow only that file.',
       grant,
     ],
   },
@@ -1004,7 +1005,7 @@ export const guide: Record<GuideKey, GuideEntry> = {
       ['within', 'How long to keep trying.'],
       ['every', 'How often.'],
     ],
-    notes: ['From a device, the agent must be started with --allow-probe.'],
+    notes: ['From a device, Checks must be on in its Capabilities.'],
   },
   dns: {
     title: 'Check: DNS resolves',

@@ -18,9 +18,9 @@ Sign in, open **Panels** and choose **New panel**.
 1. Give it a name, such as `Living room`.
 2. Add the devices it shows, in the order you want. Reorder them with the arrows.
 3. For each device, tick the services a guest may restart. The list holds what the device's agent
-   allows (`hearth agent run --allow-restart docker:jellyfin`, see
-   [guardrails.md](guardrails.md#device-capability-ceiling)). A device whose agent allows no
-   restarts is shown read-only.
+   allows by name (**Restart services**, **Restrict to…** `docker:jellyfin` in the device's
+   Capabilities card, see [guardrails.md](guardrails.md#device-capability-ceiling)); a glob such as
+   `docker:*` names no one service. A device whose agent allows no restart by name is shown read-only.
 4. **Save panel**.
 
 A guest sees each device's name, whether it is online, and when it was last seen if not. Not its

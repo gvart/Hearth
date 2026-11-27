@@ -10,16 +10,17 @@ are written. Close the view and the device stops reading.
 ## Allow a log on the device
 
 Logs can hold secrets (tokens in URLs, passwords in a failed command line), so an agent streams
-nothing unless its own `--allow-logs` flag names the source. Like `--allow-exec` and
-`--allow-restart`, it is the device's [capability ceiling](concepts.md#the-devices-ceiling): nothing
-on the hub can raise it.
+nothing until its [capability ceiling](guardrails.md#device-capability-ceiling) allows the source.
+Turn **Logs** on in the device's **Capabilities** card (every source), or **Restrict to…** some. From
+a hub host:
 
 ```sh
-hearth agent run \
-  --allow-logs systemd:pihole-FTL.service \
-  --allow-logs 'docker:*' \
-  --allow-logs 'systemd-user:backup-*'
+hearth device capabilities <device-id> --set logs=on
+hearth device capabilities <device-id> --set 'logs=systemd:pihole-FTL.service,docker:*,systemd-user:backup-*'
 ```
+
+The agent applies it at once, and ends a stream it no longer allows. Its own `--allow-logs` flag,
+repeatable, allows a source from the device instead.
 
 Each entry is `manager:name`, where the name may be a glob (`*`, `?`, `[...]`):
 

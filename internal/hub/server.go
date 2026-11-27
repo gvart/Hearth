@@ -187,6 +187,7 @@ func NewHandler(cfg Config) http.Handler {
 	stream.ca, stream.rotations, stream.renew = cfg.CA, cfg.Store.CARotations(), cfg.Store.Certs()
 	stream.metrics = cfg.Metrics
 	stream.netEdges = cfg.NetEdges
+	stream.ceilings = cfg.Store.DeviceCeilings()
 	if cfg.Agents != nil {
 		stream.agents = cfg.Agents
 	}

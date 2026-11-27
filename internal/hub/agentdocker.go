@@ -30,7 +30,7 @@ func (s *agentSession) checkDocker(device string, req *agentv1.DockerRequest) er
 	s.mu.Unlock()
 	if err := policy.DockerWithinCeiling(c, req); err != nil {
 		if !c.GetDocker() {
-			return fmt.Errorf("device %s: %w (start its agent with --allow-docker)", device, err)
+			return fmt.Errorf("device %s: %w (turn Containers on in its Capabilities)", device, err)
 		}
 		return fmt.Errorf("device %s: %w", device, err)
 	}

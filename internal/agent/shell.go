@@ -39,15 +39,16 @@ const (
 // shellHost runs the shell sessions of one hub stream. Its goroutines are
 // in wg; closeAll ends every session when the stream ends.
 type shellHost struct {
-	ceiling Ceiling
-	log     *slog.Logger
+	log *slog.Logger
 	// reply sends a message to the hub, in order for one goroutine; it
 	// returns once the message is sent or the stream ends.
 	reply func(*agentv1.AgentMessage)
 	wg    *sync.WaitGroup
 
-	mu     sync.Mutex
-	shells map[string]*shell
+	mu sync.Mutex
+	// ceiling is the effective ceiling; setCeiling changes it.
+	ceiling Ceiling
+	shells  map[string]*shell
 	// argv is the shell to start instead of the user's login shell: tests
 	// set it to one that starts fast.
 	argv []string
@@ -124,8 +125,11 @@ func (h *shellHost) open(ctx context.Context, id string, open *agentv1.ShellOpen
 		h.log.WarnContext(ctx, "shell request for a session already open", "id", id)
 		return
 	}
-	if err := policy.ShellWithinCeiling(h.ceiling.proto()); err != nil {
-		h.log.WarnContext(ctx, "shell request denied: beyond the capability ceiling (start the agent with --allow-shell)", "id", id)
+	h.mu.Lock()
+	c := h.ceiling
+	h.mu.Unlock()
+	if err := policy.ShellWithinCeiling(c.proto()); err != nil {
+		h.log.WarnContext(ctx, "shell request denied: beyond the capability ceiling (turn the terminal on in the device's Capabilities)", "id", id)
 		h.wg.Go(func() { h.exit(id, &agentv1.ShellExited{Denied: true, ExitCode: -1, Error: err.Error()}) })
 		return
 	}
@@ -144,6 +148,10 @@ func (h *shellHost) open(ctx context.Context, id string, open *agentv1.ShellOpen
 	}
 	h.mu.Lock()
 	h.shells[id] = sh
+	// A lower ceiling may have come while the shell started.
+	if !h.ceiling.Shell {
+		sh.close()
+	}
 	h.mu.Unlock()
 	// Never log what goes through the terminal: only that a session ran.
 	h.log.InfoContext(ctx, "shell started", "id", id, "shell", sh.path, "pid", sh.cmd.Process.Pid)
@@ -326,4 +334,19 @@ func (sh *shell) close() {
 			killSession(pid)
 		}
 	})
+}
+
+// setCeiling makes c the ceiling of the shells to come, and ends every open
+// shell when c allows none.
+func (h *shellHost) setCeiling(ctx context.Context, c Ceiling) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.ceiling = c
+	if c.Shell {
+		return
+	}
+	for id, sh := range h.shells {
+		h.log.InfoContext(ctx, "ending shell: the terminal was turned off", "id", id)
+		sh.close()
+	}
 }

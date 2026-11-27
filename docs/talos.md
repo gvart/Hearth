@@ -140,8 +140,8 @@ How it works:
   create the Secret again with that node's token. Until then the join of that node fails, and its pod
   retries.
 - **Only reads.** The agent runs with an empty capability ceiling: no `--allow-exec`,
-  `--allow-restart`, `--allow-logs` or `--allow-shell`, so the hub can run nothing on the node through
-  it. All Linux capabilities are dropped, the root filesystem is read-only, privilege escalation is
+  `--allow-restart`, `--allow-logs` or `--allow-shell`, and with `--local-ceiling`, so the
+  Capabilities set on the hub cannot raise it and the hub can run nothing on the node through it. All Linux capabilities are dropped, the root filesystem is read-only, privilege escalation is
   off, and the pod gets no service account token. It runs as root only to write its identity to the
   root-owned host directory. It does not use the host's PID namespace.
 - **Small.** Requests are 10m CPU and 16 MiB, limits 100m and 64 MiB. On a two-node Talos cluster each

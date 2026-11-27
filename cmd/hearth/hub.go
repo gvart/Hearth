@@ -204,7 +204,7 @@ func newHubCmd() *cobra.Command {
 		"run automations as dry runs: each action's policy decision is audited, and no action runs")
 	cmd.Flags().StringSliceVar(&opts.discoverSubnets, "discover-subnet", splitList(os.Getenv("HEARTH_DISCOVER_SUBNETS")),
 		"IPv4 subnet to discover hosts on with an ARP sweep and mDNS, e.g. 192.168.1.0/24, or \"auto\" for the hub's own LANs, "+
-			"or CIDR@device to sweep it from that device's agent (within its --allow-scan); "+
+			"or CIDR@device to sweep it from that device's agent (within its Network scan capability); "+
 			"repeatable (env HEARTH_DISCOVER_SUBNETS, comma-separated; default: off; see docs/discovery.md)")
 	cmd.Flags().DurationVar(&opts.discoverInterval, "discover-interval", discovery.DefaultInterval,
 		"time between network discovery scans, Pi-hole/DHCP lease/NetAlertX imports and Beszel and Talos reads (env HEARTH_DISCOVER_INTERVAL)")

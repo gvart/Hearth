@@ -24,12 +24,11 @@ export function latest(charts: MetricChart[] | undefined, key: string): number |
   return points?.[points.length - 1]?.[1];
 }
 
-/** What a device's agent does not allow, and the agent flag that turns each on. */
+/** The cards of the device page its agent keeps off: they are turned on in its Capabilities card. */
 export interface NotAllowed {
   logs: boolean;
   docker: boolean;
   netEdges: boolean;
-  flags: { what: string; flag: string }[];
 }
 
 /**
@@ -38,23 +37,11 @@ export interface NotAllowed {
  */
 export function notAllowed(device: { facts: { ceiling?: Ceiling } }): NotAllowed {
   const c = device.facts.ceiling;
-  const logs = (c?.logs ?? []).length === 0;
-  const docker = !c?.docker;
-  const netEdges = !c?.net_edges;
-  const flags: NotAllowed['flags'] = [];
-  if (logs) {
-    flags.push({ what: 'Logs', flag: '--allow-logs systemd:UNIT' });
-  }
-  if (docker) {
-    flags.push({ what: 'Containers', flag: '--allow-docker' });
-  }
-  if (netEdges) {
-    flags.push({ what: 'Neighbors', flag: '--allow-net-edges' });
-  }
-  if (!c?.shell) {
-    flags.push({ what: 'Terminal', flag: '--allow-shell' });
-  }
-  return { logs, docker, netEdges, flags };
+  return {
+    logs: (c?.logs ?? []).length === 0,
+    docker: !c?.docker && !c?.docker_read,
+    netEdges: !c?.net_edges,
+  };
 }
 
 export type DevicesView = 'blocks' | 'table';

@@ -84,8 +84,9 @@ func loadDaemonSet(t *testing.T) daemonSet {
 }
 
 // The agent DaemonSet only reads the node: no privilege, no capability, no
-// host path it can write but its identity dir, an empty capability ceiling,
-// bounded resources, and a token Secret it can start without.
+// host path it can write but its identity dir, an empty capability ceiling
+// the hub cannot raise (--local-ceiling), bounded resources, and a token
+// Secret it can start without.
 func TestAgentDaemonSetOnlyReads(t *testing.T) {
 	ds := loadDaemonSet(t)
 	spec := ds.Spec.Template.Spec
@@ -127,6 +128,9 @@ func TestAgentDaemonSetOnlyReads(t *testing.T) {
 				t.Errorf("container %s: %s raises the capability ceiling", c.Name, a)
 			}
 		}
+	}
+	if !slices.Contains(spec.Containers[0].Args, "--local-ceiling") {
+		t.Errorf("agent args %q lack --local-ceiling: the hub could raise its ceiling", spec.Containers[0].Args)
 	}
 	join := strings.Join(spec.InitContainers[0].Args, " ")
 	for _, want := range []string{"agent join", "--if-not-enrolled", "--token-file=/etc/hearth-tokens/$(NODE_NAME)"} {

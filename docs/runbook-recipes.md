@@ -22,8 +22,8 @@ All four are built from the step types that exist today, so they have the same l
 - **Dangerous steps are held, not bypassed.** The steps that change a machine are `exec` actions, and
   the Node deletion is a `kube_node_delete`: both are dangerous. They are denied, or held for approval,
   until you grant the runbook (`hearth hub --allow-dangerous-automation runbook/<id>`) or approve each
-  one (see [guardrails](guardrails.md)). Each device's agent must also allow the program with
-  `--allow-exec`.
+  one (see [guardrails](guardrails.md)). Each device's agent must also allow the program: **Run
+  programs** in its Capabilities card.
 - **A person approves every change.** A confirm prompt comes before each step that changes a machine,
   and says what that step does. Steps that only read, such as `talosctl health`, need none.
 - **No fixed waits.** A recipe waits for a machine with a check that polls (`within`, `every`), never
@@ -71,8 +71,8 @@ The file: [`docs/recipes/runbooks/add-talos-node.yaml`](recipes/runbooks/add-tal
 #
 # Prerequisites:
 #   - A Hearth agent runs on the machine that has talosctl and your Talos
-#     configs (a workstation or the hub host). Its flags let it run talosctl:
-#       hearth agent run --allow-exec /usr/local/bin/talosctl
+#     configs (a workstation or the hub host). Let it run talosctl (Run programs in its Capabilities card, or on the hub host):
+#       hearth device capabilities <device-id> --set exec=/usr/local/bin/talosctl
 #   - On that machine: the new node's machine config (worker.yaml or
 #     controlplane.yaml from talosctl gen config, with your patches applied),
 #     and /etc/talos/talosconfig (client config with the cluster endpoints).
@@ -287,8 +287,8 @@ The file: [`docs/recipes/runbooks/upgrade-talos-node.yaml`](recipes/runbooks/upg
 #
 # Prerequisites:
 #   - A Hearth agent runs on the machine that has talosctl and your talosconfig
-#     (a workstation or the hub host). Its flags let it run talosctl:
-#       hearth agent run --allow-exec /usr/local/bin/talosctl
+#     (a workstation or the hub host). Let it run talosctl (Run programs in its Capabilities card, or on the hub host):
+#       hearth device capabilities <device-id> --set exec=/usr/local/bin/talosctl
 #   - /etc/talos/talosconfig (client config with the cluster endpoints) exists
 #     on that machine. Hearth never sees its content.
 #   - The hub reads the Talos nodes (hearth hub --talosconfig, see docs/talos.md):
@@ -498,11 +498,12 @@ The file: [`docs/recipes/runbooks/add-k3s-node.yaml`](recipes/runbooks/add-k3s-n
 #
 # Prerequisites:
 #   - The new machine runs a Hearth agent that is enrolled with the hub, runs
-#     as root and is allowed to run the programs below:
-#       hearth agent run --allow-exec /bin/sh \
-#         --allow-exec /usr/local/bin/k3s-agent-uninstall.sh --allow-exec /bin/rm
-#     Allowing sh is a wide grant: the agent can then run anything. Remove it
-#     from the agent again after the run.
+#     as root and is allowed to run the programs below (Run programs in its
+#     Capabilities card, or on the hub host):
+#       hearth device capabilities <device-id> \
+#         --set exec=/bin/sh,/usr/local/bin/k3s-agent-uninstall.sh,/bin/rm
+#     Allowing sh is a wide grant: the agent can then run anything. Take it
+#     out of Run programs again after the run.
 #   - The agent's systemd unit keeps /usr and /etc read-only (ProtectSystem=full).
 #     For the run, let it write there with a drop-in, and restart the agent:
 #       sudo systemctl edit hearth-agent    # add: [Service] ProtectSystem=no
@@ -673,8 +674,8 @@ the group membership, the packages and the repository. For Podman, which is in D
 repositories, no recipe is needed: `apt-get install podman`.
 
 As for k3s, the agent needs a systemd drop-in for the run, shown in the file's comment. Afterwards the
-agent can be allowed to restart containers (`--allow-restart docker:NAME`). The Docker integration
-(#64) adds `--allow-docker` for containers once it ships.
+agent can be allowed to restart containers: **Restart services** (`docker:NAME`) in its Capabilities
+card, and **Containers** for the [Docker integration](docker.md).
 
 The file: [`docs/recipes/runbooks/add-docker-host.yaml`](recipes/runbooks/add-docker-host.yaml).
 
@@ -686,12 +687,12 @@ The file: [`docs/recipes/runbooks/add-docker-host.yaml`](recipes/runbooks/add-do
 # Prerequisites:
 #   - The machine (any hardware) has internet access, ca-certificates, curl and
 #     gpg (apt-get install ca-certificates curl gnupg), and runs a Hearth agent
-#     that is enrolled with the hub, runs as root and is allowed to run:
-#       hearth agent run --allow-exec /bin/sh --allow-exec /bin/rm \
-#         --allow-exec /usr/bin/apt-get --allow-exec /usr/bin/docker \
-#         --allow-exec /usr/sbin/usermod --allow-exec /usr/bin/gpasswd
-#     Allowing sh is a wide grant: the agent can then run anything. Remove it
-#     from the agent again after the run.
+#     that is enrolled with the hub, runs as root and is allowed to run these
+#     (Run programs in its Capabilities card, or on the hub host):
+#       hearth device capabilities <device-id> \
+#         --set exec=/bin/sh,/bin/rm,/usr/bin/apt-get,/usr/bin/docker,/usr/sbin/usermod,/usr/bin/gpasswd
+#     Allowing sh is a wide grant: the agent can then run anything. Take it
+#     out of Run programs again after the run.
 #   - The agent's systemd unit keeps /usr and /etc read-only (ProtectSystem=full)
 #     and forbids setuid files (RestrictSUIDSGID=yes), which a package may
 #     install. For the run, lift both with a drop-in, and restart the agent:
@@ -711,9 +712,8 @@ The file: [`docs/recipes/runbooks/add-docker-host.yaml`](recipes/runbooks/add-do
 # For Podman instead: it is in Debian's and Ubuntu's own repositories, so no
 # repository or key is needed (apt-get install podman); this runbook does Docker.
 #
-# Afterwards, let the agent restart containers with --allow-restart
-# docker:<container>. The Docker integration (issue #64) adds --allow-docker
-# for containers once it ships.
+# Afterwards, turn Containers on in the device's Capabilities card, and list
+# the containers Hearth may restart under Restart services (docker:<container>).
 #
 # The exec actions are dangerous: they are held or denied until the hub grants
 # them, for example:
@@ -882,14 +882,14 @@ steps:
     action:
       type: log
       message: >-
-        Docker host ${{ vars.device }} is ready. Remove the agent's systemd drop-in and its sh grant, and
-        add --allow-restart docker:<container> for the containers Hearth should restart.
+        Docker host ${{ vars.device }} is ready. Remove the agent's systemd drop-in, take sh out of its
+        Run programs, and list the containers Hearth should restart under Restart services.
 ```
 
 ## What the recipes cannot do yet
 
 - **Talos changes go through `talosctl`.** The [Talos integration](talos.md) only reads, so the Talos
-  recipes drive `talosctl` on a device with an agent, which needs `--allow-exec` on that device and a
+  recipes drive `talosctl` on a device with an agent, which needs **Run programs** on that device and a
   grant for dangerous actions. The k3s and Docker recipes need a wide `sh` grant for the same reason:
   an `exec` action runs one program with its arguments, with no environment, pipe or stdin, so a
   checksum check runs as `sh -c` with the pinned values passed as arguments, never pasted into the

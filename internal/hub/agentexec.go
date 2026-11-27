@@ -102,6 +102,10 @@ type agentSession struct {
 	ceiling *agentv1.Ceiling
 	// lastNetEdges is when the hub last took the stream's network edges.
 	lastNetEdges time.Time
+	// ceilingMu serialises CeilingConfig pushes; sentCeiling is the ceiling
+	// the agent last got (ceilingpush.go).
+	ceilingMu   sync.Mutex
+	sentCeiling *agentv1.CeilingConfig
 	// hubs is the hub list the agent last got, in Welcome or Hubs.
 	hubs []string
 }
@@ -172,7 +176,7 @@ func (s *agentSession) checkProbe(device string) error {
 	c := s.ceiling
 	s.mu.Unlock()
 	if err := policy.ProbeWithinCeiling(c); err != nil {
-		return fmt.Errorf("device %s: %w (start its agent with --allow-probe)", device, err)
+		return fmt.Errorf("device %s: %w (turn Checks on in its Capabilities)", device, err)
 	}
 	return nil
 }

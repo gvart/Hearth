@@ -51,6 +51,7 @@ var partitionCols = map[string]string{
 	"panel_links":      "panel_id",
 	"dashboard_tokens": "id",
 	"device_routes":    "device_id",
+	"device_ceilings":  "device_id",
 }
 
 // globalTables are replicated to every storage member.
@@ -83,6 +84,7 @@ var criticalTables = map[string]bool{
 	"sessions":         true,
 	"admin":            true,
 	"ca_rotations":     true,
+	"device_ceilings":  true,
 }
 
 // GlobalTable reports whether table is replicated to every storage member.
@@ -285,6 +287,8 @@ func RouteOf(cmd Command) (Route, error) {
 		return key(c.ID, false)
 	case SetBootTime:
 		return key(c.ID, false)
+	case SetDeviceCeiling:
+		return key(c.DeviceID, true)
 	case SetDeviceRoute:
 		return key(c.DeviceID, false)
 	case MarkOffline:

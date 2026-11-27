@@ -120,7 +120,10 @@ Keep this list in sync with `Taskfile.yml`. If you add a task, document it here.
   runs, and during a hub CA rotation only to a master that proves it holds the current CA key (policy-checked
   and audited, refusals too). A demoted master deletes its copy. A CA key never goes into the store, the
   replication stream, a snapshot or the gossip.
-- Agent-side config is the capability ceiling; the hub can never grant more than the device allows.
+- The hub may manage a device's capability ceiling through policy (`device.capabilities.raise` is Dangerous and
+  needs the admin password again to raise a terminal, exec, restart or Docker control; every change is audited),
+  unless the device was installed with `--local-ceiling`. The agent still enforces the ceiling it holds (its
+  `--allow-*` flags plus what the hub set), checks every pushed ceiling itself, and never trusts a hub-side check.
 - Any new action type must declare its class (`read` / `safe` / `dangerous`) in `internal/policy`.
 - Shell-outs: no string concatenation into shells; use `exec.Command` with args.
 

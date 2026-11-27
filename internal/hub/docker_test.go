@@ -236,19 +236,19 @@ func TestDeviceDockerRefused(t *testing.T) {
 			"ceiling off",
 			policy.Config{},
 			minDockerMinor, &agentv1.Ceiling{Logs: []string{"docker:*"}, Restart: []string{"docker:web"}},
-			http.MethodGet, "/api/v1/devices/dev-1/docker", "", http.StatusForbidden, "--allow-docker", "deny device.docker.list",
+			http.MethodGet, "/api/v1/devices/dev-1/docker", "", http.StatusForbidden, "turn Containers on", "deny device.docker.list",
 		},
 		{
 			"ceiling off, action",
 			policy.Config{},
 			minDockerMinor, &agentv1.Ceiling{Restart: []string{"docker:web"}},
-			http.MethodPost, "/api/v1/devices/dev-1/docker/actions", `{"action":"restart","container":"web"}`, http.StatusForbidden, "--allow-docker", "deny device.docker.restart",
+			http.MethodPost, "/api/v1/devices/dev-1/docker/actions", `{"action":"restart","container":"web"}`, http.StatusForbidden, "turn Containers on", "deny device.docker.restart",
 		},
 		{
 			"ceiling off, logs",
 			policy.Config{},
 			minDockerMinor, nil,
-			http.MethodGet, "/api/v1/devices/dev-1/docker/logs?container=web", "", http.StatusForbidden, "--allow-docker", "deny device.docker.logs",
+			http.MethodGet, "/api/v1/devices/dev-1/docker/logs?container=web", "", http.StatusForbidden, "turn Containers on", "deny device.docker.logs",
 		},
 		{
 			"agent too old",

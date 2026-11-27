@@ -185,6 +185,7 @@ func (a *api) routes() http.Handler {
 	a.guestRoutes(mux, ui)
 	a.dashboardRoutes(mux)
 	a.webAdminRoutes(mux)
+	a.capabilitiesRoutes(mux)
 	a.configEditRoutes(mux)
 	a.backupRoutes(mux)
 	mux.Handle("/api/v1/", a.auth(func(w http.ResponseWriter, _ *http.Request) {
@@ -279,6 +280,9 @@ type api struct {
 	hubs      hubCounter
 	members   memberLister
 	hubMintMu sync.Mutex
+	// capsMu makes each change of a device's capabilities one step: its
+	// read, decision and write (capabilities.go).
+	capsMu sync.Mutex
 	// automations are the files the automation editor reads and writes.
 	automations automation.Files
 	// automationsMu makes each save's check and write one step.

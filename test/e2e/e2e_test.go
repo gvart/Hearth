@@ -81,6 +81,10 @@ func TestHeadlineDemo(t *testing.T) {
 		t.Logf("%s: join → online in %v", name, time.Since(joinAt).Round(time.Millisecond))
 	}
 
+	// 4b. agent-1 runs with no --allow-* flag: turn its logs on from the hub
+	// and stream one, with no agent restart.
+	s.turnLogsOn(ctx, api, ids["agent-1"])
+
 	// 5. Stop one agent; the hub must mark it offline.
 	stopAt := time.Now()
 	s.compose(ctx, "stop", "agent-1")

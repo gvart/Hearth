@@ -113,6 +113,9 @@ spec:
             - agent
             - run
             - --data-dir=/var/lib/hearth-agent
+            # Read only, whatever is set on the hub: ignore the capabilities
+            # the hub sets, so the empty ceiling of the flags is the whole of it.
+            - --local-ceiling
           env:
             # The host's /proc, /sys and os-release, for the facts and metrics.
             - name: HOST_PROC

@@ -33,6 +33,12 @@
 # hub service (hearth-hub.service, or dev.hearth.hub on macOS) next to the
 # agent. A re-run with --agent-only stops and removes that service.
 #
+# What the hub may do on the device (logs, Docker, a terminal...) is turned on
+# and off from the device's page in the web UI. --local-ceiling (or
+# HEARTH_LOCAL_CEILING=1) opts the device out: its agent then ignores what
+# the hub sets, and only --allow-* flags added to the service count. A re-run
+# keeps it.
+#
 # Re-running upgrades the binary and keeps the device identity (no token
 # needed). --uninstall removes the services and binary; --purge also deletes
 # the agent's and the hub's data dirs.
@@ -97,6 +103,7 @@ Environment:
   HEARTH_TOKEN       enrollment token from the hub (first install only)
   HEARTH_AGENT_ONLY  1: as --agent-only
   HEARTH_JOIN_TOKEN  with --make-hub: the cluster join token from the device's page
+  HEARTH_LOCAL_CEILING  1: as --local-ceiling
 
 Options:
   --hub URL          hub URL for enrollment (https://<hub>:7443); the token names
@@ -116,6 +123,9 @@ Options:
                      in HEARTH_JOIN_TOKEN: the device's page in the web UI shows
                      this command. A Mac qualifies; every device needs a 64-bit
                      CPU, 1.5 GiB of memory and 2 GiB free.
+  --local-ceiling    the hub may not change what it can do on this device: the
+                     agent ignores the capabilities set in the web UI, and only
+                     --allow-* flags added to its service count; a re-run keeps it
   --uninstall        stop and remove the service and binary; keep the data dir
   --purge            with --uninstall: also delete the data dir (device identity)
   -h, --help         show this help
@@ -129,6 +139,7 @@ VERSION=
 UNINSTALL=0
 PURGE=0
 AGENT_ONLY=${HEARTH_AGENT_ONLY:-0}
+LOCAL_CEILING=${HEARTH_LOCAL_CEILING:-0}
 MAKE_HUB=
 # NO_HUB=1: --make-hub failed, so no hub service is installed this run.
 NO_HUB=0
@@ -172,6 +183,10 @@ while [ $# -gt 0 ]; do
 		;;
 	--agent-only)
 		AGENT_ONLY=1
+		shift
+		;;
+	--local-ceiling)
+		LOCAL_CEILING=1
 		shift
 		;;
 	--make-hub)
@@ -649,8 +664,18 @@ install_service() {
 		remove_hub_service
 		say "--agent-only: stopped and removed the hub service (kept $HUB_DATA_DIR; --purge deletes it)"
 	fi
+	# A device installed with --local-ceiling keeps it on a re-run.
+	if [ "$LOCAL_CEILING" != 1 ] && as_root grep -qs -- '--local-ceiling' "$UNIT_PATH" "$PLIST_PATH"; then
+		LOCAL_CEILING=1
+		say "keeping --local-ceiling: the hub may not change what it can do here"
+	fi
 	if [ "$OS" = linux ]; then
 		write_systemd_unit "$TMP/hearth-agent.service"
+		if [ "$LOCAL_CEILING" = 1 ]; then
+			sed 's|^ExecStart=.* agent run --data-dir /var/lib/hearth/agent$|& --local-ceiling|' \
+				"$TMP/hearth-agent.service" >"$TMP/hearth-agent.service.lc"
+			mv "$TMP/hearth-agent.service.lc" "$TMP/hearth-agent.service"
+		fi
 		as_root mkdir -p "${UNIT_PATH%/*}"
 		as_root cp "$TMP/hearth-agent.service" "$UNIT_PATH"
 		as_root chmod 0644 "$UNIT_PATH"
@@ -668,6 +693,11 @@ install_service() {
 		say "service hearth-agent is running (logs: journalctl -u hearth-agent -f)"
 	else
 		write_launchd_plist "$TMP/$LAUNCHD_LABEL.plist"
+		if [ "$LOCAL_CEILING" = 1 ]; then
+			awk '{ print } /<string>\/var\/lib\/hearth\/agent<\/string>/ { sub(/<string>.*/, "<string>--local-ceiling</string>"); print }' \
+				"$TMP/$LAUNCHD_LABEL.plist" >"$TMP/$LAUNCHD_LABEL.plist.lc"
+			mv "$TMP/$LAUNCHD_LABEL.plist.lc" "$TMP/$LAUNCHD_LABEL.plist"
+		fi
 		as_root mkdir -p "${PLIST_PATH%/*}"
 		as_root cp "$TMP/$LAUNCHD_LABEL.plist" "$PLIST_PATH"
 		as_root chmod 0644 "$PLIST_PATH"

@@ -4,8 +4,8 @@
 #
 # Prerequisites:
 #   - A Hearth agent runs on the machine that has talosctl and your Talos
-#     configs (a workstation or the hub host). Its flags let it run talosctl:
-#       hearth agent run --allow-exec /usr/local/bin/talosctl
+#     configs (a workstation or the hub host). Let it run talosctl (Run programs in its Capabilities card, or on the hub host):
+#       hearth device capabilities <device-id> --set exec=/usr/local/bin/talosctl
 #   - On that machine: the new node's machine config (worker.yaml or
 #     controlplane.yaml from talosctl gen config, with your patches applied),
 #     and /etc/talos/talosconfig (client config with the cluster endpoints).

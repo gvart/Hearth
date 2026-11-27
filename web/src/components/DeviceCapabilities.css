@@ -1,0 +1,179 @@
+/* The Capabilities card of the device page: one row per capability. */
+
+.caps-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.caps-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-2) var(--space-4);
+  align-items: center;
+  padding: var(--space-3) 0;
+  border-top: var(--line-1) solid var(--border);
+}
+
+.caps-row:first-child {
+  border-top: 0;
+}
+
+.caps-what {
+  display: grid;
+  gap: var(--space-05);
+  min-width: 0;
+}
+
+.caps-name {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  font-weight: var(--weight-bold);
+}
+
+.caps-risk {
+  color: var(--warn);
+  font-weight: var(--weight-regular);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  font-size: var(--type-11);
+}
+
+.caps-local {
+  color: var(--online);
+}
+
+.caps-control {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  align-items: flex-end;
+}
+
+.caps-list-value {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
+  align-items: baseline;
+  max-width: 340px;
+  text-align: right;
+}
+
+.caps-entries {
+  overflow-wrap: anywhere;
+}
+
+.caps-value {
+  text-align: right;
+  overflow-wrap: anywhere;
+  max-width: 340px;
+}
+
+/* On and Off side by side; the side in force is the inverse fill. */
+.caps-switch,
+.caps-levels {
+  display: inline-flex;
+  border: var(--line-1) solid var(--line);
+  border-radius: var(--radius);
+}
+
+.caps-switch {
+  padding: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.caps-switch > span,
+.caps-levels > button {
+  min-width: 52px;
+  height: var(--control-sm);
+  padding: 0 var(--space-2);
+  font-size: var(--type-12);
+  font-weight: var(--weight-bold);
+  line-height: var(--control-sm);
+  text-align: center;
+}
+
+.caps-switch:not(.is-on) .caps-switch-off,
+.caps-switch.is-on .caps-switch-on,
+.caps-levels > button.is-on {
+  background: var(--line);
+  color: var(--bg);
+}
+
+.caps-switch:disabled,
+.caps-levels > button:disabled {
+  cursor: not-allowed;
+}
+
+.caps-switch:disabled:not(.is-locked) {
+  opacity: var(--opacity-disabled);
+}
+
+/* On by a flag on the device: on, and not the hub's to turn off. */
+.caps-switch.is-locked.is-on .caps-switch-on {
+  background: var(--online);
+  color: var(--bg);
+}
+
+.caps-levels > button {
+  border: 0;
+  border-left: var(--line-1) solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.caps-levels > button:first-child {
+  border-left: 0;
+}
+
+.caps-levels > button:disabled:not(.is-on) {
+  opacity: var(--opacity-disabled);
+}
+
+.caps-editor {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: var(--space-2);
+}
+
+.caps-editor input {
+  width: 100%;
+}
+
+.caps-upgrade {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.caps-foot {
+  margin-top: var(--space-2);
+}
+
+@media (width <= 560px) {
+  .caps-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .caps-control,
+  .caps-list-value {
+    align-items: flex-start;
+    justify-content: flex-start;
+    text-align: left;
+  }
+}
+
+.caps-note {
+  margin: 0 0 var(--space-2);
+}

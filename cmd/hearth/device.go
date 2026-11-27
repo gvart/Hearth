@@ -20,7 +20,7 @@ import (
 
 func newDeviceCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "device", Short: "Manage enrolled devices"}
-	cmd.AddCommand(newDeviceRevokeCmd(), newDeviceHubCmd())
+	cmd.AddCommand(newDeviceRevokeCmd(), newDeviceHubCmd(), newDeviceCapabilitiesCmd())
 	return cmd
 }
 

@@ -4,11 +4,12 @@
 #
 # Prerequisites:
 #   - The new machine runs a Hearth agent that is enrolled with the hub, runs
-#     as root and is allowed to run the programs below:
-#       hearth agent run --allow-exec /bin/sh \
-#         --allow-exec /usr/local/bin/k3s-agent-uninstall.sh --allow-exec /bin/rm
-#     Allowing sh is a wide grant: the agent can then run anything. Remove it
-#     from the agent again after the run.
+#     as root and is allowed to run the programs below (Run programs in its
+#     Capabilities card, or on the hub host):
+#       hearth device capabilities <device-id> \
+#         --set exec=/bin/sh,/usr/local/bin/k3s-agent-uninstall.sh,/bin/rm
+#     Allowing sh is a wide grant: the agent can then run anything. Take it
+#     out of Run programs again after the run.
 #   - The agent's systemd unit keeps /usr and /etc read-only (ProtectSystem=full).
 #     For the run, let it write there with a drop-in, and restart the agent:
 #       sudo systemctl edit hearth-agent    # add: [Service] ProtectSystem=no

@@ -4,7 +4,7 @@ description: What protects the hub, the agents and your devices, and what you ar
 ---
 
 Hearth can restart services and run commands on your machines, so its rules are strict and few:
-every action is decided by policy and audited, devices set their own ceiling, and every connection
+every action is decided by policy and audited, each device enforces its own ceiling, and every connection
 between Hearth processes is mutually authenticated TLS.
 
 ## Rules
@@ -14,11 +14,15 @@ between Hearth processes is mutually authenticated TLS.
 2. **Everything is audited.** Each decision, allow or deny, is written to the audit log with the
    actor, the action and its target. Secrets (tokens, passwords, kubeconfigs, webhook URLs and
    headers, command arguments) never reach the audit log or the hub log.
-3. **The device has the last word.** An agent runs only what its own `--allow-exec`,
-   `--allow-restart`, `--allow-probe` and `--allow-shell` flags allow, streams only the logs its
-   `--allow-logs` flag names, sweeps only the subnets its `--allow-scan` flag names and reports its
-   neighbours and connections only with `--allow-net-edges`, lists and starts, stops and restarts its
-   containers only with `--allow-docker`, and nothing by default. Nothing on the hub can raise that ceiling.
+3. **The device has the last word.** An agent runs only what its capability ceiling allows, and
+   nothing by default: the programs, restarts, checks, logs, subnets, terminal, neighbours and
+   containers it lets the hub use. The ceiling is its own `--allow-*` flags plus what an admin turns
+   on in the device's **Capabilities** card (or `hearth device capabilities`). Turning on a terminal,
+   programs, restarts or container control is `dangerous` and asks for the admin password again;
+   every change is audited, refusals too. The agent checks each ceiling the hub sends, saves it, and
+   checks every request against the ceiling it holds, whatever the hub decided. An agent installed
+   with `--local-ceiling` ignores the hub's settings: then nothing on the hub can raise its ceiling.
+   See [Guardrails](guardrails.md#device-capability-ceiling).
 4. **Dangerous needs a name.** Actions of class `dangerous` (running a command, draining a node) are
    taken by an automation only when the hub is started with `--allow-dangerous-automation <id>` for
    that automation.
