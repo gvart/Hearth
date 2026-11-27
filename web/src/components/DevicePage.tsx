@@ -23,6 +23,7 @@ import { DeviceContainers } from './DeviceContainers.tsx';
 import { DeviceHubSection } from './DeviceHub.tsx';
 import { DeviceLogSources } from './DeviceLogSources.tsx';
 import { DeviceNetEdges } from './DeviceNetEdges.tsx';
+import { DeviceUpgrade } from './DeviceUpgrade.tsx';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
 import { StatusDot } from './StatusDot.tsx';
 
@@ -109,6 +110,7 @@ export function DevicePage({ id }: { id: string }) {
       ) : null}
 
       <div className="device-grid">
+        <DeviceUpgrade device={device} />
         <Section title="Right now">
           <Meter label="CPU" percent={on ? latest(charts, 'cpu') : undefined} plain />
           <Meter label="Mem" percent={on ? latest(charts, 'memory') : undefined} />

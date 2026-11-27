@@ -16,6 +16,7 @@ import {
   type DockerLevel,
 } from '../capabilities.ts';
 import { formatDateTime } from '../format.ts';
+import { AgentVersionLink } from './DeviceUpgrade.tsx';
 import { Tip } from './Tip.tsx';
 import './DeviceCapabilities.css';
 
@@ -109,6 +110,7 @@ function CapsBody({ device, caps, applying }: { device: Device; caps: Capabiliti
             ) : null}
             . Until then they are what it was started with, shown here as they are.
           </span>
+          {device.agent_version?.upgrade_available ? <AgentVersionLink>Upgrade agent</AgentVersionLink> : null}
         </div>
       ) : null}
       <ul className="caps-list">

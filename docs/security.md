@@ -178,7 +178,7 @@ proxy every login comes from the proxy's address and shares one limit.
 
 A signed-in session is not enough for the most sensitive actions of the web UI: revoking a device,
 creating or revoking a hub-eligible enrollment token, creating or revoking an MCP token, saving the policy, changing a notification channel, downloading
-a backup, creating a cluster join token (**Add hub**) and starting, finishing or aborting a hub CA
+a backup, creating a cluster join token (**Add hub**), upgrading a device's agent and starting, finishing or aborting a hub CA
 rotation. Each asks for the admin password again, then goes through policy like any other action.
 
 - An answer is good for **5 minutes**, for that session only, and is held in the hub's memory: a hub
@@ -212,6 +212,49 @@ The installer is served by the hub over plain HTTP (a fresh device does not trus
 Someone who can tamper with your LAN traffic could swap it; the agent still pins the hub CA from the
 token, but if that matters to you, download `install.sh` from the repository and check it before
 running it.
+
+### Remote agent upgrades
+
+An admin upgrades a device's agent from its page or with `hearth device upgrade`: the policy action
+`device.upgrade`, dangerous, only from a signed-in session with the admin password entered again
+(signing in counts, for the CLI), and audited with the versions, refusals and failures too. Never an
+automation or an MCP client.
+
+- The hub sends the agent a release version and nothing else, over the agent's mutual-TLS stream.
+  It cannot name a server, a file or a hash: **a hub, even a compromised one, can only make an agent
+  install an official Hearth release, verified against that release's own checksums.**
+- The agent builds both URLs itself, from its compiled-in release base
+  (`https://github.com/gvart/hearth/releases/download/<tag>/`) and its own platform: it reads the
+  release's `checksums.txt`, then downloads its archive with a plain HTTPS client (not its device
+  certificate), following redirects only while they stay HTTPS (GitHub sends assets on to its object
+  storage), at most 128 MiB within 5 minutes. It refuses the archive if its SHA-256 differs from
+  `checksums.txt`, reads at most 512 MiB out of it, runs the new `hearth version` and refuses it
+  unless it names the version asked for. Only then does it rename the new binary over its own
+  (synced to disk first), keeping the old one as `hearth.prev`, and exit with status 75 for systemd
+  (`Restart=always`) or launchd (`KeepAlive`) to start the new one. Nothing changes on a failed check.
+  Neither the hub nor the agent checks the release's Sigstore signature: the trust is GitHub's HTTPS
+  and the release's checksums.
+- The agent refuses a release older than the one it runs: no downgrades, so no way back to a release
+  with a known flaw. Whatever it runs, a development build too, it never installs a release that
+  cannot upgrade itself (v0.0.1-rc.10 or older).
+- If the new binary does not reach a hub, it does not stay: until a hub welcomes it, a marker in the
+  agent's data directory (`upgrade-pending`) counts its starts, and on the fourth start without a
+  welcome the agent puts `hearth.prev` back and exits for its service manager to start the old one.
+- An upgrade replaces the program that enforces the device's capability ceiling: it is above the
+  ceiling, as re-running the installer is. That is why it is dangerous and takes the password. An
+  agent started with `--local-ceiling` refuses every upgrade, as it refuses the hub's ceiling: upgrade
+  it on the device with the installer. So does an agent with `HEARTH_NO_SELF_UPGRADE` set, or in a
+  Kubernetes pod (upgrade its image).
+- To replace its binary, the agent's systemd unit has `ReadWritePaths=/usr/local/bin` on top of
+  `ProtectSystem=full`; the rest of its hardening stays.
+- On a device that is also a hub, the hub runs the same `/usr/local/bin/hearth`: it keeps running the
+  old version until its service restarts, and then runs the one the agent installed. Upgrade the
+  hubs of a cluster first.
+- `HEARTH_RELEASE_BASE_URL` in an agent's environment replaces its release base, as it does for
+  `install.sh`. It is for the end-to-end tests only, not a supported setting; whoever sets an agent's
+  environment owns its host already.
+- The audit entry of an upgrade records the version asked for, the version the agent ran, and the
+  archive URL and SHA-256 the agent reports.
 
 ## Integrations
 

@@ -41,6 +41,7 @@ type AgentMessage struct {
 	//	*AgentMessage_ScanResult
 	//	*AgentMessage_NetEdges
 	//	*AgentMessage_DockerResult
+	//	*AgentMessage_UpgradeResult
 	Payload       isAgentMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -182,6 +183,15 @@ func (x *AgentMessage) GetDockerResult() *DockerResult {
 	return nil
 }
 
+func (x *AgentMessage) GetUpgradeResult() *UpgradeResult {
+	if x != nil {
+		if x, ok := x.Payload.(*AgentMessage_UpgradeResult); ok {
+			return x.UpgradeResult
+		}
+	}
+	return nil
+}
+
 type isAgentMessage_Payload interface {
 	isAgentMessage_Payload()
 }
@@ -231,6 +241,10 @@ type AgentMessage_DockerResult struct {
 	DockerResult *DockerResult `protobuf:"bytes,11,opt,name=docker_result,json=dockerResult,proto3,oneof"`
 }
 
+type AgentMessage_UpgradeResult struct {
+	UpgradeResult *UpgradeResult `protobuf:"bytes,12,opt,name=upgrade_result,json=upgradeResult,proto3,oneof"`
+}
+
 func (*AgentMessage_Hello) isAgentMessage_Payload() {}
 
 func (*AgentMessage_Heartbeat) isAgentMessage_Payload() {}
@@ -253,6 +267,8 @@ func (*AgentMessage_NetEdges) isAgentMessage_Payload() {}
 
 func (*AgentMessage_DockerResult) isAgentMessage_Payload() {}
 
+func (*AgentMessage_UpgradeResult) isAgentMessage_Payload() {}
+
 // HubMessage is anything the hub sends to an agent.
 type HubMessage struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -269,6 +285,7 @@ type HubMessage struct {
 	//	*HubMessage_DockerRequest
 	//	*HubMessage_Hubs
 	//	*HubMessage_CeilingConfig
+	//	*HubMessage_UpgradeRequest
 	Payload       isHubMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -410,6 +427,15 @@ func (x *HubMessage) GetCeilingConfig() *CeilingConfig {
 	return nil
 }
 
+func (x *HubMessage) GetUpgradeRequest() *UpgradeRequest {
+	if x != nil {
+		if x, ok := x.Payload.(*HubMessage_UpgradeRequest); ok {
+			return x.UpgradeRequest
+		}
+	}
+	return nil
+}
+
 type isHubMessage_Payload interface {
 	isHubMessage_Payload()
 }
@@ -461,6 +487,10 @@ type HubMessage_CeilingConfig struct {
 	CeilingConfig *CeilingConfig `protobuf:"bytes,11,opt,name=ceiling_config,json=ceilingConfig,proto3,oneof"`
 }
 
+type HubMessage_UpgradeRequest struct {
+	UpgradeRequest *UpgradeRequest `protobuf:"bytes,12,opt,name=upgrade_request,json=upgradeRequest,proto3,oneof"`
+}
+
 func (*HubMessage_Welcome) isHubMessage_Payload() {}
 
 func (*HubMessage_ExecRequest) isHubMessage_Payload() {}
@@ -482,6 +512,8 @@ func (*HubMessage_DockerRequest) isHubMessage_Payload() {}
 func (*HubMessage_Hubs) isHubMessage_Payload() {}
 
 func (*HubMessage_CeilingConfig) isHubMessage_Payload() {}
+
+func (*HubMessage_UpgradeRequest) isHubMessage_Payload() {}
 
 // CeilingConfig is the capability ceiling the hub sets for a device: the
 // agent adds it to its own flags (the effective ceiling is their union),
@@ -627,6 +659,14 @@ type Hello struct {
 	// ignores the hub's CeilingConfig, so its flags are its whole ceiling.
 	// Sent by agents of protocol minor 10 and later.
 	CeilingLocked bool `protobuf:"varint,16,opt,name=ceiling_locked,json=ceilingLocked,proto3" json:"ceiling_locked,omitempty"`
+	// release_target is the os_arch of the release archive this agent
+	// upgrades itself from (hearth_<version>_<release_target>.tar.gz), such as
+	// linux_amd64 or linux_armv7, when it can replace its own binary; empty
+	// when it cannot, and no_self_upgrade then says why (a Kubernetes pod, a
+	// platform without a service manager to restart it). Reported by agents of
+	// protocol minor 11 and later.
+	ReleaseTarget string `protobuf:"bytes,17,opt,name=release_target,json=releaseTarget,proto3" json:"release_target,omitempty"`
+	NoSelfUpgrade string `protobuf:"bytes,18,opt,name=no_self_upgrade,json=noSelfUpgrade,proto3" json:"no_self_upgrade,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -771,6 +811,20 @@ func (x *Hello) GetCeilingLocked() bool {
 		return x.CeilingLocked
 	}
 	return false
+}
+
+func (x *Hello) GetReleaseTarget() string {
+	if x != nil {
+		return x.ReleaseTarget
+	}
+	return ""
+}
+
+func (x *Hello) GetNoSelfUpgrade() string {
+	if x != nil {
+		return x.NoSelfUpgrade
+	}
+	return ""
 }
 
 // Ceiling is what a device's agent lets the hub run: its flags, and from
@@ -3898,11 +3952,172 @@ func (x *DockerImage) GetCreated() *timestamppb.Timestamp {
 	return nil
 }
 
+// UpgradeRequest asks the agent to replace its own binary with the hearth of
+// an official release, named by its version only. The agent builds the URLs
+// itself from its compiled-in release base (the project's GitHub releases)
+// and its own platform, reads the release's checksums.txt, checks the
+// archive against it, extracts hearth, runs `hearth version`, renames it
+// over its executable (keeping the old one as <exe>.prev), answers with an
+// UpgradeResult and exits, for its service manager to start the new binary.
+// The hub cannot name another server or another hash. Sent to agents of
+// protocol minor 11 and later.
+type UpgradeRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// version is the release tag, such as v0.1.0.
+	Version       string `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpgradeRequest) Reset() {
+	*x = UpgradeRequest{}
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[50]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpgradeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpgradeRequest) ProtoMessage() {}
+
+func (x *UpgradeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[50]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpgradeRequest.ProtoReflect.Descriptor instead.
+func (*UpgradeRequest) Descriptor() ([]byte, []int) {
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{50}
+}
+
+func (x *UpgradeRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *UpgradeRequest) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+// UpgradeResult answers an UpgradeRequest. ok means the new binary is in
+// place and the agent exits to restart with it.
+type UpgradeResult struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Ok    bool                   `protobuf:"varint,2,opt,name=ok,proto3" json:"ok,omitempty"`
+	// denied is set when the agent refuses to upgrade itself at all (a
+	// Kubernetes pod, an upgrade already running); error says why.
+	Denied bool   `protobuf:"varint,3,opt,name=denied,proto3" json:"denied,omitempty"`
+	Error  string `protobuf:"bytes,4,opt,name=error,proto3" json:"error,omitempty"`
+	// version is what `<new binary> version` printed first.
+	Version string `protobuf:"bytes,5,opt,name=version,proto3" json:"version,omitempty"`
+	// url is the archive the agent chose, and sha256 its SHA-256 from the
+	// release's checksums.txt, for the audit log; empty when it got no further.
+	Url           string `protobuf:"bytes,6,opt,name=url,proto3" json:"url,omitempty"`
+	Sha256        string `protobuf:"bytes,7,opt,name=sha256,proto3" json:"sha256,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpgradeResult) Reset() {
+	*x = UpgradeResult{}
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[51]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpgradeResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpgradeResult) ProtoMessage() {}
+
+func (x *UpgradeResult) ProtoReflect() protoreflect.Message {
+	mi := &file_hearth_agent_v1_agent_proto_msgTypes[51]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpgradeResult.ProtoReflect.Descriptor instead.
+func (*UpgradeResult) Descriptor() ([]byte, []int) {
+	return file_hearth_agent_v1_agent_proto_rawDescGZIP(), []int{51}
+}
+
+func (x *UpgradeResult) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *UpgradeResult) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+func (x *UpgradeResult) GetDenied() bool {
+	if x != nil {
+		return x.Denied
+	}
+	return false
+}
+
+func (x *UpgradeResult) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *UpgradeResult) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *UpgradeResult) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+func (x *UpgradeResult) GetSha256() string {
+	if x != nil {
+		return x.Sha256
+	}
+	return ""
+}
+
 var File_hearth_agent_v1_agent_proto protoreflect.FileDescriptor
 
 const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"\n" +
-	"\x1bhearth/agent/v1/agent.proto\x12\x0fhearth.agent.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb8\x05\n" +
+	"\x1bhearth/agent/v1/agent.proto\x12\x0fhearth.agent.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x81\x06\n" +
 	"\fAgentMessage\x12.\n" +
 	"\x05hello\x18\x01 \x01(\v2\x16.hearth.agent.v1.HelloH\x00R\x05hello\x12:\n" +
 	"\theartbeat\x18\x02 \x01(\v2\x1a.hearth.agent.v1.HeartbeatH\x00R\theartbeat\x12D\n" +
@@ -3918,8 +4133,9 @@ const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"scanResult\x128\n" +
 	"\tnet_edges\x18\n" +
 	" \x01(\v2\x19.hearth.agent.v1.NetEdgesH\x00R\bnetEdges\x12D\n" +
-	"\rdocker_result\x18\v \x01(\v2\x1d.hearth.agent.v1.DockerResultH\x00R\fdockerResultB\t\n" +
-	"\apayload\"\xc8\x05\n" +
+	"\rdocker_result\x18\v \x01(\v2\x1d.hearth.agent.v1.DockerResultH\x00R\fdockerResult\x12G\n" +
+	"\x0eupgrade_result\x18\f \x01(\v2\x1e.hearth.agent.v1.UpgradeResultH\x00R\rupgradeResultB\t\n" +
+	"\apayload\"\x94\x06\n" +
 	"\n" +
 	"HubMessage\x124\n" +
 	"\awelcome\x18\x01 \x01(\v2\x18.hearth.agent.v1.WelcomeH\x00R\awelcome\x12A\n" +
@@ -3935,14 +4151,15 @@ const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"\x0edocker_request\x18\t \x01(\v2\x1e.hearth.agent.v1.DockerRequestH\x00R\rdockerRequest\x12+\n" +
 	"\x04hubs\x18\n" +
 	" \x01(\v2\x15.hearth.agent.v1.HubsH\x00R\x04hubs\x12G\n" +
-	"\x0eceiling_config\x18\v \x01(\v2\x1e.hearth.agent.v1.CeilingConfigH\x00R\rceilingConfigB\t\n" +
+	"\x0eceiling_config\x18\v \x01(\v2\x1e.hearth.agent.v1.CeilingConfigH\x00R\rceilingConfig\x12J\n" +
+	"\x0fupgrade_request\x18\f \x01(\v2\x1f.hearth.agent.v1.UpgradeRequestH\x00R\x0eupgradeRequestB\t\n" +
 	"\apayload\"]\n" +
 	"\rCeilingConfig\x122\n" +
 	"\aceiling\x18\x01 \x01(\v2\x18.hearth.agent.v1.CeilingR\aceiling\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\x04R\aversion\"=\n" +
 	"\x0fProtocolVersion\x12\x14\n" +
 	"\x05major\x18\x01 \x01(\rR\x05major\x12\x14\n" +
-	"\x05minor\x18\x02 \x01(\rR\x05minor\"\xfe\x04\n" +
+	"\x05minor\x18\x02 \x01(\rR\x05minor\"\xcd\x05\n" +
 	"\x05Hello\x12K\n" +
 	"\x10protocol_version\x18\x01 \x01(\v2 .hearth.agent.v1.ProtocolVersionR\x0fprotocolVersion\x12\x1b\n" +
 	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\x12\x1a\n" +
@@ -3962,7 +4179,9 @@ const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"\fcapabilities\x18\r \x03(\tR\fcapabilities\x122\n" +
 	"\aceiling\x18\x0e \x01(\v2\x18.hearth.agent.v1.CeilingR\aceiling\x12=\n" +
 	"\rlocal_ceiling\x18\x0f \x01(\v2\x18.hearth.agent.v1.CeilingR\flocalCeiling\x12%\n" +
-	"\x0eceiling_locked\x18\x10 \x01(\bR\rceilingLocked\"\xe1\x01\n" +
+	"\x0eceiling_locked\x18\x10 \x01(\bR\rceilingLocked\x12%\n" +
+	"\x0erelease_target\x18\x11 \x01(\tR\rreleaseTarget\x12&\n" +
+	"\x0fno_self_upgrade\x18\x12 \x01(\tR\rnoSelfUpgrade\"\xe1\x01\n" +
 	"\aCeiling\x12\x12\n" +
 	"\x04exec\x18\x01 \x03(\tR\x04exec\x12\x18\n" +
 	"\arestart\x18\x02 \x03(\tR\arestart\x12\x14\n" +
@@ -4167,7 +4386,18 @@ const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"\x04tags\x18\x02 \x03(\tR\x04tags\x12\x1d\n" +
 	"\n" +
 	"size_bytes\x18\x03 \x01(\x03R\tsizeBytes\x124\n" +
-	"\acreated\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\acreated2Y\n" +
+	"\acreated\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\acreated\"S\n" +
+	"\x0eUpgradeRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
+	"\aversion\x18\x02 \x01(\tR\aversionJ\x04\b\x03\x10\x04J\x04\b\x04\x10\x05R\x03urlR\x06sha256\"\xa1\x01\n" +
+	"\rUpgradeResult\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x0e\n" +
+	"\x02ok\x18\x02 \x01(\bR\x02ok\x12\x16\n" +
+	"\x06denied\x18\x03 \x01(\bR\x06denied\x12\x14\n" +
+	"\x05error\x18\x04 \x01(\tR\x05error\x12\x18\n" +
+	"\aversion\x18\x05 \x01(\tR\aversion\x12\x10\n" +
+	"\x03url\x18\x06 \x01(\tR\x03url\x12\x16\n" +
+	"\x06sha256\x18\a \x01(\tR\x06sha2562Y\n" +
 	"\fAgentService\x12I\n" +
 	"\aConnect\x12\x1d.hearth.agent.v1.AgentMessage\x1a\x1b.hearth.agent.v1.HubMessage(\x010\x01B\xbf\x01\n" +
 	"\x13com.hearth.agent.v1B\n" +
@@ -4185,7 +4415,7 @@ func file_hearth_agent_v1_agent_proto_rawDescGZIP() []byte {
 	return file_hearth_agent_v1_agent_proto_rawDescData
 }
 
-var file_hearth_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 51)
+var file_hearth_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 53)
 var file_hearth_agent_v1_agent_proto_goTypes = []any{
 	(*AgentMessage)(nil),          // 0: hearth.agent.v1.AgentMessage
 	(*HubMessage)(nil),            // 1: hearth.agent.v1.HubMessage
@@ -4237,9 +4467,11 @@ var file_hearth_agent_v1_agent_proto_goTypes = []any{
 	(*DockerResult)(nil),          // 47: hearth.agent.v1.DockerResult
 	(*DockerContainer)(nil),       // 48: hearth.agent.v1.DockerContainer
 	(*DockerImage)(nil),           // 49: hearth.agent.v1.DockerImage
-	nil,                           // 50: hearth.agent.v1.MetricSample.LabelsEntry
-	(*timestamppb.Timestamp)(nil), // 51: google.protobuf.Timestamp
-	(*durationpb.Duration)(nil),   // 52: google.protobuf.Duration
+	(*UpgradeRequest)(nil),        // 50: hearth.agent.v1.UpgradeRequest
+	(*UpgradeResult)(nil),         // 51: hearth.agent.v1.UpgradeResult
+	nil,                           // 52: hearth.agent.v1.MetricSample.LabelsEntry
+	(*timestamppb.Timestamp)(nil), // 53: google.protobuf.Timestamp
+	(*durationpb.Duration)(nil),   // 54: google.protobuf.Duration
 }
 var file_hearth_agent_v1_agent_proto_depIdxs = []int32{
 	4,  // 0: hearth.agent.v1.AgentMessage.hello:type_name -> hearth.agent.v1.Hello
@@ -4253,66 +4485,68 @@ var file_hearth_agent_v1_agent_proto_depIdxs = []int32{
 	38, // 8: hearth.agent.v1.AgentMessage.scan_result:type_name -> hearth.agent.v1.ScanResult
 	40, // 9: hearth.agent.v1.AgentMessage.net_edges:type_name -> hearth.agent.v1.NetEdges
 	47, // 10: hearth.agent.v1.AgentMessage.docker_result:type_name -> hearth.agent.v1.DockerResult
-	12, // 11: hearth.agent.v1.HubMessage.welcome:type_name -> hearth.agent.v1.Welcome
-	16, // 12: hearth.agent.v1.HubMessage.exec_request:type_name -> hearth.agent.v1.ExecRequest
-	29, // 13: hearth.agent.v1.HubMessage.ping:type_name -> hearth.agent.v1.Ping
-	19, // 14: hearth.agent.v1.HubMessage.probe_request:type_name -> hearth.agent.v1.ProbeRequest
-	24, // 15: hearth.agent.v1.HubMessage.log_request:type_name -> hearth.agent.v1.LogRequest
-	26, // 16: hearth.agent.v1.HubMessage.log_cancel:type_name -> hearth.agent.v1.LogCancel
-	30, // 17: hearth.agent.v1.HubMessage.shell_request:type_name -> hearth.agent.v1.ShellRequest
-	37, // 18: hearth.agent.v1.HubMessage.scan_request:type_name -> hearth.agent.v1.ScanRequest
-	43, // 19: hearth.agent.v1.HubMessage.docker_request:type_name -> hearth.agent.v1.DockerRequest
-	13, // 20: hearth.agent.v1.HubMessage.hubs:type_name -> hearth.agent.v1.Hubs
-	2,  // 21: hearth.agent.v1.HubMessage.ceiling_config:type_name -> hearth.agent.v1.CeilingConfig
-	5,  // 22: hearth.agent.v1.CeilingConfig.ceiling:type_name -> hearth.agent.v1.Ceiling
-	3,  // 23: hearth.agent.v1.Hello.protocol_version:type_name -> hearth.agent.v1.ProtocolVersion
-	6,  // 24: hearth.agent.v1.Hello.disks:type_name -> hearth.agent.v1.Disk
-	7,  // 25: hearth.agent.v1.Hello.interfaces:type_name -> hearth.agent.v1.NetworkInterface
-	5,  // 26: hearth.agent.v1.Hello.ceiling:type_name -> hearth.agent.v1.Ceiling
-	5,  // 27: hearth.agent.v1.Hello.local_ceiling:type_name -> hearth.agent.v1.Ceiling
-	51, // 28: hearth.agent.v1.Heartbeat.ts:type_name -> google.protobuf.Timestamp
-	52, // 29: hearth.agent.v1.Heartbeat.uptime:type_name -> google.protobuf.Duration
-	10, // 30: hearth.agent.v1.MetricsBatch.samples:type_name -> hearth.agent.v1.MetricSample
-	50, // 31: hearth.agent.v1.MetricSample.labels:type_name -> hearth.agent.v1.MetricSample.LabelsEntry
-	51, // 32: hearth.agent.v1.MetricSample.ts:type_name -> google.protobuf.Timestamp
-	51, // 33: hearth.agent.v1.Welcome.server_time:type_name -> google.protobuf.Timestamp
-	52, // 34: hearth.agent.v1.Welcome.heartbeat_interval:type_name -> google.protobuf.Duration
-	52, // 35: hearth.agent.v1.ExecRequest.timeout:type_name -> google.protobuf.Duration
-	17, // 36: hearth.agent.v1.ExecRequest.command:type_name -> hearth.agent.v1.Command
-	18, // 37: hearth.agent.v1.ExecRequest.restart:type_name -> hearth.agent.v1.RestartService
-	52, // 38: hearth.agent.v1.ProbeRequest.timeout:type_name -> google.protobuf.Duration
-	20, // 39: hearth.agent.v1.ProbeRequest.http:type_name -> hearth.agent.v1.HTTPProbe
-	21, // 40: hearth.agent.v1.ProbeRequest.tcp:type_name -> hearth.agent.v1.TCPProbe
-	22, // 41: hearth.agent.v1.ProbeRequest.dns:type_name -> hearth.agent.v1.DNSProbe
-	25, // 42: hearth.agent.v1.LogRequest.source:type_name -> hearth.agent.v1.LogSource
-	28, // 43: hearth.agent.v1.LogLines.lines:type_name -> hearth.agent.v1.LogLine
-	51, // 44: hearth.agent.v1.LogLine.ts:type_name -> google.protobuf.Timestamp
-	31, // 45: hearth.agent.v1.ShellRequest.open:type_name -> hearth.agent.v1.ShellOpen
-	32, // 46: hearth.agent.v1.ShellRequest.resize:type_name -> hearth.agent.v1.TerminalSize
-	33, // 47: hearth.agent.v1.ShellRequest.close:type_name -> hearth.agent.v1.ShellClose
-	32, // 48: hearth.agent.v1.ShellOpen.size:type_name -> hearth.agent.v1.TerminalSize
-	35, // 49: hearth.agent.v1.ShellEvent.started:type_name -> hearth.agent.v1.ShellStarted
-	36, // 50: hearth.agent.v1.ShellEvent.exited:type_name -> hearth.agent.v1.ShellExited
-	52, // 51: hearth.agent.v1.ScanRequest.timeout:type_name -> google.protobuf.Duration
-	39, // 52: hearth.agent.v1.ScanResult.hosts:type_name -> hearth.agent.v1.ScannedHost
-	41, // 53: hearth.agent.v1.NetEdges.neighbors:type_name -> hearth.agent.v1.Neighbor
-	42, // 54: hearth.agent.v1.NetEdges.connections:type_name -> hearth.agent.v1.Connection
-	52, // 55: hearth.agent.v1.DockerRequest.timeout:type_name -> google.protobuf.Duration
-	44, // 56: hearth.agent.v1.DockerRequest.list:type_name -> hearth.agent.v1.DockerList
-	45, // 57: hearth.agent.v1.DockerRequest.action:type_name -> hearth.agent.v1.DockerAction
-	46, // 58: hearth.agent.v1.DockerRequest.logs:type_name -> hearth.agent.v1.DockerLogs
-	48, // 59: hearth.agent.v1.DockerResult.containers:type_name -> hearth.agent.v1.DockerContainer
-	49, // 60: hearth.agent.v1.DockerResult.images:type_name -> hearth.agent.v1.DockerImage
-	28, // 61: hearth.agent.v1.DockerResult.lines:type_name -> hearth.agent.v1.LogLine
-	51, // 62: hearth.agent.v1.DockerContainer.created:type_name -> google.protobuf.Timestamp
-	51, // 63: hearth.agent.v1.DockerImage.created:type_name -> google.protobuf.Timestamp
-	0,  // 64: hearth.agent.v1.AgentService.Connect:input_type -> hearth.agent.v1.AgentMessage
-	1,  // 65: hearth.agent.v1.AgentService.Connect:output_type -> hearth.agent.v1.HubMessage
-	65, // [65:66] is the sub-list for method output_type
-	64, // [64:65] is the sub-list for method input_type
-	64, // [64:64] is the sub-list for extension type_name
-	64, // [64:64] is the sub-list for extension extendee
-	0,  // [0:64] is the sub-list for field type_name
+	51, // 11: hearth.agent.v1.AgentMessage.upgrade_result:type_name -> hearth.agent.v1.UpgradeResult
+	12, // 12: hearth.agent.v1.HubMessage.welcome:type_name -> hearth.agent.v1.Welcome
+	16, // 13: hearth.agent.v1.HubMessage.exec_request:type_name -> hearth.agent.v1.ExecRequest
+	29, // 14: hearth.agent.v1.HubMessage.ping:type_name -> hearth.agent.v1.Ping
+	19, // 15: hearth.agent.v1.HubMessage.probe_request:type_name -> hearth.agent.v1.ProbeRequest
+	24, // 16: hearth.agent.v1.HubMessage.log_request:type_name -> hearth.agent.v1.LogRequest
+	26, // 17: hearth.agent.v1.HubMessage.log_cancel:type_name -> hearth.agent.v1.LogCancel
+	30, // 18: hearth.agent.v1.HubMessage.shell_request:type_name -> hearth.agent.v1.ShellRequest
+	37, // 19: hearth.agent.v1.HubMessage.scan_request:type_name -> hearth.agent.v1.ScanRequest
+	43, // 20: hearth.agent.v1.HubMessage.docker_request:type_name -> hearth.agent.v1.DockerRequest
+	13, // 21: hearth.agent.v1.HubMessage.hubs:type_name -> hearth.agent.v1.Hubs
+	2,  // 22: hearth.agent.v1.HubMessage.ceiling_config:type_name -> hearth.agent.v1.CeilingConfig
+	50, // 23: hearth.agent.v1.HubMessage.upgrade_request:type_name -> hearth.agent.v1.UpgradeRequest
+	5,  // 24: hearth.agent.v1.CeilingConfig.ceiling:type_name -> hearth.agent.v1.Ceiling
+	3,  // 25: hearth.agent.v1.Hello.protocol_version:type_name -> hearth.agent.v1.ProtocolVersion
+	6,  // 26: hearth.agent.v1.Hello.disks:type_name -> hearth.agent.v1.Disk
+	7,  // 27: hearth.agent.v1.Hello.interfaces:type_name -> hearth.agent.v1.NetworkInterface
+	5,  // 28: hearth.agent.v1.Hello.ceiling:type_name -> hearth.agent.v1.Ceiling
+	5,  // 29: hearth.agent.v1.Hello.local_ceiling:type_name -> hearth.agent.v1.Ceiling
+	53, // 30: hearth.agent.v1.Heartbeat.ts:type_name -> google.protobuf.Timestamp
+	54, // 31: hearth.agent.v1.Heartbeat.uptime:type_name -> google.protobuf.Duration
+	10, // 32: hearth.agent.v1.MetricsBatch.samples:type_name -> hearth.agent.v1.MetricSample
+	52, // 33: hearth.agent.v1.MetricSample.labels:type_name -> hearth.agent.v1.MetricSample.LabelsEntry
+	53, // 34: hearth.agent.v1.MetricSample.ts:type_name -> google.protobuf.Timestamp
+	53, // 35: hearth.agent.v1.Welcome.server_time:type_name -> google.protobuf.Timestamp
+	54, // 36: hearth.agent.v1.Welcome.heartbeat_interval:type_name -> google.protobuf.Duration
+	54, // 37: hearth.agent.v1.ExecRequest.timeout:type_name -> google.protobuf.Duration
+	17, // 38: hearth.agent.v1.ExecRequest.command:type_name -> hearth.agent.v1.Command
+	18, // 39: hearth.agent.v1.ExecRequest.restart:type_name -> hearth.agent.v1.RestartService
+	54, // 40: hearth.agent.v1.ProbeRequest.timeout:type_name -> google.protobuf.Duration
+	20, // 41: hearth.agent.v1.ProbeRequest.http:type_name -> hearth.agent.v1.HTTPProbe
+	21, // 42: hearth.agent.v1.ProbeRequest.tcp:type_name -> hearth.agent.v1.TCPProbe
+	22, // 43: hearth.agent.v1.ProbeRequest.dns:type_name -> hearth.agent.v1.DNSProbe
+	25, // 44: hearth.agent.v1.LogRequest.source:type_name -> hearth.agent.v1.LogSource
+	28, // 45: hearth.agent.v1.LogLines.lines:type_name -> hearth.agent.v1.LogLine
+	53, // 46: hearth.agent.v1.LogLine.ts:type_name -> google.protobuf.Timestamp
+	31, // 47: hearth.agent.v1.ShellRequest.open:type_name -> hearth.agent.v1.ShellOpen
+	32, // 48: hearth.agent.v1.ShellRequest.resize:type_name -> hearth.agent.v1.TerminalSize
+	33, // 49: hearth.agent.v1.ShellRequest.close:type_name -> hearth.agent.v1.ShellClose
+	32, // 50: hearth.agent.v1.ShellOpen.size:type_name -> hearth.agent.v1.TerminalSize
+	35, // 51: hearth.agent.v1.ShellEvent.started:type_name -> hearth.agent.v1.ShellStarted
+	36, // 52: hearth.agent.v1.ShellEvent.exited:type_name -> hearth.agent.v1.ShellExited
+	54, // 53: hearth.agent.v1.ScanRequest.timeout:type_name -> google.protobuf.Duration
+	39, // 54: hearth.agent.v1.ScanResult.hosts:type_name -> hearth.agent.v1.ScannedHost
+	41, // 55: hearth.agent.v1.NetEdges.neighbors:type_name -> hearth.agent.v1.Neighbor
+	42, // 56: hearth.agent.v1.NetEdges.connections:type_name -> hearth.agent.v1.Connection
+	54, // 57: hearth.agent.v1.DockerRequest.timeout:type_name -> google.protobuf.Duration
+	44, // 58: hearth.agent.v1.DockerRequest.list:type_name -> hearth.agent.v1.DockerList
+	45, // 59: hearth.agent.v1.DockerRequest.action:type_name -> hearth.agent.v1.DockerAction
+	46, // 60: hearth.agent.v1.DockerRequest.logs:type_name -> hearth.agent.v1.DockerLogs
+	48, // 61: hearth.agent.v1.DockerResult.containers:type_name -> hearth.agent.v1.DockerContainer
+	49, // 62: hearth.agent.v1.DockerResult.images:type_name -> hearth.agent.v1.DockerImage
+	28, // 63: hearth.agent.v1.DockerResult.lines:type_name -> hearth.agent.v1.LogLine
+	53, // 64: hearth.agent.v1.DockerContainer.created:type_name -> google.protobuf.Timestamp
+	53, // 65: hearth.agent.v1.DockerImage.created:type_name -> google.protobuf.Timestamp
+	0,  // 66: hearth.agent.v1.AgentService.Connect:input_type -> hearth.agent.v1.AgentMessage
+	1,  // 67: hearth.agent.v1.AgentService.Connect:output_type -> hearth.agent.v1.HubMessage
+	67, // [67:68] is the sub-list for method output_type
+	66, // [66:67] is the sub-list for method input_type
+	66, // [66:66] is the sub-list for extension type_name
+	66, // [66:66] is the sub-list for extension extendee
+	0,  // [0:66] is the sub-list for field type_name
 }
 
 func init() { file_hearth_agent_v1_agent_proto_init() }
@@ -4332,6 +4566,7 @@ func file_hearth_agent_v1_agent_proto_init() {
 		(*AgentMessage_ScanResult)(nil),
 		(*AgentMessage_NetEdges)(nil),
 		(*AgentMessage_DockerResult)(nil),
+		(*AgentMessage_UpgradeResult)(nil),
 	}
 	file_hearth_agent_v1_agent_proto_msgTypes[1].OneofWrappers = []any{
 		(*HubMessage_Welcome)(nil),
@@ -4345,6 +4580,7 @@ func file_hearth_agent_v1_agent_proto_init() {
 		(*HubMessage_DockerRequest)(nil),
 		(*HubMessage_Hubs)(nil),
 		(*HubMessage_CeilingConfig)(nil),
+		(*HubMessage_UpgradeRequest)(nil),
 	}
 	file_hearth_agent_v1_agent_proto_msgTypes[16].OneofWrappers = []any{
 		(*ExecRequest_Command)(nil),
@@ -4378,7 +4614,7 @@ func file_hearth_agent_v1_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_hearth_agent_v1_agent_proto_rawDesc), len(file_hearth_agent_v1_agent_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   51,
+			NumMessages:   53,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

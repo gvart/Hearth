@@ -73,6 +73,22 @@ export interface Device {
   last_seen: string;
   /** When the host last booted (RFC 3339); null until a heartbeat reports uptime. */
   boot_time: string | null;
+  /** The agent's version next to the hub's; absent for a device without an agent that reported one. */
+  agent_version?: AgentVersion;
+}
+
+/** A device's agent version next to the hub's, and whether the hub can upgrade it (#347). */
+export interface AgentVersion {
+  agent: string;
+  hub: string;
+  /** Both are releases and the agent's is older. */
+  upgrade_available: boolean;
+  /** The agent upgrades itself when asked. */
+  remote_upgrade: boolean;
+  /** Why an agent that could does not upgrade itself (a Kubernetes pod). */
+  no_remote_upgrade?: string;
+  /** On the device's own page, for an agent too old to upgrade itself: the installer's one-liner. */
+  install_command?: string;
 }
 
 export interface Session {

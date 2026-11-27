@@ -187,6 +187,7 @@ export function DevicesPage() {
                   <span className="dev-block-name">
                     {displayName(d)}
                     {isNew(d) ? <span className="badge">New</span> : null}
+                    <OutOfDate device={d} />
                   </span>
                   <span className="pins">
                     <Pin label="Addr" value={primaryIP(d) ?? '—'} />
@@ -239,6 +240,7 @@ export function DevicesPage() {
                         <StatusDot status={d.status} />
                         <span className="name">{displayName(d)}</span>
                         {isNew(d) ? <span className="badge">New</span> : null}
+                        <OutOfDate device={d} />
                       </span>
                     </td>
                     <td>{osArch(d)}</td>
@@ -280,5 +282,18 @@ export function DevicesPage() {
         />
       ) : null}
     </>
+  );
+}
+
+/** The badge of a device whose agent is older than the hub (#347): its page upgrades it. */
+function OutOfDate({ device }: { device: Device }) {
+  const v = device.agent_version;
+  if (!v?.upgrade_available) {
+    return null;
+  }
+  return (
+    <span className="badge badge-warn" title={`The agent runs ${v.agent}; the hub runs ${v.hub}`}>
+      Out of date
+    </span>
   );
 }

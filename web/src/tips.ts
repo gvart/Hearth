@@ -16,7 +16,8 @@ export type TipId =
   | "cluster"
   | "devicehub"
   | "tokens"
-  | "capabilities";
+  | "capabilities"
+  | "upgrade";
 
 export interface TipText {
   /** What the "?" is about, for a screen reader: "About runbooks". */
@@ -133,5 +134,13 @@ export const tips: Record<TipId, TipText> = {
       "A device installed with --local-ceiling ignores what is set here.",
     ],
     docs: "security.md",
+  },
+  upgrade: {
+    about: "upgrading the agent",
+    lines: [
+      "Upgrade agent brings the agent up to the hub's version: it downloads the release from GitHub, checks it against the release's checksums, replaces its binary and restarts, in a few seconds. It takes the admin password again.",
+      "An agent older than remote upgrades is upgraded once by running the installer command on the device; after that, from here or with hearth device upgrade. An agent in a Kubernetes pod is upgraded with its image.",
+    ],
+    docs: "getting-started.md",
   },
 };

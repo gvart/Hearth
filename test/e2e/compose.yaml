@@ -1,6 +1,7 @@
 # One hub and two idle agents, all built from the current checkout. Driven by
 # e2e_test.go (`task e2e`), which runs `hearth agent join` and
-# `hearth agent run` inside the agent containers itself.
+# `hearth agent run` inside the agent containers itself. releases serves a
+# "newer" release (v0.0.2-e2e) the test upgrades agent-1 to (#347).
 
 x-hearth: &hearth
   image: hearth-e2e:local
@@ -28,11 +29,24 @@ services:
       timeout: 1s
       retries: 30
 
+  releases:
+    image: hearth-e2e-device:local
+    build:
+      context: ../..
+      dockerfile: test/e2e/Dockerfile
+      target: device
+    init: true
+    command: [busybox-extras, httpd, -f, -p, "8000", -h, /srv]
+
   agent-1:
     <<: *hearth
     pull_policy: never
     hostname: agent-1
     command: [sleep, infinity]
+    environment:
+      # For tests only: the agent upgrades itself from releases instead of
+      # the project's published releases.
+      HEARTH_RELEASE_BASE_URL: http://releases:8000/releases
     volumes:
       - agent-1-data:/var/lib/hearth/agent
 

@@ -341,6 +341,19 @@ func AgentsHandler(a *Agents, ms *metrics.Store, log *slog.Logger) http.Handler 
 		id, res, err := a.Scan(ctx, in.Device, subnets, time.Duration(in.TimeoutMS)*time.Millisecond)
 		return res, id, err
 	})
+	handle("upgrade", func(ctx context.Context, in agentCall) (proto.Message, string, error) {
+		if in.CheckOnly {
+			return nil, "", a.CheckUpgrade(ctx, in.Device)
+		}
+		req := &agentv1.UpgradeRequest{}
+		if err := protojson.Unmarshal(in.Req, req); err != nil {
+			return nil, "", err
+		}
+		ctx, cancel := context.WithTimeout(ctx, upgradeWait)
+		defer cancel()
+		res, err := a.Upgrade(ctx, in.Device, req)
+		return res, "", err
+	})
 	handle(opMetric, func(ctx context.Context, in agentCall) (proto.Message, string, error) {
 		if !metrics.IsKnown(in.Metric) {
 			return nil, "", fmt.Errorf("unknown metric %q", in.Metric)

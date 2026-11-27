@@ -6,20 +6,28 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/hearth ./cmd/hearth
+# The same binary as a "newer" release, for the agent upgrade of
+# e2e_test.go (#347): only the version linked in differs.
+RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=v0.0.2-e2e" -o /out/hearth-next ./cmd/hearth
 
 # A fresh device for autohub.compose.yaml: no hearth installed, curl to run
 # the pasted install command, and /srv, a release server's files (the
-# binary as a release archive, checksums.txt, latest.json) for install.sh.
+# binary as a release archive, checksums.txt, latest.json) for install.sh,
+# and the "newer" release v0.0.2-e2e agents upgrade to in e2e_test.go.
 FROM alpine:3.22 AS device
 RUN apk add --no-cache curl busybox-extras
 COPY --from=build /out/hearth /build/hearth
+COPY --from=build /out/hearth-next /build/next/hearth
 # The arch from uname: the classic builder sets no TARGETARCH.
 RUN set -e; case "$(uname -m)" in aarch64) arch=arm64 ;; x86_64) arch=amd64 ;; *) exit 1 ;; esac; \
     v=0.0.0-e2e; d=/srv/releases/v$v; a=hearth_${v}_linux_${arch}.tar.gz; \
     mkdir -p "$d"; tar -czf "$d/$a" -C /build hearth; \
     (cd "$d" && sha256sum "$a" >checksums.txt); \
     printf '{"tag_name": "v%s"}\n' "$v" >/srv/latest.json; \
-    rm /build/hearth
+    v=0.0.2-e2e; d=/srv/releases/v$v; a=hearth_${v}_linux_${arch}.tar.gz; \
+    mkdir -p "$d"; tar -czf "$d/$a" -C /build/next hearth; \
+    (cd "$d" && sha256sum "$a" >checksums.txt); \
+    rm -r /build
 
 # alpine rather than distroless: the agent containers idle on `sleep` and the
 # hub healthcheck needs `nc`.

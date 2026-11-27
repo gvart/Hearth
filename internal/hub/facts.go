@@ -35,6 +35,11 @@ type Facts struct {
 	CeilingLocked bool `json:"ceiling_locked,omitempty"`
 	// ProtocolMinor is the agent's protocol minor version.
 	ProtocolMinor uint32 `json:"protocol_minor,omitempty"`
+	// ReleaseTarget is the os_arch of the release archive the agent
+	// upgrades itself from; empty when it does not, and NoSelfUpgrade then
+	// says why, if the agent says.
+	ReleaseTarget string `json:"release_target,omitempty"`
+	NoSelfUpgrade string `json:"no_self_upgrade,omitempty"`
 }
 
 // Ceiling is what the device's agent lets the hub run.
@@ -110,6 +115,8 @@ func factsFromHello(h *agentv1.Hello) (store.DeviceFacts, error) {
 		Interfaces:    []Interface{},
 		AgentVersion:  h.GetAgentVersion(),
 		Capabilities:  nonNil(h.GetCapabilities()),
+		ReleaseTarget: h.GetReleaseTarget(),
+		NoSelfUpgrade: h.GetNoSelfUpgrade(),
 	}
 	f.Ceiling, f.LocalCeiling = ceilingJSON(h.GetCeiling()), ceilingJSON(h.GetLocalCeiling())
 	f.CeilingLocked, f.ProtocolMinor = h.GetCeilingLocked(), h.GetProtocolVersion().GetMinor()
