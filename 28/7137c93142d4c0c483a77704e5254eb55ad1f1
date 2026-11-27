@@ -32,6 +32,8 @@ web/test/platforms.test.mjs
 web/src/platforms.ts
   s_18b57982fdff93::t_ba663adca80697 5,10,47-56,83,98,124-133
   s_18b57982fdff93::t_a1ac32809211b5 134-135
+web/src/tips.ts
+  s_18b57982fdff93::t_3e4e10a2043292 51
 ---
 {
   "schema_version": "authorship/3.0.0",
