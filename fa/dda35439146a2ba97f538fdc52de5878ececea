@@ -1,0 +1,42 @@
+internal/hub/rollback_test.go
+  s_18b57982fdff93::t_69799b3222acf4 95-105,112-119
+docs/security.md
+  s_18b57982fdff93::t_40cfb72ecdfa95 232-242,263-268,281-283
+internal/hub/registry.go
+  s_18b57982fdff93::t_9b036a45a47767 128-134,138-140,144,149,156-162
+test/e2e/Dockerfile
+  s_18b57982fdff93::t_d4a10e5d0f6802 9-15,18-19
+internal/hub/facts.go
+  s_18b57982fdff93::t_9b036a45a47767 10,111-124,144
+internal/agent/upgrade.go
+  s_18b57982fdff93::t_27407a74b1e758 127-132,406-410,732,735-738,740-746
+internal/agent/upgrade_test.go
+  s_18b57982fdff93::t_cbc421498eff2e 540,543,556
+  s_18b57982fdff93::t_6d2c4c7f31d94c 528-539,541-542,544-555,557-564
+internal/release/sign.go
+  s_18b57982fdff93::t_83cb68a3823acc 26-30,32
+internal/release/key.go
+  s_18b57982fdff93::t_83cb68a3823acc 1-8
+internal/hub/agentstream.go
+  s_18b57982fdff93::t_9b036a45a47767 113-114,118-119,122-124,333-336,349
+internal/release/key_e2e.go
+  s_18b57982fdff93::t_83cb68a3823acc 1-13
+.github/workflows/release.yml
+  s_18b57982fdff93::t_66f34ccdcd3b05 22-23,64-105,110-115,117,122-123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "fadda35439146a2ba97f538fdc52de5878ececea",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
