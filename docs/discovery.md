@@ -125,6 +125,9 @@ The first rule that matches decides:
    (`_apple-mobdev2._tcp`, `_remotepairing._tcp`) a `phone`.
 6. Anything else is `unknown`.
 
+A host announcing ESPHome's native API (`_esphomelib._tcp`) also gets an **Adopt ESPHome** action, which
+reads its sensors and switches with its encryption key: see [ESPHome](esphome.md).
+
 Each host also gets `agent_capable`: true for a `computer`, and for anything offering a shell or
 announcing itself as a workstation (a NAS or router with SSH on, say). It is a hint for where an
 agent could go, not a promise.
