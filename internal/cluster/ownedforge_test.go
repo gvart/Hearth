@@ -133,16 +133,20 @@ func TestForgedApprovalRefused(t *testing.T) {
 		t.Fatalf("m's own decision = %q (checked %v), %v; want none", d, checked, err)
 	}
 
-	plant(t, an, store.CreateApproval{Stamp: forgedStamp(), ID: "forged", CreatedAt: now.UnixMilli(),
+	plant(t, an, store.CreateApproval{
+		Stamp: forgedStamp(), ID: "forged", CreatedAt: now.UnixMilli(),
 		ExpiresAt: now.Add(time.Hour).UnixMilli(), ActorKind: "automation", ActorID: "a", Action: "automation.exec",
-		Class: "dangerous", Target: "pi", Detail: `{}`, Owner: "m"})
+		Class: "dangerous", Target: "pi", Detail: `{}`, Owner: "m",
+	})
 	err = an.m("m").st.Approvals().Decide(ctx, "forged", store.ApprovalApproved, "web/w", now)
 	if !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("m decided an approval it did not create: %v, want ErrNotFound", err)
 	}
 	// Its own approval, it decides.
-	if err := an.m("m").st.Approvals().Create(ctx, store.Approval{ID: "own", CreatedAt: now, ExpiresAt: now.Add(time.Hour),
-		ActorKind: "automation", ActorID: "a", Action: "automation.exec", Class: "dangerous", Target: "pi", Detail: []byte(`{}`)}); err != nil {
+	if err := an.m("m").st.Approvals().Create(ctx, store.Approval{
+		ID: "own", CreatedAt: now, ExpiresAt: now.Add(time.Hour),
+		ActorKind: "automation", ActorID: "a", Action: "automation.exec", Class: "dangerous", Target: "pi", Detail: []byte(`{}`),
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := an.m("m").st.Approvals().Decide(ctx, "own", store.ApprovalApproved, "web/w", now); err != nil {
