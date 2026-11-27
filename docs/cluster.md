@@ -287,7 +287,7 @@ member's host: set the password on a master's.
 
 A critical global write counts the storage members among its W replicas, but they never hand a global
 row on: if the master that made it is lost before any other master got it, it is lost with it (unless
-a storage member holding it is promoted to master).
+a storage member holding it is promoted to master; [#386](https://github.com/gvart/hearth/issues/386)).
 
 ## Masters
 
