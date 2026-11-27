@@ -1,0 +1,51 @@
+internal/cluster/promote.go
+  s_18b57982fdff93::t_6147702aabe17f 368
+internal/cluster/antientropy.go
+  s_18b57982fdff93::t_6147702aabe17f 268-270
+internal/cluster/mastertables.go
+  s_18b57982fdff93::t_6147702aabe17f 75-84,86,91-94,96,98,102,115-117,119,124-128,142-146,148,152-154,157,160-161,188-190,194-197
+  s_18b57982fdff93::t_5a11abde503999 130-140
+  s_18b57982fdff93::t_6ae5d4655102e5 99-101
+  s_18b57982fdff93::t_24fffabf212c00 85,118,141,147
+internal/cluster/replicate_test.go
+  s_18b57982fdff93::t_6ae5d4655102e5 173-174
+internal/cluster/replicate.go
+  s_18b57982fdff93::t_eb1539e3513793 163-167,245,1131-1141,1143-1144,1146-1147,1149-1182,1527-1533,1711-1713
+  s_18b57982fdff93::t_6147702aabe17f 172,174-177,180-181,1427
+  s_18b57982fdff93::t_24fffabf212c00 85-89,102-106,173,232
+internal/cluster/promote_test.go
+  s_18b57982fdff93::t_6ae5d4655102e5 187
+internal/cluster/hints.go
+  s_18b57982fdff93::t_eb1539e3513793 109-115
+internal/cluster/mastertables_test.go
+  s_18b57982fdff93::t_6b89984a98bdcb 671
+  s_18b57982fdff93::t_9624a7f7d362c2 6
+  s_18b57982fdff93::t_9171ac39741052 469
+  s_18b57982fdff93::t_44053a57fd2284 448
+  s_18b57982fdff93::t_eddb3325b3a34e 486-490
+  s_18b57982fdff93::t_4ae3c4cbff1d50 691-692,694-695,697-698,741-742
+  s_18b57982fdff93::t_5a11abde503999 516-520,535-549
+  s_18b57982fdff93::t_c930cb4c7ec585 572,640-670,672-690,693,696,699-740,743-744
+  s_18b57982fdff93::t_5ca203c0b3721f 601-639
+  s_18b57982fdff93::t_6ae5d4655102e5 467-468,470-477,496-515,521-534,550-571
+internal/cluster/apseek_test.go
+  s_18b57982fdff93::t_6ae5d4655102e5 36
+internal/store/hubs.go
+  s_18b57982fdff93::t_5a11abde503999 53-69
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "b1ec6937044fcde0a75e63f0a98dc7cdae08b51c",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
