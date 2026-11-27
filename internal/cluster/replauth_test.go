@@ -250,6 +250,10 @@ func TestPasswordResetWithStorageOnlyMembers(t *testing.T) {
 					t.Fatalf("%s's admin row = %v, %v; want h2", id, rows.Vals, err)
 				}
 			}
+			// A member without the key resets nothing, and says so.
+			if err := an.m("s").st.Admin().SetPasswordHash(ctx, "h3"); !errors.Is(err, errNotMaster) {
+				t.Fatalf("a reset by a member without the key: %v, want errNotMaster", err)
+			}
 		})
 	}
 }

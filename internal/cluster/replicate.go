@@ -462,6 +462,11 @@ func (r *Replicator) applyRouted(ctx context.Context, cmd store.Command) (store.
 	v := r.view()
 	switch route.Kind {
 	case store.RouteEvery:
+		_, reset := cmd.(store.SetPasswordHash)
+		if reset && !r.holdsKey() {
+			// Its global rows are taken from masters only.
+			return store.Result{}, fmt.Errorf("apply %s: this member does not hold the hub CA key: %w", cmd.Op(), errNotMaster)
+		}
 		live, _ := v.all()
 		results := make([]store.Result, len(live))
 		errs := make([]error, len(live))
@@ -482,7 +487,7 @@ func (r *Replicator) applyRouted(ctx context.Context, cmd store.Command) (store.
 		// ring writes them itself. It is the one such command that writes
 		// global rows; the others touch only sharded ones, of which this
 		// member may still hold stale copies from before its demotion.
-		if _, ok := cmd.(store.SetPasswordHash); ok && !slices.Contains(live, v.self) && r.holdsKey() {
+		if reset && !slices.Contains(live, v.self) {
 			res, err := r.applyHere(ctx, cmd, route, v)
 			if err != nil {
 				return store.Result{}, err

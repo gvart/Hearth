@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gvart/hearth/internal/cluster"
+	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/policy"
 	"github.com/gvart/hearth/internal/store"
 )
@@ -155,10 +157,29 @@ func openHubStore(ctx context.Context, dataDir string) (*store.Store, error) {
 	if !cluster.IsMember(dataDir) {
 		return store.Open(ctx, path)
 	}
+	// Only a master writes what admin commands write (#382): on a
+	// storage-only member nothing is written, not even an audit entry.
+	if _, err := os.Stat(filepath.Join(dataDir, pki.CAKeyFile)); err != nil {
+		return store.Open(ctx, path, store.WithoutUpgrade(),
+			store.WithApplier(func(*store.Store) store.Applier { return storageOnly{} }))
+	}
 	cc, err := cluster.DialControl(dataDir)
 	if err != nil {
 		return nil, err
 	}
 	return store.Open(ctx, path, store.WithoutUpgrade(),
 		store.WithApplier(func(*store.Store) store.Applier { return cc }))
+}
+
+// errStorageOnly refuses a write from an admin command on a storage-only
+// member of a cluster.
+var errStorageOnly = errors.New("this hub is a storage-only member of its cluster, and only a master makes changes: " +
+	"run the command on a master's host, or use the web UI")
+
+// storageOnly is the applier of a storage-only member's admin commands: it
+// refuses every write.
+type storageOnly struct{}
+
+func (storageOnly) Apply(context.Context, store.Command) (store.Result, error) {
+	return store.Result{}, errStorageOnly
 }

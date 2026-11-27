@@ -44,6 +44,22 @@ func (c *CA) ProveKey(caFP string, msg []byte) ([]byte, error) {
 	return nil, ErrNoCAKey
 }
 
+// CanProve reports whether ProveKey(caFP, ...) would sign: this CA holds
+// the key of the CA certificate whose fingerprint is caFP.
+func (c *CA) CanProve(caFP string) bool {
+	s := c.state()
+	pairs := []keyPair{s.cur}
+	if s.next != nil {
+		pairs = append(pairs, *s.next)
+	}
+	for _, kp := range pairs {
+		if FingerprintHex(kp.cert) == caFP {
+			return kp.key != nil
+		}
+	}
+	return false
+}
+
 func signProof(key crypto.Signer, msg []byte) ([]byte, error) {
 	switch key.Public().(type) {
 	case ed25519.PublicKey:

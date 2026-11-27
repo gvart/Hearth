@@ -15,9 +15,7 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"github.com/gvart/hearth/internal/cluster"
 	"github.com/gvart/hearth/internal/hub"
-	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/policy"
 )
 
@@ -53,13 +51,6 @@ func runAdminSetPassword(ctx context.Context, dataDir, password string, out io.W
 	// Fail on a wrong data dir instead of creating an empty database there.
 	if _, err := os.Stat(dbPath); err != nil {
 		return fmt.Errorf("open hub database: %w (has `hearth hub` been started with --data-dir %s?)", err, dataDir)
-	}
-	// Only a master writes the admin password, a global row (#382): a
-	// storage-only member's copy would reach no other member.
-	if cluster.IsMember(dataDir) {
-		if _, err := os.Stat(filepath.Join(dataDir, pki.CAKeyFile)); err != nil {
-			return errors.New("this hub is not a master of its cluster: set the password on a master's host, or in the web UI")
-		}
 	}
 	st, err := openHubStore(ctx, dataDir)
 	if err != nil {

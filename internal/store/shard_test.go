@@ -95,6 +95,39 @@ func TestRouteKeyIsRowPartition(t *testing.T) {
 	}
 }
 
+// A command routed to a key, split by keys or run on every member writes
+// sharded rows only, but for a password reset (#382): a storage member,
+// which relays such a command, is no source of global rows.
+func TestOnlyGlobalRoutesWriteGlobalRows(t *testing.T) {
+	ctx := t.Context()
+	s := openTest(t)
+	applied := map[RouteKind]int{}
+	for _, cmd := range allCommands() {
+		r, err := RouteOf(cmd)
+		if err != nil || r.Kind == RouteGlobal {
+			continue
+		}
+		if _, ok := cmd.(SetPasswordHash); ok {
+			continue
+		}
+		_, muts, err := s.ApplyLocalMutations(ctx, cmd)
+		if err != nil {
+			continue // a command the fixture order does not allow
+		}
+		applied[r.Kind]++
+		for _, m := range muts {
+			if GlobalTable(m.Table) {
+				t.Errorf("%s (route %v) writes the global table %s", cmd.Op(), r.Kind, m.Table)
+			}
+		}
+	}
+	for _, k := range []RouteKind{RouteKey, RouteSplit, RouteEvery} {
+		if applied[k] == 0 {
+			t.Errorf("no command of route %v applied: the test checks nothing of it", k)
+		}
+	}
+}
+
 func TestSplitAndMergeResults(t *testing.T) {
 	cmd := MarkDevicesOffline{IDs: []string{"a", "b", "c"}, Cutoff: 7}
 	parts, err := SplitCommand(cmd, func(k string) string {

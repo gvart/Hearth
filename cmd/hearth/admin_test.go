@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/gvart/hearth/internal/cluster"
+	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/policy"
 	"github.com/gvart/hearth/internal/store"
 )
@@ -36,16 +37,24 @@ func executeWithStdin(t *testing.T, stdin string, args ...string) (string, error
 // TestAdminSetPasswordNeedsMaster: on a storage-only cluster member, which
 // holds no CA key and writes no global rows (#382), set-password refuses.
 func TestAdminSetPasswordNeedsMaster(t *testing.T) {
-	dir := t.TempDir()
+	dir, _ := initHub(t)
+	// A storage-only member of a cluster: no CA key.
 	if err := os.MkdirAll(filepath.Join(dir, cluster.StateDir), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, dbFile), nil, 0o600); err != nil {
+	if err := os.Remove(filepath.Join(dir, pki.CAKeyFile)); err != nil {
 		t.Fatal(err)
 	}
 	_, err := executeWithStdin(t, "s3cret-admin-pw\n", "admin", "set-password", "--data-dir", dir)
-	if err == nil || !strings.Contains(err.Error(), "not a master") {
+	if err == nil || !strings.Contains(err.Error(), "storage-only member") {
 		t.Fatalf("set-password on a storage member = %v", err)
+	}
+	st := openStore(t, dir)
+	if e, err := st.Audit().List(t.Context(), 10); err != nil || len(e) != 0 {
+		t.Fatalf("audit entries written on a storage member: %+v, %v", e, err)
+	}
+	if _, err := st.Admin().PasswordHash(t.Context()); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("password set on a storage member: %v", err)
 	}
 }
 

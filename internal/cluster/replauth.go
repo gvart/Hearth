@@ -24,7 +24,8 @@ import (
 
 // MasterKey proves and checks that a member holds the hub CA key.
 type MasterKey interface {
-	// Holds reports whether this member holds a hub CA key.
+	// Holds reports whether Prove would succeed: this member holds the key
+	// of a hub CA it trusts.
 	Holds() bool
 	// Prove signs msg with a hub CA key this member holds; ok is false
 	// when it holds none.
@@ -39,7 +40,15 @@ func CAMasterKey(ca *pki.CA) MasterKey { return caMasterKey{ca} }
 
 type caMasterKey struct{ ca *pki.CA }
 
-func (k caMasterKey) Holds() bool { return k.ca.HasKey() || k.ca.HasNextKey() }
+// Holds reports whether Prove would succeed.
+func (k caMasterKey) Holds() bool {
+	for _, c := range k.ca.TrustedCerts() {
+		if k.ca.CanProve(pki.FingerprintHex(c)) {
+			return true
+		}
+	}
+	return false
+}
 
 func (k caMasterKey) Prove(msg []byte) ([]byte, bool) {
 	for _, c := range k.ca.TrustedCerts() {
