@@ -2,6 +2,7 @@ cmd/hearth/device.go
   s_18b57982fdff93::t_7dc241fb8f1831 31-92
   s_18b57982fdff93::t_200d99cdd8ee6a 6,11-12,20
   s_18b57982fdff93::t_e7d917ba658496 93
+  s_18b57982fdff93::t_ed004c6ad82750 27
 cmd/hearth/device_upgrade_test.go
   s_18b57982fdff93::t_874ddf930b3fe1 1-88
 deploy/systemd/hearth-agent.service
