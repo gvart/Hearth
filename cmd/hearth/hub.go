@@ -30,6 +30,7 @@ import (
 	"github.com/gvart/hearth/internal/hub"
 	"github.com/gvart/hearth/internal/hubconfig"
 	"github.com/gvart/hearth/internal/integrations/beszel"
+	"github.com/gvart/hearth/internal/integrations/esphome"
 	"github.com/gvart/hearth/internal/integrations/kubernetes"
 	"github.com/gvart/hearth/internal/integrations/prometheus"
 	"github.com/gvart/hearth/internal/integrations/proxmox"
@@ -412,6 +413,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	esp := esphome.NewManager(esphome.Config{Store: st, Sealer: sealers.esphome, Policy: pol, Log: log})
 	if opts.newDeviceAlerts != "" && !notifier.Has(opts.newDeviceAlerts) {
 		return fmt.Errorf("--new-device-alerts: no notification channel %q (see --notify-config)", opts.newDeviceAlerts)
 	}
@@ -476,6 +478,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		Agents:            agents,
 		Kube:              kube,
 		Proxmox:           pve,
+		ESPHome:           esp,
 		Plugins:           pluginMgr,
 		Notify:            notifier,
 		NetworkScans:      networkScans,
@@ -673,6 +676,8 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	g.Go(func() error { return kube.Run(gctx) })
 	// And reads the Proxmox servers itself.
 	g.Go(func() error { return pve.Run(gctx) })
+	// And keeps a connection to every ESPHome device itself.
+	g.Go(func() error { return esp.Run(gctx) })
 	// And runs the exec plugins itself, if any: commands may reach any hub.
 	if pluginMgr != nil {
 		g.Go(func() error { return pluginMgr.Run(gctx) })

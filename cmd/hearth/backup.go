@@ -188,7 +188,7 @@ func runRestore(ctx context.Context, dataDir, input, passphrase string, out io.W
 		next = "This backup holds no CA key: the hub cannot start until " + filepath.Join(dataDir, pki.CAKeyFile) + " is there.\n" +
 			"Restore a backup taken with `hearth backup` into an empty temporary dir and copy its " + pki.CAKeyFile + " here (mode 0600).\n" +
 			"With no such backup, delete " + pki.CACertFile + " instead: the hub then creates a new CA, every agent has to enroll\n" +
-			"again, and Kubernetes clusters and Proxmox servers have to be added again. See docs/backup.md.\n" + next
+			"again, and Kubernetes clusters, Proxmox servers and ESPHome devices have to be added again. See docs/backup.md.\n" + next
 	}
 	if _, err := fmt.Fprintf(out, "Restored the backup of %s (Hearth %s, schema %d) into %s.\n%s\n",
 		m.CreatedAt.Format("2006-01-02 15:04 MST"), m.HearthVersion, m.Schema, dataDir, next); err != nil {

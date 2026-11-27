@@ -16,6 +16,7 @@ import (
 
 	"github.com/gvart/hearth/internal/automation"
 	"github.com/gvart/hearth/internal/hubconfig"
+	"github.com/gvart/hearth/internal/integrations/esphome"
 	"github.com/gvart/hearth/internal/integrations/kubernetes"
 	"github.com/gvart/hearth/internal/integrations/prometheus"
 	"github.com/gvart/hearth/internal/integrations/proxmox"
@@ -96,6 +97,9 @@ type Config struct {
 	// Proxmox serves adopted Proxmox VE servers under /api/v1/proxmox. Nil
 	// disables it.
 	Proxmox *proxmox.Manager
+	// ESPHome serves adopted ESPHome devices under /api/v1/esphome. Nil
+	// disables it.
+	ESPHome *esphome.Manager
 	// Plugins serves the hub's exec plugins under /api/v1/plugins. Nil
 	// disables it.
 	Plugins *plugins.Manager

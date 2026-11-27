@@ -118,7 +118,7 @@ the admin password entered again, audited. What it does and does not protect aga
   rotate.
 - Backups taken before the finish with the CA key still hold the old key. Destroy them if its leak is
   why you rotate.
-- A leaked database also leaked the Kubernetes and Proxmox credentials and the notification channel
+- A leaked database also leaked the Kubernetes, Proxmox and ESPHome credentials and the notification channel
   credentials sealed in it, whatever the key: rotate them at their source.
 - Enrollment and join tokens created before the finish stop working.
 - A cluster of one can also replace its CA without a rotation: delete `ca.crt` and `ca.key` and enroll
@@ -222,6 +222,10 @@ running it.
 - **Proxmox VE**: API tokens only, sealed with AES-256-GCM under a key of their own. TLS is always
   verified, against a configured CA, a pinned certificate fingerprint or the system roots. Starting a
   guest is safe; stopping and rebooting one are dangerous. See [Proxmox VE](proxmox.md).
+- **ESPHome**: API encryption keys (and legacy passwords) are sealed with AES-256-GCM under a key of
+  their own, and never logged, served or audited. A device is read-only unless it was adopted with
+  calls allowed; each switch or button call is a policy decision (`esphome.call`, safe) and audited.
+  See [ESPHome](esphome.md).
 - **Prometheus**: read only. Hearth never writes to Prometheus.
 - **MCP clients** (AI assistants): each has its own bearer token, stored as a SHA-256 hash and
   checked on every request, so a revocation takes effect at once. The token's scope caps the class
