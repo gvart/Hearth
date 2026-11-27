@@ -420,6 +420,12 @@ var errUnreachable = errors.New("member unreachable")
 // member owns it (store.OwnedBy, owned.go).
 func (r *Replicator) Apply(ctx context.Context, cmd store.Command) (store.Result, error) {
 	cmd = store.OwnedBy(cmd, r.cfg.NodeID)
+	if key, owner, ok := store.OwnedCreate(cmd); ok && owner == r.cfg.NodeID {
+		// Kept before the row exists: a use of it needs the record.
+		if err := r.uses.recordCreated(ctx, key, cmd); err != nil {
+			return store.Result{}, fmt.Errorf("apply %s: %w", cmd.Op(), err)
+		}
+	}
 	if key, ok := store.OwnedUse(cmd); ok {
 		return r.applyOwned(ctx, key, cmd)
 	}

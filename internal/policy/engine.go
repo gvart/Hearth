@@ -542,10 +542,35 @@ func (e *Engine) wait(ctx context.Context, ap store.Approval) (store.Approval, e
 			}
 			continue // retried on the next tick; the timeout still ends the wait
 		}
+		if cur.Status == store.ApprovalApproved {
+			return e.checkApproved(ctx, cur), nil
+		}
 		if cur.Status != store.ApprovalPending {
 			return cur, nil
 		}
 	}
+}
+
+// ownerDecisions is implemented by Approvals that keep the owner's own
+// record of its decisions (store.Approvals in an AP cluster).
+type ownerDecisions interface {
+	OwnerDecision(ctx context.Context, id string) (status string, checked bool, err error)
+}
+
+// checkApproved returns ap, read as approved, if this hub, its owner, approved
+// it; else denied: in an AP cluster a replica of the row (a storage member)
+// could have written the approval itself (#382). Denying is always safe.
+func (e *Engine) checkApproved(ctx context.Context, ap store.Approval) store.Approval {
+	d, ok := e.approvals.(ownerDecisions)
+	if !ok {
+		return ap
+	}
+	status, checked, err := d.OwnerDecision(ctx, ap.ID)
+	if !checked || (err == nil && status == store.ApprovalApproved) {
+		return ap
+	}
+	ap.Status, ap.DecidedBy = store.ApprovalDenied, "no one: approved on a replica, not by this hub (its owner)"
+	return ap
 }
 
 // expire closes a pending approval as expired. It does nothing to one
