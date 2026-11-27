@@ -1,0 +1,40 @@
+cmd/hearth/agent_service_windows.go
+  s_18b57982fdff93::t_d1828c64792f7d 1-14,16-97,104-108,111-200
+  s_18b57982fdff93::t_971ab5e8728637 15,98-103,109-110
+cmd/hearth/agent_service_other.go
+  s_18b57982fdff93::t_bfb04134d3f05a 1-14
+internal/agent/service_windows.go
+  s_18b57982fdff93::t_110878926b38e9 1-115
+internal/agent/service_other.go
+  s_18b57982fdff93::t_f0cc90da0bde49 1-16
+cmd/hearth/agent_service.go
+  s_18b57982fdff93::t_805cc1c86dcf68 1-98
+cmd/hearth/common.go
+  s_18b57982fdff93::t_cdfbfd63cbdeac 14,34-36,41-42
+  s_18b57982fdff93::t_6a7ca19d2fed49 43
+cmd/hearth/agent.go
+  s_18b57982fdff93::t_cdfbfd63cbdeac 25,102-115
+internal/agent/service_test.go
+  s_18b57982fdff93::t_19bf3d2811b542 1-25
+internal/agent/service.go
+  s_18b57982fdff93::t_2bc454afda906f 1-30
+cmd/hearth/agent_service_test.go
+  s_18b57982fdff93::t_f226b5e2ebec3d 1-6,8-75,78-82
+  s_18b57982fdff93::t_7cb87b8626a1bf 7,76-77
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "b01306d353f2c553362fa1e4c9052645b62664c8",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "unknown"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
