@@ -1,0 +1,25 @@
+site/src/pages.mjs
+  s_18b57982fdff93::t_44d0372c710766 11
+docs/esphome.md
+  s_18b57982fdff93::t_6c5ed4428e89aa 1-114
+docs/discovery.md
+  s_18b57982fdff93::t_438e0c8d9ebff9 128-130
+web/src/tips.ts
+  s_18b57982fdff93::t_438e0c8d9ebff9 53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "24782c8ca9d6cb6d8aea175b25b3df57b50221c4",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
