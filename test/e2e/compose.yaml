@@ -19,8 +19,6 @@ services:
     command: [hearth, hub, --data-dir, /var/lib/hearth/hub, --host, hub]
     environment:
       HEARTH_ADMIN_PASSWORD: e2e-admin-password
-      # For tests only: agent upgrades download from releases, not GitHub.
-      HEARTH_RELEASE_BASE_URL: http://releases:8000/releases
     ports:
       - "127.0.0.1::7080" # API on a random host port: `compose port hub 7080`
     volumes:
@@ -45,6 +43,10 @@ services:
     pull_policy: never
     hostname: agent-1
     command: [sleep, infinity]
+    environment:
+      # For tests only: the agent upgrades itself from releases instead of
+      # the project's published releases.
+      HEARTH_RELEASE_BASE_URL: http://releases:8000/releases
     volumes:
       - agent-1-data:/var/lib/hearth/agent
 

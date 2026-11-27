@@ -197,9 +197,12 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 	r.upgrader = cfg.upgrader
 	if r.upgrader == nil {
-		r.upgrader = newUpgrader(cfg.Executable, os.Getenv)
+		r.upgrader = newUpgrader(cfg.Executable, cfg.DataDir, cfg.Version, cfg.LocalCeiling, os.Getenv)
 	}
 	log.InfoContext(ctx, "agent starting", "version", cfg.Version, "hubs", r.hubs)
+	if err := r.upgrader.started(ctx, log); err != nil {
+		return err
+	}
 
 	b := newBackoff()
 	failed := 0 // attempts that failed in a row since the last wait or session
@@ -368,6 +371,7 @@ func (r *runner) session(ctx context.Context, hub string) (welcomed bool, err er
 	}
 	interval := heartbeatInterval(welcome.GetHeartbeatInterval())
 	r.log.InfoContext(ctx, "connected to hub", "hub", hostOf(hub), "heartbeat_interval", interval)
+	r.upgrader.welcomed(ctx, r.log)
 	r.learnHubs(ctx, hub, welcome.GetHubs())
 	if renewed, err := r.saveRenewal(welcome); err != nil {
 		r.log.ErrorContext(ctx, "save the certificate renewed for the hub CA rotation", "err", err)

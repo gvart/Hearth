@@ -98,7 +98,6 @@ func newAPI(cfg Config) *api {
 		agents:           cfg.Agents,
 		scans:            cfg.NetworkScans,
 		discoverInterval: cfg.DiscoverInterval,
-		releases:         newReleases(cfg.ReleaseBaseURL),
 		dryRuns:          newLoginLimiter(time.Now, dryRunBurst, dryRunEvery),
 		// Only a release tag is pinned: dev builds have no release to install.
 		installVersion: releaseVersion(cfg.Version),
@@ -302,8 +301,6 @@ type api struct {
 	installVersion string
 	// version is the hub's build version, shown by the web UI.
 	version string
-	// releases reads the checksums of the releases agents upgrade to.
-	releases *releases
 	// reauths are the sessions that entered the password again lately.
 	reauths reauths
 	// argon is the cost of a password the web UI sets.

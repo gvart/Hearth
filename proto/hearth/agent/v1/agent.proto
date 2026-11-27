@@ -624,19 +624,22 @@ message DockerImage {
 }
 
 // UpgradeRequest asks the agent to replace its own binary with the hearth of
-// a release archive: download url (at most a size cap, within a timeout),
-// check its SHA-256 against sha256, extract hearth, run `hearth version`,
-// rename it over its executable (keeping the old one as <exe>.prev), answer
-// with an UpgradeResult and exit, for its service manager to start the new
-// binary. The hub takes sha256 from the release's checksums.txt. Sent to
-// agents of protocol minor 11 and later.
+// an official release, named by its version only. The agent builds the URLs
+// itself from its compiled-in release base (the project's GitHub releases)
+// and its own platform, reads the release's checksums.txt, checks the
+// archive against it, extracts hearth, runs `hearth version`, renames it
+// over its executable (keeping the old one as <exe>.prev), answers with an
+// UpgradeResult and exits, for its service manager to start the new binary.
+// The hub cannot name another server or another hash. Sent to agents of
+// protocol minor 11 and later.
 message UpgradeRequest {
+  // The hub named the archive and its hash before #347 shipped; the agent
+  // finds both itself.
+  reserved 3, 4;
+  reserved "url", "sha256";
   string id = 1;
   // version is the release tag, such as v0.1.0.
   string version = 2;
-  string url = 3;
-  // sha256 is the archive's SHA-256, in hex.
-  string sha256 = 4;
 }
 
 // UpgradeResult answers an UpgradeRequest. ok means the new binary is in
@@ -650,4 +653,8 @@ message UpgradeResult {
   string error = 4;
   // version is what `<new binary> version` printed first.
   string version = 5;
+  // url is the archive the agent chose, and sha256 its SHA-256 from the
+  // release's checksums.txt, for the audit log; empty when it got no further.
+  string url = 6;
+  string sha256 = 7;
 }

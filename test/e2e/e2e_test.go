@@ -141,8 +141,10 @@ func TestHeadlineDemo(t *testing.T) {
 	api.waitDevice(ctx, "agent-2", time.Now(), "still offline", func(d device) bool { return d.Status == "offline" })
 
 	// 8. Upgrade agent-1 from the hub (#347) to v0.0.2-e2e, a "newer" build
-	// the releases service serves (HEARTH_RELEASE_BASE_URL). The agent
-	// checks the archive, swaps its binary and exits with status 75; a loop
+	// the releases service serves (HEARTH_RELEASE_BASE_URL in agent-1's
+	// environment): the hub names the version only, the agent reads the
+	// release's checksums.txt, checks the archive, swaps its binary and
+	// exits with status 75; a loop
 	// that restarts it only on 75 stands in for systemd's Restart=. It must
 	// reconnect reporting the new version.
 	s.compose(ctx, "exec", "-T", "agent-1", "pkill", "-f", "hearth agent run")
@@ -176,6 +178,10 @@ func TestHeadlineDemo(t *testing.T) {
 	t.Logf("agent-1: upgrade %s → %s, back online in %v", up.From, up.Version, time.Since(upgradeAt).Round(time.Millisecond))
 	if _, err := s.run(ctx, "exec", "-T", "agent-1", "test", "-f", "/usr/bin/hearth.prev"); err != nil {
 		t.Errorf("agent-1 kept no /usr/bin/hearth.prev: %v", err)
+	}
+	// A hub welcomed the new binary: the upgrade is confirmed, no rollback.
+	if _, err := s.run(ctx, "exec", "-T", "agent-1", "test", "!", "-e", agentDataDir+"/upgrade-pending"); err != nil {
+		t.Errorf("agent-1 still has an upgrade marker once back online: %v", err)
 	}
 	if logs := s.compose(ctx, "logs", "--no-color", "agent-1"); !strings.Contains(logs, "agent exited with status 75") {
 		t.Errorf("agent-1 did not exit with status 75 after the upgrade:\n%s", logs)

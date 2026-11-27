@@ -4,8 +4,6 @@ package agent_test
 
 import (
 	"errors"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -26,9 +24,7 @@ func TestUpgradeOverStream(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the fake release's hearth is a shell script")
 	}
-	archive, sum := agent.FakeRelease(t, "hearth", "v9.9.9")
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(archive) }))
-	t.Cleanup(srv.Close)
+	base := agent.ReleaseServer(t, "v9.9.9")
 	exe := filepath.Join(t.TempDir(), "hearth")
 	if err := os.WriteFile(exe, []byte("old"), 0o600); err != nil {
 		t.Fatal(err)
@@ -36,8 +32,8 @@ func TestUpgradeOverStream(t *testing.T) {
 
 	h := startRestartableHub(t, time.Second)
 	id, dataDir := h.join(t)
-	a := startAgentWith(t, agent.WithSelfUpgrade(agent.Config{DataDir: dataDir}, exe))
-	req := &agentv1.UpgradeRequest{Version: "v9.9.9", Url: srv.URL + "/hearth.tar.gz", Sha256: sum}
+	a := startAgentWith(t, agent.WithSelfUpgrade(agent.Config{DataDir: dataDir}, exe, base))
+	req := &agentv1.UpgradeRequest{Version: "v9.9.9"}
 	var (
 		res *agentv1.UpgradeResult
 		err error
@@ -46,8 +42,8 @@ func TestUpgradeOverStream(t *testing.T) {
 		res, err = h.agents.Upgrade(t.Context(), id, req)
 		return !errors.Is(err, hub.ErrAgentNotConnected)
 	})
-	if err != nil || !res.GetOk() || res.GetVersion() != "v9.9.9" {
-		t.Fatalf("upgrade = %v, %v; want ok", res, err)
+	if err != nil || !res.GetOk() || res.GetVersion() != "v9.9.9" || !strings.HasPrefix(res.GetUrl(), base+"/v9.9.9/") || len(res.GetSha256()) != 64 {
+		t.Fatalf("upgrade = %v, %v; want ok, with the archive and its hash", res, err)
 	}
 	select {
 	case err := <-a.done:
@@ -61,4 +57,10 @@ func TestUpgradeOverStream(t *testing.T) {
 	if b, _ := os.ReadFile(exe); !strings.Contains(string(b), "hearth v9.9.9") {
 		t.Errorf("executable = %q, want the new binary", b)
 	}
+	if !agent.UpgradePending(dataDir) {
+		t.Fatal("no upgrade marker after the upgrade")
+	}
+	// The new binary starts, and its first Welcome confirms the upgrade.
+	startAgentWith(t, agent.WithSelfUpgrade(agent.Config{DataDir: dataDir}, exe, base))
+	waitFor(t, 5*time.Second, "upgrade confirmed", func() bool { return !agent.UpgradePending(dataDir) })
 }

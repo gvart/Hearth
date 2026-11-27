@@ -133,10 +133,6 @@ type Config struct {
 	// TelemetryOff is HEARTH_TELEMETRY=off: the web UI does not ask about
 	// telemetry, and the answer cannot be changed.
 	TelemetryOff bool
-	// ReleaseBaseURL is where agent upgrades download releases from, as
-	// <base>/<tag>/<asset>; empty means DefaultReleaseBaseURL. Other values
-	// are for tests only (HEARTH_RELEASE_BASE_URL).
-	ReleaseBaseURL string
 	// ShellIdleTimeout ends a web terminal session without input for this
 	// long; ShellMaxDuration ends any this long after it opened. Zero means
 	// DefaultShellIdleTimeout and DefaultShellMaxDuration. Terminals are

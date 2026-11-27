@@ -3953,20 +3953,19 @@ func (x *DockerImage) GetCreated() *timestamppb.Timestamp {
 }
 
 // UpgradeRequest asks the agent to replace its own binary with the hearth of
-// a release archive: download url (at most a size cap, within a timeout),
-// check its SHA-256 against sha256, extract hearth, run `hearth version`,
-// rename it over its executable (keeping the old one as <exe>.prev), answer
-// with an UpgradeResult and exit, for its service manager to start the new
-// binary. The hub takes sha256 from the release's checksums.txt. Sent to
-// agents of protocol minor 11 and later.
+// an official release, named by its version only. The agent builds the URLs
+// itself from its compiled-in release base (the project's GitHub releases)
+// and its own platform, reads the release's checksums.txt, checks the
+// archive against it, extracts hearth, runs `hearth version`, renames it
+// over its executable (keeping the old one as <exe>.prev), answers with an
+// UpgradeResult and exits, for its service manager to start the new binary.
+// The hub cannot name another server or another hash. Sent to agents of
+// protocol minor 11 and later.
 type UpgradeRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	// version is the release tag, such as v0.1.0.
-	Version string `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
-	Url     string `protobuf:"bytes,3,opt,name=url,proto3" json:"url,omitempty"`
-	// sha256 is the archive's SHA-256, in hex.
-	Sha256        string `protobuf:"bytes,4,opt,name=sha256,proto3" json:"sha256,omitempty"`
+	Version       string `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4015,20 +4014,6 @@ func (x *UpgradeRequest) GetVersion() string {
 	return ""
 }
 
-func (x *UpgradeRequest) GetUrl() string {
-	if x != nil {
-		return x.Url
-	}
-	return ""
-}
-
-func (x *UpgradeRequest) GetSha256() string {
-	if x != nil {
-		return x.Sha256
-	}
-	return ""
-}
-
 // UpgradeResult answers an UpgradeRequest. ok means the new binary is in
 // place and the agent exits to restart with it.
 type UpgradeResult struct {
@@ -4040,7 +4025,11 @@ type UpgradeResult struct {
 	Denied bool   `protobuf:"varint,3,opt,name=denied,proto3" json:"denied,omitempty"`
 	Error  string `protobuf:"bytes,4,opt,name=error,proto3" json:"error,omitempty"`
 	// version is what `<new binary> version` printed first.
-	Version       string `protobuf:"bytes,5,opt,name=version,proto3" json:"version,omitempty"`
+	Version string `protobuf:"bytes,5,opt,name=version,proto3" json:"version,omitempty"`
+	// url is the archive the agent chose, and sha256 its SHA-256 from the
+	// release's checksums.txt, for the audit log; empty when it got no further.
+	Url           string `protobuf:"bytes,6,opt,name=url,proto3" json:"url,omitempty"`
+	Sha256        string `protobuf:"bytes,7,opt,name=sha256,proto3" json:"sha256,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4106,6 +4095,20 @@ func (x *UpgradeResult) GetError() string {
 func (x *UpgradeResult) GetVersion() string {
 	if x != nil {
 		return x.Version
+	}
+	return ""
+}
+
+func (x *UpgradeResult) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+func (x *UpgradeResult) GetSha256() string {
+	if x != nil {
+		return x.Sha256
 	}
 	return ""
 }
@@ -4383,18 +4386,18 @@ const file_hearth_agent_v1_agent_proto_rawDesc = "" +
 	"\x04tags\x18\x02 \x03(\tR\x04tags\x12\x1d\n" +
 	"\n" +
 	"size_bytes\x18\x03 \x01(\x03R\tsizeBytes\x124\n" +
-	"\acreated\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\acreated\"d\n" +
+	"\acreated\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\acreated\"S\n" +
 	"\x0eUpgradeRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
-	"\aversion\x18\x02 \x01(\tR\aversion\x12\x10\n" +
-	"\x03url\x18\x03 \x01(\tR\x03url\x12\x16\n" +
-	"\x06sha256\x18\x04 \x01(\tR\x06sha256\"w\n" +
+	"\aversion\x18\x02 \x01(\tR\aversionJ\x04\b\x03\x10\x04J\x04\b\x04\x10\x05R\x03urlR\x06sha256\"\xa1\x01\n" +
 	"\rUpgradeResult\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x0e\n" +
 	"\x02ok\x18\x02 \x01(\bR\x02ok\x12\x16\n" +
 	"\x06denied\x18\x03 \x01(\bR\x06denied\x12\x14\n" +
 	"\x05error\x18\x04 \x01(\tR\x05error\x12\x18\n" +
-	"\aversion\x18\x05 \x01(\tR\aversion2Y\n" +
+	"\aversion\x18\x05 \x01(\tR\aversion\x12\x10\n" +
+	"\x03url\x18\x06 \x01(\tR\x03url\x12\x16\n" +
+	"\x06sha256\x18\a \x01(\tR\x06sha2562Y\n" +
 	"\fAgentService\x12I\n" +
 	"\aConnect\x12\x1d.hearth.agent.v1.AgentMessage\x1a\x1b.hearth.agent.v1.HubMessage(\x010\x01B\xbf\x01\n" +
 	"\x13com.hearth.agent.v1B\n" +

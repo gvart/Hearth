@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/gvart/hearth/internal/policy"
 	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
@@ -22,29 +23,18 @@ import (
 
 const testArchiveSum = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
-// upgradeFixture is a hub of version v1.2.0 whose releases a test server
-// serves, with device dev-1 enrolled.
+// upgradeFixture is a hub of version v1.2.0 with device dev-1 enrolled.
 type upgradeFixture struct {
 	*apiFixture
-	client  agentv1connect.AgentServiceClient
-	release *httptest.Server
+	client agentv1connect.AgentServiceClient
 }
 
 func newUpgradeFixture(t *testing.T, version string, pcfg policy.Config) *upgradeFixture {
 	t.Helper()
-	release := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1.2.0/checksums.txt" {
-			http.NotFound(w, r)
-			return
-		}
-		_, _ = w.Write([]byte(strings.Repeat("f", 64) + "  hearth_1.2.0_linux_arm64.tar.gz\n" +
-			testArchiveSum + "  hearth_1.2.0_linux_amd64.tar.gz\n"))
-	}))
-	t.Cleanup(release.Close)
-	f := &upgradeFixture{release: release}
+	f := &upgradeFixture{}
 	f.apiFixture = newAPIFixture(t, true, withPolicy(pcfg), func(c *Config) {
 		f.client, c.Agents = newExecClient(t, c.Store)
-		c.Version, c.ReleaseBaseURL = version, release.URL
+		c.Version = version
 	})
 	f.api.argon = testArgon
 	enrollDevice(t, f.st, "dev-1")
@@ -103,8 +93,11 @@ func answerUpgrades(stream *connect.BidiStreamForClient[agentv1.AgentMessage, ag
 	}
 }
 
+// testArchiveURL is the archive a test agent says it downloaded.
+const testArchiveURL = "https://example.com/releases/v1.2.0/hearth_1.2.0_linux_amd64.tar.gz"
+
 func upgraded(req *agentv1.UpgradeRequest) *agentv1.UpgradeResult {
-	return &agentv1.UpgradeResult{Ok: true, Version: req.GetVersion()}
+	return &agentv1.UpgradeResult{Ok: true, Version: req.GetVersion(), Url: testArchiveURL, Sha256: testArchiveSum}
 }
 
 func linuxAmd64(h *agentv1.Hello) { h.ReleaseTarget = "linux_amd64" }
@@ -128,24 +121,19 @@ func TestUpgradeDevice(t *testing.T) {
 	if got := decode[UpgradeJSON](t, resp); got.Version != "v1.2.0" || got.From != "v1.0.0" {
 		t.Errorf("answer = %+v", got)
 	}
-	req := <-reqs
-	if req.GetVersion() != "v1.2.0" || req.GetSha256() != testArchiveSum ||
-		req.GetUrl() != f.release.URL+"/v1.2.0/hearth_1.2.0_linux_amd64.tar.gz" {
+	// The agent is told the version only: it finds the archive and its
+	// checksum in that release itself.
+	if req := <-reqs; req.GetVersion() != "v1.2.0" {
 		t.Errorf("agent got %v", req)
 	}
 	entries := auditOf(t, f.apiFixture, policy.DeviceUpgrade)
-	if len(entries) != 1 || entries[0].Decision != policy.Allow || entries[0].Target != "dev-1" || entries[0].Result != "ok" ||
-		!strings.Contains(string(entries[0].Detail), `"version":"v1.2.0"`) {
-		t.Errorf("audit = %+v", entries)
+	if len(entries) != 1 || entries[0].Decision != policy.Allow || entries[0].Target != "dev-1" || entries[0].Result != "ok" {
+		t.Fatalf("audit = %+v", entries)
 	}
-
-	// An explicit version the release server does not have: audited too.
-	resp = f.do(t, http.MethodPost, "/api/v1/devices/dev-1/upgrade", `{"version":"v1.3.0"}`, c)
-	if resp.StatusCode != http.StatusBadGateway || errorCode(t, resp) != "release_unreachable" {
-		t.Errorf("upgrade to a missing release = %d %s, want 502 release_unreachable", resp.StatusCode, resp.body)
-	}
-	if entries := auditOf(t, f.apiFixture, policy.DeviceUpgrade); len(entries) != 2 || entries[0].Result == "ok" {
-		t.Errorf("audit after a missing release = %+v", entries)
+	for _, want := range []string{`"version":"v1.2.0"`, `"from":"v1.0.0"`, `"url":"` + testArchiveURL + `"`, `"sha256":"` + testArchiveSum + `"`} {
+		if !strings.Contains(string(entries[0].Detail), want) {
+			t.Errorf("audit detail %s lacks %s", entries[0].Detail, want)
+		}
 	}
 }
 
@@ -182,6 +170,13 @@ func TestUpgradeDeviceRefused(t *testing.T) {
 			name: "kubernetes agent", minor: minUpgradeMinor,
 			set: func(h *agentv1.Hello) {
 				h.NoSelfUpgrade = "this agent runs in a Kubernetes pod: upgrade its image instead"
+			},
+			status: http.StatusConflict, code: "cannot_upgrade", audit: policy.Deny,
+		},
+		{
+			name: "agent with --local-ceiling", minor: minUpgradeMinor,
+			set: func(h *agentv1.Hello) {
+				h.NoSelfUpgrade = "this agent runs with --local-ceiling, so the hub cannot change it: upgrade it on the device with the installer"
 			},
 			status: http.StatusConflict, code: "cannot_upgrade", audit: policy.Deny,
 		},
@@ -257,44 +252,52 @@ func TestDeviceAgentVersionOldAgent(t *testing.T) {
 	}
 }
 
-// The agent's own failure (a checksum mismatch) is audited as the result.
+// The agent's own failure (a checksum mismatch) is audited as the result,
+// with the archive it tried, and its refusal (a downgrade) as a denial.
 func TestUpgradeDeviceAgentFails(t *testing.T) {
 	t.Parallel()
-	f := newUpgradeFixture(t, "v1.2.0", policy.Config{})
-	f.connectUpgrader(t, minUpgradeMinor, linuxAmd64, func(*agentv1.UpgradeRequest) *agentv1.UpgradeResult {
-		return &agentv1.UpgradeResult{Error: "checksum mismatch: nothing was changed"}
-	})
-	c := sessionCookie(t, f.login(t, testPassword))
-	resp := f.do(t, http.MethodPost, "/api/v1/devices/dev-1/upgrade", "", c)
-	if resp.StatusCode != http.StatusBadGateway || errorCode(t, resp) != "upgrade_failed" || !strings.Contains(string(resp.body), "checksum mismatch") {
-		t.Fatalf("upgrade = %d %s, want 502 upgrade_failed", resp.StatusCode, resp.body)
-	}
-	entries := auditOf(t, f.apiFixture, policy.DeviceUpgrade)
-	if len(entries) != 1 || entries[0].Decision != policy.Allow || !strings.Contains(entries[0].Result, "checksum mismatch") {
-		t.Errorf("audit = %+v", entries)
-	}
-}
-
-func TestCompareRelease(t *testing.T) {
-	t.Parallel()
 	for _, tt := range []struct {
-		a, b string
-		want int
+		name   string
+		res    *agentv1.UpgradeResult
+		status int
+		code   string
+		want   string
 	}{
-		{"v0.0.1", "v0.0.1", 0},
-		{"v0.0.1", "v0.0.2", -1},
-		{"v0.1.0", "v0.0.9", 1},
-		{"v0.10.0", "v0.9.0", 1},
-		{"v0.0.1-rc.9", "v0.0.1-rc.10", -1},
-		{"v0.0.1-rc.10", "v0.0.1", -1},
-		{"v0.0.1", "v0.0.1-rc.10", 1},
-		{"v0.0.1-rc.1", "v0.0.1-rc.1.1", -1},
-		{"v0.0.1-alpha", "v0.0.1-beta", -1},
-		{"v0.0.1-1", "v0.0.1-alpha", -1},
+		{
+			name:   "checksum mismatch",
+			res:    &agentv1.UpgradeResult{Error: "checksum mismatch: nothing was changed", Url: testArchiveURL, Sha256: testArchiveSum},
+			status: http.StatusBadGateway, code: "upgrade_failed", want: "checksum mismatch",
+		},
+		{
+			name:   "unreachable release",
+			res:    &agentv1.UpgradeResult{Error: "download https://example.com/x: no route (the device must reach GitHub to upgrade itself)"},
+			status: http.StatusBadGateway, code: "upgrade_failed", want: "must reach GitHub",
+		},
+		{
+			name:   "downgrade",
+			res:    &agentv1.UpgradeResult{Denied: true, Error: "v1.2.0 is older than the v1.3.0 this agent runs: downgrades are refused"},
+			status: http.StatusConflict, code: "cannot_upgrade", want: "downgrades are refused",
+		},
 	} {
-		if got := compareRelease(tt.a, tt.b); got != tt.want {
-			t.Errorf("compareRelease(%s, %s) = %d, want %d", tt.a, tt.b, got, tt.want)
-		}
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			f := newUpgradeFixture(t, "v1.2.0", policy.Config{})
+			f.connectUpgrader(t, minUpgradeMinor, linuxAmd64, func(*agentv1.UpgradeRequest) *agentv1.UpgradeResult {
+				return proto.Clone(tt.res).(*agentv1.UpgradeResult)
+			})
+			c := sessionCookie(t, f.login(t, testPassword))
+			resp := f.do(t, http.MethodPost, "/api/v1/devices/dev-1/upgrade", "", c)
+			if resp.StatusCode != tt.status || errorCode(t, resp) != tt.code || !strings.Contains(string(resp.body), tt.want) {
+				t.Fatalf("upgrade = %d %s, want %d %s", resp.StatusCode, resp.body, tt.status, tt.code)
+			}
+			entries := auditOf(t, f.apiFixture, policy.DeviceUpgrade)
+			if len(entries) != 1 || entries[0].Decision != policy.Allow || !strings.Contains(entries[0].Result, tt.want) {
+				t.Fatalf("audit = %+v", entries)
+			}
+			if tt.res.GetUrl() != "" && !strings.Contains(string(entries[0].Detail), tt.res.GetUrl()) {
+				t.Errorf("audit detail %s lacks the archive", entries[0].Detail)
+			}
+		})
 	}
 }
 

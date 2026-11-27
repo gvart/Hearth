@@ -149,7 +149,7 @@ function UpgradeDialog({ device, version, onClose }: { device: Device; version: 
             <input
               value={release}
               pattern="\s*v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?\s*"
-              title="A release tag, such as v0.1.0"
+              title="A release tag, such as v0.1.0, no older than the agent's: downgrades are refused"
               placeholder={`${version.hub} (the hub's)`}
               disabled={upgrade.isPending}
               onChange={(e) => {
@@ -202,8 +202,6 @@ function upgradeRefusal(err: Error): string {
     return err.message;
   }
   switch (err.code) {
-    case 'release_unreachable':
-      return `${err.message}. Upgrading from a local mirror is not supported yet.`;
     case 'forbidden':
       return 'Denied by policy.';
     case 'agent_not_connected':
