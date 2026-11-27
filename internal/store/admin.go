@@ -94,7 +94,7 @@ func (r Admin) CheckSession(ctx context.Context, secret string, now time.Time) (
 // DeleteSession ends a session. Deleting an unknown session is not an error.
 func (r Admin) DeleteSession(ctx context.Context, secret string) error {
 	h := hashSecret(secret)
-	if _, err := r.s.apply(ctx, DeleteSession{Hash: h[:]}); err != nil {
+	if _, err := r.s.apply(ctx, DeleteSession{Hash: h[:], At: toMillis(time.Now())}); err != nil {
 		return fmt.Errorf("delete session: %w", err)
 	}
 	return nil

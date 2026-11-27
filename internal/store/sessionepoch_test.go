@@ -86,3 +86,92 @@ func TestSignOutOfASessionNotHeld(t *testing.T) {
 		t.Fatalf("a second sign-out wrote %v", again)
 	}
 }
+
+// TestConcurrentResets: two masters reset the password at once; whichever
+// password wins, the session epoch is the higher of the two on both, so the
+// sessions of neither reset's epoch-before survive.
+func TestConcurrentResets(t *testing.T) {
+	ctx := t.Context()
+	a, b := openTest(t), openTest(t)
+	now := time.Now()
+	h := hashSecret("old")
+	created := applyOn(t, a, CreateSession{Stamp: stampAt(now, "a"), Hash: h[:], Now: toMillis(now), ExpiresAt: toMillis(now.Add(time.Hour))})
+	if err := b.Merge(ctx, created); err != nil {
+		t.Fatal(err)
+	}
+	// a's reset has the higher epoch, b's the newer stamp: b's password
+	// wins, a's epoch stays.
+	ra := applyOn(t, a, SetPasswordHash{Stamp: stampAt(now.Add(time.Second), "a"), Hash: "pa", Now: toMillis(now.Add(time.Hour))})
+	rb := applyOn(t, b, SetPasswordHash{Stamp: stampAt(now.Add(2*time.Second), "b"), Hash: "pb", Now: toMillis(now)})
+	if err := a.Merge(ctx, rb); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Merge(ctx, ra); err != nil {
+		t.Fatal(err)
+	}
+	for name, s := range map[string]*Store{"a": a, "b": b} {
+		var hash string
+		var epoch int64
+		if err := s.db.QueryRowContext(ctx, `SELECT password_hash, session_epoch FROM admin WHERE id = 1`).Scan(&hash, &epoch); err != nil {
+			t.Fatal(err)
+		}
+		if hash != "pb" || epoch != toMillis(now.Add(time.Hour)) {
+			t.Errorf("%s: password %q, epoch %d; want pb, %d", name, hash, epoch, toMillis(now.Add(time.Hour)))
+		}
+		if _, err := s.Admin().CheckSession(ctx, "old", now); !errors.Is(err, ErrNotFound) {
+			t.Errorf("%s: the session from before both resets: %v, want not found", name, err)
+		}
+	}
+}
+
+// TestSessionTombstoneWins: a sign-out wins over the session it ends, even
+// when the master that created it stamped it later than the tombstone (its
+// clock ahead): the deletion is final both ways, and the side that holds
+// the tombstone stamps it past the session, so anti-entropy carries it.
+func TestSessionTombstoneWins(t *testing.T) {
+	ctx := t.Context()
+	now := time.Now()
+	h := hashSecret("s")
+	t.Run("tombstone reaches the session", func(t *testing.T) {
+		a, b := openTest(t), openTest(t)
+		created := applyOn(t, a, CreateSession{Stamp: stampAt(now.Add(time.Minute), "a"), Hash: h[:], Now: toMillis(now), ExpiresAt: toMillis(now.Add(time.Hour))})
+		tomb := applyOn(t, b, DeleteSession{Stamp: stampAt(now, "b"), Hash: h[:], At: toMillis(now.Add(time.Second))})
+		if err := a.Merge(ctx, tomb); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := a.Admin().CheckSession(ctx, "s", now); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("session after an older-stamped sign-out: %v, want not found", err)
+		}
+		got, err := a.ReadRows(ctx, []RowRef{{Table: "sessions", Key: Values{h[:]}}})
+		if err != nil || len(got) != 1 || !got[0].Deleted || got[0].HLC <= created[0].HLC {
+			t.Fatalf("a's row: %+v, %v; want a tombstone stamped past the session", got, err)
+		}
+	})
+	t.Run("session reaches the tombstone", func(t *testing.T) {
+		a, b := openTest(t), openTest(t)
+		created := applyOn(t, a, CreateSession{Stamp: stampAt(now.Add(time.Minute), "a"), Hash: h[:], Now: toMillis(now), ExpiresAt: toMillis(now.Add(time.Hour))})
+		applyOn(t, b, DeleteSession{Stamp: stampAt(now, "b"), Hash: h[:], At: toMillis(now.Add(time.Second))})
+		if err := b.Merge(ctx, created); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := b.Admin().CheckSession(ctx, "s", now); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("session after its row came late, stamped later: %v, want not found", err)
+		}
+		got, err := b.ReadRows(ctx, []RowRef{{Table: "sessions", Key: Values{h[:]}}})
+		if err != nil || len(got) != 1 || !got[0].Deleted || got[0].HLC <= created[0].HLC {
+			t.Fatalf("b's row: %+v, %v; want a tombstone stamped past the session", got, err)
+		}
+	})
+	t.Run("a session created after the sign-out", func(t *testing.T) {
+		// Not one a sign-out could have meant: its row wins as usual.
+		a, b := openTest(t), openTest(t)
+		applyOn(t, b, DeleteSession{Stamp: stampAt(now, "b"), Hash: h[:], At: toMillis(now)})
+		created := applyOn(t, a, CreateSession{Stamp: stampAt(now.Add(time.Minute), "a"), Hash: h[:], Now: toMillis(now.Add(time.Second)), ExpiresAt: toMillis(now.Add(time.Hour))})
+		if err := b.Merge(ctx, created); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := b.Admin().CheckSession(ctx, "s", now); err != nil {
+			t.Fatalf("session created after the tombstone: %v", err)
+		}
+	})
+}

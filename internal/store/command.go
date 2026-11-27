@@ -54,6 +54,9 @@ type Result struct {
 	// the first time, and back after an absence.
 	NewHosts      []NetworkHost
 	ReturnedHosts []NetworkHost
+	// Reach, for a write that takes access away in a cluster, is how many
+	// masters took it (TakesAccess).
+	Reach *Reach `json:",omitempty"`
 	// PinMismatch is true when PinCert recorded a mismatch.
 	PinMismatch bool
 	// Roles are the cluster roles of the join token consumed by
@@ -709,10 +712,13 @@ func sessionEpoch(ctx context.Context, w *writer) (int64, error) {
 	return e, nil
 }
 
-// DeleteSession ends a session; an unknown session is not an error.
+// DeleteSession ends a session; an unknown session is not an error. At is
+// when (#384: a tombstone of a session this master does not hold beats the
+// session's row, created before).
 type DeleteSession struct {
 	Stamp
 	Hash []byte `json:"hash"`
+	At   int64  `json:"at,omitempty"`
 }
 
 // Op implements Command.
@@ -726,7 +732,7 @@ func (c DeleteSession) apply(ctx context.Context, w *writer) (Result, error) {
 	case r == nil && w.versioned:
 		// A master that does not hold it writes its tombstone all the same:
 		// another master may (#384).
-		return Result{}, w.write(ctx, "sessions", row{"hash": c.Hash, "created_at": int64(0), "expires_at": int64(0)}, nil, true)
+		return Result{}, w.write(ctx, "sessions", row{"hash": c.Hash, "created_at": c.At, "expires_at": int64(0)}, nil, true)
 	case r == nil || r.deleted():
 		return Result{}, nil
 	}

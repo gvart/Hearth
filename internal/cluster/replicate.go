@@ -713,6 +713,11 @@ func (r *Replicator) applyHere(ctx context.Context, cmd store.Command, route sto
 	if store.Revokes(cmd) {
 		r.announceRevocation(muts)
 	}
+	if route.Master && store.TakesAccess(cmd) {
+		// Never refused: it reports how many masters took it.
+		res.Reach = r.replicateRevocation(ctx, muts, v)
+		return res, nil
+	}
 	if err := r.replicate(ctx, muts, route, v); err != nil {
 		return store.Result{}, fmt.Errorf("apply %s: %w", cmd.Op(), err)
 	}
@@ -841,7 +846,7 @@ func (r *Replicator) replicate(ctx context.Context, muts []store.Mutation, route
 		r.hint(t, ms)
 	}
 	if route.Master {
-		r.sendMaster(ctx, batches)
+		r.sendMaster(ctx, batches, 0)
 		return nil
 	}
 	if !critical {
@@ -1025,22 +1030,81 @@ func (r *Replicator) sendCritical(ctx context.Context, batches map[string][]stor
 // timeout for the answers, so the other live masters have them by the time
 // it returns; it needs no ack (#384). A member that does not take them, or
 // is sent none for want of a proof, gets a hint.
-func (r *Replicator) sendMaster(ctx context.Context, batches map[string][]store.Mutation) {
+//
+// A member that fails is tried again, every revokeRetry, for up to retry:
+// a revocation is worth a few seconds of waiting before it lives on fewer
+// masters. It returns the members that took the rows and proved the key.
+func (r *Replicator) sendMaster(ctx context.Context, batches map[string][]store.Mutation, retry time.Duration) map[string]bool {
+	var mu sync.Mutex
+	took := map[string]bool{}
+	deadline := time.Now().Add(retry)
 	var wg sync.WaitGroup
 	for t, ms := range batches {
 		wg.Go(func() {
-			qctx, cancel := context.WithTimeout(ctx, r.cfg.QuickTimeout)
-			defer cancel()
-			resp, err := r.call(qctx, t, apRequest{Op: opMerge, Muts: ms})
-			if err != nil {
-				r.log.DebugContext(ctx, "replicate a master write: hinted", "member", t, "err", err)
-				r.hint(t, ms)
-				return
+			for {
+				qctx, cancel := context.WithTimeout(ctx, r.cfg.QuickTimeout)
+				resp, err := r.call(qctx, t, apRequest{Op: opMerge, Muts: ms})
+				cancel()
+				if err == nil {
+					r.hintWithheld(t, resp)
+					mu.Lock()
+					took[t] = resp.fromMaster && len(resp.withheld) == 0
+					mu.Unlock()
+					return
+				}
+				if ctx.Err() != nil || time.Now().Add(revokeRetry).After(deadline) {
+					r.log.DebugContext(ctx, "replicate a master write: hinted", "member", t, "err", err)
+					r.hint(t, ms)
+					return
+				}
+				select {
+				case <-ctx.Done():
+				case <-time.After(revokeRetry):
+				}
 			}
-			r.hintWithheld(t, resp)
 		})
 	}
 	wg.Wait()
+	return took
+}
+
+// revokeWait is how long a write that takes access away tries the masters
+// that do not take it at once; revokeRetry how often.
+const (
+	revokeWait  = 3 * time.Second
+	revokeRetry = 250 * time.Millisecond
+)
+
+// replicateRevocation sends a write that takes access away (a sign-out, a
+// revocation, a password reset) to the other members holding its rows,
+// waiting up to revokeWait for the masters, and hints it to the others. It
+// is never refused (#384): it returns how many masters, this one included,
+// hold it now, of how many masters there are (those down or that left the
+// gossip included, not those that answered without a proof).
+func (r *Replicator) replicateRevocation(ctx context.Context, muts []store.Mutation, v view) *store.Reach {
+	batches, hinted, _, err := r.plan(ctx, muts, false, false, v)
+	if err != nil {
+		r.log.WarnContext(ctx, "replicate a revocation: kept here, the others get it by anti-entropy", "err", err)
+		return &store.Reach{Applied: 1, Of: 1}
+	}
+	for t, ms := range hinted {
+		r.hint(t, ms)
+	}
+	took := r.sendMaster(ctx, batches, revokeWait)
+	masters := slices.Concat(v.masterSet, v.leftMasters)
+	reach := &store.Reach{}
+	for _, m := range slices.Compact(slices.Sorted(slices.Values(masters))) {
+		switch {
+		case m == v.self:
+			reach.Applied++
+		case r.unproved(m):
+			continue // no master: it said it was one, and proved nothing
+		case took[m]:
+			reach.Applied++
+		}
+		reach.Of++
+	}
+	return reach
 }
 
 // hintWithheld keeps for member t the master rows call did not send it, as

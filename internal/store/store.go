@@ -194,7 +194,11 @@ func (s *Store) apply(ctx context.Context, cmd Command) (Result, error) {
 			cmd = withStamp(cmd, Stamp{HLC: s.clock.Now(), Origin: s.origin})
 		}
 	}
-	return s.applier.Apply(ctx, cmd)
+	res, err := s.applier.Apply(ctx, cmd)
+	if err == nil {
+		noteReach(ctx, res)
+	}
+	return res, err
 }
 
 // Close closes the database.
