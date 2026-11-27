@@ -1,5 +1,6 @@
 import { useBeszelSystems, useKubeClusters, useNetworkHosts, useTalosNodes } from '../api/hooks.ts';
 import { usePlugins } from '../api/plugins.ts';
+import { useESPHomeDevices } from '../api/esphome.ts';
 import { useProxmoxServers } from '../api/proxmox.ts';
 import { docsURL } from '../docs.ts';
 import { integrationSummary, integrations, stateWord, type Integration, type IntegrationState } from '../integrations.ts';
@@ -22,6 +23,7 @@ const pill: Record<IntegrationState, string> = {
 export function IntegrationsPage() {
   const clusters = useKubeClusters();
   const servers = useProxmoxServers();
+  const esp = useESPHomeDevices();
   const talos = useTalosNodes();
   const beszel = useBeszelSystems();
   const plugins = usePlugins();
@@ -29,12 +31,13 @@ export function IntegrationsPage() {
   const list = integrations({
     clusters: clusters.data,
     servers: servers.data,
+    esphome: esp.data,
     talos: talos.data,
     beszel: beszel.data,
     plugins: plugins.data?.plugins,
     hosts: hosts.data,
   });
-  const loading = [clusters, servers, talos, beszel, plugins, hosts].some((q) => q.isPending);
+  const loading = [clusters, servers, esp, talos, beszel, plugins, hosts].some((q) => q.isPending);
 
   return (
     <main className="content">

@@ -14,6 +14,7 @@ test('with nothing set up, every integration is off or only known on the hub', (
     [
       'kubernetes:off',
       'proxmox:off',
+      'esphome:off',
       'talos:off',
       'beszel:off',
       'plugins:off',

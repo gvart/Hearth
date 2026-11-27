@@ -1,9 +1,13 @@
 import { useState } from 'react';
 import type { NetworkHost, NetworkHostSource } from '../api/client.ts';
 import { useAdoptNetworkHost, useDevices, useMarkNetworkHost, useNetworkHosts } from '../api/hooks.ts';
+import { useESPHomeDevices } from '../api/esphome.ts';
 import { adoptPrefill, hostName, maxAdoptName, validAdoptName } from '../adopt.ts';
+import { adoptedDevice, isESPHomeHost } from '../esphome.ts';
 import { relativeTime } from '../format.ts';
 import { hostKinds, hostKindTitle } from '../hostkinds.ts';
+import { platformHash } from '../platforms.ts';
+import { AddESPHomeDialog } from './AddESPHomeDialog.tsx';
 
 /** A MAC whose locally administered bit is set: a randomized ("private") address. */
 function isRandomized(mac: string) {
@@ -81,6 +85,9 @@ export function UnmanagedHosts({ now, onAdd }: { now: number; onAdd: (h: Network
   const hosts = useNetworkHosts();
   const devices = useDevices();
   const mark = useMarkNetworkHost();
+  const esp = useESPHomeDevices();
+  /** The ESPHome device being adopted from its row. */
+  const [espHost, setESPHost] = useState<NetworkHost | null>(null);
   /** The MAC of the host whose adopt prompt is open. */
   const [adopting, setAdopting] = useState<string | null>(null);
   /** The name of the device a scan ran from: hosts on a subnet only that device is on. */
@@ -167,6 +174,15 @@ export function UnmanagedHosts({ now, onAdd }: { now: number; onAdd: (h: Network
                     />
                   ) : (
                     <span className="host-actions">
+                      {isESPHomeHost(h) ? (
+                        <ESPHomeAction
+                          host={h}
+                          adopted={adoptedDevice(h, esp.data ?? [])?.id}
+                          onAdopt={() => {
+                            setESPHost(h);
+                          }}
+                        />
+                      ) : null}
                       <button
                         className="btn btn-ghost btn-small"
                         type="button"
@@ -232,6 +248,39 @@ export function UnmanagedHosts({ now, onAdd }: { now: number; onAdd: (h: Network
           </tbody>
         </table>
       </div>
+      {espHost ? (
+        <AddESPHomeDialog
+          initial={{ name: adoptPrefill(espHost), address: espHost.ip }}
+          onClose={() => {
+            setESPHost(null);
+          }}
+          onAdded={(d) => {
+            setESPHost(null);
+            window.location.hash = platformHash('esphome', d.id);
+          }}
+        />
+      ) : null}
     </section>
+  );
+}
+
+/** An ESPHome host's action: adopt it through its native API, or open it once adopted. */
+function ESPHomeAction({ host, adopted, onAdopt }: { host: NetworkHost; adopted?: string; onAdopt: () => void }) {
+  if (adopted) {
+    return (
+      <a className="btn btn-ghost btn-small" href={platformHash('esphome', adopted)} title="Its sensors and switches, live">
+        ESPHome ›
+      </a>
+    );
+  }
+  return (
+    <button
+      className="btn btn-ghost btn-small"
+      type="button"
+      title={`${hostName(host)} announces the ESPHome native API: read its sensors and switches with its encryption key`}
+      onClick={onAdopt}
+    >
+      Adopt ESPHome
+    </button>
   );
 }
