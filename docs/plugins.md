@@ -239,8 +239,8 @@ process speaking the same protocol, one process per command.
    An upload is the dangerous policy action `plugin.binary.upload` and asks for the admin password
    again in the web UI; the audit entry holds the program's SHA-256 and the release digest. A program
    may be at most 64 MB. A device manifest may not set `env`: the agent starts the program with a
-   clean environment. The program, manifest and `args` are not secret (every hub stores them, every
-   allowed device receives them): keep settings in a file on the device. Uploading again for the same
+   clean environment. The program, manifest and `args` are not secret (every hub stores them, and any
+   enrolled device can fetch them): keep settings in a file on the device. Uploading again for the same
    platform replaces the program, and makes a new release that devices run only once approved (step 2).
    In a cluster, upload on a master: the program stays on that hub, and the other masters fetch it
    from there when their devices need it. A copy another master fetched stays there after a re-upload
@@ -261,8 +261,14 @@ process speaking the same protocol, one process per command.
 
    A device installed with `--local-ceiling` ignores the hub's grants: allow plugins there with the
    agent's own flag, `--allow-plugin NAME[:CLASS][@DIGEST]`, repeatable. Without `@DIGEST` the agent
-   pins the first release it installs, in `<data-dir>/plugin-pins.json`, and refuses any other until
-   the flag changes; that first release is still the hub's choice.
+   pins the first release it installs, by plugin name, in `<data-dir>/plugin-pins.json`, and refuses
+   any other while the flag stays (changing its class keeps the pin; dropping the flag drops it). That
+   first release is still the hub's choice. If the pins file cannot be read, no plugin runs until it
+   is fixed or removed.
+
+   A device keeps running the release it was allowed while a new one waits for approval, but only
+   until its agent restarts: the hub offers the latest release only, so a restarted agent runs the
+   plugin again once its grant is moved to the new release (a known gap).
 3. **The agent installs it.** At its next heartbeat it downloads the program for its platform from
    the hub over mTLS, with its own certificate, and checks its SHA-256 against the one the hub pinned
    before it writes it, 0700, to `<data-dir>/plugins/<name>/<sha256>`. It checks the hash again

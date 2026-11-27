@@ -402,8 +402,8 @@ func TestPluginReleasePinning(t *testing.T) {
 		if st := syncOnce(t, h, srv, v1); st.GetPlugins()[0].GetError() != "" {
 			t.Fatalf("status = %v", st)
 		}
-		if pins := h.loadPins(); pins["lamp"].Digest != digest || pins["lamp"].Flag != "lamp:dangerous" {
-			t.Fatalf("pins = %v", pins)
+		if pins, err := h.loadPins(); err != nil || pins["lamp"].Digest != digest {
+			t.Fatalf("pins = %v, %v", pins, err)
 		}
 		// A restart: the pin holds.
 		h2 := newPluginHost(filepath.Dir(h.dir), slog.New(slog.DiscardHandler), func() Ceiling { return *c })
@@ -412,13 +412,50 @@ func TestPluginReleasePinning(t *testing.T) {
 				t.Fatalf("status = %v, want refused", st)
 			}
 		}
-		// Another flag pins anew.
+		// Another class in the flag keeps the pin.
+		*c = Ceiling{Plugins: []PluginGrant{{Name: "lamp", Class: policy.Safe}}}
+		if st := syncOnce(t, h2, srv, renewed); !strings.Contains(st.GetPlugins()[0].GetError(), "approve it") {
+			t.Fatalf("status = %v, want refused after a class change", st)
+		}
+		if st := syncOnce(t, h2, srv, v1); st.GetPlugins()[0].GetError() != "" {
+			t.Fatalf("status = %v", st)
+		}
+		// Dropping the flag drops the pin; adding it again pins anew.
+		*c = Ceiling{}
+		syncOnce(t, h2, srv, v1)
+		if pins, err := h2.loadPins(); err != nil || len(pins) != 0 {
+			t.Fatalf("pins = %v, %v, want none", pins, err)
+		}
 		*c = Ceiling{Plugins: []PluginGrant{{Name: "lamp", Class: policy.Safe}}}
 		if st := syncOnce(t, h2, srv, renewed); st.GetPlugins()[0].GetError() != "" {
 			t.Fatalf("status = %v", st)
 		}
-		if pins := h2.loadPins(); pins["lamp"].Digest != releaseOf(renewed).Digest() {
-			t.Fatalf("pins = %v", pins)
+		if pins, err := h2.loadPins(); err != nil || pins["lamp"].Digest != releaseOf(renewed).Digest() {
+			t.Fatalf("pins = %v, %v", pins, err)
+		}
+	})
+
+	t.Run("unreadable pins", func(t *testing.T) {
+		c := &Ceiling{Plugins: []PluginGrant{{Name: "lamp", Class: policy.Dangerous}}}
+		h, srv := testHost(t, c), newBlobServer(t, program, other)
+		if st := syncOnce(t, h, srv, v1); st.GetPlugins()[0].GetError() != "" {
+			t.Fatalf("status = %v", st)
+		}
+		if err := os.WriteFile(h.pinsPath, []byte("{not json"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		fetches := srv.fetches.Load()
+		// Neither re-pinned nor replaced: every plugin stops.
+		st := syncOnce(t, h, srv, renewed)
+		if !strings.Contains(st.GetPlugins()[0].GetError(), "cannot be read") || srv.fetches.Load() != fetches {
+			t.Fatalf("status = %v, fetches %d", st, srv.fetches.Load()-fetches)
+		}
+		if b, _ := os.ReadFile(h.pinsPath); string(b) != "{not json" {
+			t.Fatalf("pins file rewritten: %q", b)
+		}
+		res := h.command(t.Context(), &agentv1.PluginCommand{Plugin: "lamp", Sha256: v1.GetSha256(), Command: "reflash"})
+		if !res.GetDenied() || !strings.Contains(res.GetError(), "cannot be read") {
+			t.Fatalf("result = %v", res)
 		}
 	})
 

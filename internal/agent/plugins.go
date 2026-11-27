@@ -151,10 +151,10 @@ func sortGrants(gs []PluginGrant) []PluginGrant {
 // releaseOf is the release b offers.
 func releaseOf(b *agentv1.PluginBinary) plugins.Release { return plugins.ReleaseOf(b) }
 
-// pluginPin is a release pinned on first use, for the --allow-plugin flag
-// Flag (NAME:CLASS): another flag pins anew.
+// pluginPin is a release pinned on first use for an --allow-plugin flag
+// without @DIGEST, by plugin name: changing the flag's class keeps it;
+// dropping the flag drops it.
 type pluginPin struct {
-	Flag   string `json:"flag"`
 	Digest string `json:"digest"`
 }
 
@@ -208,41 +208,56 @@ func newPluginHost(dataDir string, log *slog.Logger, ceiling func() Ceiling) *pl
 	return h
 }
 
-// loadPins is the releases pinned on first use, by plugin name.
-func (h *pluginHost) loadPins() map[string]pluginPin {
+// loadPins is the releases pinned on first use, by plugin name. A pins file
+// that cannot be read fails: the agent then installs and runs no plugin,
+// rather than pin anew what the hub offers.
+func (h *pluginHost) loadPins() (map[string]pluginPin, error) {
 	pins := map[string]pluginPin{}
 	b, err := os.ReadFile(h.pinsPath)
-	if err == nil {
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return pins, nil
+	case err == nil:
 		err = json.Unmarshal(b, &pins)
 	}
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		h.log.Warn("read the plugin pins", "err", err)
+	if err != nil {
+		return nil, fmt.Errorf("the plugin pins in %s cannot be read, so no plugin runs until it is fixed or removed: %w", h.pinsPath, err)
 	}
-	return pins
+	return pins, nil
 }
 
+// savePins writes pins to the pins file, synced before it replaces it.
 func (h *pluginHost) savePins(pins map[string]pluginPin) error {
 	b, err := json.Marshal(pins)
 	if err != nil {
 		return err
 	}
 	tmp := h.pinsPath + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(b)
+	if err == nil {
+		err = f.Sync()
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		_ = os.Remove(tmp)
 		return err
 	}
 	return os.Rename(tmp, h.pinsPath)
 }
 
-// flagOf is the --allow-plugin flag a grant without a digest came from.
-func flagOf(g *agentv1.PluginGrant) string { return g.GetName() + ":" + g.GetMaxClass() }
-
 // resolved is c with each grant without a digest pinned to the release
-// pins hold for its flag; one without a pin stays without a digest.
+// pins hold for its plugin; one without a pin stays without a digest.
 func resolved(c *agentv1.Ceiling, pins map[string]pluginPin) *agentv1.Ceiling {
 	out := &agentv1.Ceiling{}
 	for _, g := range c.GetPlugins() {
 		if g.GetDigest() == "" {
-			if p, ok := pins[g.GetName()]; ok && p.Flag == flagOf(g) {
+			if p, ok := pins[g.GetName()]; ok {
 				g = &agentv1.PluginGrant{Name: g.GetName(), MaxClass: g.GetMaxClass(), Digest: p.Digest}
 			}
 		}
@@ -286,7 +301,27 @@ func (h *pluginHost) sync(ctx context.Context, client *http.Client, hub string, 
 		}
 	}
 	slices.Sort(names)
-	pins := h.loadPins()
+	pins, err := h.loadPins()
+	if err != nil {
+		h.log.ErrorContext(ctx, "device plugins stopped", "err", err)
+		for _, name := range names {
+			st.Plugins = append(st.Plugins, &agentv1.PluginState{Name: name, Error: err.Error()})
+		}
+		return st
+	}
+	// A pin goes with its flag: re-adding it pins anew.
+	dropped := false
+	for name := range pins {
+		if unpinned(h.ceiling().proto(), name) == nil {
+			delete(pins, name)
+			dropped = true
+		}
+	}
+	if dropped {
+		if err := h.savePins(pins); err != nil {
+			h.log.WarnContext(ctx, "drop plugin pins", "err", err)
+		}
+	}
 	h.mu.Lock()
 	had := h.installed
 	h.mu.Unlock()
@@ -388,7 +423,7 @@ func (h *pluginHost) install(ctx context.Context, client *http.Client, hub strin
 		h.log.InfoContext(ctx, "plugin installed", "plugin", b.GetName(), "version", b.GetVersion(), "sha256", b.GetSha256(), "digest", digest)
 	}
 	if pin != nil {
-		pins[b.GetName()] = pluginPin{Flag: flagOf(pin), Digest: digest}
+		pins[b.GetName()] = pluginPin{Digest: digest}
 		if err := h.savePins(pins); err != nil {
 			return installedPlugin{}, fmt.Errorf("pin the release: %w", err)
 		}
@@ -541,7 +576,11 @@ func (h *pluginHost) command(ctx context.Context, req *agentv1.PluginCommand) *a
 	if !declared {
 		return deny(fmt.Errorf("plugin %s declares no command %.64q", req.GetPlugin(), req.GetCommand()))
 	}
-	if err := policy.PluginWithinCeiling(resolved(h.ceiling().proto(), h.loadPins()), req.GetPlugin(), inst.digest, class); err != nil {
+	pins, err := h.loadPins()
+	if err != nil {
+		return deny(err)
+	}
+	if err := policy.PluginWithinCeiling(resolved(h.ceiling().proto(), pins), req.GetPlugin(), inst.digest, class); err != nil {
 		return deny(err)
 	}
 	select {

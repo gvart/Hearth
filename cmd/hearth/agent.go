@@ -62,7 +62,7 @@ func newAgentRunCmd() *cobra.Command {
 			"or lower. The hub supplies the plugin's program, which runs as this agent's user: whatever the\n" +
 			"class, allowing a plugin lets whoever uploads it run code here. DIGEST pins one release, program and\n" +
 			"manifest (`hearth plugin list` shows it); without it, the agent pins the first release it installs\n" +
-			"(trusting the hub for that one) and refuses any other until the flag changes.\n" +
+			"(trusting the hub for that one) and refuses any other while the flag stays, whatever its class.\n" +
 			"--local-ceiling ignores the capabilities the hub sets for this device, and any it saved before.",
 		Example: "  hearth agent run --allow-restart systemd:pihole-FTL.service --allow-restart docker:jellyfin \\\n" +
 			"    --allow-exec /usr/bin/df --allow-logs 'systemd:pihole-FTL.service' --allow-logs 'docker:*'",
