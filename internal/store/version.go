@@ -153,6 +153,9 @@ var tables = map[string]tableSpec{
 	"esphome_devices": {pk: []string{"id"}, deletable: true, since: esphomeDevicesSchema, tombstone: func(r row) {
 		r["connection"], r["name"] = []byte{}, deletedName(r["id"])
 	}},
+	"openwrt_routers": {pk: []string{"id"}, deletable: true, since: openwrtRoutersSchema, tombstone: func(r row) {
+		r["connection"], r["name"] = []byte{}, deletedName(r["id"])
+	}},
 	"runbook_runs": {pk: []string{"id"}, deletable: true, tombstone: func(r row) {
 		r["source"] = []byte{}
 	}},

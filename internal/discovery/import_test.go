@@ -221,6 +221,50 @@ func TestImportOneAuditEntryAndPartialFailure(t *testing.T) {
 	}
 }
 
+// idleSource is a fakeSource that says whether it is idle.
+type idleSource struct {
+	fakeSource
+	idle bool
+}
+
+func (s idleSource) Idle() bool { return s.idle }
+
+func TestImportLeavesIdleSourcesOut(t *testing.T) {
+	st := openStore(t)
+	ctx := t.Context()
+	idle := idleSource{fakeSource: fakeSource{name: store.SourceOpenWrt, err: errors.New("must not be read")}, idle: true}
+	im := NewImporter(ImportConfig{
+		Sources: []Source{
+			idle,
+			fakeSource{name: store.SourceDHCP, recs: []Record{{MAC: "aa:bb:cc:00:00:03", IP: "192.168.20.5", Hostname: "tv", Lease: true}}},
+		},
+		Hosts: st.NetworkHosts(), Policy: policy.New(st.Audit()),
+	})
+	if err := im.Import(ctx); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := st.Audit().List(ctx, 10)
+	if err != nil || len(entries) != 1 || entries[0].Target != "dhcp:test" {
+		t.Fatalf("audit = %+v, %v; want one import of the active source only", entries, err)
+	}
+	var detail map[string]any
+	if err := json.Unmarshal(entries[0].Detail, &detail); err != nil {
+		t.Fatal(err)
+	}
+	if detail["failed"] != nil || detail["hosts"] != float64(1) {
+		t.Errorf("audit detail = %v: the idle source was read", detail)
+	}
+
+	// Only idle sources: no import, no audit entry, no write.
+	im = NewImporter(ImportConfig{Sources: []Source{idle}, Hosts: st.NetworkHosts(), Policy: policy.New(st.Audit())})
+	if err := im.Import(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if entries, _ := st.Audit().List(ctx, 10); len(entries) != 1 {
+		t.Errorf("audit = %+v, want no entry for an import of idle sources", entries)
+	}
+}
+
 func TestImportDeniedByPolicyReadsNothing(t *testing.T) {
 	st := openStore(t)
 	cfg := policy.Config{Classes: map[policy.Class]policy.Mode{policy.Read: policy.ModeDeny}}

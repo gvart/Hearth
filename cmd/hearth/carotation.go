@@ -14,6 +14,7 @@ import (
 	"github.com/gvart/hearth/internal/hubconfig"
 	"github.com/gvart/hearth/internal/integrations/esphome"
 	"github.com/gvart/hearth/internal/integrations/kubernetes"
+	"github.com/gvart/hearth/internal/integrations/openwrt"
 	"github.com/gvart/hearth/internal/integrations/proxmox"
 	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/store"
@@ -67,11 +68,11 @@ func newServerCert(ctx context.Context, ca *pki.CA, hosts []string, epoch string
 }
 
 // hubSealers seal secrets in the store with keys derived from the hub CA
-// key, which every hub of a cluster holds: kubeconfigs, Proxmox and ESPHome connections,
+// key, which every hub of a cluster holds: kubeconfigs, Proxmox, ESPHome and OpenWrt connections,
 // runbook runs' files and the notify configuration document. During a hub CA rotation they open with either
 // CA's key and seal with the one the hub serves.
 type hubSealers struct {
-	kube, proxmox, runbook, notify, esphome *kubernetes.Sealer
+	kube, proxmox, runbook, notify, esphome, openwrt *kubernetes.Sealer
 }
 
 func newHubSealers(ctx context.Context, ca *pki.CA, log *slog.Logger) (*hubSealers, error) {
@@ -95,6 +96,9 @@ func newHubSealers(ctx context.Context, ca *pki.CA, log *slog.Logger) (*hubSeale
 	if s.esphome, err = kubernetes.NewPurposeSealer(keys[0], esphome.SealInfo); err != nil {
 		return nil, err
 	}
+	if s.openwrt, err = kubernetes.NewPurposeSealer(keys[0], openwrt.SealInfo); err != nil {
+		return nil, err
+	}
 	if err := s.rekey(keys); err != nil {
 		return nil, err
 	}
@@ -111,7 +115,7 @@ func newHubSealers(ctx context.Context, ca *pki.CA, log *slog.Logger) (*hubSeale
 }
 
 func (s *hubSealers) rekey(keys [][]byte) error {
-	for _, sealer := range []*kubernetes.Sealer{s.kube, s.proxmox, s.runbook, s.notify, s.esphome} {
+	for _, sealer := range []*kubernetes.Sealer{s.kube, s.proxmox, s.runbook, s.notify, s.esphome, s.openwrt} {
 		if err := sealer.SetSecrets(keys...); err != nil {
 			return err
 		}
@@ -130,6 +134,8 @@ func (s *hubSealers) reseal(_ context.Context, secrets []store.SealedSecret) ([]
 			sealer = s.proxmox
 		case store.SealedESPHomeDevices:
 			sealer = s.esphome
+		case store.SealedOpenWrtRouters:
+			sealer = s.openwrt
 		case store.SealedRunbookRuns:
 			sealer, id = s.runbook, automation.RunbookSealID(sec.ID)
 		case store.SealedConfigDocs:

@@ -855,6 +855,10 @@ func DecodeCommand(b []byte) (Command, error) {
 		cmd, err = decodeAs[AddESPHomeDevice](env.Cmd)
 	case RemoveESPHomeDevice{}.Op():
 		cmd, err = decodeAs[RemoveESPHomeDevice](env.Cmd)
+	case AddOpenWrtRouter{}.Op():
+		cmd, err = decodeAs[AddOpenWrtRouter](env.Cmd)
+	case RemoveOpenWrtRouter{}.Op():
+		cmd, err = decodeAs[RemoveOpenWrtRouter](env.Cmd)
 	case SetDeviceRoute{}.Op():
 		cmd, err = decodeAs[SetDeviceRoute](env.Cmd)
 	default:

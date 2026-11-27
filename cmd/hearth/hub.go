@@ -32,6 +32,7 @@ import (
 	"github.com/gvart/hearth/internal/integrations/beszel"
 	"github.com/gvart/hearth/internal/integrations/esphome"
 	"github.com/gvart/hearth/internal/integrations/kubernetes"
+	"github.com/gvart/hearth/internal/integrations/openwrt"
 	"github.com/gvart/hearth/internal/integrations/prometheus"
 	"github.com/gvart/hearth/internal/integrations/proxmox"
 	"github.com/gvart/hearth/internal/integrations/talos"
@@ -414,6 +415,10 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		return err
 	}
 	esp := esphome.NewManager(esphome.Config{Store: st, Sealer: sealers.esphome, Policy: pol, Log: log})
+	owrt := openwrt.NewManager(openwrt.Config{Store: st, Sealer: sealers.openwrt, Policy: pol, Log: log})
+	// The routers' clients feed network discovery; the importer leaves them
+	// out while no router is read.
+	importSources = append(importSources, owrt)
 	if opts.newDeviceAlerts != "" && !notifier.Has(opts.newDeviceAlerts) {
 		return fmt.Errorf("--new-device-alerts: no notification channel %q (see --notify-config)", opts.newDeviceAlerts)
 	}
@@ -479,6 +484,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		Kube:              kube,
 		Proxmox:           pve,
 		ESPHome:           esp,
+		OpenWrt:           owrt,
 		Plugins:           pluginMgr,
 		Notify:            notifier,
 		NetworkScans:      networkScans,
@@ -683,6 +689,8 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	g.Go(func() error { return pve.Run(gctx) })
 	// And keeps a connection to every ESPHome device itself.
 	g.Go(func() error { return esp.Run(gctx) })
+	// And reads the OpenWrt routers itself.
+	g.Go(func() error { return owrt.Run(gctx) })
 	// And runs the exec plugins itself, if any: commands may reach any hub.
 	if pluginMgr != nil {
 		g.Go(func() error { return pluginMgr.Run(gctx) })

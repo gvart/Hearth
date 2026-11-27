@@ -95,7 +95,7 @@ Hosts are matched by MAC address with the hosts discovery found:
   has not expired says nothing about whether the device is on right now. So these leases add the
   host and its name, but they do not change a known host's IP or *Last seen*. A host known only from
   such a lease keeps the *Last seen* of its first import.
-- **Source.** Each host lists where it was learned: `scan`, `pihole`, `dhcp`, `netalertx` (see [NetAlertX](netalertx.md)). The **On your
+- **Source.** Each host lists where it was learned: `scan`, `pihole`, `dhcp`, `netalertx` (see [NetAlertX](netalertx.md)), `openwrt` (see [OpenWrt](openwrt.md)). The **On your
   network** table shows these as badges.
 
 Imports publish no events, and [new-device alerts](discovery.md#new-device-alerts) and the `network`

@@ -218,6 +218,9 @@ var expected = map[Action]struct {
 	ESPHomeDeviceAdd:        {Safe, []string{ActorWeb}, false},
 	ESPHomeDeviceRemove:     {Safe, []string{ActorWeb}, false},
 	ESPHomeCall:             {Safe, []string{ActorWeb}, false},
+	OpenWrtRouterAdd:        {Safe, []string{ActorWeb}, false},
+	OpenWrtRouterRemove:     {Safe, []string{ActorWeb}, false},
+	OpenWrtDNSRestart:       {Dangerous, []string{ActorWeb}, false},
 	DeviceCapabilitiesSet:   {Safe, []string{ActorAdmin, ActorWeb}, false},
 	DeviceCapabilitiesRaise: {Dangerous, []string{ActorAdmin, ActorWeb}, false},
 }

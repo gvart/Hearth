@@ -23,6 +23,7 @@ import (
 	"github.com/gvart/hearth/internal/hubconfig"
 	"github.com/gvart/hearth/internal/integrations/esphome"
 	"github.com/gvart/hearth/internal/integrations/kubernetes"
+	"github.com/gvart/hearth/internal/integrations/openwrt"
 	"github.com/gvart/hearth/internal/integrations/prometheus"
 	"github.com/gvart/hearth/internal/integrations/proxmox"
 	"github.com/gvart/hearth/internal/metrics"
@@ -84,6 +85,7 @@ func newAPI(cfg Config) *api {
 		kube:     cfg.Kube,
 		proxmox:  cfg.Proxmox,
 		esphome:  cfg.ESPHome,
+		openwrt:  cfg.OpenWrt,
 		plugins:  cfg.Plugins,
 		notify:   cfg.Notify,
 		verify:   newVerifyGate(), verifyWait: verifyWait, verifyPassword: verifier,
@@ -168,6 +170,7 @@ func (a *api) routes() http.Handler {
 	a.kubeRoutes(mux)
 	a.proxmoxRoutes(mux)
 	a.esphomeRoutes(mux)
+	a.openwrtRoutes(mux)
 	a.pluginRoutes(mux)
 	a.notifyRoutes(mux)
 	a.automationRoutes(mux)
@@ -264,6 +267,8 @@ type api struct {
 	proxmox *proxmox.Manager
 	// esphome is Config.ESPHome; nil when ESPHome devices are not served.
 	esphome *esphome.Manager
+	// openwrt is Config.OpenWrt; nil when OpenWrt routers are not served.
+	openwrt *openwrt.Manager
 	// plugins is Config.Plugins; nil when no exec plugin is configured.
 	plugins *plugins.Manager
 	// notify is Config.Notify; nil when notification channels are not served.

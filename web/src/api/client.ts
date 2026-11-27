@@ -197,7 +197,7 @@ export interface DeviceEvent {
   device: Device;
 }
 
-export type NetworkHostSource = 'scan' | 'pihole' | 'dhcp' | 'netalertx';
+export type NetworkHostSource = 'scan' | 'pihole' | 'dhcp' | 'netalertx' | 'openwrt';
 
 /** How a network scan asked for with POST /api/v1/network/scan ended (event network.scan.done). */
 export interface NetworkScanDone {

@@ -18,6 +18,7 @@ import { NotificationsPage } from './NotificationsPage.tsx';
 import { PanelsPage } from './PanelsPage.tsx';
 import { PlatformsPage } from './PlatformsPage.tsx';
 import { ESPHomePage } from './ESPHomePage.tsx';
+import { OpenWrtPage } from './OpenWrtPage.tsx';
 import { ProxmoxPage } from './ProxmoxPage.tsx';
 import { ReauthHost } from './ReauthDialog.tsx';
 import { RunbooksPage } from './RunbooksPage.tsx';
@@ -149,6 +150,8 @@ export function Shell() {
               <ProxmoxPage id={platform.id} />
             ) : platform?.kind === 'esphome' ? (
               <ESPHomePage id={platform.id} />
+            ) : platform?.kind === 'openwrt' ? (
+              <OpenWrtPage id={platform.id} />
             ) : (
               <PlatformsPage />
             )

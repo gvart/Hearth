@@ -69,6 +69,8 @@ const (
 	SourceDHCP = "dhcp"
 	// SourceNetAlertX is a NetAlertX's device list.
 	SourceNetAlertX = "netalertx"
+	// SourceOpenWrt is an OpenWrt router's DHCP leases and wireless clients.
+	SourceOpenWrt = "openwrt"
 )
 
 // NetworkHost is a host network discovery found, keyed by its MAC address.
