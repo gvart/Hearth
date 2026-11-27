@@ -182,8 +182,16 @@ printf '%s\n' "$TOKEN" >/tmp/token.pat
     grep -a -l -F -f /tmp/token.pat /proc/[0-9]*/cmdline 2>/dev/null | while read -r f; do
       tr '\0' ' ' <"$f" 2>/dev/null && echo
     done >>/tmp/argv-hits.log
+    # environ is a process's initial environment block: a forked subshell of
+    # the installer carries the installer's block until it execs. Read cmdline
+    # before and after re-reading environ, and record a hit only if both reads
+    # match, so an exec in between is not blamed on the new program.
     grep -a -l -F -f /tmp/token.pat /proc/[0-9]*/environ 2>/dev/null | while read -r f; do
-      tr '\0' ' ' <"${f%/environ}/cmdline" 2>/dev/null && echo
+      d=${f%/environ}
+      a=$(tr '\0' ' ' <"$d/cmdline" 2>/dev/null) || continue
+      grep -a -q -F -f /tmp/token.pat "$f" 2>/dev/null || continue
+      b=$(tr '\0' ' ' <"$d/cmdline" 2>/dev/null) || continue
+      [ -n "$a" ] && [ "$a" = "$b" ] && printf '%s\n' "$a"
     done >>/tmp/env-hits.log
   done
   exit 0
