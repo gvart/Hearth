@@ -1,0 +1,23 @@
+docs/mcp.md
+  s_18b57982fdff93::t_44a75d988a752f 93
+docs/docker.md
+  s_18b57982fdff93::t_44a75d988a752f 38,77
+internal/mcpserver/docker.go
+  s_18b57982fdff93::t_44a75d988a752f 40,47
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "350a101c664d99e2305d4d2860cdb978c93fd86f",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
