@@ -15,7 +15,7 @@ running the hub in its place, so you can shut the laptop. You need:
   Linux. The hub finds its LAN IP itself; you need it only to open the UI from another machine.
 
 Hearth is pre-alpha: every release so far is a pre-release, `v0.0.1-rc.N`. The commands below use
-`0.0.1-rc.10`; take the newest from the
+`0.0.1-rc.11`; take the newest from the
 [releases page](https://github.com/gvart/hearth/releases).
 
 ## 1. Download Hearth on the hub machine
@@ -25,7 +25,7 @@ Hub and agent are the same single binary. Pick the archive for the hub machine
 `linux_armv7`):
 
 ```sh
-VERSION=0.0.1-rc.10
+VERSION=0.0.1-rc.11
 PLATFORM=darwin_arm64
 curl -fsSLO "https://github.com/gvart/hearth/releases/download/v${VERSION}/hearth_${VERSION}_${PLATFORM}.tar.gz"
 tar -xzf "hearth_${VERSION}_${PLATFORM}.tar.gz" hearth
@@ -33,7 +33,7 @@ tar -xzf "hearth_${VERSION}_${PLATFORM}.tar.gz" hearth
 ```
 
 If you would rather run the hub in Docker, skip this step and use the image
-(`ghcr.io/gvart/hearth:v0.0.1-rc.10`) in the next one.
+(`ghcr.io/gvart/hearth:v0.0.1-rc.11`) in the next one.
 
 ## 2. Start the hub
 
@@ -65,7 +65,7 @@ In Docker instead:
 ```sh
 docker run -d --name hearth -p 7443:7443 -p 7080:7080 -v hearth:/var/lib/hearth \
   -e HEARTH_ADMIN_PASSWORD='choose-a-password' \
-  ghcr.io/gvart/hearth:v0.0.1-rc.10 hub --host 192.168.1.10
+  ghcr.io/gvart/hearth:v0.0.1-rc.11 hub --host 192.168.1.10
 ```
 
 In a container the hub sees only the container's own network, so pass `--host` with the host
@@ -96,7 +96,7 @@ sensitive as the hub's CA key, and the dialog asks for your admin password again
 the command. Untick it for a device that should only run the agent. The dialog shows a command like:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/gvart/Hearth/v0.0.1-rc.10/deploy/install.sh | HEARTH_TOKEN=hearth2.… sh -s -- --version v0.0.1-rc.10
+curl -fsSL https://raw.githubusercontent.com/gvart/Hearth/v0.0.1-rc.11/deploy/install.sh | HEARTH_TOKEN=hearth2.… sh -s -- --version v0.0.1-rc.11
 ```
 
 It holds a single-use enrollment token that expires after 15 minutes. The token also names the hub
@@ -141,7 +141,7 @@ No `sudo` on the device? Run the agent as your own user instead. In the "Add dev
 **Hearth already installed?** and copy the **Join only** command. Then on the device:
 
 ```sh
-VERSION=0.0.1-rc.10
+VERSION=0.0.1-rc.11
 PLATFORM=linux_arm64     # linux_amd64, linux_armv7, darwin_arm64, darwin_amd64
 curl -fsSLO "https://github.com/gvart/hearth/releases/download/v${VERSION}/hearth_${VERSION}_${PLATFORM}.tar.gz"
 tar -xzf "hearth_${VERSION}_${PLATFORM}.tar.gz" hearth
