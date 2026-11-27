@@ -1,0 +1,21 @@
+docs/design/relay.md
+  s_18b57982fdff93::t_a974af031fc29b 103,133
+  s_18b57982fdff93::t_d6db134e7989e4 1-101,104-132,134-147
+  s_18b57982fdff93::t_eb3f79ce4a102c 102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "aa520fde92f7db4a02c9204c6cf47ef7a02b5138",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
