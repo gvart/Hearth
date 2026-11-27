@@ -20,6 +20,7 @@ proto/hearth/agent/v1/agent.proto
   s_18b57982fdff93::t_c914680671bce2 636,673-776
   s_18b57982fdff93::t_5697c8d100a3e1 33-36
   s_18b57982fdff93::t_411458b5b16491 58-64
+  s_18b57982fdff93::t_3f0816d7643b67 672
 internal/hub/agentstream.go
   s_18b57982fdff93::t_eb4f659079bda0 145,184,211-212
 internal/automation/action_device.go
