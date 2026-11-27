@@ -328,7 +328,7 @@ func (n *APNode) Bind(ctx context.Context, st *store.Store) error {
 	n.membership = m
 	n.masters = NewMasterRing(n.cfg.NodeID, m.Members, time.Now)
 	n.masters.SelfMaster(n.IsMaster)
-	n.link = NewMasterLink(n.cfg.NodeID, m.DialMaster, m.Members, http.HandlerFunc(n.serveMaster), n.log)
+	n.link = NewMasterLink(n.cfg.NodeID, m.DialMaster, m.Members, CAMasterKey(n.cfg.CA), http.HandlerFunc(n.serveMaster), n.log)
 	n.isolated = Isolation{
 		LastContact: m.LastContact, Now: time.Now, Bound: IsolationBound,
 		Others: func() bool {

@@ -450,10 +450,12 @@ func (r *Replicator) applyRouted(ctx context.Context, cmd store.Command) (store.
 		if route.Critical && !slices.Contains(errs, nil) {
 			return store.Result{}, fmt.Errorf("apply %s: no storage member reachable: %w", cmd.Op(), store.ErrUnavailable)
 		}
-		// The storage members do not send the global rows it writes unless
-		// they are masters too (replauth.go): a master off the ring writes
-		// them itself.
-		if !slices.Contains(live, v.self) && r.holdsKey() {
+		// The storage members do not send the global rows a password reset
+		// writes unless they are masters too (replauth.go): a master off the
+		// ring writes them itself. It is the one such command that writes
+		// global rows; the others touch only sharded ones, of which this
+		// member may still hold stale copies from before its demotion.
+		if _, ok := cmd.(store.SetPasswordHash); ok && !slices.Contains(live, v.self) && r.holdsKey() {
 			res, err := r.applyHere(ctx, cmd, route, v)
 			if err != nil {
 				return store.Result{}, err

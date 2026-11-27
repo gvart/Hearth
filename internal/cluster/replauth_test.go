@@ -4,7 +4,11 @@ package cluster
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
+	"io"
+	"net"
+	"net/http"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -383,5 +387,65 @@ func TestPromotedMemberDropsUnprovedConns(t *testing.T) {
 	_, err := an.m("s").rep.call(ctx, "m", apRequest{Op: opMerge, Muts: forgeCeiling(t, an.m("s"))})
 	if !errors.Is(err, errNotMaster) {
 		t.Fatalf("s, demoted, merges a global row: %v, want errNotMaster", err)
+	}
+}
+
+// TestMasterLinkNeedsTheCAKey: a member that announces the master role on
+// the gossip but does not hold the hub CA key cannot call a master over the
+// master link (forwarded agent calls, role changes); a master can.
+func TestMasterLinkNeedsTheCAKey(t *testing.T) {
+	members := func() []MemberInfo {
+		return []MemberInfo{
+			{ID: "m", Roles: HubRoles, State: MemberAlive},
+			{ID: "s", Roles: HubRoles, State: MemberAlive}, // claims master
+		}
+	}
+	served := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "ok") })
+	srv := NewMasterLink("m", nil, members, testMasterKey{holds: true}, served, testLogger(t))
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- srv.Run(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Error(err)
+		}
+	})
+	dial := func(context.Context, string) (net.Conn, error) {
+		a, b := net.Pipe()
+		binding := []byte(rand.Text())
+		go srv.Accept(boundConn{b, binding}, "s")
+		return boundConn{a, binding}, nil
+	}
+	get := func(key MasterKey) (string, error) {
+		cl := NewMasterLink("s", dial, members, key, nil, testLogger(t))
+		defer cl.transport.CloseIdleConnections()
+		resp, err := cl.Client().Get("http://m/x")
+		if err != nil {
+			return "", err
+		}
+		defer func() { _ = resp.Body.Close() }()
+		b, err := io.ReadAll(resp.Body)
+		return string(b), err
+	}
+	if got, err := get(testMasterKey{holds: true}); err != nil || got != "ok" {
+		t.Fatalf("a master's call: %q, %v", got, err)
+	}
+	if _, err := get(testMasterKey{}); err == nil {
+		t.Fatal("a member without the key called a master")
+	}
+	// One that sends a forged proof anyway is hung up on.
+	c, err := dial(ctx, "m")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	_ = c.SetDeadline(time.Now().Add(5 * time.Second))
+	if err := writeFrame(c, masterHello{Proof: []byte("forged")}); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.WriteString(c, "GET /x HTTP/1.1\r\nHost: m\r\nConnection: close\r\n\r\n")
+	if b, _ := io.ReadAll(c); len(b) > 0 {
+		t.Fatalf("a forged proof was served: %q", b)
 	}
 }

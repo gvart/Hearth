@@ -372,12 +372,33 @@ func (n *APNode) applyRoleChange(ctx context.Context, req roleRequest) (string, 
 		if err := n.setLocal(lr); err != nil {
 			return "", err
 		}
+		// Once the key is gone, the other members take no global row from
+		// this one (#382): first push those it holds, its hints' among them,
+		// to the other masters. Best effort: a master that misses one gets it
+		// from the masters that have it.
+		n.pushGlobals(ctx)
 		if err := n.cfg.CA.DropKey(); err != nil {
 			n.log.ErrorContext(ctx, "delete the CA key of a demoted master", "err", err)
 		}
 		n.log.InfoContext(ctx, "demoted from master: CA key deleted, agents move to the other masters",
 			"tokens_spent", closed.Tokens, "join_tokens_spent", closed.JoinTokens, "approvals_expired", closed.Approvals)
 		return RoleDone, nil
+	}
+}
+
+// pushGlobals runs a round of anti-entropy of the global rows with every
+// live master, while this member still holds the hub CA key.
+func (n *APNode) pushGlobals(ctx context.Context) {
+	if n.membership == nil {
+		return
+	}
+	for _, m := range n.membership.Members() {
+		if m.ID == n.cfg.NodeID || !m.Roles.Has(RoleMaster) || m.State != MemberAlive {
+			continue
+		}
+		if err := n.rep.SyncGlobal(ctx, m.ID); err != nil {
+			n.log.WarnContext(ctx, "demotion from master: copy the global rows to a master", "master", m.ID, "err", err)
+		}
 	}
 }
 

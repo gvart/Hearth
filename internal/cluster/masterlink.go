@@ -17,13 +17,16 @@ import (
 // gossip port's mutual TLS (gossipMaster connections): a call on one master
 // that needs a device's agent stream is forwarded to the master holding it.
 // Both ends present hub node certificates of the cluster CA; a request is
-// served only when the member that sent it is a live master.
+// served only when the member that sent it is a live master and, as the
+// roles on the gossip are a member's own word, proved on the connection that
+// it holds the hub CA key (#382).
 
 // MasterLink serves and makes the HTTP calls between masters.
 type MasterLink struct {
 	self    string
 	dial    func(ctx context.Context, id string) (net.Conn, error)
 	members func() []MemberInfo
+	key     MasterKey
 	log     *slog.Logger
 
 	ln        *connListener
@@ -33,18 +36,27 @@ type MasterLink struct {
 
 // NewMasterLink returns the link of master self: dial opens a gossipMaster
 // connection to a member, members lists the members, and h serves what
-// other masters ask.
+// other masters ask; key proves this member holds the hub CA key on each
+// connection it opens, and checks the proofs of those it accepts.
 func NewMasterLink(self string, dial func(ctx context.Context, id string) (net.Conn, error),
-	members func() []MemberInfo, h http.Handler, log *slog.Logger,
+	members func() []MemberInfo, key MasterKey, h http.Handler, log *slog.Logger,
 ) *MasterLink {
-	l := &MasterLink{self: self, dial: dial, members: members, handler: h, log: log, ln: newConnListener()}
+	l := &MasterLink{self: self, dial: dial, members: members, key: key, handler: h, log: log, ln: newConnListener()}
 	l.transport = &http.Transport{
 		DialContext: func(ctx context.Context, _, addr string) (net.Conn, error) {
 			host, _, err := net.SplitHostPort(addr)
 			if err != nil {
 				return nil, err
 			}
-			return l.dial(ctx, host)
+			c, err := l.dial(ctx, host)
+			if err != nil {
+				return nil, err
+			}
+			if err := l.hello(c); err != nil {
+				_ = c.Close()
+				return nil, fmt.Errorf("master link to %s: %w", host, err)
+			}
+			return c, nil
 		},
 		MaxIdleConnsPerHost: 4,
 		IdleConnTimeout:     replicaIdle,
@@ -70,9 +82,49 @@ func (l *MasterLink) Accept(c net.Conn, peer string) {
 		_ = c.Close()
 		return
 	}
+	if !l.proved(c) {
+		l.log.Warn("refused a master call from a member that did not prove it holds the hub CA key", "peer", peer)
+		_ = c.Close()
+		return
+	}
 	if !l.ln.put(peerConn{Conn: c, peer: peer}) {
 		_ = c.Close()
 	}
+}
+
+// proofMasterLink is what the dialer of a master link connection signs,
+// with the connection's binding.
+const proofMasterLink = "hearth ap master link: the dialer holds the hub CA key\x00"
+
+// masterHello is the first frame of a master link connection, before HTTP.
+type masterHello struct {
+	Proof []byte `json:"proof,omitempty"`
+}
+
+// hello sends, on c, the proof that this member holds the hub CA key.
+func (l *MasterLink) hello(c net.Conn) error {
+	var h masterHello
+	if b := bindingOf(c); len(b) > 0 {
+		h.Proof, _ = l.key.Prove(append([]byte(proofMasterLink), b...))
+	}
+	if h.Proof == nil {
+		return errors.New("this member does not hold the hub CA key")
+	}
+	_ = c.SetWriteDeadline(time.Now().Add(replicaDialTimeout))
+	defer func() { _ = c.SetWriteDeadline(time.Time{}) }()
+	return writeFrame(c, h)
+}
+
+// proved reads the dialer's hello from c and checks its proof.
+func (l *MasterLink) proved(c net.Conn) bool {
+	_ = c.SetReadDeadline(time.Now().Add(replicaDialTimeout))
+	defer func() { _ = c.SetReadDeadline(time.Time{}) }()
+	var h masterHello
+	if err := readFrame(c, &h); err != nil {
+		return false
+	}
+	b := bindingOf(c)
+	return len(b) > 0 && len(h.Proof) > 0 && l.key.Verify(append([]byte(proofMasterLink), b...), h.Proof)
 }
 
 // isMaster reports whether id is a live master other than this one.

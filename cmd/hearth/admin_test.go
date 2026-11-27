@@ -8,12 +8,15 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/gvart/hearth/internal/cluster"
 	"github.com/gvart/hearth/internal/policy"
 	"github.com/gvart/hearth/internal/store"
 )
@@ -28,6 +31,22 @@ func executeWithStdin(t *testing.T, stdin string, args ...string) (string, error
 	cmd.SetArgs(args)
 	err := cmd.ExecuteContext(t.Context())
 	return out.String(), err
+}
+
+// TestAdminSetPasswordNeedsMaster: on a storage-only cluster member, which
+// holds no CA key and writes no global rows (#382), set-password refuses.
+func TestAdminSetPasswordNeedsMaster(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, cluster.StateDir), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, dbFile), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := executeWithStdin(t, "s3cret-admin-pw\n", "admin", "set-password", "--data-dir", dir)
+	if err == nil || !strings.Contains(err.Error(), "not a master") {
+		t.Fatalf("set-password on a storage member = %v", err)
+	}
 }
 
 func TestAdminSetPassword(t *testing.T) {

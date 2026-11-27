@@ -268,6 +268,9 @@ signs the connection's TLS exporter with it.
   the master's stamp, and a master that is not a storage member writes its global part itself.
 - **Commands are coordinated for masters only.** A member refuses `apply` from a peer that did not
   prove it holds the key: what it coordinates is written in its own name.
+- **Masters call masters only.** The HTTP calls between masters (an agent call forwarded to the master
+  holding the device's stream, a role change) are served only to a live master that proved the key
+  on the connection.
 - **Sharded rows go through storage members.** They are their replicas: a storage member coordinates
   the writes a master forwards, keeps hints, hands rows off and runs anti-entropy for them.
 
@@ -277,7 +280,14 @@ integrations. It can still change the sharded rows it holds, and answer reads of
 sessions, tokens, enrollment and join tokens, approvals, devices and their certificates, audit
 entries. Treat a storage member as able to sign in as the admin (a forged session) until those rows are
 signed by the master that wrote them ([#384](https://github.com/gvart/hearth/issues/384)). A member of
-a version from before this check proves nothing: upgrade every hub together.
+a version from before this check proves nothing: upgrade every hub together. Device ceilings were
+sharded before; a ceiling set before the upgrade that only storage-only members hold does not reach
+the masters: set it again. `hearth admin set-password --data-dir` refuses to run on a storage-only
+member's host: set the password on a master's.
+
+A critical global write counts the storage members among its W replicas, but they never hand a global
+row on: if the master that made it is lost before any other master got it, it is lost with it (unless
+a storage member holding it is promoted to master).
 
 ## Masters
 
