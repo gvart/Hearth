@@ -13,6 +13,7 @@ web/src/components/DevicePage.tsx
 web/src/tips.ts
   s_18b57982fdff93::t_04256ac32d4e24 17,20,136-142
   s_18b57982fdff93::t_bad8c44ce6ec25 143
+  s_18b57982fdff93::t_c992e5db2c8add 19
 web/src/api/client.ts
   s_18b57982fdff93::t_0245d9711d59bc 76-91
 web/src/components/DevicesPage.tsx
