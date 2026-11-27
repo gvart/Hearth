@@ -40,3 +40,18 @@ test('platformSummary counts what is connected and what cannot be reached', () =
   assert.equal(platformSummary(platformCards(clusters, servers)), '4 connected · 1 unreachable');
   assert.equal(platformSummary(platformCards([], servers)), '2 connected');
 });
+
+test('an ESPHome device is a platform card, read-only unless calls are allowed', () => {
+  const cards = platformCards([], [], [
+    { id: 'e1', name: 'kitchen', address: '192.168.1.40:6053', state: 'connected', error: '', entities: 5, control: false },
+    { id: 'e2', name: 'porch', address: '192.168.1.41:6053', state: 'unavailable', error: 'the device rejected the encryption key', entities: 0, control: true },
+  ]);
+  assert.deepEqual(
+    cards.map((c) => [c.name, c.state, c.line, c.hash]),
+    [
+      ['porch', 'unreachable', '0 entities · calls allowed', '#/platforms/esphome/e2'],
+      ['kitchen', 'connected', '5 entities · read-only', '#/platforms/esphome/e1'],
+    ],
+  );
+  assert.deepEqual(platformOfHash('#/platforms/esphome/e1'), { kind: 'esphome', id: 'e1' });
+});

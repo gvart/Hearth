@@ -38,6 +38,7 @@ interface Read {
 export interface IntegrationInputs {
   clusters?: { state: string }[];
   servers?: { state: string }[];
+  esphome?: { state: string }[];
   talos?: Read & { nodes: unknown[] };
   beszel?: Read & { systems: unknown[] };
   plugins?: { state: string }[];
@@ -98,6 +99,14 @@ export function integrations(x: IntegrationInputs): Integration[] {
       ...connected(x.servers, 'unavailable', 'server', 'Connect a server on the Platforms page.'),
       where: { label: 'Platforms', hash: '#/platforms' },
       docs: 'proxmox.md',
+    },
+    {
+      id: 'esphome',
+      name: 'ESPHome',
+      gives: 'Sensors, binary sensors, switches and buttons of ESPHome devices, live, through their native API.',
+      ...connected(x.esphome, 'unavailable', 'device', 'Adopt a device on the Platforms page, or from On your network.'),
+      where: { label: 'Platforms', hash: '#/platforms' },
+      docs: 'esphome.md',
     },
     {
       id: 'talos',

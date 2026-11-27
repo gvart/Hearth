@@ -17,6 +17,7 @@ import { NetworkPage } from './NetworkPage.tsx';
 import { NotificationsPage } from './NotificationsPage.tsx';
 import { PanelsPage } from './PanelsPage.tsx';
 import { PlatformsPage } from './PlatformsPage.tsx';
+import { ESPHomePage } from './ESPHomePage.tsx';
 import { ProxmoxPage } from './ProxmoxPage.tsx';
 import { ReauthHost } from './ReauthDialog.tsx';
 import { RunbooksPage } from './RunbooksPage.tsx';
@@ -146,6 +147,8 @@ export function Shell() {
               <KubernetesPage id={platform.id} />
             ) : platform?.kind === 'proxmox' ? (
               <ProxmoxPage id={platform.id} />
+            ) : platform?.kind === 'esphome' ? (
+              <ESPHomePage id={platform.id} />
             ) : (
               <PlatformsPage />
             )

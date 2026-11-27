@@ -2,11 +2,12 @@
 // one page. Kept apart from the components so node --test can check it
 // (web/test/platforms.test.mjs).
 
-export type PlatformKind = 'kubernetes' | 'proxmox';
+export type PlatformKind = 'kubernetes' | 'proxmox' | 'esphome';
 
 export const kindLabel: Record<PlatformKind, string> = {
   kubernetes: 'Kubernetes cluster',
   proxmox: 'Proxmox server',
+  esphome: 'ESPHome device',
 };
 
 /** How a platform reads now, whatever its kind calls it. */
@@ -43,6 +44,16 @@ interface Cluster {
   pods: number;
 }
 
+interface ESPDevice {
+  id: string;
+  name: string;
+  address: string;
+  state: 'connecting' | 'connected' | 'unavailable';
+  error: string;
+  entities: number;
+  control: boolean;
+}
+
 interface Server {
   id: string;
   name: string;
@@ -69,7 +80,7 @@ export function platformOfHash(hash: string): { kind: PlatformKind; id: string }
     return undefined;
   }
   const [kind, id, ...rest] = hash.slice(prefix.length).split('/');
-  if ((kind !== 'kubernetes' && kind !== 'proxmox') || !id || rest.length > 0) {
+  if ((kind !== 'kubernetes' && kind !== 'proxmox' && kind !== 'esphome') || !id || rest.length > 0) {
     return undefined;
   }
   try {
@@ -84,7 +95,7 @@ function count(n: number, one: string, many = `${one}s`): string {
 }
 
 /** Every connected platform as a card: unreachable ones first, then by name. */
-export function platformCards(clusters: Cluster[], servers: Server[]): PlatformCard[] {
+export function platformCards(clusters: Cluster[], servers: Server[], devices: ESPDevice[] = []): PlatformCard[] {
   const cards: PlatformCard[] = [
     ...clusters.map(
       (c): PlatformCard => ({
@@ -108,6 +119,18 @@ export function platformCards(clusters: Cluster[], servers: Server[]): PlatformC
         line: `${count(s.nodes, 'host')} · ${count(s.guests, 'guest')}`,
         error: s.error,
         hash: platformHash('proxmox', s.id),
+      }),
+    ),
+    ...devices.map(
+      (d): PlatformCard => ({
+        kind: 'esphome',
+        id: d.id,
+        name: d.name,
+        address: d.address,
+        state: d.state === 'unavailable' ? 'unreachable' : d.state,
+        line: `${count(d.entities, 'entity', 'entities')} · ${d.control ? 'calls allowed' : 'read-only'}`,
+        error: d.error,
+        hash: platformHash('esphome', d.id),
       }),
     ),
   ];

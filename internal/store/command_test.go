@@ -107,6 +107,8 @@ func allCommands() []Command {
 		DeleteConfigDoc{Kind: ConfigRunbook, Name: "r.yaml"},
 		SetDeviceRoute{DeviceID: "pi", Master: "hub-a", At: 34},
 		SetDeviceCeiling{DeviceID: "pi", Ceiling: `{"logs":["docker:*"]}`, UpdatedAt: 37, UpdatedBy: "web/10.0.0.1"},
+		AddESPHomeDevice{ID: "e1", Name: "kitchen", Sealed: []byte{9, 9}, CreatedAt: 38},
+		RemoveESPHomeDevice{ID: "e1"},
 		CreateRunbookRun{
 			ID: "rr1", RunbookID: "rb", Status: "running", StartedBy: "admin/root", StartedAt: 35,
 			Source: []byte("steps: []"), State: `{"step":0}`, Keep: 100,
@@ -428,6 +430,10 @@ func runScenario(t *testing.T, s *Store) {
 	}
 	must(s.ProxmoxServers().Remove(ctx, "p2"))
 	wantErr(s.ProxmoxServers().Remove(ctx, "p2"), ErrNotFound)
+	must(s.ESPHomeDevices().Add(ctx, ESPHomeDevice{ID: "e1", Name: "kitchen", Sealed: []byte{1}, CreatedAt: at(5 * time.Hour)}))
+	must(s.ESPHomeDevices().Add(ctx, ESPHomeDevice{ID: "e2", Name: "porch", Sealed: []byte{2}, CreatedAt: at(5 * time.Hour)}))
+	must(s.ESPHomeDevices().Remove(ctx, "e2"))
+	wantErr(s.ESPHomeDevices().Remove(ctx, "e2"), ErrNotFound)
 
 	// A hub CA rotation: started, a second refused, cut over, its secrets
 	// re-sealed (a stale one refused), finished.

@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { useRunbookFiles } from '../api/admin.ts';
 import { useDevices, useKubeClusters, useRunbooks } from '../api/hooks.ts';
+import { useESPHomeDevices } from '../api/esphome.ts';
 import { useProxmoxServers } from '../api/proxmox.ts';
 import { findCommands, type Command } from '../nav.ts';
 import { kindLabel, platformCards } from '../platforms.ts';
@@ -22,12 +23,13 @@ export function CommandBar({ cluster, className }: { cluster: boolean; className
   // Read only once something is typed: the bar is on every page, and these lists are not.
   const clusters = useKubeClusters(typed);
   const servers = useProxmoxServers(typed);
+  const esp = useESPHomeDevices(typed);
   const runbooks = useRunbooks(typed);
   const files = useRunbookFiles(typed);
   const theme = useTheme();
   const results = findCommands(query, {
     devices,
-    platforms: platformCards(clusters.data ?? [], servers.data ?? []).map((p) => ({
+    platforms: platformCards(clusters.data ?? [], servers.data ?? [], esp.data ?? []).map((p) => ({
       name: p.name,
       kind: kindLabel[p.kind],
       hash: p.hash,

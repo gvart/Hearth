@@ -150,6 +150,9 @@ var tables = map[string]tableSpec{
 	"proxmox_servers": {pk: []string{"id"}, deletable: true, tombstone: func(r row) {
 		r["connection"], r["name"] = []byte{}, deletedName(r["id"])
 	}},
+	"esphome_devices": {pk: []string{"id"}, deletable: true, since: esphomeDevicesSchema, tombstone: func(r row) {
+		r["connection"], r["name"] = []byte{}, deletedName(r["id"])
+	}},
 	"runbook_runs": {pk: []string{"id"}, deletable: true, tombstone: func(r row) {
 		r["source"] = []byte{}
 	}},

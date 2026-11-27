@@ -290,6 +290,14 @@ const (
 	PluginCommandRead      Action = "plugin.command.read"
 	PluginCommandSafe      Action = "plugin.command.safe"
 	PluginCommandDangerous Action = "plugin.command.dangerous"
+	// ESPHomeDeviceAdd adopts an ESPHome device: the hub stores its address
+	// and API encryption key, sealed, and starts reading its entities.
+	ESPHomeDeviceAdd Action = "esphome.device.add"
+	// ESPHomeDeviceRemove forgets an adopted ESPHome device and its key.
+	ESPHomeDeviceRemove Action = "esphome.device.remove"
+	// ESPHomeCall turns a switch of an ESPHome device on or off, or presses
+	// one of its buttons.
+	ESPHomeCall Action = "esphome.call"
 )
 
 // Actor kinds.
@@ -610,6 +618,14 @@ var rules = map[Action]rule{
 	PluginCommandRead:      {class: Read, actors: []string{ActorWeb, ActorAutomation, ActorMCP}},
 	PluginCommandSafe:      {class: Safe, actors: []string{ActorWeb, ActorAutomation, ActorMCP}},
 	PluginCommandDangerous: {class: Dangerous, actors: []string{ActorWeb, ActorAutomation, ActorMCP}},
+	// Adopting an ESPHome device hands the hub its key; the hub only reads
+	// with it, except for esphome.call, decided and audited on its own.
+	ESPHomeDeviceAdd:    {class: Safe, actors: []string{ActorWeb}},
+	ESPHomeDeviceRemove: {class: Safe, actors: []string{ActorWeb}},
+	// A switch or a button does what its firmware makes it do, and the next
+	// call undoes a switch. The device must also have been adopted with
+	// calls allowed: read-only is the default.
+	ESPHomeCall: {class: Safe, actors: []string{ActorWeb}},
 }
 
 // Actions returns every known action, sorted.

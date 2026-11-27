@@ -6,6 +6,7 @@ require (
 	connectrpc.com/connect v1.21.1
 	github.com/canonical/starlark v0.0.0-20261013114702-d127486937f6
 	github.com/creack/pty v1.1.24
+	github.com/flynn/noise v1.1.0
 	github.com/hashicorp/memberlist v0.7.0
 	github.com/mochi-mqtt/server/v2 v2.7.9
 	github.com/modelcontextprotocol/go-sdk v1.8.0

@@ -49,8 +49,9 @@ export const tips: Record<TipId, TipText> = {
   platforms: {
     about: "platforms",
     lines: [
-      "A platform is a cluster or server Hearth reads through its own API: a Kubernetes cluster or a Proxmox server.",
+      "A platform is something Hearth reads through its own API: a Kubernetes cluster, a Proxmox server or an ESPHome device.",
       "Nothing is installed there, and Hearth changes something only when you ask it to.",
+      "An ESPHome device is adopted with its API encryption key, read-only unless you allow calls: its sensors and switches stay live on its page.",
     ],
     docs: "kubernetes.md",
   },

@@ -12,6 +12,7 @@ import (
 
 	"github.com/gvart/hearth/internal/automation"
 	"github.com/gvart/hearth/internal/hubconfig"
+	"github.com/gvart/hearth/internal/integrations/esphome"
 	"github.com/gvart/hearth/internal/integrations/kubernetes"
 	"github.com/gvart/hearth/internal/integrations/proxmox"
 	"github.com/gvart/hearth/internal/pki"
@@ -66,11 +67,11 @@ func newServerCert(ctx context.Context, ca *pki.CA, hosts []string, epoch string
 }
 
 // hubSealers seal secrets in the store with keys derived from the hub CA
-// key, which every hub of a cluster holds: kubeconfigs, Proxmox connections
+// key, which every hub of a cluster holds: kubeconfigs, Proxmox and ESPHome connections,
 // runbook runs' files and the notify configuration document. During a hub CA rotation they open with either
 // CA's key and seal with the one the hub serves.
 type hubSealers struct {
-	kube, proxmox, runbook, notify *kubernetes.Sealer
+	kube, proxmox, runbook, notify, esphome *kubernetes.Sealer
 }
 
 func newHubSealers(ctx context.Context, ca *pki.CA, log *slog.Logger) (*hubSealers, error) {
@@ -91,6 +92,9 @@ func newHubSealers(ctx context.Context, ca *pki.CA, log *slog.Logger) (*hubSeale
 	if s.notify, err = kubernetes.NewPurposeSealer(keys[0], notifySealInfo); err != nil {
 		return nil, err
 	}
+	if s.esphome, err = kubernetes.NewPurposeSealer(keys[0], esphome.SealInfo); err != nil {
+		return nil, err
+	}
 	if err := s.rekey(keys); err != nil {
 		return nil, err
 	}
@@ -107,7 +111,7 @@ func newHubSealers(ctx context.Context, ca *pki.CA, log *slog.Logger) (*hubSeale
 }
 
 func (s *hubSealers) rekey(keys [][]byte) error {
-	for _, sealer := range []*kubernetes.Sealer{s.kube, s.proxmox, s.runbook, s.notify} {
+	for _, sealer := range []*kubernetes.Sealer{s.kube, s.proxmox, s.runbook, s.notify, s.esphome} {
 		if err := sealer.SetSecrets(keys...); err != nil {
 			return err
 		}
@@ -124,6 +128,8 @@ func (s *hubSealers) reseal(_ context.Context, secrets []store.SealedSecret) ([]
 		switch sec.Table {
 		case store.SealedProxmoxServers:
 			sealer = s.proxmox
+		case store.SealedESPHomeDevices:
+			sealer = s.esphome
 		case store.SealedRunbookRuns:
 			sealer, id = s.runbook, automation.RunbookSealID(sec.ID)
 		case store.SealedConfigDocs:
