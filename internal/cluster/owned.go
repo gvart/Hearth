@@ -49,6 +49,10 @@ type ownedUses struct {
 	mu  sync.Mutex
 	db  *sql.DB // nil keeps them in memory only
 	mem map[string]bool
+	// rowsMu guards the records of created rows (owned_rows, or rows when
+	// db is nil), apart from mu, which applyOwned holds over the network: a
+	// held request reads its approval's decision without waiting for it.
+	rowsMu sync.Mutex
 	// rows are the created rows' records when db is nil.
 	rows map[string]ownedRow
 }
@@ -99,8 +103,8 @@ func (u *ownedUses) recordCreated(ctx context.Context, key string, cmd store.Com
 	if err != nil {
 		return err
 	}
-	u.mu.Lock()
-	defer u.mu.Unlock()
+	u.rowsMu.Lock()
+	defer u.rowsMu.Unlock()
 	if u.db == nil {
 		u.rows[key] = ownedRow{cmd: b}
 		return nil
@@ -112,8 +116,10 @@ func (u *ownedUses) recordCreated(ctx context.Context, key string, cmd store.Com
 }
 
 // created returns the command that created the master-owned row key here,
-// nil if this master created none. The caller holds mu.
+// nil if this master created none.
 func (u *ownedUses) created(ctx context.Context, key string) (store.Command, error) {
+	u.rowsMu.Lock()
+	defer u.rowsMu.Unlock()
 	var b []byte
 	if u.db == nil {
 		b = u.rows[key].cmd
@@ -132,9 +138,10 @@ func (u *ownedUses) created(ctx context.Context, key string) (store.Command, err
 	return store.DecodeCommand(b)
 }
 
-// setDecision records this master's decision on the row key. The caller
-// holds mu.
+// setDecision records this master's decision on the row key; "" clears it.
 func (u *ownedUses) setDecision(ctx context.Context, key, status string) error {
+	u.rowsMu.Lock()
+	defer u.rowsMu.Unlock()
 	if u.db == nil {
 		row := u.rows[key]
 		row.decision = status
@@ -150,8 +157,8 @@ func (u *ownedUses) setDecision(ctx context.Context, key, status string) error {
 // OwnerDecision implements store.OwnerDecisions.
 func (r *Replicator) OwnerDecision(ctx context.Context, id string) (string, error) {
 	u := r.uses
-	u.mu.Lock()
-	defer u.mu.Unlock()
+	u.rowsMu.Lock()
+	defer u.rowsMu.Unlock()
 	key := "approvals/" + id
 	if u.db == nil {
 		return u.rows[key].decision, nil
@@ -193,16 +200,29 @@ func (r *Replicator) applyOwned(ctx context.Context, key string, cmd store.Comma
 	if err != nil {
 		return store.Result{}, err
 	}
-	if d, ok := cmd.(store.DecideApproval); ok && created != nil {
-		// Before the decision can be read: the request held here waits for it.
+	d, deciding := cmd.(store.DecideApproval)
+	deciding = deciding && created != nil
+	if deciding {
+		// Before the decision can be read: the request held here waits for
+		// it, and reads it as soon as the row says it.
 		if err := u.setDecision(ctx, key, d.Status); err != nil {
 			return store.Result{}, err
 		}
 	}
 	res, err := r.applyRouted(ctx, cmd)
-	if err == nil || mayHaveApplied(err) {
+	// A row of its own the replicas say is spent is spent for good here
+	// too: a replica cannot bring a revoked token back.
+	spent := created != nil && (errors.Is(err, store.ErrTokenUsed) || errors.Is(err, store.ErrTokenExpired) ||
+		errors.Is(err, store.ErrApprovalClosed))
+	if err == nil || mayHaveApplied(err) || spent {
 		if merr := u.mark(context.WithoutCancel(ctx), key); merr != nil {
 			r.log.ErrorContext(ctx, "record a use of a master-owned row", "op", cmd.Op(), "err", merr)
+		}
+	}
+	if deciding && err != nil && !mayHaveApplied(err) {
+		// Refused: no decision of this master's.
+		if derr := u.setDecision(context.WithoutCancel(ctx), key, ""); derr != nil {
+			r.log.ErrorContext(ctx, "clear a refused approval decision", "err", derr)
 		}
 	}
 	if err != nil {

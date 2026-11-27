@@ -38,15 +38,27 @@ func plant(t *testing.T, an *apNet, cmds ...store.Command) {
 func rewrite(t *testing.T, an *apNet, ref store.RowRef, set map[string]any) {
 	t.Helper()
 	ctx := t.Context()
-	ms, err := an.m("m").st.ReadRows(ctx, []store.RowRef{ref})
-	if err != nil || len(ms) != 1 {
-		t.Fatalf("read %v: %v, %v", ref, ms, err)
+	var ms []store.Mutation
+	for _, id := range []string{"m", "s", "s2"} {
+		got, err := an.m(id).st.ReadRows(ctx, []store.RowRef{ref})
+		if err != nil {
+			t.Fatalf("read %v on %s: %v", ref, id, err)
+		}
+		if len(got) == 1 && (len(ms) == 0 || got[0].HLC > ms[0].HLC) {
+			ms = got
+		}
+	}
+	if len(ms) != 1 {
+		t.Fatalf("no member holds %v", ref)
 	}
 	m := ms[0]
 	for k, v := range set {
 		m.Row[k] = v
 	}
 	m.HLC = hlc.New(time.Now().Add(time.Second))
+	if err := an.m("s").st.Merge(ctx, []store.Mutation{m}); err != nil {
+		t.Fatal(err)
+	}
 	for _, to := range []string{"m", "s2"} {
 		if _, err := an.m("s").rep.call(ctx, to, apRequest{Op: opMerge, Muts: []store.Mutation{m}}); err != nil {
 			t.Fatalf("merge the rewritten row into %s: %v", to, err)
@@ -83,6 +95,65 @@ func TestForgedJoinTokenRefused(t *testing.T) {
 	jt, err := an.m("m").st.JoinTokens().Use(ctx, "real", "new", time.Now())
 	if err != nil || jt.Roles != "storage" {
 		t.Fatalf("rewritten join token grants %q, %v; want storage", jt.Roles, err)
+	}
+}
+
+// TestRevokedTokenStaysRevoked: a token its owner revoked, or found spent
+// on the replicas, is not brought back by a replica that marks it unused.
+func TestRevokedTokenStaysRevoked(t *testing.T) {
+	an := newGateNet(t)
+	ctx := t.Context()
+	m := an.m("m").st
+	exp := time.Now().Add(time.Hour)
+	if err := m.Tokens().Create(ctx, "revoked", nil, exp); err != nil {
+		t.Fatal(err)
+	}
+	pending, err := m.Tokens().ListUnused(ctx, time.Now())
+	if err != nil || len(pending) != 1 {
+		t.Fatalf("pending tokens: %+v, %v", pending, err)
+	}
+	if err := m.Tokens().Revoke(ctx, pending[0].ID, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	unuse := map[string]any{"used_at": nil}
+	rewrite(t, an, store.RowRef{Table: "tokens", Key: store.Values{hashOf("revoked")}}, unuse)
+	if _, err := m.Tokens().Consume(ctx, "revoked", time.Now()); !errors.Is(err, store.ErrTokenUsed) {
+		t.Fatalf("a revoked token brought back by a replica: %v, want ErrTokenUsed", err)
+	}
+
+	// A token a replica says is used, then unused again.
+	if err := m.Tokens().Create(ctx, "flipped", nil, exp); err != nil {
+		t.Fatal(err)
+	}
+	rewrite(t, an, store.RowRef{Table: "tokens", Key: store.Values{hashOf("flipped")}}, map[string]any{"used_at": time.Now().UnixMilli()})
+	if _, err := m.Tokens().Consume(ctx, "flipped", time.Now()); !errors.Is(err, store.ErrTokenUsed) {
+		t.Fatalf("consume a token the replicas say is used: %v", err)
+	}
+	rewrite(t, an, store.RowRef{Table: "tokens", Key: store.Values{hashOf("flipped")}}, unuse)
+	if _, err := m.Tokens().Consume(ctx, "flipped", time.Now()); !errors.Is(err, store.ErrTokenUsed) {
+		t.Fatalf("a spent token brought back by a replica: %v, want ErrTokenUsed", err)
+	}
+}
+
+// TestRefusedDecisionIsNoDecision: a decision the replicas refused (the
+// approval was closed already) is no decision of the owner's, so a replica
+// that then marks it approved does not have it act.
+func TestRefusedDecisionIsNoDecision(t *testing.T) {
+	an := newGateNet(t)
+	ctx := t.Context()
+	now := time.Now()
+	m := an.m("m").st
+	if err := m.Approvals().Create(ctx, store.Approval{ID: "closed", CreatedAt: now, ExpiresAt: now.Add(time.Hour),
+		ActorKind: "automation", ActorID: "a", Action: "automation.exec", Class: "dangerous", Target: "pi", Detail: []byte(`{}`)}); err != nil {
+		t.Fatal(err)
+	}
+	ref := store.RowRef{Table: "approvals", Key: store.Values{"closed"}}
+	rewrite(t, an, ref, map[string]any{"status": store.ApprovalExpired, "decided_by": "timeout", "decided_at": now.UnixMilli()})
+	if err := m.Approvals().Decide(ctx, "closed", store.ApprovalApproved, "web/w", now); !errors.Is(err, store.ErrApprovalClosed) {
+		t.Fatalf("decide a closed approval: %v, want ErrApprovalClosed", err)
+	}
+	if d, _, err := m.Approvals().OwnerDecision(ctx, "closed"); err != nil || d != "" {
+		t.Fatalf("the owner's decision after a refusal = %q, %v; want none", d, err)
 	}
 }
 
