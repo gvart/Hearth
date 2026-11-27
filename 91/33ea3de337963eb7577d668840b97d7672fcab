@@ -1,0 +1,29 @@
+internal/policy/ceiling.go
+  s_18b57982fdff93::t_39e375685005f1 66,69-71
+  s_18b57982fdff93::t_caa37c6bfc8cd6 43-45,47-49
+  s_18b57982fdff93::t_d44695260f6ffa 72
+internal/hub/logs_test.go
+  s_18b57982fdff93::t_d33099fdcb0214 244
+internal/policy/ceiling_hub_test.go
+  s_18b57982fdff93::t_9ee823687322ae 40-67
+internal/agent/hubceiling_test.go
+  s_18b57982fdff93::t_ef798406a5bf81 168-182
+internal/hub/agentexec_test.go
+  s_18b57982fdff93::t_234d64f4b0d3eb 228-229
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9133ea3de337963eb7577d668840b97d7672fcab",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
