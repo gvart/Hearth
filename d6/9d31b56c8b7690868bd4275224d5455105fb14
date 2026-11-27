@@ -1,0 +1,23 @@
+internal/cluster/apschema_test.go
+  s_18b57982fdff93::t_2e2b0881651f08 6,127-133
+  s_18b57982fdff93::t_97c0f8a87d21e4 81-90
+  s_18b57982fdff93::t_be57f7bb2d06ad 134
+internal/cluster/apnode.go
+  s_18b57982fdff93::t_49edd36cb8df53 782-793,800
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d69d31b56c8b7690868bd4275224d5455105fb14",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
