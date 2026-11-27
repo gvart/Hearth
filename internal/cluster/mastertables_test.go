@@ -311,23 +311,19 @@ func TestKeylessMemberHoldsNoMasterRows(t *testing.T) {
 }
 
 // TestPlaceMasterRows: as its store is bound, a member without the hub CA
-// key deletes every master row; a member of a cluster that first runs this
-// version deletes the sessions, MCP and dashboard tokens and panel links it
-// held (a copy may be stale: it missed a revocation that only storage-only
-// members held), keeps the panels, and does it once; a hub that never had
-// another member keeps them all.
+// key deletes every master row, a master keeps them (the store reset those
+// of a cluster's database as it migrated it, store.TestGrantsResetOnUpgrade);
+// either drops, once, the hints of sessions, tokens and links kept from
+// before this version, which would bring stale ones back elsewhere.
 func TestPlaceMasterRows(t *testing.T) {
 	ctx := t.Context()
 	cases := []struct {
-		name      string
-		key       bool
-		seeds     []string
-		want      int // master rows left: makeGrants writes five
-		wantAgain int // after a session and a second start
+		name string
+		key  bool
+		want int // master rows left: makeGrants writes five
 	}{
-		{"single hub", true, nil, 5, 6},
-		{"master of a cluster", true, []string{"127.0.0.1:1"}, 1, 2},
-		{"storage-only member", false, []string{"127.0.0.1:1"}, 0, 0},
+		{"master", true, 5},
+		{"storage-only member", false, 0},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -346,7 +342,7 @@ func TestPlaceMasterRows(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { _ = hints.Close() })
-			n := &APNode{cfg: APConfig{DataDir: dir, CA: ca, Seeds: tc.seeds}, log: testLogger(t), hints: hints}
+			n := &APNode{cfg: APConfig{DataDir: dir, CA: ca}, log: testLogger(t), hints: hints}
 			st := storetest.Open(t, store.WithDigest())
 			makeGrants(t, &apMember{id: "a", st: st})
 			// A hint kept from before, of a session and a panel.
@@ -357,6 +353,13 @@ func TestPlaceMasterRows(t *testing.T) {
 			if err != nil || len(rows) != 2 {
 				t.Fatalf("rows for a hint: %v, %v", rows, err)
 			}
+			hinted := func() int {
+				_, ms, err := hints.Take(ctx, "b", 10)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return len(ms)
+			}
 			if err := hints.Add("b", rows); err != nil {
 				t.Fatal(err)
 			}
@@ -366,22 +369,18 @@ func TestPlaceMasterRows(t *testing.T) {
 			if got := masterRowCount(t, st); got != tc.want {
 				t.Fatalf("master rows left: %d, want %d", got, tc.want)
 			}
-			_, hinted, err := hints.Take(ctx, "b", 10)
-			if err != nil {
-				t.Fatal(err)
+			if got := hinted(); got != 1 {
+				t.Fatalf("hinted rows left: %d, want the panel's", got)
 			}
-			if wantHinted := map[bool]int{true: 2, false: 1}[len(tc.seeds) == 0]; len(hinted) != wantHinted {
-				t.Fatalf("hinted rows left: %d, want %d", len(hinted), wantHinted)
-			}
-			now := time.Now()
-			if err := st.Admin().CreateSession(ctx, "later", now, now.Add(time.Hour)); err != nil {
+			// Once: a hint of a session since is kept at the next start.
+			if err := hints.Add("b", rows[:1]); err != nil {
 				t.Fatal(err)
 			}
 			if err := n.placeMasterRows(ctx, st); err != nil {
 				t.Fatal(err)
 			}
-			if got := masterRowCount(t, st); got != tc.wantAgain {
-				t.Fatalf("master rows left after a second start: %d, want %d", got, tc.wantAgain)
+			if got := hinted(); got != 2 {
+				t.Fatalf("hinted rows after a second start: %d, want 2", got)
 			}
 		})
 	}

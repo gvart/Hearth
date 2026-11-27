@@ -20,18 +20,20 @@ import (
 // master deletes them once it is demoted; a member promoted to master pulls
 // them from a master that proves the key.
 
-// masterTablesFile marks a data dir whose master tables were reset when it
-// first ran a version that keeps them on masters only.
+// masterTablesFile marks a data dir whose hints of the grant tables were
+// dropped when it first ran a version that keeps them on masters only.
 const masterTablesFile = "master-tables"
 
-// grantTables are the master tables reset at that first start: a copy kept
-// from before may be stale, a revocation or a sign-out it missed held only
-// by the storage members that were the row's replicas then.
+// grantTables are the master tables the store resets in a database that was
+// a cluster's, as it first opens with this version (migration 00041): a copy
+// kept from before may be stale, a revocation or a sign-out it missed held
+// only by the storage members that were the row's replicas then. Their
+// hints from before go too, once per data dir: they would bring them back.
 var grantTables = []string{"sessions", "mcp_tokens", "dashboard_tokens", "panel_links"}
 
 // placeMasterRows, when the store is bound, deletes the master tables'
-// rows of a member that holds no hub CA key, and resets the grant tables
-// of a member of a cluster at its first start with this version.
+// rows of a member that holds no hub CA key, and the hints of the grant
+// tables kept from before this version.
 func (n *APNode) placeMasterRows(ctx context.Context, st *store.Store) error {
 	if !n.cfg.CA.HasKey() {
 		k, err := st.DropMasterRows(ctx)
@@ -49,19 +51,10 @@ func (n *APNode) placeMasterRows(ctx context.Context, st *store.Store) error {
 	case !errors.Is(err, fs.ErrNotExist):
 		return fmt.Errorf("master tables: %w", err)
 	}
-	if len(n.seeds()) > 0 {
-		k, err := st.DropMasterRows(ctx, grantTables...)
-		if err != nil {
+	if n.hints != nil {
+		if err := n.hints.DropTables(ctx, grantTables); err != nil {
 			return err
 		}
-		// Hints kept from before would bring them back elsewhere.
-		if n.hints != nil {
-			if err := n.hints.DropTables(ctx, grantTables); err != nil {
-				return err
-			}
-		}
-		n.log.InfoContext(ctx, "upgrade: sign-in sessions, MCP and dashboard tokens and panel links now live on masters only; "+
-			"the ones from before are gone: sign in again and create them again", "rows", k)
 	}
 	if err := writeFileSync(marker, []byte("1\n"), 0o600); err != nil {
 		return fmt.Errorf("master tables: %w", err)
