@@ -248,6 +248,9 @@ func TestUpgradeRefused(t *testing.T) {
 		{name: "downgrade", version: "v0.9.0", rel: with(func(r *fakeReleaseFiles) {
 			*r = releaseFor("v0.9.0", testTarget, archive, sum)
 		}), denied: true, wantErr: "downgrades are refused"},
+		{name: "a release that cannot upgrade itself, from a dev build", version: "v0.0.1-rc.10", rel: with(func(r *fakeReleaseFiles) {
+			*r = releaseFor("v0.0.1-rc.10", testTarget, archive, sum)
+		}), setup: func(u *upgrader) { u.current = "dev" }, denied: true, wantErr: "cannot upgrade itself"},
 		{
 			name: "local ceiling", rel: &ok, denied: true, wantErr: "--local-ceiling",
 			setup: func(u *upgrader) { u.refusal = selfUpgradeRefusal("linux", true, func(string) string { return "" }) },
@@ -326,6 +329,10 @@ func TestNewUpgraderBase(t *testing.T) {
 	})
 	if u.base != "http://releases:8000/r" {
 		t.Errorf("base with %s = %s", releaseBaseEnv, u.base)
+	}
+	// An agent started with --local-ceiling refuses, as Run builds it.
+	if u := newUpgrader("/x/hearth", t.TempDir(), "v1.0.0", true, func(string) string { return "" }); !strings.Contains(u.refusal, "--local-ceiling") {
+		t.Errorf("refusal with --local-ceiling = %q", u.refusal)
 	}
 }
 
@@ -429,6 +436,35 @@ func TestUpgradeRollback(t *testing.T) {
 			t.Errorf("executable = %q, want it kept", got)
 		}
 	})
+}
+
+// TestRunCountsStartsFirst checks that Run counts the start of an upgraded
+// agent before anything else can fail, its identity included: a binary that
+// cannot even load it is rolled back too.
+func TestRunCountsStartsFirst(t *testing.T) {
+	t.Parallel()
+	exe := filepath.Join(t.TempDir(), "hearth")
+	for path, body := range map[string]string{exe: "new", exe + ".prev": "old"} {
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	dataDir := t.TempDir() // no identity in it
+	if err := writePending(dataDir, pendingUpgrade{From: "v1.0.0", To: "v1.2.3"}); err != nil {
+		t.Fatal(err)
+	}
+	cfg := Config{DataDir: dataDir, Log: slog.New(slog.DiscardHandler), upgrader: &upgrader{exe: exe, dataDir: dataDir}}
+	for i := 1; i <= maxUpgradeStarts; i++ {
+		if err := Run(t.Context(), cfg); err == nil || errors.Is(err, ErrUpgraded) {
+			t.Fatalf("Run %d without an identity = %v, want its error", i, err)
+		}
+	}
+	if err := Run(t.Context(), cfg); !errors.Is(err, ErrUpgraded) {
+		t.Fatalf("Run %d = %v, want the rollback", maxUpgradeStarts+1, err)
+	}
+	if got := readFile(t, exe); got != "old" {
+		t.Errorf("executable = %q, want the previous one back", got)
+	}
 }
 
 func TestSelfUpgradeRefusal(t *testing.T) {

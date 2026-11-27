@@ -78,6 +78,11 @@ const (
 	maxRedirects = 5
 )
 
+// lastReleaseWithoutSelfUpgrade is the newest release whose agent cannot
+// upgrade itself. An agent never installs it or an older one, whatever
+// version it runs (a development build too): it could not come back.
+const lastReleaseWithoutSelfUpgrade = "v0.0.1-rc.10"
+
 // upgrader replaces the agent's executable.
 type upgrader struct {
 	// exe is the executable to replace, resolved when the agent starts:
@@ -213,6 +218,10 @@ func (u *upgrader) upgrade(ctx context.Context, req *agentv1.UpgradeRequest) *ag
 		return res
 	case !release.Tag.MatchString(version):
 		res.Denied, res.Error = true, "the upgrade names no release version"
+		return res
+	case release.Compare(version, lastReleaseWithoutSelfUpgrade) <= 0:
+		res.Denied, res.Error = true, fmt.Sprintf("%s cannot upgrade itself, so the agent never goes back to it: "+
+			"pick %s or later", version, lastReleaseWithoutSelfUpgrade)
 		return res
 	case release.Tag.MatchString(u.current) && release.Compare(version, u.current) < 0:
 		res.Denied, res.Error = true, fmt.Sprintf("%s is older than the %s this agent runs: downgrades are refused", version, u.current)

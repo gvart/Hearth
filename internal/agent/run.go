@@ -149,6 +149,15 @@ const ExitRevoked = 78
 // the certificate is revoked; a NotLeader or Unavailable answer never stops
 // it. Cancellation returns nil.
 func Run(ctx context.Context, cfg Config) error {
+	up := cfg.upgrader
+	if up == nil {
+		up = newUpgrader(cfg.Executable, cfg.DataDir, cfg.Version, cfg.LocalCeiling, os.Getenv)
+	}
+	// First thing: an upgraded binary that fails anywhere before a hub
+	// welcomes it, its identity included, counts a start.
+	if err := up.started(ctx, cfg.Log); err != nil {
+		return err
+	}
 	id, err := loadIdentity(cfg.DataDir)
 	if err != nil {
 		return err
@@ -195,14 +204,8 @@ func Run(ctx context.Context, cfg Config) error {
 	if cfg.readNetEdges != nil {
 		r.netEdges = cfg.readNetEdges
 	}
-	r.upgrader = cfg.upgrader
-	if r.upgrader == nil {
-		r.upgrader = newUpgrader(cfg.Executable, cfg.DataDir, cfg.Version, cfg.LocalCeiling, os.Getenv)
-	}
+	r.upgrader = up
 	log.InfoContext(ctx, "agent starting", "version", cfg.Version, "hubs", r.hubs)
-	if err := r.upgrader.started(ctx, log); err != nil {
-		return err
-	}
 
 	b := newBackoff()
 	failed := 0 // attempts that failed in a row since the last wait or session

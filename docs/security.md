@@ -235,7 +235,8 @@ automation or an MCP client.
   Neither the hub nor the agent checks the release's Sigstore signature: the trust is GitHub's HTTPS
   and the release's checksums.
 - The agent refuses a release older than the one it runs: no downgrades, so no way back to a release
-  with a known flaw.
+  with a known flaw. Whatever it runs, a development build too, it never installs a release that
+  cannot upgrade itself (v0.0.1-rc.10 or older).
 - If the new binary does not reach a hub, it does not stay: until a hub welcomes it, a marker in the
   agent's data directory (`upgrade-pending`) counts its starts, and on the fourth start without a
   welcome the agent puts `hearth.prev` back and exits for its service manager to start the old one.
