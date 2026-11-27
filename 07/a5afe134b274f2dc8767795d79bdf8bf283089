@@ -1,0 +1,28 @@
+internal/agent/upgrade_test.go
+  s_18b57982fdff93::t_707e1168f4abf9 251-253
+  s_18b57982fdff93::t_1ea3648c4e04a5 441-469
+  s_18b57982fdff93::t_36fd6215275c4c 333-336
+internal/agent/run.go
+  s_18b57982fdff93::t_1ea3648c4e04a5 152-160,207
+internal/agent/upgrade.go
+  s_18b57982fdff93::t_5dc0d1989d0b3f 222-225
+  s_18b57982fdff93::t_85796279bb481c 81-85
+docs/security.md
+  s_18b57982fdff93::t_73fc718d78839c 238-239
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "07a5afe134b274f2dc8767795d79bdf8bf283089",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
