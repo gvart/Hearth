@@ -1,0 +1,21 @@
+internal/release/mirror.go
+  s_18b57982fdff93::t_d011355a08b221 95
+internal/release/mirror_test.go
+  s_18b57982fdff93::t_d011355a08b221 150-161
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "2a0a65fb6253785badfa1b16fe0ca0e02270f344",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "unknown"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
