@@ -181,8 +181,9 @@ func PlacementOf(table string, r map[string]any) (Placement, error) {
 func (m Mutation) Placement() (Placement, error) { return PlacementOf(m.Table, m.Row) }
 
 // parentKeys are the tables with a foreign key: the column, and the table
-// it references. A child has its parent's partition key, so every replica
-// of the child holds the parent, except a stand-in.
+// it references. A child has its parent's partition key, so its replicas
+// are the parent's; a replica may still lack the parent (a stand-in, or one
+// the parent's write has not reached yet), so it is sent with the child.
 var parentKeys = map[string][2]string{
 	"certs":       {"device_id", "devices"},
 	"panel_links": {"panel_id", "panels"},
