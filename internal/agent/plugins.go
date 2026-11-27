@@ -137,8 +137,14 @@ type installedPlugin struct {
 	manifest plugins.Manifest
 }
 
+// newPluginHost keeps the plugins under dataDir. The path is made absolute:
+// a plugin's program is named relative to nothing else.
 func newPluginHost(dataDir string, log *slog.Logger, ceiling func() Ceiling) *pluginHost {
-	return &pluginHost{dir: filepath.Join(dataDir, PluginsDir), log: log, ceiling: ceiling, installed: map[string]installedPlugin{}}
+	dir := filepath.Join(dataDir, PluginsDir)
+	if abs, err := filepath.Abs(dir); err == nil {
+		dir = abs
+	}
+	return &pluginHost{dir: dir, log: log, ceiling: ceiling, installed: map[string]installedPlugin{}}
 }
 
 // next numbers a config just received.

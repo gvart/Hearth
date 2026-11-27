@@ -320,3 +320,24 @@ func TestUnionGrants(t *testing.T) {
 		}
 	}
 }
+
+// TestPluginCommandRelativeDataDir: an agent started with a relative
+// --data-dir runs its plugins too.
+func TestPluginCommandRelativeDataDir(t *testing.T) {
+	lamp := buildLamp(t)
+	t.Chdir(t.TempDir())
+	if err := os.Mkdir("data", 0o700); err != nil {
+		t.Fatal(err)
+	}
+	ceiling := &Ceiling{Plugins: []PluginGrant{{Name: "go-lamp", Class: policy.Safe}}}
+	h := newPluginHost("data", slog.New(slog.DiscardHandler), func() Ceiling { return *ceiling })
+	b := binaryOf("go-lamp", lamp, &agentv1.PluginCommandSpec{Name: "turn_on", Class: "safe"})
+	b.Capabilities = []string{"discover", "state", "command"}
+	if st := syncOnce(t, h, newBlobServer(t, lamp), b); st.GetPlugins()[0].GetError() != "" {
+		t.Fatalf("status = %v", st)
+	}
+	res := h.command(t.Context(), &agentv1.PluginCommand{Plugin: "go-lamp", Sha256: b.GetSha256(), Command: "turn_on"})
+	if !res.GetOk() || res.GetOutput() != "lamp is on" {
+		t.Fatalf("result = %v", res)
+	}
+}
