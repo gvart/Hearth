@@ -316,6 +316,9 @@ const (
 	// DeviceCommand sends a command a Device Protocol device announced
 	// (docs/spec/device-protocol-v1.md) to it, over the hub's MQTT broker.
 	DeviceCommand Action = "device.command"
+	// DeviceRemove removes a Device Protocol device: its MQTT user from the
+	// hub's clients file and broker, then its row in the registry.
+	DeviceRemove Action = "device.remove"
 	// OpenWrtRouterAdd adopts an OpenWrt router: the hub stores its URL and
 	// rpcd login, sealed, and starts reading it through ubus.
 	OpenWrtRouterAdd Action = "openwrt.router.add"
@@ -700,6 +703,10 @@ var rules = map[Action]rule{
 	// of it: a relay may switch a heater or a pump. Each one is dangerous,
 	// whatever the device calls it.
 	DeviceCommand: {class: Dangerous, actors: []string{ActorWeb}},
+	// Removing a Device Protocol device rewrites the hub's MQTT clients file
+	// and cuts the device off for good: it cannot log in again until an
+	// operator gives it a user anew.
+	DeviceRemove: {class: Dangerous, actors: []string{ActorWeb}},
 	// Adopting an OpenWrt router hands the hub its login; the hub only reads
 	// with it, except for openwrt.dnsmasq.restart, decided on its own.
 	OpenWrtRouterAdd:    {class: Safe, actors: []string{ActorWeb}},

@@ -143,7 +143,8 @@ const auditTable = "audit_log"
 
 // tables are the replicated tables, but the audit log.
 var tables = map[string]tableSpec{
-	"devices": {pk: []string{"id"}},
+	// A device's tombstone is a removed Device Protocol device (#406).
+	"devices": {pk: []string{"id"}, deletable: true},
 	"tokens":  {pk: []string{"hash"}, setOnce: []string{"used_at"}},
 	"certs": {
 		pk: []string{"serial"}, setOnce: []string{"revoked_at", "pin_mismatch_at"},

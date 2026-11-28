@@ -49,6 +49,9 @@ var (
 	ErrProtocolUnavailable    = errors.New("the device is not connected to this hub's MQTT broker")
 	ErrProtocolTimeout        = errors.New("the device did not answer the command in time")
 	ErrProtocolFailed         = errors.New("the device answered that the command failed")
+	// ErrProtocolUserNotRemoved fails DeviceProtocol.Remove when the
+	// device's MQTT user could not be removed: nothing was.
+	ErrProtocolUserNotRemoved = errors.New("cannot remove the device's MQTT user")
 )
 
 // ProtocolBus is the MQTT broker as DeviceProtocol needs it (mqtt.Broker).
@@ -57,6 +60,10 @@ type ProtocolBus interface {
 	PublishCommand(id string, payload []byte) error
 	// Connected reports whether device id has a connection to the broker.
 	Connected(id string) bool
+	// RemoveUser removes the MQTT user of device id, from the clients file
+	// and the broker, ending its connections, and reports whether there was
+	// one.
+	RemoveUser(id string) (bool, error)
 }
 
 // DeviceProtocolConfig holds DeviceProtocol's dependencies. Zero durations
@@ -86,6 +93,8 @@ type DeviceProtocol struct {
 	flush   time.Duration
 	seen    time.Duration
 	kick    chan struct{}
+	// applyMu orders applyOps and Remove's forget and delete.
+	applyMu sync.Mutex
 
 	mu  sync.Mutex
 	bus ProtocolBus
@@ -242,6 +251,10 @@ func (p *DeviceProtocol) Run(ctx context.Context) error {
 }
 
 func (p *DeviceProtocol) applyOps(ctx context.Context) {
+	// A removal waits for the ops taken here to be written, so it does
+	// not miss one and leave its device registered.
+	p.applyMu.Lock()
+	defer p.applyMu.Unlock()
 	p.mu.Lock()
 	ops := p.ops
 	p.ops = nil
@@ -444,6 +457,81 @@ func (p *DeviceProtocol) Command(ctx context.Context, actorKind, actorID, id str
 	return res, nil
 }
 
+// RemoveResult is what removing a Device Protocol device did.
+type RemoveResult struct {
+	ID string `json:"id"`
+	// MQTTUserRemoved is whether this hub's broker had the device's MQTT
+	// user, now gone from its clients file. In a cluster the user may be in
+	// the clients file of another hub.
+	MQTTUserRemoved bool   `json:"mqtt_user_removed"`
+	Class           string `json:"class"`
+}
+
+// Remove removes Device Protocol device id on behalf of actorKind/actorID:
+// its MQTT user from this hub's clients file and broker, which ends its
+// connections, then what the hub holds of it and its row in the registry.
+// It is the policy action device.remove: nothing is changed unless policy
+// allows it, and the decision and outcome are audited. precheck, if not nil,
+// is the policy request's Precheck (the web UI's re-authentication).
+func (p *DeviceProtocol) Remove(ctx context.Context, actorKind, actorID, id string,
+	precheck func(context.Context) error,
+) (RemoveResult, error) {
+	d, err := p.devices.Get(ctx, id)
+	if errors.Is(err, store.ErrNotFound) || (err == nil && d.Labels[store.LabelSource] != store.SourceDeviceProtocol) {
+		return RemoveResult{}, ErrProtocolDeviceNotFound
+	}
+	if err != nil {
+		return RemoveResult{}, err
+	}
+	name := protocolFactsOf(d).ID
+	if name == "" {
+		name = d.Hostname
+	}
+	res := RemoveResult{ID: id, Class: removeClass()}
+	err = p.pol.Do(ctx, policy.Request{
+		ActorKind: actorKind, ActorID: actorID, Action: policy.DeviceRemove, Target: d.Name,
+		Detail:   map[string]any{"device_id": id, "device": name},
+		Precheck: precheck,
+	}, func(ctx context.Context) error {
+		p.mu.Lock()
+		bus := p.bus
+		p.mu.Unlock()
+		if bus != nil {
+			// First, so the device cannot announce itself again.
+			removed, err := bus.RemoveUser(name)
+			if err != nil {
+				return fmt.Errorf("%w: %w", ErrProtocolUserNotRemoved, err)
+			}
+			res.MQTTUserRemoved = removed
+		}
+		p.applyMu.Lock()
+		defer p.applyMu.Unlock()
+		p.forget(name)
+		return p.reg.removeDevice(ctx, id)
+	})
+	if err != nil {
+		return res, fmt.Errorf("remove %s: %w", d.Name, err)
+	}
+	return res, nil
+}
+
+// forget drops what p holds of device name: its queued announces and
+// departures, presence, last announce and unwritten values.
+func (p *DeviceProtocol) forget(name string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.ops = slices.DeleteFunc(p.ops, func(op protocolOp) bool { return op.device == name })
+	delete(p.live, name)
+	delete(p.announced, name)
+	delete(p.state, name)
+	delete(p.telemetry, name)
+}
+
+func removeClass() string {
+	class, _ := policy.ClassOf(policy.DeviceRemove)
+	return string(class)
+}
+
 // send publishes req to device name and waits for its result.
 func (p *DeviceProtocol) send(ctx context.Context, name string, req CommandRequest) (deviceproto.Result, error) {
 	var b [16]byte
@@ -582,6 +670,14 @@ func (r *Registry) updateDevice(ctx context.Context, id string, update func(stor
 	}
 	r.publish(ctx, Event{Type: EventDeviceUpdated, Device: d})
 	return nil
+}
+
+// removeDevice deletes device id. It publishes no event: the UI refetches
+// its devices, as it does for a device removed on another member.
+func (r *Registry) removeDevice(ctx context.Context, id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.devices.Remove(ctx, id)
 }
 
 // markDevicesOffline marks devices ids offline and publishes device.offline

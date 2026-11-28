@@ -79,7 +79,7 @@ func newMQTTBroker(ctx context.Context, opts hubOptions, ca *pki.CA, serverCert 
 		sink = protocol
 	}
 	b, err := mqtt.New(mqtt.Config{
-		Listener: ln, CA: ca, ServerCert: serverCert, Clients: clients, Certs: st.Certs(), Bridge: bridge,
+		Listener: ln, CA: ca, ServerCert: serverCert, Clients: clients, ClientsFile: path, Certs: st.Certs(), Bridge: bridge,
 		Protocol: sink, Log: log.With("component", "mqtt"),
 	})
 	if err != nil {
