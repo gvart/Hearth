@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 const testKey = "sk-test-SENTINEL-key-0123456789"
@@ -198,6 +199,17 @@ func TestNoRedirect(t *testing.T) {
 	_, err := p.Complete(context.Background(), testReq)
 	if err == nil || followed {
 		t.Fatalf("redirect followed (%v), err = %v", followed, err)
+	}
+}
+
+func TestTimeout(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-release }))
+	defer srv.Close()
+	defer close(release)
+	p := &OpenAI{BaseURL: srv.URL + "/v1", ModelID: "m", HTTP: newHTTPClient(50 * time.Millisecond)}
+	if _, err := p.Complete(context.Background(), testReq); !errors.Is(err, ErrTimeout) {
+		t.Fatalf("err = %v", err)
 	}
 }
 

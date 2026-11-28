@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -80,6 +81,8 @@ var (
 	ErrBadRequest = errors.New("the provider refused the request")
 	// ErrUnavailable is a provider that cannot be reached or failed (5xx).
 	ErrUnavailable = errors.New("the provider is unavailable")
+	// ErrTimeout is no answer within the configured time.
+	ErrTimeout = errors.New("the provider did not answer in time")
 	// ErrNoAnswer is an answer without text: a refusal, or the token limit
 	// reached before any text.
 	ErrNoAnswer = errors.New("the model gave no answer")
@@ -162,6 +165,10 @@ func post(ctx context.Context, c *http.Client, provider, url string, headers map
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, fmt.Errorf("%s: %w", provider, ctx.Err())
+		}
+		var ne net.Error
+		if errors.As(err, &ne) && ne.Timeout() {
+			return nil, fmt.Errorf("%s: %w", provider, ErrTimeout)
 		}
 		return nil, fmt.Errorf("%s: %w: %v", provider, ErrUnavailable, transportError(err)) //nolint:errorlint // the cause is text only
 	}

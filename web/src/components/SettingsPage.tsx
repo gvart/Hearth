@@ -13,19 +13,21 @@ import { ApiError } from '../api/client.ts';
 import { useSession, useTlsInfo } from '../api/hooks.ts';
 import { formatDateTime } from '../format.ts';
 import { chooseTheme, themes, useTheme } from '../theme.ts';
+import { AISettingsCard } from './AISettings.tsx';
 import { McpTokens } from './McpTokens.tsx';
 import { Tip } from './Tip.tsx';
 import { Modal } from './Modal.tsx';
 import './PanelsPage.css';
 import './SettingsPage.css';
 
-export type SettingsSection = 'settings' | 'access' | 'policy' | 'backup';
+export type SettingsSection = 'settings' | 'access' | 'policy' | 'backup' | 'ai';
 
 const sections: Record<SettingsSection, { title: string; lead: string }> = {
   settings: { title: 'General', lead: 'How this browser shows Hearth, and which hub it talks to.' },
   access: { title: 'Access', lead: 'Who and what may sign in to the hub: the admin password and the tokens of MCP clients.' },
   policy: { title: 'Policy', lead: 'What every action is checked against before it runs.' },
   backup: { title: 'Backup', lead: 'The hub’s state as one encrypted archive.' },
+  ai: { title: 'AI', lead: 'The language model that explains what is wrong with a device. Off until you set one up.' },
 };
 
 /** One page of the hub's own settings: what `hearth` does on the hub host, behind your session. */
@@ -36,7 +38,7 @@ export function SettingsPage({ section }: { section: SettingsSection }) {
       <div className="page-head">
         <div>
           <h1>
-            {title} {section === 'policy' ? <Tip id="policy" /> : null}
+            {title} {section === 'policy' ? <Tip id="policy" /> : section === 'ai' ? <Tip id="ai" /> : null}
           </h1>
           <p className="muted">{lead}</p>
         </div>
@@ -54,6 +56,8 @@ export function SettingsPage({ section }: { section: SettingsSection }) {
           </>
         ) : section === 'policy' ? (
           <PolicyCard />
+        ) : section === 'ai' ? (
+          <AISettingsCard />
         ) : (
           <BackupCard />
         )}

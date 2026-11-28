@@ -368,6 +368,11 @@ does.
   over https only, verified against the system roots or a pinned fingerprint. Hearth only reads, but
   for restarting an access point (`unifi.ap.restart`, dangerous), which asks for the admin password
   again. The account's UniFi role is the ceiling. See [UniFi](unifi.md).
+- **AI** (off by default): `ai.yaml`'s API key is sealed like `notify.yaml`, and never logged, served
+  or audited; it is sent only to the provider and address it was entered for, and redirects are not
+  followed. An explanation (`ai.explain`, read) redacts credentials from what it sends, and its audit
+  entry holds sizes, never text. The model only returns text: it runs nothing. See
+  [Explain with AI](ai.md).
 - **Prometheus**: read only. Hearth never writes to Prometheus.
 - **MCP clients** (AI assistants): each has its own bearer token, stored as a SHA-256 hash and
   checked on every request, so a revocation takes effect at once. The token's scope caps the class

@@ -201,7 +201,7 @@ export function Shell() {
             <IntegrationsPage />
           ) : page === 'deviceplugins' ? (
             <DevicePluginsPage />
-          ) : page === 'settings' || page === 'access' || page === 'policy' || page === 'backup' ? (
+          ) : page === 'settings' || page === 'access' || page === 'policy' || page === 'backup' || page === 'ai' ? (
             <SettingsPage section={page} />
           ) : deviceId !== undefined ? (
             <DevicePage key={deviceId} id={deviceId} />

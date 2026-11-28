@@ -339,6 +339,9 @@ On the hub, the log says `device enrolled` and then `agent connected` for each d
 - [Automations](automations.md): restart a service when a check fails, also [on the device while
   the hub is down](automations.md#running-on-the-device).
 - [Prometheus](prometheus.md) and [Kubernetes](kubernetes.md): bring in what you already run.
+- [Explain with AI](ai.md): optional, off by default. Point **Settings, AI** at a local Ollama (or
+  Anthropic) and a device page's **Explain** asks it what is wrong, from redacted evidence you can read
+  first. It never runs anything.
 - [Plugins on devices](plugins.md#plugins-on-devices): your own program for a GPIO relay or a USB
   sensor, uploaded once and run on the device within its **Capabilities**.
 - [Cluster mode](cluster.md): several hubs, no leader, that keep working when one dies. Started on a

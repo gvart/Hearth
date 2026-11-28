@@ -312,7 +312,7 @@ func (a *api) writeExplainError(w http.ResponseWriter, r *http.Request, err erro
 		writeError(w, http.StatusBadGateway, "ai_unavailable", err.Error())
 	case errors.Is(err, ai.ErrBadRequest), errors.Is(err, ai.ErrNoAnswer):
 		writeError(w, http.StatusBadGateway, "ai_error", err.Error())
-	case errors.Is(err, context.DeadlineExceeded) && r.Context().Err() == nil:
+	case errors.Is(err, ai.ErrTimeout):
 		writeError(w, http.StatusGatewayTimeout, "ai_timeout", "the model did not answer in time: raise timeout_seconds, or use a smaller model")
 	default:
 		a.writeActionError(w, r, "explain", err)
