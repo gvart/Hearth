@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gvart/hearth/internal/ai"
 	"github.com/gvart/hearth/internal/automation"
 	"github.com/gvart/hearth/internal/notify"
 	"github.com/gvart/hearth/internal/policy"
@@ -29,6 +30,7 @@ import (
 const (
 	PolicyFile     = policy.ConfigFile
 	NotifyFile     = "notify.yaml"
+	AIFile         = "ai.yaml"
 	AutomationsDir = "automations"
 	RunbooksDir    = "runbooks"
 )
@@ -43,8 +45,8 @@ type Store interface {
 	Delete(ctx context.Context, kind, name string) error
 }
 
-// Sealer seals the notify document, which holds credentials, with a key
-// derived from the hub CA key (see cmd/hearth's hubSealers).
+// Sealer seals the notify and ai documents, which hold credentials, with a
+// key derived from the hub CA key (see cmd/hearth's hubSealers).
 type Sealer interface {
 	Seal(id string, plaintext []byte) ([]byte, error)
 	Open(id string, sealed []byte) ([]byte, error)
@@ -68,10 +70,13 @@ type Doc struct {
 func (d Doc) ID() string { return store.ConfigDocID(d.Kind, d.Name) }
 
 // fixedName is the one name of a policy or notify document.
-var fixedName = map[string]string{store.ConfigPolicy: PolicyFile, store.ConfigNotify: NotifyFile}
+var fixedName = map[string]string{store.ConfigPolicy: PolicyFile, store.ConfigNotify: NotifyFile, store.ConfigAI: AIFile}
+
+// sealed reports whether documents of kind are sealed in the store.
+func sealed(kind string) bool { return slices.Contains(store.SealedConfigKinds, kind) }
 
 // CheckName refuses a document name that could not be a file of an export:
-// policy and notify have one name each, automations and runbooks are .yaml
+// policy, notify and ai have one name each, automations and runbooks are .yaml
 // or .yml file names without a path.
 func CheckName(kind, name string) error {
 	if fixed, ok := fixedName[kind]; ok {
@@ -81,7 +86,7 @@ func CheckName(kind, name string) error {
 		return nil
 	}
 	if kind != store.ConfigAutomation && kind != store.ConfigRunbook {
-		return fmt.Errorf("unknown document kind %q (want policy, notify, automation or runbook)", kind)
+		return fmt.Errorf("unknown document kind %q (want policy, notify, ai, automation or runbook)", kind)
 	}
 	if !automation.ValidDocName(name) {
 		return fmt.Errorf("%s %q: a name is a .yaml or .yml file name, without a path or a leading dot", kind, name)
@@ -89,7 +94,8 @@ func CheckName(kind, name string) error {
 	return nil
 }
 
-// Load reads every document of st, the notify document opened with sealer.
+// Load reads every document of st, the notify and ai documents opened with
+// sealer.
 func Load(ctx context.Context, st Store, sealer Sealer) ([]Doc, error) {
 	stored, err := st.List(ctx, "")
 	if err != nil {
@@ -98,8 +104,8 @@ func Load(ctx context.Context, st Store, sealer Sealer) ([]Doc, error) {
 	out := make([]Doc, 0, len(stored))
 	for _, d := range stored {
 		content := d.Content
-		if d.Kind == store.ConfigNotify {
-			if content, err = sealer.Open(SealID(d.Name), d.Content); err != nil {
+		if sealed(d.Kind) {
+			if content, err = sealer.Open(SealIDOfRow(store.ConfigDocID(d.Kind, d.Name)), d.Content); err != nil {
 				return nil, fmt.Errorf("open the stored %s: %w", d.Name, err)
 			}
 		}
@@ -108,14 +114,15 @@ func Load(ctx context.Context, st Store, sealer Sealer) ([]Doc, error) {
 	return out, nil
 }
 
-// Seal returns docs as the store keeps them: the notify document sealed.
+// Seal returns docs as the store keeps them: the notify and ai documents
+// sealed.
 func Seal(docs []Doc, sealer Sealer) ([]store.ConfigDoc, error) {
 	out := make([]store.ConfigDoc, 0, len(docs))
 	for _, d := range docs {
 		content := d.Content
-		if d.Kind == store.ConfigNotify {
+		if sealed(d.Kind) {
 			var err error
-			if content, err = sealer.Seal(SealID(d.Name), d.Content); err != nil {
+			if content, err = sealer.Seal(SealIDOfRow(d.ID()), d.Content); err != nil {
 				return nil, fmt.Errorf("seal %s: %w", d.Name, err)
 			}
 		}
@@ -149,6 +156,8 @@ func Overlay(current, incoming []Doc) []Doc {
 type Set struct {
 	Policy   policy.Config
 	Notifier *notify.Notifier
+	// AI is ai.yaml: off without one.
+	AI ai.Config
 	// Automations and Runbooks are their documents, by name.
 	Automations []automation.Doc
 	Runbooks    []automation.Doc
@@ -157,7 +166,7 @@ type Set struct {
 // Parse reads docs into a Set. The policy and notify documents must be
 // valid, and the policy's approval channel one of notify's; automations
 // and runbooks are only sorted out, their own loaders judge them. No error
-// quotes a notify value: they are credentials.
+// quotes a notify or ai value: they are credentials.
 func Parse(docs []Doc) (Set, error) {
 	set := Set{Notifier: &notify.Notifier{}}
 	var errs []error
@@ -176,6 +185,12 @@ func Parse(docs []Doc) (Set, error) {
 				continue
 			}
 			set.Notifier = n
+		case store.ConfigAI:
+			cfg, err := ai.ParseConfig(d.Content)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("%s: %w", d.Name, err))
+			}
+			set.AI = cfg
 		case store.ConfigAutomation:
 			set.Automations = append(set.Automations, automation.Doc{Name: d.Name, Content: d.Content})
 		case store.ConfigRunbook:
@@ -264,10 +279,10 @@ func incomingPolicy(docs []Doc) []Doc {
 }
 
 // ReadPath reads documents to import from path: a directory laid out like a
-// hub's data dir or an export (policy.yaml, notify.yaml, automations/,
-// runbooks/), or one file. A file's kind is kind, or else what its name
-// says: policy.yaml, notify.yaml, or a file of an automations or runbooks
-// directory.
+// hub's data dir or an export (policy.yaml, notify.yaml, ai.yaml,
+// automations/, runbooks/), or one file. A file's kind is kind, or else what
+// its name says: policy.yaml, notify.yaml, ai.yaml, or a file of an
+// automations or runbooks directory.
 func ReadPath(path, kind string) ([]Doc, error) {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -277,8 +292,19 @@ func ReadPath(path, kind string) ([]Doc, error) {
 		if kind != "" {
 			return nil, errors.New("--kind is for one file, not a directory")
 		}
-		return ReadDir(filepath.Join(path, PolicyFile), filepath.Join(path, NotifyFile),
+		docs, err := ReadDir(filepath.Join(path, PolicyFile), filepath.Join(path, NotifyFile),
 			filepath.Join(path, AutomationsDir), filepath.Join(path, RunbooksDir))
+		if err != nil {
+			return nil, err
+		}
+		b, err := os.ReadFile(filepath.Join(path, AIFile))
+		if errors.Is(err, fs.ErrNotExist) {
+			return docs, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		return Overlay(docs, []Doc{{Kind: store.ConfigAI, Name: AIFile, Content: b}}), nil
 	}
 	base := filepath.Base(path)
 	if kind == "" {
@@ -287,12 +313,14 @@ func ReadPath(path, kind string) ([]Doc, error) {
 			kind = store.ConfigPolicy
 		case base == NotifyFile:
 			kind = store.ConfigNotify
+		case base == AIFile:
+			kind = store.ConfigAI
 		case filepath.Base(filepath.Dir(path)) == AutomationsDir:
 			kind = store.ConfigAutomation
 		case filepath.Base(filepath.Dir(path)) == RunbooksDir:
 			kind = store.ConfigRunbook
 		default:
-			return nil, fmt.Errorf("cannot tell what %s is: give --kind policy, notify, automation or runbook", base)
+			return nil, fmt.Errorf("cannot tell what %s is: give --kind policy, notify, ai, automation or runbook", base)
 		}
 	}
 	name := base
@@ -342,7 +370,7 @@ func ReadDir(policyPath, notifyPath, automationsDir, runbooksDir string) ([]Doc,
 }
 
 // WriteDir writes docs into dir in the layout ReadPath reads, every file
-// readable by its owner only (notify.yaml holds credentials), each written
+// readable by its owner only (notify.yaml and ai.yaml hold credentials), each written
 // whole or not at all. It refuses a name that is not a plain file name.
 func WriteDir(dir string, docs []Doc) error {
 	for _, d := range docs {

@@ -5,6 +5,8 @@ package store
 import (
 	"bytes"
 	"errors"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -141,13 +143,14 @@ func TestConfigDocsBelowSchema(t *testing.T) {
 	}
 }
 
-// Only notify documents are sealed secrets for a CA rotation.
+// Only notify and ai documents are sealed secrets for a CA rotation.
 func TestConfigDocsSealed(t *testing.T) {
 	ctx := t.Context()
 	s := openMember(t, "a", time.Unix(1_700_000_000, 0))
 	if err := s.ConfigDocs().Put(ctx, "admin/op", []ConfigDoc{
 		{Kind: ConfigPolicy, Name: "policy.yaml", Content: []byte("plain")},
 		{Kind: ConfigNotify, Name: "notify.yaml", Content: []byte("sealed")},
+		{Kind: ConfigAI, Name: "ai.yaml", Content: []byte("sealed ai")},
 	}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
@@ -155,9 +158,36 @@ func TestConfigDocsSealed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(secrets) != 1 || secrets[0].Table != SealedConfigDocs || secrets[0].ID != "notify/notify.yaml" ||
-		string(secrets[0].Sealed) != "sealed" {
+	slices.SortFunc(secrets, func(a, b SealedSecret) int { return strings.Compare(a.ID, b.ID) })
+	if len(secrets) != 2 || secrets[0].Table != SealedConfigDocs || secrets[0].ID != "ai/ai.yaml" ||
+		string(secrets[0].Sealed) != "sealed ai" || secrets[1].ID != "notify/notify.yaml" || string(secrets[1].Sealed) != "sealed" {
 		t.Fatalf("Sealed = %+v", secrets)
+	}
+}
+
+// An ai document needs schema 42; the other kinds do not.
+func TestConfigDocsAIBelowSchema(t *testing.T) {
+	ctx := t.Context()
+	s := openAtSchema(t, aiConfigSchema-1)
+	if err := s.ConfigDocs().Put(ctx, "admin/op", []ConfigDoc{{Kind: ConfigAI, Name: "ai.yaml"}}, time.Now()); !errors.Is(err, ErrSchemaTooOld) {
+		t.Fatalf("Put ai = %v, want ErrSchemaTooOld", err)
+	}
+	if err := s.ConfigDocs().Put(ctx, "admin/op", []ConfigDoc{{Kind: ConfigPolicy, Name: "policy.yaml", Content: []byte("p")}}, time.Now()); err != nil {
+		t.Fatalf("Put policy = %v", err)
+	}
+	// The migration keeps the rows it copies.
+	p, err := s.newMigrator()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.UpTo(ctx, aiConfigSchema); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ConfigDocs().Get(ctx, ConfigPolicy, "policy.yaml"); err != nil {
+		t.Fatalf("after the migration: %v", err)
+	}
+	if err := s.ConfigDocs().Put(ctx, "admin/op", []ConfigDoc{{Kind: ConfigAI, Name: "ai.yaml", Content: []byte("x")}}, time.Now()); err != nil {
+		t.Fatalf("Put ai after the migration = %v", err)
 	}
 }
 

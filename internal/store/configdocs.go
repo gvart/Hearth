@@ -25,19 +25,32 @@ const (
 	ConfigNotify     = "notify"
 	ConfigAutomation = "automation"
 	ConfigRunbook    = "runbook"
+	// ConfigAI is ai.yaml: the model the hub asks, with its API key.
+	ConfigAI = "ai"
 )
 
+// aiConfigSchema is the schema version whose migration (00042) lets
+// config_docs hold the ai document.
+const aiConfigSchema = 42
+
+// AIConfigSchema is aiConfigSchema, for the hub to check.
+const AIConfigSchema = aiConfigSchema
+
+// SealedConfigKinds are the kinds of documents sealed before they are
+// stored: they hold credentials.
+var SealedConfigKinds = []string{ConfigNotify, ConfigAI}
+
 // ConfigKinds are the kinds of configuration documents.
-var ConfigKinds = []string{ConfigPolicy, ConfigNotify, ConfigAutomation, ConfigRunbook}
+var ConfigKinds = []string{ConfigPolicy, ConfigNotify, ConfigAutomation, ConfigRunbook, ConfigAI}
 
 // ConfigDoc is one configuration document: policy.yaml, notify.yaml, an
 // automation file or a runbook file. Content is the file byte for byte, but
-// for ConfigNotify, whose content is sealed (see the hub's sealers): the
-// store never holds notification credentials in clear.
+// for SealedConfigKinds, whose content is sealed (see the hub's sealers): the
+// store never holds notification or AI credentials in clear.
 type ConfigDoc struct {
 	Kind string
 	Name string
-	// Content is the document; sealed for ConfigNotify.
+	// Content is the document; sealed for SealedConfigKinds.
 	Content []byte
 	// Digest is the SHA-256, in hex, of Content as stored.
 	Digest    string
@@ -236,7 +249,14 @@ type PutConfigDocs struct {
 // Op implements Command.
 func (PutConfigDocs) Op() string { return "put_config_docs" }
 
-func (PutConfigDocs) minSchema() int64 { return configDocsSchema }
+func (c PutConfigDocs) minSchema() int64 {
+	for _, d := range c.Docs {
+		if d.Kind == ConfigAI {
+			return aiConfigSchema
+		}
+	}
+	return configDocsSchema
+}
 
 func (c PutConfigDocs) apply(ctx context.Context, w *writer) (Result, error) {
 	if c.IfNone {
