@@ -1,0 +1,41 @@
+internal/store/version.go
+  s_18b57982fdff93::t_ce990c01e44501 148-151
+docs/cluster.md
+  s_18b57982fdff93::t_882935f761f7ae 400-402
+  s_18b57982fdff93::t_d71f3fe47bb730 360-362
+internal/store/certs_test.go
+  s_18b57982fdff93::t_63f7eb2b194517 125-137
+  s_18b57982fdff93::t_1abc8a1fe39cb8 124
+internal/store/certs.go
+  s_18b57982fdff93::t_350938bb14f097 52-56,59,63,65,68-71,77-78
+  s_18b57982fdff93::t_120a1ce1eac170 79
+internal/store/pinread_test.go
+  s_18b57982fdff93::t_d33d63a292051c 148-158,164-171
+  s_18b57982fdff93::t_e97338bbcab734 177-178
+  s_18b57982fdff93::t_4b9cd63ae4e19e 87-97
+  s_18b57982fdff93::t_95220ae103585b 159-163
+  s_18b57982fdff93::t_b9a1d5d7c271a4 86
+internal/cluster/aprunbook_test.go
+  s_18b57982fdff93::t_ce990c01e44501 339-342
+internal/store/pins.go
+  s_18b57982fdff93::t_8354ca24758eff 93,97,100,103-107
+  s_18b57982fdff93::t_1302ee2add6104 132-142
+  s_18b57982fdff93::t_4fd74534ac791e 122-123
+  s_18b57982fdff93::t_9163f624ce919e 108
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "e5f971ac78432110dd3631f5a32404d8126363c9",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
