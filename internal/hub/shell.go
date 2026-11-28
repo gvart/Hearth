@@ -268,7 +268,7 @@ func (a *api) serveShell(r *http.Request, ws *websocket.Conn, dev store.Device, 
 	req := policy.Request{
 		ActorKind: policy.ActorWeb, ActorID: actor, Action: policy.DeviceShell, Target: dev.ID, Detail: detail,
 		Precheck: func(ctx context.Context) error { return a.agents.CheckShell(ctx, dev.ID) },
-		OnHold: onHold,
+		OnHold:   onHold,
 	}
 	var sh *Shell
 	err := a.policy.Do(holdCtx, req, func(ctx context.Context) error {
@@ -328,7 +328,6 @@ func (a *api) serveShell(r *http.Request, ws *websocket.Conn, dev store.Device, 
 	}
 	if rec != nil {
 		started.Recording, started.RecordLimit = rec.id, maxRecordingBytes
-		defer func() { a.recordings.finish(rec, a.now()) }()
 	}
 	sendJSON(started)
 
@@ -382,6 +381,10 @@ func (a *api) serveShell(r *http.Request, ws *websocket.Conn, dev store.Device, 
 		}
 	}
 	close(done)
+	// Ended before the browser is told, so that it can draft from it at once.
+	if rec != nil {
+		a.recordings.finish(rec, a.now())
+	}
 	ex := sh.Exit()
 	why := "shell exited"
 	if p := reason.Load(); p != nil {

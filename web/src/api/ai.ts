@@ -1,10 +1,11 @@
 // Typed client and hooks for the AI settings and explanations
 // (GET /api/v1/ai, PUT /api/v1/ai/config, POST /api/v1/devices/{id}/explain, #59)
-// and automation drafts (POST /api/v1/automations/draft, #60).
+// automation drafts (POST /api/v1/automations/draft, #60), and runbook drafts
+// from recorded terminal sessions (/api/v1/devices/{id}/recordings, #81).
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { AutomationProblem } from './automations.ts';
-import { ApiError, request } from './client.ts';
+import { ApiError, request, type RunbookPlan } from './client.ts';
 import { useWithReauth } from './reauth.ts';
 
 /** ai.yaml as the hub shows it: never the API key, only whether one is set. */
@@ -70,7 +71,44 @@ export interface AutomationDraft {
   output_tokens?: number;
 }
 
+/** A terminal session recorded for a runbook: never what it holds. */
+export interface Recording {
+  id: string;
+  device: string;
+  started: string;
+  /** Absent while the session is being recorded. */
+  ended?: string;
+  /** When the hub deletes it if no runbook is made from it. */
+  expires?: string;
+  bytes: number;
+  full: boolean;
+}
+
+/** A draft runbook: never saved by the hub, only shown in the editor. */
+export interface RunbookDraft {
+  provider: string;
+  model: string;
+  base_url: string;
+  /** The file, and the name it would be saved as; empty for a preview. */
+  yaml: string;
+  file: string;
+  valid: boolean;
+  problems: AutomationProblem[];
+  plan?: RunbookPlan;
+  attempts: number;
+  sent: { system: string; messages: AIMessage[] };
+  sent_bytes: number;
+  redactions: number;
+  truncated: string[];
+  preview: boolean;
+  /** The recording was deleted: it is, once the model answered. */
+  discarded: boolean;
+}
+
 const aiKey = ['ai', 'config'] as const;
+const recordingsKey = (device: string) => ['recordings', device] as const;
+const recordingPath = (device: string, id: string) =>
+  `/devices/${encodeURIComponent(device)}/recordings/${encodeURIComponent(id)}`;
 
 export const aiApi = {
   /** null on a hub that keeps its configuration in files: AI is not served there. */
@@ -89,6 +127,11 @@ export const aiApi = {
     request<Explanation>('POST', `/devices/${encodeURIComponent(device)}/explain`, body),
   draftAutomation: (body: { text: string; preview: boolean }) =>
     request<AutomationDraft>('POST', '/automations/draft', body),
+  recordings: (device: string) =>
+    request<{ recordings: Recording[] }>('GET', `/devices/${encodeURIComponent(device)}/recordings`),
+  discardRecording: (device: string, id: string) => request<undefined>('DELETE', recordingPath(device, id)),
+  draftRunbook: (device: string, id: string, body: { notes: string; preview: boolean }) =>
+    request<RunbookDraft>('POST', `${recordingPath(device, id)}/runbook`, body),
 };
 
 /** The AI settings; null where AI is not served. */
@@ -116,4 +159,33 @@ export function useExplain(device: string) {
 /** Asks the model for an automation file; the hub validates it and saves nothing. */
 export function useDraftAutomation() {
   return useMutation({ mutationFn: aiApi.draftAutomation });
+}
+
+/** The recordings of a device, on the hub that holds its terminal. */
+export function useRecordings(device: string, enabled = true) {
+  return useQuery({
+    queryKey: recordingsKey(device),
+    queryFn: async () => (await aiApi.recordings(device)).recordings,
+    enabled,
+    refetchInterval: 15_000,
+  });
+}
+
+/** Deletes a recording at once. */
+export function useDiscardRecording(device: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => aiApi.discardRecording(device, id),
+    onSettled: () => qc.invalidateQueries({ queryKey: recordingsKey(device) }),
+  });
+}
+
+/** Asks the model for a runbook from a recording; the hub validates it and saves nothing. */
+export function useDraftRunbook(device: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, notes, preview }: { id: string; notes: string; preview: boolean }) =>
+      aiApi.draftRunbook(device, id, { notes, preview }),
+    onSettled: () => qc.invalidateQueries({ queryKey: recordingsKey(device) }),
+  });
 }

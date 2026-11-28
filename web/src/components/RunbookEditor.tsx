@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import {
   problemsOf,
   useDeleteRunbook,
@@ -8,6 +8,7 @@ import {
   type Validation,
 } from '../api/admin.ts';
 import type { RunbookPlanStep } from '../api/client.ts';
+import { clearRunbookDraft, readRunbookDraft, runbookDraftNotice, type StashedRunbookDraft } from '../runbookdraft.ts';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
 import { ProblemList } from './SettingsPage.tsx';
 import './SettingsPage.css';
@@ -32,8 +33,15 @@ steps:
 /** Opens a runbook file of the hub, or a new one. */
 export function RunbookEditor({ file }: { file?: string }) {
   const doc = useRunbookFile(file);
+  // A new runbook may start from a draft made from a recorded terminal session.
+  const [draft] = useState(() => (file === undefined ? readRunbookDraft() : null));
+  useEffect(() => {
+    if (draft) {
+      clearRunbookDraft();
+    }
+  }, [draft]);
   if (file === undefined) {
-    return <Editor initial={newRunbookYaml} revision="" />;
+    return <Editor initial={draft?.yaml ?? newRunbookYaml} revision="" draft={draft ?? undefined} />;
   }
   if (doc.isPending) {
     return (
@@ -61,7 +69,17 @@ function fileOf(yaml: string): string {
   return id ? `${id}.yaml` : '';
 }
 
-function Editor({ file, initial, revision: initialRevision }: { file?: string; initial: string; revision: string }) {
+function Editor({
+  file,
+  initial,
+  revision: initialRevision,
+  draft,
+}: {
+  file?: string;
+  initial: string;
+  revision: string;
+  draft?: StashedRunbookDraft;
+}) {
   const [yaml, setYaml] = useState(initial);
   const [revision, setRevision] = useState(initialRevision);
   const [checked, setChecked] = useState<Validation | null>(null);
@@ -85,6 +103,16 @@ function Editor({ file, initial, revision: initialRevision }: { file?: string; i
       },
     );
   };
+
+  // A draft is checked and planned as it opens.
+  const checkedDraft = useRef(false);
+  useEffect(() => {
+    if (draft && !checkedDraft.current && target !== '') {
+      checkedDraft.current = true;
+      check();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, as the draft opens
+  }, []);
 
   return (
     <main className="content doc-editor doc-wide">
@@ -133,6 +161,11 @@ function Editor({ file, initial, revision: initialRevision }: { file?: string; i
         </div>
       </div>
 
+      {draft ? (
+        <p className={draft.valid ? 'notice' : 'warn-box'} role="status">
+          {runbookDraftNotice(draft)}
+        </p>
+      ) : null}
       {target === '' ? <p className="error">The file needs an id: lowercase letters, digits, - and _.</p> : null}
       {problems.length > 0 ? (
         <div className="error-box" role="alert">

@@ -89,7 +89,7 @@ func recordFixture(t *testing.T, model *scriptedModel, pol policy.Config) *termi
 	f := newTerminalFixtureWith(t, 0, passwordAgent, withConfigDocs, func(c *Config) {
 		c.Runbooks = automation.NewRunbooks(automation.RunbooksConfig{
 			Source: hubconfig.StoreDocs(c.Store.ConfigDocs(), store.ConfigRunbook, "", string(policy.ConfigImport), time.Now),
-			Kinds: testKinds(&notify.Notifier{}), Policy: c.Policy, Runs: c.Store.RunbookRuns(), Sealer: sealer,
+			Kinds:  testKinds(&notify.Notifier{}), Policy: c.Policy, Runs: c.Store.RunbookRuns(), Sealer: sealer,
 		})
 	})
 	if err := f.st.ConfigDocs().Put(t.Context(), "test", []store.ConfigDoc{
