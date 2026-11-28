@@ -1,11 +1,12 @@
 ---
 title: Explain with AI
-description: Ask a language model you choose (a local Ollama, any OpenAI-compatible server, or Anthropic) what is wrong with a device. Off by default, redacted, audited, and it never runs anything.
+description: Ask a language model you choose (a local Ollama, any OpenAI-compatible server, or Anthropic) what is wrong with a device, or to draft an automation. Off by default, redacted, audited, and it never runs anything.
 ---
 
 A device page has an **Explain** card: ask "why is it slow?", or nothing at all, and the hub sends what it
 knows about the device to a language model and shows the answer. `hearth ai explain <device>` does the
-same from a terminal.
+same from a terminal. The **New automation** editor has a **Write it with AI** card: describe what you want,
+and the model drafts the file for you to review and save ([below](#draft-an-automation)).
 
 - **Off by default.** Hearth works fully without it. An admin turns it on by choosing a provider.
 - **Bring your own model.** Any OpenAI-compatible chat completions API (Ollama, LM Studio, vLLM,
@@ -139,6 +140,75 @@ of values redacted, the bytes and tokens of the answer, and whether it succeeded
 The model never gets a tool, a token or a way to act: the hub sends text and reads text back. Any step its
 answer suggests is shown as plain text, never as a button; you run it yourself, through policy.
 
+## Draft an automation
+
+Open **Automations, New automation** and describe what the automation should do in the **Write it with
+AI** card, such as "restart pihole-FTL on the dns pi when DNS fails 3 times, then notify me". The hub:
+
+1. builds a prompt from the automation schema (the step types and fields of the visual editor, the same
+   list the editor's forms use) and the names of what it has: its devices, with the services their agents
+   let automations restart, the programs they may run and whether they run checks; its notification
+   channels; its Kubernetes clusters; its plugins and their commands; and the automation ids already
+   taken. Names only, no facts, metrics or logs, redacted like an explanation;
+2. asks the model, takes the YAML out of its answer, and validates it with the same validator a save from
+   the editor uses;
+3. if the hub refuses it, sends the model its problems, line by line, and asks once more. Two answers at
+   most;
+4. returns the draft. **Nothing is saved, enabled or run.**
+
+The draft opens in the editor, unsaved. A valid one gets a dry run at once: what the automation would do,
+and what policy would decide on saving it and on each of its actions. One the hub still refuses opens in
+the YAML view with its problems, to fix by hand or describe again. Review every step, then **Save**: the
+save is `automation.apply`, through policy and audited as any edit, and the actions are decided by policy
+each time they run. **What was sent** shows the prompt, and **Preview what is sent** shows it without
+sending anything.
+
+A draft for the request above, on a hub with a device `pi4` that may restart `systemd:pihole-FTL.service`
+and a channel `phone`:
+
+```yaml
+id: dns-watchdog
+description: Restart Pi-hole on pi4 when DNS fails 3 times in a row, then tell me.
+triggers:
+  - id: dns-down
+    type: dns
+    name: example.com
+    server: 192.168.1.2
+    every: 10s
+    for: 20s
+actions:
+  - id: restart-dns
+    type: restart
+    device: pi4
+    service: systemd:pihole-FTL.service
+  - id: verify
+    type: check
+    check: dns
+    name: example.com
+    server: 192.168.1.2
+  - id: tell-me
+    type: notify
+    channel: phone
+    title: DNS restarted
+    message: "pihole-FTL on pi4 was restarted: {{ .Trigger.Error }}"
+```
+
+From a terminal, `hearth ai automation "<what it should do>"` prints only the YAML, so it can go straight
+to a file; notes and any problems go to stderr, and the command fails if the draft does not validate.
+`--preview` prints what would be sent. Save a file with `hearth config import` or paste it into the
+editor:
+
+```sh
+hearth ai automation "notify me on phone when the nas goes offline" > automations/nas-down.yaml
+```
+
+A draft is the policy action `ai.automation.draft`, class `read`, of the web actor: a policy that denies
+reads to the web UI denies it, and nothing is gathered or sent. Its audit entry records the provider, the
+model, its host, whether it was a preview, the bytes sent, the values redacted, the number of answers,
+their bytes and tokens, and whether the draft validated: never the description, the names sent or the
+draft. The prompt is about 8 KiB (some 2000 tokens) before the inventory: start Ollama with
+`OLLAMA_CONTEXT_LENGTH=8192`, as above, or a small default context window cuts it without saying so.
+
 ## Errors
 
 | Error code                     | Meaning                                                                 |
@@ -149,5 +219,6 @@ answer suggests is shown as plain text, never as a button; you run it yourself, 
 | `ai_rate_limited`              | the provider is rate limiting, or the account is out of credit (429)    |
 | `ai_unavailable`               | the provider cannot be reached, or failed (5xx)                         |
 | `ai_timeout`                   | no answer within `timeout_seconds`: a small machine wants a smaller model |
+| `ai_error`                     | the model answered nothing, or the provider refused the request          |
 
 Redirects are not followed, so the key never goes to another address: give the provider's final address.

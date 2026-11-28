@@ -1,7 +1,9 @@
 // Typed client and hooks for the AI settings and explanations
-// (GET /api/v1/ai, PUT /api/v1/ai/config, POST /api/v1/devices/{id}/explain, #59).
+// (GET /api/v1/ai, PUT /api/v1/ai/config, POST /api/v1/devices/{id}/explain, #59)
+// and automation drafts (POST /api/v1/automations/draft, #60).
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { AutomationProblem } from './automations.ts';
 import { ApiError, request } from './client.ts';
 import { useWithReauth } from './reauth.ts';
 
@@ -46,6 +48,28 @@ export interface ExplainRequest {
   preview: boolean;
 }
 
+/** A draft automation: never saved by the hub, only shown in the editor. */
+export interface AutomationDraft {
+  provider: string;
+  model: string;
+  base_url: string;
+  /** The file; empty for a preview. */
+  yaml: string;
+  /** Whether the hub's validator accepts it. */
+  valid: boolean;
+  problems: AutomationProblem[];
+  plan?: string;
+  /** Answers asked for: two when the first did not validate. */
+  attempts: number;
+  sent: { system: string; messages: AIMessage[] };
+  sent_bytes: number;
+  redactions: number;
+  truncated: string[];
+  preview: boolean;
+  input_tokens?: number;
+  output_tokens?: number;
+}
+
 const aiKey = ['ai', 'config'] as const;
 
 export const aiApi = {
@@ -63,6 +87,8 @@ export const aiApi = {
   save: (body: Record<string, unknown>) => request<AIConfig>('PUT', '/ai/config', body),
   explain: (device: string, body: ExplainRequest) =>
     request<Explanation>('POST', `/devices/${encodeURIComponent(device)}/explain`, body),
+  draftAutomation: (body: { text: string; preview: boolean }) =>
+    request<AutomationDraft>('POST', '/automations/draft', body),
 };
 
 /** The AI settings; null where AI is not served. */
@@ -85,4 +111,9 @@ export function useSaveAIConfig() {
 /** Asks the model about a device, or with preview only gathers what would be sent. */
 export function useExplain(device: string) {
   return useMutation({ mutationFn: (body: ExplainRequest) => aiApi.explain(device, body) });
+}
+
+/** Asks the model for an automation file; the hub validates it and saves nothing. */
+export function useDraftAutomation() {
+  return useMutation({ mutationFn: aiApi.draftAutomation });
 }

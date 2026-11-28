@@ -344,6 +344,12 @@ const (
 	// audit entries and, if asked, a log tail), redacted, to the language
 	// model the operator configured, and returns its explanation.
 	AIExplain Action = "ai.explain"
+	// AIAutomationDraft sends the operator's description of an automation,
+	// with the names of the hub's devices, channels, clusters and plugins,
+	// redacted, to the language model the operator configured, and returns
+	// a draft automation file. Nothing is saved: the draft is saved, if at
+	// all, through automation.apply.
+	AIAutomationDraft Action = "ai.automation.draft"
 )
 
 // Actor kinds.
@@ -721,6 +727,11 @@ var rules = map[Action]rule{
 	// audited, with the provider, the model and the sizes, never the text.
 	// A log tail it includes is a device.logs read of its own.
 	AIExplain: {class: Read, actors: []string{ActorWeb}},
+	// A draft only reads: it is text in the editor until the operator saves
+	// it, as automation.apply, decided on its own. The names it sends leave
+	// the lab when the model is not local, so every draft is audited, with
+	// the provider, the model and the sizes, never the text.
+	AIAutomationDraft: {class: Read, actors: []string{ActorWeb}},
 }
 
 // Actions returns every known action, sorted.
