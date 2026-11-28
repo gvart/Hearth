@@ -125,6 +125,7 @@ func allCommands() []Command {
 			Source: []byte("steps: []"), State: `{"step":0}`, Keep: 100,
 		},
 		SaveRunbookRun{ID: "rr1", Version: 1, Status: "succeeded", UpdatedAt: 36, FinishedAt: 36, State: `{"step":1}`},
+		RemoveDevice{ID: "gone"},
 	}
 }
 
@@ -555,6 +556,11 @@ func runScenario(t *testing.T, s *Store) {
 	must(err)
 	_, err = s.RunbookRuns().Save(ctx, run)
 	wantErr(err, ErrRunbookRunConflict)
+	// A Device Protocol device removed; pi, which has certificates, is not.
+	must(s.Devices().Upsert(ctx, Device{ID: "gone", Name: "gone", FirstSeen: at(14 * time.Hour), LastSeen: at(14 * time.Hour), Status: StatusOnline}))
+	must(s.Devices().Remove(ctx, "gone"))
+	wantErr(s.Devices().Remove(ctx, "gone"), ErrNotFound)
+	wantErr(s.Devices().Remove(ctx, "pi"), ErrDeviceHasCerts)
 	// The master holding pi's stream, recorded twice.
 	must(s.DeviceRoutes().Set(ctx, "pi", "hub-a", at(14*time.Hour)))
 	must(s.DeviceRoutes().Set(ctx, "pi", "hub-b", at(14*time.Hour+time.Minute)))

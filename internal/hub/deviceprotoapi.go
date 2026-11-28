@@ -23,6 +23,38 @@ func (a *api) deviceProtocolRoutes(mux *http.ServeMux) {
 		return
 	}
 	mux.Handle("POST /api/v1/devices/{id}/commands", a.auth(a.deviceProtocolCommand))
+	mux.Handle("DELETE /api/v1/devices/{id}", a.auth(a.deviceProtocolRemove))
+}
+
+// deviceProtocolRemove removes a Device Protocol device and its MQTT user on
+// this hub. It is the policy action device.remove, dangerous: the session
+// must have entered the admin password again within ReauthTTL. An enrolled
+// device is not one: it is revoked (POST /api/v1/devices/{id}/revoke).
+func (a *api) deviceProtocolRemove(w http.ResponseWriter, r *http.Request) {
+	res, err := a.protocol.Remove(r.Context(), policy.ActorWeb, remoteHost(r), r.PathValue("id"), a.recentAuth(r))
+	switch {
+	case err == nil:
+		writeJSON(w, http.StatusOK, res)
+	case errors.Is(err, ErrProtocolDeviceNotFound):
+		writeError(w, http.StatusNotFound, "not_found", "no such device protocol device")
+	case errors.Is(err, errReauthRequired):
+		writeError(w, http.StatusForbidden, "reauth_required", "enter the admin password again to do this")
+	case errors.Is(err, policy.ErrDenied):
+		writeError(w, http.StatusForbidden, "forbidden", "denied by policy")
+	case errors.Is(err, store.ErrUnavailable):
+		writeUnavailable(w)
+	default:
+		a.log.ErrorContext(r.Context(), "remove device protocol device", "err", err)
+		writeError(w, http.StatusInternalServerError, "internal", "cannot remove the device")
+	}
+}
+
+// failedCommandJSON answers a command the device said failed: its result,
+// and the error the API's clients show.
+type failedCommandJSON struct {
+	CommandResult
+	Error string `json:"error"`
+	Code  string `json:"code"`
 }
 
 // deviceProtocolCommand sends a Device Protocol device a command it
@@ -58,7 +90,11 @@ func (a *api) deviceProtocolCommand(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, ErrProtocolTimeout):
 		writeError(w, http.StatusGatewayTimeout, "timeout", err.Error())
 	case errors.Is(err, ErrProtocolFailed):
-		writeJSON(w, http.StatusBadGateway, res)
+		msg := "the device answered that the command failed"
+		if res.Message != "" {
+			msg += ": " + res.Message
+		}
+		writeJSON(w, http.StatusBadGateway, failedCommandJSON{CommandResult: res, Error: msg, Code: "command_failed"})
 	case errors.Is(err, store.ErrUnavailable):
 		writeUnavailable(w)
 	default:

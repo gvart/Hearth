@@ -12,6 +12,7 @@ import (
 // fetching the newest copy first, and why a stale copy is acceptable.
 var readsExempt = map[string]string{
 	"upsert_device":          "device state is soft: last writer wins",
+	"remove_device":          "a missed row is refused with not found, retried; the delete is a tombstone",
 	"report_facts":           "device state is soft: last writer wins",
 	"set_boot_time":          "device state is soft: last writer wins",
 	"mark_seen":              "presence is soft: last writer wins",

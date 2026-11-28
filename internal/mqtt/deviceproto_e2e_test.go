@@ -6,9 +6,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/gvart/hearth/internal/deviceproto"
 	"github.com/gvart/hearth/internal/hub"
@@ -27,7 +31,7 @@ type protocolHub struct {
 	p   *hub.DeviceProtocol
 }
 
-func startProtocolHub(t *testing.T) *protocolHub {
+func startProtocolHub(t *testing.T, configure ...func(*Config)) *protocolHub {
 	t.Helper()
 	st := storetest.Open(t)
 	reg := hub.NewRegistry(hub.RegistryConfig{Store: st})
@@ -36,7 +40,12 @@ func startProtocolHub(t *testing.T) *protocolHub {
 		Store: st, Registry: reg, Policy: pol,
 		Flush: 20 * time.Millisecond, Seen: 50 * time.Millisecond, CommandTimeout: 2 * time.Second,
 	})
-	tb := startBrokerConfig(t, protocolYAML, func(c *Config) { c.Protocol = p })
+	tb := startBrokerConfig(t, protocolYAML, func(c *Config) {
+		c.Protocol = p
+		for _, f := range configure {
+			f(c)
+		}
+	})
 	p.SetBus(tb.b)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -278,5 +287,67 @@ func TestDeviceProtocolDoesNotTakeOverDevices(t *testing.T) {
 	d, err := h.st.Devices().Get(t.Context(), id)
 	if err != nil || d.Name != "other" || d.Status != store.StatusOffline || string(d.Facts) != "{}" {
 		t.Fatalf("device = %+v, %v", d, err)
+	}
+}
+
+// TestDeviceProtocolRemoveEndToEnd: removing a connected device takes its
+// user out of the clients file and the broker, ends its connection, refuses
+// its next login, and its device stays gone.
+func TestDeviceProtocolRemoveEndToEnd(t *testing.T) {
+	hash, err := bcrypt.GenerateFromPassword([]byte(testPassword), bcrypt.MinCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "mqtt.yaml")
+	if err := os.WriteFile(path, []byte(strings.ReplaceAll(protocolYAML, "HASH", string(hash))), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h := startProtocolHub(t, func(c *Config) { c.ClientsFile = path })
+	id := store.ProtocolDeviceID("kitchen")
+	kitchen := connected(t, h.tb, "kitchen", "kitchen")
+	kitchen.publish("hearth/v1/kitchen/announce", announceJSON)
+	h.waitDevice(t, id, func(d store.Device) bool { return d.Status == store.StatusOnline })
+
+	res, err := h.p.Remove(t.Context(), policy.ActorWeb, "127.0.0.1", id, nil)
+	if err != nil || !res.MQTTUserRemoved {
+		t.Fatalf("Remove = %+v, %v", res, err)
+	}
+	if closed, _ := kitchen.closedSoon(); !closed {
+		t.Fatal("the removed device is still connected")
+	}
+	if _, rc, err := h.tb.dial(t, connectOpts{id: "kitchen", user: "kitchen", pass: testPassword}); err == nil && rc == accepted {
+		t.Fatal("the removed device logged in again")
+	}
+	c, err := LoadClients(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, u := range c.Users {
+		names = append(names, u.Name)
+	}
+	if strings.Join(names, ",") != "garage,watcher" || len(c.Devices) != 1 {
+		t.Fatalf("clients file users = %v, devices = %v", names, c.Devices)
+	}
+	time.Sleep(100 * time.Millisecond) // a few flushes
+	if _, err := h.st.Devices().Get(t.Context(), id); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("removed device: %v, want not found", err)
+	}
+	// Again: no device, nothing changed.
+	if _, err := h.p.Remove(t.Context(), policy.ActorWeb, "127.0.0.1", id, nil); !errors.Is(err, hub.ErrProtocolDeviceNotFound) {
+		t.Fatalf("Remove again: %v", err)
+	}
+	entries, err := h.st.Audit().List(t.Context(), 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var audited []string
+	for _, e := range entries {
+		if e.Action == string(policy.DeviceRemove) {
+			audited = append(audited, e.Decision+":"+e.Result+":"+e.Target)
+		}
+	}
+	if strings.Join(audited, ",") != "allow:ok:Kitchen" {
+		t.Fatalf("audit of device.remove = %v", audited)
 	}
 }

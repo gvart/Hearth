@@ -342,6 +342,8 @@ func RouteOf(cmd Command) (Route, error) {
 	switch c := cmd.(type) {
 	case UpsertDevice:
 		return key(c.ID, false)
+	case RemoveDevice:
+		return key(c.ID, false)
 	case ReportFacts:
 		return key(c.ID, false)
 	case MarkSeen:

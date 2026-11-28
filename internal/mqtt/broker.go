@@ -56,6 +56,9 @@ type Config struct {
 	ServerCert func() *tls.Certificate
 	// Clients is who may connect, and to which topics.
 	Clients *Clients
+	// ClientsFile, if set, is the file Clients was read from: RemoveUser
+	// removes the user from it too.
+	ClientsFile string
 	// Certs checks a device certificate is known and not revoked.
 	Certs CertChecker
 	// Recheck is how often connected devices' certificates are checked
@@ -81,6 +84,9 @@ type Broker struct {
 	serve   *serveListener
 	recheck time.Duration
 	bridge  *bridge
+	// clientsFile is Config.ClientsFile; fileMu orders its rewrites.
+	clientsFile string
+	fileMu      sync.Mutex
 }
 
 // New returns a broker serving on cfg.Listener once Run is called. The caller
@@ -110,7 +116,7 @@ func New(cfg Config) (*Broker, error) {
 	if recheck <= 0 {
 		recheck = DefaultRecheck
 	}
-	b := &Broker{srv: srv, auth: auth, ln: ln, conns: conns, serve: serve, recheck: recheck}
+	b := &Broker{srv: srv, auth: auth, ln: ln, conns: conns, serve: serve, recheck: recheck, clientsFile: cfg.ClientsFile}
 	if cfg.Bridge != nil {
 		br, err := newBridge(srv, cfg.Bridge, cfg.Clients, cfg.Log)
 		if err != nil {
