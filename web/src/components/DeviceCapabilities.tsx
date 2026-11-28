@@ -233,7 +233,7 @@ function CapRow({ s, hub, readOnly, effective, busy, editing, onEdit, onChange }
             }}
           />
         ) : info.kind === 'exec' ? (
-          <ListValue s={s} disabled={disabled} onEdit={onEdit} onClear={() => { onChange(withList(hub, 'exec', [])); }} />
+          <ListValue s={s} disabled={disabled} onEdit={onEdit} onClear={() => { onChange(withList(hub, info.key, [])); }} />
         ) : (
           <>
             <Switch
@@ -282,7 +282,7 @@ function ListValue({
 }) {
   const { info } = s;
   const all = isAll(info.key, s.hubList);
-  const restrict = info.kind === 'exec' ? (s.hubList.length ? 'Edit' : 'Add programs…') : s.hubOn && !all ? 'Edit' : 'Restrict to…';
+  const restrict = info.kind === 'exec' ? (s.hubList.length ? 'Edit' : info.key === 'vip' ? 'Add addresses…' : 'Add programs…') : s.hubOn && !all ? 'Edit' : 'Restrict to…';
   return (
     <div className="caps-list-value">
       {s.hubList.length && !all ? <span className="mono small caps-entries">{s.hubList.join(', ')}</span> : null}
@@ -320,7 +320,9 @@ function ListEditor({ s, onCancel, onSave }: { s: CapState; onCancel: () => void
       }}
     >
       <label htmlFor={id} className="small">
-        {info.kind === 'exec'
+        {info.key === 'vip'
+          ? 'Virtual IPs automations may claim and release, as interface=address/prefix, comma-separated.'
+          : info.kind === 'exec'
           ? 'Programs the hub may run, as absolute paths, comma-separated. Each runs with any arguments.'
           : `Only these, comma-separated${info.key === 'scan' ? ' (IPv4 subnets)' : ' (manager:name; a name may be a glob such as docker:*)'}.`}
       </label>
@@ -440,6 +442,8 @@ function listOfEffective(s: CapState, c: Ceiling | null): string[] {
       return c?.scan ?? [];
     case 'exec':
       return c?.exec ?? [];
+    case 'vip':
+      return c?.vip ?? [];
     default:
       return [];
   }

@@ -75,6 +75,9 @@ type Ceiling struct {
 	// Plugins are the exec plugins the hub may install and run on the
 	// device, each with the highest class of its commands it may run.
 	Plugins []PluginGrant `json:"plugins"`
+	// VIP are the virtual IPs the hub's automations may claim and release
+	// on the device, as IFACE=ADDRESS/PREFIX.
+	VIP []string `json:"vip,omitempty"`
 }
 
 // PluginGrant allows a release of an exec plugin on a device, up to a
@@ -94,7 +97,7 @@ func ceilingJSON(c *agentv1.Ceiling) *Ceiling {
 	return &Ceiling{
 		Exec: nonNil(c.GetExec()), Restart: nonNil(c.GetRestart()), Probe: c.GetProbe(), Logs: nonNil(c.GetLogs()),
 		Shell: c.GetShell(), Scan: nonNil(c.GetScan()), NetEdges: c.GetNetEdges(), Docker: c.GetDocker(), DockerRead: c.GetDockerRead(),
-		Plugins: pluginGrantsJSON(c.GetPlugins()),
+		Plugins: pluginGrantsJSON(c.GetPlugins()), VIP: c.GetVip(),
 	}
 }
 
@@ -103,6 +106,7 @@ func (c Ceiling) Proto() *agentv1.Ceiling {
 	return &agentv1.Ceiling{
 		Exec: c.Exec, Restart: c.Restart, Probe: c.Probe, Logs: c.Logs, Shell: c.Shell, Scan: c.Scan,
 		NetEdges: c.NetEdges, Docker: c.Docker, DockerRead: c.DockerRead, Plugins: pluginGrantsProto(c.Plugins),
+		Vip: c.VIP,
 	}
 }
 

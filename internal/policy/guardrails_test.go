@@ -144,6 +144,8 @@ var expected = map[Action]struct {
 	AutomationWebhook:            {Safe, []string{ActorAutomation}, false},
 	AutomationRestart:            {Safe, []string{ActorAutomation}, false},
 	AutomationExec:               {Dangerous, []string{ActorAutomation}, false},
+	AutomationVIPClaim:           {Dangerous, []string{ActorAutomation}, false},
+	AutomationVIPRelease:         {Dangerous, []string{ActorAutomation}, false},
 	AutomationProbe:              {Read, []string{ActorAutomation}, false},
 	KubeClusterAdd:               {Safe, []string{ActorWeb}, false},
 	KubeClusterRemove:            {Safe, []string{ActorWeb}, false},

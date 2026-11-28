@@ -337,7 +337,8 @@ On the hub, the log says `device enrolled` and then `agent connected` for each d
 
 - [Concepts](concepts.md): what the hub, agents, policy and the audit log do.
 - [Automations](automations.md): restart a service when a check fails, also [on the device while
-  the hub is down](automations.md#running-on-the-device).
+  the hub is down](automations.md#running-on-the-device), or [fail a Pi-hole over to a standby by
+  moving its address](automations.md#self-heal-pi-hole).
 - [Prometheus](prometheus.md) and [Kubernetes](kubernetes.md): bring in what you already run.
 - [Explain with AI](ai.md): optional, off by default. Point **Settings, AI** at a local Ollama (or
   Anthropic) and a device page's **Explain** asks it what is wrong, from redacted evidence you can read

@@ -43,16 +43,21 @@ type ActionDeps struct {
 	Probers Probers
 }
 
-// Actions returns the exec, restart, check, webhook, notify, plugin_command and kube_* action kinds,
+// Actions returns the exec, restart, check, vip_claim, vip_release, webhook, notify, plugin_command and
+// kube_* action kinds,
 // to add to Builtin's.
 func Actions(d ActionDeps) map[string]Builder[Action] {
 	if d.HTTP == nil {
 		d.HTTP = &http.Client{}
 	}
 	out := map[string]Builder[Action]{
-		"exec":    func(p Params) (Action, error) { return buildExec(p, d.Agents) },
-		"restart": func(p Params) (Action, error) { return buildRestart(p, d.Agents) },
-		"check":   func(p Params) (Action, error) { return buildCheckAction(p, d.Probers) },
+		"exec":      func(p Params) (Action, error) { return buildExec(p, d.Agents) },
+		"restart":   func(p Params) (Action, error) { return buildRestart(p, d.Agents) },
+		"check":     func(p Params) (Action, error) { return buildCheckAction(p, d.Probers) },
+		"vip_claim": func(p Params) (Action, error) { return buildVIP(p, d.Agents, false) },
+		"vip_release": func(p Params) (Action, error) {
+			return buildVIP(p, d.Agents, true)
+		},
 		"webhook": func(p Params) (Action, error) { return buildWebhook(p, d.HTTP) },
 		"notify":  func(p Params) (Action, error) { return buildNotify(p, d.Notifier) },
 		"plugin_command": func(p Params) (Action, error) {

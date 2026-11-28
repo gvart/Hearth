@@ -22,8 +22,8 @@ import (
 
 // Capabilities managed from the hub (#346): what the hub may do on a device,
 // set here and pushed to its agent (ceilingpush.go), which adds it to its own
-// flags and enforces the union itself. Raising a shell, exec, restart or
-// Docker control is device.capabilities.raise, dangerous, and takes the
+// flags and enforces the union itself. Raising a shell, exec, restart,
+// Docker control or a virtual IP is device.capabilities.raise, dangerous, and takes the
 // password again; anything else is device.capabilities.set.
 
 // What "on" means for a capability with a list: everything of it.
@@ -156,7 +156,7 @@ func (c CapabilitiesChange) Detail(device string) map[string]any {
 }
 
 // ChangeOf is the change from the ceiling old to next: a raise of shell,
-// exec, restart, Docker control or a plugin (an entry or a switch next has
+// exec, restart, Docker control, a virtual IP or a plugin (an entry or a switch next has
 // and old lacks, or a plugin allowed a higher class) is
 // device.capabilities.raise, anything else device.capabilities.set.
 func ChangeOf(old, next *agentv1.Ceiling) CapabilitiesChange {
@@ -189,6 +189,8 @@ func ChangeOf(old, next *agentv1.Ceiling) CapabilitiesChange {
 	flag("probe", old.GetProbe(), next.GetProbe(), false)
 	list("scan", old.GetScan(), next.GetScan(), false)
 	flag("net_edges", old.GetNetEdges(), next.GetNetEdges(), false)
+	// A virtual IP takes an address over on the network.
+	list("vip", old.GetVip(), next.GetVip(), true)
 	// Allowing a plugin, a higher class of its commands, or another
 	// release of it lets the hub run code it supplies on the device.
 	for _, n := range next.GetPlugins() {
@@ -223,6 +225,7 @@ func NormalizeCeiling(c Ceiling) (*agentv1.Ceiling, error) {
 		return out
 	}
 	c.Exec, c.Restart, c.Logs, c.Scan = dedupe(c.Exec), dedupe(c.Restart), dedupe(c.Logs), dedupe(c.Scan)
+	c.VIP = dedupe(c.VIP)
 	for i := range c.Plugins {
 		c.Plugins[i].Name = strings.TrimSpace(c.Plugins[i].Name)
 	}
@@ -419,7 +422,7 @@ var ErrCeilingLocked = fmt.Errorf("this device's agent runs with --local-ceiling
 
 // CapabilityKeys are the capabilities SetCapability takes, in the order the
 // web UI and the CLI show them.
-var CapabilityKeys = []string{"logs", "docker", "net-edges", "probe", "scan", "restart", "exec", "shell", "plugins"}
+var CapabilityKeys = []string{"logs", "docker", "net-edges", "probe", "scan", "restart", "exec", "vip", "shell", "plugins"}
 
 // SetCapability changes capability key of c to value, as `hearth device
 // capabilities --set key=value` does: "on" or "off" for shell, probe and
@@ -427,6 +430,7 @@ var CapabilityKeys = []string{"logs", "docker", "net-edges", "probe", "scan", "r
 // of it), "off" or a comma-separated list for logs (manager:name), restart
 // (manager:name) and scan (IPv4 subnets); "off" or a comma-separated list of
 // absolute paths for exec, which has no "on"; "off" or a comma-separated
+// list of IFACE=ADDRESS/PREFIX for vip, which has no "on"; "off" or a comma-separated
 // list of NAME or NAME:CLASS (read, the default, safe or dangerous) for
 // plugins, which has no "on" either.
 func SetCapability(c *Ceiling, key, value string) error {
@@ -483,6 +487,11 @@ func SetCapability(c *Ceiling, key, value string) error {
 		return list(&c.Scan, AllScan)
 	case "exec":
 		return list(&c.Exec, nil)
+	case "vip":
+		if value == "on" {
+			return errors.New(`vip has no "on": list the virtual IPs, comma-separated IFACE=ADDRESS/PREFIX`)
+		}
+		return list(&c.VIP, nil)
 	case "plugins":
 		old := c.Plugins
 		c.Plugins = []PluginGrant{}

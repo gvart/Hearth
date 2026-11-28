@@ -93,11 +93,15 @@ const knownActions = [
   'kube_drain',
   'kube_node_delete',
   'plugin_command',
+  'vip_claim',
+  'vip_release',
 ];
-const dangerousActions = ['exec', 'kube_drain', 'kube_node_delete'];
+const dangerousActions = ['exec', 'kube_drain', 'kube_node_delete', 'vip_claim', 'vip_release'];
 const actionNeeds: Record<string, string[]> = {
   restart: ['device', 'service'],
   exec: ['device', 'command'],
+  vip_claim: ['device', 'interface', 'address'],
+  vip_release: ['device', 'interface', 'address'],
   webhook: ['url'],
   notify: ['channel', 'message'],
   log: ['message'],

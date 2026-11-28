@@ -55,6 +55,8 @@ test('the password is asked for raising a terminal, programs, restarts or contai
   assert.equal(raisesRisky(none, withDocker(none, 'read')), false);
   assert.equal(raisesRisky(none, withSwitch(none, 'logs', true)), false);
   assert.equal(raisesRisky(none, withSwitch(none, 'net_edges', true)), false);
+  assert.equal(raisesRisky(none, withList(none, 'vip', ['eth0=192.168.1.53/24'])), true);
+  assert.deepEqual(withSwitch({ ...emptyCeiling(), vip: ['eth0=192.168.1.53/24'] }, 'vip', false).vip, []);
   const all = { ...withSwitch(withSwitch(none, 'shell', true), 'restart', true), docker: true, exec: ['/a'] };
   assert.equal(raisesRisky(all, none), false, 'lowering never asks');
 });
@@ -73,6 +75,7 @@ test('platforms without a capability say so', () => {
   assert.equal(s.find((x) => x.info.key === 'shell').unsupported, 'Not on Windows');
   assert.equal(capStates(caps(), 'darwin 26.1').find((x) => x.info.key === 'net_edges').unsupported, 'Linux only');
   assert.equal(capStates(caps(), 'debian 12').find((x) => x.info.key === 'net_edges').unsupported, undefined);
+  assert.equal(capStates(caps(), 'darwin 26.1').find((x) => x.info.key === 'vip').unsupported, 'Linux only');
 });
 
 test('the card mode follows the agent', () => {

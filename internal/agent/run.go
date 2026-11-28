@@ -710,7 +710,8 @@ func (r *runner) applyCeiling(ctx context.Context, cfg *agentv1.CeilingConfig) b
 	}
 	r.log.InfoContext(ctx, "capability ceiling changed by the hub", "exec", len(after.Exec), "restart", len(after.Restart),
 		"probe", after.Probe, "logs", len(after.Logs), "shell", after.Shell, "scan", len(after.Scan),
-		"net_edges", after.NetEdges, "docker", after.Docker, "docker_read", after.DockerRead, "plugins", len(after.Plugins))
+		"net_edges", after.NetEdges, "docker", after.Docker, "docker_read", after.DockerRead, "plugins", len(after.Plugins),
+		"vip", len(after.VIP))
 	select {
 	case r.ceilingChanged <- struct{}{}:
 	default:
