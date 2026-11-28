@@ -97,14 +97,16 @@ it behind a key may cost goodwill. Consider making it free and keeping roles or 
 
 ## Licensing questions (not legal advice)
 
-- Hearth is AGPL-3.0 (with `pkg/` Apache-2.0). Anyone may remove a license check from AGPL source and
-  run or distribute the result. A key in AGPL code is a request, not a lock. Is that acceptable, or does
-  Pro code live elsewhere?
-- **Open core**: Pro features in a separate, non-AGPL module or repository, built into a Pro binary.
-  The free binary would not contain them.
-- **Contributions**: the project uses a DCO, not a CLA. Contributors keep their copyright under AGPL,
-  so the maintainer cannot relicense their code into a proprietary Pro module without their consent.
-  Pro code would have to be written by the maintainer or under a CLA for that module.
+- **License checks in AGPL code**: Hearth is AGPL-3.0 (with `pkg/` Apache-2.0). Can anyone remove a
+  license check from the AGPL source and run or distribute the result, so that a key in AGPL code is
+  only a request, not a lock? If so, is that acceptable, or should Pro code live elsewhere? To confirm
+  with a lawyer.
+- **Open core**: could Pro features live in a separate, non-AGPL module or repository, built into a
+  Pro binary that the free binary does not include? What would that require of the AGPL core and of
+  the boundary between them? To confirm with a lawyer.
+- **Contributions**: the project uses a DCO, not a CLA. Can code contributed under the DCO and AGPL be
+  used in a proprietary Pro module without each contributor's consent, or does Pro code have to be
+  written by the maintainer or contributed under a CLA for that module? To confirm with a lawyer.
 - **Trademark**: whether "Hearth Pro" should be protected so forks cannot sell under the name.
 
 ## Open questions for the maintainer

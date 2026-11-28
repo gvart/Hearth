@@ -121,9 +121,9 @@ request by the `DCO` workflow. See [CONTRIBUTING.md](CONTRIBUTING.md) for toolin
 
 ## Support
 
-Hearth is free and open source. If it is useful to you and you want to fund its
-development, use the **Sponsor** button at the top of the repository, which lists the ways to
-support the project. Issues, bug reports and pull requests help just as much.
+Hearth is free and open source. Funding options will be listed here once GitHub Sponsors and
+Open Collective are set up ([#56](https://github.com/gvart/hearth/issues/56)). Until then, issues,
+bug reports and pull requests help most.
 
 ## License
 
