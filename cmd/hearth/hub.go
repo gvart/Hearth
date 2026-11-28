@@ -116,6 +116,9 @@ type hubOptions struct {
 	dhcpLeases []string
 	// plugins are the manifests of the exec plugins to run; none by default.
 	plugins []string
+	// registry is the signed plugin index the hub installs plugins from;
+	// none by default.
+	registry registryOptions
 	// backup schedules encrypted backups to an S3-compatible bucket.
 	backup    scheduledBackupOptions
 	cluster   clusterOptions
@@ -244,6 +247,7 @@ func newHubCmd() *cobra.Command {
 	cmd.Flags().StringArrayVar(&opts.plugins, "plugin", splitList(os.Getenv("HEARTH_PLUGINS")),
 		"manifest of an exec plugin to run on the hub, e.g. /etc/hearth/plugins/lamp/plugin.yaml; repeatable "+
 			"(env HEARTH_PLUGINS, comma-separated; default: none; see docs/plugins.md)")
+	addRegistryFlags(cmd, &opts.registry)
 	addBackupFlags(cmd, &opts.backup)
 	addTelemetryFlags(cmd, &opts.telemetry)
 	addMQTTFlags(cmd, &opts.mqtt)
@@ -331,6 +335,10 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		}
 		manifests = append(manifests, m)
 	}
+	pluginRegistry, err := opts.registry.registry()
+	if err != nil {
+		return err
+	}
 	hosts := hubHosts(ctx, opts.hosts, opts.lanName, log)
 	var agentPort string
 	if _, port, err := net.SplitHostPort(opts.listen); err == nil && port != "0" {
@@ -404,14 +412,15 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	var pluginMgr *plugins.Manager
-	if len(manifests) > 0 {
-		if pluginMgr, err = plugins.New(plugins.Config{
-			Manifests: manifests, Policy: pol, Log: log.With("component", "plugins"),
-		}); err != nil {
-			return fmt.Errorf("--plugin: %w", err)
-		}
+	// A hub always has a plugin manager: plugins installed from a plugin
+	// index start and stop while it runs.
+	pluginMgr, err := plugins.New(plugins.Config{
+		Manifests: manifests, Policy: pol, Log: log.With("component", "plugins"),
+	})
+	if err != nil {
+		return fmt.Errorf("--plugin: %w", err)
 	}
+	registryPlugins := newRegistrySync(opts.dataDir, pluginMgr, log)
 	pve, err := newProxmoxManager(st, sealers.proxmox, pol, log)
 	if err != nil {
 		return err
@@ -504,6 +513,8 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		OPNsense:          opn,
 		UniFi:             ufi,
 		Plugins:           pluginMgr,
+		PluginRegistry:    pluginRegistry,
+		RegistryPlugins:   registryPlugins,
 		Notify:            notifier,
 		NetworkScans:      networkScans,
 		Version:           opts.version,
@@ -718,9 +729,9 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	// And the UniFi controllers.
 	g.Go(func() error { return ufi.Run(gctx) })
 	// And runs the exec plugins itself, if any: commands may reach any hub.
-	if pluginMgr != nil {
-		g.Go(func() error { return pluginMgr.Run(gctx) })
-	}
+	g.Go(func() error { return pluginMgr.Run(gctx) })
+	// And those installed from a plugin index, as they come and go.
+	g.Go(func() error { return registryPlugins.Run(gctx, registrySyncEvery) })
 	// Every hub applies the configuration documents, whichever hub wrote
 	// them; a cluster member imports its files once it has caught up.
 	if configDocs {

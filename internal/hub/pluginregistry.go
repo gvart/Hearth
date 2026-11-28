@@ -52,7 +52,7 @@ func registryEntryJSON(e plugins.IndexEntry) RegistryEntryJSON {
 	}
 	return RegistryEntryJSON{
 		Name: e.Name, Version: e.Version, Description: e.Description, Author: e.Author, Homepage: e.Homepage,
-		License: e.License, Runtime: e.Runtime, SHA256: e.SHA256, Memory: e.Manifest("").Memory,
+		License: e.License, Runtime: e.Runtime, SHA256: e.SHA256, Memory: e.MemoryMiB(),
 		Capabilities: caps, Commands: commands, HTTPAllow: plugins.HTTPAllow(e.Host),
 	}
 }

@@ -81,7 +81,7 @@ func (c Change) Confirmed(version, sha256 string) error {
 func (c Change) Request() policy.Request {
 	d := map[string]any{
 		"plugin": c.Entry.Name, "version": c.Entry.Version, "sha256": c.Entry.SHA256, "source": c.Source,
-		"runtime": c.Entry.Runtime, "memory": c.Entry.Manifest("").wasmMemory(),
+		"runtime": c.Entry.Runtime, "memory": c.Entry.MemoryMiB(),
 		"capabilities": nonNilStrings(c.Entry.Capabilities), "commands": CommandList(c.Entry.Commands),
 		"http_allow": HTTPAllow(c.Entry.Host),
 	}

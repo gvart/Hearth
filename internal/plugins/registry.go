@@ -125,6 +125,9 @@ func (e IndexEntry) Manifest(dir string) Manifest {
 	}
 }
 
+// MemoryMiB is e's memory cap, in MiB.
+func (e IndexEntry) MemoryMiB() int { return e.Manifest("").wasmMemory() }
+
 // Validate checks e.
 func (e IndexEntry) Validate() error {
 	var errs []error

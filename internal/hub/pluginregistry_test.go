@@ -146,7 +146,7 @@ func TestPluginRegistryInstallUpdateRemove(t *testing.T) {
 		t.Fatalf("registry %+v", got)
 	}
 	if a := got.Available[0]; a.Name != "lamp" || len(a.HTTPAllow) != 1 || a.HTTPAllow[0] != "192.0.2.7:80" ||
-		len(a.Commands) != 1 || a.Commands[0].Class != policy.Safe || a.Memory != 0 {
+		len(a.Commands) != 1 || a.Commands[0].Class != policy.Safe || a.Memory != 64 {
 		t.Fatalf("available %+v", a)
 	}
 	if got.Decisions["install"] != policy.Allow || got.Decisions["remove"] != policy.Allow {

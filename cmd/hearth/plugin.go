@@ -28,13 +28,16 @@ import (
 func newPluginCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "plugin",
-		Short: "Upload, list and remove the exec plugins devices may run",
+		Short: "Install plugins from a plugin index, and upload the exec plugins devices may run",
 		Long: "Exec plugins for devices: the hub hands each device's agent the program built for its platform,\n" +
 			"pinned by SHA-256, once the device's capabilities allow that plugin\n" +
 			"(`hearth device capabilities <device> --set plugins=name[:class]`). Run these on a hub host.\n" +
-			"The web UI does the same under Settings, Device plugins.",
+			"The web UI does the same under Settings, Device plugins.\n\n" +
+			"WASM plugins for the hub itself install from a signed plugin index (search, install, update, remove;\n" +
+			"index for those who publish one). The web UI does the same under Settings, Plugins.",
 	}
-	cmd.AddCommand(newPluginUploadCmd(), newPluginListCmd(), newPluginDeleteCmd())
+	cmd.AddCommand(newPluginUploadCmd(), newPluginListCmd(), newPluginDeleteCmd(),
+		newPluginSearchCmd(), newPluginInstallCmd(), newPluginUpdateCmd(), newPluginRemoveCmd(), newPluginIndexCmd())
 	return cmd
 }
 
@@ -146,10 +149,13 @@ func runPluginUpload(ctx context.Context, dataDir, program, manifest, goos, arch
 }
 
 func newPluginListCmd() *cobra.Command {
-	var dataDir string
+	var (
+		dataDir string
+		reg     registryOptions
+	)
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List the plugins uploaded for devices",
+		Short: "List the plugins uploaded for devices, and those installed from a plugin index",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			st, err := openExistingHubStore(cmd.Context(), dataDir)
@@ -163,8 +169,10 @@ func newPluginListCmd() *cobra.Command {
 			}
 			out := cmd.OutOrStdout()
 			if len(list) == 0 {
-				_, err := fmt.Fprintln(out, "No plugins uploaded. Upload one with `hearth plugin upload`.")
-				return err
+				if _, err := fmt.Fprintln(out, "No plugins uploaded. Upload one with `hearth plugin upload`."); err != nil {
+					return err
+				}
+				return listInstalled(cmd.Context(), out, dataDir, reg)
 			}
 			tw := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
 			_, _ = fmt.Fprintln(tw, "PLUGIN\tVERSION\tSIZE\tSHA256\tCOMMANDS\tRELEASE DIGEST")
@@ -175,10 +183,14 @@ func newPluginListCmd() *cobra.Command {
 				}
 				_, _ = fmt.Fprintf(tw, "%s/%s/%s\t%s\t%d\t%s\t%s\t%s\n", p.Name, p.OS, p.Arch, p.Version, p.Size, p.SHA256[:12], strings.Join(commands, ","), p.Digest)
 			}
-			return tw.Flush()
+			if err := tw.Flush(); err != nil {
+				return err
+			}
+			return listInstalled(cmd.Context(), out, dataDir, reg)
 		},
 	}
 	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir("hub"), "hub data directory (env HEARTH_DATA_DIR)")
+	addRegistryFlags(cmd, &reg)
 	return cmd
 }
 
