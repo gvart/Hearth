@@ -1,0 +1,62 @@
+docs/getting-started.md
+  s_18b57982fdff93::t_97014b130de2dc 201-205
+internal/agent/logs_windows.go
+  s_18b57982fdff93::t_f69395a2d0a43b 1-286
+web/src/components/DeviceLogSources.tsx
+  s_18b57982fdff93::t_902fb72bb064ba 10
+proto/hearth/agent/v1/agent.proto
+  s_18b57982fdff93::t_0a2db08b11384e 400-401,403-404,406
+  s_18b57982fdff93::t_eafb3086eab445 158-159
+web/src/capabilities.ts
+  s_18b57982fdff93::t_c15715fe7e8415 58
+  s_18b57982fdff93::t_902fb72bb064ba 35
+internal/policy/ceiling_eventlog_test.go
+  s_18b57982fdff93::t_d7369d6c30c757 1-58
+docs/logs.md
+  s_18b57982fdff93::t_375c38ec907bc5 32,35-43
+  s_18b57982fdff93::t_40b5161bcacc52 78-79
+  s_18b57982fdff93::t_b2126eb9b06792 77
+internal/hub/capabilities_test.go
+  s_18b57982fdff93::t_d02701537f7d0c 54-55,59
+  s_18b57982fdff93::t_bbe44e1fa93b3d 116-117
+internal/policy/ceiling.go
+  s_18b57982fdff93::t_c059b28dc77bba 196-202,207-208,217,220-221,229,232
+internal/agent/logs.go
+  s_18b57982fdff93::t_0e553f0b277a6b 102-104
+  s_18b57982fdff93::t_86a265b781989f 54-56
+  s_18b57982fdff93::t_333f062bb78708 261-265,268-272
+  s_18b57982fdff93::t_9fcbf16627f5c7 126
+  s_18b57982fdff93::t_f06fe9fcd55ce7 358-371
+cmd/hearth/device_caps.go
+  s_18b57982fdff93::t_de20dcbdd1cbe4 41-42
+cmd/hearth/agent.go
+  s_18b57982fdff93::t_9f774e07d0b9dc 140
+  s_18b57982fdff93::t_4dd92d23fc6c8f 141
+internal/agent/logs_eventlog.go
+  s_18b57982fdff93::t_ee8c2ec2221c63 27-28,34,52,55-56,69-70,73,75-80,102,107
+  s_18b57982fdff93::t_2e445cf6f4540c 1-26,29-33,35-51,53-54,57-68,71-72,74,81-101,103-106,108-121
+internal/hub/capabilities.go
+  s_18b57982fdff93::t_889b513de3e46c 31-33
+internal/agent/logs_eventlog_test.go
+  s_18b57982fdff93::t_98f4caf2ba8197 1-182
+internal/agent/logs_other.go
+  s_18b57982fdff93::t_23d263d534dbb3 1-20
+internal/proto/hearth/agent/v1/agent.pb.go
+  s_18b57982fdff93::t_7c6635bfacee03 955-956,2395-2396,2399-2400,2402
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "3d997f659654672dfb5552fbecb21bac29638d4d",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
