@@ -1,0 +1,32 @@
+internal/mqtt/protocol.go
+  s_18b57982fdff93::t_7c89797f450fb0 127-128
+internal/store/deviceprotocol_test.go
+  s_18b57982fdff93::t_bd753bc913a286 12-64
+  s_18b57982fdff93::t_97200ea73b9e4d 7
+internal/hub/deviceprotoapi_test.go
+  s_18b57982fdff93::t_9c66d47e939035 275-276
+  s_18b57982fdff93::t_15c12e6d1f49d5 309
+internal/hub/deviceprotoapi.go
+  s_18b57982fdff93::t_c066a371822d62 46-50
+internal/hub/deviceproto.go
+  s_18b57982fdff93::t_415c1f6666a7ec 52-54
+  s_18b57982fdff93::t_74da68fea20835 254-257
+  s_18b57982fdff93::t_177a7e5cafd4b6 96-97
+  s_18b57982fdff93::t_8eea53c52bc08c 503,507-508
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "2e39741b4027b0ba51f19869081c51c1e18c31f9",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}

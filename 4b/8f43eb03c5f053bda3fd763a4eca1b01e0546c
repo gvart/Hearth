@@ -1,0 +1,85 @@
+internal/store/version.go
+  s_18b57982fdff93::t_95ec232939dcad 146-147
+internal/mqtt/auth.go
+  s_18b57982fdff93::t_bdfd357fb19203 145
+  s_18b57982fdff93::t_76ea0263d25488 49-51
+  s_18b57982fdff93::t_5eb3518c1672ac 324
+  s_18b57982fdff93::t_0c5f7f044f3c05 174-177,181-196
+  s_18b57982fdff93::t_dad37a700bb8ea 197
+internal/policy/policy.go
+  s_18b57982fdff93::t_3aeffee10d86bd 319-321
+  s_18b57982fdff93::t_ccb8cef50f9be6 700-703
+internal/store/deviceprotocol_test.go
+  s_18b57982fdff93::t_46ead39d30bf8b 1-54
+internal/hub/deviceprotoapi.go
+  s_18b57982fdff93::t_253ce39556bc75 93-97
+  s_18b57982fdff93::t_285320c536a1fb 26-57
+cmd/hearth/device_protocol_test.go
+  s_18b57982fdff93::t_2a2b426bb95e05 1-181
+internal/store/command.go
+  s_18b57982fdff93::t_b0590f81e5c0f3 799-800
+cmd/hearth/device.go
+  s_18b57982fdff93::t_636428fbbb5e4e 26-28
+internal/store/reads_test.go
+  s_18b57982fdff93::t_a11b29787d8498 15
+internal/mqtt/clientsfile.go
+  s_18b57982fdff93::t_57e682d62196f8 1-113
+cmd/hearth/hub_mqtt.go
+  s_18b57982fdff93::t_53c69351ccb4a4 82
+internal/store/partition.go
+  s_18b57982fdff93::t_70c146dddb2ce8 345-346
+internal/store/devices.go
+  s_18b57982fdff93::t_43cc7ae9d0efa6 76,78-82,84
+internal/store/command_test.go
+  s_18b57982fdff93::t_4537a5d3bd3805 128
+  s_18b57982fdff93::t_9ef031f515b8cb 559-563
+cmd/hearth/device_protocol.go
+  s_18b57982fdff93::t_e99419cba9d991 1-206
+internal/mqtt/broker.go
+  s_18b57982fdff93::t_635c4de85daee6 87-89
+  s_18b57982fdff93::t_c84f4140da484c 119
+  s_18b57982fdff93::t_122ed7b984326d 59-61
+internal/mqtt/deviceproto_e2e_test.go
+  s_18b57982fdff93::t_6e4af9f3375d7d 292-353
+  s_18b57982fdff93::t_019cc6e7af6870 34,43-48
+  s_18b57982fdff93::t_2302fc97202f76 9-10,15
+  s_18b57982fdff93::t_e7679a3a6f153e 16
+internal/store/deviceprotocol.go
+  s_18b57982fdff93::t_b503ce330d899c 23,32-40,48-50,53-58
+  s_18b57982fdff93::t_365ead6c7ea233 5-10
+  s_18b57982fdff93::t_49ae698eeae63f 24-31,41-47,51-52
+internal/hub/deviceprotoapi_test.go
+  s_18b57982fdff93::t_dacf9e15c794d2 305-307,309-315
+  s_18b57982fdff93::t_d95a564f7d1e54 308
+  s_18b57982fdff93::t_4b78472d2899ad 143-146
+  s_18b57982fdff93::t_e846dce7a2af12 175-304,316-318
+  s_18b57982fdff93::t_8dcf9d79927bec 30-47
+  s_18b57982fdff93::t_6699b9c24885ff 8
+internal/hub/deviceproto.go
+  s_18b57982fdff93::t_55f4fc2817552f 60-63
+  s_18b57982fdff93::t_ea79083698c5f4 451-523
+  s_18b57982fdff93::t_ebc083d81bd378 664-671
+internal/mqtt/clientsfile_test.go
+  s_18b57982fdff93::t_bb3fa947efa346 1-100
+internal/mqtt/protocol.go
+  s_18b57982fdff93::t_57fe6154223020 98
+  s_18b57982fdff93::t_e0412958f6ac31 125-156
+internal/policy/guardrails_test.go
+  s_18b57982fdff93::t_79cd93f66fedb6 228
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "4b8f43eb03c5f053bda3fd763a4eca1b01e0546c",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
