@@ -41,13 +41,15 @@ func newDeviceCapabilitiesCmd() *cobra.Command {
 			"                           systemd-user or docker; a name may be a glob such as docker:*)\n" +
 			"  scan                     on (the private IPv4 ranges) | off | CIDR,...\n" +
 			"  exec                     off | /absolute/path,... (no on: name each program)\n" +
+			"  vip                      off | IFACE=ADDRESS/PREFIX,... (virtual IPs automations may claim and\n" +
+			"                           release here, such as eth0=192.168.1.53/24; Linux; no on)\n" +
 			"  plugins                  off | name[:class][@latest],... (the plugins uploaded with `hearth\n" +
 			"                           plugin upload` it may install and run, each up to a class of command:\n" +
 			"                           read (the default), safe or dangerous). Each grant pins one release,\n" +
 			"                           program and manifest, by its digest: a new grant pins the release\n" +
 			"                           uploaded now, and one already set keeps its release until @latest\n" +
 			"                           moves it to the one uploaded now\n\n" +
-			"Raising shell, exec, restart, Docker control or a plugin, or moving a plugin to another release,\n" +
+			"Raising shell, exec, restart, Docker control, a virtual IP or a plugin, or moving a plugin to another release,\n" +
 			"is the dangerous policy action\n" +
 			"device.capabilities.raise; anything else is device.capabilities.set. Both are audited. A device\n" +
 			"whose agent runs with --local-ceiling ignores what the hub sets.",
@@ -218,6 +220,8 @@ func capValue(c *hub.Ceiling, k string) string {
 		return list(c.Scan, hub.AllScan)
 	case "exec":
 		return list(c.Exec, nil)
+	case "vip":
+		return list(c.VIP, nil)
 	case "plugins":
 		if len(c.Plugins) == 0 {
 			return "off"

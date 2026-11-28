@@ -57,6 +57,9 @@ type Ceiling struct {
 	// with the highest class of command it may run (see plugins.go), sorted
 	// by name.
 	Plugins []PluginGrant
+	// VIP are the virtual IPs the hub may claim and release here, each as
+	// IFACE=ADDRESS/PREFIX (see vip.go). Linux only.
+	VIP []string
 }
 
 // Service managers a restart may name.
@@ -89,7 +92,7 @@ func (c Ceiling) proto() *agentv1.Ceiling {
 	return &agentv1.Ceiling{
 		Exec: slices.Clone(c.Exec), Restart: slices.Clone(c.Restart), Probe: c.Probe, Logs: slices.Clone(c.Logs),
 		Shell: c.Shell, Scan: slices.Clone(c.Scan), NetEdges: c.NetEdges, Docker: c.Docker, DockerRead: c.DockerRead,
-		Plugins: grantsProto(c.Plugins),
+		Plugins: grantsProto(c.Plugins), Vip: slices.Clone(c.VIP),
 	}
 }
 
@@ -122,6 +125,9 @@ func (c Ceiling) command(req *agentv1.ExecRequest) ([]string, error) {
 // execute runs req if the ceiling allows it and reports the outcome.
 func (c Ceiling) execute(ctx context.Context, req *agentv1.ExecRequest) *agentv1.ExecResult {
 	res := &agentv1.ExecResult{Id: req.GetId(), ExitCode: -1}
+	if v := req.GetVip(); v != nil {
+		return c.vip(ctx, req, v, res)
+	}
 	argv, err := c.command(req)
 	if err != nil {
 		res.Denied = errors.Is(err, policy.ErrBeyondCeiling)

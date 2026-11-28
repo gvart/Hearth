@@ -1,0 +1,30 @@
+# Self-heal Pi-hole, part 1 of 2: the watchdog on the primary.
+# See docs/automations.md, "Self-heal Pi-hole". Runs on the primary's agent,
+# also while no hub is reachable: when its Pi-hole stops answering, restart it.
+# If the restart does not help, pihole-selfheal.yaml (run by the hub) moves the
+# Pi-hole's address to the standby.
+#
+# Needs, on the device pihole-primary: Checks and Restart services
+# (systemd:pihole-FTL.service) in its Capabilities card.
+id: pihole-watchdog
+description: Restart Pi-hole on the primary when it stops answering.
+local: true
+triggers:
+  - id: dns-down
+    type: dns
+    name: pi.hole            # Pi-hole answers this itself: an Internet outage does not fire it
+    server: 127.0.0.1
+    from: pihole-primary
+    every: 5s
+    for: 15s                 # 4 failed checks in a row
+actions:
+  - id: restart-dns
+    type: restart
+    device: pihole-primary
+    service: systemd:pihole-FTL.service   # docker:pihole for Pi-hole in Docker
+  - id: verify
+    type: check              # fails the run if Pi-hole still does not answer
+    check: dns
+    name: pi.hole
+    server: 127.0.0.1
+    from: pihole-primary

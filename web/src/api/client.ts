@@ -60,6 +60,8 @@ export interface Ceiling {
   docker_read?: boolean;
   /** The device plugins the hub may run commands of, each up to a class. */
   plugins?: PluginGrant[];
+  /** Virtual IPs automations may claim and release on the device, as IFACE=ADDRESS/PREFIX (Linux). */
+  vip?: string[];
 }
 
 /** One plugin of a ceiling: the highest class of its commands the hub may run. */

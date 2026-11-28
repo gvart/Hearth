@@ -38,7 +38,7 @@ func ceilingOf(c *agentv1.Ceiling) Ceiling {
 		Exec: slices.Clone(c.GetExec()), Restart: slices.Clone(c.GetRestart()), Probe: c.GetProbe(),
 		Logs: slices.Clone(c.GetLogs()), Shell: c.GetShell(), Scan: slices.Clone(c.GetScan()),
 		NetEdges: c.GetNetEdges(), Docker: c.GetDocker(), DockerRead: c.GetDockerRead(),
-		Plugins: grantsOf(c.GetPlugins()),
+		Plugins: grantsOf(c.GetPlugins()), VIP: slices.Clone(c.GetVip()),
 	}
 }
 
@@ -57,7 +57,7 @@ func (c Ceiling) union(o Ceiling) Ceiling {
 		Exec: merge(c.Exec, o.Exec), Restart: merge(c.Restart, o.Restart), Probe: c.Probe || o.Probe,
 		Logs: merge(c.Logs, o.Logs), Shell: c.Shell || o.Shell, Scan: merge(c.Scan, o.Scan),
 		NetEdges: c.NetEdges || o.NetEdges, Docker: c.Docker || o.Docker, DockerRead: c.DockerRead || o.DockerRead,
-		Plugins: unionGrants(c.Plugins, o.Plugins),
+		Plugins: unionGrants(c.Plugins, o.Plugins), VIP: merge(c.VIP, o.VIP),
 	}
 }
 
@@ -66,19 +66,22 @@ func (c Ceiling) equal(o Ceiling) bool {
 	return slices.Equal(c.Exec, o.Exec) && slices.Equal(c.Restart, o.Restart) && c.Probe == o.Probe &&
 		slices.Equal(c.Logs, o.Logs) && c.Shell == o.Shell && slices.Equal(c.Scan, o.Scan) &&
 		c.NetEdges == o.NetEdges && c.Docker == o.Docker && c.DockerRead == o.DockerRead &&
-		slices.Equal(c.Plugins, o.Plugins)
+		slices.Equal(c.Plugins, o.Plugins) && slices.Equal(c.VIP, o.VIP)
 }
 
 // checkHubCeiling checks a ceiling the hub set, entry by entry
 // (policy.CheckHubCeiling): one bad entry refuses all of it. A capability
-// this platform's agent lacks (a shell on Windows, network edges off Linux)
-// is dropped.
+// this platform's agent lacks (a shell on Windows, network edges and virtual
+// IPs off Linux) is dropped.
 func checkHubCeiling(c Ceiling) (Ceiling, error) {
 	if err := policy.CheckHubCeiling(c.proto()); err != nil {
 		return Ceiling{}, err
 	}
 	c.Shell = c.Shell && ShellSupported
 	c.NetEdges = c.NetEdges && NetEdgesSupported
+	if !VIPSupported {
+		c.VIP = nil
+	}
 	return c, nil
 }
 
