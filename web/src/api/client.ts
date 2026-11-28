@@ -143,6 +143,8 @@ export interface CreatedToken {
   /** The same for an elevated PowerShell on Windows (install.ps1). */
   install_command_windows: string;
   join_command: string;
+  /** The hearth://enroll link a phone app scans (docs/spec/enroll-uri-v1.md). It holds the token. */
+  enroll_uri: string;
 }
 
 /** An enrollment token not used yet nor expired, without its secret. */

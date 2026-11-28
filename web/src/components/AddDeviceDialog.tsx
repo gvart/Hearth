@@ -259,10 +259,7 @@ export function AddDeviceDialog({ host, joined, onClose, onShow }: Props) {
                 </form>
               </details>
             </div>
-            <figure className="qr-wrap">
-              <QrCode value={install} label="QR code of the install command" />
-              <figcaption className="muted small">Scan to copy on a phone</figcaption>
-            </figure>
+            <EnrollQr key={tok.token} uri={tok.enroll_uri} expiresAt={tok.expires_at} used={joined !== undefined} />
           </div>
 
           <div className={`waiting${joined ? ' waiting-done' : ''}`} aria-live="polite">
@@ -294,6 +291,67 @@ export function AddDeviceDialog({ host, joined, onClose, onShow }: Props) {
         <p className="muted">Creating a single-use token…</p>
       ) : null}
     </Modal>
+  );
+}
+
+/**
+ * The token's hearth://enroll link as a QR code, for the Hearth app on a
+ * phone (#79). It holds the token, so it is drawn only on a click, and
+ * never again once the token is used or expired. Keyed on the token: a new
+ * token starts hidden.
+ */
+function EnrollQr({ uri, expiresAt, used }: { uri: string; expiresAt: string; used: boolean }) {
+  const [shown, setShown] = useState(false);
+  const [expired, setExpired] = useState(() => Date.parse(expiresAt) <= Date.now());
+  useEffect(() => {
+    const t = setTimeout(
+      () => {
+        setExpired(true);
+      },
+      Math.max(0, Date.parse(expiresAt) - Date.now()),
+    );
+    return () => {
+      clearTimeout(t);
+    };
+  }, [expiresAt]);
+
+  if (used || expired) {
+    return (
+      <p className="qr-wrap muted small">
+        {used ? 'The token was used: its QR code is gone.' : 'The token expired: create a new one for a QR code.'}
+      </p>
+    );
+  }
+  if (!shown) {
+    return (
+      <div className="qr-wrap">
+        <button
+          className="btn btn-small"
+          type="button"
+          onClick={() => {
+            setShown(true);
+          }}
+        >
+          Show QR
+        </button>
+        <span className="muted small">For the Hearth app on a phone. The QR code holds the token.</span>
+      </div>
+    );
+  }
+  return (
+    <figure className="qr-wrap">
+      <QrCode value={uri} label="QR code of the enrollment link" />
+      <figcaption className="muted small">Scan with the Hearth app</figcaption>
+      <button
+        className="btn btn-ghost btn-small"
+        type="button"
+        onClick={() => {
+          setShown(false);
+        }}
+      >
+        Hide QR
+      </button>
+    </figure>
   );
 }
 

@@ -4,11 +4,14 @@ package hub
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"mime"
 	"net"
 	"net/http"
+	"net/url"
 	"regexp"
 	"slices"
 	"strconv"
@@ -47,6 +50,9 @@ type TokenJSON struct {
 	// on Windows (deploy/install.ps1).
 	InstallCommandWindows string `json:"install_command_windows"`
 	JoinCommand           string `json:"join_command"`
+	// EnrollURI is the hearth://enroll link a phone app scans from the
+	// dialog's QR code (docs/spec/enroll-uri-v1.md). It holds the token.
+	EnrollURI string `json:"enroll_uri"`
 }
 
 // DryRunJSON answers a dry run: the decision policy made and audited, allow
@@ -198,6 +204,7 @@ func (a *api) createToken(w http.ResponseWriter, r *http.Request) {
 		// which install.ps1 clears at once and hands to join on stdin.
 		InstallCommandWindows: a.installCommandWindows(httpHost, enc),
 		JoinCommand:           "HEARTH_TOKEN=" + enc + " hearth agent join",
+		EnrollURI:             enrollURI(agentURL, tok.CAFingerprint, enc),
 	})
 }
 
@@ -278,6 +285,20 @@ func RevokeTokenDetail(t store.PendingToken) map[string]any {
 		d["name"] = t.Name
 	}
 	return d
+}
+
+// enrollURI is the link an app enrolls with (docs/spec/enroll-uri-v1.md):
+// hearth://enroll?ca=<hex>&hub=<agent URL>&token=<token>&v=1. The token
+// names the hub and pins its CA itself; hub and ca repeat them in the clear
+// so an app can show where it enrolls before it parses the token, and must
+// refuse a link where they differ.
+func enrollURI(agentURL string, caFP [sha256.Size]byte, token string) string {
+	q := url.Values{}
+	q.Set("v", "1")
+	q.Set("hub", agentURL)
+	q.Set("ca", hex.EncodeToString(caFP[:]))
+	q.Set("token", token)
+	return (&url.URL{Scheme: "hearth", Host: "enroll", RawQuery: q.Encode()}).String()
 }
 
 // installScriptURL is where a release hub's install command fetches
