@@ -321,13 +321,13 @@ The hub keeps the newest 100 finished runs, and every unfinished one.
 
 ## In a cluster
 
-Run state is replicated through the store like other hub state, so any hub can show a run or take an
+Run state is kept on every master and on no storage-only member, so any master can show a run or take an
 operator's decision, and the master that owns the run on the master ring runs the steps. Starting a run
-and each save of it need a majority of the run's replicas (both of two, two of three; the hub alone in a
+and each save of it need a majority of the masters (both of two, two of three; the hub alone in a
 cluster of one): a step is recorded as running on a majority before it runs, so when its master dies
 the next owner finds it running and stops the run as `unknown` instead of running the step again. On
 the side of a network split without that majority nothing runs: a start, retry or answer there is
-refused with "cluster split: runbook steps need a majority of replicas; retry when the cluster heals",
+refused with "cluster split: runbook steps need a majority of masters; retry when the cluster heals",
 and a run under way waits, then goes on once the split heals (a step already running when the split
 came stops the run as `unknown`, as when its master dies;
 [Runbook runs across a split](cluster.md#how-data-is-kept)). Runbook files are documents of the replicated
