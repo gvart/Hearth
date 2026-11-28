@@ -1,0 +1,47 @@
+web/src/components/RecordingRunbook.tsx
+  s_18b57982fdff93::t_f965c5db215148 131-132
+  s_18b57982fdff93::t_81200c1a8ea484 32-33,53-56,128-130,133-135
+  s_18b57982fdff93::t_0ba84c3d48679d 136
+internal/hub/airunbook.go
+  s_18b57982fdff93::t_11cc5259ae78eb 81
+  s_18b57982fdff93::t_5a93fd2d4067a0 187,191-193
+  s_18b57982fdff93::t_6b8dba640f337d 194
+docs/threat-model.md
+  s_18b57982fdff93::t_ba69f8f909e9ed 94
+internal/hub/recording_test.go
+  s_18b57982fdff93::t_f40318b57f4f3e 8,10
+  s_18b57982fdff93::t_266232c8c5a072 412-434
+  s_18b57982fdff93::t_37d18d9b6a6980 511-601
+docs/ai.md
+  s_18b57982fdff93::t_e7de86c27996b4 242
+internal/hub/forward.go
+  s_18b57982fdff93::t_93c77e6529f6f4 403-408,457-460
+internal/hub/reauth.go
+  s_18b57982fdff93::t_93c77e6529f6f4 86-87,93-101
+web/src/api/reauth.ts
+  s_18b57982fdff93::t_f73c2e2adac2a3 6
+  s_18b57982fdff93::t_fbb727c6957408 105-115
+docs/security.md
+  s_18b57982fdff93::t_be013ad4814804 187-189
+  s_18b57982fdff93::t_1e85a93e019e07 183-184
+web/src/components/TerminalPage.tsx
+  s_18b57982fdff93::t_03cddc608d7281 11,76,166-169,197
+cmd/hearth/airunbook.go
+  s_18b57982fdff93::t_e7de86c27996b4 69
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "865b2db23a649594124fa58649f921625dc9893c",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
