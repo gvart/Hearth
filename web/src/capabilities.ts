@@ -32,7 +32,7 @@ export interface PluginRelease {
   digest: string;
 }
 
-/** "On" for a capability with a list: all of it. The hub's AllLogs, AllRestart and AllScan. */
+/** "On" for a capability with a list: all of it. The hub's AllLogs (no eventlog: an older agent refuses it), AllRestart and AllScan. */
 export const allLogs = ['systemd:*', 'systemd-user:*', 'docker:*'];
 export const allRestart = ['systemd:*', 'systemd-user:*', 'docker:*'];
 export const allScan = ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'];
@@ -55,7 +55,7 @@ export interface CapInfo {
 }
 
 export const capInfo: CapInfo[] = [
-  { key: 'logs', label: 'Logs', what: 'Stream systemd and container logs here.', kind: 'list', risky: false, placeholder: 'systemd:nginx.service, docker:web' },
+  { key: 'logs', label: 'Logs', what: 'Stream systemd and container logs here, and Windows event log channels you name.', kind: 'list', risky: false, placeholder: 'systemd:nginx.service, docker:web, eventlog:System' },
   { key: 'docker', label: 'Containers', what: 'List Docker or Podman containers and read their logs; with control, start, stop and restart them.', kind: 'docker', risky: true },
   { key: 'net_edges', label: 'Neighbors', what: 'Report its neighbours and TCP connections for the network map (Linux).', kind: 'switch', risky: false },
   { key: 'probe', label: 'Checks', what: 'Run HTTP, TCP and DNS checks from this device.', kind: 'switch', risky: false },

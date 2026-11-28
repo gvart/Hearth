@@ -193,13 +193,19 @@ func DockerWithinCeiling(c *agentv1.Ceiling, req *agentv1.DockerRequest) error {
 	return nil
 }
 
-// ceilingManagers are the service managers a logs or restart entry names.
-var ceilingManagers = []string{"systemd", "systemd-user", "docker"}
+// restartManagers are the service managers a restart entry names, and
+// logManagers the log sources a logs entry names: those and the Windows
+// event log (eventlog:CHANNEL, such as eventlog:System).
+var (
+	restartManagers = []string{"systemd", "systemd-user", "docker"}
+	logManagers     = []string{"systemd", "systemd-user", "docker", "eventlog"}
+)
 
 // CheckHubCeiling checks a ceiling the hub sets for a device (#346), entry
 // by entry, as the agent checks its flags: programs are absolute paths,
 // matched exactly; logs and restart entries are manager:pattern with
-// manager systemd, systemd-user or docker and pattern a name or a glob; scan
+// manager systemd, systemd-user or docker (or eventlog, for logs) and
+// pattern a name or a glob; scan
 // entries are IPv4 subnets. The hub checks it before it stores it, and the
 // agent again before it applies it.
 func CheckHubCeiling(c *agentv1.Ceiling) error {
@@ -208,11 +214,11 @@ func CheckHubCeiling(c *agentv1.Ceiling) error {
 			return fmt.Errorf("exec entry %q: want an absolute path", e)
 		}
 	}
-	entries := func(what string, list []string) error {
+	entries := func(what string, list, managers []string) error {
 		for _, e := range list {
 			manager, pattern, ok := strings.Cut(e, ":")
-			if !ok || pattern == "" || !slices.Contains(ceilingManagers, manager) {
-				return fmt.Errorf("%s entry %q: want manager:name with manager one of %s", what, e, strings.Join(ceilingManagers, ", "))
+			if !ok || pattern == "" || !slices.Contains(managers, manager) {
+				return fmt.Errorf("%s entry %q: want manager:name with manager one of %s", what, e, strings.Join(managers, ", "))
 			}
 			if _, err := path.Match(pattern, ""); err != nil {
 				return fmt.Errorf("%s entry %q: %w", what, e, err)
@@ -220,10 +226,10 @@ func CheckHubCeiling(c *agentv1.Ceiling) error {
 		}
 		return nil
 	}
-	if err := entries("logs", c.GetLogs()); err != nil {
+	if err := entries("logs", c.GetLogs(), logManagers); err != nil {
 		return err
 	}
-	if err := entries("restart", c.GetRestart()); err != nil {
+	if err := entries("restart", c.GetRestart(), restartManagers); err != nil {
 		return err
 	}
 	for _, e := range c.GetScan() {

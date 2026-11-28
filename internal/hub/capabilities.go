@@ -28,7 +28,9 @@ import (
 
 // What "on" means for a capability with a list: everything of it.
 var (
-	// AllLogs are the log entries of logs "on": every source.
+	// AllLogs are the log entries of logs "on": every source but the
+	// Windows event log (eventlog:CHANNEL), which is allowed by name: an
+	// agent older than it refuses a ceiling that names it, whole.
 	AllLogs = []string{"systemd:*", "systemd-user:*", "docker:*"}
 	// AllRestart are the restart entries of restart "on": every service.
 	AllRestart = []string{"systemd:*", "systemd-user:*", "docker:*"}

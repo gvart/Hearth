@@ -51,8 +51,9 @@ const (
 // errJournalCorrupt is output of journalctl that is not export format.
 var errJournalCorrupt = errors.New("corrupt journal export")
 
-// Log managers a ceiling entry or a LogRequest may name.
-var logManagers = []string{"systemd", "systemd-user", "docker"}
+// Log managers a ceiling entry or a LogRequest may name. eventlog, the
+// Windows event log, is read through wevtapi.dll, not a command.
+var logManagers = []string{"systemd", "systemd-user", "docker", "eventlog"}
 
 // ParseLogs checks a Ceiling.Logs entry: manager:pattern.
 func ParseLogs(entry string) error {
@@ -98,6 +99,9 @@ type logStreams struct {
 	log *slog.Logger
 	// argv builds the command of a source; logArgv, or a fake in tests.
 	argv func(src *agentv1.LogSource, tail int) []string
+	// eventLog follows an event log channel, adding its last tail events
+	// first, until ctx is done (nil then); readEventLog, or a fake in tests.
+	eventLog func(ctx context.Context, channel string, tail int, add func(*agentv1.LogLine)) error
 	// freeMemory runs once the last active source is gone:
 	// debug.FreeOSMemory, so the agent idles as small after streaming as
 	// before, instead of keeping the heap a burst of lines grew.
@@ -119,7 +123,7 @@ type logStreams struct {
 
 func newLogStreams(c Ceiling, log *slog.Logger) *logStreams {
 	return &logStreams{
-		ceiling: c, log: log, argv: logArgv, freeMemory: debug.FreeOSMemory,
+		ceiling: c, log: log, argv: logArgv, eventLog: readEventLog, freeMemory: debug.FreeOSMemory,
 		sources: map[string]*logSource{}, cancels: map[string]context.CancelFunc{},
 		srcs: map[string]*agentv1.LogSource{}, revoked: map[string]bool{},
 	}
@@ -254,11 +258,18 @@ func (l *logStreams) acquireLocked(src *agentv1.LogSource, tail int) (*logSource
 	ctx, stop := context.WithCancel(context.Background())
 	s := &logSource{key: key, refs: 1, stop: stop, changed: make(chan struct{})}
 	l.sources[key] = s
-	argv := l.argv(src, tail)
-	manager := src.GetManager()
+	manager, name := src.GetManager(), src.GetName()
+	var argv []string
+	if manager != "eventlog" {
+		argv = l.argv(src, tail)
+	}
 	held := s // the goroutine's only reference, dropped before freeing memory
 	l.procs.Go(func() {
-		held.end(l.run(ctx, manager, argv, held))
+		if manager == "eventlog" {
+			held.end(l.runEventLog(ctx, name, tail, held))
+		} else {
+			held.end(l.run(ctx, manager, argv, held))
+		}
 		stop()
 		held = nil
 		l.mu.Lock()
@@ -342,6 +353,20 @@ func (l *logStreams) run(ctx context.Context, manager string, argv []string, s *
 		msg += ": " + tail
 	}
 	return errors.New(msg)
+}
+
+// runEventLog follows the event log channel until ctx is done or the
+// reader fails, appending each event to s. It returns why the source
+// ended; nil when ctx was canceled.
+func (l *logStreams) runEventLog(ctx context.Context, channel string, tail int, s *logSource) error {
+	err := l.eventLog(ctx, channel, tail, s.append)
+	if ctx.Err() != nil {
+		return nil
+	}
+	if err == nil {
+		err = fmt.Errorf("event log %s ended", channel)
+	}
+	return err
 }
 
 // readLogLine reads one line without its newline, at most limit bytes of

@@ -29,9 +29,18 @@ Each entry is `manager:name`, where the name may be a glob (`*`, `?`, `[...]`):
 | `systemd:UNIT` | `journalctl --unit=UNIT --follow` |
 | `systemd-user:UNIT` | `journalctl --user-unit=UNIT --follow`: the agent user's own `systemctl --user` units |
 | `docker:CONTAINER` | `docker logs --follow --timestamps CONTAINER`, stdout and stderr |
+| `eventlog:CHANNEL` | the Windows event log channel `CHANNEL` (`Application`, `System`, `Microsoft-Windows-PowerShell/Operational`), Windows only |
 
 `systemd:*` does not cover user units, and the agent runs no shell: the name is passed to
-`journalctl` or `docker` as one argument. The agent's user needs read access to the journal (root,
+`journalctl` or `docker` as one argument, or to the Windows Event Log API as the channel.
+
+**Windows.** "Logs on" allows the systemd and Docker sources, not the event log: allow its channels
+by name, for example `--set 'logs=eventlog:Application,eventlog:System'`. A glob does not cross a
+`/`, so `eventlog:*` covers `Application`, `System`, `Setup` and other top-level channels but not
+`Microsoft-Windows-…/Operational` ones: name those, or allow `eventlog:*/*`. `eventlog:Security`
+holds sign-in events: allow it only if you mean to. Each event is one line: its level, provider
+and event ID, then its message (rendered from the provider's message file, or its data values when
+it has none), at most 4 KiB. The agent's user needs read access to the journal (root,
 or the `systemd-journal` or `adm` group, for system units, and for user units where the journal is
 not split per user) and to the Docker socket.
 
@@ -65,3 +74,6 @@ before asking, and the agent checks again before it starts `journalctl` or `dock
 - When the browser goes away (tab closed, network lost) the hub tells the agent to stop. A viewer
   that reads too slowly loses old lines (the viewer says how many) rather than slowing the agent.
 - Lines longer than 4 KiB are cut.
+- On Windows the agent reads the event log through `wevtapi.dll` (`EvtSubscribe` for new events,
+  a reverse `EvtQuery` for the last ones): no process is started. An event whose XML is over
+  256 KiB shows as unreadable, and a message over 32 K characters gives way to the event's data.

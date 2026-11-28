@@ -137,8 +137,8 @@ func newAgentRunCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&ceiling.Probe, "allow-probe", false,
 		"let the hub run HTTP, TCP and DNS checks from this device, against anything it can reach")
 	cmd.Flags().StringArrayVar(&ceiling.Logs, "allow-logs", nil,
-		"log the hub may stream from here, as systemd:UNIT, systemd-user:UNIT or docker:CONTAINER, where the\n"+
-			"name may be a glob (systemd:*, docker:*); repeatable")
+		"log the hub may stream from here, as systemd:UNIT, systemd-user:UNIT, docker:CONTAINER or (Windows)\n"+
+			"eventlog:CHANNEL, where the name may be a glob (systemd:*, docker:*); repeatable")
 	cmd.Flags().BoolVar(&ceiling.Shell, "allow-shell", false,
 		"let an admin open an interactive shell on this device from the web UI, as this agent's user")
 	cmd.Flags().StringArrayVar(&ceiling.Scan, "allow-scan", nil,

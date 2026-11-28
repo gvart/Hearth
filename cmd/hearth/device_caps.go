@@ -38,7 +38,8 @@ func newDeviceCapabilitiesCmd() *cobra.Command {
 			"  shell, probe, net-edges  on | off\n" +
 			"  docker                   on (list, logs, start, stop, restart) | read (list, logs) | off\n" +
 			"  logs, restart            on (every source or service) | off | manager:name,... (systemd,\n" +
-			"                           systemd-user or docker; a name may be a glob such as docker:*)\n" +
+			"                           systemd-user or docker, and eventlog for logs (Windows; not in on);\n" +
+			"                           a name may be a glob such as docker:*)\n" +
 			"  scan                     on (the private IPv4 ranges) | off | CIDR,...\n" +
 			"  exec                     off | /absolute/path,... (no on: name each program)\n" +
 			"  plugins                  off | name[:class][@latest],... (the plugins uploaded with `hearth\n" +

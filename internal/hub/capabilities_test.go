@@ -51,12 +51,12 @@ func TestCapabilitiesSetAndRaise(t *testing.T) {
 		t.Fatalf("capabilities = %+v", got)
 	}
 
-	// Logs on, Docker read, net edges: no re-auth.
-	resp := f.do(t, http.MethodPut, capsPath, `{"hub":{"logs":["systemd:*","docker:*"],"docker_read":true,"net_edges":true}}`, stale)
+	// Logs on (the event log too), Docker read, net edges: no re-auth.
+	resp := f.do(t, http.MethodPut, capsPath, `{"hub":{"logs":["systemd:*","docker:*","eventlog:Application"],"docker_read":true,"net_edges":true}}`, stale)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("set = %d %s", resp.StatusCode, resp.body)
 	}
-	if got := decode[CapabilitiesJSON](t, resp); !slices.Equal(got.Hub.Logs, []string{"systemd:*", "docker:*"}) || got.UpdatedBy == "" {
+	if got := decode[CapabilitiesJSON](t, resp); !slices.Equal(got.Hub.Logs, []string{"systemd:*", "docker:*", "eventlog:Application"}) || got.UpdatedBy == "" {
 		t.Errorf("after set = %+v", got)
 	}
 	if e := auditOf(t, f, policy.DeviceCapabilitiesSet); len(e) == 0 || !strings.Contains(string(e[0].Detail), `"logs"`) {
@@ -113,6 +113,8 @@ func TestCapabilitiesRefused(t *testing.T) {
 	for _, body := range []string{
 		`{"hub":{"exec":["df"]}}`,
 		`{"hub":{"logs":["syslog:*"]}}`,
+		`{"hub":{"logs":["eventlog:"]}}`,
+		`{"hub":{"restart":["eventlog:System"]}}`,
 		`{"hub":{"scan":["fe80::/64"]}}`,
 		`{"hub":{"root":true}}`,
 	} {

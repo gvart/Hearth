@@ -952,8 +952,8 @@ type Ceiling struct {
 	// from this device. Reported by agents of protocol minor 3 and later.
 	Probe bool `protobuf:"varint,3,opt,name=probe,proto3" json:"probe,omitempty"`
 	// logs are the log sources the hub may read, as manager:pattern, where
-	// manager is "systemd", "systemd-user" or "docker" and pattern a name or a
-	// glob (path.Match) such as "*". Reported by agents of protocol minor 5
+	// manager is "systemd", "systemd-user", "docker" or "eventlog" (a Windows
+	// event log channel) and pattern a name or a glob (path.Match) such as "*". Reported by agents of protocol minor 5
 	// and later.
 	Logs []string `protobuf:"bytes,4,rep,name=logs,proto3" json:"logs,omitempty"`
 	// shell allows ShellRequests: the hub may open an interactive shell, on a
@@ -2392,13 +2392,14 @@ func (x *LogRequest) GetTail() uint32 {
 	return 0
 }
 
-// LogSource names a log: a systemd unit, a user's systemd unit, or a Docker
-// container.
+// LogSource names a log: a systemd unit, a user's systemd unit, a Docker
+// container or a Windows event log channel.
 type LogSource struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// manager is "systemd", "systemd-user" (journalctl --user) or "docker".
+	// manager is "systemd", "systemd-user" (journalctl --user), "docker" or
+	// "eventlog" (Windows).
 	Manager string `protobuf:"bytes,1,opt,name=manager,proto3" json:"manager,omitempty"`
-	// name is the unit or container.
+	// name is the unit, container or channel (such as System).
 	Name          string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

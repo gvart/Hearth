@@ -7,6 +7,7 @@ const managerLabel: Record<string, string> = {
   systemd: 'systemd unit',
   'systemd-user': 'user unit',
   docker: 'container',
+  eventlog: 'event log',
 };
 
 /** The log sources a device's agent allows, each opening a live log view. */

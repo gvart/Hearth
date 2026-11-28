@@ -198,8 +198,11 @@ agent on Windows does not upgrade itself yet, so **Upgrade agent** on its page r
 installer instead. `-Uninstall` removes the service and the binary, `-Uninstall -Purge` the
 identity too. Without the installer, `hearth agent service install` (from an elevated shell) does
 the service part: run it before `hearth agent join`, then `Start-Service hearth-agent`. Interactive
-terminals and network edges are not available on Windows, and the web UI cannot stream the event
-log yet.
+terminals and network edges are not available on Windows.
+
+The web UI streams the Windows event log once its channels are allowed by name, for example
+`hearth device capabilities <device-id> --set 'logs=eventlog:Application,eventlog:System'`, or
+**Logs** → **Restrict to…** in the device's **Capabilities** card; see [Logs](logs.md).
 
 ## 5. See it
 
