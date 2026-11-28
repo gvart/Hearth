@@ -1,0 +1,98 @@
+internal/policy/policy.go
+  s_18b57982fdff93::t_dee43f4e93ec3e 81-86,480-485
+internal/policy/ceiling.go
+  s_18b57982fdff93::t_dee43f4e93ec3e 37-38,205-206,237-238
+  s_18b57982fdff93::t_5c60cd36073442 239
+internal/agent/vip_linux.go
+  s_18b57982fdff93::t_9ae15e038564e2 21-29
+  s_18b57982fdff93::t_f0a338081d3996 1-20,30-60
+internal/policy/guardrails_test.go
+  s_18b57982fdff93::t_003c20264d06c8 147-148
+internal/automation/action_vip_test.go
+  s_18b57982fdff93::t_015ffa3d21358c 1-143
+internal/policy/vip_test.go
+  s_18b57982fdff93::t_cba2a45fe61266 1-5,7-114,116-118,121-127
+  s_18b57982fdff93::t_9b0f63159bd807 6,115,119-120
+examples/automations/pihole-selfheal.yaml
+  s_18b57982fdff93::t_ab93b202cbf0db 1-46
+internal/automation/action_vip.go
+  s_18b57982fdff93::t_11c1e2e787da37 1-54
+internal/hub/capabilities.go
+  s_18b57982fdff93::t_78beb364031a77 25-26,159,192-193,425,433,490-494
+  s_18b57982fdff93::t_a0d06e111317ff 228
+web/test/capabilities.test.mjs
+  s_18b57982fdff93::t_36303f0d1f5409 58-59,78
+internal/agent/vip.go
+  s_18b57982fdff93::t_1657ce5f41931f 107,118-134,140,142,148,154-166,168
+  s_18b57982fdff93::t_069322ce7bdaa3 1-106,108-117,135-139,141,143-147,149-153,167,169-181
+internal/agent/vip_linux_test.go
+  s_18b57982fdff93::t_66e817a9e07864 1-53,57-60,62-85,87-108
+  s_18b57982fdff93::t_6d976fff96a597 54-56,61,86
+web/src/runbookdoc.ts
+  s_18b57982fdff93::t_a215549a498f0f 96-97,99,103-104
+web/src/components/DeviceCapabilities.tsx
+  s_18b57982fdff93::t_a235a3797bbbf7 236,285,323-325,445-446
+cmd/hearth/agent.go
+  s_18b57982fdff93::t_ec2d65308bbc18 68-70,104-111,167-169
+internal/agent/vip_test.go
+  s_18b57982fdff93::t_3c7e4df09c1263 1-7,9-77,79-223
+  s_18b57982fdff93::t_9ae15e038564e2 8,78
+internal/hub/capabilities_test.go
+  s_18b57982fdff93::t_d351119f31395b 72,119-121,177-179
+  s_18b57982fdff93::t_486942059cb2b9 228-246
+internal/agent/exec.go
+  s_18b57982fdff93::t_5f2b4fca66136d 60-62,95,128-130
+docs/guardrails.md
+  s_18b57982fdff93::t_3a105146c9e491 242,248-249,256,262
+examples/automations/pihole-watchdog.yaml
+  s_18b57982fdff93::t_2e75292b9c1858 1-30
+web/src/api/client.ts
+  s_18b57982fdff93::t_a235a3797bbbf7 63-64
+internal/agent/run.go
+  s_18b57982fdff93::t_5f2b4fca66136d 713-714
+docs/automations.md
+  s_18b57982fdff93::t_3a105146c9e491 341-342,365-368,394-396
+  s_18b57982fdff93::t_a921d7cc8e1d60 406-469,471-486
+  s_18b57982fdff93::t_34c6a2397e38b1 470
+internal/agent/ceiling.go
+  s_18b57982fdff93::t_5f2b4fca66136d 41,60,69,74-75,82-84
+docs/getting-started.md
+  s_18b57982fdff93::t_d6e8fa2689a35d 340-341
+cmd/hearth/device_caps.go
+  s_18b57982fdff93::t_a0d06e111317ff 44-45,52,223-224
+proto/hearth/agent/v1/agent.proto
+  s_18b57982fdff93::t_9ce5b47ab89789 189-193,323,327-339
+  s_18b57982fdff93::t_6d49a925f1fbfe 340-341
+internal/policy/vip.go
+  s_18b57982fdff93::t_38164a6f0e2f5f 1-115
+internal/hub/facts.go
+  s_18b57982fdff93::t_78beb364031a77 78-80,100,109
+examples/automations/selfheal-demo.sh
+  s_18b57982fdff93::t_555b73e606958b 1-44,47-50,53-125
+  s_18b57982fdff93::t_ca3953b7dc810c 45-46,51-52
+web/src/capabilities.ts
+  s_18b57982fdff93::t_a235a3797bbbf7 40,65,100-101,158,164,223-227,254-256,272-273,283
+internal/agent/vip_other.go
+  s_18b57982fdff93::t_9ed08bff9d67e2 1-21
+internal/automation/action_device.go
+  s_18b57982fdff93::t_d41ed4eda35a4c 46-47,57-60
+  s_18b57982fdff93::t_003c20264d06c8 54-56
+internal/proto/hearth/agent/v1/agent.pb.go
+  s_18b57982fdff93::t_7b5a617c893ef4 985-990,1095-1101,1805,1880-1888,1901-1904,1909-1979,1992,2004,2017,2040,2052,2065,2104,2116,2129,2216,2228,2241,2269,2281,2294,2317,2329,2342,2375,2387,2400,2443,2455,2468,2506,2518,2531,2558,2570,2583,2615,2627,2640,2697,2709,2722,2748,2760,2773,2798,2810,2823,2936,2948,2961,2982,2994,3007,3033,3045,3058,3078,3090,3103,3182,3194,3207,3234,3246,3259,3302,3314,3327,3369,3381,3394,3439,3451,3464,3511,3523,3536,3572,3584,3597,3634,3646,3659,3712,3724,3737,3822,3834,3847,3864,3876,3889,3919,3931,3944,3986,3998,4011,4086,4098,4111,4184,4196,4209,4260,4272,4285,4324,4336,4349,4420,4432,4445,4480,4492,4505,4557,4569,4582,4646,4658,4671,4750,4762,4775,4823,4835,4848,4956,4968,4981,5022,5034,5047,5071,5083,5096,5154,5166,5179,5212,5224,5237,5316,5328,5341,5388,5400,5413,5479,5491,5504,5562,5574,5587,5628,5640,5653,5707,5719,5732,5846,5859-5860,5911,5916-5922,6188,6208-6263,6271-6279,6282-6288,6291-6294,6302-6303,6305-6367,6411,6413,6418,6425,6430,6435,6439,6443,6453
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "8f58097e957ed7ea0b64b6ccf9dbb1bcd5fdd5cc",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
