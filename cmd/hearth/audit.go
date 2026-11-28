@@ -64,12 +64,18 @@ func printAuditReport(out io.Writer, rep hub.AuditVerifyJSON) {
 		p("This hub holds no hub CA key (a storage-only member): it cannot check seals, only the sequence numbers.\n")
 	}
 	p("%d entries: %d legacy (written before sealing started), %d without a seal since\n", rep.Entries, rep.Legacy, rep.Unsealed)
+	verified := 0
 	for _, c := range rep.Chains {
-		status := "OK"
-		if !c.OK() {
-			status = "NOT OK"
+		verified += c.Verified
+	}
+	// Each hub, and each admin command run on a master's host, seals in a
+	// chain of its own: only the chains with a problem are listed.
+	p("%d chains, %d entries verified\n", len(rep.Chains), verified)
+	for _, c := range rep.Chains {
+		if c.OK() {
+			continue
 		}
-		p("%s: entries 1-%d, %d verified: %s\n", c.Origin, c.Last, c.Verified, status)
+		p("%s: entries 1-%d, %d verified: NOT OK\n", c.Origin, c.Last, c.Verified)
 		for _, m := range c.Missing {
 			if m.From == m.To {
 				p("  entry %d from %s missing\n", m.From, c.Origin)

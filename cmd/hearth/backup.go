@@ -78,7 +78,15 @@ func openBackupStore(ctx context.Context, dataDir string) (*store.Store, error) 
 	if cluster.IsMember(dataDir) {
 		return openHubStore(ctx, dataDir)
 	}
-	return store.Open(ctx, filepath.Join(dataDir, dbFile), store.WithoutUpgrade())
+	st, err := store.Open(ctx, filepath.Join(dataDir, dbFile), store.WithoutUpgrade())
+	if err != nil {
+		return nil, err
+	}
+	if err := sealCLIAudit(st, dataDir); err != nil {
+		_ = st.Close()
+		return nil, err
+	}
+	return st, nil
 }
 
 func runBackup(ctx context.Context, opts backupOptions, output, passphrase, version string, out io.Writer) error {

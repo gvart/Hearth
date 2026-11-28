@@ -195,8 +195,8 @@ func TestAuditForgedEntriesUnverified(t *testing.T) {
 	if rep.OK() || rep.Unsealed != 1 || !reflect.DeepEqual(c.Unverified, []int64{2, 3}) || c.Verified != 1 {
 		t.Fatalf("report = %+v", rep)
 	}
-	// The keyless member checks nothing.
-	if v := verifications(ctx, t, keyless); v["unsealed"] != AuditUnverified {
+	// The keyless member checks nothing; alone, its log holds no seal yet.
+	if v := verifications(ctx, t, keyless); v["unsealed"] != AuditLegacy {
 		t.Errorf("keyless member's own unsealed entry = %s", v["unsealed"])
 	}
 	if rep := verify(ctx, t, keyless); rep.CanVerify {

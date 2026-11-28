@@ -5,6 +5,7 @@ package store
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
@@ -13,7 +14,6 @@ import (
 	"math"
 	"strconv"
 	"sync"
-	"sync/atomic"
 )
 
 // Audit entry seals (#387).
@@ -185,27 +185,44 @@ const auditRawArray = `json_array(o.ts, o.actor_kind, o.actor_id, o.action, o.ta
 	coalesce(o.audit_key, ''), coalesce(o.chain_origin, ''), coalesce(o.chain_seq, 0), coalesce(o.chain_prev, ''),
 	coalesce(o.chain_kid, ''), coalesce(o.chain_mac, ''))`
 
-// auditSince returns when this database started sealing (unix ms): an entry
-// without a seal is legacy only if older. Below schema 44, never.
+// auditSince returns when the cluster started sealing (unix ms), the time of
+// its oldest sealed entry, the same on every master: an entry
+// without a seal is legacy only if older. Before any seal, or below schema
+// 44, every entry without one is legacy.
 func (s *Store) auditSince(ctx context.Context) (int64, error) {
-	if v := s.chain.since.Load(); v != 0 {
-		return v, nil
-	}
 	ok, err := atSchema(ctx, s.db, auditChainSchema)
-	if err != nil {
-		return 0, err
+	if err != nil || !ok {
+		return math.MaxInt64, err
 	}
-	since := int64(math.MaxInt64)
-	if ok {
-		// goose's tstamp is UTC, to the second.
-		if err := s.db.QueryRowContext(ctx, `SELECT coalesce(max(CAST(strftime('%s', tstamp) AS INTEGER)), 0) * 1000
-			FROM goose_db_version WHERE version_id = ? AND is_applied`, auditChainSchema).Scan(&since); err != nil {
+	// Every member answers while each holds the columns; a hub whose
+	// cluster is unreadable falls back to what it holds itself.
+	read := s.readLocal
+	if every, err := s.writesAt(ctx, auditChainSchema); err != nil {
+		return 0, err
+	} else if every {
+		read = s.readEvery
+	}
+	rows, err := read(ctx, auditFirstSealSQL)
+	if err != nil {
+		if rows, err = s.readLocal(ctx, auditFirstSealSQL); err != nil {
 			return 0, fmt.Errorf("read when the audit log started sealing: %w", err)
 		}
-		s.chain.since.Store(since)
+	}
+	since := int64(math.MaxInt64)
+	for _, vals := range rows {
+		var ts sql.NullInt64
+		if err := scanVals(vals, []any{&ts}); err != nil {
+			return 0, fmt.Errorf("read when the audit log started sealing: %w", err)
+		}
+		if ts.Valid {
+			since = min(since, ts.Int64)
+		}
 	}
 	return since, nil
 }
+
+// auditFirstSealSQL reads when the oldest sealed entry was written.
+const auditFirstSealSQL = `SELECT min(ts) FROM audit_log WHERE chain_mac IS NOT NULL`
 
 // auditChain is this member's own chain: the head its next sealed entry
 // follows. mu serializes sealed appends, so the chain has no fork: an entry
@@ -215,8 +232,6 @@ type auditChain struct {
 	loaded bool
 	seq    int64
 	mac    string
-	// since caches auditSince.
-	since atomic.Int64
 }
 
 // sealsAudit reports whether the store's appends are sealed: it has a

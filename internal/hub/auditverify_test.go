@@ -38,10 +38,10 @@ func TestAPIAuditVerify(t *testing.T) {
 		t.Errorf("entry = %+v, want verified and sealed", e)
 	}
 	v := decode[AuditVerifyJSON](t, f.do(t, http.MethodGet, "/api/v1/audit/verify", "", c))
-	// The fixture's entries written before the sealer was set (its admin
-	// password) are unsealed, after sealing started; the rest is one chain.
+	// The fixture's entries written before the first seal (its admin
+	// password) are legacy; the rest is one chain.
 	ch := v.Chains
-	if v.OK || !v.CanVerify || v.Unsealed == 0 || len(ch) != 1 || ch[0].Verified != int(ch[0].Last) || !ch[0].OK() {
+	if !v.OK || !v.CanVerify || v.Legacy == 0 || v.Unsealed != 0 || len(ch) != 1 || ch[0].Verified != int(ch[0].Last) {
 		t.Errorf("verify = %+v", v)
 	}
 }

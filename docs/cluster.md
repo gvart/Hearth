@@ -384,13 +384,14 @@ key. A storage-only member has no CA key, so it cannot seal an entry. When a mas
 
 - **verified**: its seal checks;
 - **unverified**: its seal does not check: forged, changed, or sealed with a key the master does not know;
-- **legacy**: written before sealing started (before the upgrade that added it), with nothing to check;
+- **legacy**: no seal, and older than the oldest sealed entry of the cluster (written before sealing started), so nothing to check;
 - **unchecked**: on a hub without the CA key, which cannot check seals.
 
 `hearth audit verify` (and `GET /api/v1/audit/verify`) also reads each master's chain end to end and
 reports what is missing ("entries 120-131 from hub-a missing"), what does not follow the entry before
 it (moved or replaced), sequence numbers taken twice, and entries without a seal written since
-sealing started. A hub CA rotation keeps the old entries verifiable: each master stores the audit key
+sealing started. Admin commands run on a master's host (`hearth token create`, `hearth backup`, ...)
+seal their entries too, each command in a chain of its own. A hub CA rotation keeps the old entries verifiable: each master stores the audit key
 of every CA key it holds in the masters-only `audit_keys` table, sealed with a key derived from the CA
 key like the integration secrets, and the rotation's finish re-seals it with the new CA's key. Neither
 the CA key nor a key derived from it is ever stored in the clear; a demoted master forgets them.

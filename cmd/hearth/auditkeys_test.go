@@ -152,3 +152,31 @@ func auditRows(ctx context.Context, t *testing.T, st *store.Store) []store.Mutat
 	}
 	return muts
 }
+
+// An admin command run on a master's host seals its audit entries, in a
+// chain of its own: a backup or a token made there does not read as forged.
+func TestAdminCommandsSealTheirAudit(t *testing.T) {
+	t.Setenv(passphraseEnv, testBackupPassphrase)
+	dir, ca := initHub(t)
+	for range 2 {
+		if _, err := execute(t, "token", "create", "--data-dir", dir); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := execute(t, "backup", filepath.Join(t.TempDir(), "hub.hbk"), "--data-dir", dir); err != nil {
+		t.Fatal(err)
+	}
+	st := openStore(t, dir)
+	ring, err := pki.NewAuditKeyring(ca)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.SetAuditSealer(ring)
+	rep, err := st.Audit().Verify(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rep.OK() || rep.Unsealed != 0 || len(rep.Chains) != 3 {
+		t.Errorf("verify = %+v, want three sealed chains, one per command", rep)
+	}
+}

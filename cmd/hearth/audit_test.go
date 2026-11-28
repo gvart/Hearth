@@ -30,7 +30,7 @@ func TestAuditVerifyCmd(t *testing.T) {
 				CanVerify: true, Entries: 12, Legacy: 2,
 				Chains: []store.AuditChainReport{{Origin: "hub-a", Last: 10, Verified: 10}},
 			}},
-			want: []string{"12 entries: 2 legacy", "hub-a: entries 1-10, 10 verified: OK", "The audit log verifies."},
+			want: []string{"12 entries: 2 legacy", "1 chains, 10 entries verified", "The audit log verifies."},
 		},
 		{
 			name: "gaps",

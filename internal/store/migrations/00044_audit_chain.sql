@@ -6,9 +6,9 @@
 -- master), chain_seq (1, 2, 3, ... per master) and chain_prev (the
 -- chain_mac of the master's entry before). A member without the CA key
 -- cannot make a valid entry; a missing sequence number is a deleted entry.
--- Entries written before this migration have none of these: legacy. When
--- this migration ran (goose_db_version.tstamp) is when sealing started: an
--- entry without a seal is legacy only if it is older.
+-- Entries written before sealing started (the oldest sealed entry of the
+-- cluster) have none of these: legacy. One without a seal written since is
+-- not.
 
 -- +goose Up
 ALTER TABLE audit_log ADD COLUMN chain_origin TEXT;
@@ -18,6 +18,7 @@ ALTER TABLE audit_log ADD COLUMN chain_kid TEXT;
 ALTER TABLE audit_log ADD COLUMN chain_mac TEXT;
 
 CREATE INDEX audit_log_chain ON audit_log (chain_origin, chain_seq) WHERE chain_origin IS NOT NULL;
+CREATE INDEX audit_log_sealed_ts ON audit_log (ts) WHERE chain_mac IS NOT NULL;
 
 -- The audit MAC keys of earlier hub CAs, each sealed (AES-256-GCM) with a key
 -- derived from the hub CA key the masters hold now, and sealed again with the
@@ -34,6 +35,7 @@ CREATE TABLE audit_keys (
 
 -- +goose Down
 DROP TABLE audit_keys;
+DROP INDEX audit_log_sealed_ts;
 DROP INDEX audit_log_chain;
 ALTER TABLE audit_log DROP COLUMN chain_mac;
 ALTER TABLE audit_log DROP COLUMN chain_kid;
