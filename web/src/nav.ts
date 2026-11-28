@@ -16,6 +16,7 @@ export type Page =
   | 'access'
   | 'policy'
   | 'backup'
+  | 'ai'
   | 'integrations'
   | 'deviceplugins';
 
@@ -76,6 +77,7 @@ export const sheets: Sheet[] = [
       { id: 'access', label: 'Access', hash: '#/settings/access' },
       { id: 'policy', label: 'Policy', hash: '#/settings/policy' },
       { id: 'notifications', label: 'Notifications', hash: '#/notifications' },
+      { id: 'ai', label: 'AI', hash: '#/settings/ai' },
       { id: 'backup', label: 'Backup', hash: '#/settings/backup' },
       { id: 'integrations', label: 'Integrations', hash: '#/settings/integrations' },
       { id: 'deviceplugins', label: 'Device plugins', hash: '#/settings/device-plugins' },

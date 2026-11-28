@@ -23,7 +23,7 @@ import (
 
 func newAgentCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "agent", Short: "Run or manage the Hearth agent on this device"}
-	cmd.AddCommand(newAgentJoinCmd(), newAgentRunCmd(), newAgentMakeHubCmd())
+	cmd.AddCommand(newAgentJoinCmd(), newAgentRunCmd(), newAgentMakeHubCmd(), newAgentServiceCmd())
 	return cmd
 }
 
@@ -111,18 +111,21 @@ func newAgentRunCmd() *cobra.Command {
 				}
 				mirror = m
 			}
-			connected, failed, stop := agent.TuneRuntime()
-			defer stop()
-			return agent.Run(cmd.Context(), agent.Config{
-				DataDir:       dataDir,
-				Version:       cmd.Root().Version,
-				Log:           newLogger(cmd.ErrOrStderr()),
-				Ceiling:       ceiling,
-				LocalCeiling:  localCeiling,
-				ReleaseMirror: mirror,
-				DockerSocket:  dockerSocket,
-				Connected:     connected,
-				Failed:        failed,
+			// Under the Windows service manager, the agent runs as its service.
+			return agent.RunService(cmd.Context(), cmd.ErrOrStderr(), func(ctx context.Context, logOut io.Writer) error {
+				connected, failed, stop := agent.TuneRuntime()
+				defer stop()
+				return agent.Run(ctx, agent.Config{
+					DataDir:       dataDir,
+					Version:       cmd.Root().Version,
+					Log:           newLogger(logOut),
+					Ceiling:       ceiling,
+					LocalCeiling:  localCeiling,
+					ReleaseMirror: mirror,
+					DockerSocket:  dockerSocket,
+					Connected:     connected,
+					Failed:        failed,
+				})
 			})
 		},
 	}

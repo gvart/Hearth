@@ -28,6 +28,10 @@ export function PanelsPage() {
   const devices = useDevices();
   const [editing, setEditing] = useState<Panel | 'new' | null>(null);
   const [sharing, setSharing] = useState<Panel | null>(null);
+  // The delete lives here, not on the card, so its reach is still shown
+  // once the deleted panel's card is gone.
+  const del = useDeletePanel();
+  const [deletedName, setDeletedName] = useState('');
   const list = panels.data ?? [];
   const byId = new Map((devices.data ?? []).map((d) => [d.id, d]));
 
@@ -53,6 +57,12 @@ export function PanelsPage() {
           New panel
         </button>
       </div>
+
+      {del.isSuccess && del.data ? (
+        <p className="notice small" role="status">
+          Deleted {deletedName}: {del.data.message}.
+        </p>
+      ) : null}
 
       {panels.isError ? (
         <div className="error-box" role="alert">
@@ -80,6 +90,11 @@ export function PanelsPage() {
               }}
               onShare={() => {
                 setSharing(p);
+              }}
+              del={del}
+              onDelete={() => {
+                setDeletedName(p.name);
+                del.mutate(p.id);
               }}
             />
           ))}
@@ -114,14 +129,20 @@ function PanelCard({
   devices,
   onEdit,
   onShare,
+  del,
+  onDelete,
 }: {
   panel: Panel;
   devices: Map<string, Device>;
   onEdit: () => void;
   onShare: () => void;
+  /** The page's panel delete, shared by every card. */
+  del: ReturnType<typeof useDeletePanel>;
+  onDelete: () => void;
 }) {
-  const del = useDeletePanel();
   const revoke = useRevokePanelLink();
+  // The delete's error, if it was this panel's.
+  const delError = del.isError && del.variables === panel.id ? del.error : null;
   const active = panel.links.filter((l) => l.status === 'active');
   const [deleting, setDeleting] = useState(false);
   const buttons = panel.widgets.reduce((n, w) => n + w.actions.length, 0);
@@ -209,9 +230,9 @@ function PanelCard({
           ))}
         </ul>
       )}
-      {del.isError || revoke.isError ? (
+      {delError || revoke.isError ? (
         <p className="error" role="alert">
-          {(del.error ?? revoke.error)?.message}
+          {(delError ?? revoke.error)?.message}
         </p>
       ) : null}
       {revoke.data ? (
@@ -226,9 +247,9 @@ function PanelCard({
           confirmLabel="Delete panel"
           pendingLabel="Deleting…"
           pending={del.isPending}
-          error={del.isError ? del.error.message : undefined}
+          error={delError?.message}
           onConfirm={() => {
-            del.mutate(panel.id);
+            onDelete();
           }}
           onClose={() => {
             setDeleting(false);

@@ -74,10 +74,56 @@ type Manifest struct {
 	// class. The hub sends no other command.
 	Commands []CommandSpec `yaml:"commands"`
 
+	// Runtime is how the plugin runs: RuntimeExec (the default, also when
+	// empty), a program the hub starts as a child process; or RuntimeWasm,
+	// a WebAssembly module (WASI preview 1) the hub runs in a sandbox, with
+	// Command its .wasm file.
+	Runtime string `yaml:"runtime"`
+	// SHA256 pins the program, or the .wasm module, by its SHA-256 in
+	// lower-case hex: the hub refuses to start another. Empty pins nothing.
+	SHA256 string `yaml:"sha256"`
+	// Memory caps a WASM plugin's memory, in MiB: default 64, at most 1024.
+	Memory int `yaml:"memory"`
+	// Host are the host functions a WASM plugin may call; it may call no
+	// other.
+	Host HostGrants `yaml:"host"`
+
 	// Dir is the manifest's directory: the plugin's working directory, and
 	// the base of a relative Command.
 	Dir string `yaml:"-"`
 }
+
+// Runtimes a manifest may name.
+const (
+	RuntimeExec = "exec"
+	RuntimeWasm = "wasm"
+)
+
+// Bounds of a WASM plugin's memory, in MiB.
+const (
+	defaultWasmMemory = 64
+	maxWasmMemory     = 1024
+)
+
+// HostGrants are the host functions a manifest grants a WASM plugin. None
+// is granted unless named.
+type HostGrants struct {
+	// HTTP lets the plugin make HTTP requests to the hosts it allows.
+	HTTP *HTTPGrant `yaml:"http" json:"http,omitempty"`
+}
+
+// HTTPGrant is the http host function's grant.
+type HTTPGrant struct {
+	// Allow are the hosts the plugin may reach, each as host:port, matched
+	// exactly (the host case-insensitively).
+	Allow []string `yaml:"allow" json:"allow"`
+}
+
+// maxHTTPAllow bounds an http grant's hosts.
+const maxHTTPAllow = 32
+
+// IsWasm reports whether m is a WASM plugin.
+func (m Manifest) IsWasm() bool { return m.Runtime == RuntimeWasm }
 
 // CommandSpec is a command a plugin declares.
 type CommandSpec struct {
@@ -152,7 +198,58 @@ func (m Manifest) Validate() error {
 			errs = append(errs, fmt.Errorf("commands.%s: class %q (want read, safe or dangerous)", c.Name, c.Class))
 		}
 	}
+	errs = append(errs, m.validateRuntime()...)
 	return errors.Join(errs...)
+}
+
+// validateRuntime checks the runtime and the fields that go with it.
+func (m Manifest) validateRuntime() []error {
+	var errs []error
+	if m.SHA256 != "" && !ValidSHA256(m.SHA256) {
+		errs = append(errs, errors.New("sha256: want 64 lower-case hex digits"))
+	}
+	switch m.Runtime {
+	case "", RuntimeExec:
+		if m.Memory != 0 {
+			errs = append(errs, errors.New("memory is for a wasm plugin"))
+		}
+		if m.Host.HTTP != nil {
+			errs = append(errs, errors.New("host functions are for a wasm plugin"))
+		}
+		return errs
+	case RuntimeWasm:
+	default:
+		return append(errs, fmt.Errorf("runtime %q: want exec or wasm", m.Runtime))
+	}
+	if len(m.Env) > 0 {
+		errs = append(errs, errors.New("env is not for a wasm plugin: it runs with no environment but HEARTH_PLUGIN"))
+	}
+	if m.Command != "" && !filepath.IsAbs(m.Command) &&
+		!strings.ContainsRune(m.Command, '/') && !strings.ContainsRune(m.Command, filepath.Separator) {
+		errs = append(errs, fmt.Errorf("command %q: a wasm plugin's module is a path, such as ./%s", m.Command, m.Command))
+	}
+	if m.Memory < 0 || m.Memory > maxWasmMemory {
+		errs = append(errs, fmt.Errorf("memory: want 1-%d MiB, not %d", maxWasmMemory, m.Memory))
+	}
+	if g := m.Host.HTTP; g != nil {
+		if len(g.Allow) == 0 || len(g.Allow) > maxHTTPAllow {
+			errs = append(errs, fmt.Errorf("host.http.allow: want 1-%d host:port", maxHTTPAllow))
+		}
+		for _, a := range g.Allow {
+			if _, err := allowedHost(a); err != nil {
+				errs = append(errs, fmt.Errorf("host.http.allow: %w", err))
+			}
+		}
+	}
+	return errs
+}
+
+// wasmMemory is a WASM plugin's memory cap, in MiB.
+func (m Manifest) wasmMemory() int {
+	if m.Memory == 0 {
+		return defaultWasmMemory
+	}
+	return m.Memory
 }
 
 // commandAction is the policy action of a command of class.

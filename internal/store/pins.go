@@ -4,9 +4,9 @@ package store
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 )
 
@@ -60,26 +60,84 @@ func (r Certs) Record(ctx context.Context, c CertRecord) error {
 	return nil
 }
 
+// ErrPinDisagreement is returned by Certs.Fingerprint when the replicas of a
+// certificate record different fingerprints for it (#387): one of them is
+// forged, and no one replica's word decides.
+var ErrPinDisagreement = errors.New("the replicas of the certificate record different fingerprints")
+
+// pinConflict is the fingerprint two different fingerprints of one
+// certificate merge into (tableSpec.setOnceExact): no certificate has it, as
+// it is no hex.
+const pinConflict = "conflict"
+
 // Fingerprint returns the fingerprint recorded for the certificate with
 // serial issued to deviceID: empty when none is, as for a certificate issued
 // before CertPinsSchema and not pinned since. It fails with ErrNotFound for an
 // unknown certificate and with ErrSchemaTooOld below CertPinsSchema.
+//
+// In a sharded cluster it asks every live replica of the certificate
+// (#387). A fingerprint is set once and never changed, so a replica without
+// one is behind, and the fingerprint of any other decides; but two replicas
+// that record different ones, or one whose copy merged two (pinConflict),
+// fail it with ErrPinDisagreement. A storage member answering with the
+// fingerprint of a certificate minted with the CA key, so that a hub CA
+// rotation renews it or the mismatch goes unrecorded, is then refused,
+// whichever replica answers first.
 func (r Certs) Fingerprint(ctx context.Context, serial, deviceID string) (string, error) {
 	if ok, err := atSchema(ctx, r.s.db, CertPinsSchema); err != nil {
 		return "", fmt.Errorf("cert fingerprint %s: %w", serial, err)
 	} else if !ok {
 		return "", fmt.Errorf("cert fingerprint %s: %w", serial, ErrSchemaTooOld)
 	}
-	var fp sql.NullString
-	err := r.s.queryRowLive(ctx, "certs", deviceID,
-		`SELECT fingerprint`, ` FROM certs WHERE serial = ? AND device_id = ?`, serial, deviceID).Scan(&fp)
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
-		return "", fmt.Errorf("cert fingerprint %s: %w", serial, ErrNotFound)
-	case err != nil:
+	rows, err := r.s.queryEachReplica(ctx, deviceID,
+		`SELECT fingerprint, device_id FROM certs WHERE serial = ?`, serial)
+	if err != nil {
 		return "", fmt.Errorf("cert fingerprint %s: %w", serial, err)
 	}
-	return fp.String, nil
+	found, moved := false, false
+	var fps []string // the fingerprints recorded, not empty
+	for _, row := range rows {
+		if len(row) < 2 {
+			continue // a malformed answer says nothing
+		}
+		if !sameText(row[1], deviceID) {
+			// A certificate never moves to another device: a copy that
+			// says so was rewritten, to hide the others' answers.
+			moved = true
+			continue
+		}
+		switch fp := row[0].(type) {
+		case nil:
+			found = true
+		case string:
+			found, fps = true, append(fps, fp)
+		case []byte:
+			found, fps = true, append(fps, string(fp))
+		}
+	}
+	fps = slices.DeleteFunc(fps, func(fp string) bool { return fp == "" })
+	switch {
+	case !found:
+		return "", fmt.Errorf("cert fingerprint %s: %w", serial, ErrNotFound)
+	case moved:
+		return "", fmt.Errorf("cert fingerprint %s: its replicas name different devices: %w", serial, ErrPinDisagreement)
+	case len(fps) == 0:
+		return "", nil
+	case slices.Contains(fps, pinConflict) || slices.ContainsFunc(fps, func(fp string) bool { return fp != fps[0] }):
+		return "", fmt.Errorf("cert fingerprint %s: %w", serial, ErrPinDisagreement)
+	}
+	return fps[0], nil
+}
+
+// sameText reports whether v, a text value as a read returns it, is s.
+func sameText(v any, s string) bool {
+	switch v := v.(type) {
+	case string:
+		return v == s
+	case []byte:
+		return string(v) == s
+	}
+	return false
 }
 
 // PinOutcome is what Certs.Pin did.

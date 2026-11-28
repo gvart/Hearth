@@ -290,6 +290,9 @@ const (
 	PluginCommandRead      Action = "plugin.command.read"
 	PluginCommandSafe      Action = "plugin.command.safe"
 	PluginCommandDangerous Action = "plugin.command.dangerous"
+	// PluginHostCall is a WASM plugin's call of a host function (#74), such
+	// as an HTTP request to a host its manifest allows.
+	PluginHostCall Action = "plugin.host.call"
 	// PluginBinaryUpload adds or replaces an exec plugin for devices (#223):
 	// its program for one platform, pinned by SHA-256, and its manifest.
 	PluginBinaryUpload Action = "plugin.binary.upload"
@@ -310,6 +313,9 @@ const (
 	// ESPHomeCall turns a switch of an ESPHome device on or off, or presses
 	// one of its buttons.
 	ESPHomeCall Action = "esphome.call"
+	// DeviceCommand sends a command a Device Protocol device announced
+	// (docs/spec/device-protocol-v1.md) to it, over the hub's MQTT broker.
+	DeviceCommand Action = "device.command"
 	// OpenWrtRouterAdd adopts an OpenWrt router: the hub stores its URL and
 	// rpcd login, sealed, and starts reading it through ubus.
 	OpenWrtRouterAdd Action = "openwrt.router.add"
@@ -334,6 +340,10 @@ const (
 	UniFiControllerRemove Action = "unifi.controller.remove"
 	// UniFiAPRestart restarts an access point of a UniFi site.
 	UniFiAPRestart Action = "unifi.ap.restart"
+	// AIExplain sends what the hub knows about a device (its facts, metrics,
+	// audit entries and, if asked, a log tail), redacted, to the language
+	// model the operator configured, and returns its explanation.
+	AIExplain Action = "ai.explain"
 )
 
 // Actor kinds.
@@ -654,6 +664,11 @@ var rules = map[Action]rule{
 	PluginCommandRead:      {class: Read, actors: []string{ActorWeb, ActorAutomation, ActorMCP}},
 	PluginCommandSafe:      {class: Safe, actors: []string{ActorWeb, ActorAutomation, ActorMCP}},
 	PluginCommandDangerous: {class: Dangerous, actors: []string{ActorWeb, ActorAutomation, ActorMCP}},
+	// A WASM plugin reaches nothing outside its sandbox but through host
+	// functions, and only those its manifest grants, to the hosts it names:
+	// the manifest is the grant, and no one is there to approve each call.
+	// One the manifest does not grant is denied and audited.
+	PluginHostCall: {class: Safe, actors: []string{ActorHub}, fixed: true},
 	// A plugin uploaded for devices runs as the agent's user on every device
 	// whose ceiling allows its name: replacing its program changes what
 	// runs there without any ceiling change, so an upload is dangerous, and
@@ -674,6 +689,11 @@ var rules = map[Action]rule{
 	// call undoes a switch. The device must also have been adopted with
 	// calls allowed: read-only is the default.
 	ESPHomeCall: {class: Safe, actors: []string{ActorWeb}},
+	// A Device Protocol command does whatever the device's firmware makes
+	// of it, and its announce, the device's own word, is all the hub knows
+	// of it: a relay may switch a heater or a pump. Each one is dangerous,
+	// whatever the device calls it.
+	DeviceCommand: {class: Dangerous, actors: []string{ActorWeb}},
 	// Adopting an OpenWrt router hands the hub its login; the hub only reads
 	// with it, except for openwrt.dnsmasq.restart, decided on its own.
 	OpenWrtRouterAdd:    {class: Safe, actors: []string{ActorWeb}},
@@ -695,6 +715,12 @@ var rules = map[Action]rule{
 	// A restart drops every Wi-Fi client of the access point for a minute or
 	// two, and one that does not come back leaves its area without Wi-Fi.
 	UniFiAPRestart: {class: Dangerous, actors: []string{ActorWeb}},
+	// An explanation only reads: the model's answer is text, and nothing it
+	// suggests runs unless the operator takes it through policy. What it
+	// reads leaves the lab when the model is not local, so every one is
+	// audited, with the provider, the model and the sizes, never the text.
+	// A log tail it includes is a device.logs read of its own.
+	AIExplain: {class: Read, actors: []string{ActorWeb}},
 }
 
 // Actions returns every known action, sorted.

@@ -169,6 +169,8 @@ var fastOptions = Options{
 	BackoffMin: 10 * time.Millisecond, BackoffMax: 50 * time.Millisecond,
 	StartTimeout: 5 * time.Second, PingEvery: 50 * time.Millisecond, ReplyTimeout: 500 * time.Millisecond,
 	CommandTimeout: 2 * time.Second, MaxLine: 64 << 10, MaxRate: 100,
+	// Every test's WASM plugins share one: each module compiles once.
+	wasmCache: &wasmCache{},
 }
 
 // memAudit is an in-memory audit log.

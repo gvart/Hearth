@@ -201,13 +201,13 @@ dir and join it again.
 
 - **Placement.** A consistent-hash ring over the `storage` members places each row on `--replicas`
   members (env `HEARTH_REPLICAS`, default min(2, storage members), never below 1). Rows that belong
-  together stay together: a device's certificates with the device, runs with their automation or
-  runbook, an action's audit entries with each other. Small global tables (the admin password, hub
+  together stay together: a device's certificates with the device, runs with their automation, an
+  action's audit entries with each other. Small global tables (the admin password, hub
   certificates, configuration documents, device capability ceilings and plugins, Kubernetes and Proxmox
   connections, network hosts, telemetry settings) are on every storage member and every master. The
   tables whose rows grant access (sign-in sessions, MCP and dashboard tokens, panels and their share
-  links) are on **every master and on no storage-only member**: see
-  [Who may write what](#who-may-write-what).
+  links), and runbook runs, which only masters run, are on **every master and on no storage-only
+  member**: see [Who may write what](#who-may-write-what).
 - **Writes.** Audit entries, certificates, revocations, tokens, approvals and configuration
   documents are **critical**: they need W = min(2, N) replicas and fail at once with 503
   `cluster_unavailable` when fewer are reachable. The rows only masters hold need no quorum. A sign-in,
@@ -225,9 +225,10 @@ dir and join it again.
   same, and a deletion wins over any copy of the session created before it, whatever the clocks of
   the masters. Revoking an MCP or dashboard token or a share link the master does not hold writes a
   revoked stub of it, and the token's own copy, from the master that has it, merges into a revoked
-  one. Runbook runs need more: a strict **majority** of the
-  run's N replicas themselves (W = N/2 + 1, a stand-in never counts), both to read the run and to save
-  it, so runbooks are consistent rather than available across a split (below). Other writes (presence, facts, scans, automation run
+  one. Runbook runs need more: a strict **majority of the masters** (W = M/2 + 1 of the M masters,
+  down ones included; a storage member never counts, and a member that says it is a master counts
+  only once it proved the hub CA key), both to read the run and to save it, so runbooks are
+  consistent rather than available across a split (below). Other writes (presence, facts, scans, automation run
   history) need one replica and reach the others in the background. A replica that is down is replaced by the
   next live member, and gets the write later from a hint (kept in `hints.db`, bounded).
 - **Reads.** A read by key goes to the nearest live replica (R = 1). When that replica has no copy of
@@ -235,9 +236,13 @@ dir and join it again.
   device route is asked of every live replica, and the newest copy wins, a deletion included. A device
   certificate check always asks every live replica, and a revocation any one of them holds wins, however
   new the others' copies are ([#387](https://github.com/gvart/hearth/issues/387)); with none reachable,
-  the agent's call answers 503 and it retries.
-  A master reads a sign-in session, an MCP or dashboard token, a panel and a share link on its own
-  copy, and never asks another member. A master that started, or was just promoted, first compares
+  the agent's call answers 503 and it retries. A certificate's recorded fingerprint (its pin) is read
+  from every live replica too: a replica without one is behind and the others decide, but two replicas
+  that record different fingerprints decide nothing, and the certificate is neither renewed by a hub
+  CA rotation nor taken as matching. A fingerprint is set once: a later version naming another does
+  not replace it on merge, and two different ones merge into a conflict that stays.
+  A master reads a sign-in session, an MCP or dashboard token, a panel, a share link and a runbook run
+  on its own copy, and never asks another member. A master that started, or was just promoted, first compares
   these rows with every other live master that proves the hub CA key, so it holds every sign-out and
   reset they took while it was down: until it has (a moment: it tries as the first check comes, then
   in the background, backing off; a check that comes while one runs does not wait for it), a sign-in,
@@ -258,24 +263,28 @@ dir and join it again.
   that missed a pin, a certificate, a decision or a session while it was down still decides on the newest copy.
   A password reset ends every session: the master running it first reads every session the other live
   masters hold, and the session epoch it raises ends those it still misses.
-  A runbook run is saved only from the version it was read at, on the run's first live replica, so of two
-  saves from one version (two masters, or a master and an operator) exactly one is taken.
+  A runbook run is saved only from the version it was read at, on the first live master (by name) that
+  proves the hub CA key, so of two saves from one version (two masters, or a master and an operator)
+  exactly one is taken. A master whose save is refused so reads the run again from the masters.
   Members compare digests of the rows
   they share and copy what differs (anti-entropy), so replicas converge after an outage or a split.
 - **Runbook runs across a split.** Everything else keeps writing on both sides of a split; runbook runs
   do not. Starting a run and recording each step (as running before it runs, then its outcome) need a
-  majority of the run's replicas to read the run and to take the save, and two majorities always share
-  a replica, so at most one side of a split records a step and no step runs twice. On the side without
+  majority of the masters to read the run and to take the save, and two majorities always share a
+  master, so at most one side of a split records a step and no step runs twice. On the side without
   that majority the start, or the step, is refused before anything runs or is written, with 503
-  `cluster_split`: "cluster split: runbook steps need a majority of replicas; retry when the cluster
+  `cluster_split`: "cluster split: runbook steps need a majority of masters; retry when the cluster
   heals". A run there waits (its master logs the same reason) and goes on once the split heals; a step
   already running when the split came, whose outcome could not be recorded, stops the run as `unknown`
   for an operator to decide, as when its master dies. A hub that started without reaching any member
-  it knows also refuses runbook runs until it finds one. With the default `--replicas` 2 the majority
-  is both replicas, so one of them down stops the runs of the runbooks it holds; run three replicas
-  (`--replicas 3`, with three storage members or more) for runbooks that keep going with one storage
-  member down. The re-sealing of runs during a [hub CA rotation](#rotating-the-hub-ca) needs the same
-  majority: `hearth cluster ca finish` fails until it is reachable, and can be run again.
+  it knows also refuses runbook runs until it finds one. The count is of masters, not of storage
+  members or `--replicas`: one master alone runs runbooks; with two, both must be up, so one of them
+  crashed or cut off stops every run; run three masters for runbooks that keep going with one master
+  down. A master that is stopped cleanly leaves the gossip and is off the count until it is back, like
+  a storage member off the ring. Promote, demote or stop one master at a time, so that the majorities
+  before and after a change still share a master. The re-sealing of runs during a
+  [hub CA rotation](#rotating-the-hub-ca) needs the same majority: `hearth cluster ca finish` fails
+  until it is reachable, and can be run again.
 - **Conflicts.** Every row carries a hybrid logical clock (HLC) stamp and the member that wrote it.
   Two writes to the same row merge by **last writer wins** on that stamp. Some rows do not merge this
   way: the audit log is append-only (entries are only ever added); a revocation, once any replica has
@@ -328,12 +337,19 @@ signs the connection's TLS exporter with it.
   neither holds nor serves them, so it cannot forge a sign-in, an MCP or dashboard token or a share
   link, nor answer "yes" to one. A member promoted to master compares them with every live master that
   proves the key before it reads them.
+- **Runbook runs live on masters only** ([#387](https://github.com/gvart/hearth/issues/387)). A run's
+  state says which step a master runs next, so the runs are master rows like the above: a storage-only
+  member neither holds nor serves them, cannot start or save one (it holds no key, and a master takes
+  no command, row or hint of them from it), and is not among the masters a run's majority counts, even
+  when it says on the gossip that it is a master: a master sends a save to decide only to a master that
+  proved the key on the connection, and counts a read or an ack only from one.
 - **Sharded rows go through storage members.** They are their replicas: a storage member coordinates
   the writes a master forwards, keeps hints, hands rows off and runs anti-entropy for them.
 
 So a storage-only member, compromised, cannot change the admin password, the configuration (policy,
 automations, runbooks), a device's capability ceiling or plugins, the hub certificates or the
-integrations, and cannot sign in or forge a token or a share link. It can still change the sharded rows
+integrations, cannot sign in or forge a token or a share link, and cannot change which step of a
+runbook run a master runs next. It can still change the sharded rows
 it holds, or answer reads of them as it likes, until they are signed by the master that wrote them
 ([#387](https://github.com/gvart/hearth/issues/387)). For the rows of the buckets it is a replica of
 (with `--replicas 2` and S storage members, about 2 in S of them), it can:
@@ -341,12 +357,18 @@ it holds, or answer reads of them as it likes, until they are signed by the mast
 - **Refuse a device certificate**: a certificate check asks every live replica and refuses the device
   if any one answers "revoked", so a storage member can make a master refuse a device whose
   certificate it holds (until it is removed from the cluster). It cannot un-revoke one: its "not
-  revoked" or "no such certificate" does not outweigh a revocation another replica holds, and a
-  revocation, once merged, is never cleared. It decides alone only while it is the one live replica of
+  revoked" or "no such certificate" does not outweigh a revocation another replica holds, a
+  revocation, once merged, is never cleared, and a newer version that moves the certificate to
+  another device, merged into the others to hide their copies, makes the check refuse it. It decides alone only while it is the one live replica of
   the certificate's row that answers. Hub certificates are global, so none of this reaches hubs.
-- **Rewrite a runbook run**: a run's runbook file is sealed with the hub CA key, but its state (which
-  step is next, each step's outcome) is not, so it can change which step of that runbook a master runs
-  next: skip one, or run one again.
+- **Spoil a certificate's pin**: a fingerprint read asks every live replica, and replicas that record
+  different fingerprints decide nothing, so a storage member can answer with another and have a hub CA
+  rotation not renew that device's certificate (it must enroll again), as a disagreement is never
+  taken for a match. It cannot have a certificate minted with the CA key taken as the one recorded
+  for its serial, nor hide a recorded fingerprint by answering with none, nor replace one by sending a
+  newer version (a fingerprint is set once; two different ones merge into a conflict). It can set the
+  fingerprint of a certificate that has none yet, one issued before fingerprints were recorded and not
+  pinned since, and it decides alone while it is the one live replica that answers.
 - **Hide, change or invent audit entries**, and the devices list, device facts and presence, device
   routes, and automation run history of its buckets: what the UI and the API show of them.
 - **List forged enrollment tokens, join tokens or approvals**. They grant nothing: their owner acts on
@@ -372,7 +394,12 @@ before the upgrade are refused: create new ones. Device ceilings were sharded be
 one that only storage-only members hold. A change of such a device's ceiling is measured from none, so
 any raise asks for the password again, and it is refused until the device's agent reports its ceiling.
 Admin commands (`hearth admin set-password --data-dir` and the others) refuse to run on a storage-only
-member's host, before anything is written: run them on a master's.
+member's host, before anything is written: run them on a master's. Runbook runs were sharded before
+([#387](https://github.com/gvart/hearth/issues/387)): a storage-only member deletes its copies when it
+starts, and the masters compare theirs before they read them, so a run that only storage-only members
+held is gone, and a master's copy may lack the newest save of a run, which only storage-only members
+held: that run could then run a step again. Before you upgrade a cluster with storage-only members,
+let every runbook run finish, or stop it.
 
 ## Masters
 
@@ -905,7 +932,7 @@ the time it was made and lands only once. If a spooled entry cannot be read back
   homelab's split is usually a switch or a Wi-Fi link, and both sides still have devices to run, so
   Hearth keeps both sides writing and merges, and limits what a cut-off side may do instead
   (fail-closed dangerous actions, deny-wins revocations, master-owned tokens). Runbook runs are the
-  exception: a step that runs twice cannot be merged away, so they need a majority of their replicas.
+  exception: a step that runs twice cannot be merged away, so they need a majority of the masters.
 - **Rows, not commands, are replicated.** Each write becomes row changes stamped with an HLC, merged
   per row. Global uniqueness that a shard cannot check is avoided by design: rows such as Kubernetes
   and Proxmox connections take ids derived from their unique name, so two masters creating the same
@@ -927,12 +954,12 @@ the time it was made and lands only once. If a spooled entry cannot be read back
 - `hearth` commands run on a member's host (`hearth token create`, `hearth cluster token create`) are
   not refused when that master is cut off: the 60-second fail-closed rule covers the hub's API, agents,
   MCP and automations.
-- **Runbooks need a majority.** A runbook run starts and moves on only where a majority of its
-  replicas is reachable ([Runbook runs across a split](#how-data-is-kept)). The other side of a split,
-  and a run whose replicas are mostly down, waits until they are back. With `--replicas` 2 that means
-  both replicas. The majority is counted on the members a hub knows: one restarted during a split
-  knows only those it reaches, and a member that is stopped (not crashed) leaves the gossip and is
-  off the ring until it is back. Avoid restarting or stopping hubs during a split.
+- **Runbooks need a majority.** A runbook run starts and moves on only where a majority of the
+  masters is reachable ([Runbook runs across a split](#how-data-is-kept)). The other side of a split,
+  and every run while most masters are down, waits until they are back. With two masters that means
+  both. The majority is counted on the members a hub knows: one restarted during a split knows only
+  those it reaches, and a master that is stopped (not crashed) leaves the gossip and is off the count
+  until it is back. Avoid restarting or stopping hubs during a split.
 - An approval link opens on the master that owns the approval. With `approval_notify.url` set to one
   fixed address, a link for an approval owned by another master answers 409 `not_owner`, naming the
   master to open it on.

@@ -434,7 +434,7 @@ func TestRunbookErrorClusterSplit(t *testing.T) {
 	err := fmt.Errorf("save runbook run r1: apply save_runbook_run: 1 of 3 replicas of its key reachable, 2 needed: %w", store.ErrNoMajority)
 	a.writeRunbookError(rec, httptest.NewRequest(http.MethodPost, "/", nil), "retry runbook run", err)
 	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), `"cluster_split"`) ||
-		!strings.Contains(rec.Body.String(), "runbook steps need a majority of replicas; retry when the cluster heals") {
+		!strings.Contains(rec.Body.String(), "runbook steps need a majority of masters; retry when the cluster heals") {
 		t.Errorf("answered %d %s", rec.Code, rec.Body)
 	}
 }

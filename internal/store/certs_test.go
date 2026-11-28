@@ -122,6 +122,20 @@ func TestCertCheckDenyWins(t *testing.T) {
 			want: ErrCertRevoked,
 		},
 		{
+			// The others' copies moved to another device by a newer version
+			// merged into them, so that only the forger's unrevoked copy
+			// answers for pi.
+			name: "other replicas' copies moved to another device",
+			setup: func(t *testing.T, rs replicaSet) {
+				rs.apply(t, rs.x, RevokeDevice{DeviceID: "pi", Now: toMillis(now)})
+				copyRows(t, rs.x, rs.first, refs)
+				copyRows(t, rs.x, rs.y, refs)
+				moveCert(t, rs.x, rs.x, rs.y)
+				forge(t, rs.first)
+			},
+			want: ErrCertRevoked,
+		},
+		{
 			name: "other replicas have no row",
 			setup: func(t *testing.T, rs replicaSet) {
 				rs.apply(t, rs.x, RevokeDevice{DeviceID: "pi", Now: toMillis(now)})

@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/gvart/hearth/internal/cluster"
@@ -30,11 +31,15 @@ const (
 	auditSpoolDir = "audit-spool"
 )
 
-// defaultDataDir is HEARTH_DATA_DIR if set, /var/lib/hearth/<role> for root,
-// and the user's XDG data dir otherwise.
+// defaultDataDir is HEARTH_DATA_DIR if set, %ProgramData%\Hearth\<role> on
+// Windows, /var/lib/hearth/<role> for root, and the user's XDG data dir
+// otherwise.
 func defaultDataDir(role string) string {
 	if v := os.Getenv("HEARTH_DATA_DIR"); v != "" {
 		return v
+	}
+	if runtime.GOOS == "windows" {
+		return programDataDir(role)
 	}
 	if os.Geteuid() == 0 {
 		return filepath.Join("/var/lib/hearth", role)

@@ -348,6 +348,11 @@ does.
   their own, and never logged, served or audited. A device is read-only unless it was adopted with
   calls allowed; each switch or button call is a policy decision (`esphome.call`, safe) and audited.
   See [ESPHome](esphome.md).
+- **Device Protocol devices**: a device that joins over MQTT ([Device Protocol](spec/device-protocol-v1.md))
+  logs in with a user of its own and may publish only to its own topics under `hearth/v1/`; no MQTT
+  client may publish a command. Each command the hub sends is a policy decision (`device.command`,
+  dangerous, web session only, which asks for the admin password again) and audited, with the
+  command's name but not its params.
 - **OpenWrt**: the rpcd login is sealed with AES-256-GCM under a key of its own, and never logged,
   served or audited; so is the session ID. https is verified against the system roots or a pinned
   fingerprint; plain http sends the password in the clear. Hearth only reads, but for restarting
@@ -363,6 +368,11 @@ does.
   over https only, verified against the system roots or a pinned fingerprint. Hearth only reads, but
   for restarting an access point (`unifi.ap.restart`, dangerous), which asks for the admin password
   again. The account's UniFi role is the ceiling. See [UniFi](unifi.md).
+- **AI** (off by default): `ai.yaml`'s API key is sealed like `notify.yaml`, and never logged, served
+  or audited; it is sent only to the provider and address it was entered for, and redirects are not
+  followed. An explanation (`ai.explain`, read) redacts credentials from what it sends, and its audit
+  entry holds sizes, never text. The model only returns text: it runs nothing. See
+  [Explain with AI](ai.md).
 - **Prometheus**: read only. Hearth never writes to Prometheus.
 - **MCP clients** (AI assistants): each has its own bearer token, stored as a SHA-256 hash and
   checked on every request, so a revocation takes effect at once. The token's scope caps the class

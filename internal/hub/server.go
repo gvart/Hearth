@@ -106,6 +106,9 @@ type Config struct {
 	// ESPHome serves adopted ESPHome devices under /api/v1/esphome. Nil
 	// disables it.
 	ESPHome *esphome.Manager
+	// DeviceProtocol serves commands to Device Protocol devices under
+	// /api/v1/devices/{id}/commands. Nil disables it.
+	DeviceProtocol *DeviceProtocol
 	// OpenWrt serves adopted OpenWrt routers under /api/v1/openwrt. Nil
 	// disables it.
 	OpenWrt *openwrt.Manager

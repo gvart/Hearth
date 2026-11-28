@@ -215,6 +215,7 @@ var expected = map[Action]struct {
 	PluginCommandRead:            {Read, []string{ActorWeb, ActorAutomation, ActorMCP}, false},
 	PluginCommandSafe:            {Safe, []string{ActorWeb, ActorAutomation, ActorMCP}, false},
 	PluginCommandDangerous:       {Dangerous, []string{ActorWeb, ActorAutomation, ActorMCP}, false},
+	PluginHostCall:               {Safe, []string{ActorHub}, true},
 	PluginBinaryUpload:           {Dangerous, []string{ActorAdmin, ActorWeb}, false},
 	PluginBinaryDelete:           {Safe, []string{ActorAdmin, ActorWeb}, false},
 	DevicePluginCommandRead:      {Read, []string{ActorWeb, ActorMCP}, false},
@@ -223,6 +224,7 @@ var expected = map[Action]struct {
 	ESPHomeDeviceAdd:             {Safe, []string{ActorWeb}, false},
 	ESPHomeDeviceRemove:          {Safe, []string{ActorWeb}, false},
 	ESPHomeCall:                  {Safe, []string{ActorWeb}, false},
+	DeviceCommand:                {Dangerous, []string{ActorWeb}, false},
 	OpenWrtRouterAdd:             {Safe, []string{ActorWeb}, false},
 	OpenWrtRouterRemove:          {Safe, []string{ActorWeb}, false},
 	OpenWrtDNSRestart:            {Dangerous, []string{ActorWeb}, false},
@@ -232,6 +234,7 @@ var expected = map[Action]struct {
 	UniFiControllerAdd:           {Safe, []string{ActorWeb}, false},
 	UniFiControllerRemove:        {Safe, []string{ActorWeb}, false},
 	UniFiAPRestart:               {Dangerous, []string{ActorWeb}, false},
+	AIExplain:                    {Read, []string{ActorWeb}, false},
 	DeviceCapabilitiesSet:        {Safe, []string{ActorAdmin, ActorWeb}, false},
 	DeviceCapabilitiesRaise:      {Dangerous, []string{ActorAdmin, ActorWeb}, false},
 }

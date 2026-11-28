@@ -483,7 +483,15 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if scheduledScans {
 		discoverInterval = opts.discoverInterval
 	}
+	// A hub with an MQTT broker serves the Device Protocol on it.
+	var protocol *hub.DeviceProtocol
+	if opts.mqtt.listen != "" {
+		protocol = hub.NewDeviceProtocol(hub.DeviceProtocolConfig{
+			Store: st, Registry: reg, Policy: pol, Log: log.With("component", "device-protocol"),
+		})
+	}
 	cfg := hub.Config{
+		DeviceProtocol:    protocol,
 		DiscoverInterval:  discoverInterval,
 		Store:             st,
 		CA:                ca,
@@ -700,7 +708,7 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	}
 
 	// Bound last, after every early return, so Run always closes it.
-	broker, err := newMQTTBroker(ctx, opts, ca, serverCert.Load, st, log)
+	broker, err := newMQTTBroker(ctx, opts, ca, serverCert.Load, st, protocol, log)
 	if err != nil {
 		_ = agentLn.Close()
 		_ = webLn.Close()
@@ -768,6 +776,10 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	// Every hub with --mqtt-listen runs a broker of its own.
 	if broker != nil {
 		g.Go(func() error { return broker.Run(gctx) })
+		if protocol != nil {
+			protocol.SetBus(broker)
+			g.Go(func() error { return protocol.Run(gctx) })
+		}
 	}
 	// And every master with --tailscale a tailnet node of its own.
 	if tn != nil {

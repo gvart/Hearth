@@ -57,6 +57,26 @@ func testClock(f *panelFixture) func(time.Duration) {
 	return func(d time.Duration) { mu.Lock(); defer mu.Unlock(); now = now.Add(d) }
 }
 
+// TestDashboardSummaryUnavailable: while this master may not read its
+// dashboard tokens yet, a read answers 503 cluster_unavailable, not 401 (the
+// token may well be valid) nor 500.
+func TestDashboardSummaryUnavailable(t *testing.T) {
+	f, g := newGatedFixture(t)
+	if err := f.st.DashboardTokens().Create(t.Context(), store.DashboardToken{ID: "d", Name: "homepage", CreatedAt: time.Now()}, "dash-secret"); err != nil {
+		t.Fatal(err)
+	}
+	if r := f.raw(t, http.MethodGet, dashboardPath, "", bearer("dash-secret")); r.StatusCode != http.StatusOK {
+		t.Fatalf("summary with the gate open = %d %s", r.StatusCode, r.body)
+	}
+	g.closed.Store(true)
+	for name, secret := range map[string]string{"valid": "dash-secret", "unknown": rand.Text()} {
+		r := f.raw(t, http.MethodGet, dashboardPath, "", bearer(secret))
+		if r.StatusCode != http.StatusServiceUnavailable || decode[ErrorJSON](t, r).Code != "cluster_unavailable" {
+			t.Errorf("%s token: summary = %d %s, want 503 cluster_unavailable", name, r.StatusCode, r.body)
+		}
+	}
+}
+
 func TestDashboardSummary(t *testing.T) {
 	f := newPanelFixture(t)
 	advance := testClock(f)

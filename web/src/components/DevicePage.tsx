@@ -25,6 +25,7 @@ import { DeviceHubSection } from './DeviceHub.tsx';
 import { DeviceLogSources } from './DeviceLogSources.tsx';
 import { DeviceNetEdges } from './DeviceNetEdges.tsx';
 import { DeviceUpgrade } from './DeviceUpgrade.tsx';
+import { DeviceExplain } from './DeviceExplain.tsx';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
 import { StatusDot } from './StatusDot.tsx';
 
@@ -246,6 +247,8 @@ export function DevicePage({ id }: { id: string }) {
             <DeviceNetEdges device={device} />
           </Section>
         )}
+
+        <DeviceExplain device={device} />
 
         <DevicePlugins device={device} />
 

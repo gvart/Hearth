@@ -19,7 +19,8 @@ export type TipId =
   | "capabilities"
   | "deviceplugins"
   | "upgrade"
-  | "tailscale";
+  | "tailscale"
+  | "ai";
 
 export interface TipText {
   /** What the "?" is about, for a screen reader: "About runbooks". */
@@ -163,5 +164,13 @@ export const tips: Record<TipId, TipText> = {
       "Agents on the tailnet enroll and connect at the agent address, with the hub CA as on the LAN. It is set by flags on the hub, so this card only shows it.",
     ],
     docs: "tailscale.md",
+  },
+  ai: {
+    about: "Explain with AI",
+    lines: [
+      "Explain sends what the hub knows about a device (its facts, a metrics summary, recent audit entries and any log tail you add) to the model set up in Settings, AI. Passwords, tokens and keys are redacted first; What was sent shows every byte.",
+      "The model never runs anything: a fix it suggests is yours to take, through the usual controls and policy. AI is off until an admin sets it up; a local Ollama keeps it all in the lab.",
+    ],
+    docs: "ai.md",
   },
 };
