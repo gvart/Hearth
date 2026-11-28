@@ -1,0 +1,26 @@
+internal/hub/ai.go
+  s_18b57982fdff93::t_486d483f8c703a 247
+web/src/components/DevicePage.tsx
+  s_18b57982fdff93::t_6e16aac0cd78a0 251
+  s_18b57982fdff93::t_76caa30a1eef6b 252
+internal/hub/ai_test.go
+  s_18b57982fdff93::t_9ec6177f929ce0 261-264
+cmd/hearth/ai.go
+  s_18b57982fdff93::t_486d483f8c703a 60
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "eae1d8f8124711c6fb53ddf12aec9972e9803a32",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
