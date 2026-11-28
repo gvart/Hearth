@@ -384,8 +384,9 @@ the module and checks its SHA-256 against the one the index pins. An index whose
 missing or does not verify with a trusted key, and a module that is not the one pinned, are refused,
 and nothing is installed. Then it shows what the plugin asks for: the hosts it may reach over HTTP
 (`host.http.allow`), its memory cap, its commands and their classes, and the module's SHA-256. The web
-UI sends back the version and SHA-256 you saw, and the hub refuses if the signed index changed
-meanwhile.
+UI sends back the version, the SHA-256 and the entry's `digest` (a hash of the whole entry, grants
+included) you saw, and the hub refuses if the signed index changed meanwhile, even to widen the grants
+of the same module.
 
 The plugin runs with the manifest its index entry gives it, and nothing else: it gets no more host
 access than the entry grants. A registry installs WASM plugins only; an entry of another runtime makes
@@ -416,7 +417,7 @@ reach and its commands. Every start is then `plugin.start`, as for any plugin.
 | | |
 | --- | --- |
 | `GET /api/v1/plugin-registry` | Whether an index is configured, its location and key ids, the plugins installed (with an available update and why one does not run), the newest version of each plugin the index offers, why the index cannot be used if so, and what policy decides now for `install`, `update` and `remove`. |
-| `POST /api/v1/plugin-registry/install` | `{"name": "go-wasm-lamp", "version": "0.1.0", "sha256": "…"}`: the version and SHA-256 reviewed. Needs the password again. 409 `index_changed` when the index now says otherwise, 502 `index_untrusted` or `pin_mismatch` when the index or the module cannot be trusted. |
+| `POST /api/v1/plugin-registry/install` | `{"name": "go-wasm-lamp", "version": "0.1.0", "sha256": "…", "digest": "…"}`: the version, SHA-256 and entry digest reviewed, as `GET` gave them. Needs the password again. 409 `index_changed` when the index now says otherwise, 502 `index_untrusted` or `pin_mismatch` when the index or the module cannot be trusted. |
 | `POST /api/v1/plugin-registry/update` | The same, and `"allow_downgrade": true` for an older version. |
 | `DELETE /api/v1/plugin-registry/{name}` | Uninstalls it. |
 

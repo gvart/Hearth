@@ -333,17 +333,23 @@ func mustList(t *testing.T, st InstalledStore) []Installed {
 func TestChangeConfirmedAndRequest(t *testing.T) {
 	e := testEntry("p", "1.0.0", "p.wasm", []byte("m"))
 	c := Change{Action: policy.PluginRegistryInstall, Entry: e, Source: "https://example.com/index.json"}
-	if err := c.Confirmed("1.0.0", e.SHA256); err != nil {
+	if err := c.Confirmed("1.0.0", e.SHA256, e.Digest()); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Confirmed("", ""); err != nil {
+	if err := c.Confirmed("", "", ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Confirmed("1.0.1", e.SHA256); !errors.Is(err, ErrIndexChanged) {
+	if err := c.Confirmed("1.0.1", e.SHA256, ""); !errors.Is(err, ErrIndexChanged) {
 		t.Fatalf("other version: %v", err)
 	}
-	if err := c.Confirmed("1.0.0", sum([]byte("x"))); !errors.Is(err, ErrIndexChanged) {
+	if err := c.Confirmed("1.0.0", sum([]byte("x")), ""); !errors.Is(err, ErrIndexChanged) {
 		t.Fatalf("other module: %v", err)
+	}
+	// The same module with wider grants is another entry.
+	wider := e
+	wider.Host = HostGrants{HTTP: &HTTPGrant{Allow: []string{"192.0.2.1:80", "203.0.113.5:443"}}}
+	if err := (Change{Entry: wider}).Confirmed("1.0.0", e.SHA256, e.Digest()); !errors.Is(err, ErrIndexChanged) {
+		t.Fatalf("wider grants: %v", err)
 	}
 	req := c.Request()
 	if req.Action != policy.PluginRegistryInstall || req.Target != "p" {

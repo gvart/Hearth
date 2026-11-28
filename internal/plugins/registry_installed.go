@@ -252,12 +252,17 @@ type RegistrySync struct {
 	Manager *Manager
 	Log     *slog.Logger
 
-	mu   sync.Mutex
-	errs map[string]string
+	// syncing serializes Sync: one that read the store before a change
+	// never applies after one that read it since.
+	syncing sync.Mutex
+	mu      sync.Mutex
+	errs    map[string]string
 }
 
 // Sync applies what is installed now.
 func (r *RegistrySync) Sync(ctx context.Context) {
+	r.syncing.Lock()
+	defer r.syncing.Unlock()
 	manifests, errs := r.Store.Manifests()
 	for name, err := range r.Manager.Reconcile(manifests) {
 		errs[name] = err

@@ -125,6 +125,16 @@ func (e IndexEntry) Manifest(dir string) Manifest {
 	}
 }
 
+// Digest names everything e says, its manifest and host grants included:
+// the SHA-256 of its JSON, in hex. A caller that reviewed an entry confirms
+// it by its digest, so that an index re-signed meanwhile with the same
+// module but wider grants is refused.
+func (e IndexEntry) Digest() string {
+	b, _ := json.Marshal(e) // an IndexEntry always marshals
+	s := sha256.Sum256(b)
+	return hex.EncodeToString(s[:])
+}
+
 // MemoryMiB is e's memory cap, in MiB.
 func (e IndexEntry) MemoryMiB() int { return e.Manifest("").wasmMemory() }
 

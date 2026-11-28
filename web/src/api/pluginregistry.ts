@@ -17,6 +17,8 @@ export interface RegistryEntry {
   license?: string;
   runtime: string;
   sha256: string;
+  /** Names the whole entry, grants included: an install or update confirms it. */
+  digest: string;
   /** Its memory cap, in MiB. */
   memory: number;
   capabilities: string[];
@@ -54,6 +56,7 @@ export interface RegistryChange {
   name: string;
   version: string;
   sha256: string;
+  digest: string;
   allow_downgrade?: boolean;
 }
 

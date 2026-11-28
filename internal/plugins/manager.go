@@ -61,9 +61,11 @@ type Manager struct {
 	dynamic map[*plugin]bool
 	// handles stop the plugins running, by plugin.
 	handles map[*plugin]handle
-	// runCtx is Run's, once it runs.
-	runCtx context.Context
-	wg     sync.WaitGroup
+	// runCtx is Run's, once it runs; stopping is set once Run waits for
+	// its plugins to stop, after which none starts.
+	runCtx   context.Context
+	stopping bool
+	wg       sync.WaitGroup
 }
 
 // handle stops a running plugin: cancel it, then wait for done.
@@ -107,13 +109,16 @@ func (m *Manager) Run(ctx context.Context) error {
 	}
 	m.mu.Unlock()
 	<-ctx.Done()
+	m.mu.Lock()
+	m.stopping = true
+	m.mu.Unlock()
 	m.wg.Wait()
 	return nil
 }
 
 // start runs p under Run's context; m.mu is held. Before Run, Run starts it.
 func (m *Manager) start(p *plugin) {
-	if m.runCtx == nil || m.runCtx.Err() != nil {
+	if m.runCtx == nil || m.stopping {
 		return
 	}
 	ctx, cancel := context.WithCancel(m.runCtx)

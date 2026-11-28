@@ -67,10 +67,12 @@ func PlanUpdate(idx *Index, source string, st InstalledStore, name, version stri
 	return Change{Action: policy.PluginRegistryUpdate, Entry: e, Previous: &in, Source: source}, nil
 }
 
-// Confirmed checks that c installs what the caller reviewed: version and
-// sha256, if given. Otherwise the index changed meanwhile.
-func (c Change) Confirmed(version, sha256 string) error {
-	if (version != "" && CompareVersions(version, c.Entry.Version) != 0) || (sha256 != "" && sha256 != c.Entry.SHA256) {
+// Confirmed checks that c installs what the caller reviewed: version,
+// sha256 and the entry's digest, each if given. Otherwise the index changed
+// meanwhile.
+func (c Change) Confirmed(version, sha256, digest string) error {
+	if (version != "" && CompareVersions(version, c.Entry.Version) != 0) || (sha256 != "" && sha256 != c.Entry.SHA256) ||
+		(digest != "" && digest != c.Entry.Digest()) {
 		return fmt.Errorf("plugin %s: %w", c.Entry.Name, ErrIndexChanged)
 	}
 	return nil
@@ -80,7 +82,7 @@ func (c Change) Confirmed(version, sha256 string) error {
 // what host access, from where.
 func (c Change) Request() policy.Request {
 	d := map[string]any{
-		"plugin": c.Entry.Name, "version": c.Entry.Version, "sha256": c.Entry.SHA256, "source": c.Source,
+		"plugin": c.Entry.Name, "version": c.Entry.Version, "sha256": c.Entry.SHA256, "digest": c.Entry.Digest(), "source": c.Source,
 		"runtime": c.Entry.Runtime, "memory": c.Entry.MemoryMiB(),
 		"capabilities": nonNilStrings(c.Entry.Capabilities), "commands": CommandList(c.Entry.Commands),
 		"http_allow": HTTPAllow(c.Entry.Host),

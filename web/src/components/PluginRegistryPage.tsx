@@ -325,7 +325,7 @@ function InstallDialog({ entry, from, onClose }: { entry: RegistryEntry; from?: 
       error={m.isError ? changeError(m.error) : undefined}
       done={m.isSuccess ? `${from ? 'Updated' : 'Installed'} ${entry.name} ${entry.version}. The hub starts it now.` : undefined}
       onConfirm={() => {
-        m.mutate({ name: entry.name, version: entry.version, sha256: entry.sha256 });
+        m.mutate({ name: entry.name, version: entry.version, sha256: entry.sha256, digest: entry.digest });
       }}
       onClose={onClose}
     >

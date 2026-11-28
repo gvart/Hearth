@@ -25,14 +25,16 @@ const registryFetchTimeout = time.Minute
 
 // RegistryEntryJSON is a plugin as an index offers it, or as installed.
 type RegistryEntryJSON struct {
-	Name         string                `json:"name"`
-	Version      string                `json:"version"`
-	Description  string                `json:"description,omitempty"`
-	Author       string                `json:"author,omitempty"`
-	Homepage     string                `json:"homepage,omitempty"`
-	License      string                `json:"license,omitempty"`
-	Runtime      string                `json:"runtime"`
-	SHA256       string                `json:"sha256"`
+	Name        string `json:"name"`
+	Version     string `json:"version"`
+	Description string `json:"description,omitempty"`
+	Author      string `json:"author,omitempty"`
+	Homepage    string `json:"homepage,omitempty"`
+	License     string `json:"license,omitempty"`
+	Runtime     string `json:"runtime"`
+	SHA256      string `json:"sha256"`
+	// Digest names the whole entry: an install or update confirms it.
+	Digest       string                `json:"digest"`
 	Memory       int                   `json:"memory"`
 	Capabilities []string              `json:"capabilities"`
 	Commands     []plugins.CommandSpec `json:"commands"`
@@ -52,7 +54,7 @@ func registryEntryJSON(e plugins.IndexEntry) RegistryEntryJSON {
 	}
 	return RegistryEntryJSON{
 		Name: e.Name, Version: e.Version, Description: e.Description, Author: e.Author, Homepage: e.Homepage,
-		License: e.License, Runtime: e.Runtime, SHA256: e.SHA256, Memory: e.MemoryMiB(),
+		License: e.License, Runtime: e.Runtime, SHA256: e.SHA256, Digest: e.Digest(), Memory: e.MemoryMiB(),
 		Capabilities: caps, Commands: commands, HTTPAllow: plugins.HTTPAllow(e.Host),
 	}
 }
@@ -88,11 +90,12 @@ type PluginRegistryJSON struct {
 }
 
 // RegistryChangeRequest is the body of an install or an update: the
-// plugin, and the version and SHA-256 the caller reviewed.
+// plugin, and the version, SHA-256 and entry digest the caller reviewed.
 type RegistryChangeRequest struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
 	SHA256  string `json:"sha256"`
+	Digest  string `json:"digest"`
 	// AllowDowngrade allows an update to an older version.
 	AllowDowngrade bool `json:"allow_downgrade"`
 }
@@ -171,7 +174,7 @@ func (a *api) updateRegistryPlugin(w http.ResponseWriter, r *http.Request) {
 func (a *api) changeRegistryPlugin(w http.ResponseWriter, r *http.Request, action policy.Action) {
 	ctx := r.Context()
 	var req RegistryChangeRequest
-	if !decodeJSON(w, r, 4<<10, &req, `{"name": "...", "version": "...", "sha256": "..."}`) {
+	if !decodeJSON(w, r, 4<<10, &req, `{"name": "...", "version": "...", "sha256": "...", "digest": "..."}`) {
 		return
 	}
 	actor := func(p policy.Request) policy.Request {
@@ -184,8 +187,8 @@ func (a *api) changeRegistryPlugin(w http.ResponseWriter, r *http.Request, actio
 		a.writeActionError(w, r, "change the plugin", err)
 		return
 	}
-	if req.Name == "" || !plugins.ValidVersion(req.Version) || !plugins.ValidSHA256(req.SHA256) {
-		writeError(w, http.StatusBadRequest, "bad_request", "name, the version and the sha256 reviewed are required")
+	if req.Name == "" || !plugins.ValidVersion(req.Version) || !plugins.ValidSHA256(req.SHA256) || !plugins.ValidSHA256(req.Digest) {
+		writeError(w, http.StatusBadRequest, "bad_request", "name, and the version, sha256 and digest reviewed are required")
 		return
 	}
 	if a.pluginRegistry == nil {
@@ -211,7 +214,7 @@ func (a *api) changeRegistryPlugin(w http.ResponseWriter, r *http.Request, actio
 		c, err = plugins.PlanUpdate(idx, a.pluginRegistry.Source, st, req.Name, req.Version, req.AllowDowngrade)
 	}
 	if err == nil {
-		err = c.Confirmed(req.Version, req.SHA256)
+		err = c.Confirmed(req.Version, req.SHA256, req.Digest)
 	}
 	if err != nil {
 		writeRegistryError(w, err)

@@ -11,6 +11,7 @@ const entry = (over = {}) => ({
   author: 'Hearth',
   runtime: 'wasm',
   sha256: 'a'.repeat(64),
+  digest: 'b'.repeat(64),
   memory: 32,
   capabilities: ['discover', 'state', 'command'],
   commands: [{ name: 'turn_on', class: 'safe' }],

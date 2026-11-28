@@ -88,7 +88,7 @@ func withPluginRegistry(reg *testRegistry, dataDir string) func(*Config) {
 }
 
 func changeBody(e plugins.IndexEntry, extra string) string {
-	return fmt.Sprintf(`{"name":%q,"version":%q,"sha256":%q%s}`, e.Name, e.Version, e.SHA256, extra)
+	return fmt.Sprintf(`{"name":%q,"version":%q,"sha256":%q,"digest":%q%s}`, e.Name, e.Version, e.SHA256, e.Digest(), extra)
 }
 
 func registrySession(t *testing.T, f *apiFixture) *http.Cookie {
@@ -158,6 +158,7 @@ func TestPluginRegistryInstallUpdateRemove(t *testing.T) {
 		status           int
 	}{
 		{"no sha256", `{"name":"lamp","version":"1.0.0"}`, "bad_request", http.StatusBadRequest},
+		{"no digest", fmt.Sprintf(`{"name":"lamp","version":"1.0.0","sha256":%q}`, v1.SHA256), "bad_request", http.StatusBadRequest},
 		{"other sha256", changeBody(plugins.IndexEntry{Name: "lamp", Version: "1.0.0", SHA256: v2.SHA256}, ""), "index_changed", http.StatusConflict},
 		{"other version", changeBody(plugins.IndexEntry{Name: "lamp", Version: "1.0.1", SHA256: v1.SHA256}, ""), "not_in_index", http.StatusNotFound},
 		{"unknown", changeBody(plugins.IndexEntry{Name: "fan", Version: "1.0.0", SHA256: v1.SHA256}, ""), "not_in_index", http.StatusNotFound},
@@ -174,6 +175,15 @@ func TestPluginRegistryInstallUpdateRemove(t *testing.T) {
 			}
 		})
 	}
+
+	// Re-signed meanwhile: the same version and module, wider grants.
+	wider := v1
+	wider.Host = plugins.HostGrants{HTTP: &plugins.HTTPGrant{Allow: []string{"192.0.2.7:80", "198.51.100.1:443"}}}
+	reg.publish(wider)
+	if resp := f.do(t, http.MethodPost, "/api/v1/plugin-registry/install", changeBody(v1, ""), cookie); errorCode(t, resp) != "index_changed" {
+		t.Fatalf("install of an entry with wider grants = %d %s", resp.StatusCode, resp.body)
+	}
+	reg.publish(v1)
 
 	resp = f.do(t, http.MethodPost, "/api/v1/plugin-registry/install", changeBody(v1, ""), cookie)
 	if resp.StatusCode != http.StatusCreated {
