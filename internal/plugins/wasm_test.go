@@ -3,6 +3,7 @@
 package plugins
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -17,6 +18,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/tetratelabs/wazero"
 
 	"github.com/gvart/hearth/internal/policy"
 )
@@ -41,6 +44,12 @@ func buildWasm(t *testing.T, pkg string) string {
 			wasmBuildsMu.Unlock()
 			t.Fatalf("build %s: %v\n%s", pkg, err, out)
 		}
+		// Compiled into the tests' shared cache now, outside any test's
+		// deadline: under -race on a small machine it takes long.
+		if err := precompile(t.Context(), built); err != nil {
+			wasmBuildsMu.Unlock()
+			t.Fatalf("compile %s: %v", pkg, err)
+		}
 		wasmBuilds[pkg] = built
 	}
 	wasmBuildsMu.Unlock()
@@ -53,6 +62,18 @@ func buildWasm(t *testing.T, pkg string) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+// precompile compiles the module at path into fastOptions' cache.
+func precompile(ctx context.Context, path string) error {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	rt := wazero.NewRuntimeWithConfig(ctx, wazero.NewRuntimeConfig().WithCompilationCache(fastOptions.wasmCache.get()))
+	defer func() { _ = rt.Close(ctx) }()
+	_, err = rt.CompileModule(ctx, b)
+	return err
 }
 
 // guestManifest is a manifest of the test guest module.
