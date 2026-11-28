@@ -1,0 +1,29 @@
+internal/hub/recording_test.go
+  s_18b57982fdff93::t_2d70745023496c 7,533-536,540-541,544-551,553-556,568,570-571,621-656
+  s_18b57982fdff93::t_ec3b225640a981 657
+docs/security.md
+  s_18b57982fdff93::t_06bbfec37624f2 189-192
+internal/hub/forward.go
+  s_18b57982fdff93::t_1a73e35d53c39b 404-409,412-420,469
+internal/hub/reauth.go
+  s_18b57982fdff93::t_1a73e35d53c39b 87-89,97
+internal/hub/api.go
+  s_18b57982fdff93::t_1a73e35d53c39b 129,365-368
+  s_18b57982fdff93::t_a8ea2c5c2d2b0d 22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "993cadc649bf1e68692c1a053ead4452c51d4919",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
