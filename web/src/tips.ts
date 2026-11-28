@@ -19,7 +19,8 @@ export type TipId =
   | "capabilities"
   | "deviceplugins"
   | "upgrade"
-  | "ai";
+  | "ai"
+  | "aidraft";
 
 export interface TipText {
   /** What the "?" is about, for a screen reader: "About runbooks". */
@@ -161,6 +162,14 @@ export const tips: Record<TipId, TipText> = {
     lines: [
       "Explain sends what the hub knows about a device (its facts, a metrics summary, recent audit entries and any log tail you add) to the model set up in Settings, AI. Passwords, tokens and keys are redacted first; What was sent shows every byte.",
       "The model never runs anything: a fix it suggests is yours to take, through the usual controls and policy. AI is off until an admin sets it up; a local Ollama keeps it all in the lab.",
+    ],
+    docs: "ai.md",
+  },
+  aidraft: {
+    about: "drafting automations with AI",
+    lines: [
+      "Describe what you want and the model set up in Settings, AI writes the file, using the names of your devices, channels, clusters and plugins (redacted). The hub checks it, and asks once more if it is invalid.",
+      "Nothing is saved or turned on: the draft opens here, unsaved, with its dry run. Review it, then Save, where policy decides as for any edit.",
     ],
     docs: "ai.md",
   },

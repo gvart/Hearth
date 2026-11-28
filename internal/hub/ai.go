@@ -45,6 +45,7 @@ func (a *api) aiRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /api/v1/ai", a.auth(a.getAIConfig))
 	mux.Handle("PUT /api/v1/ai/config", a.auth(a.putAIConfig))
 	mux.Handle("POST /api/v1/devices/{id}/explain", a.auth(a.explainDevice))
+	a.aiAutomationRoutes(mux)
 }
 
 // AIConfigJSON is ai.yaml as the web UI and the CLI see it: everything but

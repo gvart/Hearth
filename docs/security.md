@@ -371,7 +371,9 @@ does.
 - **AI** (off by default): `ai.yaml`'s API key is sealed like `notify.yaml`, and never logged, served
   or audited; it is sent only to the provider and address it was entered for, and redirects are not
   followed. An explanation (`ai.explain`, read) redacts credentials from what it sends, and its audit
-  entry holds sizes, never text. The model only returns text: it runs nothing. See
+  entry holds sizes, never text. An automation draft (`ai.automation.draft`, read) sends the names of
+  devices, channels, clusters and plugins, redacted, and saves nothing: the draft is saved, if at all,
+  as `automation.apply`. The model only returns text: it runs nothing. See
   [Explain with AI](ai.md).
 - **Prometheus**: read only. Hearth never writes to Prometheus.
 - **MCP clients** (AI assistants): each has its own bearer token, stored as a SHA-256 hash and
