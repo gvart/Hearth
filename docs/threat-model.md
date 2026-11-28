@@ -89,8 +89,8 @@ The letters are STRIDE: **S**poofing, **T**ampering, **R**epudiation, **I**nform
 | | Threat | Mitigation | Reference |
 | --- | --- | --- | --- |
 | S | Guessing the admin password | 5 attempts in a row per client address, then one every 12 s; argon2id hash | [security.md](security.md#the-web-ui), `internal/hub/loginlimit.go`, `internal/hub/password.go` |
-| S | Reusing a stolen session for the most sensitive actions | Revoking a device, tokens, policy, notification channels, backups, Add hub, agent upgrades, ceiling raises and CA rotation ask for the password again (5 minutes, per session, in memory) | [security.md](security.md#sensitive-actions-ask-for-the-password-again), `internal/hub/reauth.go` |
-| T | Cross-site request forgery | Session cookie is `HttpOnly` and `SameSite=Strict`; request bodies must be `application/json` | `internal/hub/api.go`, `internal/hub/webadmin.go` (`decodeJSON`) |
+| S | Reusing a stolen session for the most sensitive actions | Revoking a device, creating or revoking a hub-eligible enrollment token or an MCP token, saving the policy, changing a notification channel, downloading a backup, Add hub, agent upgrades, ceiling raises and CA rotation ask for the password again (5 minutes, per session, in memory) | [security.md](security.md#sensitive-actions-ask-for-the-password-again), `internal/hub/reauth.go` |
+| T | Cross-site request forgery | Session cookie is `HttpOnly` and `SameSite=Strict`; the login, `decodeJSON` and the handlers checked so far refuse a body that is not `application/json`. Coverage of every endpoint is a question for the reviewer | `internal/hub/api.go`, `internal/hub/webadmin.go` (`decodeJSON`) |
 | I | Sniffing the password or cookie | HTTPS on 7443 with the hub CA, `Secure` cookie over TLS. Plain HTTP on 7080 stays open: see residual risks | [https.md](https.md) |
 | I | Terminal traffic over plain HTTP | Terminals are served only over HTTPS and only to the hub's own page (`Origin` host check). No flag turns this off | [terminal.md](terminal.md#https-only), `internal/hub/shell.go` |
 | D | Many logins starving the hub of CPU | One password check at a time, in a child process at the lowest CPU priority; `503 busy` after 10 s | [security.md](security.md#the-web-ui), `internal/hub/verifychild.go` |
@@ -172,7 +172,7 @@ what the hub may ask, not what the program does.
 
 | | Threat | Mitigation | Reference |
 | --- | --- | --- | --- |
-| I | Leaking integration credentials from the database | Kubeconfigs, Proxmox, ESPHome, OpenWrt, OPNsense, UniFi and notification credentials are sealed with AES-256-GCM, never logged, served or audited | [security.md](security.md#integrations), `internal/store/carotation.go`, `internal/hubconfig/docs.go` |
+| I | Leaking integration credentials from the database | Kubeconfigs, Proxmox, ESPHome, OpenWrt, OPNsense, UniFi and notification credentials are sealed with AES-256-GCM under keys derived (HKDF, one per purpose) from the hub CA key, which is never in the store, and are never logged, served or audited. A leak of the database alone does not expose them; a leak of the database and the CA key does | [security.md](security.md#integrations), `internal/integrations/kubernetes/seal.go`, `internal/hubconfig/docs.go` |
 | E | A kubeconfig running programs on the hub | `exec` and `auth-provider` credential plugins and `tokenFile` are refused | [kubernetes.md](kubernetes.md) |
 | S | A man in the middle on an integration | Proxmox, OPNsense and UniFi verify TLS against a CA, a pinned fingerprint or system roots. OpenWrt over plain http sends the password in the clear (documented) | [security.md](security.md#integrations) |
 | E | Over-privileged integration accounts | Read-only by default; each write is a policy decision. The account's own role on the remote system is the ceiling (read-only talosconfig, Beszel read-only user) | [talos.md](talos.md), [beszel.md](beszel.md) |
@@ -246,7 +246,7 @@ Open issues and documented gaps, as of v0.0.1-rc.12:
 - **Automation and runbook files are stored as written**, not sealed. Secrets in them are readable by
   anyone with the store.
 - **Outbound requests are not restricted.** A webhook action or a check can reach any address the hub
-  can, LAN included. Writing automations is an admin or a `dangerous`-scope MCP action.
+  can, loopback and LAN included: `internal/automation/action_webhook.go` filters no address. Writing automations is an admin or a `dangerous`-scope MCP action.
 - **One admin account.** No users, no roles, no second factor.
 - **Upgrade rollback by network.** Whoever keeps an upgraded agent from every hub for 5 minutes makes it
   go back to the previous release, never an older one
