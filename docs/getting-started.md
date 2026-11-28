@@ -166,6 +166,40 @@ under that name instead of its hostname. A token no device has used yet shows un
 enrollment tokens** on the **Devices** page and in `hearth token list`; revoke one you handed out
 by mistake there, or with `hearth token revoke <id>`.
 
+### Windows
+
+A Windows PC (64-bit, amd64) runs the agent as a Windows service. The "Add device" dialog shows the
+Linux and macOS command; on Windows, take the token from it (the `hearth2.…` after `HEARTH_TOKEN=`)
+and run the PowerShell installer in an elevated PowerShell (**Run as administrator**), Windows
+PowerShell 5.1 or PowerShell 7:
+
+```powershell
+$env:HEARTH_TOKEN = 'hearth2.…'
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/gvart/Hearth/v0.0.1-rc.12/deploy/install.ps1))) -Version v0.0.1-rc.12
+```
+
+It does what `install.sh` does: downloads `hearth_<version>_windows_amd64.zip` from GitHub releases,
+checks its SHA-256 against the release's `checksums.txt` (and the Sigstore signature of that file
+when `cosign` is installed; without it, it says the signature was not checked), installs
+`C:\Program Files\Hearth\hearth.exe`, enrolls the device and starts the service `hearth-agent`. It
+clears `HEARTH_TOKEN` as soon as it has read it and hands the token to `hearth agent join` on stdin.
+The agent keeps its identity in `C:\ProgramData\Hearth\agent`, which only SYSTEM and Administrators
+can read, runs as LocalSystem, starts at boot, is restarted after a crash, and logs to the Windows
+event log:
+
+```powershell
+Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='hearth-agent'} -MaxEvents 20
+```
+
+`-Hub https://<hub>:7443` gives another hub address and `-LocalCeiling` keeps the hub from changing
+what the agent may do. Re-running the installer upgrades the binary and keeps the identity; an
+agent on Windows does not upgrade itself yet, so **Upgrade agent** on its page refuses: re-run the
+installer instead. `-Uninstall` removes the service and the binary, `-Uninstall -Purge` the
+identity too. Without the installer, `hearth agent service install` (from an elevated shell) does
+the service part: run it before `hearth agent join`, then `Start-Service hearth-agent`. Interactive
+terminals and network edges are not available on Windows, and the web UI cannot stream the event
+log yet.
+
 ## 5. See it
 
 The device is in the **Devices** list, online, with its OS, architecture and IP. Click it for its
