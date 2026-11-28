@@ -1,0 +1,87 @@
+internal/store/reads.go
+  s_18b57982fdff93::t_690ac67beffec9 127-129
+internal/store/auditop_test.go
+  s_18b57982fdff93::t_9cf045d802cae6 142
+  s_18b57982fdff93::t_90994994bc2124 141,143-144
+internal/store/command.go
+  s_18b57982fdff93::t_44ef743ff7f562 590-592,598-604
+  s_18b57982fdff93::t_1a1400e3d763b1 623
+  s_18b57982fdff93::t_cdc396f79d4612 852-853
+  s_18b57982fdff93::t_634c7b61522c23 605
+internal/store/auditchain.go
+  s_18b57982fdff93::t_055dfde3bdc9c6 16,219
+  s_18b57982fdff93::t_d288f6fd4aea0c 1-15,17-199,203-218,220-278,289-292,298-299,307,321-333
+  s_18b57982fdff93::t_5d1ec1c2522a97 200-202
+  s_18b57982fdff93::t_36e0e271e2b2d8 279-288,293-297,300-306,308-320
+internal/store/audit.go
+  s_18b57982fdff93::t_2c373abd3abf34 264,273,276-283
+  s_18b57982fdff93::t_df59b362741ec2 94-95,101-102
+  s_18b57982fdff93::t_ade9b4545046fb 469,707,709-716
+  s_18b57982fdff93::t_fc500b0bf51322 162-189,360,368-371,377-379,381-386,389-394,410,416-429,432-434,441,448,450-457,460,465-468
+  s_18b57982fdff93::t_208906ead924e2 538
+  s_18b57982fdff93::t_0aa7fc9cf3397d 642-651
+  s_18b57982fdff93::t_108e5f09e2746d 685-688
+  s_18b57982fdff93::t_f5fa3d2d783151 349-355
+  s_18b57982fdff93::t_d148cf8489f8e4 41-48
+internal/store/partition.go
+  s_18b57982fdff93::t_55e62cab562a73 83
+  s_18b57982fdff93::t_e490d0ebc6ac73 389-391
+  s_18b57982fdff93::t_b2bef319c6dcc9 92-93,101
+  s_18b57982fdff93::t_c36c4501d46dce 373-374
+internal/store/store.go
+  s_18b57982fdff93::t_fefde824db6ce8 63-66
+internal/store/schema_test.go
+  s_18b57982fdff93::t_9cf045d802cae6 85-88,96,224-242
+  s_18b57982fdff93::t_acb96a7424d1a9 9-10,12-13
+  s_18b57982fdff93::t_bf1075d26dcab2 243
+internal/store/auditkeys.go
+  s_18b57982fdff93::t_da6c3532e31cc6 1-6,8-76,78-87
+  s_18b57982fdff93::t_fcada0c0d34d58 7,77
+internal/store/store_test.go
+  s_18b57982fdff93::t_90994994bc2124 391
+  s_18b57982fdff93::t_6249ae9cd03dfd 86
+internal/store/migrations/00044_audit_chain.sql
+  s_18b57982fdff93::t_45797c6adb2ae7 1-8,12-42
+  s_18b57982fdff93::t_418b8e1969fdc9 9-11
+internal/store/carotation.go
+  s_18b57982fdff93::t_5ec06eec91ccdb 418
+  s_18b57982fdff93::t_169dc7654e2dbe 359
+  s_18b57982fdff93::t_4fc11cb04a8b33 369
+  s_18b57982fdff93::t_531c040d010be8 343-344
+internal/store/version.go
+  s_18b57982fdff93::t_f4192b836b3a3b 194-195
+internal/store/auditverify.go
+  s_18b57982fdff93::t_f3799f2b608d20 395
+  s_18b57982fdff93::t_04c42cdb54fdb2 416-419,421
+  s_18b57982fdff93::t_ed1a2752b3f045 243
+  s_18b57982fdff93::t_02fa376a38642d 1-50,54-59,64-65,69-80,84-85,87-199,201-242,244-285,287-298,300-394,396-407,411,414-415,420,422-432
+  s_18b57982fdff93::t_45e40e1b8ac334 408-410,412-413
+  s_18b57982fdff93::t_326b8880574ee8 51-53,60-63,66-68,81-83,86
+  s_18b57982fdff93::t_58488b277c5b91 286
+  s_18b57982fdff93::t_a31d5eb6f0e21a 200
+  s_18b57982fdff93::t_81583330e66293 299
+internal/store/command_test.go
+  s_18b57982fdff93::t_c8fa87f37b6841 571-573
+  s_18b57982fdff93::t_90994994bc2124 63
+  s_18b57982fdff93::t_690ac67beffec9 53
+internal/pki/audit.go
+  s_18b57982fdff93::t_214bd50b364845 1-179
+internal/store/digest.go
+  s_18b57982fdff93::t_885eeb833e9239 413-418
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "a4c9f3e1fe868e95d6038c7c42fec41b56867f03",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
