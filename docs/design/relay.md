@@ -53,9 +53,9 @@ asks the relay to publish the challenge TXT record.
   terminal's rule (TLS reached the hub, `Origin` host matches) holds unchanged.
 - The relay sees only metadata: the name, client IPs, timing and sizes.
 - Risk: the relay operator controls the DNS zone, so it could get a certificate for the same name
-  itself and read the traffic. Mitigations to weigh: a CAA record with `accounturi` bound to the hub's
-  own ACME account, which the relay publishes at registration and cannot change without the hub; the
-  hub watching Certificate Transparency logs for its name and alerting; a self-hosted relay for owners
+  itself and read the traffic. A CAA record cannot stop that: the relay runs the zone and can rewrite
+  it. What is left is detection and choice: the hub watching Certificate Transparency logs for its name
+  and alerting on any certificate it did not request, option C below, or a self-hosted relay for owners
   who do not want to trust ours.
 
 ### C. TLS passthrough, hub CA certificate
@@ -125,7 +125,7 @@ key on every master. Open question.
 | Attacker | Can | Mitigation |
 | --- | --- | --- |
 | Relay operator, honest but curious | see names, client IPs, timing, sizes | passthrough (B or C): no plaintext |
-| Relay operator, malicious | issue a certificate for the hub's name through its DNS (B) | CAA `accounturi`, CT monitoring, option C, self-hosting |
+| Relay operator, malicious | issue a certificate for the hub's name through its DNS (B) | detection only, through CT monitoring; option C or self-hosting to prevent it |
 | Relay operator | drop or delay traffic and pushes | none beyond the LAN and other access paths still working |
 | Stolen relay credential | register a tunnel for the hub's name and receive its traffic | browsers fail TLS without the hub's key; DNS-01 requests must not be possible with this credential alone (open) |
 | Internet attacker | guess the admin password, probe the API | login limits per address and per tunnel, re-auth for sensitive actions, open question on a second factor |
