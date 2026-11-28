@@ -251,16 +251,13 @@ func TestDeviceLogsRefused(t *testing.T) {
 			f := newLogsFixture(t)
 			stream := connectAgent(ctx, t, f.client, tc.minor, tc.ceiling)
 			reqs, _ := fakeLogAgent(stream, "")
-			var resp *http.Response
-			for range 100 {
-				resp = f.open(ctx, t, tc.source)
-				if resp.StatusCode != http.StatusConflict {
-					break
-				}
-				_ = resp.Body.Close()
-				time.Sleep(10 * time.Millisecond)
-			}
+			// Right after Welcome, with no wait: the hub attaches the
+			// session before it sends Welcome, so the policy precheck sees
+			// the agent and denies, rather than allowing what the action
+			// then refuses (#417).
+			resp := f.open(ctx, t, tc.source)
 			body, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
 			if resp.StatusCode != tc.status || !strings.Contains(string(body), tc.want) {
 				t.Errorf("open = %d %s, want %d with %q", resp.StatusCode, body, tc.status, tc.want)
 			}

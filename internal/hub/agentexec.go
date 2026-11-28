@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -133,9 +134,17 @@ type agentSession struct {
 	sentPlugins *agentv1.PluginConfig
 }
 
-// attach records the stream of deviceID. A newer stream of the same device
-// replaces an older one. Call detach when the stream ends.
-func (a *Agents) attach(deviceID string, hello *agentv1.Hello, send func(*agentv1.HubMessage) error, abort func()) *agentSession {
+// attach records the stream of deviceID and sends welcome on it, if set. A
+// newer stream of the same device replaces an older one. Call detach when the
+// stream ends, also when sending welcome failed.
+//
+// The session is findable before welcome goes out, so a request that comes
+// once the agent has its Welcome never finds the agent not connected (a
+// policy precheck would then allow what the action refuses). It holds the
+// send lock until welcome is sent, so nothing reaches the agent before it.
+func (a *Agents) attach(deviceID string, hello *agentv1.Hello, welcome *agentv1.HubMessage,
+	send func(*agentv1.HubMessage) error, abort func(),
+) (*agentSession, error) {
 	s := &agentSession{
 		device: deviceID, sendTimeout: a.sendTimeout,
 		minor: hello.GetProtocolVersion().GetMinor(), send: send, abort: abort, done: make(chan struct{}),
@@ -144,11 +153,20 @@ func (a *Agents) attach(deviceID string, hello *agentv1.Hello, send func(*agentv
 		upgrades: map[string]chan *agentv1.UpgradeResult{}, noUpgrade: hello.GetNoSelfUpgrade(),
 		logs: map[string]*logQueue{}, shells: map[string]*Shell{}, ceiling: hello.GetCeiling(),
 		pluginRuns: map[string]chan *agentv1.PluginResult{},
+		hubs:       slices.Clone(welcome.GetWelcome().GetHubs()),
 	}
+	s.sendMu.Lock()
+	defer s.sendMu.Unlock()
 	a.mu.Lock()
 	a.sessions[deviceID] = s
 	a.mu.Unlock()
-	return s
+	if welcome == nil {
+		return s, nil
+	}
+	// Bounded as every send to an agent is (see sendMsg).
+	stalled := time.AfterFunc(s.sendTimeout, abort)
+	defer stalled.Stop()
+	return s, s.send(welcome)
 }
 
 // detach forgets s, if it is still the stream of deviceID, and fails the
