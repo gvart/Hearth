@@ -333,7 +333,7 @@ export function applied(caps: Capabilities): boolean {
   return (
     capInfo.every((i) => {
       const want = flagOf(caps.hub, i.key) || flagOf(caps.local, i.key);
-      return i.key === 'shell' || i.key === 'net_edges' ? true : want === flagOf(effective, i.key);
+      return i.key === 'shell' || i.key === 'net_edges' || i.key === 'vip' ? true : want === flagOf(effective, i.key);
     }) &&
     (!caps.plugins_manageable || samePlugins(unionPlugins(caps.hub.plugins ?? [], caps.local?.plugins ?? []), effective.plugins ?? []))
   );

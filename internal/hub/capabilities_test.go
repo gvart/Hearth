@@ -89,8 +89,11 @@ func TestCapabilitiesSetAndRaise(t *testing.T) {
 	if resp := f.do(t, http.MethodPost, "/api/v1/session/reauth", passwordBody(testPassword), stale); resp.StatusCode != http.StatusOK {
 		t.Fatalf("reauth = %d", resp.StatusCode)
 	}
-	if resp := f.do(t, http.MethodPut, capsPath, `{"hub":{"shell":true,"exec":["/usr/bin/df"]}}`, stale); resp.StatusCode != http.StatusOK {
+	if resp := f.do(t, http.MethodPut, capsPath, `{"hub":{"shell":true,"exec":["/usr/bin/df"],"vip":["eth0=192.168.1.53/24"]}}`, stale); resp.StatusCode != http.StatusOK {
 		t.Fatalf("raise after re-auth = %d %s", resp.StatusCode, resp.body)
+	}
+	if got := decode[CapabilitiesJSON](t, f.do(t, http.MethodGet, capsPath, "", stale)); !slices.Equal(got.Hub.VIP, []string{"eth0=192.168.1.53/24"}) {
+		t.Errorf("vip after the raise = %v", got.Hub.VIP)
 	}
 
 	// Lowering never asks: a fresh stale session turns it all off.

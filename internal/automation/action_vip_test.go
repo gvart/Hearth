@@ -58,7 +58,7 @@ func TestPiholeSelfHealExamples(t *testing.T) {
 	for _, s := range a.Actions {
 		got = append(got, s.Type+"="+string(s.Impl.Policy()))
 	}
-	want := "check=automation.probe vip_claim=automation.vip.claim notify=automation.notify vip_release=automation.vip.release"
+	want := "check=automation.probe vip_claim=automation.vip.claim notify=automation.notify vip_release=automation.vip.release vip_claim=automation.vip.claim"
 	if strings.Join(got, " ") != want {
 		t.Errorf("actions = %s, want %s", strings.Join(got, " "), want)
 	}

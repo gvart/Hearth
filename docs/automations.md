@@ -451,7 +451,8 @@ What happens when the primary's Pi-hole stops answering:
 - **A minute in,** if the primary still does not answer, `pihole-selfheal` on the hub checks that the
   standby's Pi-hole answers (if it does not, nothing moves and the run fails), claims 192.168.1.53 on
   the standby, which announces it with gratuitous ARP so every host sends its queries there within a
-  second or two, notifies you, and releases the address on the primary.
+  second or two, notifies you, releases the address on the primary, and claims it on the standby
+  once more, which announces it again.
 - When the primary is off, the release is the step that fails: the run ends `failed` after the
   failover and the notification. Each step is in the audit log as `automation/pihole-selfheal`.
 
@@ -463,8 +464,10 @@ breaks the primary's Pi-hole on purpose, so you can watch the steps happen, and 
 - **The failover needs a hub.** Only restarts and checks run on a device without one; moving the
   address is decided by policy on a hub, so a hub that goes down with the primary cannot fail it over.
   In a [cluster](cluster.md) any master runs it.
-- **Split brain.** Between the claim on the standby and the release on the primary, both hold the
-  address, for about a second. If the primary is cut off from the hub but still on the LAN (its agent
+- **Split brain.** From the claim on the standby to the release on the primary, both hold the
+  address: for the notification and the release, a few seconds. A host that asks who holds it in
+  that time may learn the primary; the second claim after the release announces the standby again.
+  If the primary is cut off from the hub but still on the LAN (its agent
   unreachable, its network up), the release fails and both keep it: hosts then reach whichever
   answered their ARP last. Remove it on the primary by hand (`sudo ip address del 192.168.1.53/24 dev
   eth0`). Hearth has no fencing and no quorum for this.
@@ -472,8 +475,11 @@ breaks the primary's Pi-hole on purpose, so you can watch the steps happen, and 
   ignores it keeps sending to the primary until its ARP entry expires, usually within a minute.
   Hosts and the router that cache DNS answers are not affected by the move itself.
 - **No failback.** Hearth does not move the address back when the primary recovers, and does not
-  fail over again from the standby. Move it back by hand (`ip address del` on the standby,
-  `ip address add` on the primary), or write the reverse automation.
+  fail over again from the standby. Move it back by hand: `sudo ip address del 192.168.1.53/24 dev
+  eth0` on the standby, then on the primary `sudo ip address add 192.168.1.53/24 dev eth0` and
+  `sudo arping -U -c 3 -I eth0 192.168.1.53` (iputils-arping): Linux does not announce an address
+  added by hand, so without it hosts keep sending to the standby until their ARP entry expires. Or
+  write the reverse automation, whose `vip_claim` announces it.
 - **Not saved.** The address a claim adds is gone after a reboot of that device, on purpose: a
   primary that reboots does not take the address back from the standby. After a reboot of the device
   that held it, add it again.
@@ -610,7 +616,7 @@ actions:
     body: "{{ .Trigger.Hostname }} went {{ .Trigger.State }} at {{ .Trigger.At }}"
 ```
 
-Templated fields: `device` (exec, restart), `body` and header values (webhook), `message` (log),
+Templated fields: `device` (exec, restart, vip_claim, vip_release), `body` and header values (webhook), `message` (log),
 `title` and `message` (notify), `cluster`, `namespace`, `name` and `node` (kube_*).
 The webhook `url`, `command` and `service` are not templates.
 

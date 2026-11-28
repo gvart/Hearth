@@ -14,8 +14,9 @@
 # done (both automations loaded, the dangerous grant, Virtual IPs on both
 # devices). Nothing runs it in CI.
 #
-# Needs: ssh to both devices as a user with sudo, dig on the workstation, and
-# optionally ssh to a hub host for `hearth automation runs`.
+# Needs: ssh to both devices as a user with sudo, dig on the workstation,
+# arping (iputils-arping) on the primary for restore, and optionally ssh to a
+# hub host for `hearth automation runs`.
 #
 #   PRIMARY=pi@pihole-primary STANDBY=pi@pihole-standby VIP=192.168.1.53/24 \
 #     IFACE=eth0 HUB=pi@hub examples/automations/selfheal-demo.sh [scene1|scene2|restore|all]
@@ -104,7 +105,15 @@ restore() {
 	remote "$PRIMARY" sudo systemctl start "$FTL"
 	remote "$STANDBY" sudo ip -4 address del "$VIP" dev "$IFACE" 2>/dev/null || true
 	remote "$PRIMARY" sudo ip -4 address replace "$VIP" dev "$IFACE"
+	# Linux does not announce an address added by hand: without this, hosts
+	# keep sending to the standby until their ARP entry expires.
+	if remote "$PRIMARY" sh -c 'command -v arping' >/dev/null; then
+		remote "$PRIMARY" sudo arping -U -c 3 -I "$IFACE" "$vip_addr" >/dev/null || true
+	else
+		echo "no arping on the primary (apt install iputils-arping): hosts may keep the standby for a minute" >&2
+	fi
 	holder
+	if answers; then echo "$vip_addr answers"; else echo "$vip_addr does NOT answer yet" >&2; fi
 }
 
 case "${1:-all}" in

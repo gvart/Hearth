@@ -39,8 +39,13 @@ actions:
     channel: phone
     title: Pi-hole failed over
     message: "The primary Pi-hole stopped answering ({{ .Trigger.Error }}). 192.168.1.53 now points at pihole-standby."
-  - id: release-on-primary   # last: on a primary that is off, only this step fails
+  - id: release-on-primary   # on a primary that is off, this step fails and ends the run
     type: vip_release
     device: pihole-primary
+    interface: eth0
+    address: 192.168.1.53/24
+  - id: announce-again       # hosts that asked the primary in between learn the standby again
+    type: vip_claim
+    device: pihole-standby
     interface: eth0
     address: 192.168.1.53/24
