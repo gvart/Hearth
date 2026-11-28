@@ -8,7 +8,7 @@
 export const sections = [
 	{ label: 'Start here', pages: ['getting-started', 'concepts', 'comparison'] },
 	{ label: 'Automations', pages: ['automations', 'runbooks', 'runbook-recipes', 'notifications'] },
-	{ label: 'Integrations', pages: ['logs', 'prometheus', 'kubernetes', 'proxmox', 'esphome', 'openwrt', 'opnsense', 'unifi', 'discovery', 'net-edges', 'docker', 'pihole', 'netalertx', 'beszel', 'talos', 'homepage', 'mcp', 'plugins', 'mqtt', 'spec/device-protocol-v1'] },
+	{ label: 'Integrations', pages: ['logs', 'prometheus', 'kubernetes', 'proxmox', 'esphome', 'openwrt', 'opnsense', 'unifi', 'discovery', 'net-edges', 'docker', 'pihole', 'netalertx', 'beszel', 'talos', 'homepage', 'mcp', 'ai', 'plugins', 'mqtt', 'spec/device-protocol-v1'] },
 	{ label: 'Operating', pages: ['terminal', 'guardrails', 'panels', 'https', 'cluster', 'backup', 'security', 'threat-model', 'telemetry'] },
 ];
 

@@ -28,7 +28,7 @@ func newConfigCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "config",
 		Short: "Import, export and delete the hub's configuration documents",
-		Long: "policy.yaml, notify.yaml, the automation files and the runbook files are documents of the hub's\n" +
+		Long: "policy.yaml, notify.yaml, ai.yaml, the automation files and the runbook files are documents of the hub's\n" +
 			"store, the same on every hub of a cluster, which every hub applies within seconds of a change.\n" +
 			"Files on disk are import and export only. Run these commands on a hub host: they open the hub's\n" +
 			"data dir directly. See docs/guardrails.md.",
@@ -45,17 +45,17 @@ func newConfigImportCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "import <dir|file>",
 		Short: "Validate configuration files and write them into the store, through policy (config.import)",
-		Long: "Import a directory laid out like an export (policy.yaml, notify.yaml, automations/, runbooks/) or one\n" +
+		Long: "Import a directory laid out like an export (policy.yaml, notify.yaml, ai.yaml, automations/, runbooks/) or one\n" +
 			"file. Each file adds or replaces the document of its name; documents not in the import stay.\n" +
 			"The whole configuration the import would leave is validated first: nothing is written unless all\n" +
-			"of it loads. notify.yaml is sealed before it is stored. The import is audited.",
+			"of it loads. notify.yaml and ai.yaml are sealed before they are stored. The import is audited.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runConfigImport(cmd.Context(), dataDir, args[0], kind, dryRun, cmd.OutOrStdout())
 		},
 	}
 	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir("hub"), "hub data directory (env HEARTH_DATA_DIR)")
-	cmd.Flags().StringVar(&kind, "kind", "", "kind of a single file: policy, notify, automation or runbook "+
+	cmd.Flags().StringVar(&kind, "kind", "", "kind of a single file: policy, notify, ai, automation or runbook "+
 		"(default: from its name, or its automations/ or runbooks/ directory)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "validate and audit the policy decision only; nothing is written")
 	return cmd
@@ -67,7 +67,7 @@ func newConfigExportCmd() *cobra.Command {
 		Use:   "export <dir>",
 		Short: "Write the configuration documents to files, through policy (config.export)",
 		Long: "Write every document into dir, in the layout import reads, each file readable by its owner only.\n" +
-			"notify.yaml is written in clear: it holds the notification credentials. Only this command, on a hub\n" +
+			"notify.yaml and ai.yaml are written in clear: they hold credentials. Only this command, on a hub\n" +
 			"host, exports it; no API returns it.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

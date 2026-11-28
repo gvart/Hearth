@@ -329,7 +329,7 @@ const (
 	SealedKubeClusters   = "kube_clusters"
 	SealedProxmoxServers = "proxmox_servers"
 	SealedRunbookRuns    = "runbook_runs"
-	// SealedConfigDocs holds the sealed notify documents; its other
+	// SealedConfigDocs holds the sealed notify and ai documents; its other
 	// documents are not secret.
 	SealedConfigDocs = "config_docs"
 	// SealedESPHomeDevices holds the ESPHome devices' connections.
@@ -359,7 +359,7 @@ var sealedColumns = map[string]string{
 // sealedWhere narrows a table of sealedColumns to its sealed rows, and
 // sealedSince is the schema a table of it needs.
 var (
-	sealedWhere = map[string]string{SealedConfigDocs: ` AND kind = '` + ConfigNotify + `'`}
+	sealedWhere = map[string]string{SealedConfigDocs: ` AND kind IN ('` + ConfigNotify + `', '` + ConfigAI + `')`}
 	sealedSince = map[string]int64{
 		SealedConfigDocs: configDocsSchema, SealedESPHomeDevices: esphomeDevicesSchema, SealedOpenWrtRouters: openwrtRoutersSchema,
 		SealedOPNsenseFirewalls: opnsenseFirewallsSchema,

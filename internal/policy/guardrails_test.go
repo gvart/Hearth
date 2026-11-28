@@ -233,6 +233,7 @@ var expected = map[Action]struct {
 	UniFiControllerAdd:           {Safe, []string{ActorWeb}, false},
 	UniFiControllerRemove:        {Safe, []string{ActorWeb}, false},
 	UniFiAPRestart:               {Dangerous, []string{ActorWeb}, false},
+	AIExplain:                    {Read, []string{ActorWeb}, false},
 	DeviceCapabilitiesSet:        {Safe, []string{ActorAdmin, ActorWeb}, false},
 	DeviceCapabilitiesRaise:      {Dangerous, []string{ActorAdmin, ActorWeb}, false},
 }
