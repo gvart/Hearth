@@ -442,6 +442,20 @@ func TestOneMasterWithStorageMembersDown(t *testing.T) {
 // master that may prove the hub CA key is live; it reads them once it
 // compared them, or once none is (a down one, or members that only say
 // they are masters, are waited for by none).
+// startCompared waits until r's comparison at the start (Run) is done
+// and no longer holds pullMu: a read while it runs is refused at once, so
+// a test that closes the gate and reads must not race it.
+func startCompared(t *testing.T, r *Replicator) {
+	t.Helper()
+	apEventuallyTB(t, "the comparison at the start", func() bool {
+		if !r.masterRowsSynced.Load() || !r.pullMu.TryLock() {
+			return false
+		}
+		r.pullMu.Unlock()
+		return true
+	})
+}
+
 func TestMasterRowsGate(t *testing.T) {
 	ctx := t.Context()
 	t.Run("another master hung", func(t *testing.T) {
@@ -488,6 +502,7 @@ func TestMasterRowsGate(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
+		startCompared(t, a.rep)
 		a.rep.masterRowsSynced.Store(false)
 		an.setDown("b", true)
 		if _, err := a.st.Admin().CheckSession(ctx, "s", time.Now()); err != nil {
@@ -526,10 +541,22 @@ func TestMasterRowsGate(t *testing.T) {
 		if a.rep.Uncompared() {
 			t.Fatal("a says it reads uncompared rows while it reads none")
 		}
-		a.rep.gateSince.Store(time.Now().Add(-2 * time.Hour).UnixNano())
-		if _, err := a.st.Admin().CheckSession(ctx, "s", time.Now()); err != nil {
-			t.Fatalf("session after the wait, alone: %v", err)
+		// The refused read asked Run for a comparison, which retries
+		// (pullMasterRows); within the wait none opens the rows.
+		if a.rep.masterRowsSynced.Load() {
+			t.Fatal("a opened its rows within the wait, alone")
 		}
+		a.rep.gateSince.Store(time.Now().Add(-2 * time.Hour).UnixNano())
+		// A read while that comparison runs is refused at once (it does not
+		// queue), so the one after the wait may come too early: it reads
+		// once a round past the wait is done.
+		apEventuallyTB(t, "a reads the session after the wait, alone", func() bool {
+			_, err := a.st.Admin().CheckSession(ctx, "s", time.Now())
+			if err != nil && !errors.Is(err, store.ErrUnavailable) {
+				t.Fatalf("session after the wait, alone: %v", err)
+			}
+			return err == nil
+		})
 		if !a.rep.Uncompared() {
 			t.Fatal("a read with no master to compare with, and does not say so")
 		}
@@ -541,6 +568,7 @@ func TestMasterRowsGate(t *testing.T) {
 		if err := a.st.Admin().CreateSession(ctx, "s", time.Now(), time.Now().Add(time.Hour)); err != nil {
 			t.Fatal(err)
 		}
+		startCompared(t, a.rep)
 		a.rep.closeMasterRows()
 		if _, err := a.st.Admin().CheckSession(ctx, "s", time.Now()); err != nil {
 			t.Fatalf("session of a hub alone from the start: %v", err)
@@ -570,6 +598,7 @@ func TestMasterRowsGate(t *testing.T) {
 		if err := m.st.Admin().CreateSession(ctx, "s", time.Now(), time.Now().Add(time.Hour)); err != nil {
 			t.Fatal(err)
 		}
+		startCompared(t, m.rep)
 		m.rep.closeMasterRows()
 		if _, err := m.st.Admin().CheckSession(ctx, "s", time.Now()); err != nil {
 			t.Fatalf("session on the only master: %v", err)
