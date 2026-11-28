@@ -47,7 +47,8 @@ HEARTH_ADMIN_PASSWORD='choose-a-password' ./hearth hub
   issued at every start for the addresses of the moment, but devices keep the address they enrolled
   with: give the hub a fixed address (a DHCP reservation) or a DNS name with `--host`.
 - `--host` replaces that list with the names and IPs you give, for a DNS name (`--host nas.lan`), a
-  tailnet or VPN address, or an address behind a port forward. Repeat it to add more
+  VPN address, or an address behind a port forward (for a tailnet, [`--tailscale`](tailscale.md)
+  adds the hub's tailnet name for you). Repeat it to add more
   (`--host nas.lan --host 192.168.1.10`). The first one is the address install commands name.
 - The hub also answers at **`hearth.local`** on the LAN: it announces that name over mDNS (next to
   the OS's own responder, Bonjour or avahi) and its certificate names it too. It is for your
@@ -350,4 +351,6 @@ On the hub, the log says `device enrolled` and then `agent connected` for each d
 - [Cluster mode](cluster.md): several hubs, no leader, that keep working when one dies. Started on a
   laptop? Before you stop it, its Cluster page (or `hearth cluster status`) says whether it is
   [safe to stop](cluster.md#is-it-safe-to-stop-this-hub).
+- [Tailscale](tailscale.md): `hearth hub --tailscale` to open the UI from your phone anywhere on your
+  tailnet, and to add devices over it, with no port forwarded.
 - [Security model](security.md): what protects your devices.

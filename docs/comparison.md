@@ -168,10 +168,9 @@ On `main`, Hearth has:
   ([ESPHome](esphome.md), [OpenWrt](openwrt.md), [OPNsense](opnsense.md), [UniFi](unifi.md));
 - a leaderless cluster of hubs that keeps working when one dies or the network splits ([Cluster mode](cluster.md));
 - an MCP server, so Claude Code and other AI assistants can see and operate the lab with scoped
-  tokens, through the same policy, approvals and audit log, Docker containers included ([MCP](mcp.md)).
-
-**Planned** for v0 and not on `main` yet: built-in Tailscale
-([#48](https://github.com/gvart/hearth/issues/48)).
+  tokens, through the same policy, approvals and audit log, Docker containers included ([MCP](mcp.md));
+- built-in Tailscale: `hearth hub --tailscale` puts the hub on your tailnet, so you can open the UI
+  from a phone on cellular and agents can enroll over the tailnet, with no port forwarded ([Tailscale](tailscale.md)).
 
 ## Sources
 
