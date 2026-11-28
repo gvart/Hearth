@@ -22,22 +22,32 @@ import (
 // does.
 func TestAPICreateTokenPinsHubVersion(t *testing.T) {
 	for _, tc := range []struct {
-		version string
-		want    func(token string) string
+		version     string
+		want, want2 func(token string) string
 	}{
 		{"v0.0.1-rc.5", func(tok string) string {
 			return "curl -fsSL https://raw.githubusercontent.com/gvart/Hearth/v0.0.1-rc.5/deploy/install.sh | HEARTH_TOKEN=" + tok +
 				" sh -s -- --version v0.0.1-rc.5"
+		}, func(tok string) string {
+			return "$env:HEARTH_TOKEN='" + tok + "'; & ([scriptblock]::Create((irm " +
+				"https://raw.githubusercontent.com/gvart/Hearth/v0.0.1-rc.5/deploy/install.ps1))) -Version v0.0.1-rc.5"
 		}},
 		{"v1.2.3", func(tok string) string {
 			return "curl -fsSL https://raw.githubusercontent.com/gvart/Hearth/v1.2.3/deploy/install.sh | HEARTH_TOKEN=" + tok +
 				" sh -s -- --version v1.2.3"
+		}, func(tok string) string {
+			return "$env:HEARTH_TOKEN='" + tok + "'; & ([scriptblock]::Create((irm " +
+				"https://raw.githubusercontent.com/gvart/Hearth/v1.2.3/deploy/install.ps1))) -Version v1.2.3"
 		}},
 		{"dev", func(tok string) string {
 			return "curl -fsSL http://hub.lan:7080/install.sh | HEARTH_TOKEN=" + tok + " sh"
+		}, func(tok string) string {
+			return "$env:HEARTH_TOKEN='" + tok + "'; & ([scriptblock]::Create((irm http://hub.lan:7080/install.ps1)))"
 		}},
 		{"v0.0.2-snapshot", func(tok string) string {
 			return "curl -fsSL http://hub.lan:7080/install.sh | HEARTH_TOKEN=" + tok + " sh"
+		}, func(tok string) string {
+			return "$env:HEARTH_TOKEN='" + tok + "'; & ([scriptblock]::Create((irm http://hub.lan:7080/install.ps1)))"
 		}},
 	} {
 		t.Run(tc.version, func(t *testing.T) {
@@ -50,6 +60,14 @@ func TestAPICreateTokenPinsHubVersion(t *testing.T) {
 			got := decode[TokenJSON](t, resp)
 			if want := tc.want(got.Token); got.InstallCommand != want {
 				t.Errorf("install_command = %q, want %q", got.InstallCommand, want)
+			}
+			if want := tc.want2(got.Token); got.InstallCommandWindows != want {
+				t.Errorf("install_command_windows = %q, want %q", got.InstallCommandWindows, want)
+			}
+			// The token is a base64url string in single quotes: nothing in
+			// it ends the string.
+			if strings.ContainsAny(got.Token, "'`$;\"") {
+				t.Errorf("token %q has a PowerShell metacharacter", got.Token)
 			}
 			if !strings.HasPrefix(got.Token, "hearth2.") {
 				t.Errorf("token %q does not name its hub", got.Token)

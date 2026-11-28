@@ -15,7 +15,7 @@ its own certificate authority (CA):
 | `https://<host>:7443/`       | Web UI and API over HTTPS (and the agent services, as before) |
 | `http://<host>:7080/`        | Web UI and API over plain HTTP                               |
 | `http://<host>:7080/ca.crt`  | The hub CA certificate (PEM; `?format=der` for DER)          |
-| `http://<host>:7080/install.sh`, `/download/*` | Agent installer, HTTP only            |
+| `http://<host>:7080/install.sh`, `/install.ps1`, `/download/*` | Agent installers, HTTP only |
 
 No certificate is bought or requested from anywhere: each device you browse from trusts the hub CA
 **once**, and from then on `https://<host>:7443` is a normal secure site. The CA can only issue

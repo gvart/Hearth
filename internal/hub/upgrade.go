@@ -46,7 +46,8 @@ type AgentVersionJSON struct {
 	RemoteUpgrade   bool   `json:"remote_upgrade"`
 	NoRemoteUpgrade string `json:"no_remote_upgrade,omitempty"`
 	// InstallCommand, on a device's own page, is the installer's one-liner
-	// that upgrades an agent too old to upgrade itself.
+	// that upgrades an agent too old to upgrade itself, or (PowerShell) an
+	// agent on Windows, which does not upgrade itself.
 	InstallCommand string `json:"install_command,omitempty"`
 	// RolledBackFrom is the release an upgrade of the agent went to and was
 	// rolled back from: the new binary reached no hub (#359).

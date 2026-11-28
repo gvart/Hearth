@@ -14,6 +14,14 @@ const ttls = [
   { value: '24h', label: '24 hours' },
 ];
 
+/** The platforms the dialog has an install command for. */
+const platforms = [
+  { id: 'unix', label: 'Linux / macOS' },
+  { id: 'windows', label: 'Windows' },
+] as const;
+
+type Platform = (typeof platforms)[number]['id'];
+
 interface Label {
   key: string;
   value: string;
@@ -64,6 +72,9 @@ export function AddDeviceDialog({ host, joined, onClose, onShow }: Props) {
   // Stays open across the new token, which remounts it.
   // Open for a discovered host, so its prefilled name shows.
   const [optionsOpen, setOptionsOpen] = useState(host !== undefined);
+  const [platform, setPlatform] = useState<Platform>('unix');
+  const windows = platform === 'windows';
+  const install = tok ? (windows ? tok.install_command_windows : tok.install_command) : '';
   const remint = (asHub = hub) => {
     mutate({ ttl, labels: labelsOf(labels), name: name.trim() === '' ? undefined : name.trim(), hub: asHub });
   };
@@ -77,9 +88,25 @@ export function AddDeviceDialog({ host, joined, onClose, onShow }: Props) {
         </button>
       </header>
       <p className="muted">
-        Run this on {host ? <>the device at {host.ip}</> : 'the device'} (Linux or macOS). It installs the agent,
-        enrolls it with this hub and starts it.
+        Run this on {host ? <>the device at {host.ip}</> : 'the device'}. It installs the agent, enrolls it with this
+        hub and starts it.
       </p>
+      <div className="tabs" role="tablist" aria-label="Device platform">
+        {platforms.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            role="tab"
+            className="tab"
+            aria-selected={platform === p.id}
+            onClick={() => {
+              setPlatform(p.id);
+            }}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
 
       <label className="hub-opt">
         <input
@@ -122,11 +149,18 @@ export function AddDeviceDialog({ host, joined, onClose, onShow }: Props) {
         <>
           <div className="add-grid">
             <div className="add-commands">
-              <Command label="Install and join" value={tok.install_command} />
-              <details className="alt">
-                <summary>Hearth already installed?</summary>
-                <Command label="Join only" value={tok.join_command} />
-              </details>
+              <Command
+                label={windows ? 'Install and join, in PowerShell run as administrator' : 'Install and join'}
+                value={install}
+              />
+              {windows ? (
+                <p className="muted small">A 64-bit Windows PC stays an agent: it does not become a hub.</p>
+              ) : (
+                <details className="alt">
+                  <summary>Hearth already installed?</summary>
+                  <Command label="Join only" value={tok.join_command} />
+                </details>
+              )}
               <p className="muted small">
                 Single use · {tokenName ? <>joins as <strong>{tokenName}</strong> · </> : null}
                 {tokenHub ? <>may become a hub · </> : null}expires at{' '}
@@ -226,7 +260,7 @@ export function AddDeviceDialog({ host, joined, onClose, onShow }: Props) {
               </details>
             </div>
             <figure className="qr-wrap">
-              <QrCode value={tok.install_command} label="QR code of the install command" />
+              <QrCode value={install} label="QR code of the install command" />
               <figcaption className="muted small">Scan to copy on a phone</figcaption>
             </figure>
           </div>

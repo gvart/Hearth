@@ -142,7 +142,7 @@ func newHubCmd() *cobra.Command {
 			"in the data dir. Agents enroll and connect over TLS on the listen address, which also\n" +
 			"serves the web UI and JSON API over HTTPS with a certificate from the hub CA for the\n" +
 			"--host names. The http-listen address serves the UI and API over plain HTTP, plus\n" +
-			"/install.sh, /download/ and the CA certificate at /ca.crt (see docs/https.md).\n\n" +
+			"/install.sh, /install.ps1, /download/ and the CA certificate at /ca.crt (see docs/https.md).\n\n" +
 			"If HEARTH_ADMIN_PASSWORD is set and no admin password is stored yet, it becomes the\n" +
 			"admin password. Otherwise use `hearth admin set-password`.\n\n" +
 			"A hub is a cluster of one; --join adds it to the cluster of another hub, with which it\n" +

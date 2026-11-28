@@ -54,6 +54,25 @@ func TestInstallScriptRoute(t *testing.T) {
 	}
 }
 
+func TestInstallPowerShellRoute(t *testing.T) {
+	rec := get(t, installMux(""), http.MethodGet, "/install.ps1")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "text/plain; charset=utf-8" {
+		t.Errorf("Content-Type = %q", ct)
+	}
+	if rec.Body.String() != string(deploy.InstallPowerShell) || !strings.Contains(rec.Body.String(), "[CmdletBinding(") {
+		t.Error("body is not the embedded deploy/install.ps1")
+	}
+	if rec = get(t, installMux(""), http.MethodHead, "/install.ps1"); rec.Code != http.StatusOK || rec.Body.Len() != 0 {
+		t.Errorf("HEAD: status = %d, body length %d", rec.Code, rec.Body.Len())
+	}
+	if rec = get(t, installMux(""), http.MethodPost, "/install.ps1"); rec.Body.String() == string(deploy.InstallPowerShell) {
+		t.Error("POST /install.ps1 must not serve the script")
+	}
+}
+
 func TestDownloadRoute(t *testing.T) {
 	root := t.TempDir()
 	assets := filepath.Join(root, "assets")

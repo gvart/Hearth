@@ -252,6 +252,23 @@ func TestDeviceAgentVersionOldAgent(t *testing.T) {
 	}
 }
 
+// An agent on Windows does not upgrade itself: its page shows the
+// PowerShell installer's command, which upgrades it (#399), with no token.
+func TestDeviceAgentVersionWindows(t *testing.T) {
+	t.Parallel()
+	f := newUpgradeFixture(t, "v1.2.0", policy.Config{})
+	f.connectUpgrader(t, minUpgradeMinor, func(h *agentv1.Hello) {
+		h.Os, h.Arch, h.ReleaseTarget = "windows", "amd64", "windows_amd64"
+	}, upgraded)
+	c := sessionCookie(t, f.login(t, testPassword))
+	dev := decode[DeviceJSON](t, f.do(t, http.MethodGet, "/api/v1/devices/dev-1", "", c))
+	v := dev.AgentVersion
+	want := "& ([scriptblock]::Create((irm https://raw.githubusercontent.com/gvart/Hearth/v1.2.0/deploy/install.ps1))) -Version v1.2.0"
+	if v == nil || v.RemoteUpgrade || !v.UpgradeAvailable || v.InstallCommand != want {
+		t.Fatalf("agent version of a Windows agent = %+v, want command %q", v, want)
+	}
+}
+
 // The agent's own failure (a checksum mismatch) is audited as the result,
 // with the archive it tried, and its refusal (a downgrade) as a denial.
 func TestUpgradeDeviceAgentFails(t *testing.T) {

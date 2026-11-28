@@ -17,11 +17,13 @@ import (
 var assetName = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`) })
 
 // RegisterInstallRoutes adds the unauthenticated installer routes to mux:
-// GET /install.sh serves the embedded agent installer, and GET /download/{name}
+// GET /install.sh serves the embedded agent installer, GET /install.ps1 its
+// Windows counterpart, and GET /download/{name}
 // serves release archives and checksums.txt from assetsDir for
 // `install.sh --from-hub`. With no assetsDir, every /download/ path is a 404.
 func RegisterInstallRoutes(mux *http.ServeMux, assetsDir string) {
 	mux.HandleFunc("GET /install.sh", serveInstallScript)
+	mux.HandleFunc("GET /install.ps1", serveInstallPowerShell)
 	mux.HandleFunc("GET /download/{name}", downloadHandler(assetsDir))
 	mux.HandleFunc("/download/", http.NotFound)
 }
@@ -30,6 +32,14 @@ func serveInstallScript(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/x-shellscript; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
 	http.ServeContent(w, r, "install.sh", time.Time{}, bytes.NewReader(deploy.InstallScript))
+}
+
+// serveInstallPowerShell serves deploy/install.ps1 as text: PowerShell's
+// Invoke-RestMethod then returns it as a string for [scriptblock]::Create.
+func serveInstallPowerShell(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	http.ServeContent(w, r, "install.ps1", time.Time{}, bytes.NewReader(deploy.InstallPowerShell))
 }
 
 func downloadHandler(assetsDir string) http.HandlerFunc {

@@ -644,6 +644,12 @@ func (a *api) getDevice(w http.ResponseWriter, r *http.Request) {
 		if httpHost, _, ok := a.commandHosts(r.Host, r.TLS != nil); ok {
 			v.InstallCommand = a.installCommandWith(httpHost, "")
 		}
+	} else if v != nil && v.UpgradeAvailable && !v.RemoteUpgrade && strings.Contains(d.OS, "windows") {
+		// An agent on Windows does not upgrade itself: re-running
+		// install.ps1 does (#399).
+		if httpHost, _, ok := a.commandHosts(r.Host, r.TLS != nil); ok {
+			v.InstallCommand = a.installCommandWindows(httpHost, "")
+		}
 	}
 	writeJSON(w, http.StatusOK, out)
 }
