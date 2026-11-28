@@ -218,16 +218,23 @@ func (a *api) writeGuestLinkError(w http.ResponseWriter, r *http.Request, err er
 	writeError(w, http.StatusInternalServerError, "internal", "cannot open the panel")
 }
 
-// guestPage serves the web UI for a usable share link, and a plain 404
-// otherwise.
+// guestPage serves the web UI for a usable share link, a plain 503 while
+// this master cannot check links yet, and a plain 404 otherwise.
 func (a *api) guestPage(ui http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if _, _, _, err := a.checkGuestLink(r.Context(), r.PathValue("token")); err != nil {
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.Header().Set("Cache-Control", "no-store")
+			if errors.Is(err, store.ErrUnavailable) {
+				// A master still comparing links with the others (#384):
+				// the link may well be valid.
+				w.WriteHeader(http.StatusServiceUnavailable)
+				_, _ = fmt.Fprintln(w, "This panel cannot be opened right now; try again shortly.")
+				return
+			}
 			if !isGuestLinkGone(err) {
 				a.log.ErrorContext(r.Context(), "check panel link", "err", err)
 			}
-			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-			w.Header().Set("Cache-Control", "no-store")
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = fmt.Fprintln(w, "This panel link is invalid, revoked or expired.")
 			return
