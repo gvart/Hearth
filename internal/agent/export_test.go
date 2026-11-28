@@ -23,7 +23,7 @@ func WithNetEdgesReader(cfg Config, read func() (*agentv1.NetEdges, error)) Conf
 // base, whatever the environment of the test says (a CI runner in a
 // Kubernetes pod).
 func WithSelfUpgrade(cfg Config, exe, base string) Config {
-	cfg.upgrader = newUpgrader(exe, cfg.DataDir, cfg.Version, cfg.LocalCeiling, func(string) string { return "" })
+	cfg.upgrader = newUpgrader(exe, cfg.DataDir, cfg.Version, "", cfg.LocalCeiling, func(string) string { return "" })
 	cfg.upgrader.base, cfg.upgrader.pubKey = base, testReleasePublicKey()
 	return cfg
 }

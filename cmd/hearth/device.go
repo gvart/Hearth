@@ -41,7 +41,8 @@ func newDeviceUpgradeCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "upgrade <device-id>",
 		Short: "Upgrade a device's agent to the hub's version, or to --version",
-		Long: "Asks the device's agent to upgrade itself: it downloads the release archive from GitHub, checks it\n" +
+		Long: "Asks the device's agent to upgrade itself: it downloads the release archive from GitHub (or the\n" +
+			"release mirror the device's --release-mirror names), checks it\n" +
 			"against the release's checksums.txt and that file's signature, replaces its binary (keeping the old\n" +
 			"one as hearth.prev) and restarts; if the new version reaches no hub, the agent puts the old one back.\n" +
 			"This uses the hub's API with a signed-in session: the admin password comes from\n" +

@@ -278,11 +278,16 @@ automation or an MCP client.
 - On a device that is also a hub, the hub runs the same `/usr/local/bin/hearth`: it keeps running the
   old version until its service restarts, and then runs the one the agent installed. Upgrade the
   hubs of a cluster first.
-- `HEARTH_RELEASE_BASE_URL` in an agent's environment replaces its release base, as it does for
-  `install.sh`. It is for the end-to-end tests only, not a supported setting; whoever sets an agent's
-  environment owns its host already. It may be plain `http://` (the end-to-end tests' release
-  server is), and it does not skip the signature, which is what makes a release trusted, whatever
-  the transport: the end-to-end image is built with a test key in place of the release key.
+- `--release-mirror URL` (or `HEARTH_RELEASE_MIRROR`) makes an agent download releases from a
+  [local release mirror](getting-started.md#devices-that-cannot-reach-github) instead of GitHub. It is
+  set on the device (the installer writes it into the service), never by the hub. It may be plain
+  `http://` and it does not skip the signature, which is what makes a release trusted, whatever the
+  server or the transport: a mirror can serve only releases signed with the release key. It may carry
+  no credentials, as the archive URL goes into the audit log.
+- `HEARTH_RELEASE_BASE_URL` in an agent's environment replaces its release base below a mirror, as
+  it does for `install.sh`. It is for the end-to-end tests only, not a supported setting; whoever
+  sets an agent's environment owns its host already. It does not skip the signature either: the
+  end-to-end image is built with a test key in place of the release key.
 - The audit entry of an upgrade records the version asked for, the version the agent ran, and the
   archive URL and SHA-256 the agent reports.
 

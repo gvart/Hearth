@@ -251,7 +251,41 @@ and if the new one does not reach a hub, after three restarts or within 5 minute
 the old one back; the device's page then says **Upgrade to vX rolled back**. Releases up to
 v0.0.1-rc.11 carry no signature, so an agent refuses to upgrade to them. The hub only
 names the version: the device itself downloads the official release from GitHub, so it needs to
-reach GitHub; a local mirror is not supported yet.
+reach GitHub, or a local release mirror.
+
+### Devices that cannot reach GitHub
+
+An air-gapped lab keeps a release mirror: a directory laid out as the project's GitHub releases,
+`<URL>/<tag>/<asset>`, served over HTTP. On a machine that reaches GitHub, copy a release into it;
+`hearth release mirror` checks the release's signature with the key built into it before it writes
+anything, and each archive against its SHA-256:
+
+```sh
+hearth release mirror v0.0.1-rc.12 /srv/hearth-releases
+# /srv/hearth-releases/v0.0.1-rc.12/: checksums.txt, checksums.txt.sig,
+#   checksums.txt.sigstore.json and hearth_0.0.1-rc.12_<os>_<arch>.tar.gz for every platform
+cd /srv/hearth-releases && python3 -m http.server 8000   # or any web server
+```
+
+Put `deploy/install.sh` of that tag somewhere the devices reach too (the mirror will do), and install
+with `--release-mirror` and `--version` (the latest release is looked up on GitHub):
+
+```sh
+curl -fsSL http://mirror.lan:8000/install.sh | HEARTH_TOKEN=hearth2.… sh -s -- \
+  --release-mirror http://mirror.lan:8000 --version v0.0.1-rc.12
+```
+
+The installer downloads from the mirror and writes `--release-mirror` into the agent's service, so
+**Upgrade agent** works from there too; a re-run keeps it. On a device installed another way, start
+the agent with `hearth agent run --release-mirror <URL>` (or `HEARTH_RELEASE_MIRROR=<URL>`). Mirror a
+release before you ask for an upgrade to it. The agent still checks `checksums.txt` against its
+signature with the Hearth release key built into it, so a mirror can only serve official releases,
+never other binaries. The mirror may be plain `http://`: the signature, not the transport, makes a
+release trusted, but anyone on the network then sees which version a device downloads. The URL may
+carry no credentials, query or `%`-escapes: an agent reports where it downloaded from, and the hub's
+audit log keeps it. With cosign installed on the device, the installer also checks the release's
+Sigstore bundle, which may need to reach Sigstore: without cosign, it checks the SHA-256 only, and
+the agent the signature on every upgrade.
 
 ## If it does not show up
 

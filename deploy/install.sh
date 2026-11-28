@@ -39,6 +39,12 @@
 # the hub sets, and only --allow-* flags added to the service count. A re-run
 # keeps it.
 #
+# A device that cannot reach GitHub installs and upgrades from a local
+# release mirror (`hearth release mirror` fills one): --release-mirror URL (or
+# HEARTH_RELEASE_MIRROR) downloads from <URL>/<tag>/<asset>, needs --version,
+# and goes into the agent's service, so the agent upgrades itself from there
+# too. A re-run keeps it.
+#
 # Re-running upgrades the binary and keeps the device identity (no token
 # needed). --uninstall removes the services and binary; --purge also deletes
 # the agent's and the hub's data dirs.
@@ -104,6 +110,7 @@ Environment:
   HEARTH_AGENT_ONLY  1: as --agent-only
   HEARTH_JOIN_TOKEN  with --make-hub: the cluster join token from the device's page
   HEARTH_LOCAL_CEILING  1: as --local-ceiling
+  HEARTH_RELEASE_MIRROR  as --release-mirror
 
 Options:
   --hub URL          hub URL for enrollment (https://<hub>:7443); the token names
@@ -126,6 +133,11 @@ Options:
   --local-ceiling    the hub may not change what it can do on this device: the
                      agent ignores the capabilities set in the web UI, and only
                      --allow-* flags added to its service count; a re-run keeps it
+  --release-mirror URL
+                     download releases from a local mirror laid out as GitHub's
+                     (URL/<tag>/<asset>; `hearth release mirror` fills one)
+                     instead of GitHub; needs --version. The agent's service
+                     gets it too, to upgrade itself from there; a re-run keeps it
   --uninstall        stop and remove the service and binary; keep the data dir
   --purge            with --uninstall: also delete the data dir (device identity)
   -h, --help         show this help
@@ -140,6 +152,7 @@ UNINSTALL=0
 PURGE=0
 AGENT_ONLY=${HEARTH_AGENT_ONLY:-0}
 LOCAL_CEILING=${HEARTH_LOCAL_CEILING:-0}
+MIRROR=${HEARTH_RELEASE_MIRROR:-}
 MAKE_HUB=
 # NO_HUB=1: --make-hub failed, so no hub service is installed this run.
 NO_HUB=0
@@ -187,6 +200,15 @@ while [ $# -gt 0 ]; do
 		;;
 	--local-ceiling)
 		LOCAL_CEILING=1
+		shift
+		;;
+	--release-mirror)
+		need_arg "$1" $#
+		MIRROR=$2
+		shift 2
+		;;
+	--release-mirror=*)
+		MIRROR=${1#*=}
 		shift
 		;;
 	--make-hub)
@@ -316,6 +338,9 @@ hub_host() {
 }
 
 resolve_version() {
+	if [ -z "$VERSION" ] && [ -n "$MIRROR" ]; then
+		die "with a release mirror ($MIRROR), pass --version vX.Y.Z: the latest release is looked up on GitHub"
+	fi
 	if [ -n "$VERSION" ]; then
 		case $VERSION in
 		v*) ;;
@@ -334,6 +359,31 @@ resolve_version() {
 		VERSION=$(tag_name "$TMP/latest.json")
 		[ -n "$VERSION" ] || die "found no release at $RELEASES_URL; pass --version vX.Y.Z"
 	fi
+}
+
+# setup_mirror keeps the release mirror of an earlier install when none is
+# given, checks it and makes it the release base. The URL goes into a sed
+# replacement, a systemd ExecStart (where % and $ expand) and a plist, so it
+# may hold only characters none of them treats specially.
+setup_mirror() {
+	if [ -z "$MIRROR" ]; then
+		if as_root test -f "$UNIT_PATH"; then
+			MIRROR=$(as_root sed -n 's/^ExecStart=.* --release-mirror \([^ ]*\).*$/\1/p' "$UNIT_PATH")
+		elif as_root test -f "$PLIST_PATH"; then
+			MIRROR=$(as_root awk 'k { gsub(/.*<string>|<\/string>.*/, ""); print; exit } /<string>--release-mirror<\/string>/ { k = 1 }' "$PLIST_PATH")
+		fi
+		[ -z "$MIRROR" ] || say "keeping the release mirror $MIRROR"
+	fi
+	[ -n "$MIRROR" ] || return 0
+	while [ "${MIRROR%/}" != "$MIRROR" ]; do MIRROR=${MIRROR%/}; done
+	case $MIRROR in
+	http://?* | https://?*) ;;
+	*) die "--release-mirror must be an http:// or https:// URL" ;;
+	esac
+	case $MIRROR in
+	*[!A-Za-z0-9._~:/-]*) die "--release-mirror may hold only letters, digits and . _ ~ : / - (no credentials, query or %-escapes)" ;;
+	esac
+	RELEASE_BASE_URL=$MIRROR
 }
 
 # tag_name FILE prints the first "tag_name" in the JSON in FILE.
@@ -679,6 +729,11 @@ install_service() {
 				"$TMP/hearth-agent.service" >"$TMP/hearth-agent.service.lc"
 			mv "$TMP/hearth-agent.service.lc" "$TMP/hearth-agent.service"
 		fi
+		if [ -n "$MIRROR" ]; then
+			sed "s|^ExecStart=.* agent run --data-dir /var/lib/hearth/agent.*\$|& --release-mirror $MIRROR|" \
+				"$TMP/hearth-agent.service" >"$TMP/hearth-agent.service.rm"
+			mv "$TMP/hearth-agent.service.rm" "$TMP/hearth-agent.service"
+		fi
 		as_root mkdir -p "${UNIT_PATH%/*}"
 		as_root cp "$TMP/hearth-agent.service" "$UNIT_PATH"
 		as_root chmod 0644 "$UNIT_PATH"
@@ -700,6 +755,11 @@ install_service() {
 			awk '{ print } /<string>\/var\/lib\/hearth\/agent<\/string>/ { sub(/<string>.*/, "<string>--local-ceiling</string>"); print }' \
 				"$TMP/$LAUNCHD_LABEL.plist" >"$TMP/$LAUNCHD_LABEL.plist.lc"
 			mv "$TMP/$LAUNCHD_LABEL.plist.lc" "$TMP/$LAUNCHD_LABEL.plist"
+		fi
+		if [ -n "$MIRROR" ]; then
+			awk -v m="$MIRROR" '{ print } /<string>\/var\/lib\/hearth\/agent<\/string>/ { i = $0; sub(/<string>.*/, "", i); print i "<string>--release-mirror</string>"; print i "<string>" m "</string>" }' \
+				"$TMP/$LAUNCHD_LABEL.plist" >"$TMP/$LAUNCHD_LABEL.plist.rm"
+			mv "$TMP/$LAUNCHD_LABEL.plist.rm" "$TMP/$LAUNCHD_LABEL.plist"
 		fi
 		as_root mkdir -p "${PLIST_PATH%/*}"
 		as_root cp "$TMP/$LAUNCHD_LABEL.plist" "$PLIST_PATH"
@@ -791,6 +851,7 @@ main() {
 		JOIN=1
 	fi
 
+	setup_mirror
 	check_tools
 	TMP=$(mktemp -d)
 	trap 'rm -rf "$TMP"' EXIT

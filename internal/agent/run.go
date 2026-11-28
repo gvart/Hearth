@@ -70,6 +70,10 @@ type Config struct {
 	// LocalCeiling makes Ceiling the whole ceiling: the agent ignores the
 	// ceiling the hub sets, and a saved one (--local-ceiling).
 	LocalCeiling bool
+	// ReleaseMirror, if set, is the base URL of the release mirror the agent
+	// upgrades from, as <base>/<tag>/<asset>, in place of the project's
+	// releases (--release-mirror, checked with release.MirrorBase).
+	ReleaseMirror string
 	// DockerSocket is the Docker or Podman engine's unix socket, for
 	// Ceiling.Docker; empty tries DefaultDockerSocket, then Podman's.
 	DockerSocket string
@@ -163,7 +167,7 @@ const ExitRevoked = 78
 func Run(ctx context.Context, cfg Config) error {
 	up := cfg.upgrader
 	if up == nil {
-		up = newUpgrader(cfg.Executable, cfg.DataDir, cfg.Version, cfg.LocalCeiling, os.Getenv)
+		up = newUpgrader(cfg.Executable, cfg.DataDir, cfg.Version, cfg.ReleaseMirror, cfg.LocalCeiling, os.Getenv)
 	}
 	// First thing: an upgraded binary that fails anywhere before a hub
 	// welcomes it, its identity included, counts a start.

@@ -34,7 +34,8 @@ import (
 
 // An agent upgrades itself when its hub asks (UpgradeRequest, #347). The hub
 // names only a version: the agent builds the archive's URL itself, from its
-// compiled-in release base and its own platform, checks the release's
+// release base (the project's releases, or the mirror its --release-mirror
+// names, #348) and its own platform, checks the release's
 // checksums.txt against its Ed25519 signature (checksums.txt.sig) with the
 // release key compiled in (#359), reads the archive's SHA-256 from it,
 // checks the archive against it, puts the new
@@ -50,11 +51,12 @@ import (
 // Hello.rolled_back_from, until a hub welcomes it (upgradeRolledBackFile).
 
 // ReleaseBaseURL is where an agent downloads releases from, as
-// <base>/<tag>/<asset>, as deploy/install.sh does.
-const ReleaseBaseURL = "https://github.com/gvart/hearth/releases/download"
+// <base>/<tag>/<asset>, as deploy/install.sh does, unless it has a release
+// mirror.
+const ReleaseBaseURL = release.BaseURL
 
-// releaseBaseEnv overrides ReleaseBaseURL, for the end-to-end tests only.
-// Whoever sets an agent's environment owns its host already.
+// releaseBaseEnv overrides ReleaseBaseURL, for the end-to-end tests, below a
+// release mirror. Whoever sets an agent's environment owns its host already.
 const releaseBaseEnv = "HEARTH_RELEASE_BASE_URL"
 
 // ErrUpgraded is returned by Run once the agent replaced its own binary:
@@ -137,15 +139,12 @@ type upgrader struct {
 
 // newUpgrader is the upgrader of the executable exe ("" for the running
 // one) of an agent running version current, with its marker in dataDir,
-// refusing as selfUpgradeRefusal says.
-func newUpgrader(exe, dataDir, current string, localCeiling bool, getenv func(string) string) *upgrader {
-	base := ReleaseBaseURL
-	if b := getenv(releaseBaseEnv); b != "" {
-		base = b
-	}
+// downloading from releaseBase(mirror, getenv), refusing as
+// selfUpgradeRefusal says.
+func newUpgrader(exe, dataDir, current, mirror string, localCeiling bool, getenv func(string) string) *upgrader {
 	u := &upgrader{
 		dataDir: dataDir, current: current,
-		base:       strings.TrimRight(base, "/"),
+		base:       releaseBase(mirror, getenv),
 		client:     &http.Client{Transport: http.DefaultTransport, CheckRedirect: httpsRedirects},
 		maxArchive: maxUpgradeArchive, maxBinary: maxUpgradeBinary, maxUnpacked: maxUpgradeUnpacked,
 		timeout: upgradeTimeout, noHub: noHubRollback,
@@ -169,6 +168,20 @@ func newUpgrader(exe, dataDir, current string, localCeiling bool, getenv func(st
 	}
 	u.exe = exe
 	return u
+}
+
+// releaseBase is the base URL releases are downloaded from, without a
+// trailing slash: the release mirror if there is one, else
+// HEARTH_RELEASE_BASE_URL if set, else ReleaseBaseURL.
+func releaseBase(mirror string, getenv func(string) string) string {
+	base := ReleaseBaseURL
+	if b := getenv(releaseBaseEnv); b != "" {
+		base = b
+	}
+	if mirror != "" {
+		base = mirror
+	}
+	return strings.TrimRight(base, "/")
 }
 
 // httpsRedirects follows a download's redirects only while they stay https:
@@ -288,8 +301,12 @@ func (u *upgrader) get(ctx context.Context, url string) (*http.Response, error) 
 	}
 	resp, err := u.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("download %s: %w (the device must reach GitHub to upgrade itself; "+
-			"a local release mirror is not supported yet)", url, err)
+		hint := "the device must reach GitHub to upgrade itself, or upgrade from a local release mirror " +
+			"(hearth agent run --release-mirror URL)"
+		if u.base != ReleaseBaseURL {
+			hint = "the device must reach its release mirror " + u.base + " to upgrade itself"
+		}
+		return nil, fmt.Errorf("download %s: %w (%s)", url, err, hint)
 	}
 	if resp.StatusCode != http.StatusOK {
 		_ = resp.Body.Close()
