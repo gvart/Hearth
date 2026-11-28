@@ -1,0 +1,22 @@
+web/src/components/AuditPage.tsx
+  s_18b57982fdff93::t_c887c923dcee17 363-366,388
+  s_18b57982fdff93::t_93a83667428f5f 375,378,385
+web/src/index.css
+  s_18b57982fdff93::t_c887c923dcee17 221-224
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "c8928db60db36b16d311c722b1af7163530ef29f",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
