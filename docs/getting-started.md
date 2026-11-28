@@ -109,6 +109,10 @@ gets the same release as the hub. (A hub you built yourself serves the installer
 `curl -fsSL http://192.168.1.10:7080/install.sh | HEARTH_TOKEN=hearth2.… sh`.) Keep the dialog open:
 it tells you when the device joins.
 
+For an app on a phone, **Show QR** draws the token as a QR code of a `hearth://enroll` link (see
+[Enrollment link](spec/enroll-uri-v1.md)). It holds the token, so the dialog shows it only when you
+click, and removes it once a device joined with the token or the token expired.
+
 The UI also offers to switch to HTTPS. You don't need it to get started;
 [HTTPS for the web UI](https.md) explains how when you want it.
 

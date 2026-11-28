@@ -3,9 +3,11 @@
 package hub
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +15,48 @@ import (
 	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/policy"
 )
+
+// TestAPICreateTokenEnrollURI: the hearth://enroll link of the QR code
+// (docs/spec/enroll-uri-v1.md) holds the token, and the hub URL and CA
+// fingerprint the token names, in the clear; the token is not logged.
+func TestAPICreateTokenEnrollURI(t *testing.T) {
+	f := newAPIFixture(t, true)
+	c := sessionCookie(t, f.login(t, testPassword))
+	resp := f.do(t, http.MethodPost, "/api/v1/tokens", `{}`, c)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, body %s", resp.StatusCode, resp.body)
+	}
+	got := decode[TokenJSON](t, resp)
+	u, err := url.Parse(got.EnrollURI)
+	if err != nil || u.Scheme != "hearth" || u.Host != "enroll" || u.Path != "" {
+		t.Fatalf("enroll_uri = %q (%v)", got.EnrollURI, err)
+	}
+	q := u.Query()
+	tok, err := pki.ParseToken(q.Get("token"))
+	if err != nil || q.Get("token") != got.Token {
+		t.Fatalf("token in the link = %q, want %q (%v)", q.Get("token"), got.Token, err)
+	}
+	if q.Get("v") != "1" || q.Get("hub") != tok.HubURL || q.Get("hub") != "https://hub.lan:7443" {
+		t.Errorf("v = %q, hub = %q, token names %q", q.Get("v"), q.Get("hub"), tok.HubURL)
+	}
+	if want := pki.FingerprintHex(f.api.ca.Cert()); q.Get("ca") != want || q.Get("ca") != hex.EncodeToString(tok.CAFingerprint[:]) {
+		t.Errorf("ca = %q, want %q", q.Get("ca"), want)
+	}
+	if strings.Contains(f.logs.String(), got.Token) {
+		t.Error("the token was logged")
+	}
+}
+
+func TestEnrollURI(t *testing.T) {
+	var fp [32]byte
+	fp[0], fp[31] = 0xab, 0x01
+	got := enrollURI("https://[fd00::1]:7443", fp, "hearth2.s-_.f.aHR0cHM")
+	want := "hearth://enroll?ca=ab" + strings.Repeat("00", 30) + "01" +
+		"&hub=https%3A%2F%2F%5Bfd00%3A%3A1%5D%3A7443&token=hearth2.s-_.f.aHR0cHM&v=1"
+	if got != want {
+		t.Errorf("enrollURI = %q, want %q", got, want)
+	}
+}
 
 // TestAPICreateTokenPinsHubVersion: a release hub's install command fetches
 // install.sh of its own release tag from GitHub over HTTPS and pins the agent
