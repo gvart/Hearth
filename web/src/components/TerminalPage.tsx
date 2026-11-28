@@ -119,6 +119,10 @@ export default function TerminalPage({ deviceId }: { deviceId: string }) {
 
   useEffect(() => {
     document.title = `${name} · Terminal · Hearth`;
+    return () => {
+      // Make a runbook opens the editor in this tab.
+      document.title = 'Hearth';
+    };
   }, [name]);
 
   useEffect(() => {

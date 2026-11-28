@@ -416,11 +416,10 @@ func TestRecordingLimits(t *testing.T) {
 		t.Fatal(err)
 	}
 	chunk := bytes.Repeat([]byte("x"), 100<<10)
-	if rs.write(rec, chunk) || rs.write(rec, chunk) {
-		t.Fatal("full too early")
-	}
-	if !rs.write(rec, chunk) || rs.write(rec, chunk) {
-		t.Fatal("the third write must fill it, once")
+	for i, want := range []bool{false, false, true, false} {
+		if got := rs.write(rec, chunk); got != want {
+			t.Fatalf("write %d filled it: %v, want %v", i+1, got, want)
+		}
 	}
 	if got, _ := rs.get("dev-1", rec.id); len(got.out) != maxRecordingBytes || !got.full {
 		t.Fatalf("kept %d bytes, full %v", len(got.out), got.full)
@@ -473,6 +472,8 @@ func TestScreenText(t *testing.T) {
 		{"$ ech\b \bo hi\r\n", "$ eco hi\n"},
 		{"\x1b]0;pi@pi5: ~\x07$ uptime\r\n", "$ uptime\n"},
 		{"50%\r100%\r\n", "100%\n"},
+		{"pi % uptime\r\r\n13:41 up\r\n", "pi % uptime\n13:41 up\n"},
+		{"50%\r\r100%\r\n", "100%\n"},
 		{"a\r\n\r\n\r\n\r\n\r\nb\r\n", "a\n\nb\n"},
 		{"\x1b(B\x1b[?2004h$ x\x1b[?2004l\r\n", "$ x\n"},
 		{"caf\xc3\xa9 \x07\x00ok", "café ok\n"},

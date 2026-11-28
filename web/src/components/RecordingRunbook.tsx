@@ -123,9 +123,11 @@ export function MakeRunbook({ device, recording }: { device: string; recording: 
       {res?.preview ? (
         <>
           <p className="notice" role="status">
-            This is what would be sent to <span className="mono">{where}</span>: {res.sent_bytes} bytes, {res.redactions}{' '}
-            value{res.redactions === 1 ? '' : 's'} redacted. Nothing has been sent yet. Redaction catches known secret
-            formats only: check the transcript below.
+            <span>
+              This is what would be sent to {where}: {res.sent_bytes} bytes, {res.redactions} value
+              {res.redactions === 1 ? '' : 's'} redacted. Nothing has been sent yet. Redaction catches known secret
+              formats only: check the transcript below.
+            </span>
           </p>
           {res.truncated.length > 0 ? <p className="muted small">Cut to fit: {res.truncated.join(', ')}.</p> : null}
           <details className="explain-sent" open>

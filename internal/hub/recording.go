@@ -255,9 +255,19 @@ func screenText(b []byte) string {
 		case c == '\n':
 			flush()
 		case c == '\r':
-			if i+1 >= len(b) || b[i+1] != '\n' {
-				line = line[:0]
+			// Carriage returns before a line feed end the line (zsh sends
+			// \r\r\n); one before anything else starts it over.
+			j := i + 1
+			for j < len(b) && b[j] == '\r' {
+				j++
 			}
+			if j < len(b) && b[j] == '\n' {
+				i = j
+				continue
+			}
+			line = line[:0]
+			i = j
+			continue
 		case c == '\b':
 			if len(line) > 0 {
 				line = line[:len(line)-1]
