@@ -19,30 +19,34 @@ export function terminalTransportAllowed(): boolean {
   return protocol === 'https:' || ['localhost', '127.0.0.1', '[::1]'].includes(hostname);
 }
 
-/** Records that the user asked for a terminal, for the tab about to open. */
-export function markTerminalLaunch(deviceId: string): void {
+/** Records that the user asked for a terminal, recorded for a runbook or not, for the tab about to open. */
+export function markTerminalLaunch(deviceId: string, record = false): void {
   try {
-    localStorage.setItem(launchKey, JSON.stringify({ deviceId, at: Date.now() }));
+    localStorage.setItem(launchKey, JSON.stringify({ deviceId, at: Date.now(), record }));
   } catch {
     // Without storage the new tab asks for a click instead.
   }
 }
 
 /**
- * Whether the user just asked for this terminal. Anything else that loads the
- * page, such as a link from elsewhere or a reload, must not start a shell.
+ * Whether the user just asked for this terminal, and whether to record it for
+ * a runbook; null if not. Anything else that loads the page, such as a link
+ * from elsewhere or a reload, must not start a shell.
  */
-export function consumeTerminalLaunch(deviceId: string): boolean {
+export function consumeTerminalLaunch(deviceId: string): { record: boolean } | null {
   try {
     const raw = localStorage.getItem(launchKey);
     localStorage.removeItem(launchKey);
     if (!raw) {
-      return false;
+      return null;
     }
-    const launch = JSON.parse(raw) as { deviceId?: string; at?: number };
-    return launch.deviceId === deviceId && Date.now() - (launch.at ?? 0) < launchWindowMs;
+    const launch = JSON.parse(raw) as { deviceId?: string; at?: number; record?: boolean };
+    if (launch.deviceId !== deviceId || Date.now() - (launch.at ?? 0) >= launchWindowMs) {
+      return null;
+    }
+    return { record: launch.record === true };
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -63,9 +67,16 @@ export interface TerminalSize {
 export type TerminalEvent =
   /** Policy holds the session until an operator approves it. */
   | { type: 'pending'; approval: string; expires: string }
-  | { type: 'started'; shell: string; idle_timeout: number; max_duration: number }
+  /** recording is set, by the hub, only for a session it records for a runbook. */
+  | { type: 'started'; shell: string; idle_timeout: number; max_duration: number; recording?: string; record_limit?: number }
+  /** The recording reached its limit: the rest of the session is not recorded. */
+  | { type: 'recording_full'; record_limit: number }
   | { type: 'exit'; exit_code: number; reason: string }
-  | { type: 'error'; code: 'forbidden' | 'not_connected' | 'failed'; reason: string }
+  | {
+      type: 'error';
+      code: 'forbidden' | 'reauth_required' | 'ai_off' | 'not_connected' | 'failed';
+      reason: string;
+    }
   /** The connection dropped without the hub saying why. */
   | { type: 'disconnected' };
 
@@ -77,14 +88,23 @@ export interface TerminalConnection {
   close(): void;
 }
 
+/**
+ * Opens a terminal on the device. With record, the hub records what the
+ * terminal shows for a runbook draft, if policy allows it; refused, no
+ * shell opens at all.
+ */
 export function openTerminal(
   deviceId: string,
   size: TerminalSize,
   onOutput: (data: Uint8Array) => void,
   onEvent: (ev: TerminalEvent) => void,
+  record = false,
 ): TerminalConnection {
   const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const q = new URLSearchParams({ rows: String(size.rows), cols: String(size.cols) });
+  if (record) {
+    q.set('record', '1');
+  }
   const ws = new WebSocket(
     `${scheme}//${window.location.host}/api/v1/devices/${encodeURIComponent(deviceId)}/shell?${q.toString()}`,
   );

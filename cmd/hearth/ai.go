@@ -44,7 +44,8 @@ func newAICmd() *cobra.Command {
 		c.http.Timeout = aiClientTimeout
 		return c, nil
 	}
-	cmd.AddCommand(newAIExplainCmd(client), newAIStatusCmd(client), newAISetCmd(client), newAIAutomationCmd(client))
+	cmd.AddCommand(newAIExplainCmd(client), newAIStatusCmd(client), newAISetCmd(client), newAIAutomationCmd(client),
+		newAIRecordingsCmd(client), newAIRunbookCmd(client))
 	return cmd
 }
 

@@ -400,8 +400,27 @@ func prefixStrings(ps []netip.Prefix) []string {
 // link.
 const remoteHeader = "X-Hearth-Client-Addr"
 
+// reauthHeader carries, on a request proxied from another master, until when
+// its session's re-authentication there holds: an RFC 3339 time and nothing
+// else, never the password or a token. The password is entered on the hub
+// the browser talks to; the request still authenticates here by its own
+// session cookie. It is believed only from a master that proved on the
+// masters' link connection that it holds the hub CA key (api.masterPeer),
+// and for at most ReauthTTL from now.
+const reauthHeader = "X-Hearth-Reauth-Until"
+
+// carryReauth sets, on out, a request proxied to another master, the
+// reauthHeader of in's session here, and drops any its client sent.
+func (a *api) carryReauth(out, in *http.Request) {
+	out.Header.Del(reauthHeader)
+	if until := a.reauthUntil(in); !until.IsZero() {
+		out.Header.Set(reauthHeader, until.Format(time.RFC3339Nano))
+	}
+}
+
 // ProxiedHandler serves on this master the device stream requests (logs,
-// terminal) other masters proxy to it: web, the hub's own UI and API. Their
+// terminal, the terminal's recordings) other masters proxy to it: web, the
+// hub's own UI and API. Their
 // client authenticates there, by its session, and policy decides there, as
 // for a request made here.
 func ProxiedHandler(web http.Handler) http.Handler {
@@ -415,6 +434,9 @@ func ProxiedHandler(web http.Handler) http.Handler {
 	}
 	mux.HandleFunc("GET /api/v1/devices/{id}/logs", serve)
 	mux.HandleFunc("GET /api/v1/devices/{id}/shell", serve)
+	mux.HandleFunc("GET /api/v1/devices/{id}/recordings", serve)
+	mux.HandleFunc("DELETE /api/v1/devices/{id}/recordings/{rec}", serve)
+	mux.HandleFunc("POST /api/v1/devices/{id}/recordings/{rec}/runbook", serve)
 	return mux
 }
 
@@ -444,6 +466,7 @@ func (a *api) proxyStream(next http.HandlerFunc) http.HandlerFunc {
 				pr.SetURL(target)
 				pr.Out.Host = pr.In.Host // the terminal checks its Origin against it
 				pr.Out.Header.Set(remoteHeader, pr.In.RemoteAddr)
+				a.carryReauth(pr.Out, pr.In)
 			},
 			Transport:     ag.masters.Client().Transport,
 			FlushInterval: -1,

@@ -26,6 +26,7 @@ import { DeviceLogSources } from './DeviceLogSources.tsx';
 import { DeviceNetEdges } from './DeviceNetEdges.tsx';
 import { DeviceUpgrade } from './DeviceUpgrade.tsx';
 import { DeviceExplain } from './DeviceExplain.tsx';
+import { DeviceRecordings, RecordTerminalButton } from './RecordingRunbook.tsx';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
 import { StatusDot } from './StatusDot.tsx';
 import { protocolFacts } from '../deviceprotocol.ts';
@@ -108,7 +109,10 @@ export function DevicePage({ id }: { id: string }) {
             {primaryIP(device) ? <span className="mono"> · {primaryIP(device)}</span> : null}
           </p>
         </div>
-        <TerminalButton device={device} />
+        <div className="device-terminal-actions">
+          <RecordTerminalButton device={device} />
+          <TerminalButton device={device} />
+        </div>
       </div>
       {device.facts.ceiling?.shell && !terminalTransportAllowed() ? (
         <p className="small muted">
@@ -257,6 +261,7 @@ export function DevicePage({ id }: { id: string }) {
         )}
 
         <DeviceExplain device={device} />
+        <DeviceRecordings device={device.id} />
 
         <DevicePlugins device={device} />
 

@@ -1,0 +1,51 @@
+/* Terminal sessions recorded for a runbook: the recording indicator and its badge. */
+
+.recording-dot {
+  display: inline-block;
+  width: var(--dot);
+  height: var(--dot);
+  margin-right: var(--space-1);
+  border-radius: var(--radius-full);
+  background: var(--danger);
+  vertical-align: middle;
+}
+
+.recording-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-05) var(--space-2);
+  border: var(--line-1) solid var(--danger);
+  border-radius: var(--radius);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: var(--type-12);
+  font-weight: var(--weight-bold);
+  white-space: nowrap;
+}
+
+.recording-badge .recording-dot {
+  margin-right: 0;
+}
+
+.device-terminal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.terminal-record {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  white-space: nowrap;
+}
+
+.terminal-after {
+  max-height: 50dvh;
+  overflow: auto;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: var(--line-1) solid var(--border);
+  background: var(--surface);
+}

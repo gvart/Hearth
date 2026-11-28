@@ -43,10 +43,11 @@ const (
 
 func (a *api) shellRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /api/v1/devices/{id}/shell", a.auth(a.proxyStream(a.deviceShell)))
+	a.recordingRoutes(mux)
 }
 
 // ShellMessageJSON is a text message of the terminal WebSocket, from the
-// hub: pending (held for approval), started, exit or error. Output and
+// hub: pending (held for approval), started, recording_full, exit or error. Output and
 // input are binary messages; the browser's text messages are resizes,
 // {"type": "resize", "rows": 24, "cols": 80}, and the terminal's automatic
 // answers to the shell, {"type": "reply", "data": "..."}.
@@ -57,6 +58,11 @@ type ShellMessageJSON struct {
 	// IdleTimeout and MaxDuration are the session's limits, in seconds (started).
 	IdleTimeout int `json:"idle_timeout,omitempty"`
 	MaxDuration int `json:"max_duration,omitempty"`
+	// Recording is the id of the session's recording, for a runbook draft,
+	// and RecordLimit the most it keeps, in bytes (started); absent for a
+	// session that is not recorded.
+	Recording   string `json:"recording,omitempty"`
+	RecordLimit int    `json:"record_limit,omitempty"`
 	// Approval and Expires name the approval the session waits for (pending).
 	Approval string     `json:"approval,omitempty"`
 	Expires  *time.Time `json:"expires,omitempty"`
@@ -64,7 +70,8 @@ type ShellMessageJSON struct {
 	ExitCode *int32 `json:"exit_code,omitempty"`
 	// Reason says why the session ended (exit) or failed (error).
 	Reason string `json:"reason,omitempty"`
-	// Code classifies an error: forbidden, not_connected or failed.
+	// Code classifies an error: forbidden, reauth_required, ai_off,
+	// not_connected or failed.
 	Code string `json:"code,omitempty"`
 	// Rows and Cols are a resize (from the browser).
 	Rows uint32 `json:"rows,omitempty"`
@@ -130,9 +137,11 @@ func (a *api) deviceShell(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, cols := queryUint(r, "rows", 24), queryUint(r, "cols", 80)
+	// Recorded only when asked for, as the session opens: never otherwise.
+	record := r.URL.Query().Get("record") == "1"
 	websocket.Server{
 		Handshake: func(*websocket.Config, *http.Request) error { return nil }, // origin checked above
-		Handler:   func(ws *websocket.Conn) { a.serveShell(r, ws, dev, rows, cols) },
+		Handler:   func(ws *websocket.Conn) { a.serveShell(r, ws, dev, rows, cols, record) },
 	}.ServeHTTP(w, r)
 }
 
@@ -185,7 +194,7 @@ func queryUint(r *http.Request, name string, def uint32) uint32 {
 // serveShell runs one terminal session on ws until the shell exits, the
 // browser goes away, the session idles or outlasts its maximum, the admin
 // session that opened it ends, or the request's context ends.
-func (a *api) serveShell(r *http.Request, ws *websocket.Conn, dev store.Device, rows, cols uint32) {
+func (a *api) serveShell(r *http.Request, ws *websocket.Conn, dev store.Device, rows, cols uint32, record bool) {
 	ctx, actor := r.Context(), remoteHost(r)
 	var wg sync.WaitGroup
 	defer wg.Wait()
@@ -237,13 +246,29 @@ func (a *api) serveShell(r *http.Request, ws *websocket.Conn, dev store.Device, 
 		}
 	})
 
+	onHold := func(id string, expires time.Time) {
+		sendJSON(ShellMessageJSON{Type: "pending", Approval: id, Expires: &expires})
+	}
+	// A recorded session is decided on as such first; refused, no shell
+	// opens at all, recorded or not.
+	if record {
+		if err := a.allowRecording(holdCtx, r, dev, onHold); err != nil {
+			if ctx.Err() == nil {
+				a.log.InfoContext(ctx, "recorded terminal refused", "device_id", dev.ID, "remote", actor, "err", err)
+			}
+			sendJSON(ShellMessageJSON{Type: "error", Code: shellErrorCode(err), Reason: err.Error()})
+			return
+		}
+	}
+	var rec *recording
 	detail := map[string]any{"device": dev.Name}
+	if record {
+		detail["recorded"] = true
+	}
 	req := policy.Request{
 		ActorKind: policy.ActorWeb, ActorID: actor, Action: policy.DeviceShell, Target: dev.ID, Detail: detail,
 		Precheck: func(ctx context.Context) error { return a.agents.CheckShell(ctx, dev.ID) },
-		OnHold: func(id string, expires time.Time) {
-			sendJSON(ShellMessageJSON{Type: "pending", Approval: id, Expires: &expires})
-		},
+		OnHold:   onHold,
 	}
 	var sh *Shell
 	err := a.policy.Do(holdCtx, req, func(ctx context.Context) error {
@@ -254,6 +279,13 @@ func (a *api) serveShell(r *http.Request, ws *websocket.Conn, dev store.Device, 
 		// An agent that never answers must not hold the session forever.
 		ctx, cancel := context.WithTimeoutCause(ctx, shellOpenTimeout, errors.New("the agent did not start the shell in time"))
 		defer cancel()
+		if record {
+			var err error
+			if rec, err = a.recordings.begin(dev.ID, dev.Name, a.now()); err != nil {
+				return err
+			}
+			detail["recording"] = rec.id
+		}
 		s, err := a.agents.OpenShell(ctx, dev.ID, rows, cols)
 		if err != nil {
 			return err
@@ -271,13 +303,10 @@ func (a *api) serveShell(r *http.Request, ws *websocket.Conn, dev store.Device, 
 		if sh != nil {
 			sh.Close()
 		}
-		code := "failed"
-		switch {
-		case errors.Is(err, policy.ErrDenied):
-			code = "forbidden"
-		case errors.Is(err, ErrAgentNotConnected):
-			code = "not_connected"
+		if rec != nil {
+			a.recordings.drop(rec.id)
 		}
+		code := shellErrorCode(err)
 		if ctx.Err() == nil {
 			a.log.InfoContext(ctx, "terminal refused", "device_id", dev.ID, "remote", actor, "err", err)
 		}
@@ -293,10 +322,14 @@ func (a *api) serveShell(r *http.Request, ws *websocket.Conn, dev store.Device, 
 	if gone.Load() { // left just before the shell was live
 		end("terminal closed")
 	}
-	sendJSON(ShellMessageJSON{
+	started := ShellMessageJSON{
 		Type: "started", Shell: sh.Path(),
 		IdleTimeout: int(idle / time.Second), MaxDuration: int(maxDur / time.Second),
-	})
+	}
+	if rec != nil {
+		started.Recording, started.RecordLimit = rec.id, maxRecordingBytes
+	}
+	sendJSON(started)
 
 	done := make(chan struct{})
 	wg.Go(func() { // the limits
@@ -339,11 +372,19 @@ func (a *api) serveShell(r *http.Request, ws *websocket.Conn, dev store.Device, 
 			readCtx = context.WithoutCancel(ctx)
 			continue
 		}
+		// What the terminal shows is recorded, never what is typed.
+		if rec != nil && a.recordings.write(rec, out) {
+			sendJSON(ShellMessageJSON{Type: "recording_full", RecordLimit: maxRecordingBytes})
+		}
 		if err := send(shellFrame{binary: true, data: out}); err != nil {
 			end("terminal closed")
 		}
 	}
 	close(done)
+	// Ended before the browser is told, so that it can draft from it at once.
+	if rec != nil {
+		a.recordings.finish(rec, a.now())
+	}
 	ex := sh.Exit()
 	why := "shell exited"
 	if p := reason.Load(); p != nil {
@@ -361,13 +402,64 @@ func (a *api) serveShell(r *http.Request, ws *websocket.Conn, dev store.Device, 
 	}
 	a.log.InfoContext(ctx, "terminal closed", "device_id", dev.ID, "remote", actor, "duration", took, "reason", why, "forced", forced)
 	// Audited first: telling a browser that stopped reading can take a while.
-	if err := a.policy.RecordEnd(context.WithoutCancel(ctx), req, result, map[string]any{
+	endDetail := map[string]any{
 		"event": "end", "duration_s": int(took / time.Second), "exit_code": code, "reason": why, "forced": forced,
-	}); err != nil {
+	}
+	if rec != nil {
+		endDetail["recording"] = rec.id
+	}
+	if err := a.policy.RecordEnd(context.WithoutCancel(ctx), req, result, endDetail); err != nil {
 		a.log.ErrorContext(ctx, "audit terminal end", "err", err)
 	}
 	sendJSON(ShellMessageJSON{Type: "exit", ExitCode: &code, Reason: why})
 	_ = ws.Close() // ends the browser reader
+}
+
+// shellErrorCode classifies why a terminal did not open, for the browser.
+func shellErrorCode(err error) string {
+	switch {
+	case errors.Is(err, errReauthRequired):
+		return "reauth_required"
+	case errors.Is(err, errRecordAIOff):
+		return "ai_off"
+	case errors.Is(err, policy.ErrDenied):
+		return "forbidden"
+	case errors.Is(err, ErrAgentNotConnected):
+		return "not_connected"
+	}
+	return "failed"
+}
+
+// allowRecording decides on recording the terminal session about to open
+// on dev: device.shell.record, dangerous, audited, refused unless the admin
+// entered the password again lately, AI is set up and the hub has room for
+// another recording.
+func (a *api) allowRecording(ctx context.Context, r *http.Request, dev store.Device, onHold func(string, time.Time)) error {
+	reauthed := a.recentAuth(r)
+	return a.policy.Do(ctx, policy.Request{
+		ActorKind: policy.ActorWeb, ActorID: remoteHost(r), Action: policy.DeviceShellRecord, Target: dev.ID,
+		Detail: map[string]any{"device": dev.Name},
+		Precheck: func(ctx context.Context) error {
+			if err := reauthed(ctx); err != nil {
+				return err
+			}
+			cfg, _, err := a.aiConfig(ctx)
+			if err != nil {
+				return fmt.Errorf("read the AI settings: %w", err)
+			}
+			if !cfg.Enabled() {
+				return errRecordAIOff
+			}
+			return a.recordings.room()
+		},
+		OnHold: onHold,
+	}, func(context.Context) error {
+		// The admin may have signed out while the request was held.
+		if _, err := a.checkSession(r); err != nil {
+			return fmt.Errorf("the admin session ended before the recording started: %w", policy.ErrDenied)
+		}
+		return nil
+	})
 }
 
 // shellFrom hands the shell one message from the browser. Only input someone

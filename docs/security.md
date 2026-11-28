@@ -180,11 +180,16 @@ proxy every login comes from the proxy's address and shares one limit.
 
 A signed-in session is not enough for the most sensitive actions of the web UI: revoking a device,
 creating or revoking a hub-eligible enrollment token, creating or revoking an MCP token, saving the policy, changing a notification channel, downloading
-a backup, creating a cluster join token (**Add hub**), upgrading a device's agent and starting, finishing or aborting a hub CA
-rotation. Each asks for the admin password again, then goes through policy like any other action.
+a backup, creating a cluster join token (**Add hub**), upgrading a device's agent, opening a terminal recorded for a runbook, and starting, finishing or
+aborting a hub CA rotation. Each asks for the admin password again, then goes through policy like any other action.
 
 - An answer is good for **5 minutes**, for that session only, and is held in the hub's memory: a hub
-  restart, a sign-out or a password change forgets it. Signing in counts as entering it.
+  restart, a sign-out or a password change forgets it. Signing in counts as entering it. A recorded
+  terminal that another master serves (the device streams there) takes the answer given to the hub you
+  use. The proxied request carries only until when that answer holds (a time: never the password or a
+  token, and the request still authenticates by its own session), and the serving master believes it
+  only from a master that proved on that link connection that it holds the hub CA key, and for at
+  most 5 minutes from then.
 - A missing or expired one is refused (`403 reauth_required`) and audited as a denial, before policy
   can hold the action for approval.
 - A wrong one is refused (`403 reauth_failed`), audited as `admin.reauth` with the result `error: wrong password`, and limited like a
@@ -376,6 +381,15 @@ does.
   devices, channels, clusters and plugins, redacted, and saves nothing: the draft is saved, if at all,
   as `automation.apply`. The model only returns text: it runs nothing. See
   [Explain with AI](ai.md).
+- **Terminal recordings**: a terminal is never recorded, except a session the user explicitly opens as
+  a runbook recording (`device.shell.record`, dangerous, web only, with the admin password again, only
+  while AI is set up; refused, no shell opens). Then what the terminal shows, never input typed at a
+  prompt that does not echo, is held, at most 256 KiB, in the memory of the hub serving the terminal
+  only: never in the store (so neither replicated nor backed up), the audit log or any log. The
+  terminal shows a recording badge from the hub throughout. The recording is deleted once a runbook
+  draft is made from it (`ai.runbook.draft`, read, redacted before it is sent), when it is discarded,
+  and an hour after the session. The draft is saved, if at all, as `config.import`. See
+  [Capture a runbook](ai.md#capture-a-runbook-from-a-terminal-session).
 - **Prometheus**: read only. Hearth never writes to Prometheus.
 - **MCP clients** (AI assistants): each has its own bearer token, stored as a SHA-256 hash and
   checked on every request, so a revocation takes effect at once. The token's scope caps the class

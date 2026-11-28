@@ -239,6 +239,8 @@ var expected = map[Action]struct {
 	UniFiAPRestart:               {Dangerous, []string{ActorWeb}, false},
 	AIExplain:                    {Read, []string{ActorWeb}, false},
 	AIAutomationDraft:            {Read, []string{ActorWeb}, false},
+	DeviceShellRecord:            {Dangerous, []string{ActorWeb}, false},
+	AIRunbookDraft:               {Read, []string{ActorWeb}, false},
 	DeviceCapabilitiesSet:        {Safe, []string{ActorAdmin, ActorWeb}, false},
 	DeviceCapabilitiesRaise:      {Dangerous, []string{ActorAdmin, ActorWeb}, false},
 }

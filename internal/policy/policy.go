@@ -359,6 +359,16 @@ const (
 	// a draft automation file. Nothing is saved: the draft is saved, if at
 	// all, through automation.apply.
 	AIAutomationDraft Action = "ai.automation.draft"
+	// DeviceShellRecord records a terminal session for a runbook draft: what
+	// the terminal shows, held in the memory of the hub that serves it until
+	// a draft is made or an hour after it ends. It is decided before the
+	// session's own device.shell decision.
+	DeviceShellRecord Action = "device.shell.record"
+	// AIRunbookDraft sends a recorded terminal session, redacted, with the
+	// names of the hub's devices, clusters and plugins, to the language model
+	// the operator configured, and returns a draft runbook file. Nothing is
+	// saved: the draft is saved, if at all, through config.import.
+	AIRunbookDraft Action = "ai.runbook.draft"
 )
 
 // Actor kinds.
@@ -751,6 +761,15 @@ var rules = map[Action]rule{
 	// the lab when the model is not local, so every draft is audited, with
 	// the provider, the model and the sizes, never the text.
 	AIAutomationDraft: {class: Read, actors: []string{ActorWeb}},
+	// A recording keeps everything the terminal shows, secrets the screen
+	// shows included, for a model that may not be local: as dangerous as the
+	// shell itself, and only for a person at the web UI.
+	DeviceShellRecord: {class: Dangerous, actors: []string{ActorWeb}},
+	// A runbook draft only reads: the recording it sends was decided on as
+	// device.shell.record, and the draft is text in the editor until the
+	// operator saves it, as config.import. Every draft is audited, with the
+	// provider, the model and the sizes, never the text.
+	AIRunbookDraft: {class: Read, actors: []string{ActorWeb}},
 }
 
 // Actions returns every known action, sorted.

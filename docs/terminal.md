@@ -81,7 +81,13 @@ it on the Approvals page or with an approval link), and `deny` refuses it.
 Each session leaves two entries in the audit log, both with the action `device.shell` and the
 device as the target: one when it opens (who: `web/<address>`, the device's name and the shell),
 and one when it ends, with the reason, the exit status and the duration. What goes through the
-terminal is never recorded, in the audit log or in any log.
+terminal is never recorded, in the audit log or in any log, except in a session you explicitly open
+as a runbook recording (**Record for a runbook**): what that terminal shows, never what is typed at a
+hidden password prompt, is held in the serving hub's memory only, never in the store, a backup or a
+log, until a runbook is drafted from it, it is discarded, or an hour after the session, and its
+terminal shows a recording badge throughout. Such a session is decided on first as
+`device.shell.record` (dangerous, with the admin password again); both of its `device.shell` entries
+name the recording. See [Capture a runbook from a terminal session](ai.md#capture-a-runbook-from-a-terminal-session).
 
 ## Limits
 

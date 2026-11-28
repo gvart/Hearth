@@ -21,7 +21,8 @@ export type TipId =
   | "upgrade"
   | "tailscale"
   | "ai"
-  | "aidraft";
+  | "aidraft"
+  | "airecord";
 
 export interface TipText {
   /** What the "?" is about, for a screen reader: "About runbooks". */
@@ -179,6 +180,14 @@ export const tips: Record<TipId, TipText> = {
     lines: [
       "Describe what you want and the model set up in Settings, AI writes the file, using the names of your devices, channels, clusters and plugins (redacted). The hub checks it, and asks once more if it is invalid.",
       "Nothing is saved or turned on: the draft opens here, unsaved, with its dry run. Review it, then Save, where policy decides as for any edit.",
+    ],
+    docs: "ai.md",
+  },
+  airecord: {
+    about: "recording a session for a runbook",
+    lines: [
+      "A terminal opened with Record for a runbook keeps what the screen shows, never what you type at a hidden password prompt, in the hub's memory only, for an hour after it ends.",
+      "Make a runbook sends it, redacted, to the model set up in Settings, AI, and deletes it. The draft opens unsaved in the runbook editor; saving is as for any edit.",
     ],
     docs: "ai.md",
   },

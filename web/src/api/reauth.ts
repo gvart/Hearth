@@ -3,7 +3,7 @@
 // the last few minutes (POST /api/v1/session/reauth).
 
 import { useQueryClient } from '@tanstack/react-query';
-import { useSyncExternalStore } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 import { ApiError, request, type Session } from './client.ts';
 import { keys } from './hooks.ts';
 
@@ -100,6 +100,17 @@ export function useWithReauth() {
       return fn();
     }
   };
+}
+
+/**
+ * Forgets the cached re-authentication, as the hub refused one it no longer
+ * holds (it restarted): the next sensitive action asks for the password.
+ */
+export function useForgetReauth() {
+  const qc = useQueryClient();
+  return useCallback(() => {
+    qc.setQueryData<Session | null>(keys.session, (s) => (s ? { ...s, reauth_until: undefined } : s));
+  }, [qc]);
 }
 
 /** Records a re-authentication in the cached session, so the next sensitive action asks no password. */

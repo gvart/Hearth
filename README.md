@@ -30,7 +30,8 @@ network mappers discover. Nothing **acts**. Hearth adds the missing layer:
 - **Agent-native** — a built-in MCP server lets Claude Code and other agents operate your lab, safely.
 - **Explain what's wrong** — optional, off by default: a device's Explain button asks your own model
   (a local Ollama, any OpenAI-compatible server, or Anthropic) what is wrong, from redacted evidence you
-  can read first. It suggests; it never runs anything. See [Explain with AI](docs/ai.md).
+  can read first. It suggests; it never runs anything. A terminal session you choose to record for a
+  runbook becomes a draft runbook to review and save. See [Explain with AI](docs/ai.md).
 - **Deny by default** — every action from the UI, automations, AI or MCP passes one policy engine with an audit log.
 
 How it fits next to Beszel, Komodo, NetAlertX and Homepage, and when to use those instead:

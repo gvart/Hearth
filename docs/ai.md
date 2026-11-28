@@ -1,12 +1,14 @@
 ---
 title: Explain with AI
-description: Ask a language model you choose (a local Ollama, any OpenAI-compatible server, or Anthropic) what is wrong with a device, or to draft an automation. Off by default, redacted, audited, and it never runs anything.
+description: Ask a language model you choose (a local Ollama, any OpenAI-compatible server, or Anthropic) what is wrong with a device, to draft an automation, or to turn a recorded terminal session into a runbook. Off by default, redacted, audited, and it never runs anything.
 ---
 
 A device page has an **Explain** card: ask "why is it slow?", or nothing at all, and the hub sends what it
 knows about the device to a language model and shows the answer. `hearth ai explain <device>` does the
 same from a terminal. The **New automation** editor has a **Write it with AI** card: describe what you want,
-and the model drafts the file for you to review and save ([below](#draft-an-automation)).
+and the model drafts the file for you to review and save ([below](#draft-an-automation)). A terminal
+session you choose to record becomes a draft runbook
+([below](#capture-a-runbook-from-a-terminal-session)).
 
 - **Off by default.** Hearth works fully without it. An admin turns it on by choosing a provider.
 - **Bring your own model.** Any OpenAI-compatible chat completions API (Ollama, LM Studio, vLLM,
@@ -208,6 +210,75 @@ model, its host, whether it was a preview, the bytes sent, the values redacted, 
 their bytes and tokens, and whether the draft validated: never the description, the names sent or the
 draft. The prompt is about 8 KiB (some 2000 tokens) before the inventory: start Ollama with
 `OLLAMA_CONTEXT_LENGTH=8192`, as above, or a small default context window cuts it without saying so.
+
+## Capture a runbook from a terminal session
+
+Do something once by hand in a device's [web terminal](terminal.md), such as adding a node, and let the
+model turn it into a [runbook](runbooks.md) you can run again. A terminal is recorded only when you
+ask for it, for that session:
+
+1. On the device's page, choose **Record for a runbook** next to **Terminal**, or tick **Record for a
+   runbook** on the terminal page before **Connect**. The hub asks for the admin password again. While
+   AI is off the choice is not offered, and one line links to **Settings, AI**.
+2. Work as usual. The terminal shows a red **Recording for a runbook** badge as long as the hub
+   records the session; the hub sends the badge when the session opens, and a terminal opened without
+   the choice never has one.
+3. Close the session (`exit`, or close the tab). The terminal, and the device's page under **Recorded
+   for a runbook**, offer **Make a runbook**, with an optional note on what you did, **Preview what is
+   sent** and **Discard**.
+4. The draft opens in the runbook editor, unsaved, checked and planned. Review every step, then
+   **Save…**, which is `config.import`, decided by policy and audited as any edit. Nothing is saved,
+   started or run until you do.
+
+What is recorded:
+
+- **What the terminal shows, never what is typed.** The shell echoes a command as you type it, so the
+  commands and their output are there. A password prompt (sudo, ssh, `read -s`) turns the echo off, so
+  what you type at it is never on the screen and never recorded.
+- **At most 256 KiB**; the badge says when the recording is full, and the rest of the session is not
+  recorded.
+- **In the memory of the hub that serves the terminal only**: never in the store, so never replicated to
+  other hubs or put in a backup, and never in a log or the audit log. It is deleted when a runbook is
+  made from it (once a draft is returned; an error keeps it for another try), when you discard
+  it, and one hour after its session ended. A hub restart loses it. At most 8 recordings are held at a
+  time.
+- **Redacted before it is sent**, with the same patterns as explanations (see
+  [How redaction works](#how-redaction-works)). Redaction recognises known formats, not every secret: a
+  password on a command line, such as `mysql -pSECRET`, is sent as is. **Preview what is sent** shows
+  every byte before anything leaves the hub.
+
+The model is told the runbook step types, the action and check types and their fields, an example, the
+names of the hub's devices (with the programs their agents let actions run), channels, clusters and
+plugins, and the runbook ids already taken. It is asked to turn each command that changed or verified
+something into an `exec` action of the device, with a confirmation first, rollbacks where there is an
+obvious undo, and checks for what you verified. An `exec` action runs a program, never a shell: a
+command with pipes or `&&` becomes a step you do by hand. The hub validates the answer as the editor's
+save does and, if it refuses it, asks once more with the problems, as for an automation draft. An
+`exec` step runs only if the device's ceiling allows that program (**Capabilities**), and it is
+dangerous: policy decides on it when the runbook runs.
+
+Recording a session is the policy action `device.shell.record`, class `dangerous`, of the web actor
+only, decided and audited before the session's own `device.shell`: refused, no shell opens at all. It
+also needs the admin password entered again in the last five minutes, AI set up, and room for another
+recording. Under a policy that holds dangerous web actions for approval, a recorded session waits for
+two approvals: the recording's, then the terminal's. Both `device.shell` entries of a recorded session
+name its recording. Making the draft is `ai.runbook.draft`, class `read`, of the web actor; its audit
+entry holds the provider, the model, its host, the recording's id and size, the bytes sent, the values
+redacted, the answers and tokens, and whether the draft validated: never any text.
+
+In a cluster, the recording is held by the hub the device's agent streams to, which serves its
+terminal; the recording requests are sent there from any hub. If the agent moved to another hub in
+between, that hub has no such recording.
+
+From a terminal, list a device's recordings and draft from one; only the YAML goes to stdout:
+
+```sh
+hearth ai recordings pi5
+hearth ai runbook pi5 <recording-id> --notes "added a k3s worker" > runbooks/add-k3s-worker.yaml
+```
+
+`--preview` prints what would be sent and keeps the recording. A session can be recorded only from the
+web terminal: there is no terminal in the CLI.
 
 ## Errors
 
