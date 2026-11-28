@@ -1,0 +1,65 @@
+internal/ai/provider_test.go
+  s_18b57982fdff93::t_c95d2efad62580 205-215
+  s_18b57982fdff93::t_51ccff71902ab8 14
+web/src/components/DeviceExplain.css
+  s_18b57982fdff93::t_21e3504eef92af 1-14,16-55
+  s_18b57982fdff93::t_bc200360cf1883 15
+web/src/components/Shell.tsx
+  s_18b57982fdff93::t_94cfb9336bedec 204
+web/src/api/ai.ts
+  s_18b57982fdff93::t_616a5840bf1178 1-88
+web/src/components/DeviceExplain.tsx
+  s_18b57982fdff93::t_f272493ed81dca 1-184
+web/src/nav.ts
+  s_18b57982fdff93::t_c5a1d60d6314bd 19
+  s_18b57982fdff93::t_3c0007f5e2e7bd 80
+docs/ai.md
+  s_18b57982fdff93::t_5a7a7df3d83088 1-151
+web/src/components/DevicePage.tsx
+  s_18b57982fdff93::t_fe9bd01c4513f9 28,116
+internal/hub/ai.go
+  s_18b57982fdff93::t_d460953394341d 315
+docs/getting-started.md
+  s_18b57982fdff93::t_e32bc013bc7f08 274-276
+web/src/components/SettingsPage.tsx
+  s_18b57982fdff93::t_7a6ba334cda63f 41
+  s_18b57982fdff93::t_b0c4e102782abc 16
+  s_18b57982fdff93::t_a4f803b0a4c9cc 59-60
+  s_18b57982fdff93::t_b86f57e136568d 23,30
+web/test/ai.test.mjs
+  s_18b57982fdff93::t_a6f085850142ac 1-35
+site/src/pages.mjs
+  s_18b57982fdff93::t_1bf1d05b9b97a4 11
+README.md
+  s_18b57982fdff93::t_04eb36cc809f35 31-33
+docs/security.md
+  s_18b57982fdff93::t_a9b312cd38156c 360-364
+web/src/tips.ts
+  s_18b57982fdff93::t_1839c67d32b33e 21-22
+  s_18b57982fdff93::t_2ed4c90f67ec6b 159-166
+CLAUDE.md
+  s_18b57982fdff93::t_46f84c7cceb2cc 55-56
+web/src/components/AISettings.tsx
+  s_18b57982fdff93::t_ef4f66867de015 1-170
+internal/ai/provider.go
+  s_18b57982fdff93::t_d460953394341d 15,84-85,169-171
+  s_18b57982fdff93::t_f5e069c2ee4e82 172
+web/src/ai.ts
+  s_18b57982fdff93::t_e48bc7458a59f2 1-78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "79e0d95b7f0e75a58d7c9b0db6f3ec0b11c71650",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
