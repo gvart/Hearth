@@ -796,6 +796,8 @@ func DecodeCommand(b []byte) (Command, error) {
 	switch env.Op {
 	case UpsertDevice{}.Op():
 		cmd, err = decodeAs[UpsertDevice](env.Cmd)
+	case RemoveDevice{}.Op():
+		cmd, err = decodeAs[RemoveDevice](env.Cmd)
 	case ReportFacts{}.Op():
 		cmd, err = decodeAs[ReportFacts](env.Cmd)
 	case MarkSeen{}.Op():

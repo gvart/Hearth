@@ -62,7 +62,25 @@ func fakeLogAgent(stream *connect.BidiStreamForClient[agentv1.AgentMessage, agen
 type logsFixture struct {
 	srv    *httptest.Server
 	client agentv1connect.AgentServiceClient
+	agents *Agents
 	audit  func() []string
+}
+
+// attached waits until the hub holds dev-1's session. The hub sends Welcome
+// before it attaches the session, so a request right after connectAgent may
+// find no session in its policy precheck (allowed: not a denial) and one in
+// its action (refused there), auditing an allow for a refused stream.
+func (f *logsFixture) attached(t *testing.T) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := f.agents.session(t.Context(), "dev-1"); err == nil {
+			return
+		} else if time.Now().After(deadline) {
+			t.Fatalf("dev-1 never attached: %v", err)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 }
 
 func newLogsFixture(t *testing.T) *logsFixture {
@@ -83,7 +101,7 @@ func newLogsFixtureAudit(t *testing.T, wrap func(policy.Auditor) policy.Auditor)
 	if err := st.Admin().CreateSession(t.Context(), "logs-session", time.Now(), time.Now().Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	return &logsFixture{srv: srv, client: client, audit: func() []string {
+	return &logsFixture{srv: srv, client: client, agents: agents, audit: func() []string {
 		es, err := st.Audit().List(t.Context(), 100)
 		if err != nil {
 			t.Fatal(err)
@@ -250,17 +268,15 @@ func TestDeviceLogsRefused(t *testing.T) {
 			ctx := t.Context()
 			f := newLogsFixture(t)
 			stream := connectAgent(ctx, t, f.client, tc.minor, tc.ceiling)
+			f.attached(t)
 			reqs, _ := fakeLogAgent(stream, "")
-			var resp *http.Response
-			for range 100 {
-				resp = f.open(ctx, t, tc.source)
-				if resp.StatusCode != http.StatusConflict {
-					break
-				}
-				_ = resp.Body.Close()
-				time.Sleep(10 * time.Millisecond)
-			}
+			// Right after Welcome, with no wait: the hub attaches the
+			// session before it sends Welcome, so the policy precheck sees
+			// the agent and denies, rather than allowing what the action
+			// then refuses (#417).
+			resp := f.open(ctx, t, tc.source)
 			body, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
 			if resp.StatusCode != tc.status || !strings.Contains(string(body), tc.want) {
 				t.Errorf("open = %d %s, want %d with %q", resp.StatusCode, body, tc.status, tc.want)
 			}

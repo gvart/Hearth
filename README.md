@@ -52,7 +52,7 @@ both through the API and fails if either is not online within `DeviceVisibleWith
 - [x] Kubernetes integration (read + safe actions)
 - [x] Automations (YAML in git) + guardrails + audit log
 - [x] MCP server, installable PWA
-- [ ] Built-in Tailscale (tsnet)
+- [x] Built-in Tailscale (tsnet): the UI from anywhere on your tailnet, agents over it ([docs](docs/tailscale.md))
 
 ## Releases
 

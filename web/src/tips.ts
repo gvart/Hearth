@@ -20,6 +20,7 @@ export type TipId =
   | "deviceplugins"
   | "plugins"
   | "upgrade"
+  | "tailscale"
   | "ai"
   | "aidraft";
 
@@ -165,6 +166,14 @@ export const tips: Record<TipId, TipText> = {
       "An agent older than remote upgrades needs the installer run on the device once; one in a Kubernetes pod, a new image",
     ],
     docs: "getting-started.md",
+  },
+  tailscale: {
+    about: "Tailscale",
+    lines: [
+      "With hearth hub --tailscale the hub joins your tailnet as a node of its own: open the tailnet URL from a phone or laptop on the tailnet, from anywhere, with no port forwarded.",
+      "Agents on the tailnet enroll and connect at the agent address, with the hub CA as on the LAN. It is set by flags on the hub, so this card only shows it.",
+    ],
+    docs: "tailscale.md",
   },
   ai: {
     about: "Explain with AI",

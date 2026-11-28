@@ -73,10 +73,15 @@ func (r Devices) Get(ctx context.Context, id string) (Device, error) {
 	return d, nil
 }
 
-// List returns all devices ordered by ID.
+// List returns all devices ordered by ID, removed ones left out.
 func (r Devices) List(ctx context.Context) ([]Device, error) {
+	versioned, err := isVersioned(ctx, r.s.db)
+	if err != nil {
+		return nil, fmt.Errorf("list devices: %w", err)
+	}
+	// liveOnly is a constant clause.
 	rows, err := r.s.list(ctx, "", gather{table: "devices", order: byText(0)},
-		`SELECT `+deviceColumns, ` FROM devices ORDER BY id`)
+		`SELECT `+deviceColumns, ` FROM devices WHERE TRUE`+liveOnly(versioned)+` ORDER BY id`)
 	if err != nil {
 		return nil, fmt.Errorf("list devices: %w", err)
 	}

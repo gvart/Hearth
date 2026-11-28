@@ -65,6 +65,9 @@ func newAgentRunCmd() *cobra.Command {
 			"class, allowing a plugin lets whoever uploads it run code here. DIGEST pins one release, program and\n" +
 			"manifest (`hearth plugin list` shows it); without it, the agent pins the first release it installs\n" +
 			"(trusting the hub for that one) and refuses any other while the flag stays, whatever its class.\n" +
+			"--allow-vip IFACE=ADDRESS/PREFIX lets the hub's automations claim that virtual IP on that interface\n" +
+			"(add it and announce it with gratuitous ARP) and release it again, to move a service's address\n" +
+			"between devices (Linux; the agent needs CAP_NET_ADMIN and CAP_NET_RAW, as root has).\n" +
 			"--local-ceiling ignores the capabilities the hub sets for this device, and any it saved before.\n\n" +
 			"--release-mirror URL makes the agent upgrade itself from a local release mirror, laid out as the\n" +
 			"project's GitHub releases (<URL>/<tag>/<asset>; `hearth release mirror` fills one), instead of\n" +
@@ -97,6 +100,14 @@ func newAgentRunCmd() *cobra.Command {
 					return fmt.Errorf("--allow-plugin: %s given twice", g.Name)
 				}
 				ceiling.Plugins = append(ceiling.Plugins, g)
+			}
+			for _, e := range ceiling.VIP {
+				if err := agent.ParseVIP(e); err != nil {
+					return fmt.Errorf("--allow-vip: %w", err)
+				}
+			}
+			if len(ceiling.VIP) > 0 && !agent.VIPSupported {
+				return errors.New("--allow-vip: virtual IPs are supported on Linux only")
 			}
 			if ceiling.NetEdges && !agent.NetEdgesSupported {
 				return errors.New("--allow-net-edges: network edges are only reported on Linux")
@@ -153,6 +164,9 @@ func newAgentRunCmd() *cobra.Command {
 		"exec plugin the hub may install and run here, as NAME[:CLASS][@DIGEST], where CLASS (read, safe or\n"+
 			"dangerous; default read) is the highest class of its commands the hub may run and DIGEST pins a\n"+
 			"release; repeatable")
+	cmd.Flags().StringArrayVar(&ceiling.VIP, "allow-vip", nil,
+		"virtual IP the hub's automations may claim and release on this device, as IFACE=ADDRESS/PREFIX,\n"+
+			"e.g. eth0=192.168.1.53/24 (Linux); repeatable (default: none)")
 	cmd.Flags().BoolVar(&localCeiling, "local-ceiling", false,
 		"make the --allow-* flags this device's whole capability ceiling: ignore the capabilities the hub sets")
 	cmd.Flags().StringVar(&mirror, "release-mirror", os.Getenv(releaseMirrorEnv),

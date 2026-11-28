@@ -78,6 +78,12 @@ const (
 	AutomationRestart Action = "automation.restart"
 	// AutomationExec runs a command on a device, through its agent.
 	AutomationExec Action = "automation.exec"
+	// AutomationVIPClaim adds a virtual IP to an interface of a device and
+	// announces it with gratuitous ARP, through its agent (vip.go).
+	AutomationVIPClaim Action = "automation.vip.claim"
+	// AutomationVIPRelease removes a virtual IP from an interface of a
+	// device, through its agent.
+	AutomationVIPRelease Action = "automation.vip.release"
 	// AutomationScript is an automation's script action: a Starlark script
 	// run on the hub. It reads and acts only through the device.read and
 	// automation actions it calls, each decided and audited on its own.
@@ -325,6 +331,9 @@ const (
 	// DeviceCommand sends a command a Device Protocol device announced
 	// (docs/spec/device-protocol-v1.md) to it, over the hub's MQTT broker.
 	DeviceCommand Action = "device.command"
+	// DeviceRemove removes a Device Protocol device: its MQTT user from the
+	// hub's clients file and broker, then its row in the registry.
+	DeviceRemove Action = "device.remove"
 	// OpenWrtRouterAdd adopts an OpenWrt router: the hub stores its URL and
 	// rpcd login, sealed, and starts reading it through ubus.
 	OpenWrtRouterAdd Action = "openwrt.router.add"
@@ -489,6 +498,12 @@ var rules = map[Action]rule{
 	AutomationRestart: {class: Safe, actors: []string{ActorAutomation}},
 	// An arbitrary command can do anything the agent can.
 	AutomationExec: {class: Dangerous, actors: []string{ActorAutomation}},
+	// Moving a virtual IP takes an address over on the network: claimed on
+	// two devices, or on the wrong one, it cuts every client of the service
+	// off, so a claim and a release are dangerous, even though the device's
+	// ceiling names each interface=address pair it allows.
+	AutomationVIPClaim:   {class: Dangerous, actors: []string{ActorAutomation}},
+	AutomationVIPRelease: {class: Dangerous, actors: []string{ActorAutomation}},
 	// A script by itself only computes, within its step and time limits:
 	// every device read and action it calls is decided on its own, as the
 	// automation, and a dangerous one is denied unless granted or approved.
@@ -716,6 +731,10 @@ var rules = map[Action]rule{
 	// of it: a relay may switch a heater or a pump. Each one is dangerous,
 	// whatever the device calls it.
 	DeviceCommand: {class: Dangerous, actors: []string{ActorWeb}},
+	// Removing a Device Protocol device rewrites the hub's MQTT clients file
+	// and cuts the device off for good: it cannot log in again until an
+	// operator gives it a user anew.
+	DeviceRemove: {class: Dangerous, actors: []string{ActorWeb}},
 	// Adopting an OpenWrt router hands the hub its login; the hub only reads
 	// with it, except for openwrt.dnsmasq.restart, decided on its own.
 	OpenWrtRouterAdd:    {class: Safe, actors: []string{ActorWeb}},

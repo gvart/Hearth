@@ -186,6 +186,11 @@ message Ceiling {
   // device (#223), each with the highest class of command it may run.
   // Reported by agents of protocol minor 14 and later.
   repeated PluginGrant plugins = 10;
+  // vip are the virtual IPv4 addresses the hub may claim and release on
+  // this device (VirtualIP), each as IFACE=ADDRESS/PREFIX, such as
+  // eth0=192.168.1.53/24, matched exactly. Linux agents only. Empty allows
+  // none.
+  repeated string vip = 11;
 }
 
 // PluginGrant allows one exec plugin on a device: the hub may install it
@@ -315,7 +320,23 @@ message ExecRequest {
   oneof action {
     Command command = 3;
     RestartService restart = 4;
+    VirtualIP vip = 5;
   }
+}
+
+// VirtualIP adds a virtual IPv4 address to an interface of the device and
+// announces it with gratuitous ARP (claim), or removes it (release), so a
+// service's address moves from one device to another. The agent takes it
+// only if its ceiling's vip lists interface=address exactly, and on Linux
+// only. Claiming an address the interface holds, or releasing one it does not,
+// succeeds: a claim announces it again.
+message VirtualIP {
+  // interface is the network interface, such as eth0.
+  string interface = 1;
+  // address is the IPv4 address and prefix length, such as 192.168.1.53/24.
+  string address = 2;
+  // release removes the address instead of adding it.
+  bool release = 3;
 }
 
 // Command runs a program with arguments, never through a shell.

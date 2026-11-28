@@ -38,6 +38,7 @@ export const keys = {
   beszelSystems: ['beszel', 'systems'] as const,
   talosNodes: ['talos', 'nodes'] as const,
   tls: ['tls'] as const,
+  tailscale: ['tailscale'] as const,
   shareOrigin: ['tls', 'share-origin'] as const,
   configDrift: ['cluster', 'config-drift'] as const,
   metrics: (id: string, range: MetricsRange) => ['metrics', id, range] as const,
@@ -236,6 +237,15 @@ export function useSetTelemetry() {
     onSuccess: (data) => {
       qc.setQueryData(keys.telemetry, data);
     },
+  });
+}
+
+/** The hub's node on a tailnet; polled while it starts. */
+export function useTailscaleInfo() {
+  return useQuery({
+    queryKey: keys.tailscale,
+    queryFn: api.tailscaleInfo,
+    refetchInterval: (q) => (q.state.data?.state === 'starting' ? 5000 : false),
   });
 }
 

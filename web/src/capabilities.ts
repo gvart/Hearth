@@ -37,7 +37,7 @@ export const allLogs = ['systemd:*', 'systemd-user:*', 'docker:*'];
 export const allRestart = ['systemd:*', 'systemd-user:*', 'docker:*'];
 export const allScan = ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'];
 
-export type CapKey = 'logs' | 'docker' | 'net_edges' | 'probe' | 'scan' | 'restart' | 'exec' | 'shell';
+export type CapKey = 'logs' | 'docker' | 'net_edges' | 'probe' | 'scan' | 'restart' | 'exec' | 'vip' | 'shell';
 
 /** How a capability is switched: on/off, on/off with "restrict to", Docker's three levels, or a list only. */
 export type CapKind = 'switch' | 'list' | 'docker' | 'exec';
@@ -62,6 +62,7 @@ export const capInfo: CapInfo[] = [
   { key: 'scan', label: 'Network scan', what: 'Sweep a subnet for discovery from here.', kind: 'list', risky: false, placeholder: '192.168.20.0/24' },
   { key: 'restart', label: 'Restart services', what: 'Restart systemd units and containers, from automations and runbooks.', kind: 'list', risky: true, placeholder: 'systemd:pihole-FTL.service, docker:jellyfin' },
   { key: 'exec', label: 'Run programs', what: 'Run the programs named here, with any arguments.', kind: 'exec', risky: true, placeholder: '/usr/bin/df' },
+  { key: 'vip', label: 'Virtual IPs', what: 'Claim and release the addresses named here, to move a service between devices (Linux).', kind: 'exec', risky: true, placeholder: 'eth0=192.168.1.53/24' },
   { key: 'shell', label: 'Terminal', what: "Open a shell in the browser, as the agent's user.", kind: 'switch', risky: true },
 ];
 
@@ -96,6 +97,8 @@ function listOf(c: Ceiling | null | undefined, key: CapKey): string[] {
       return c.scan ?? [];
     case 'exec':
       return c.exec;
+    case 'vip':
+      return c.vip ?? [];
     default:
       return [];
   }
@@ -152,13 +155,13 @@ export interface CapState {
   unsupported?: string;
 }
 
-/** Whether the device's platform lacks key: a terminal on Windows, neighbours off Linux. */
+/** Whether the device's platform lacks key: a terminal on Windows, neighbours and virtual IPs off Linux. */
 export function unsupportedOn(os: string | undefined, key: CapKey): string | undefined {
   const o = (os ?? '').toLowerCase();
   if (key === 'shell' && o.includes('windows')) {
     return 'Not on Windows';
   }
-  if (key === 'net_edges' && (o.includes('windows') || o.includes('darwin') || o.includes('macos'))) {
+  if ((key === 'net_edges' || key === 'vip') && (o.includes('windows') || o.includes('darwin') || o.includes('macos'))) {
     return 'Linux only';
   }
   return undefined;
@@ -217,6 +220,11 @@ export function withSwitch(c: Ceiling, key: CapKey, on: boolean): Ceiling {
         next.exec = [];
       }
       break;
+    case 'vip':
+      if (!on) {
+        next.vip = [];
+      }
+      break;
   }
   return next;
 }
@@ -243,6 +251,9 @@ export function withList(c: Ceiling, key: CapKey, list: string[]): Ceiling {
     case 'exec':
       next.exec = clean;
       break;
+    case 'vip':
+      next.vip = clean;
+      break;
     default:
       break;
   }
@@ -258,8 +269,8 @@ export function parseList(text: string): string[] {
 }
 
 /**
- * Whether going from old to next raises a shell, exec, restart or Docker
- * control: the hub then asks for the password again, as it decides it
+ * Whether going from old to next raises a shell, exec, restart, Docker
+ * control or a virtual IP: the hub then asks for the password again, as it decides it
  * (hub.ChangeOf).
  */
 export function raisesRisky(old: Ceiling, next: Ceiling): boolean {
@@ -269,6 +280,7 @@ export function raisesRisky(old: Ceiling, next: Ceiling): boolean {
     added(old.exec, next.exec) ||
     added(old.restart, next.restart) ||
     ((next.docker ?? false) && !(old.docker ?? false)) ||
+    added(old.vip ?? [], next.vip ?? []) ||
     raisesPlugin(old.plugins ?? [], next.plugins ?? [])
   );
 }
@@ -321,7 +333,7 @@ export function applied(caps: Capabilities): boolean {
   return (
     capInfo.every((i) => {
       const want = flagOf(caps.hub, i.key) || flagOf(caps.local, i.key);
-      return i.key === 'shell' || i.key === 'net_edges' ? true : want === flagOf(effective, i.key);
+      return i.key === 'shell' || i.key === 'net_edges' || i.key === 'vip' ? true : want === flagOf(effective, i.key);
     }) &&
     (!caps.plugins_manageable || samePlugins(unionPlugins(caps.hub.plugins ?? [], caps.local?.plugins ?? []), effective.plugins ?? []))
   );

@@ -136,19 +136,14 @@ func (s *AgentStream) Connect(ctx context.Context, stream *connect.BidiStream[ag
 		Certificate:       cert,
 		CaBundle:          bundle,
 	}}}
-	// Bounded as every send to an agent is (see agentSession.sendMsg).
-	stalled := time.AfterFunc(s.agents.sendTimeout, streamAbort(ctx))
-	err = stream.Send(welcome)
-	stalled.Stop()
+	// From here on only Agents.Exec, Agents.Probe, Agents.PushHubs and
+	// Shells send on the stream.
+	sess, err := s.agents.attach(deviceID, hello, welcome, stream.Send, streamAbort(ctx))
+	defer s.agents.detach(deviceID, sess)
 	if err != nil {
 		return fmt.Errorf("send welcome to %s: %w", deviceID, err)
 	}
-	// From here on only Agents.Exec, Agents.Probe, Agents.PushHubs and
-	// Shells send on the stream.
-	sess := s.agents.attach(deviceID, hello, stream.Send, streamAbort(ctx))
-	sess.setHubs(hubs)
 	s.forgetNetEdges(deviceID, hello.GetCeiling())
-	defer s.agents.detach(deviceID, sess)
 	var routed time.Time
 	s.route(ctx, log, deviceID, &routed)
 	s.syncCeiling(ctx, log, sess)

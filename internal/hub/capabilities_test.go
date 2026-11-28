@@ -69,6 +69,7 @@ func TestCapabilitiesSetAndRaise(t *testing.T) {
 		`{"hub":{"exec":["/usr/bin/df"]}}`,
 		`{"hub":{"restart":["docker:*"]}}`,
 		`{"hub":{"docker":true}}`,
+		`{"hub":{"vip":["eth0=192.168.1.53/24"]}}`,
 	} {
 		before := len(auditOf(t, f, policy.DeviceCapabilitiesRaise))
 		resp := f.do(t, http.MethodPut, capsPath, body, stale)
@@ -88,8 +89,11 @@ func TestCapabilitiesSetAndRaise(t *testing.T) {
 	if resp := f.do(t, http.MethodPost, "/api/v1/session/reauth", passwordBody(testPassword), stale); resp.StatusCode != http.StatusOK {
 		t.Fatalf("reauth = %d", resp.StatusCode)
 	}
-	if resp := f.do(t, http.MethodPut, capsPath, `{"hub":{"shell":true,"exec":["/usr/bin/df"]}}`, stale); resp.StatusCode != http.StatusOK {
+	if resp := f.do(t, http.MethodPut, capsPath, `{"hub":{"shell":true,"exec":["/usr/bin/df"],"vip":["eth0=192.168.1.53/24"]}}`, stale); resp.StatusCode != http.StatusOK {
 		t.Fatalf("raise after re-auth = %d %s", resp.StatusCode, resp.body)
+	}
+	if got := decode[CapabilitiesJSON](t, f.do(t, http.MethodGet, capsPath, "", stale)); !slices.Equal(got.Hub.VIP, []string{"eth0=192.168.1.53/24"}) {
+		t.Errorf("vip after the raise = %v", got.Hub.VIP)
 	}
 
 	// Lowering never asks: a fresh stale session turns it all off.
@@ -115,6 +119,9 @@ func TestCapabilitiesRefused(t *testing.T) {
 		`{"hub":{"logs":["syslog:*"]}}`,
 		`{"hub":{"scan":["fe80::/64"]}}`,
 		`{"hub":{"root":true}}`,
+		`{"hub":{"vip":["eth0=192.168.1.0/24"]}}`,
+		`{"hub":{"vip":["lo=192.168.1.53/24"]}}`,
+		`{"hub":{"vip":["192.168.1.53/24"]}}`,
 	} {
 		if resp := f.do(t, http.MethodPut, capsPath, body, c); resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("%s = %d %s, want 400", body, resp.StatusCode, resp.body)
@@ -170,6 +177,9 @@ func TestChangeOf(t *testing.T) {
 		{&agentv1.Ceiling{Restart: []string{"docker:web"}}, &agentv1.Ceiling{Restart: AllRestart}, policy.DeviceCapabilitiesRaise},
 		{&agentv1.Ceiling{Restart: AllRestart}, &agentv1.Ceiling{Restart: []string{"docker:*"}}, policy.DeviceCapabilitiesSet},
 		{&agentv1.Ceiling{DockerRead: true}, &agentv1.Ceiling{Docker: true}, policy.DeviceCapabilitiesRaise},
+		{&agentv1.Ceiling{}, &agentv1.Ceiling{Vip: []string{"eth0=192.168.1.53/24"}}, policy.DeviceCapabilitiesRaise},
+		{&agentv1.Ceiling{Vip: []string{"eth0=192.168.1.53/24"}}, &agentv1.Ceiling{Vip: []string{"eth0=192.168.1.54/24"}}, policy.DeviceCapabilitiesRaise},
+		{&agentv1.Ceiling{Vip: []string{"eth0=192.168.1.53/24"}}, &agentv1.Ceiling{}, policy.DeviceCapabilitiesSet},
 	} {
 		if got := ChangeOf(tt.old, tt.next); got.Action != tt.want {
 			t.Errorf("ChangeOf(%v, %v) = %+v, want %s", tt.old, tt.next, got, tt.want)
@@ -216,5 +226,24 @@ func TestCapabilitiesLocked(t *testing.T) {
 	got := decode[CapabilitiesJSON](t, f.do(t, http.MethodGet, capsPath, "", c))
 	if !got.Locked || got.Hub.Probe {
 		t.Errorf("locked device = %+v, want locked and nothing stored", got)
+	}
+}
+
+func TestSetCapabilityVIP(t *testing.T) {
+	var c Ceiling
+	if err := SetCapability(&c, "vip", "eth0=192.168.1.53/24,wlan0=10.0.0.53/24"); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(c.VIP, []string{"eth0=192.168.1.53/24", "wlan0=10.0.0.53/24"}) {
+		t.Errorf("vip = %v", c.VIP)
+	}
+	if err := SetCapability(&c, "vip", "on"); err == nil {
+		t.Error(`vip "on" was taken`)
+	}
+	if err := SetCapability(&c, "vip", "off"); err != nil || len(c.VIP) != 0 {
+		t.Errorf("vip off = %v, %v", c.VIP, err)
+	}
+	if !slices.Contains(CapabilityKeys, "vip") {
+		t.Error("vip is not a capability key")
 	}
 }

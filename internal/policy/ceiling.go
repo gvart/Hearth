@@ -34,6 +34,8 @@ func WithinCeiling(c *agentv1.Ceiling, req *agentv1.ExecRequest) error {
 			return fmt.Errorf("restart %s: %w", service, ErrBeyondCeiling)
 		}
 		return nil
+	case *agentv1.ExecRequest_Vip:
+		return vipWithinCeiling(c, a.Vip)
 	}
 	return errors.New("unknown action")
 }
@@ -200,7 +202,8 @@ var ceilingManagers = []string{"systemd", "systemd-user", "docker"}
 // by entry, as the agent checks its flags: programs are absolute paths,
 // matched exactly; logs and restart entries are manager:pattern with
 // manager systemd, systemd-user or docker and pattern a name or a glob; scan
-// entries are IPv4 subnets. The hub checks it before it stores it, and the
+// entries are IPv4 subnets; vip entries are IFACE=ADDRESS/PREFIX
+// (checkVIPEntries). The hub checks it before it stores it, and the
 // agent again before it applies it.
 func CheckHubCeiling(c *agentv1.Ceiling) error {
 	for _, e := range c.GetExec() {
@@ -230,6 +233,9 @@ func CheckHubCeiling(c *agentv1.Ceiling) error {
 		if p, err := netip.ParsePrefix(e); err != nil || !p.Addr().Is4() {
 			return fmt.Errorf("scan entry %q: want an IPv4 subnet such as 192.168.1.0/24", e)
 		}
+	}
+	if err := checkVIPEntries(c.GetVip()); err != nil {
+		return err
 	}
 	if err := CheckPluginGrants(c.GetPlugins()); err != nil {
 		return err

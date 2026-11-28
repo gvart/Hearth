@@ -41,7 +41,7 @@ func (p *pushedTo) lists() [][]string {
 // attachFake attaches a stream whose Welcome listed welcomed.
 func attachFake(a *Agents, id string, welcomed []string) *pushedTo {
 	p := &pushedTo{}
-	s := a.attach(id, &agentv1.Hello{}, p.send, func() {})
+	s, _ := a.attach(id, &agentv1.Hello{}, nil, p.send, func() {})
 	s.setHubs(welcomed)
 	return p
 }

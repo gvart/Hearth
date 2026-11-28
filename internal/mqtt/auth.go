@@ -43,9 +43,12 @@ var dummyHash = sync.OnceValue(func() []byte {
 // publish and delivery against their rules.
 type authHook struct {
 	mochi.HookBase
-	srv     *mochi.Server
-	ca      *pki.CA
-	certs   CertChecker
+	srv   *mochi.Server
+	ca    *pki.CA
+	certs CertChecker
+	// users are the password users; RemoveUser takes one out while the
+	// broker runs, under usersMu.
+	usersMu sync.RWMutex
 	users   map[string]*User
 	devices map[string]*Device
 	log     *slog.Logger
@@ -139,7 +142,7 @@ func (h *authHook) authenticate(cl *mochi.Client, pk packets.Packet) (string, []
 	if !pk.Connect.UsernameFlag || name == "" || !pk.Connect.PasswordFlag {
 		return name, nil, "no client certificate or username and password"
 	}
-	u := h.users[name]
+	u := h.user(name)
 	var hash []byte
 	if u != nil {
 		hash = []byte(u.PasswordHash)
@@ -168,7 +171,28 @@ func (h *authHook) authenticate(cl *mochi.Client, pk packets.Packet) (string, []
 	if u == nil || err != nil {
 		return name, nil, "wrong username or password"
 	}
+	// Removed while its password was checked.
+	if h.user(name) == nil {
+		return name, nil, "user removed"
+	}
 	return name, u.Allow, ""
+}
+
+// user returns the password user named name, or nil.
+func (h *authHook) user(name string) *User {
+	h.usersMu.RLock()
+	defer h.usersMu.RUnlock()
+	return h.users[name]
+}
+
+// dropUser takes the password user named name out, and reports whether
+// there was one. Its connections stay: the caller disconnects them.
+func (h *authHook) dropUser(name string) bool {
+	h.usersMu.Lock()
+	defer h.usersMu.Unlock()
+	_, ok := h.users[name]
+	delete(h.users, name)
+	return ok
 }
 
 func (h *authHook) authenticateDevice(leaf *x509.Certificate, username []byte) (string, []Rule, string) {
@@ -297,7 +321,7 @@ func (h *authHook) rulesOf(identity string) []Rule {
 		}
 		return nil
 	}
-	if u := h.users[identity]; u != nil {
+	if u := h.user(identity); u != nil {
 		return u.Allow
 	}
 	return nil

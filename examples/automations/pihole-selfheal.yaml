@@ -1,0 +1,51 @@
+# Self-heal Pi-hole, part 2 of 2: fail over to the standby.
+# See docs/automations.md, "Self-heal Pi-hole". Every host of the LAN resolves
+# through the virtual IP 192.168.1.53. pihole-watchdog.yaml restarts the
+# primary's Pi-hole after 15 s of failures; when the primary still does not
+# answer a minute in, this moves 192.168.1.53 to the standby, which runs its
+# own, already configured, Pi-hole.
+#
+# Needs:
+# - the hub to grant it dangerous actions:
+#   hearth hub --allow-dangerous-automation pihole-selfheal
+# - on pihole-standby and pihole-primary, the virtual IP in their Capabilities
+#   card (vip eth0=192.168.1.53/24) or the agent flag
+#   --allow-vip eth0=192.168.1.53/24
+# - a notification channel named phone (docs/notifications.md)
+#
+# Change the addresses, interface and device names to yours.
+id: pihole-selfheal
+description: Move the Pi-hole address to the standby when the primary stays down.
+triggers:
+  - id: primary-down
+    type: dns
+    name: pi.hole
+    server: 192.168.1.11     # the primary's own address, not the virtual IP
+    every: 10s
+    for: 1m                  # past the watchdog's 15 s, its restart and its check
+actions:
+  - id: standby-answers
+    type: check              # moves nothing unless the standby's Pi-hole answers
+    check: dns
+    name: pi.hole
+    server: 192.168.1.12     # the standby's own address
+  - id: claim-on-standby
+    type: vip_claim
+    device: pihole-standby
+    interface: eth0
+    address: 192.168.1.53/24
+  - id: tell
+    type: notify
+    channel: phone
+    title: Pi-hole failed over
+    message: "The primary Pi-hole stopped answering ({{ .Trigger.Error }}). 192.168.1.53 now points at pihole-standby."
+  - id: release-on-primary   # on a primary that is off, this step fails and ends the run
+    type: vip_release
+    device: pihole-primary
+    interface: eth0
+    address: 192.168.1.53/24
+  - id: announce-again       # hosts that asked the primary in between learn the standby again
+    type: vip_claim
+    device: pihole-standby
+    interface: eth0
+    address: 192.168.1.53/24

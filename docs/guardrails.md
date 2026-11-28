@@ -239,24 +239,27 @@ parts, and the agent uses both:
   hearth device capabilities <device-id> --set exec=/usr/bin/df --set shell=on
   hearth device capabilities <device-id> --set shell=off
   hearth device capabilities <device-id> --set plugins=go-lamp:safe
+  hearth device capabilities <device-id> --set vip=eth0=192.168.1.53/24
   ```
 
   Each capability is on or off. On is all of it (every log source, every service, the private IPv4
   ranges for a scan); **Restrict to…** names only some, and a name may be a glob (`docker:*`,
   `systemd:pihole-*`). Programs have no "all": each is an absolute path, run with any arguments.
+  Virtual IPs have none either: each is `interface=address/prefix`, matched exactly (see
+  [Self-heal Pi-hole](automations.md#self-heal-pi-hole); Linux only).
   Containers are off, **read** (list them and read their logs) or **control** (start, stop and
   restart too). The agent applies a change at once, with no restart: it saves it to
   `<data-dir>/ceiling.json` (0600), reports its new facts, and ends a terminal or a log stream it no
   longer allows.
 - **Set on the device.** The agent's own flags (`--allow-exec`, `--allow-restart`, `--allow-probe`,
   `--allow-logs`, `--allow-shell`, `--allow-scan`, `--allow-net-edges`, `--allow-docker`,
-  `--allow-plugin`, see
+  `--allow-plugin`, `--allow-vip`, see
   [automations.md](automations.md)) add to what the hub sets. The card shows them as **set on the
   device**: the hub cannot take them away.
 
 Changing it is the policy action `device.capabilities.set` (`safe`: lowering anything, and raising
 logs, checks, a scan, neighbours or reading containers) or `device.capabilities.raise` (`dangerous`:
-raising a terminal, programs, restarts, container control or a [plugin](plugins.md#plugins-on-devices),
+raising a terminal, programs, restarts, container control, a virtual IP or a [plugin](plugins.md#plugins-on-devices),
 which also asks for the admin password again). Only an admin, from the web UI or a hub host, may take either; every change is audited,
 refusals too. The agent checks each ceiling the hub sends (absolute program paths, valid globs and
 subnets) and refuses a bad one whole.

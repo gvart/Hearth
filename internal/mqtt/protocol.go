@@ -95,7 +95,7 @@ func (h *authHook) OnPublish(cl *mochi.Client, pk packets.Packet) (packets.Packe
 // connection of its identity.
 func (h *authHook) deviceGone(cl *mochi.Client) {
 	identity := string(cl.Properties.Username)
-	if h.protocol == nil || !deviceproto.ValidID(identity) || h.users[identity] == nil {
+	if h.protocol == nil || !deviceproto.ValidID(identity) || h.user(identity) == nil {
 		return
 	}
 	for _, other := range h.srv.Clients.GetAll() {
@@ -120,6 +120,30 @@ func (b *Broker) PublishCommand(id string, payload []byte) error {
 		return err
 	}
 	return nil
+}
+
+// RemoveUser removes the password user named name: from the clients file
+// first, if the broker was given one, so a restart does not bring it back,
+// then from the broker, and its connections are ended. It reports whether
+// this broker had the user, in its file or in memory.
+func (b *Broker) RemoveUser(name string) (bool, error) {
+	inFile := false
+	if b.clientsFile != "" {
+		b.fileMu.Lock()
+		var err error
+		inFile, err = RemoveUserFromFile(b.clientsFile, name)
+		b.fileMu.Unlock()
+		if err != nil {
+			return false, err
+		}
+	}
+	inMemory := b.auth.dropUser(name)
+	for _, cl := range b.srv.Clients.GetAll() {
+		if !cl.Net.Inline && string(cl.Properties.Username) == name {
+			_ = b.srv.DisconnectClient(cl, packets.ErrNotAuthorized)
+		}
+	}
+	return inFile || inMemory, nil
 }
 
 // Connected reports whether the password user named id has a connection.

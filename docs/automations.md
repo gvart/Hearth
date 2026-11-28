@@ -341,6 +341,8 @@ The MCP `apply_automation` tool writes the same store.
 | `restart` | restarts a systemd unit or Docker container       | safe         | device  |
 | `check`   | runs an http, tcp or dns check once; fails if it fails | read    | hub or device |
 | `exec`    | runs a command                                    | dangerous    | device  |
+| `vip_claim` | adds a virtual IP to an interface and announces it (gratuitous ARP) | dangerous | device (Linux) |
+| `vip_release` | removes a virtual IP from an interface          | dangerous    | device (Linux) |
 
 ```yaml
 actions:
@@ -362,6 +364,10 @@ actions:
     body: pi4 restarted pihole-FTL
     timeout: 10s                 # optional, default 10s, at most 1m
 ```
+
+`vip_claim` and `vip_release` take `device`, `interface` (such as `eth0`), `address` (an IPv4
+address with its prefix length, such as `192.168.1.53/24`) and an optional `timeout`; see
+[Self-heal Pi-hole](#self-heal-pi-hole). Only `device` may be a template.
 
 A `check` action names its kind in `check` (`http`, `tcp` or `dns`) and takes that
 [check trigger](#synthetic-checks-http-dns-tcp)'s fields (`url`, `status`, `address`, `name`, `server`,
@@ -388,8 +394,9 @@ Two gates stand before anything runs on a device, and both must agree:
   **Run programs** matches the command's first word exactly as the automation writes it, with any
   arguments. **Restart services** takes `systemd:UNIT`, `systemd-user:UNIT` or `docker:CONTAINER`, a
   glob in the name included. **Checks** lets checks run from the device (see above), and
-  [runbook](runbooks.md) check steps that set `from` too. The agent's own flags (`--allow-exec`,
-  `--allow-restart`, `--allow-probe`) add the same from the device; see
+  [runbook](runbooks.md) check steps that set `from` too. **Virtual IPs** lists the
+  `interface=address/prefix` pairs `vip_claim` and `vip_release` may take. The agent's own flags
+  (`--allow-exec`, `--allow-restart`, `--allow-probe`, `--allow-vip`) add the same from the device; see
   [Guardrails](guardrails.md#device-capability-ceiling).
 
 A denial by either gate stops the run with status `denied`, shown in `hearth automation runs`, and
@@ -398,6 +405,93 @@ an offline device) stops it with status `failed`.
 
 A `notify` action sends to a channel configured on the hub, by name: see
 [Notifications](notifications.md).
+
+## Self-heal Pi-hole
+
+Every host of a homelab resolves through the Pi-hole, and most routers hand out one DNS server only,
+so a Pi-hole that stops answering takes the whole LAN with it. Two shipped automations,
+in [`examples/automations`](https://github.com/gvart/hearth/tree/main/examples/automations), fix it
+without you: restart it, and if that does not help, move its address to a standby Pi-hole and tell you.
+
+The setup: two devices with Hearth agents, each running its own, already configured Pi-hole
+(Hearth does not install or sync Pi-hole: use its Teleporter or a sync tool for that). The hosts of
+the LAN resolve through a **virtual IP**, an address of its own that one of the two holds at a time,
+and the router's DHCP hands it out as the DNS server. Here the primary is `pihole-primary` at
+192.168.1.11, the standby `pihole-standby` at 192.168.1.12, and the virtual IP 192.168.1.53/24 on
+`eth0`; change them to yours. The hub runs on a third device, or on the standby: on the primary, it
+would go down with it.
+
+1. **Let the devices move the address.** On each of the two devices, turn on **Virtual IPs** with
+   `eth0=192.168.1.53/24` in its **Capabilities** card, or from a hub host:
+
+   ```sh
+   hearth device capabilities pihole-primary --set vip=eth0=192.168.1.53/24
+   hearth device capabilities pihole-standby --set vip=eth0=192.168.1.53/24
+   ```
+
+   (or start the agents with `--allow-vip eth0=192.168.1.53/24`). It is a raise: the hub asks for the
+   admin password again. On the primary, also turn on **Checks** and **Restart services** with
+   `systemd:pihole-FTL.service` (`docker:pihole` for Pi-hole in Docker) for the watchdog.
+2. **Give the primary the address**, once, by hand: `sudo ip address add 192.168.1.53/24 dev eth0`.
+   It is not kept across a reboot (see below). Point the router's DHCP DNS server at 192.168.1.53.
+3. **Load the automations.** Copy
+   [`pihole-watchdog.yaml`](https://github.com/gvart/hearth/blob/main/examples/automations/pihole-watchdog.yaml)
+   and [`pihole-selfheal.yaml`](https://github.com/gvart/hearth/blob/main/examples/automations/pihole-selfheal.yaml)
+   into the `automations/` directory of your configuration, edit the names and addresses, and
+   `hearth config import DIR` (or paste each into the web UI's editor). Check them first with
+   `hearth automation plan FILE`.
+4. **Grant the failover its dangerous actions** on every hub: `hearth hub
+   --allow-dangerous-automation pihole-selfheal`, or `dangerous_automations: [pihole-selfheal]` in
+   the policy file. Without it, the claim is denied (or held for approval with `confirm`, which is too
+   late for DNS). Add a [notification channel](notifications.md) named `phone`.
+
+What happens when the primary's Pi-hole stops answering:
+
+- **Within 15 s,** `pihole-watchdog`, a [local automation](#running-on-the-device) the primary's agent
+  runs itself, also while no hub is reachable, restarts `pihole-FTL` and checks that it answers again.
+  Most outages end here. Its checks ask for `pi.hole`, which Pi-hole answers itself, so an Internet
+  outage does not count as a dead Pi-hole.
+- **A minute in,** if the primary still does not answer, `pihole-selfheal` on the hub checks that the
+  standby's Pi-hole answers (if it does not, nothing moves and the run fails), claims 192.168.1.53 on
+  the standby, which announces it with gratuitous ARP so every host sends its queries there within a
+  second or two, notifies you, releases the address on the primary, and claims it on the standby
+  once more, which announces it again.
+- When the primary is off, the release is the step that fails: the run ends `failed` after the
+  failover and the notification. Each step is in the audit log as `automation/pihole-selfheal`.
+
+The demo script [`examples/automations/selfheal-demo.sh`](https://github.com/gvart/hearth/blob/main/examples/automations/selfheal-demo.sh)
+breaks the primary's Pi-hole on purpose, so you can watch the steps happen, and puts it back.
+
+### What to know before you rely on it
+
+- **The failover needs a hub.** Only restarts and checks run on a device without one; moving the
+  address is decided by policy on a hub, so a hub that goes down with the primary cannot fail it over.
+  In a [cluster](cluster.md) any master runs it.
+- **Split brain.** From the claim on the standby to the release on the primary, both hold the
+  address: for the notification and the release, a few seconds. A host that asks who holds it in
+  that time may learn the primary; the second claim after the release announces the standby again.
+  If the primary is cut off from the hub but still on the LAN (its agent
+  unreachable, its network up), the release fails and both keep it: hosts then reach whichever
+  answered their ARP last. Remove it on the primary by hand (`sudo ip address del 192.168.1.53/24 dev
+  eth0`). Hearth has no fencing and no quorum for this.
+- **ARP caches.** Gratuitous ARP updates the caches of most hosts and switches at once. A host that
+  ignores it keeps sending to the primary until its ARP entry expires, usually within a minute.
+  Hosts and the router that cache DNS answers are not affected by the move itself.
+- **No failback.** Hearth does not move the address back when the primary recovers, and does not
+  fail over again from the standby. Move it back by hand: `sudo ip address del 192.168.1.53/24 dev
+  eth0` on the standby, then on the primary `sudo ip address add 192.168.1.53/24 dev eth0` and
+  `sudo arping -U -c 3 -I eth0 192.168.1.53` (iputils-arping): Linux does not announce an address
+  added by hand, so without it hosts keep sending to the standby until their ARP entry expires. Or
+  write the reverse automation, whose `vip_claim` announces it.
+- **Not saved.** The address a claim adds is gone after a reboot of that device, on purpose: a
+  primary that reboots does not take the address back from the standby. After a reboot of the device
+  that held it, add it again.
+- **What Hearth does not do:** install, configure or sync Pi-hole; check that the standby's blocklists
+  and local records match the primary's; run VRRP or keepalived; handle IPv6 (the virtual IP is IPv4,
+  and IPv6 hosts that resolve through the primary's IPv6 address are not moved).
+- **Privileges.** The agent adds the address with `ip address` (iproute2) and sends ARP from a raw
+  socket: it needs `CAP_NET_ADMIN` and `CAP_NET_RAW`. The agent `install.sh` sets up runs as root and
+  has both. Linux only.
 
 ## Kubernetes actions
 
@@ -525,7 +619,7 @@ actions:
     body: "{{ .Trigger.Hostname }} went {{ .Trigger.State }} at {{ .Trigger.At }}"
 ```
 
-Templated fields: `device` (exec, restart), `body` and header values (webhook), `message` (log),
+Templated fields: `device` (exec, restart, vip_claim, vip_release), `body` and header values (webhook), `message` (log),
 `title` and `message` (notify), `cluster`, `namespace`, `name` and `node` (kube_*).
 The webhook `url`, `command` and `service` are not templates.
 
