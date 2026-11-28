@@ -18,7 +18,8 @@ export type Page =
   | 'backup'
   | 'ai'
   | 'integrations'
-  | 'deviceplugins';
+  | 'deviceplugins'
+  | 'plugins';
 
 export type SheetId = 'lab' | 'automate' | 'activity' | 'settings';
 
@@ -80,6 +81,7 @@ export const sheets: Sheet[] = [
       { id: 'ai', label: 'AI', hash: '#/settings/ai' },
       { id: 'backup', label: 'Backup', hash: '#/settings/backup' },
       { id: 'integrations', label: 'Integrations', hash: '#/settings/integrations' },
+      { id: 'plugins', label: 'Plugins', hash: '#/settings/plugins' },
       { id: 'deviceplugins', label: 'Device plugins', hash: '#/settings/device-plugins' },
       { id: 'cluster', label: 'Cluster', hash: '#/cluster' },
     ],

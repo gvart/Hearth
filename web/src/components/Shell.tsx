@@ -11,6 +11,7 @@ import { ConfigDriftBanner } from './ConfigDriftBanner.tsx';
 import { DevicePage } from './DevicePage.tsx';
 import { DevicesPage } from './DevicesPage.tsx';
 import { DevicePluginsPage } from './DevicePluginsPage.tsx';
+import { PluginRegistryPage } from './PluginRegistryPage.tsx';
 import { IntegrationsPage } from './IntegrationsPage.tsx';
 import { KubernetesPage } from './KubernetesPage.tsx';
 import { Logo } from './Logo.tsx';
@@ -201,6 +202,8 @@ export function Shell() {
             <IntegrationsPage />
           ) : page === 'deviceplugins' ? (
             <DevicePluginsPage />
+          ) : page === 'plugins' ? (
+            <PluginRegistryPage />
           ) : page === 'settings' || page === 'access' || page === 'policy' || page === 'backup' || page === 'ai' ? (
             <SettingsPage section={page} />
           ) : deviceId !== undefined ? (
