@@ -272,7 +272,8 @@ func TestDeviceProtocolRemoveAPI(t *testing.T) {
 	bus.mu.Lock()
 	bus.removeErr = errors.New("clients file read-only")
 	bus.mu.Unlock()
-	if r := f.do(t, http.MethodDelete, path, "", cookie); r.StatusCode != http.StatusInternalServerError {
+	if r := f.do(t, http.MethodDelete, path, "", cookie); r.StatusCode != http.StatusInternalServerError ||
+		!strings.Contains(string(r.body), "nothing was removed") {
 		t.Fatalf("clients file not written: %d %s", r.StatusCode, r.body)
 	}
 	stillThere("clients file not written")
@@ -305,7 +306,7 @@ func TestDeviceProtocolRemoveAPI(t *testing.T) {
 	// Newest first: the removal, the failed write, the policy's denial, the
 	// one for want of the password.
 	got := audits()
-	want := []string{"allow:ok", "allow:error: remove its MQTT user", "deny:dangerous actions", "deny:the admin password"}
+	want := []string{"allow:ok", "allow:error: cannot remove the device's MQTT user", "deny:dangerous actions", "deny:the admin password"}
 	if len(got) != len(want) {
 		t.Fatalf("audit of device.remove = %v", got)
 	}

@@ -4,9 +4,63 @@ package store
 
 import (
 	"errors"
+	"slices"
 	"testing"
 	"time"
 )
+
+// TestRemoveDeviceReplicates: a device's tombstone merges into another
+// member, keeps its digests right through the tombstone GC, and an older
+// version of the row merged after it does not bring the device back.
+func TestRemoveDeviceReplicates(t *testing.T) {
+	ctx := t.Context()
+	a := openTestWith(t, WithDigest(), WithOrigin("a"))
+	b := openTestWith(t, WithDigest(), WithOrigin("b"))
+	id := ProtocolDeviceID("kitchen")
+	apply := func(cmd Command) []Mutation {
+		t.Helper()
+		_, ms, err := a.ApplyLocalMutations(ctx, withStamp(cmd, Stamp{HLC: a.clock.Now(), Origin: "a"}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ms
+	}
+	upsert := apply(UpsertDevice{ID: id, Name: "kitchen", Facts: `{}`, Labels: `{}`, FirstSeen: 1, LastSeen: 1, Status: StatusOnline})
+	if err := b.Merge(ctx, upsert); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Merge(ctx, apply(RemoveDevice{ID: id})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.Devices().Get(ctx, id); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("removed device on b: %v, want not found", err)
+	}
+	// The older upsert again, as anti-entropy or a late hint may bring it.
+	if err := b.Merge(ctx, upsert); err != nil {
+		t.Fatal(err)
+	}
+	if list, err := b.Devices().List(ctx); err != nil || len(list) != 0 {
+		t.Fatalf("devices on b = %+v, %v, want none", list, err)
+	}
+	if _, err := a.GCTombstones(ctx, time.Now().Add(30*24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []*Store{a, b} {
+		for _, sp := range []Space{SpaceShard, SpaceGlobal, SpaceMaster} {
+			buckets := make([]int, sp.Buckets())
+			for i := range buckets {
+				buckets[i] = i
+			}
+			kept := s.BucketDigests(sp, buckets)
+			if err := s.buildDigest(ctx); err != nil {
+				t.Fatal(err)
+			}
+			if built := s.BucketDigests(sp, buckets); !slices.Equal(kept, built) {
+				t.Errorf("%s space %d: kept digests differ from built ones", s.origin, sp)
+			}
+		}
+	}
+}
 
 // TestRemoveDevice: a removed device is gone from Get, List and presence
 // writes, a second remove is not found, and an upsert brings it back.

@@ -124,9 +124,8 @@ func (b *Broker) PublishCommand(id string, payload []byte) error {
 
 // RemoveUser removes the password user named name: from the clients file
 // first, if the broker was given one, so a restart does not bring it back,
-// then from the broker. Its connections are ended, and the retained messages
-// of its Device Protocol topics cleared. It reports whether this broker had
-// the user, in its file or in memory.
+// then from the broker, and its connections are ended. It reports whether
+// this broker had the user, in its file or in memory.
 func (b *Broker) RemoveUser(name string) (bool, error) {
 	inFile := false
 	if b.clientsFile != "" {
@@ -142,15 +141,6 @@ func (b *Broker) RemoveUser(name string) (bool, error) {
 	for _, cl := range b.srv.Clients.GetAll() {
 		if !cl.Net.Inline && string(cl.Properties.Username) == name {
 			_ = b.srv.DisconnectClient(cl, packets.ErrNotAuthorized)
-		}
-	}
-	if b.auth.protocol != nil && deviceproto.ValidID(name) {
-		for _, kind := range []string{
-			deviceproto.KindAnnounce, deviceproto.KindState, deviceproto.KindTelemetry,
-			deviceproto.KindAvailability, deviceproto.KindResult,
-		} {
-			// An empty retained message clears the one retained.
-			_ = b.srv.Publish(deviceproto.Topic(name, kind), nil, true, 0)
 		}
 	}
 	return inFile || inMemory, nil

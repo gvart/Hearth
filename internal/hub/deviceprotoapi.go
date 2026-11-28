@@ -43,6 +43,11 @@ func (a *api) deviceProtocolRemove(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "forbidden", "denied by policy")
 	case errors.Is(err, store.ErrUnavailable):
 		writeUnavailable(w)
+	case errors.Is(err, ErrProtocolUserNotRemoved):
+		// Such as a clients file the hub cannot write. Nothing was removed.
+		a.log.ErrorContext(r.Context(), "remove device protocol device", "err", err)
+		writeError(w, http.StatusInternalServerError, "internal",
+			"cannot remove the device's MQTT user from the clients file: see the hub's log; nothing was removed")
 	default:
 		a.log.ErrorContext(r.Context(), "remove device protocol device", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal", "cannot remove the device")

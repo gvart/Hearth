@@ -49,6 +49,9 @@ var (
 	ErrProtocolUnavailable    = errors.New("the device is not connected to this hub's MQTT broker")
 	ErrProtocolTimeout        = errors.New("the device did not answer the command in time")
 	ErrProtocolFailed         = errors.New("the device answered that the command failed")
+	// ErrProtocolUserNotRemoved fails DeviceProtocol.Remove when the
+	// device's MQTT user could not be removed: nothing was.
+	ErrProtocolUserNotRemoved = errors.New("cannot remove the device's MQTT user")
 )
 
 // ProtocolBus is the MQTT broker as DeviceProtocol needs it (mqtt.Broker).
@@ -90,6 +93,8 @@ type DeviceProtocol struct {
 	flush   time.Duration
 	seen    time.Duration
 	kick    chan struct{}
+	// applyMu orders applyOps and Remove's forget and delete.
+	applyMu sync.Mutex
 
 	mu  sync.Mutex
 	bus ProtocolBus
@@ -246,6 +251,10 @@ func (p *DeviceProtocol) Run(ctx context.Context) error {
 }
 
 func (p *DeviceProtocol) applyOps(ctx context.Context) {
+	// A removal waits for the ops taken here to be written, so it does
+	// not miss one and leave its device registered.
+	p.applyMu.Lock()
+	defer p.applyMu.Unlock()
 	p.mu.Lock()
 	ops := p.ops
 	p.ops = nil
@@ -491,10 +500,12 @@ func (p *DeviceProtocol) Remove(ctx context.Context, actorKind, actorID, id stri
 			// First, so the device cannot announce itself again.
 			removed, err := bus.RemoveUser(name)
 			if err != nil {
-				return fmt.Errorf("remove its MQTT user: %w", err)
+				return fmt.Errorf("%w: %w", ErrProtocolUserNotRemoved, err)
 			}
 			res.MQTTUserRemoved = removed
 		}
+		p.applyMu.Lock()
+		defer p.applyMu.Unlock()
 		p.forget(name)
 		return p.reg.removeDevice(ctx, id)
 	})
