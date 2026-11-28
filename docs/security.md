@@ -313,6 +313,12 @@ does.
   entry holds the program's SHA-256 and the release digest. Allowing a plugin on a device, raising its
   class, or moving it to another release ("approve" in the Capabilities card, `@latest` in the CLI) is
   `device.capabilities.raise` (dangerous, the password again). All are audited.
+- A WASM plugin installed from a plugin index (docs/plugins.md, Plugin registry) comes only from an
+  index signed with an Ed25519 key the operator passed with `--plugin-index-key` (none by default), and
+  only as the module whose SHA-256 the signed entry pins. It runs with the manifest of that entry, so
+  with no more host access than it grants, shown before the install. Installing or updating one is
+  dangerous (`plugin.registry.install`, `.update`, the password again in the web UI), removing it safe;
+  updates are never automatic, and a downgrade only when asked for. All are audited.
 - An agent's own `--allow-plugin NAME[:CLASS]@DIGEST` pins a release on the device. Without `@DIGEST`
   the agent pins the first release it installs (trust on first use) by plugin name, keeps the pin in
   `<data-dir>/plugin-pins.json`, and refuses any other release while the flag stays, whatever its

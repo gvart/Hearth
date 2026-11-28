@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"reflect"
 	"slices"
 	"sync"
 	"time"
@@ -45,9 +46,32 @@ type Config struct {
 	Options   Options
 }
 
-// Manager runs the configured plugins.
+// Manager runs the configured plugins, and those Reconcile adds.
 type Manager struct {
+	o   Options
+	pol Policy
+	log *slog.Logger
+
+	// reconcile serializes Reconcile.
+	reconcile sync.Mutex
+
+	mu      sync.Mutex
 	plugins []*plugin
+	// dynamic are the plugins Reconcile added, by plugin.
+	dynamic map[*plugin]bool
+	// handles stop the plugins running, by plugin.
+	handles map[*plugin]handle
+	// runCtx is Run's, once it runs; stopping is set once Run waits for
+	// its plugins to stop, after which none starts.
+	runCtx   context.Context
+	stopping bool
+	wg       sync.WaitGroup
+}
+
+// handle stops a running plugin: cancel it, then wait for done.
+type handle struct {
+	cancel context.CancelFunc
+	done   chan struct{}
 }
 
 // New returns a manager of cfg's plugins, which must be valid and named
@@ -58,7 +82,7 @@ func New(cfg Config) (*Manager, error) {
 		log = slog.New(slog.DiscardHandler)
 	}
 	o := cfg.Options.withDefaults()
-	m := &Manager{}
+	m := &Manager{o: o, pol: cfg.Policy, log: log, dynamic: map[*plugin]bool{}, handles: map[*plugin]handle{}}
 	seen := map[string]bool{}
 	for _, man := range cfg.Manifests {
 		if err := man.Validate(); err != nil {
@@ -78,12 +102,98 @@ func New(cfg Config) (*Manager, error) {
 // Run runs every plugin until ctx is done. A plugin that fails is restarted
 // with backoff; nothing a plugin does ends Run, which returns nil.
 func (m *Manager) Run(ctx context.Context) error {
-	var wg sync.WaitGroup
+	m.mu.Lock()
+	m.runCtx = ctx
 	for _, p := range m.plugins {
-		wg.Go(func() { p.run(ctx) })
+		m.start(p)
 	}
-	wg.Wait()
+	m.mu.Unlock()
+	<-ctx.Done()
+	m.mu.Lock()
+	m.stopping = true
+	m.mu.Unlock()
+	m.wg.Wait()
 	return nil
+}
+
+// start runs p under Run's context; m.mu is held. Before Run, Run starts it.
+func (m *Manager) start(p *plugin) {
+	if m.runCtx == nil || m.stopping {
+		return
+	}
+	ctx, cancel := context.WithCancel(m.runCtx)
+	h := handle{cancel: cancel, done: make(chan struct{})}
+	m.handles[p] = h
+	m.wg.Go(func() {
+		defer close(h.done)
+		p.run(ctx)
+	})
+}
+
+// Reconcile makes manifests the plugins m runs besides those it was
+// configured with: it starts the new ones, restarts those whose manifest
+// changed (once the one before stopped) and stops those not named any more.
+// A manifest that is invalid, or names a configured plugin, is not run: its
+// error is returned by name.
+func (m *Manager) Reconcile(manifests []Manifest) map[string]error {
+	m.reconcile.Lock()
+	defer m.reconcile.Unlock()
+	errs := map[string]error{}
+	m.mu.Lock()
+	want := map[string]Manifest{}
+	for _, man := range manifests {
+		switch {
+		case man.Validate() != nil:
+			errs[man.Name] = fmt.Errorf("plugin %s: %w", man.Name, man.Validate())
+		case slices.ContainsFunc(m.plugins, func(p *plugin) bool { return !m.dynamic[p] && p.m.Name == man.Name }):
+			errs[man.Name] = fmt.Errorf("plugin %s is configured with --plugin too: remove one", man.Name)
+		case want[man.Name].Name != "":
+			errs[man.Name] = fmt.Errorf("plugin %s named twice", man.Name)
+		default:
+			want[man.Name] = man
+		}
+	}
+	var stop []*plugin
+	keep := m.plugins[:0:0]
+	for _, p := range m.plugins {
+		if man, ok := want[p.m.Name]; m.dynamic[p] && (!ok || !reflect.DeepEqual(man, p.m)) {
+			stop = append(stop, p)
+			continue
+		}
+		if m.dynamic[p] {
+			delete(want, p.m.Name)
+		}
+		keep = append(keep, p)
+	}
+	m.plugins = keep
+	handles := make([]handle, 0, len(stop))
+	for _, p := range stop {
+		delete(m.dynamic, p)
+		if h, ok := m.handles[p]; ok {
+			handles = append(handles, h)
+			delete(m.handles, p)
+		}
+	}
+	m.mu.Unlock()
+	// Stopped before its successor starts: never two of one plugin.
+	for _, h := range handles {
+		h.cancel()
+		<-h.done
+	}
+	names := make([]string, 0, len(want))
+	for n := range want {
+		names = append(names, n)
+	}
+	slices.Sort(names)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, n := range names {
+		p := &plugin{m: want[n], o: m.o, pol: m.pol, log: m.log, now: time.Now, state: StateStopped}
+		m.plugins = append(m.plugins, p)
+		m.dynamic[p] = true
+		m.start(p)
+	}
+	return errs
 }
 
 // Status is what the hub knows of a plugin.
@@ -104,8 +214,11 @@ type Status struct {
 
 // Plugins returns the status of every plugin, in configuration order.
 func (m *Manager) Plugins() []Status {
-	out := make([]Status, 0, len(m.plugins))
-	for _, p := range m.plugins {
+	m.mu.Lock()
+	list := slices.Clone(m.plugins)
+	m.mu.Unlock()
+	out := make([]Status, 0, len(list))
+	for _, p := range list {
 		out = append(out, p.status())
 	}
 	return out
@@ -222,11 +335,25 @@ func (m *Manager) RunGranted(ctx context.Context, name string, req CommandReques
 	return p.command(ctx, req)
 }
 
+// Configured reports whether plugin name is one m was configured with, not
+// one Reconcile added.
+func (m *Manager) Configured(name string) bool {
+	p := m.find(name)
+	if p == nil {
+		return false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return !m.dynamic[p]
+}
+
 // find returns the configured plugin named name, or nil.
 func (m *Manager) find(name string) *plugin {
 	if m == nil {
 		return nil
 	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	i := slices.IndexFunc(m.plugins, func(p *plugin) bool { return p.m.Name == name })
 	if i < 0 {
 		return nil

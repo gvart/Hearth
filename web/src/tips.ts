@@ -18,6 +18,7 @@ export type TipId =
   | "tokens"
   | "capabilities"
   | "deviceplugins"
+  | "plugins"
   | "upgrade"
   | "tailscale"
   | "ai"
@@ -146,6 +147,14 @@ export const tips: Record<TipId, TipText> = {
     lines: [
       "Programs you upload here run on a device, as its agent's user, and speak the same JSON lines as the hub's exec plugins. A device gets one when you grant it under Capabilities.",
       "Uploading asks for your password again. A command's class decides what policy asks before it runs.",
+    ],
+    docs: "plugins.md",
+  },
+  plugins: {
+    about: "plugins",
+    lines: [
+      "WASM plugins from a plugin index: a JSON file you or someone you trust publishes, signed with a key the hub trusts (--plugin-index and --plugin-index-key). Without one, Browse is empty.",
+      "A plugin runs in the hub's sandbox and reaches only the hosts its entry names, shown before you install. Installing or updating asks for your password again; updates are never automatic.",
     ],
     docs: "plugins.md",
   },
