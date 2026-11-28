@@ -181,12 +181,12 @@ func TestProtocolMalformedAndOversize(t *testing.T) {
 	watcher := connected(t, tb, "watcher", "watcher")
 	watcher.subscribe("hearth/#")
 	kitchen := connected(t, tb, "kitchen", "kitchen")
-	const secret = "do-not-log-this-payload"
+	const marker = "do-not-log-this-payload"
 	for _, payload := range []string{
-		`{"v":1,"name":"` + secret,        // malformed JSON
-		`{"v":2,"name":"` + secret + `"}`, // another version
-		`{"v":1,"name":"` + secret + strings.Repeat("x", deviceproto.MaxPayload) + `"}`, // over 16 KiB
-		`{"v":1,"entities":[{"id":"` + secret + `/x","kind":"sensor"}]}`,                // a bad entity id
+		`{"v":1,"name":"` + marker,        // malformed JSON
+		`{"v":2,"name":"` + marker + `"}`, // another version
+		`{"v":1,"name":"` + marker + strings.Repeat("x", deviceproto.MaxPayload) + `"}`, // over 16 KiB
+		`{"v":1,"entities":[{"id":"` + marker + `/x","kind":"sensor"}]}`,                // a bad entity id
 	} {
 		kitchen.publish("hearth/v1/kitchen/announce", payload)
 	}
@@ -198,7 +198,7 @@ func TestProtocolMalformedAndOversize(t *testing.T) {
 		t.Fatalf("sink got %d messages, want only the valid one", len(msgs))
 	}
 	waitLog(t, tb, "mqtt device message refused", 4)
-	if strings.Contains(tb.logs.String(), secret) {
+	if strings.Contains(tb.logs.String(), marker) {
 		t.Fatal("a payload was logged")
 	}
 	// A refused message is not retained either.

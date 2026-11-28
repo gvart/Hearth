@@ -1,0 +1,12 @@
+The specifications in this directory (docs/spec/) are licensed under the
+Creative Commons Attribution 4.0 International License (CC BY 4.0), unlike the
+rest of the repository (AGPL-3.0; pkg/ is Apache-2.0).
+
+You may share and adapt them, for any purpose, even commercially, as long as
+you give appropriate credit ("Hearth contributors"), link to the licence and
+indicate if changes were made.
+
+Licence: https://creativecommons.org/licenses/by/4.0/
+Legal code: https://creativecommons.org/licenses/by/4.0/legalcode
+
+SPDX-License-Identifier: CC-BY-4.0

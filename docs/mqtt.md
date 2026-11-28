@@ -180,12 +180,37 @@ Bridge limits:
 - A prefix ends in `/`, has no wildcard, and forwards the topics below it, not the prefix itself.
 - The hub reads the bridge file when it starts. Restart it after you change the file.
 
+## Devices without an agent: the Device Protocol
+
+A microcontroller or any small device can join Hearth through the broker with the
+[Device Protocol](spec/device-protocol-v1.md): JSON messages on its own topics under
+`hearth/v1/<id>/`. It announces itself and shows up with the other devices, reports its state and
+readings, and takes the commands it announced. Each command is a policy decision
+(`device.command`, dangerous) and audited. Give the device a user of its own, named by its id, and
+its topics:
+
+```yaml
+users:
+  - name: kitchen-sensor
+    password_hash: "$2a$10$..."
+    allow:
+      - topic: hearth/v1/kitchen-sensor/#
+        access: readwrite
+```
+
+Under `hearth/v1/` the broker lets a client publish only to its own device topics, whatever the
+clients file grants, and no client publishes a command: only the hub does. Malformed or oversized
+protocol messages (over 16 KiB) are dropped before anyone receives them. A reference client for the
+ESP32 is in [examples/esp32](../examples/esp32/README.md).
+
 ## What the hub logs
 
 The hub logs every refused connection with its reason, the user or device, the client ID and the
 address it came from. It never logs passwords or message payloads. Denied topics are logged at debug
 level. MQTT traffic is not written to the audit log: a broker carries far too many messages, and the
-clients file is the rule that guards it.
+clients file is the rule that guards it. Device Protocol commands are the exception: each one the
+hub sends is a policy decision, audited. A refused Device Protocol message is logged with its
+reason, never its payload.
 
 ## Limits
 
