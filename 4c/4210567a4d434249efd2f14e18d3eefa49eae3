@@ -44,6 +44,8 @@ internal/ai/provider.go
   s_18b57982fdff93::t_f5e069c2ee4e82 172
 web/src/ai.ts
   s_18b57982fdff93::t_e48bc7458a59f2 1-78
+site/src/pages.mjs
+  s_18b57982fdff93::t_cf70103c2cc346 11
 ---
 {
   "schema_version": "authorship/3.0.0",
