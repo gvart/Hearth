@@ -1,0 +1,282 @@
+go.mod
+  s_18b57982fdff93::t_b69d10b0e27204 17
+cmd/hearth/common.go
+  s_18b57982fdff93::t_b69d10b0e27204 14,34-36,41-42
+  s_18b57982fdff93::t_ff2fffc4e7748d 43
+internal/agent/service_windows.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-115
+internal/deviceproto/deviceproto.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-396
+site/astro.config.mjs
+  s_18b57982fdff93::t_b69d10b0e27204 37
+cmd/hearth/root.go
+  s_18b57982fdff93::t_b69d10b0e27204 18
+internal/ai/openai.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-116
+internal/policy/policy.go
+  s_18b57982fdff93::t_b69d10b0e27204 293-295,316-318,343-346,667-671,692-696,718-723
+internal/cluster/replicate.go
+  s_18b57982fdff93::t_b69d10b0e27204 269-270,521-534,538-547,618-620,624,626,643-699,753-755,785,791,873-880,882-883,887-888,920-923,928,930,938-951,985,1011,1032,1036,1058-1060,1062,1176
+internal/plugins/manager.go
+  s_18b57982fdff93::t_b69d10b0e27204 291-295
+internal/hubconfig/aidoc_test.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-88
+examples/plugins/rust-lamp/plugin.yaml
+  s_18b57982fdff93::t_b69d10b0e27204 1-16
+internal/hub/guest.go
+  s_18b57982fdff93::t_b69d10b0e27204 221-222,226-234
+cmd/hearth/ai.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-201
+examples/plugins/rust-lamp/.gitignore
+  s_18b57982fdff93::t_b69d10b0e27204 1-2
+examples/plugins/rust-lamp/src/main.rs
+  s_18b57982fdff93::t_b69d10b0e27204 1-60
+web/src/components/AISettings.tsx
+  s_18b57982fdff93::t_b69d10b0e27204 1-170
+examples/plugins/rust-lamp/Cargo.toml
+  s_18b57982fdff93::t_b69d10b0e27204 1-18
+internal/hubconfig/docs.go
+  s_18b57982fdff93::t_b69d10b0e27204 22,33,48-49,73-76,79,89,97-98,107-108,117-118,123,125,159-160,169,188-193,282-285,295,297-307,316-317,323,373
+examples/esp32/platformio.ini
+  s_18b57982fdff93::t_b69d10b0e27204 1-13
+internal/plugins/wasm_test.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-492
+internal/hub/deviceprotoapi_test.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-218
+internal/hub/api.go
+  s_18b57982fdff93::t_b69d10b0e27204 94,184,212,288-290
+internal/plugins/device.go
+  s_18b57982fdff93::t_b69d10b0e27204 113-115,147-149
+internal/hub/deviceproto.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-600
+internal/store/command_test.go
+  s_18b57982fdff93::t_b69d10b0e27204 127
+cmd/hearth/carotation_ai_test.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-48
+internal/cluster/mastertables_test.go
+  s_18b57982fdff93::t_b69d10b0e27204 445-458,467,506,537,546-549,551-561,573,603,619,774-857,859
+  s_18b57982fdff93::t_62b6424904e98d 858
+internal/store/migrations/00042_ai_config_doc.sql
+  s_18b57982fdff93::t_b69d10b0e27204 1-42
+internal/hub/server.go
+  s_18b57982fdff93::t_b69d10b0e27204 109-111
+docs/spec/LICENSE
+  s_18b57982fdff93::t_b69d10b0e27204 1-12
+CLAUDE.md
+  s_18b57982fdff93::t_b69d10b0e27204 55-57
+cmd/hearth/ai_test.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-132
+internal/cluster/aprunbook_test.go
+  s_18b57982fdff93::t_b69d10b0e27204 15,22-25,91,94,99-101,103,106-107,112,116-118,121,123-124,126-127,193-198,225,230,236-240,243-249,251-263,265-266,268-269,271-277,279-280,287-288,290,293,296-304,324-325,333,337-342,346-353,366-371,375-376,401-406,413,443-530
+  s_18b57982fdff93::t_e50c7159f0b703 531
+web/src/components/DevicePage.tsx
+  s_18b57982fdff93::t_b69d10b0e27204 28,251
+  s_18b57982fdff93::t_e1db54ea0a782e 252
+docs/security.md
+  s_18b57982fdff93::t_b69d10b0e27204 351-355,371-375
+pkg/sdk/host_wasip1.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-79
+internal/mqtt/protocol.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-133
+internal/store/reads.go
+  s_18b57982fdff93::t_b69d10b0e27204 118-119
+examples/plugins/go-wasm-lamp/main.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-85
+internal/plugins/testdata/wasmguest/main.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-103
+cmd/hearth/hub_mqtt_test.go
+  s_18b57982fdff93::t_b69d10b0e27204 40,44,48,54,62,65
+cmd/hearth/hub.go
+  s_18b57982fdff93::t_b69d10b0e27204 486-492,494,711,779-782
+cmd/hearth/agent_service_test.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-82
+docs/cluster.md
+  s_18b57982fdff93::t_b69d10b0e27204 204-205,209-210,228-231,239-245,266-268,273-274,276,280-287,340-345,351-352,360-362,364-371,397-402,935,957-962
+cmd/hearth/config.go
+  s_18b57982fdff93::t_b69d10b0e27204 31,48,51,58,70
+pkg/sdk/doc.go
+  s_18b57982fdff93::t_b69d10b0e27204 7-22
+web/src/components/DeviceExplain.css
+  s_18b57982fdff93::t_b69d10b0e27204 1-55
+internal/store/certs.go
+  s_18b57982fdff93::t_b69d10b0e27204 52-56,59,63,65,68-71,77-78
+  s_18b57982fdff93::t_53230aef470466 79
+docs/mqtt.md
+  s_18b57982fdff93::t_b69d10b0e27204 183-205,211-213
+internal/store/version.go
+  s_18b57982fdff93::t_b69d10b0e27204 118-125,146-151,615-620
+internal/store/pins.go
+  s_18b57982fdff93::t_b69d10b0e27204 9,63-72,77-85,92-118,120,122-138,140
+examples/esp32/src/config.example.h
+  s_18b57982fdff93::t_b69d10b0e27204 1-28
+internal/mqtt/auth.go
+  s_18b57982fdff93::t_b69d10b0e27204 52-54,83,99-100,110,112-113,229,284-285
+internal/ai/explain.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-121
+internal/ai/redact.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-79
+internal/hub/runbooks_test.go
+  s_18b57982fdff93::t_b69d10b0e27204 437
+internal/store/deviceprotocol.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-16
+deploy/install.ps1
+  s_18b57982fdff93::t_b69d10b0e27204 1-359
+internal/store/carotation.go
+  s_18b57982fdff93::t_b69d10b0e27204 332,362,373-374,379-381,383,386
+internal/store/runbookruns.go
+  s_18b57982fdff93::t_b69d10b0e27204 40-42,48,143,159,170,182-184,194,265-267
+pkg/sdk/host_other.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-57
+internal/deviceproto/deviceproto_test.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-144
+internal/agent/service.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-30
+internal/plugins/manifest.go
+  s_18b57982fdff93::t_b69d10b0e27204 77-90,96-127,201,205-253
+  s_18b57982fdff93::t_f5d2ca1ec29f70 254
+internal/store/pinread_test.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-217
+examples/esp32/README.md
+  s_18b57982fdff93::t_b69d10b0e27204 1-62
+internal/mqtt/broker.go
+  s_18b57982fdff93::t_b69d10b0e27204 68-72,95-98
+web/src/components/SettingsPage.tsx
+  s_18b57982fdff93::t_b69d10b0e27204 16,23,30,41,60-61
+internal/mqtt/protocol_test.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-327
+web/src/components/DeviceExplain.tsx
+  s_18b57982fdff93::t_b69d10b0e27204 1-184
+internal/ai/provider.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-215
+examples/plugins/go-wasm-lamp/plugin.yaml
+  s_18b57982fdff93::t_b69d10b0e27204 1-22
+internal/hub/guest_test.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-106
+internal/store/panels.go
+  s_18b57982fdff93::t_b69d10b0e27204 113,140,161-178,335,359-364,391,419-421,423-432,438-460
+internal/policy/guardrails_test.go
+  s_18b57982fdff93::t_b69d10b0e27204 218,227,237
+internal/mqtt/bridge.go
+  s_18b57982fdff93::t_b69d10b0e27204 24-25,283-286
+docs/spec/device-protocol-v1.md
+  s_18b57982fdff93::t_b69d10b0e27204 1-253
+cmd/hearth/agent_service_other.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-14
+web/src/ai.ts
+  s_18b57982fdff93::t_b69d10b0e27204 1-78
+internal/store/certs_test.go
+  s_18b57982fdff93::t_b69d10b0e27204 125-137
+  s_18b57982fdff93::t_bc05f778b0165e 124
+internal/ai/provider_test.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-289
+cmd/hearth/hub_mqtt.go
+  s_18b57982fdff93::t_b69d10b0e27204 17,46,48,77-80,83
+internal/cluster/apnode.go
+  s_18b57982fdff93::t_b69d10b0e27204 542
+docs/plugins.md
+  s_18b57982fdff93::t_b69d10b0e27204 2-3,11-14,19,25-29,72-73,233-344,438-440
+internal/plugins/plugin.go
+  s_18b57982fdff93::t_b69d10b0e27204 61-64,87-89,117-120,148,184-195,197-202,209,213-214,216-227,229,242,248-250,272-275,277-279,286-331
+  s_18b57982fdff93::t_33c8c7f3b62017 332
+README.md
+  s_18b57982fdff93::t_b69d10b0e27204 31-33
+web/src/components/Shell.tsx
+  s_18b57982fdff93::t_b69d10b0e27204 204
+internal/store/shard_test.go
+  s_18b57982fdff93::t_b69d10b0e27204 61,66-78
+pkg/sdk/plugin_test.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-109
+internal/hub/dashboard_test.go
+  s_18b57982fdff93::t_b69d10b0e27204 60-79
+internal/plugins/wasm.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-538
+cmd/hearth/agent.go
+  s_18b57982fdff93::t_b69d10b0e27204 26,114-128
+internal/mqtt/deviceproto_e2e_test.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-282
+internal/agent/service_other.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-16
+web/test/ai.test.mjs
+  s_18b57982fdff93::t_b69d10b0e27204 1-35
+internal/agent/service_test.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-25
+internal/hub/ai.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-549
+pkg/sdk/http.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-40
+internal/plugins/helper_test.go
+  s_18b57982fdff93::t_b69d10b0e27204 172-173
+site/src/pages.mjs
+  s_18b57982fdff93::t_b69d10b0e27204 11
+web/src/tips.ts
+  s_18b57982fdff93::t_38a33474add41e 22
+  s_18b57982fdff93::t_b69d10b0e27204 23,168-174
+  s_18b57982fdff93::t_1907e94b65a3b1 175
+cmd/hearth/agent_service_windows.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-200
+internal/store/configdocs_test.go
+  s_18b57982fdff93::t_b69d10b0e27204 8-9,146,153,161-163,168-191
+  s_18b57982fdff93::t_744bf59817bc38 192-193
+internal/ai/config.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-197
+internal/store/panels_test.go
+  s_18b57982fdff93::t_b69d10b0e27204 157-183
+examples/esp32/.gitignore
+  s_18b57982fdff93::t_b69d10b0e27204 1-2
+docs/ai.md
+  s_18b57982fdff93::t_b69d10b0e27204 1-153
+web/src/nav.ts
+  s_18b57982fdff93::t_b69d10b0e27204 19,80
+internal/store/configdocs.go
+  s_18b57982fdff93::t_b69d10b0e27204 28-29,32-42,44,48-49,53,252-259
+web/src/components/PanelsPage.tsx
+  s_18b57982fdff93::t_b69d10b0e27204 31-34,61-66,94-98,132-133,139-141,144-145,233,235,250,252
+internal/hub/ai_test.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-318
+internal/cluster/apsession_test.go
+  s_18b57982fdff93::t_b69d10b0e27204 29,93,277-289
+web/src/api/ai.ts
+  s_18b57982fdff93::t_b69d10b0e27204 1-88
+internal/hub/deviceprotoapi.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-68
+pkg/sdk/plugin.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-232
+docs/threat-model.md
+  s_18b57982fdff93::t_b69d10b0e27204 146-148,159,222-230
+cmd/hearth/agent_service.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-98
+examples/esp32/src/main.cpp
+  s_18b57982fdff93::t_b69d10b0e27204 1-170
+internal/store/partition.go
+  s_18b57982fdff93::t_b69d10b0e27204 24-25,31-32,82,90-91,98,309-313,315-318,374-375,379-380,418-419,423-427
+internal/ai/anthropic.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-121
+docs/runbooks.md
+  s_18b57982fdff93::t_b69d10b0e27204 324,326,330
+docs/getting-started.md
+  s_18b57982fdff93::t_b69d10b0e27204 170-203,343-345,348-349
+internal/ai/redact_test.go
+  s_18b57982fdff93::t_b69d10b0e27204 1-151
+internal/mqtt/broker_test.go
+  s_18b57982fdff93::t_b69d10b0e27204 68,88-93,118,120-123,128,174,223-227
+examples/plugins/rust-lamp/Cargo.lock
+  s_18b57982fdff93::t_d113edf2e4eda2 1-107
+go.sum
+  s_18b57982fdff93::t_655e4098442d84 290-291
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "0470802fbb05d7db6fa4995bf50be0544081a284",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
