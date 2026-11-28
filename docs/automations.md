@@ -253,6 +253,9 @@ The web UI's **Automations** page lists the automation files of the store, and e
 trigger, condition and action blocks or as YAML. Both views change the same file: switch between them
 at any time. Export the files with `hearth config export` to keep them in git.
 
+- **Write it with AI.** With AI set up, a new automation can start from a description: the model
+  drafts the file, the hub validates it, and the draft opens here unsaved, with its dry run. See
+  [Draft an automation](ai.md#draft-an-automation).
 - **Your file stays yours.** An edit replaces only the text of what you changed: every other byte of
   the file, comments, key order, quoting and spacing included, stays as written. An edit that cannot
   be made that way is refused, and the editor sends you to the YAML view.

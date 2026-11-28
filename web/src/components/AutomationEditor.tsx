@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import type { AutomationDraft } from '../api/ai.ts';
 import type { AutomationDryRun, AutomationProblem, PolicyDecision } from '../api/automations.ts';
 import { useAutomation, useDryRunAutomation, useSaveAutomation } from '../api/automations.ts';
 import { useDevices } from '../api/hooks.ts';
@@ -25,6 +26,7 @@ import {
   stepSpecs,
 } from '../automations/model.ts';
 import { mayEdit, savedNotice } from '../automations/session.ts';
+import { AutomationDraftCard } from './AutomationDraft.tsx';
 import { AutomationRuns, DeleteAutomationButton } from './AutomationRuns.tsx';
 import { Modal } from './Modal.tsx';
 
@@ -85,6 +87,7 @@ function Editor({ id, file, initial, revision: initialRevision, problems = [] }:
   const [savedNote, setSavedNote] = useState('');
   const [loadProblems, setLoadProblems] = useState(problems);
   const [dryRunResult, setDryRunResult] = useState<AutomationDryRun | null>(null);
+  const [draftProblems, setDraftProblems] = useState<AutomationProblem[]>([]);
   const [leaving, setLeaving] = useState(false);
   const save = useSaveAutomation();
   const dryRun = useDryRunAutomation();
@@ -120,6 +123,7 @@ function Editor({ id, file, initial, revision: initialRevision, problems = [] }:
     }
     setSource(next);
     setDryRunResult(null);
+    setDraftProblems([]);
     setSavedNote('');
     setEditError('');
     save.reset();
@@ -131,6 +135,16 @@ function Editor({ id, file, initial, revision: initialRevision, problems = [] }:
       change(fn(source));
     } catch (err) {
       setEditError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  /** A draft from the model replaces the file, unsaved; a valid one gets its dry run at once. */
+  const applyDraft = (d: AutomationDraft) => {
+    change(d.yaml);
+    setDraftProblems(d.problems);
+    setView(d.valid ? 'visual' : 'yaml');
+    if (d.valid) {
+      dryRun.mutate({ id, yaml: d.yaml, revision }, { onSuccess: setDryRunResult });
     }
   };
 
@@ -220,6 +234,10 @@ function Editor({ id, file, initial, revision: initialRevision, problems = [] }:
         </div>
       </div>
 
+      {id === undefined ? <AutomationDraftCard disabled={busy} onDraft={applyDraft} /> : null}
+      {draftProblems.length > 0 ? (
+        <Problems title="The hub does not accept this draft yet" problems={draftProblems} />
+      ) : null}
       {loadProblems.length > 0 && !dirty ? (
         <Problems title="The hub cannot load this file" problems={loadProblems} />
       ) : null}
