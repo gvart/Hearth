@@ -299,6 +299,15 @@ const (
 	// PluginBinaryDelete removes an exec plugin for devices, for one
 	// platform: the agents remove it at their next sync.
 	PluginBinaryDelete Action = "plugin.binary.delete"
+	// PluginRegistryInstall installs a WASM plugin from a signed plugin
+	// index (#75) on the hub, which starts it with the host grants the index
+	// gives it.
+	PluginRegistryInstall Action = "plugin.registry.install"
+	// PluginRegistryUpdate replaces an installed plugin with another version
+	// from the index: its module, commands and host grants.
+	PluginRegistryUpdate Action = "plugin.registry.update"
+	// PluginRegistryRemove uninstalls a plugin installed from an index.
+	PluginRegistryRemove Action = "plugin.registry.remove"
 	// DevicePluginCommandRead, DevicePluginCommandSafe and
 	// DevicePluginCommandDangerous run a command of an exec plugin on a
 	// device, through its agent, of the class the plugin's manifest declares.
@@ -675,6 +684,13 @@ var rules = map[Action]rule{
 	// the web UI asks for the password again. Removing one only takes away.
 	PluginBinaryUpload: {class: Dangerous, actors: []string{ActorAdmin, ActorWeb}},
 	PluginBinaryDelete: {class: Safe, actors: []string{ActorAdmin, ActorWeb}},
+	// A plugin from a registry is third-party code the hub runs, with the
+	// host access its index entry grants: installing or updating one is
+	// dangerous, and the web UI asks for the password again. Removing one
+	// only takes away.
+	PluginRegistryInstall: {class: Dangerous, actors: []string{ActorAdmin, ActorWeb}},
+	PluginRegistryUpdate:  {class: Dangerous, actors: []string{ActorAdmin, ActorWeb}},
+	PluginRegistryRemove:  {class: Safe, actors: []string{ActorAdmin, ActorWeb}},
 	// A device plugin command is as risky as the class its manifest
 	// declares; the device's agent also refuses one above the class its
 	// ceiling allows for the plugin.
