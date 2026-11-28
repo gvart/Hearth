@@ -21,7 +21,8 @@ import (
 //   - a read of one partition this member does not hold runs on a live
 //     replica of it (queryKey: R = 1); a point read a false not-found must
 //     not come from asks every replica when the first has no row of it
-//     (queryRowLive);
+//     (queryRowLive); a check that no one replica's word may decide asks
+//     every live replica and gets each one's rows (queryEachReplica);
 //   - a list not keyed by one partition fans out to live storage members
 //     that together hold every partition, and the rows they return merge
 //     here (queryAll): each row once, at its newest version, then sorted
@@ -317,6 +318,36 @@ func (s *Store) queryRowLive(ctx context.Context, table, key, sel, rest string, 
 		return memRow{}
 	}
 	return memRow{rows: [][]any{vals[:len(vals)-1]}}
+}
+
+// queryEachReplica runs query, whose rows all have partition key key, on
+// every live replica of it (this member's copy among them when it holds key,
+// stand-ins included) and returns every row each one answered, unmerged: for
+// a check in which no one replica's word may decide, but any one replica's
+// "deny" does (Certs.Check, #387). It fails with ErrUnavailable when no
+// replica answered. On a store that holds every row it reads here. Not for a
+// global or a deletable table: the rows are taken as they are.
+func (s *Store) queryEachReplica(ctx context.Context, key, query string, args ...any) ([][]any, error) {
+	wargs, err := wireArgs(args)
+	if err != nil {
+		return nil, err
+	}
+	if s.shards == nil {
+		rs, err := s.readOn(ctx, s.db, query, wargs)
+		if err != nil {
+			return nil, err
+		}
+		return valuesRows(rs.Vals), nil
+	}
+	parts, err := s.shards.ReadReplicas(ctx, key, query, wargs)
+	if err != nil {
+		return nil, err
+	}
+	var out [][]any
+	for _, p := range parts {
+		out = append(out, valuesRows(p.Vals)...)
+	}
+	return out, nil
 }
 
 func valuesRows(vs []Values) [][]any {

@@ -231,8 +231,11 @@ dir and join it again.
   history) need one replica and reach the others in the background. A replica that is down is replaced by the
   next live member, and gets the write later from a hint (kept in `hints.db`, bounded).
 - **Reads.** A read by key goes to the nearest live replica (R = 1). When that replica has no copy of
-  the row at all (it missed the write while it was down), a certificate, approval or approval link,
-  device or device route is asked of every live replica, and the newest copy wins, a deletion included.
+  the row at all (it missed the write while it was down), an approval or approval link, device or
+  device route is asked of every live replica, and the newest copy wins, a deletion included. A device
+  certificate check always asks every live replica, and a revocation any one of them holds wins, however
+  new the others' copies are ([#387](https://github.com/gvart/hearth/issues/387)); with none reachable,
+  the agent's call answers 503 and it retries.
   A master reads a sign-in session, an MCP or dashboard token, a panel and a share link on its own
   copy, and never asks another member. A master that started, or was just promoted, first compares
   these rows with every other live master that proves the hub CA key, so it holds every sign-out and
@@ -335,9 +338,12 @@ it holds, or answer reads of them as it likes, until they are signed by the mast
 ([#387](https://github.com/gvart/hearth/issues/387)). For the rows of the buckets it is a replica of
 (with `--replicas 2` and S storage members, about 2 in S of them), it can:
 
-- **Un-revoke a device certificate**, or hide that it was revoked: a master that asks it about a
-  certificate takes its answer, so a revoked device whose certificate it holds may connect again. Hub
-  certificates are global, so this does not reach hubs.
+- **Refuse a device certificate**: a certificate check asks every live replica and refuses the device
+  if any one answers "revoked", so a storage member can make a master refuse a device whose
+  certificate it holds (until it is removed from the cluster). It cannot un-revoke one: its "not
+  revoked" or "no such certificate" does not outweigh a revocation another replica holds, and a
+  revocation, once merged, is never cleared. It decides alone only while it is the one live replica of
+  the certificate's row that answers. Hub certificates are global, so none of this reaches hubs.
 - **Rewrite a runbook run**: a run's runbook file is sealed with the hub CA key, but its state (which
   step is next, each step's outcome) is not, so it can change which step of that runbook a master runs
   next: skip one, or run one again.
