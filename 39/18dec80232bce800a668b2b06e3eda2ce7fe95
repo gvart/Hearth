@@ -1,0 +1,86 @@
+pkg/sdk/host_wasip1.go
+  s_18b57982fdff93::t_63b2adc15783bb 1-80
+examples/plugins/go-wasm-lamp/main.go
+  s_18b57982fdff93::t_3a107229d83fab 1-84
+internal/plugins/wasm.go
+  s_18b57982fdff93::t_a311a747fffda8 1-20,22-80,95-112,114-233,237-240,242-266,268-272,275-292,294-296,298,300-301,303-317,322-390,392-461,463-535
+  s_18b57982fdff93::t_8c6ebec02187da 21,81-94,113,234-236,241,273-274,293,297,299,302
+  s_18b57982fdff93::t_d9330c175fb545 318-321
+  s_18b57982fdff93::t_53f4c7634878f1 267,391,462
+examples/plugins/rust-lamp/Cargo.toml
+  s_18b57982fdff93::t_4fd9f0bcd6355c 1-18
+examples/plugins/rust-lamp/src/main.rs
+  s_18b57982fdff93::t_107a5adf0196b0 1-60
+internal/plugins/wasm_test.go
+  s_18b57982fdff93::t_f1dbf0ebd92c66 389-391,393-395,398
+  s_18b57982fdff93::t_76b53c833cfe1a 128-130,134
+  s_18b57982fdff93::t_664af53a58acb8 131-133
+  s_18b57982fdff93::t_229646bf253844 291-295
+  s_18b57982fdff93::t_fdb22ba3901482 1-37,39-46,48-51,53-108,110-127,135-151,155-172,174-240,242-262,264-290,296-388,392,396-397,399-401,403-423,445-448
+  s_18b57982fdff93::t_34f1b9563b2e29 152-154
+  s_18b57982fdff93::t_ecb40eabc6e084 424-436,438-444
+  s_18b57982fdff93::t_53f4c7634878f1 38,47,52,109,173,241,263,402,437
+pkg/sdk/http.go
+  s_18b57982fdff93::t_9b911f5fb29799 1-30
+internal/plugins/plugin.go
+  s_18b57982fdff93::t_9e415275cbd4aa 277-279
+  s_18b57982fdff93::t_8071c8f3d8eb62 193-194
+  s_18b57982fdff93::t_cd714b5c1744ef 61-64
+  s_18b57982fdff93::t_5935addf01ea7e 117-120
+  s_18b57982fdff93::t_52f3f402361ba0 148
+  s_18b57982fdff93::t_aef0bdd584a5de 87-89
+  s_18b57982fdff93::t_53f4c7634878f1 202,209,213
+  s_18b57982fdff93::t_f9102219aa9ecb 184-192,195,197-201,214,216-227,229,242,248-250,272-275,286-332
+internal/plugins/testdata/wasmguest/main.go
+  s_18b57982fdff93::t_4e4ed0d78bd646 1-98
+examples/plugins/rust-lamp/plugin.yaml
+  s_18b57982fdff93::t_df5edb958ac425 1-16
+go.mod
+  s_18b57982fdff93::t_22f11e2cef84cb 17
+internal/plugins/device.go
+  s_18b57982fdff93::t_048218c07261fe 113-115
+  s_18b57982fdff93::t_7233b7f079df4a 147-149
+internal/policy/guardrails_test.go
+  s_18b57982fdff93::t_49cc619f13e09b 218
+internal/plugins/helper_test.go
+  s_18b57982fdff93::t_8c6ebec02187da 172-173
+pkg/sdk/doc.go
+  s_18b57982fdff93::t_6086500bafa1b5 7-22
+internal/plugins/manifest.go
+  s_18b57982fdff93::t_b03d8478073a16 77-90,96-126
+  s_18b57982fdff93::t_e396cd36873103 201,205-253
+  s_18b57982fdff93::t_9f180c63dad229 127,254
+internal/plugins/manager.go
+  s_18b57982fdff93::t_a2fc3ed6d3c56c 291-295
+pkg/sdk/plugin.go
+  s_18b57982fdff93::t_0e5ac9195e96e4 1-225
+pkg/sdk/host_other.go
+  s_18b57982fdff93::t_c767e51f0955c8 34-38
+  s_18b57982fdff93::t_b69675a62ab04c 1-33,39-57
+examples/plugins/go-wasm-lamp/plugin.yaml
+  s_18b57982fdff93::t_331c0b8ead5d35 1-22
+examples/plugins/rust-lamp/.gitignore
+  s_18b57982fdff93::t_279f33621401be 1-2
+internal/policy/policy.go
+  s_18b57982fdff93::t_49cc619f13e09b 293-295,667-671
+examples/plugins/rust-lamp/Cargo.lock
+  s_18b57982fdff93::t_df4555758d54e0 1-107
+go.sum
+  s_18b57982fdff93::t_394d869c291a6e 107-108
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "3918dec80232bce800a668b2b06e3eda2ce7fe95",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
