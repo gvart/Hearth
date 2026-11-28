@@ -1,0 +1,26 @@
+web/src/components/RecordingRunbook.tsx
+  s_18b57982fdff93::t_186b0296cf38e7 126-130
+internal/hub/recording.go
+  s_18b57982fdff93::t_abe60a071c93c7 258-262,264-270
+web/src/components/TerminalPage.tsx
+  s_18b57982fdff93::t_0b5d92217e4884 122-125
+internal/hub/recording_test.go
+  s_18b57982fdff93::t_4ba4c188a8f0d9 419-422
+  s_18b57982fdff93::t_56c98875fa992b 475-476
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "6286560c7cc817eb755464f138259e770640a6de",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
