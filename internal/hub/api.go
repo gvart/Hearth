@@ -87,6 +87,7 @@ func newAPI(cfg Config) *api {
 		netEdges: cfg.NetEdges,
 		beszel:   cfg.Beszel,
 		talos:    cfg.Talos,
+		tailnet:  cfg.Tailnet,
 		kube:     cfg.Kube,
 		proxmox:  cfg.Proxmox,
 		esphome:  cfg.ESPHome,
@@ -153,6 +154,7 @@ func (a *api) routes() http.Handler {
 	mux.Handle("/", ui)
 	mux.HandleFunc("POST /api/v1/login", a.login)
 	mux.HandleFunc("GET /api/v1/tls", a.tlsInfo)
+	mux.Handle("GET /api/v1/tailscale", a.auth(a.tailnetInfo))
 	mux.Handle("POST /api/v1/logout", a.auth(a.logout))
 	mux.Handle("GET /api/v1/session", a.auth(a.session))
 	mux.Handle("POST /api/v1/session/reauth", a.auth(a.reauth))
@@ -271,6 +273,8 @@ type api struct {
 	beszel BeszelSnapshotter
 	// talos is Config.Talos; nil when no talosconfig is configured.
 	talos TalosSnapshotter
+	// tailnet is Config.Tailnet.
+	tailnet Tailnet
 	// metrics is Config.Metrics; nil when the hub keeps no metrics.
 	metrics *metrics.Store
 	// netEdges serves the network edges agents report; nil serves none.

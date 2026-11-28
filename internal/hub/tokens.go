@@ -349,7 +349,7 @@ func (a *api) commandHosts(reqHost string, overTLS bool) (httpHost, agentHost st
 	}
 	agentHost = host
 	if first, found := a.stableHost(); found {
-		inCert := slices.ContainsFunc(a.agentHosts, func(h string) bool { return strings.EqualFold(h, host) })
+		inCert := slices.ContainsFunc(a.certHosts(), func(h string) bool { return strings.EqualFold(h, host) })
 		if !inCert || localOnly(host, first) {
 			agentHost = first
 		}
@@ -369,13 +369,14 @@ func (a *api) commandHosts(reqHost string, overTLS bool) (httpHost, agentHost st
 // stableHost returns the first certificate name that is neither loopback nor
 // discovery.LANName: the address other devices should use for this hub.
 func (a *api) stableHost() (string, bool) {
-	i := slices.IndexFunc(a.agentHosts, func(h string) bool {
+	hosts := a.certHosts()
+	i := slices.IndexFunc(hosts, func(h string) bool {
 		return !isLoopback(h) && !strings.EqualFold(strings.TrimSuffix(h, "."), discovery.LANName)
 	})
 	if i < 0 {
 		return "", false
 	}
-	return a.agentHosts[i], true
+	return hosts[i], true
 }
 
 // localOnly reports whether host, the browser's, is one other devices and

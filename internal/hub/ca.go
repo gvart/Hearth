@@ -66,7 +66,7 @@ type TLSInfoJSON struct {
 
 // tlsInfo is unauthenticated: the banner that uses it shows on the login page.
 func (a *api) tlsInfo(w http.ResponseWriter, r *http.Request) {
-	hosts := a.agentHosts
+	hosts := a.certHosts()
 	if hosts == nil {
 		hosts = []string{}
 	}

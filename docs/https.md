@@ -37,7 +37,8 @@ VPN tunnels; never link-local, public or tailnet `100.x` addresses), `localhost`
 LAN over mDNS (see [the UI on any master](cluster.md#the-ui-on-any-master)), so
 `https://hearth.local:7443` works once the CA is trusted; `--no-lan-name` leaves it out and stops the
 announcement. The browser checks the name in the address bar against it, so for a DNS name, a tailnet
-address or anything else, start the hub with every name and IP you use to reach it:
+address or anything else, start the hub with every name and IP you use to reach it (a hub started
+with [`--tailscale`](tailscale.md) names its own tailnet name and addresses on the tailnet):
 
 ```sh
 hearth hub --host nas.lan --host 192.168.1.10
