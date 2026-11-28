@@ -310,6 +310,9 @@ const (
 	// ESPHomeCall turns a switch of an ESPHome device on or off, or presses
 	// one of its buttons.
 	ESPHomeCall Action = "esphome.call"
+	// DeviceCommand sends a command a Device Protocol device announced
+	// (docs/spec/device-protocol-v1.md) to it, over the hub's MQTT broker.
+	DeviceCommand Action = "device.command"
 	// OpenWrtRouterAdd adopts an OpenWrt router: the hub stores its URL and
 	// rpcd login, sealed, and starts reading it through ubus.
 	OpenWrtRouterAdd Action = "openwrt.router.add"
@@ -674,6 +677,11 @@ var rules = map[Action]rule{
 	// call undoes a switch. The device must also have been adopted with
 	// calls allowed: read-only is the default.
 	ESPHomeCall: {class: Safe, actors: []string{ActorWeb}},
+	// A Device Protocol command does whatever the device's firmware makes
+	// of it, and its announce, the device's own word, is all the hub knows
+	// of it: a relay may switch a heater or a pump. Each one is dangerous,
+	// whatever the device calls it.
+	DeviceCommand: {class: Dangerous, actors: []string{ActorWeb}},
 	// Adopting an OpenWrt router hands the hub its login; the hub only reads
 	// with it, except for openwrt.dnsmasq.restart, decided on its own.
 	OpenWrtRouterAdd:    {class: Safe, actors: []string{ActorWeb}},

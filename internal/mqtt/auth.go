@@ -49,6 +49,9 @@ type authHook struct {
 	users   map[string]*User
 	devices map[string]*Device
 	log     *slog.Logger
+	// protocol receives the Device Protocol's messages; nil drops them
+	// after they are checked.
+	protocol ProtocolSink
 	// ctx is the broker's run context, set before it serves.
 	ctx context.Context
 	// gate runs one bcrypt comparison at a time, so a flood of logins
@@ -77,7 +80,7 @@ func newAuthHook(srv *mochi.Server, cfg Config) *authHook {
 		srv: srv, ca: cfg.CA, certs: cfg.Certs, log: cfg.Log, ctx: context.Background(),
 		users: map[string]*User{}, devices: map[string]*Device{},
 		gate: make(chan struct{}, 1), waiters: make(chan struct{}, maxLoginWaiters), gateWait: loginWait,
-		compare: bcrypt.CompareHashAndPassword, claims: map[string]*claim{},
+		compare: bcrypt.CompareHashAndPassword, claims: map[string]*claim{}, protocol: cfg.Protocol,
 	}
 	if cfg.Clients != nil {
 		for i := range cfg.Clients.Users {
@@ -93,7 +96,8 @@ func newAuthHook(srv *mochi.Server, cfg Config) *authHook {
 func (h *authHook) ID() string { return "hearth-auth" }
 
 func (h *authHook) Provides(b byte) bool {
-	return b == mochi.OnConnectAuthenticate || b == mochi.OnACLCheck || b == mochi.OnDisconnect
+	return b == mochi.OnConnectAuthenticate || b == mochi.OnACLCheck || b == mochi.OnDisconnect ||
+		b == mochi.OnPublish
 }
 
 // OnConnectAuthenticate admits a client with a valid device certificate or
@@ -103,7 +107,7 @@ func (h *authHook) OnConnectAuthenticate(cl *mochi.Client, pk packets.Packet) bo
 	identity, rules, reason := h.authenticate(cl, pk)
 	switch {
 	case reason != "":
-	case pk.Connect.WillFlag && !allowed(rules, pk.Connect.WillTopic, true):
+	case pk.Connect.WillFlag && !permits(identity, rules, pk.Connect.WillTopic, true):
 		reason = "will topic not allowed"
 	case !h.claim(cl.ID, identity):
 		reason = "client ID belongs to another client's session"
@@ -220,6 +224,7 @@ func (h *authHook) claim(clientID, identity string) bool {
 // its CONNACK never gets here and leaves its claim, which only keeps the ID
 // for the identity that already proved it holds it.
 func (h *authHook) OnDisconnect(cl *mochi.Client, _ error, _ bool) {
+	h.deviceGone(cl)
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if c := h.claims[cl.ID]; c != nil && c.identity == string(cl.Properties.Username) {
@@ -274,7 +279,8 @@ func (h *authHook) recheck(ctx context.Context) {
 // OnACLCheck allows a read (a subscription filter, or a message delivered to
 // the client) or a write (a publish) only if the client's rules grant it.
 func (h *authHook) OnACLCheck(cl *mochi.Client, topic string, write bool) bool {
-	ok := allowed(h.rulesOf(string(cl.Properties.Username)), topic, write)
+	identity := string(cl.Properties.Username)
+	ok := permits(identity, h.rulesOf(identity), topic, write)
 	if !ok {
 		h.log.Debug("mqtt topic denied", "identity", string(cl.Properties.Username), "topic", topic, "write", write)
 	}

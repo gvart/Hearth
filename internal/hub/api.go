@@ -90,6 +90,7 @@ func newAPI(cfg Config) *api {
 		kube:     cfg.Kube,
 		proxmox:  cfg.Proxmox,
 		esphome:  cfg.ESPHome,
+		protocol: cfg.DeviceProtocol,
 		openwrt:  cfg.OpenWrt,
 		opnsense: cfg.OPNsense,
 		unifi:    cfg.UniFi,
@@ -178,6 +179,7 @@ func (a *api) routes() http.Handler {
 	a.kubeRoutes(mux)
 	a.proxmoxRoutes(mux)
 	a.esphomeRoutes(mux)
+	a.deviceProtocolRoutes(mux)
 	a.openwrtRoutes(mux)
 	a.opnsenseRoutes(mux)
 	a.unifiRoutes(mux)
@@ -278,6 +280,9 @@ type api struct {
 	proxmox *proxmox.Manager
 	// esphome is Config.ESPHome; nil when ESPHome devices are not served.
 	esphome *esphome.Manager
+	// protocol is Config.DeviceProtocol; nil when Device Protocol commands
+	// are not served.
+	protocol *DeviceProtocol
 	// openwrt is Config.OpenWrt; nil when OpenWrt routers are not served.
 	openwrt *openwrt.Manager
 	// opnsense is Config.OPNsense; nil when OPNsense firewalls are not served.
