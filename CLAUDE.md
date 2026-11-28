@@ -108,6 +108,13 @@ Keep this list in sync with `Taskfile.yml`. If you add a task, document it here.
 ## Security rules
 
 - Never log secrets, tokens, private keys or full certificates.
+- A terminal session is never recorded, except a session the user explicitly starts as a runbook
+  recording: `device.shell.record` (dangerous, web only, the admin password again, AI set up), decided
+  and audited before the shell opens, refused if it is refused, and shown on the terminal throughout.
+  Only what the terminal shows is kept (never input at a no-echo prompt), capped, in the memory of the
+  hub serving the terminal only: never in the store (so never replicated or backed up), the audit log
+  or any log. It is deleted once a runbook is drafted from it, when discarded, or an hour after the
+  session, and redacted (`ai.Redact`) before it goes to the model.
 - Enrollment tokens: single-use, short TTL, stored hashed.
 - mTLS everywhere between hub and agents, and between hubs; the hub CA key never leaves a master's data
   dir (0600), except inside an encrypted backup archive created by an authenticated admin through policy and

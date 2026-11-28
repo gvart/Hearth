@@ -375,6 +375,15 @@ does.
   devices, channels, clusters and plugins, redacted, and saves nothing: the draft is saved, if at all,
   as `automation.apply`. The model only returns text: it runs nothing. See
   [Explain with AI](ai.md).
+- **Terminal recordings**: a terminal is never recorded, except a session the user explicitly opens as
+  a runbook recording (`device.shell.record`, dangerous, web only, with the admin password again, only
+  while AI is set up; refused, no shell opens). Then what the terminal shows, never input typed at a
+  prompt that does not echo, is held, at most 256 KiB, in the memory of the hub serving the terminal
+  only: never in the store (so neither replicated nor backed up), the audit log or any log. The
+  terminal shows a recording badge from the hub throughout. The recording is deleted once a runbook
+  draft is made from it (`ai.runbook.draft`, read, redacted before it is sent), when it is discarded,
+  and an hour after the session. The draft is saved, if at all, as `config.import`. See
+  [Capture a runbook](ai.md#capture-a-runbook-from-a-terminal-session).
 - **Prometheus**: read only. Hearth never writes to Prometheus.
 - **MCP clients** (AI assistants): each has its own bearer token, stored as a SHA-256 hash and
   checked on every request, so a revocation takes effect at once. The token's scope caps the class

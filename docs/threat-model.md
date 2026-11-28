@@ -23,6 +23,7 @@ the doc that explains it and the code that does it. The rules themselves are in 
 | Configuration documents | policy, automations, runbooks, notifications in the replicated store | Decide what is allowed and what runs automatically |
 | Audit log | sharded rows in the store, spooled in `audit-spool` while replicas are down | The record of every decision |
 | Backups | `.hbk` files, local or in an S3 bucket | Hold every credential of the hub, and the CA key unless left out |
+| Terminal recordings | only for a session opened as a runbook recording: the memory of the hub serving the terminal, at most an hour after the session | What the screen showed, which may include secrets a command printed |
 
 ## Trust boundaries
 
@@ -93,6 +94,7 @@ The letters are STRIDE: **S**poofing, **T**ampering, **R**epudiation, **I**nform
 | T | Cross-site request forgery | Session cookie is `HttpOnly` and `SameSite=Strict`; the login, `decodeJSON` and the handlers checked so far refuse a body that is not `application/json`. Coverage of every endpoint is a question for the reviewer | `internal/hub/api.go`, `internal/hub/webadmin.go` (`decodeJSON`) |
 | I | Sniffing the password or cookie | HTTPS on 7443 with the hub CA, `Secure` cookie over TLS. Plain HTTP on 7080 stays open: see residual risks | [https.md](https.md) |
 | I | Terminal traffic over plain HTTP | Terminals are served only over HTTPS and only to the hub's own page (`Origin` host check). No flag turns this off | [terminal.md](terminal.md#https-only), `internal/hub/shell.go` |
+| I | A terminal session's contents leaking through its recording | A terminal is never recorded, except a session the user explicitly opens as a runbook recording: `device.shell.record` (dangerous, web only, password again, AI set up), decided before the shell opens and audited, with a badge on the terminal throughout. Only what the screen shows is kept (no-echo input never is), at most 256 KiB, in the serving hub's memory only: never in the store, a backup, the audit log or a log. Deleted once drafted, discarded, or an hour after the session. Redacted before it goes to the model, which redaction does not make complete: the preview shows every byte | [ai.md](ai.md#capture-a-runbook-from-a-terminal-session), `internal/hub/recording.go` |
 | D | Many logins starving the hub of CPU | One password check at a time, in a child process at the lowest CPU priority; `503 busy` after 10 s | [security.md](security.md#the-web-ui), `internal/hub/verifychild.go` |
 | E | Acting beyond policy from the UI | Every action goes through the policy engine; unknown actions are refused | [guardrails.md](guardrails.md), `internal/policy/engine.go` |
 | R | Denying an action took place | Each decision, allow or deny, is audited before the action runs; a master that cannot place the entry refuses the action | [cluster.md](cluster.md#policy-and-audit), `internal/policy/spool.go` |

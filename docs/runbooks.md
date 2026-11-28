@@ -22,6 +22,10 @@ policy decision for those that act) without running anything; **Save…** checks
 saving. A new runbook is saved as `<id>.yaml`. Saving and deleting are `config.import` by `web`,
 decided by policy and audited, like an import.
 
+A new runbook can also start from a terminal session: do the procedure once in a device's terminal
+opened with **Record for a runbook**, then **Make a runbook**, and the configured model drafts it into
+the editor, unsaved. See [Capture a runbook from a terminal session](ai.md#capture-a-runbook-from-a-terminal-session).
+
 ## A worked example
 
 This runbook upgrades an app behind a load balancer. It asks for a go-ahead and a reason, takes the

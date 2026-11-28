@@ -341,7 +341,8 @@ On the hub, the log says `device enrolled` and then `agent connected` for each d
 - [Prometheus](prometheus.md) and [Kubernetes](kubernetes.md): bring in what you already run.
 - [Explain with AI](ai.md): optional, off by default. Point **Settings, AI** at a local Ollama (or
   Anthropic) and a device page's **Explain** asks it what is wrong, from redacted evidence you can read
-  first. It never runs anything.
+  first. It never runs anything. Do something once in a terminal opened with **Record for a runbook**,
+  and **Make a runbook** drafts a runbook from it, unsaved, in the runbook editor.
 - [Plugins on devices](plugins.md#plugins-on-devices): your own program for a GPIO relay or a USB
   sensor, uploaded once and run on the device within its **Capabilities**.
 - [WASM plugins](plugins.md#wasm-plugins): an integration in Go, Rust or any language that builds
