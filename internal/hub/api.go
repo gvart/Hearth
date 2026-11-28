@@ -207,6 +207,7 @@ func (a *api) routes() http.Handler {
 	a.capabilitiesRoutes(mux)
 	a.devicePluginRoutes(mux)
 	a.configEditRoutes(mux)
+	a.aiRoutes(mux)
 	a.backupRoutes(mux)
 	mux.Handle("/api/v1/", a.auth(func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "no such endpoint")

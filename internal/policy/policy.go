@@ -337,6 +337,10 @@ const (
 	UniFiControllerRemove Action = "unifi.controller.remove"
 	// UniFiAPRestart restarts an access point of a UniFi site.
 	UniFiAPRestart Action = "unifi.ap.restart"
+	// AIExplain sends what the hub knows about a device (its facts, metrics,
+	// audit entries and, if asked, a log tail), redacted, to the language
+	// model the operator configured, and returns its explanation.
+	AIExplain Action = "ai.explain"
 )
 
 // Actor kinds.
@@ -703,6 +707,12 @@ var rules = map[Action]rule{
 	// A restart drops every Wi-Fi client of the access point for a minute or
 	// two, and one that does not come back leaves its area without Wi-Fi.
 	UniFiAPRestart: {class: Dangerous, actors: []string{ActorWeb}},
+	// An explanation only reads: the model's answer is text, and nothing it
+	// suggests runs unless the operator takes it through policy. What it
+	// reads leaves the lab when the model is not local, so every one is
+	// audited, with the provider, the model and the sizes, never the text.
+	// A log tail it includes is a device.logs read of its own.
+	AIExplain: {class: Read, actors: []string{ActorWeb}},
 }
 
 // Actions returns every known action, sorted.
