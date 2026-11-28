@@ -410,6 +410,12 @@ func (s *Store) readRow(ctx context.Context, q interface {
 		for _, c := range []string{"ts", "actor_kind", "actor_id", "action", "target", "decision", "result", "detail", "audit_key"} {
 			m.Row[c] = r[c]
 		}
+		// Its seal (#387), on a database that has the columns.
+		if r["chain_mac"] != nil {
+			for _, c := range []string{"chain_origin", "chain_seq", "chain_prev", "chain_kid", "chain_mac"} {
+				m.Row[c] = r[c]
+			}
+		}
 		return m, true, nil
 	}
 	return Mutation{Table: ref.Table, Row: r.data(), HLC: h, Origin: origin, Deleted: r.deleted()}, true, nil

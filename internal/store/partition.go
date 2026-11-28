@@ -80,6 +80,7 @@ var globalTables = map[string]bool{
 	"panels":           true,
 	"panel_links":      true,
 	"runbook_runs":     true,
+	"audit_keys":       true,
 }
 
 // masterTables are the global tables only masters hold (#384): their rows
@@ -88,7 +89,8 @@ var globalTables = map[string]bool{
 // it holds or answer a read of one as it likes, neither holds nor serves
 // them. Masters write them, replicate them to each other only, and read them
 // on their own copy. Runbook runs are master rows too (#387): a run's state
-// says which step a master runs next, and only masters run runbooks.
+// says which step a master runs next, and only masters run runbooks. So are
+// the sealed audit MAC keys of earlier hub CAs: only masters check seals.
 var masterTables = map[string]bool{
 	"sessions":         true,
 	"mcp_tokens":       true,
@@ -96,6 +98,7 @@ var masterTables = map[string]bool{
 	"panels":           true,
 	"panel_links":      true,
 	"runbook_runs":     true,
+	"audit_keys":       true,
 }
 
 // criticalTables are written with W = min(2, N) acknowledgements.
@@ -367,6 +370,8 @@ func RouteOf(cmd Command) (Route, error) {
 		return master()
 	case StartCARotation, AdvanceCARotation:
 		return global(true)
+	case PutAuditKey:
+		return master()
 	case RevokeCACerts:
 		return Route{Kind: RouteEvery}, nil
 	case ResealSecrets:
@@ -380,6 +385,9 @@ func RouteOf(cmd Command) (Route, error) {
 			r, err := master()
 			r.Majority = true
 			return r, err
+		}
+		if c.Secrets[0].Table == SealedAuditKeys {
+			return master()
 		}
 		return global(true)
 	case CreateToken:

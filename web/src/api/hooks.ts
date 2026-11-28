@@ -47,6 +47,7 @@ export const keys = {
   kubeCluster: (id: string) => ['kube', 'cluster', id] as const,
   notifyChannels: ['notify', 'channels'] as const,
   audit: (filter: AuditFilter) => ['audit', filter] as const,
+  auditVerify: ['audit', 'verify'] as const,
   approvals: (status: 'pending' | 'all') => ['approvals', status] as const,
   approvalLink: (token: string) => ['approval-link', token] as const,
   runbooks: ['runbooks', 'list'] as const,
@@ -133,6 +134,11 @@ export function useAudit(filter: AuditFilter) {
     initialPageParam: undefined as number | string | undefined,
     getNextPageParam: (last) => last.next_cursor ?? last.next_before,
   });
+}
+
+/** The check of every audit seal and chain; it reads the whole log, so not refetched on its own. */
+export function useAuditVerify() {
+  return useQuery({ queryKey: keys.auditVerify, queryFn: api.auditVerify, staleTime: 60_000 });
 }
 
 /** The device list, kept current by the event stream rather than polling. */

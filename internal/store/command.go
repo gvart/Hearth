@@ -587,10 +587,21 @@ type AppendAudit struct {
 	Decision  string `json:"decision"`
 	Result    string `json:"result"`
 	Detail    string `json:"detail"`
+	// Seal, set by the master appending the entry, is its place in the
+	// master's chain and its MAC (#387): nil for an entry not sealed.
+	Seal *AuditSeal `json:"seal,omitempty"`
 }
 
 // Op implements Command.
 func (AppendAudit) Op() string { return "append_audit" }
+
+// minSchema: a sealed entry needs the seal columns.
+func (c AppendAudit) minSchema() int64 {
+	if c.Seal != nil {
+		return auditChainSchema
+	}
+	return 0
+}
 
 func (c AppendAudit) apply(ctx context.Context, w *writer) (Result, error) {
 	id, err := w.appendAudit(ctx, c, "")
@@ -609,7 +620,7 @@ type AppendAuditOnce struct {
 // Op implements Command.
 func (AppendAuditOnce) Op() string { return "append_audit_once" }
 
-func (AppendAuditOnce) minSchema() int64 { return auditKeySchema }
+func (c AppendAuditOnce) minSchema() int64 { return max(auditKeySchema, c.AppendAudit.minSchema()) }
 
 func (c AppendAuditOnce) apply(ctx context.Context, w *writer) (Result, error) {
 	var id int64
@@ -838,6 +849,8 @@ func DecodeCommand(b []byte) (Command, error) {
 		cmd, err = decodeAs[AppendAudit](env.Cmd)
 	case AppendAuditOnce{}.Op():
 		cmd, err = decodeAs[AppendAuditOnce](env.Cmd)
+	case PutAuditKey{}.Op():
+		cmd, err = decodeAs[PutAuditKey](env.Cmd)
 	case SetPasswordHash{}.Op():
 		cmd, err = decodeAs[SetPasswordHash](env.Cmd)
 	case CreateSession{}.Op():

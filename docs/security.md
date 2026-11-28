@@ -14,7 +14,10 @@ rules to the trust boundaries they guard and lists the known residual risks.
    one policy engine. An action it does not know is refused. See [Policy](concepts.md#policy).
 2. **Everything is audited.** Each decision, allow or deny, is written to the audit log with the
    actor, the action and its target. Secrets (tokens, passwords, kubeconfigs, webhook URLs and
-   headers, command arguments) never reach the audit log or the hub log.
+   headers, command arguments) never reach the audit log or the hub log. Each entry is sealed by the
+   master that writes it (an HMAC with a key derived from the hub CA key, chained per master), so a
+   forged or changed entry shows as unverified and a deleted one as a gap: run `hearth audit verify`,
+   or see the Audit page. See [Sealed audit entries](cluster.md#who-may-write-what).
 3. **The device has the last word.** An agent runs only what its capability ceiling allows, and
    nothing by default: the programs, restarts, checks, logs, subnets, terminal, neighbours and
    containers and plugins it lets the hub use. The ceiling is its own `--allow-*` flags plus what an

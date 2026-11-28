@@ -96,6 +96,7 @@ export const tips: Record<TipId, TipText> = {
     about: "the audit log",
     lines: [
       "Every action is written here with who asked for it and what policy decided.",
+      "Each entry is sealed by the master that wrote it: the Seal column says whether it checks, and a banner names missing entries. hearth audit verify reports the same.",
     ],
     docs: "security.md",
   },

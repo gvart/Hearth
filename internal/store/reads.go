@@ -124,6 +124,9 @@ func ReadsOf(cmd Command) []Read {
 		return []Read{key("runbook_runs", c.ID)}
 	case DeleteConfigDoc:
 		return []Read{key("config_docs", ConfigDocID(c.Kind, c.Name))}
+	case PutAuditKey:
+		// A copy without the key would store it again.
+		return []Read{key("audit_keys", c.ID)}
 	}
 	return nil
 }

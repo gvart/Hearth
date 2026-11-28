@@ -340,6 +340,8 @@ const (
 	SealedOPNsenseFirewalls = "opnsense_firewalls"
 	// SealedUniFiControllers holds the UniFi controllers' connections.
 	SealedUniFiControllers = "unifi_controllers"
+	// SealedAuditKeys holds the audit MAC keys of earlier hub CAs (#387).
+	SealedAuditKeys = "audit_keys"
 )
 
 // sealedColumns maps each table of sealed secrets to its sealed column.
@@ -354,6 +356,7 @@ var sealedColumns = map[string]string{
 	SealedOPNsenseFirewalls: "connection",
 	// UniFi controllers (#365).
 	SealedUniFiControllers: "connection",
+	SealedAuditKeys:        "sealed",
 }
 
 // sealedWhere narrows a table of sealedColumns to its sealed rows, and
@@ -363,6 +366,7 @@ var (
 	sealedSince = map[string]int64{
 		SealedConfigDocs: configDocsSchema, SealedESPHomeDevices: esphomeDevicesSchema, SealedOpenWrtRouters: openwrtRoutersSchema,
 		SealedOPNsenseFirewalls: opnsenseFirewallsSchema,
+		SealedAuditKeys:         auditChainSchema,
 		SealedUniFiControllers:  unifiControllersSchema,
 	}
 )
@@ -411,7 +415,7 @@ type sealedQuerier interface {
 
 func readSealed(ctx context.Context, q sealedQuerier) ([]SealedSecret, error) {
 	return readSealedTables(ctx, q, SealedKubeClusters, SealedProxmoxServers, SealedRunbookRuns, SealedConfigDocs,
-		SealedESPHomeDevices, SealedOpenWrtRouters, SealedOPNsenseFirewalls, SealedUniFiControllers)
+		SealedESPHomeDevices, SealedOpenWrtRouters, SealedOPNsenseFirewalls, SealedUniFiControllers, SealedAuditKeys)
 }
 
 // readSealedTables reads the sealed secrets of tables, in that order.

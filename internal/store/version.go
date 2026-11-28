@@ -191,6 +191,8 @@ var tables = map[string]tableSpec{
 	"device_routes":   {pk: []string{"device_id"}, since: mastersSchema},
 	"device_ceilings": {pk: []string{"device_id"}, since: deviceCeilingsSchema},
 	"device_plugins":  {pk: []string{"id"}, deletable: true, since: devicePluginsSchema},
+	// The sealed audit MAC keys of earlier hub CAs (#387).
+	"audit_keys": {pk: []string{"id"}, since: auditChainSchema},
 }
 
 // deletedName is the name a tombstone of a table with a UNIQUE name holds:

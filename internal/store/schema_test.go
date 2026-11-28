@@ -6,7 +6,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
+	"path"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -78,7 +82,10 @@ func TestWithoutUpgrade(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := p.DownTo(ctx, SchemaVersion()-1); err != nil {
+	// The migration before the newest: numbers may skip one reserved for a
+	// change not merged yet.
+	behind := previousSchema(t)
+	if _, err := p.DownTo(ctx, behind); err != nil {
 		t.Fatal(err)
 	}
 	_ = s.Close()
@@ -86,7 +93,7 @@ func TestWithoutUpgrade(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open behind: %v", err)
 	}
-	if v := gooseVersion(t, s.db); v != SchemaVersion()-1 {
+	if v := gooseVersion(t, s.db); v != behind {
 		t.Fatalf("Open behind migrated the database to %d", v)
 	}
 	_ = s.Close()
@@ -213,4 +220,24 @@ func TestIsDomainError(t *testing.T) {
 	if err == nil || IsDomainError(err) {
 		t.Errorf("closed database: err = %v, want a non-domain error", err)
 	}
+}
+
+// previousSchema is the version of the migration before the newest.
+func previousSchema(t *testing.T) int64 {
+	t.Helper()
+	names, err := fs.Glob(migrations, "migrations/*.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var prev int64
+	for _, n := range names {
+		v, err := strconv.ParseInt(strings.SplitN(path.Base(n), "_", 2)[0], 10, 64)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if v < SchemaVersion() {
+			prev = max(prev, v)
+		}
+	}
+	return prev
 }

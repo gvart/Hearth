@@ -38,6 +38,14 @@ type AuditEntry struct {
 	// seemed to fail. Before auditKeySchema it is ignored. Query does not
 	// return it.
 	Key string
+	// Verification, filled by Query, is whether the entry's seal checks
+	// (#387): AuditVerified, AuditUnverified, AuditLegacy or AuditUnchecked;
+	// for an entry folded with its outcome, the worse of the two.
+	Verification string
+	// SealOrigin and SealSeq, filled by Query for a sealed entry, are its
+	// place in the chain of the master that sealed it.
+	SealOrigin string
+	SealSeq    int64
 }
 
 // Keys of an entry's Detail that tie the entry written before an action to
@@ -83,11 +91,15 @@ const (
 	auditByDetail auditMode = iota
 	auditByColumn
 	auditByVersion
+	// auditByChain is auditByVersion with the entries' seals (#387).
+	auditByChain
 )
 
 // auditModeAt is the mode of a database at schema v.
 func auditModeAt(v int64) auditMode {
 	switch {
+	case v >= auditChainSchema:
+		return auditByChain
 	case v >= VersionedSchema:
 		return auditByVersion
 	case v >= auditOpSchema:
@@ -146,6 +158,34 @@ const auditPageDetailSQL = `
 	  AND (?7 = 0 OR ts < ?7)
 	  AND (?8 = 0 OR id < ?8)
 	ORDER BY id DESC LIMIT ?9`
+
+// auditPageChainLocalSQL is auditPageVersionSQL with the columns an entry's
+// seal covers (#387).
+const auditPageChainLocalSQL = `
+	SELECT id, ts, actor_kind, actor_id, action, target, decision, result, detail,
+	       coalesce(audit_op, ''), coalesce(audit_key, ''), coalesce(chain_origin, ''), coalesce(chain_seq, 0),
+	       coalesce(chain_prev, ''), coalesce(chain_kid, ''), coalesce(chain_mac, '')
+	FROM audit_log
+	WHERE +audit_outcome_of IS NULL
+	  AND (?1 = '' OR actor_kind = ?1)
+	  AND (?2 = '' OR instr(actor_id, ?2) > 0)
+	  AND (?3 = '[]' OR action IN (SELECT value FROM json_each(?3)))
+	  AND (?4 = '[]' OR target IN (SELECT value FROM json_each(?4)))
+	  AND (?5 = '' OR decision = ?5)
+	  AND (?6 = 0 OR ts >= ?6)
+	  AND (?7 = 0 OR ts < ?7)
+	  AND (?8 = 0 OR (_hlc, _origin, _seq) < (SELECT _hlc, _origin, _seq FROM audit_log WHERE id = ?8))
+	ORDER BY _hlc DESC, _origin DESC, _seq DESC LIMIT ?9`
+
+// auditFoldChainSQL is auditFoldVersionSQL with the columns the outcome's
+// seal covers.
+const auditFoldChainSQL = `
+	SELECT audit_outcome_of, result, detail, ts, actor_kind, actor_id, action, target, decision,
+	       coalesce(audit_key, ''), coalesce(chain_origin, ''), coalesce(chain_seq, 0),
+	       coalesce(chain_prev, ''), coalesce(chain_kid, ''), coalesce(chain_mac, '')
+	FROM audit_log
+	WHERE audit_outcome_of IN (SELECT value FROM json_each(?2))
+	  AND (_hlc, _origin, _seq) > (SELECT _hlc, _origin, _seq FROM audit_log WHERE id = ?1)`
 
 // auditFoldIndexedSQL and auditFoldDetailSQL select the outcome entries newer
 // than ?1 that report one of the operations in the JSON array ?2.
@@ -221,7 +261,7 @@ func (r Audit) Append(ctx context.Context, e AuditEntry) (int64, error) {
 		TS: toMillis(e.TS), ActorKind: e.ActorKind, ActorID: e.ActorID, Action: e.Action,
 		Target: e.Target, Decision: e.Decision, Result: e.Result, Detail: string(detail),
 	}
-	var cmd Command = appendCmd
+	key := ""
 	if e.Key != "" {
 		// A cluster not yet migrated cannot apply the keyed command: the
 		// entry goes in without its key, and a retry may then add it twice.
@@ -230,10 +270,17 @@ func (r Audit) Append(ctx context.Context, e AuditEntry) (int64, error) {
 			return 0, fmt.Errorf("append audit %s: %w", e.Action, err)
 		}
 		if v >= auditKeySchema {
-			cmd = AppendAuditOnce{AppendAudit: appendCmd, Key: e.Key}
+			key = e.Key
 		}
 	}
-	res, err := r.s.apply(ctx, cmd)
+	sealer, err := r.s.sealsAudit(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("append audit %s: %w", e.Action, err)
+	}
+	if sealer != nil {
+		return r.appendSealed(ctx, appendCmd, key, sealer)
+	}
+	res, err := r.s.apply(ctx, auditCommand(appendCmd, key))
 	if err != nil {
 		return 0, fmt.Errorf("append audit %s: %w", e.Action, err)
 	}
@@ -299,10 +346,18 @@ func (r Audit) query(ctx context.Context, f AuditFilter, limit int, mode auditMo
 		until = toMillis(f.Until)
 	}
 	if r.s.shards != nil {
+		sealed, err := r.s.writesAt(ctx, auditChainSchema)
+		if err != nil {
+			return nil, fmt.Errorf("list audit: %w", err)
+		}
+		if sealed {
+			return r.queryChain(ctx, f, string(actions), string(targets), since, until, limit)
+		}
 		return r.queryShards(ctx, f, string(actions), string(targets), since, until, limit)
 	}
 	page := map[auditMode]string{
 		auditByDetail: auditPageDetailSQL, auditByColumn: auditPageIndexedSQL, auditByVersion: auditPageVersionSQL,
+		auditByChain: auditPageChainLocalSQL,
 	}[mode]
 	rows, err := r.s.db.QueryContext(ctx, page,
 		f.ActorKind, f.ActorID, string(actions), string(targets), f.Decision, since, until, f.Before, limit)
@@ -310,22 +365,35 @@ func (r Audit) query(ctx context.Context, f AuditFilter, limit int, mode auditMo
 		return nil, fmt.Errorf("list audit: %w", err)
 	}
 	defer rows.Close()
+	ck, err := r.checker(ctx, mode)
+	if err != nil {
+		return nil, fmt.Errorf("list audit: %w", err)
+	}
 	var out []AuditEntry
 	ops := map[string]int{} // operation id to its index in out
 	var oldest int64
 	for rows.Next() {
 		var (
-			e      AuditEntry
-			ts     int64
-			detail string
-			op     string
+			e   AuditEntry
+			raw auditRaw
+			op  string
 		)
-		if err := rows.Scan(&e.ID, &ts, &e.ActorKind, &e.ActorID, &e.Action, &e.Target,
-			&e.Decision, &e.Result, &detail, &op); err != nil {
+		dest := []any{
+			&e.ID, &raw.TS, &raw.ActorKind, &raw.ActorID, &raw.Action, &raw.Target,
+			&raw.Decision, &raw.Result, &raw.Detail, &op,
+		}
+		if mode == auditByChain {
+			dest = append(dest, &raw.Key, &raw.Origin, &raw.Seq, &raw.Prev, &raw.KID, &raw.MAC)
+		}
+		if err := rows.Scan(dest...); err != nil {
 			return nil, fmt.Errorf("list audit: %w", err)
 		}
-		e.TS = fromMillis(ts)
-		e.Detail = json.RawMessage(detail)
+		e.TS, e.ActorKind, e.ActorID, e.Action, e.Target = fromMillis(raw.TS), raw.ActorKind, raw.ActorID, raw.Action, raw.Target
+		e.Decision, e.Result, e.Detail = raw.Decision, raw.Result, json.RawMessage(raw.Detail)
+		e.Verification = ck(raw)
+		if raw.MAC != "" {
+			e.SealOrigin, e.SealSeq = raw.Origin, raw.Seq
+		}
 		if op != "" {
 			ops[op] = len(out)
 			oldest = e.ID
@@ -341,37 +409,65 @@ func (r Audit) query(ctx context.Context, f AuditFilter, limit int, mode auditMo
 	if len(ops) == 0 {
 		return out, nil
 	}
-	if err := r.foldOutcomes(ctx, out, ops, oldest, mode); err != nil {
+	if err := r.foldOutcomes(ctx, out, ops, oldest, mode, ck); err != nil {
 		return nil, fmt.Errorf("list audit: %w", err)
 	}
 	return out, nil
 }
 
+// checker returns the verification of an entry a query in mode reads: below
+// auditChainSchema every entry is legacy.
+func (r Audit) checker(ctx context.Context, mode auditMode) (func(auditRaw) string, error) {
+	if mode != auditByChain {
+		return func(auditRaw) string { return AuditLegacy }, nil
+	}
+	since, err := r.s.auditSince(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sealer := r.s.auditSealer()
+	return func(raw auditRaw) string { return raw.verify(since, sealer) }, nil
+}
+
 // foldOutcomes gives the entries of out named by ops the result and detail of
 // their outcome entries, all of them newer than the entry with ID oldest, and
-// removes the keys that tie the two from every detail.
-func (r Audit) foldOutcomes(ctx context.Context, out []AuditEntry, ops map[string]int, oldest int64, mode auditMode) error {
+// removes the keys that tie the two from every detail. An entry's
+// verification becomes the worse of its own and its outcome's (ck).
+func (r Audit) foldOutcomes(ctx context.Context, out []AuditEntry, ops map[string]int, oldest int64, mode auditMode, ck func(auditRaw) string) error {
 	ids, err := json.Marshal(slices.Collect(maps.Keys(ops)))
 	if err != nil {
 		return err
 	}
 	fold := map[auditMode]string{
 		auditByDetail: auditFoldDetailSQL, auditByColumn: auditFoldIndexedSQL, auditByVersion: auditFoldVersionSQL,
+		auditByChain: auditFoldChainSQL,
 	}[mode]
 	rows, err := r.s.db.QueryContext(ctx, fold, oldest, string(ids))
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
+	outcome := map[string]auditRaw{}
 	for rows.Next() {
-		var op, result, detail string
-		if err := rows.Scan(&op, &result, &detail); err != nil {
+		var op string
+		var raw auditRaw
+		dest := []any{&op, &raw.Result, &raw.Detail}
+		if mode == auditByChain {
+			dest = append(dest, &raw.TS, &raw.ActorKind, &raw.ActorID, &raw.Action, &raw.Target, &raw.Decision,
+				&raw.Key, &raw.Origin, &raw.Seq, &raw.Prev, &raw.KID, &raw.MAC)
+		}
+		if err := rows.Scan(dest...); err != nil {
 			return err
 		}
-		out[ops[op]].Result, out[ops[op]].Detail = result, json.RawMessage(detail)
+		outcome[op] = raw
 	}
 	if err := rows.Err(); err != nil {
 		return err
+	}
+	for op, raw := range outcome {
+		e := &out[ops[op]]
+		e.Result, e.Detail = raw.Result, json.RawMessage(raw.Detail)
+		e.Verification = worseVerification(e.Verification, ck(raw))
 	}
 	for _, i := range ops {
 		out[i].Detail = withoutOpKeys(out[i].Detail)
@@ -441,6 +537,7 @@ func (r Audit) queryShards(ctx context.Context, f AuditFilter, actions, targets 
 		e.ID, e.Cursor = c.hlc, c.String()
 		e.TS = fromMillis(ts)
 		e.Detail = json.RawMessage(detail)
+		e.Verification = AuditLegacy
 		if op != "" {
 			e.Detail = withoutOpKeys(e.Detail)
 		}
@@ -544,6 +641,16 @@ const (
 		       CASE WHEN json_valid(detail) THEN json_extract(detail, '$.audit_outcome_of') END,
 		       nullif(k, '')
 		FROM (SELECT ? AS detail, ? AS k)`
+	// auditInsertSealedSQL is auditInsertVersionSQL with the seal (#387).
+	auditInsertSealedSQL = `
+		INSERT INTO audit_log (ts, actor_kind, actor_id, action, target, decision, result, _hlc, _origin, _seq,
+		                       detail, audit_op, audit_outcome_of, audit_key,
+		                       chain_origin, chain_seq, chain_prev, chain_kid, chain_mac)
+		SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, detail,
+		       CASE WHEN json_valid(detail) THEN json_extract(detail, '$.audit_op') END,
+		       CASE WHEN json_valid(detail) THEN json_extract(detail, '$.audit_outcome_of') END,
+		       nullif(k, ''), co, cs, cp, ck, cm
+		FROM (SELECT ? AS detail, ? AS k, ? AS co, ? AS cs, ? AS cp, ? AS ck, ? AS cm)`
 )
 
 // appendAudit appends entry c with key (none if empty) and returns its local
@@ -577,6 +684,10 @@ func (w *writer) appendAudit(ctx context.Context, c AppendAudit, key string) (in
 			"decision": c.Decision, "result": c.Result, "detail": c.Detail, "audit_key": optString(key),
 		},
 	}
+	if s := c.Seal; s != nil {
+		m.Row["chain_origin"], m.Row["chain_seq"], m.Row["chain_prev"] = s.Origin, s.Seq, s.Prev
+		m.Row["chain_kid"], m.Row["chain_mac"] = s.KID, s.MAC
+	}
 	var id int64
 	if err := w.dt.merge(ctx, w.tx, m, func() (err error) {
 		id, err = insertAudit(ctx, w.tx, m)
@@ -595,9 +706,16 @@ func insertAudit(ctx context.Context, tx *sql.Tx, m Mutation) (int64, error) {
 	if !r.isNull("audit_key") {
 		key = r.str("audit_key")
 	}
-	res, err := tx.ExecContext(ctx, auditInsertVersionSQL,
+	q, args := auditInsertVersionSQL, []any{
 		r["ts"], r["actor_kind"], r["actor_id"], r["action"], r["target"], r["decision"], r["result"],
-		int64(m.HLC), m.Origin, m.Seq, r["detail"], key) //nolint:gosec // an HLC fits in 63 bits
+		int64(m.HLC), m.Origin, m.Seq, r["detail"], key, //nolint:gosec // an HLC fits in 63 bits
+	}
+	if _, sealed := r["chain_mac"]; sealed {
+		// The seal columns, which a member below auditChainSchema does not
+		// have: its merge drops them (knownColumns).
+		q, args = auditInsertSealedSQL, append(args, r["chain_origin"], r["chain_seq"], r["chain_prev"], r["chain_kid"], r["chain_mac"])
+	}
+	res, err := tx.ExecContext(ctx, q, args...)
 	if err != nil {
 		return 0, err
 	}

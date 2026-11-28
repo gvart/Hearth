@@ -519,6 +519,44 @@ export interface AuditEntry {
   decision: Decision;
   result: string;
   detail: Record<string, unknown>;
+  /**
+   * Whether the entry's seal checks: verified; unverified (forged, changed, or sealed with a key
+   * this hub does not know); legacy (written before sealing started); unchecked (this hub holds
+   * no hub CA key to check it).
+   */
+  verification: AuditVerification;
+  /** A sealed entry's place in the chain of the master that sealed it. */
+  seal_origin?: string;
+  seal_seq?: number;
+}
+
+export type AuditVerification = 'verified' | 'unverified' | 'legacy' | 'unchecked';
+
+/** One master's chain of sealed entries; see GET /api/v1/audit/verify. */
+export interface AuditChainReport {
+  origin: string;
+  /** The highest sequence number seen. */
+  last: number;
+  verified: number;
+  /** Sequence numbers whose seal does not check. */
+  unverified?: number[];
+  /** Sequence numbers no entry has: deleted entries. */
+  missing?: { from: number; to: number }[];
+  /** Sequence numbers whose entry does not follow the one before it: moved or replaced. */
+  broken?: number[];
+  /** Sequence numbers two different entries have. */
+  duplicates?: number[];
+}
+
+/** What checking every seal and every master's chain of the whole audit log found. */
+export interface AuditReport {
+  ok: boolean;
+  can_verify: boolean;
+  entries: number;
+  legacy: number;
+  /** Entries without a seal written after sealing started. */
+  unsealed: number;
+  chains: AuditChainReport[] | null;
 }
 
 export interface AuditPage {
@@ -837,6 +875,7 @@ export const api = {
     }
     return request<AuditPage>('GET', `/audit?${q.toString()}`);
   },
+  auditVerify: () => request<AuditReport>('GET', '/audit/verify'),
   kubeClusters: async () => (await request<{ clusters: KubeCluster[] }>('GET', '/kube/clusters')).clusters,
   kubeCluster: (id: string) => request<KubeSnapshot>('GET', `/kube/clusters/${encodeURIComponent(id)}`),
   addKubeCluster: (opts: { name: string; kubeconfig: string }) => request<KubeCluster>('POST', '/kube/clusters', opts),

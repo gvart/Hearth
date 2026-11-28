@@ -158,6 +158,18 @@ func adminDo(ctx context.Context, dataDir string, st *store.Store, out io.Writer
 // running hub's control socket and so to the cluster: writing the local file
 // directly would silently diverge from the other hubs.
 func openHubStore(ctx context.Context, dataDir string) (*store.Store, error) {
+	st, err := openHubStoreUnsealed(ctx, dataDir)
+	if err != nil {
+		return nil, err
+	}
+	if err := sealCLIAudit(st, dataDir); err != nil {
+		_ = st.Close()
+		return nil, err
+	}
+	return st, nil
+}
+
+func openHubStoreUnsealed(ctx context.Context, dataDir string) (*store.Store, error) {
 	path := filepath.Join(dataDir, dbFile)
 	if !cluster.IsMember(dataDir) {
 		return store.Open(ctx, path)
@@ -174,6 +186,27 @@ func openHubStore(ctx context.Context, dataDir string) (*store.Store, error) {
 	}
 	return store.Open(ctx, path, store.WithoutUpgrade(),
 		store.WithApplier(func(*store.Store) store.Applier { return cc }))
+}
+
+// sealCLIAudit has the audit entries an admin command writes sealed (#387)
+// when the data dir holds the hub CA key: otherwise a backup or a token made
+// on a master's host would read as forged. The store's origin is new for
+// each command, so its entries form a chain of their own and never take up
+// the running hub's sequence numbers.
+func sealCLIAudit(st *store.Store, dataDir string) error {
+	if _, err := os.Stat(filepath.Join(dataDir, pki.CAKeyFile)); err != nil {
+		return nil
+	}
+	ca, err := pki.LoadCA(dataDir, time.Now())
+	if err != nil {
+		return fmt.Errorf("load the hub CA to seal audit entries: %w", err)
+	}
+	ring, err := pki.NewAuditKeyring(ca)
+	if err != nil {
+		return err
+	}
+	st.SetAuditSealer(ring)
+	return nil
 }
 
 // errStorageOnly refuses a write from an admin command on a storage-only

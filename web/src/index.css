@@ -218,6 +218,10 @@ a.btn {
   overflow-x: auto;
 }
 
+.error-box.audit-verify {
+  margin-bottom: var(--space-3);
+}
+
 .error-box {
   display: flex;
   flex-direction: column;

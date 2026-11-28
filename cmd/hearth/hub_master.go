@@ -22,9 +22,12 @@ import (
 // (runClusterHub): its store, CA and node, the ready channel closed after the
 // first sync, and the member's context, which outlives the layer.
 type apMember struct {
-	st    *store.Store
-	ca    *pki.CA
-	node  *cluster.APNode
+	st   *store.Store
+	ca   *pki.CA
+	node *cluster.APNode
+	// ring seals the audit entries the member appends and checks those it
+	// reads (#387); it holds keys only while the member is a master.
+	ring  *pki.AuditKeyring
 	ready chan struct{}
 	// caughtUp, read once ready is closed, is whether the member found the
 	// cluster it was told to join and copied its rows.
@@ -53,6 +56,11 @@ func runClusterHub(ctx context.Context, opts hubOptions, allowed cluster.RoleSet
 		return err
 	}
 	defer st.Close()
+	ring, err := pki.NewAuditKeyring(ca)
+	if err != nil {
+		return err
+	}
+	st.SetAuditSealer(ring)
 	ready := make(chan struct{})
 	caughtUp := new(atomic.Bool)
 	// HEARTH_ADMIN_PASSWORD is applied with an engine of its own: the
@@ -60,7 +68,7 @@ func runClusterHub(ctx context.Context, opts hubOptions, allowed cluster.RoleSet
 	setupPol := policy.NewWithConfig(st.Audit(), st.Approvals(), policy.Config{})
 	g, gctx := errgroup.WithContext(ctx)
 	// Set before any goroutine starts: the member's closure reads opts.
-	opts.apm = &apMember{st: st, ca: ca, node: node, ready: ready, caughtUp: caughtUp, ctx: gctx}
+	opts.apm = &apMember{st: st, ca: ca, node: node, ring: ring, ready: ready, caughtUp: caughtUp, ctx: gctx}
 	g.Go(func() error { return node.Run(gctx) })
 	g.Go(func() error { return cluster.ServeAPControl(gctx, opts.dataDir, node, log) })
 	g.Go(func() error {

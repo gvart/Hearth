@@ -145,7 +145,8 @@ CA key.
 | E | A storage member minting a master join token | The owner master acts on its own record, not the row; what a token grants comes from the record | [cluster.md](cluster.md#who-may-write-what), `internal/cluster/owned.go` |
 | T | A storage member rewriting runbook runs | Runbook runs live on masters only; a run starts and moves on only with a majority of the masters that prove the key, decided on one master | [cluster.md](cluster.md#who-may-write-what), `internal/cluster/replicate.go` |
 | T | A storage member forging a certificate's revocation state or pin | A certificate check and a fingerprint read ask every live replica: any revocation wins, and replicas that record different fingerprints decide nothing. A fingerprint is set once on merge | [cluster.md](cluster.md#who-may-write-what), `internal/store/certs.go`, `internal/store/pins.go` |
-| T | A storage member rewriting other sharded rows | **Not mitigated yet** for audit entries and the device, presence and run-history rows: see residual risks ([#387](https://github.com/gvart/hearth/issues/387)) | [cluster.md](cluster.md#who-may-write-what) |
+| T | A storage member forging, changing, deleting or reordering audit entries | Each entry is sealed by the master that writes it: an HMAC keyed by a key derived from the CA key, in a per-master hash chain. Listing marks a bad seal unverified; `hearth audit verify` and the Audit page report gaps, broken links and unsealed entries per master | [cluster.md](cluster.md#who-may-write-what), `internal/store/auditchain.go`, `internal/store/auditverify.go` |
+| T | A storage member rewriting other sharded rows | **Not mitigated yet** for the device, presence and run-history rows: see residual risks ([#387](https://github.com/gvart/hearth/issues/387)) | [cluster.md](cluster.md#who-may-write-what) |
 
 ### 6. Agents and devices
 
@@ -220,14 +221,20 @@ what the hub may ask, not what the program does.
 Open issues and documented gaps, as of v0.0.1-rc.12:
 
 - **A compromised storage-only member can still rewrite some sharded rows it holds**
-  ([#387](https://github.com/gvart/hearth/issues/387)): it can hide, change or invent audit entries,
-  and mislead the devices list and run history of its buckets. It can make a master refuse a device
+  ([#387](https://github.com/gvart/hearth/issues/387)): it can mislead the devices list and run
+  history of its buckets. Audit entries are sealed: it can hide them, but `hearth audit verify`
+  reports the gap, and an entry it forges or changes shows as unverified. What sealing does not catch:
+  an entry it invents without a seal and dates before sealing started looks legacy; the order entries
+  are shown in (by time) is not sealed, only each master's chain; the newest entries of a master that
+  is not running, cut from the end of its chain, leave no gap (a running master knows its own head);
+  and hiding the stored audit keys of an earlier hub CA makes the entries sealed with it unverified,
+  not verified. It can make a master refuse a device
   (answer "revoked") or have a hub CA rotation not renew one (answer another fingerprint), set the pin
   of a certificate issued before fingerprints were recorded and not pinned since, and it decides a
   certificate check or pin alone while it is the only live replica that answers. It can no longer
   un-revoke a certificate, have a forged one taken as pinned, or touch runbook runs, which live on
-  masters only. Until signed row versions land, run storage-only members only on hosts you trust as
-  much as masters for the audit log.
+  masters only. Until signed row versions land, run storage-only members only on hosts you trust for
+  the devices list and run history.
 - **Leftovers of masters-only tables** ([#389](https://github.com/gvart/hearth/issues/389)): edge cases
   of share-link revocation on a master that missed the panel, and untested branches.
 - **No Byzantine tolerance between hubs.** The cluster tolerates crashes and splits, not lying members.

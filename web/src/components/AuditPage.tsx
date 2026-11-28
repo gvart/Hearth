@@ -1,6 +1,6 @@
 import { Fragment, useDeferredValue, useEffect, useState } from 'react';
-import type { ActionClass, AuditEntry, AuditFilter, Decision } from '../api/client.ts';
-import { useAudit, useDevices } from '../api/hooks.ts';
+import type { ActionClass, AuditEntry, AuditFilter, AuditReport, AuditVerification, Decision } from '../api/client.ts';
+import { useAudit, useAuditVerify, useDevices } from '../api/hooks.ts';
 import { displayName, relativeTime } from '../format.ts';
 import { Tip } from './Tip.tsx';
 
@@ -27,6 +27,16 @@ const ranges: { id: string; label: string; ms?: number }[] = [
 const decisionLabel: Record<Decision, string> = { allow: 'Allowed', confirm: 'Held', deny: 'Denied' };
 const decisionTone: Record<Decision, string> = { allow: 'pill-ok', confirm: 'pill-warn', deny: 'pill-bad' };
 const classTone: Record<ActionClass, string> = { read: 'pill-muted', safe: 'pill-ok', dangerous: 'pill-bad' };
+const verification: Record<AuditVerification, { label: string; tone: string; title: string }> = {
+  verified: { label: 'verified', tone: 'pill-ok', title: 'Sealed by a master with the hub CA key, and unchanged since.' },
+  unverified: {
+    label: 'unverified',
+    tone: 'pill-bad',
+    title: 'The seal does not check: the entry was forged or changed, or sealed with a key this hub does not know.',
+  },
+  legacy: { label: 'legacy', tone: 'pill-muted', title: 'Written before audit entries were sealed: nothing to check.' },
+  unchecked: { label: 'unchecked', tone: 'pill-muted', title: 'This hub holds no hub CA key, so it cannot check seals.' },
+};
 
 interface Filters {
   range: string;
@@ -105,6 +115,7 @@ export function AuditPage() {
     since: filters.since,
   };
   const audit = useAudit(query);
+  const verify = useAuditVerify();
   const entries = audit.data?.pages.flatMap((p) => p.entries) ?? [];
   const actions = audit.data?.pages[0]?.actions ?? [];
   const now = useNow(30_000);
@@ -124,6 +135,8 @@ export function AuditPage() {
           <p className="muted">Every action from the CLI, the web UI and automations, and what policy decided.</p>
         </div>
       </div>
+
+      {verify.data && !verify.data.ok ? <VerifyBanner report={verify.data} /> : null}
 
       <div className="filters" role="search" aria-label="Audit log filters">
         <Select
@@ -235,6 +248,7 @@ export function AuditPage() {
                   <th>Target</th>
                   <th>Decision</th>
                   <th>Result</th>
+                  <th>Seal</th>
                 </tr>
               </thead>
               <tbody>
@@ -250,7 +264,7 @@ export function AuditPage() {
                     />
                     {open === e.id ? (
                       <tr className="audit-detail">
-                        <td colSpan={7}>
+                        <td colSpan={8}>
                           <pre className="mono">{JSON.stringify(e.detail, null, 2)}</pre>
                         </td>
                       </tr>
@@ -312,6 +326,11 @@ function Row({ entry: e, now, open, onToggle }: { entry: AuditEntry; now: number
       <td className="wrap audit-result">
         <Result result={e.result} />
       </td>
+      <td>
+        <span className={`pill ${verification[e.verification].tone}`} title={verification[e.verification].title}>
+          {verification[e.verification].label}
+        </span>
+      </td>
     </tr>
   );
 }
@@ -339,4 +358,41 @@ function Result({ result }: { result: string }) {
     );
   }
   return result || <span className="muted">—</span>;
+}
+
+function entries(n: number): string {
+  return n === 1 ? '1 entry' : `${String(n)} entries`;
+}
+
+/** What `hearth audit verify` reports, when the log does not verify. */
+function VerifyBanner({ report }: { report: AuditReport }) {
+  const lines: string[] = [];
+  for (const c of report.chains ?? []) {
+    for (const m of c.missing ?? []) {
+      lines.push(m.from === m.to ? `Entry ${String(m.from)} from ${c.origin} is missing.` : `Entries ${String(m.from)}–${String(m.to)} from ${c.origin} are missing.`);
+    }
+    if (c.unverified?.length) {
+      lines.push(`Seal does not check: ${entries(c.unverified.length)} from ${c.origin} (forged or changed).`);
+    }
+    if (c.broken?.length) {
+      lines.push(`Out of chain: ${entries(c.broken.length)} from ${c.origin} (moved or replaced).`);
+    }
+    if (c.duplicates?.length) {
+      lines.push(`${String(c.duplicates.length)} sequence numbers from ${c.origin} have two different entries.`);
+    }
+  }
+  if (report.unsealed > 0) {
+    lines.push(`No seal: ${entries(report.unsealed)} written since sealing started.`);
+  }
+  return (
+    <div className="error-box audit-verify" role="alert">
+      <strong>The audit log does not verify.</strong>
+      <ul>
+        {lines.slice(0, 10).map((l) => (
+          <li key={l}>{l}</li>
+        ))}
+      </ul>
+      {lines.length > 10 ? <p>…and {lines.length - 10} more. Run hearth audit verify for the full report.</p> : null}
+    </div>
+  );
 }

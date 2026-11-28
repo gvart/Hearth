@@ -33,6 +33,14 @@ type AuditEntryJSON struct {
 	Decision string          `json:"decision"`
 	Result   string          `json:"result"`
 	Detail   json.RawMessage `json:"detail"`
+	// Verification is whether the entry's seal checks (#387): verified,
+	// unverified, legacy (written before sealing started) or unchecked
+	// (this hub holds no key to check it).
+	Verification string `json:"verification"`
+	// SealOrigin and SealSeq are a sealed entry's place in the chain of the
+	// master that sealed it.
+	SealOrigin string `json:"seal_origin,omitempty"`
+	SealSeq    int64  `json:"seal_seq,omitempty"`
 }
 
 // AuditPageJSON is a page of the audit log, newest first. NextBefore, when
@@ -160,6 +168,7 @@ func (a *api) listAudit(w http.ResponseWriter, r *http.Request) {
 		page.Entries = append(page.Entries, AuditEntryJSON{
 			ID: e.ID, TS: e.TS, ActorKind: e.ActorKind, ActorID: e.ActorID, Action: e.Action, Class: string(class),
 			Target: e.Target, Decision: e.Decision, Result: e.Result, Detail: e.Detail,
+			Verification: e.Verification, SealOrigin: e.SealOrigin, SealSeq: e.SealSeq,
 		})
 	}
 	writeJSON(w, http.StatusOK, page)
@@ -171,4 +180,24 @@ func allActions() []string {
 		out = append(out, string(a))
 	}
 	return out
+}
+
+// AuditVerifyJSON is GET /api/v1/audit/verify: what checking every seal and
+// every master's chain of the whole log found (#387).
+type AuditVerifyJSON struct {
+	store.AuditReport
+	// OK is true when nothing is wrong: no entry missing, out of its
+	// chain, or failing its seal.
+	OK bool `json:"ok"`
+}
+
+// verifyAudit checks the seals and the chains of the whole audit log.
+func (a *api) verifyAudit(w http.ResponseWriter, r *http.Request) {
+	rep, err := a.store.Audit().Verify(r.Context())
+	if err != nil {
+		a.log.ErrorContext(r.Context(), "verify audit", "err", err)
+		writeError(w, http.StatusInternalServerError, "internal", "cannot read the audit log")
+		return
+	}
+	writeJSON(w, http.StatusOK, AuditVerifyJSON{AuditReport: rep, OK: rep.OK()})
 }

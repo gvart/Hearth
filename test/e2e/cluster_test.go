@@ -227,6 +227,11 @@ func TestCluster(t *testing.T) {
 			t.Errorf("%s on hub-d after its catch-up differs from hub-a's (%v)", path, err)
 		}
 	}
+	// Kills, a partition, a heal, a demotion and a promotion are no
+	// tampering: the audit log still verifies (#387).
+	if b, err := apis["hub-a"].raw(ctx, "/api/v1/audit/verify"); err != nil || !bytes.Contains(b, []byte(`"ok":true`)) {
+		t.Errorf("audit verify on hub-a = %s, %v; want ok", b, err)
+	}
 
 	// 6. Demote the master the agent streams to, through another master's
 	// API: the agent is on another master and the device online there

@@ -138,6 +138,10 @@ func TestAuditQueryColumnsMatchDetailFolding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The detail folding knows no seals.
+	for i := range min(len(got), len(want)) {
+		got[i].Verification = want[i].Verification
+	}
 	if !reflect.DeepEqual(got, want) || len(got) == 0 {
 		t.Errorf("List differs from the detail folding: %d rows against %d", len(got), len(want))
 	}

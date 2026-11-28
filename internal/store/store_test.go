@@ -83,7 +83,7 @@ func tableNames(ctx context.Context, t *testing.T, db *sql.DB) []string {
 func TestMigrationsUpDownUp(t *testing.T) {
 	ctx := t.Context()
 	s := openTest(t) // Open runs all migrations up.
-	want := []string{"admin", "approval_links", "approvals", "audit_log", "automation_runs", "ca_rotations", "certs", "cluster_hubs", "config_docs", "dashboard_tokens", "device_ceilings", "device_plugins", "device_routes", "devices", "esphome_devices", "hub_certs", "join_tokens", "kube_clusters", "mcp_tokens", "network_hosts", "openwrt_routers", "opnsense_firewalls", "panel_links", "panels", "proxmox_servers", "runbook_runs", "sessions", "telemetry", "tokens", "unifi_controllers"}
+	want := []string{"admin", "approval_links", "approvals", "audit_keys", "audit_log", "automation_runs", "ca_rotations", "certs", "cluster_hubs", "config_docs", "dashboard_tokens", "device_ceilings", "device_plugins", "device_routes", "devices", "esphome_devices", "hub_certs", "join_tokens", "kube_clusters", "mcp_tokens", "network_hosts", "openwrt_routers", "opnsense_firewalls", "panel_links", "panels", "proxmox_servers", "runbook_runs", "sessions", "telemetry", "tokens", "unifi_controllers"}
 	if got := tableNames(ctx, t, s.db); !reflect.DeepEqual(got, want) {
 		t.Fatalf("after up: tables = %v, want %v", got, want)
 	}
@@ -388,7 +388,7 @@ func TestAudit(t *testing.T) {
 	if len(got) != 2 || got[0].ID != id2 || got[1].ID != id1 {
 		t.Fatalf("List = %+v, want ids [%d %d]", got, id2, id1)
 	}
-	first.ID = id1
+	first.ID, first.Verification = id1, AuditLegacy
 	if !reflect.DeepEqual(got[1], first) {
 		t.Errorf("List[1] = %+v, want %+v", got[1], first)
 	}

@@ -194,6 +194,7 @@ func (a *api) routes() http.Handler {
 	a.logRoutes(mux)
 	a.shellRoutes(mux)
 	mux.Handle("GET /api/v1/audit", a.auth(a.listAudit))
+	mux.Handle("GET /api/v1/audit/verify", a.auth(a.verifyAudit))
 	mux.Handle("GET /api/v1/approvals", a.auth(a.listApprovals))
 	mux.Handle("POST /api/v1/approvals/{id}/approve", a.auth(a.decideApproval(true)))
 	mux.Handle("POST /api/v1/approvals/{id}/deny", a.auth(a.decideApproval(false)))
