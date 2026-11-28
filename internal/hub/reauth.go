@@ -84,7 +84,9 @@ func sessionSecret(r *http.Request) string {
 
 // reauthUntil is when the request's session's re-authentication ends; zero
 // for none. A request another master proxied here carries that master's
-// (reauthHeader): the password was entered there.
+// (reauthHeader): the password was entered there. It is believed only from
+// a master that proved it holds the hub CA key on the link connection, never
+// from a storage member or a client, and never past ReauthTTL from now.
 func (a *api) reauthUntil(r *http.Request) time.Time {
 	secret := sessionSecret(r)
 	if secret == "" {
@@ -92,7 +94,7 @@ func (a *api) reauthUntil(r *http.Request) time.Time {
 	}
 	now := a.now()
 	until := a.reauths.until(secret, now)
-	if forwarded(r.Context()) {
+	if forwarded(r.Context()) && a.masterPeer(r.Context()) != "" {
 		if t, err := time.Parse(time.RFC3339Nano, r.Header.Get(reauthHeader)); err == nil &&
 			now.Before(t) && !t.After(now.Add(ReauthTTL)) && t.After(until) {
 			until = t

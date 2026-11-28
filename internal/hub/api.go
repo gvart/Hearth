@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/gvart/hearth/internal/automation"
+	"github.com/gvart/hearth/internal/cluster"
 	"github.com/gvart/hearth/internal/hub/webui"
 	"github.com/gvart/hearth/internal/hubconfig"
 	"github.com/gvart/hearth/internal/integrations/esphome"
@@ -125,6 +126,7 @@ func newAPI(cfg Config) *api {
 		shellIdle:      orDefault(cfg.ShellIdleTimeout, DefaultShellIdleTimeout),
 		shellMax:       orDefault(cfg.ShellMaxDuration, DefaultShellMaxDuration),
 		recordings:     newRecordings(),
+		masterPeer:     cluster.MasterPeer,
 		runner:         runnerOf(cfg.Agents),
 		guestActions:   newLoginLimiter(time.Now, guestActionBurst, guestActionEvery),
 	}
@@ -360,6 +362,10 @@ type api struct {
 	// recordings are the terminal sessions recorded for runbook drafts, in
 	// this hub's memory only.
 	recordings *recordings
+	// masterPeer is the master a request came from on the masters' link,
+	// which proved on that connection that it holds the hub CA key; empty
+	// otherwise (cluster.MasterPeer; tests replace it).
+	masterPeer func(context.Context) string
 	// runner is agents as an agentRunner, for guest actions; nil when the
 	// hub runs no agent actions.
 	runner agentRunner

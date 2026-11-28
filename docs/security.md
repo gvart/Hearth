@@ -186,7 +186,10 @@ aborting a hub CA rotation. Each asks for the admin password again, then goes th
 - An answer is good for **5 minutes**, for that session only, and is held in the hub's memory: a hub
   restart, a sign-out or a password change forgets it. Signing in counts as entering it. A recorded
   terminal that another master serves (the device streams there) takes the answer given to the hub you
-  use, which the masters' mTLS link carries with the proxied request.
+  use. The proxied request carries only until when that answer holds (a time: never the password or a
+  token, and the request still authenticates by its own session), and the serving master believes it
+  only from a master that proved on that link connection that it holds the hub CA key, and for at
+  most 5 minutes from then.
 - A missing or expired one is refused (`403 reauth_required`) and audited as a denial, before policy
   can hold the action for approval.
 - A wrong one is refused (`403 reauth_failed`), audited as `admin.reauth` with the result `error: wrong password`, and limited like a

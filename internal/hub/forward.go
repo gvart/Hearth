@@ -401,10 +401,22 @@ func prefixStrings(ps []netip.Prefix) []string {
 const remoteHeader = "X-Hearth-Client-Addr"
 
 // reauthHeader carries, on a request proxied from another master, until when
-// its session's re-authentication there holds (RFC 3339): the password is
-// entered on the hub the browser talks to. It is believed only on the
-// masters' link.
+// its session's re-authentication there holds: an RFC 3339 time and nothing
+// else, never the password or a token. The password is entered on the hub
+// the browser talks to; the request still authenticates here by its own
+// session cookie. It is believed only from a master that proved on the
+// masters' link connection that it holds the hub CA key (api.masterPeer),
+// and for at most ReauthTTL from now.
 const reauthHeader = "X-Hearth-Reauth-Until"
+
+// carryReauth sets, on out, a request proxied to another master, the
+// reauthHeader of in's session here, and drops any its client sent.
+func (a *api) carryReauth(out, in *http.Request) {
+	out.Header.Del(reauthHeader)
+	if until := a.reauthUntil(in); !until.IsZero() {
+		out.Header.Set(reauthHeader, until.Format(time.RFC3339Nano))
+	}
+}
 
 // ProxiedHandler serves on this master the device stream requests (logs,
 // terminal, the terminal's recordings) other masters proxy to it: web, the
@@ -454,10 +466,7 @@ func (a *api) proxyStream(next http.HandlerFunc) http.HandlerFunc {
 				pr.SetURL(target)
 				pr.Out.Host = pr.In.Host // the terminal checks its Origin against it
 				pr.Out.Header.Set(remoteHeader, pr.In.RemoteAddr)
-				pr.Out.Header.Del(reauthHeader)
-				if until := a.reauthUntil(pr.In); !until.IsZero() {
-					pr.Out.Header.Set(reauthHeader, until.Format(time.RFC3339Nano))
-				}
+				a.carryReauth(pr.Out, pr.In)
 			},
 			Transport:     ag.masters.Client().Transport,
 			FlushInterval: -1,

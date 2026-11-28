@@ -4,6 +4,7 @@ package hub
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -529,15 +530,30 @@ func dialRecordedAt(t *testing.T, srv *httptest.Server, cookie *http.Cookie, hea
 	return ws
 }
 
+// provenPeerKey marks, in tests, a request from a master that proved on the
+// masters' link that it holds the hub CA key (cluster.MasterPeer).
+type provenPeerKey struct{}
+
 // TestProxiedRecording: in a cluster, the password is entered on the hub the
 // browser talks to, which proxies the recorded terminal and its recording
 // requests to the hub holding the device's stream. That hub believes the
-// re-authentication the proxying master carries, and only on the masters'
-// link.
+// re-authentication the proxying master carries only from a master that
+// proved it holds the hub CA key on the link, and for at most ReauthTTL.
 func TestProxiedRecording(t *testing.T) {
 	f := recordFixture(t, &scriptedModel{answers: []string{draftedRunbook}}, policy.Config{})
-	link := httptest.NewServer(ProxiedHandler(f.srv.Config.Handler))
+	f.api.masterPeer = func(ctx context.Context) string {
+		id, _ := ctx.Value(provenPeerKey{}).(string)
+		return id
+	}
+	proxied := ProxiedHandler(f.srv.Config.Handler)
+	link := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proxied.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), provenPeerKey{}, "a")))
+	}))
 	t.Cleanup(link.Close)
+	// A member with a hub certificate that did not prove the CA key: a
+	// storage member, say.
+	unproven := httptest.NewServer(proxied)
+	t.Cleanup(unproven.Close)
 	stale := staleSession(t, f.apiFixture)
 	until := func(d time.Duration) http.Header {
 		return http.Header{reauthHeader: {f.api.now().Add(d).Format(time.RFC3339Nano)}}
@@ -549,7 +565,10 @@ func TestProxiedRecording(t *testing.T) {
 	}{
 		{"no re-authentication carried", link, nil},
 		{"one that ended", link, until(-time.Second)},
+		{"one that ended over 5 min ago", link, until(-ReauthTTL - time.Minute)},
 		{"one past the TTL", link, until(ReauthTTL + time.Minute)},
+		{"not a time", link, http.Header{reauthHeader: {"forever"}}},
+		{"from a peer that did not prove the CA key", unproven, until(2 * time.Minute)},
 		{"not on the masters' link", f.srv, until(2 * time.Minute)},
 	} {
 		ws := dialRecordedAt(t, tc.srv, stale, tc.header)
@@ -597,5 +616,42 @@ func TestProxiedRecording(t *testing.T) {
 	}
 	if code, body := send(http.MethodDelete, "/api/v1/devices/dev-1/recordings/"+m.Recording, ""); code != http.StatusNoContent {
 		t.Fatalf("proxied discard = %d %s", code, body)
+	}
+}
+
+// TestCarryReauth: the proxying master sets the re-authentication of the
+// session here, a time and nothing else, and drops one its client sent.
+func TestCarryReauth(t *testing.T) {
+	f := recordFixture(t, nil, policy.Config{})
+	forge := func(cookie *http.Cookie) *http.Request {
+		in := httptest.NewRequest(http.MethodGet, "/api/v1/devices/dev-1/shell?record=1", nil)
+		in.AddCookie(cookie)
+		in.Header.Set(reauthHeader, f.api.now().Add(time.Hour).Format(time.RFC3339Nano))
+		return in
+	}
+
+	in := forge(staleSession(t, f.apiFixture))
+	out := in.Clone(t.Context())
+	f.api.carryReauth(out, in)
+	if got := out.Header.Values(reauthHeader); len(got) != 0 {
+		t.Fatalf("a session with no re-authentication carried %q", got)
+	}
+
+	in = forge(f.cookie)
+	out = in.Clone(t.Context())
+	f.api.carryReauth(out, in)
+	got := out.Header.Values(reauthHeader)
+	if len(got) != 1 {
+		t.Fatalf("carried %q, want one time", got)
+	}
+	at, err := time.Parse(time.RFC3339Nano, got[0])
+	if err != nil {
+		t.Fatalf("carried %q: %v", got[0], err)
+	}
+	if want := f.api.reauthUntil(in); !at.Equal(want) || at.After(f.api.now().Add(ReauthTTL)) {
+		t.Fatalf("carried %v, want the session's %v", at, want)
+	}
+	if strings.Contains(got[0], f.cookie.Value) || strings.Contains(got[0], "testpass") {
+		t.Fatal("the header carries a secret")
 	}
 }
