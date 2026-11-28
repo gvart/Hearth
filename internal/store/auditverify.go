@@ -25,7 +25,7 @@ func (s *Store) writesAt(ctx context.Context, v int64) (bool, error) {
 
 // auditChainPageCols are the columns of a page of sealed entries after the
 // entry's position: its auditRawCols, its operation, and its outcome's
-// auditRawArray ('' if none), read raw so their seals can be checked.
+// auditRawArray (” if none), read raw so their seals can be checked.
 const auditChainPageCols = auditRawCols + `, coalesce(audit_op, ''),
 	coalesce((SELECT ` + auditRawArray + ` FROM audit_log o WHERE a.audit_op IS NOT NULL AND o.audit_outcome_of = a.audit_op
 	          ORDER BY o._hlc DESC, o._origin DESC, o._seq DESC LIMIT 1), '')`
@@ -274,8 +274,10 @@ func (s *chainScan) add(copies []auditRaw, sealer AuditSealer, canVerify bool) {
 		s.report.Missing = appendRange(s.report.Missing, AuditRange{From: s.report.Last + 1, To: seq - 1})
 	}
 	s.report.Last = seq
+	// The link is checked when the entry before is there and verified.
+	checkable := seq == 1 || (s.prevSeq == seq-1 && len(s.prev) > 0)
 	var macs []string
-	follows := false
+	broken := false
 	for _, c := range copies {
 		if canVerify && c.verify(0, sealer) != AuditVerified {
 			continue
@@ -283,9 +285,8 @@ func (s *chainScan) add(copies []auditRaw, sealer AuditSealer, canVerify bool) {
 		if !slices.Contains(macs, c.MAC) {
 			macs = append(macs, c.MAC)
 		}
-		if (s.prevSeq == seq-1 && slices.Contains(s.prev, c.Prev)) || (seq == 1 && c.Prev == "") {
-			follows = true
-		}
+		follows := (seq == 1 && c.Prev == "") || (seq > 1 && slices.Contains(s.prev, c.Prev))
+		broken = broken || (checkable && !follows)
 	}
 	switch {
 	case len(macs) == 0:
@@ -295,8 +296,7 @@ func (s *chainScan) add(copies []auditRaw, sealer AuditSealer, canVerify bool) {
 		if len(macs) > 1 {
 			s.report.Duplicates = appendCapped(s.report.Duplicates, seq)
 		}
-		// The link is checked when the entry before is there and verified.
-		if !follows && (seq == 1 || (s.prevSeq == seq-1 && len(s.prev) > 0)) {
+		if broken {
 			s.report.Broken = appendCapped(s.report.Broken, seq)
 		}
 	}

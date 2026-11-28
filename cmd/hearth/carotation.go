@@ -71,10 +71,10 @@ func newServerCert(ctx context.Context, ca *pki.CA, hosts []string, epoch string
 
 // hubSealers seal secrets in the store with keys derived from the hub CA
 // key, which every hub of a cluster holds: kubeconfigs, Proxmox, ESPHome, OpenWrt, OPNsense and UniFi connections,
-// runbook runs' files and the notify configuration document. During a hub CA rotation they open with either
-// CA's key and seal with the one the hub serves.
+// runbook runs' files, the notify configuration document and the audit keys of earlier CAs. During a hub CA
+// rotation they open with either CA's key and seal with the one the hub serves.
 type hubSealers struct {
-	kube, proxmox, runbook, notify, esphome, openwrt, opnsense, unifi *kubernetes.Sealer
+	kube, proxmox, runbook, notify, esphome, openwrt, opnsense, unifi, audit *kubernetes.Sealer
 }
 
 func newHubSealers(ctx context.Context, ca *pki.CA, log *slog.Logger) (*hubSealers, error) {
@@ -107,6 +107,9 @@ func newHubSealers(ctx context.Context, ca *pki.CA, log *slog.Logger) (*hubSeale
 	if s.unifi, err = kubernetes.NewPurposeSealer(keys[0], unifi.SealInfo); err != nil {
 		return nil, err
 	}
+	if s.audit, err = kubernetes.NewPurposeSealer(keys[0], auditKeySealInfo); err != nil {
+		return nil, err
+	}
 	if err := s.rekey(keys); err != nil {
 		return nil, err
 	}
@@ -123,7 +126,7 @@ func newHubSealers(ctx context.Context, ca *pki.CA, log *slog.Logger) (*hubSeale
 }
 
 func (s *hubSealers) rekey(keys [][]byte) error {
-	for _, sealer := range []*kubernetes.Sealer{s.kube, s.proxmox, s.runbook, s.notify, s.esphome, s.openwrt, s.opnsense, s.unifi} {
+	for _, sealer := range []*kubernetes.Sealer{s.kube, s.proxmox, s.runbook, s.notify, s.esphome, s.openwrt, s.opnsense, s.unifi, s.audit} {
 		if err := sealer.SetSecrets(keys...); err != nil {
 			return err
 		}
@@ -152,6 +155,8 @@ func (s *hubSealers) reseal(_ context.Context, secrets []store.SealedSecret) ([]
 			sealer, id = s.runbook, automation.RunbookSealID(sec.ID)
 		case store.SealedConfigDocs:
 			sealer, id = s.notify, hubconfig.SealIDOfRow(sec.ID)
+		case store.SealedAuditKeys:
+			sealer, id = s.audit, auditKeySealID(sec.ID)
 		}
 		out, changed, err := sealer.Reseal(id, sec.Sealed)
 		if err != nil {

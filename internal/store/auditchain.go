@@ -109,12 +109,12 @@ func worseVerification(a, b string) string {
 
 // auditRaw is an audit entry as stored: what its MAC covers, and its seal.
 type auditRaw struct {
-	TS                                        int64
-	ActorKind, ActorID, Action, Target        string
-	Decision, Result, Detail, Key             string
-	Origin                                    string
-	Seq                                       int64
-	Prev, KID, MAC                            string
+	TS                                 int64
+	ActorKind, ActorID, Action, Target string
+	Decision, Result, Detail, Key      string
+	Origin                             string
+	Seq                                int64
+	Prev, KID, MAC                     string
 }
 
 // message is what an entry's MAC covers: its columns and its place in the

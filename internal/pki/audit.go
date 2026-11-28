@@ -82,46 +82,62 @@ func (c *CA) AuditKeys() ([]AuditKey, error) {
 // AuditKeyring seals and checks audit entries: it seals with the serving
 // CA's audit key and checks with any key it knows, those of the CA keys the
 // hub holds and the earlier ones added with AddEarlier. It follows the CA:
-// a key the hub no longer holds (a rotation finished) stays known.
+// a key the hub no longer holds after a rotation stays known; on a hub that
+// holds no CA key any more (a demoted master) it forgets every key.
 type AuditKeyring struct {
 	ca *CA
 	mu sync.RWMutex
+	// at is the CA state held was read from.
+	at *caState
 	// held are the keys of the CA keys held, the sealing one first.
 	held []AuditKey
 	// earlier are the other keys known, by id.
 	earlier map[string][]byte
 }
 
-// NewAuditKeyring returns the keyring of ca, kept up to date as ca changes.
+// NewAuditKeyring returns the keyring of ca, which follows ca as it changes.
 func NewAuditKeyring(ca *CA) (*AuditKeyring, error) {
 	k := &AuditKeyring{ca: ca, earlier: map[string][]byte{}}
-	if err := k.Refresh(); err != nil {
+	if err := k.refresh(); err != nil {
 		return nil, err
 	}
-	ca.OnChange(func() { _ = k.Refresh() })
 	return k, nil
 }
 
-// Refresh reads the CA's keys again. A key no longer held is kept as an
-// earlier one.
-func (k *AuditKeyring) Refresh() error {
+// refresh reads the CA's keys again if the CA changed since: a key no
+// longer held is kept as an earlier one.
+func (k *AuditKeyring) refresh() error {
+	st := k.ca.state()
+	k.mu.RLock()
+	same := k.at == st
+	k.mu.RUnlock()
+	if same {
+		return nil
+	}
 	held, err := k.ca.AuditKeys()
 	if err != nil {
 		return err
 	}
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	for _, old := range k.held {
-		if !slices.ContainsFunc(held, func(h AuditKey) bool { return h.ID == old.ID }) {
-			k.earlier[old.ID] = old.Key
+	switch {
+	case len(held) == 0:
+		// A demoted master: it keeps no key derived from the CA key.
+		k.earlier = map[string][]byte{}
+	default:
+		for _, old := range k.held {
+			if !slices.ContainsFunc(held, func(h AuditKey) bool { return h.ID == old.ID }) {
+				k.earlier[old.ID] = old.Key
+			}
 		}
 	}
-	k.held = held
+	k.held, k.at = held, st
 	return nil
 }
 
 // Held returns the keys of the CA keys the hub holds, the sealing one first.
 func (k *AuditKeyring) Held() []AuditKey {
+	_ = k.refresh()
 	k.mu.RLock()
 	defer k.mu.RUnlock()
 	return slices.Clone(k.held)
@@ -139,6 +155,7 @@ func (k *AuditKeyring) AddEarlier(keys ...AuditKey) {
 // CanVerify reports whether the keyring holds a CA's key: whether this hub
 // can seal and check entries at all.
 func (k *AuditKeyring) CanVerify() bool {
+	_ = k.refresh()
 	k.mu.RLock()
 	defer k.mu.RUnlock()
 	return len(k.held) > 0
@@ -147,6 +164,9 @@ func (k *AuditKeyring) CanVerify() bool {
 // MAC seals msg with the serving CA's audit key and returns the key's id:
 // ErrNoCAKey on a hub without the CA key.
 func (k *AuditKeyring) MAC(msg []byte) (string, []byte, error) {
+	if err := k.refresh(); err != nil {
+		return "", nil, err
+	}
 	k.mu.RLock()
 	defer k.mu.RUnlock()
 	if len(k.held) == 0 {
@@ -158,6 +178,7 @@ func (k *AuditKeyring) MAC(msg []byte) (string, []byte, error) {
 // Check reports whether mac seals msg under the key kid (ok), and whether
 // the keyring knows that key at all (known).
 func (k *AuditKeyring) Check(kid string, msg, mac []byte) (known, ok bool) {
+	_ = k.refresh()
 	k.mu.RLock()
 	defer k.mu.RUnlock()
 	key, found := k.earlier[kid]
