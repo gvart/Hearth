@@ -464,6 +464,7 @@ func TestMasterRowsGate(t *testing.T) {
 		if err := a.st.Admin().CreateSession(ctx, "s", time.Now(), time.Now().Add(time.Hour)); err != nil {
 			t.Fatal(err)
 		}
+		startCompared(t, a.rep)
 		a.rep.masterRowsSynced.Store(false)
 		an.mu.Lock()
 		an.hung["b"] = true
@@ -533,6 +534,7 @@ func TestMasterRowsGate(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
+		startCompared(t, a.rep)
 		an.setDown("b", true)
 		a.rep.closeMasterRows()
 		if _, err := a.st.Admin().CheckSession(ctx, "s", time.Now()); !errors.Is(err, store.ErrUnavailable) {
@@ -614,6 +616,7 @@ func TestMasterRowsGate(t *testing.T) {
 		if err := a.st.Admin().CreateSession(ctx, "s", time.Now(), time.Now().Add(time.Hour)); err != nil {
 			t.Fatal(err)
 		}
+		startCompared(t, a.rep)
 		a.rep.closeMasterRows()
 		if err := a.rep.SyncGlobal(ctx, "b"); err != nil {
 			t.Fatal(err)
