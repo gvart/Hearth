@@ -1,0 +1,51 @@
+internal/hub/upgrade.go
+  s_18b57982fdff93::t_4f046b6f1b4a75 49-50
+internal/hub/install_test.go
+  s_18b57982fdff93::t_4f046b6f1b4a75 57-75
+internal/hub/install.go
+  s_18b57982fdff93::t_05f5afc09ee6fa 20-21,26,37-42
+  s_18b57982fdff93::t_7604cdba6b8716 43-44
+internal/hub/upgrade_test.go
+  s_18b57982fdff93::t_16c4fb2f899df6 255-271
+deploy/embed.go
+  s_18b57982fdff93::t_05f5afc09ee6fa 3-4,13-17
+internal/hub/tokens.go
+  s_18b57982fdff93::t_05f5afc09ee6fa 46-49,197-200,318-333
+  s_18b57982fdff93::t_ba5d6f9e55f728 334-336
+docs/https.md
+  s_18b57982fdff93::t_90a746c7d20018 18
+deploy/embed_test.go
+  s_18b57982fdff93::t_12df5409c640de 59-64
+docs/getting-started.md
+  s_18b57982fdff93::t_d52ef26d8cea4a 172-174,177,180-182,198-199
+docs/concepts.md
+  s_18b57982fdff93::t_90a746c7d20018 28
+cmd/hearth/hub.go
+  s_18b57982fdff93::t_90a746c7d20018 145
+web/src/api/client.ts
+  s_18b57982fdff93::t_174ffe2b8f89ae 143-144
+web/src/components/DeviceUpgrade.tsx
+  s_18b57982fdff93::t_174ffe2b8f89ae 38-41,87-95
+web/src/components/AddDeviceDialog.tsx
+  s_18b57982fdff93::t_174ffe2b8f89ae 17-24,75-77,91-92,94-109,152-163,263
+internal/hub/tokens_test.go
+  s_18b57982fdff93::t_4f046b6f1b4a75 25-26,31-33,38-40,44-45,49-50,64-71
+internal/hub/api.go
+  s_18b57982fdff93::t_05f5afc09ee6fa 647-652
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "ef98f4d52b83a5a056cf994da69ad180a629b40d",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "unknown"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
