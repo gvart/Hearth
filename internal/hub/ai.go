@@ -17,8 +17,8 @@ import (
 	"github.com/gvart/hearth/internal/automation"
 	"github.com/gvart/hearth/internal/hubconfig"
 	"github.com/gvart/hearth/internal/metrics"
-	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
 	"github.com/gvart/hearth/internal/policy"
+	agentv1 "github.com/gvart/hearth/internal/proto/hearth/agent/v1"
 	"github.com/gvart/hearth/internal/store"
 )
 

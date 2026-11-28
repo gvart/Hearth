@@ -226,10 +226,10 @@ func TestConfig(t *testing.T) {
 		{"", true},
 		{"provider: openai\nbase_url: http://127.0.0.1:11434/v1\nmodel: llama3.2\n", true},
 		{"provider: anthropic\napi_key: k\n", true},
-		{"provider: anthropic\n", false},                          // no key
-		{"provider: openai\nmodel: m\n", false},                   // no URL
-		{"provider: openai\nbase_url: http://h/v1\n", false},      // no model
-		{"provider: gemini\n", false},                             // unknown
+		{"provider: anthropic\n", false},                           // no key
+		{"provider: openai\nmodel: m\n", false},                    // no URL
+		{"provider: openai\nbase_url: http://h/v1\n", false},       // no model
+		{"provider: gemini\n", false},                              // unknown
 		{"provider: openai\nbase_url: ftp://h\nmodel: m\n", false}, // scheme
 		{"provider: openai\nbase_url: http://u:p@h/v1\nmodel: m\n", false},
 		{"provider: openai\nbase_url: http://h/v1\nmodel: m\nmax_tokens: -1\n", false},
