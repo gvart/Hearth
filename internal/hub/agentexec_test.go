@@ -316,3 +316,57 @@ func TestAgentsExecCeilingLoweredByFacts(t *testing.T) {
 		t.Fatalf("Check after the ceiling was lowered = %v, want ErrBeyondCeiling", err)
 	}
 }
+
+// TestAttachBeforeWelcome: the session is findable while Welcome is still
+// being sent, and a message sent on it meanwhile reaches the agent only
+// after Welcome (#417).
+func TestAttachBeforeWelcome(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	st := newTestStore(t)
+	enrollDevice(t, st, "dev-1")
+	a := NewAgents(st.Devices())
+	sending, release := make(chan struct{}), make(chan struct{})
+	sent := make(chan *agentv1.HubMessage, 2)
+	send := func(m *agentv1.HubMessage) error {
+		if m.GetWelcome() != nil {
+			close(sending)
+			<-release
+		}
+		sent <- m
+		return nil
+	}
+	welcome := &agentv1.HubMessage{Payload: &agentv1.HubMessage_Welcome{Welcome: &agentv1.Welcome{}}}
+	attached := make(chan error, 1)
+	go func() {
+		_, err := a.attach("dev-1", &agentv1.Hello{}, welcome, send, func() {})
+		attached <- err
+	}()
+	<-sending
+	s, err := a.session(ctx, "dev-1")
+	if err != nil {
+		t.Fatalf("session while Welcome is sent = %v, want it attached", err)
+	}
+	other := make(chan error, 1)
+	go func() {
+		other <- s.sendMsg(&agentv1.HubMessage{Payload: &agentv1.HubMessage_Hubs{Hubs: &agentv1.Hubs{}}})
+	}()
+	select {
+	case m := <-sent:
+		t.Fatalf("%v sent before Welcome", m)
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(release)
+	if err := <-attached; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-other; err != nil {
+		t.Fatal(err)
+	}
+	if m := <-sent; m.GetWelcome() == nil {
+		t.Errorf("first message = %v, want Welcome", m)
+	}
+	if m := <-sent; m.GetHubs() == nil {
+		t.Errorf("second message = %v, want Hubs", m)
+	}
+}
