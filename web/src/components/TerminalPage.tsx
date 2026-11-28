@@ -8,7 +8,7 @@ import '@xterm/xterm/css/xterm.css';
 import { useEffect, useRef, useState } from 'react';
 import { useAIConfig, useRecordings } from '../api/ai.ts';
 import { useDevices } from '../api/hooks.ts';
-import { useWithReauth } from '../api/reauth.ts';
+import { useForgetReauth, useWithReauth } from '../api/reauth.ts';
 import {
   consumeTerminalLaunch,
   openTerminal,
@@ -73,6 +73,7 @@ export default function TerminalPage({ deviceId }: { deviceId: string }) {
   const device = useDevices().data?.find((d) => d.id === deviceId);
   const ai = useAIConfig();
   const withReauth = useWithReauth();
+  const forgetReauth = useForgetReauth();
   const host = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<Status>({ kind: 'connecting' });
   const [launch] = useState(() => consumeTerminalLaunch(deviceId));
@@ -162,6 +163,10 @@ export default function TerminalPage({ deviceId }: { deviceId: string }) {
         if (ev.type === 'started' && ev.recording) {
           setRecording({ id: ev.recording, full: false });
         }
+        if (ev.type === 'error' && ev.code === 'reauth_required') {
+          // The hub holds no re-authentication (it restarted): ask for the password on Connect.
+          forgetReauth();
+        }
         const s = statusOf(ev);
         setStatus(s);
         if (s.kind === 'open') {
@@ -189,7 +194,7 @@ export default function TerminalPage({ deviceId }: { deviceId: string }) {
       conn.close();
       term.dispose();
     };
-  }, [deviceId, armed, session]);
+  }, [deviceId, armed, session, forgetReauth]);
 
   const recordToggle =
     ai.data === undefined ? null : aiOn ? (

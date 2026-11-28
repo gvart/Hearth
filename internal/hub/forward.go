@@ -400,6 +400,12 @@ func prefixStrings(ps []netip.Prefix) []string {
 // link.
 const remoteHeader = "X-Hearth-Client-Addr"
 
+// reauthHeader carries, on a request proxied from another master, until when
+// its session's re-authentication there holds (RFC 3339): the password is
+// entered on the hub the browser talks to. It is believed only on the
+// masters' link.
+const reauthHeader = "X-Hearth-Reauth-Until"
+
 // ProxiedHandler serves on this master the device stream requests (logs,
 // terminal, the terminal's recordings) other masters proxy to it: web, the
 // hub's own UI and API. Their
@@ -448,6 +454,10 @@ func (a *api) proxyStream(next http.HandlerFunc) http.HandlerFunc {
 				pr.SetURL(target)
 				pr.Out.Host = pr.In.Host // the terminal checks its Origin against it
 				pr.Out.Header.Set(remoteHeader, pr.In.RemoteAddr)
+				pr.Out.Header.Del(reauthHeader)
+				if until := a.reauthUntil(pr.In); !until.IsZero() {
+					pr.Out.Header.Set(reauthHeader, until.Format(time.RFC3339Nano))
+				}
 			},
 			Transport:     ag.masters.Client().Transport,
 			FlushInterval: -1,

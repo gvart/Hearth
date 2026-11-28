@@ -180,11 +180,13 @@ proxy every login comes from the proxy's address and shares one limit.
 
 A signed-in session is not enough for the most sensitive actions of the web UI: revoking a device,
 creating or revoking a hub-eligible enrollment token, creating or revoking an MCP token, saving the policy, changing a notification channel, downloading
-a backup, creating a cluster join token (**Add hub**), upgrading a device's agent and starting, finishing or aborting a hub CA
-rotation. Each asks for the admin password again, then goes through policy like any other action.
+a backup, creating a cluster join token (**Add hub**), upgrading a device's agent, opening a terminal recorded for a runbook, and starting, finishing or
+aborting a hub CA rotation. Each asks for the admin password again, then goes through policy like any other action.
 
 - An answer is good for **5 minutes**, for that session only, and is held in the hub's memory: a hub
-  restart, a sign-out or a password change forgets it. Signing in counts as entering it.
+  restart, a sign-out or a password change forgets it. Signing in counts as entering it. A recorded
+  terminal that another master serves (the device streams there) takes the answer given to the hub you
+  use, which the masters' mTLS link carries with the proxied request.
 - A missing or expired one is refused (`403 reauth_required`) and audited as a denial, before policy
   can hold the action for approval.
 - A wrong one is refused (`403 reauth_failed`), audited as `admin.reauth` with the result `error: wrong password`, and limited like a

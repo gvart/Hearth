@@ -5,7 +5,9 @@ package hub
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -407,6 +409,29 @@ func TestRunbookDraftProviderError(t *testing.T) {
 	if len(f.recordings(t)) != 1 {
 		t.Fatal("a failed draft dropped the recording")
 	}
+
+	// A model that answers nothing, at once or on the retry, makes no
+	// draft: the recording stays too.
+	for name, answers := range map[string][]string{
+		"blank":            {""},
+		"blank on a retry": {"id: Not Valid\n", ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			model := &scriptedModel{answers: answers}
+			f := recordFixture(t, model, policy.Config{})
+			id := f.recordSession(t)
+			resp := f.do(t, http.MethodPost, "/api/v1/devices/dev-1/recordings/"+id+"/runbook", draftRunbookBody("", false), f.cookie)
+			if resp.StatusCode == http.StatusOK {
+				t.Fatalf("draft = %d %s", resp.StatusCode, resp.body)
+			}
+			if got := len(model.sent()); got != len(answers) {
+				t.Fatalf("%d calls, want %d", got, len(answers))
+			}
+			if len(f.recordings(t)) != 1 {
+				t.Fatal("a draft that failed dropped the recording")
+			}
+		})
+	}
 }
 
 func TestRecordingLimits(t *testing.T) {
@@ -481,5 +506,96 @@ func TestScreenText(t *testing.T) {
 		if got := screenText([]byte(tc.in)); got != tc.want {
 			t.Errorf("screenText(%q) = %q, want %q", tc.in, got, tc.want)
 		}
+	}
+}
+
+// dialRecordedAt is dialRecorded at the server srv, with header.
+func dialRecordedAt(t *testing.T, srv *httptest.Server, cookie *http.Cookie, header http.Header) *websocket.Conn {
+	t.Helper()
+	cfg, err := websocket.NewConfig(strings.Replace(srv.URL, "http", "ws", 1)+"/api/v1/devices/dev-1/shell?record=1", srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Header = header.Clone()
+	if cfg.Header == nil {
+		cfg.Header = http.Header{}
+	}
+	cfg.Header.Set("Cookie", cookie.String())
+	ws, err := websocket.DialConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ws.Close() })
+	return ws
+}
+
+// TestProxiedRecording: in a cluster, the password is entered on the hub the
+// browser talks to, which proxies the recorded terminal and its recording
+// requests to the hub holding the device's stream. That hub believes the
+// re-authentication the proxying master carries, and only on the masters'
+// link.
+func TestProxiedRecording(t *testing.T) {
+	f := recordFixture(t, &scriptedModel{answers: []string{draftedRunbook}}, policy.Config{})
+	link := httptest.NewServer(ProxiedHandler(f.srv.Config.Handler))
+	t.Cleanup(link.Close)
+	stale := staleSession(t, f.apiFixture)
+	until := func(d time.Duration) http.Header {
+		return http.Header{reauthHeader: {f.api.now().Add(d).Format(time.RFC3339Nano)}}
+	}
+	for _, tc := range []struct {
+		name   string
+		srv    *httptest.Server
+		header http.Header
+	}{
+		{"no re-authentication carried", link, nil},
+		{"one that ended", link, until(-time.Second)},
+		{"one past the TTL", link, until(ReauthTTL + time.Minute)},
+		{"not on the masters' link", f.srv, until(2 * time.Minute)},
+	} {
+		ws := dialRecordedAt(t, tc.srv, stale, tc.header)
+		if m, _ := next(t, ws); m.Type != "error" || m.Code != "reauth_required" {
+			t.Fatalf("%s: message = %+v, want reauth_required", tc.name, m)
+		}
+	}
+
+	ws := dialRecordedAt(t, link, stale, until(2*time.Minute))
+	m, _ := next(t, ws)
+	if m.Type != "started" || m.Recording == "" {
+		t.Fatalf("proxied recorded terminal = %+v, want started with a recording", m)
+	}
+	typeLine(t, ws, "uptime")
+	_ = ws.Close()
+	for range 200 {
+		if got := f.recordings(t); len(got) == 1 && got[0].Ended != nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// The recording routes are served on the link too.
+	send := func(method, path, body string) (int, string) {
+		t.Helper()
+		req, err := http.NewRequestWithContext(t.Context(), method, link.URL+path, strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(f.cookie)
+		resp, err := link.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(b)
+	}
+	if code, body := send(http.MethodGet, "/api/v1/devices/dev-1/recordings", ""); code != http.StatusOK || !strings.Contains(body, m.Recording) {
+		t.Fatalf("proxied list = %d %s", code, body)
+	}
+	if code, body := send(http.MethodPost, "/api/v1/devices/dev-1/recordings/"+m.Recording+"/runbook", draftRunbookBody("", true)); code != http.StatusOK {
+		t.Fatalf("proxied preview = %d %s", code, body)
+	}
+	if code, body := send(http.MethodDelete, "/api/v1/devices/dev-1/recordings/"+m.Recording, ""); code != http.StatusNoContent {
+		t.Fatalf("proxied discard = %d %s", code, body)
 	}
 }

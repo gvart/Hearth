@@ -29,6 +29,8 @@ export function MakeRunbook({ device, recording }: { device: string; recording: 
   const discard = useDiscardRecording(device);
   const [notes, setNotes] = useState('');
   const [discarded, setDiscarded] = useState(false);
+  // A draft the editor could not be handed (no session storage): shown here to copy.
+  const [unstashed, setUnstashed] = useState('');
   const res = draft.data;
   const where = res ? `${res.provider} ${res.model} at ${res.base_url}` : '';
   const busy = draft.isPending || discard.isPending;
@@ -48,7 +50,10 @@ export function MakeRunbook({ device, recording }: { device: string; recording: 
           if (d.preview) {
             return;
           }
-          stashRunbookDraft(d);
+          if (!stashRunbookDraft(d)) {
+            setUnstashed(d.yaml);
+            return;
+          }
           window.location.hash = '#/runbooks/new';
         },
       },
@@ -119,6 +124,15 @@ export function MakeRunbook({ device, recording }: { device: string; recording: 
         <p className="error" role="alert">
           Not discarded: {discard.error.message}
         </p>
+      ) : null}
+      {unstashed ? (
+        <>
+          <p className="error" role="alert">
+            The draft could not be handed to the runbook editor (this browser keeps no session storage): copy it from
+            here into a new runbook.
+          </p>
+          <pre className="explain-sent">{unstashed}</pre>
+        </>
       ) : null}
       {res?.preview ? (
         <>

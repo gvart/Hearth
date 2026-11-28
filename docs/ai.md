@@ -239,7 +239,7 @@ What is recorded:
   recorded.
 - **In the memory of the hub that serves the terminal only**: never in the store, so never replicated to
   other hubs or put in a backup, and never in a log or the audit log. It is deleted when a runbook is
-  made from it (once the model answered; a provider error keeps it for another try), when you discard
+  made from it (once a draft is returned; an error keeps it for another try), when you discard
   it, and one hour after its session ended. A hub restart loses it. At most 8 recordings are held at a
   time.
 - **Redacted before it is sent**, with the same patterns as explanations (see

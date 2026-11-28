@@ -66,7 +66,7 @@ func newAIRunbookCmd(client aiClientFunc) *cobra.Command {
 		Long: "Sends what the recorded session showed, redacted, with the names of the hub's devices,\n" +
 			"clusters and plugins, to the model, validates the answer as the runbook editor's save does, and asks\n" +
 			"once more with the problems if it does not validate. Only the YAML goes to stdout; notes and\n" +
-			"problems go to stderr. Once the model answered, the recording is deleted. Nothing is saved: review\n" +
+			"problems go to stderr. Once a draft is returned, the recording is deleted. Nothing is saved: review\n" +
 			"the file, then save it in the web editor or with `hearth config import`. --preview prints what\n" +
 			"would be sent, sends nothing and keeps the recording. The draft is ai.runbook.draft, audited.",
 		Args: cobra.ExactArgs(2),

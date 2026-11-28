@@ -83,13 +83,22 @@ func sessionSecret(r *http.Request) string {
 }
 
 // reauthUntil is when the request's session's re-authentication ends; zero
-// for none.
+// for none. A request another master proxied here carries that master's
+// (reauthHeader): the password was entered there.
 func (a *api) reauthUntil(r *http.Request) time.Time {
 	secret := sessionSecret(r)
 	if secret == "" {
 		return time.Time{}
 	}
-	return a.reauths.until(secret, a.now())
+	now := a.now()
+	until := a.reauths.until(secret, now)
+	if forwarded(r.Context()) {
+		if t, err := time.Parse(time.RFC3339Nano, r.Header.Get(reauthHeader)); err == nil &&
+			now.Before(t) && !t.After(now.Add(ReauthTTL)) && t.After(until) {
+			until = t
+		}
+	}
+	return until
 }
 
 // recentAuth is the Precheck of a sensitive web action: it refuses, as an

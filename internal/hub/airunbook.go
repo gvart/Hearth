@@ -78,7 +78,7 @@ type RunbookDraftJSON struct {
 // does and, if it is refused, asks once more with the problems. It is
 // ai.runbook.draft, a read, decided and audited before the transcript is
 // read; the audit entry names the provider, the model and the sizes, never
-// the text. Once the model answered, the recording is deleted. Nothing is
+// the text. Once a draft is returned, the recording is deleted. Nothing is
 // saved or run: the draft is returned.
 func (a *api) draftRunbook(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -127,7 +127,6 @@ func (a *api) draftRunbook(w http.ResponseWriter, r *http.Request) {
 		"provider": cfg.Provider, "model": cfg.ModelName(), "host": hostOf(cfg.URL()), "preview": body.Preview,
 		"device": dev.Name, "recording": id, "recorded_bytes": len(rec.out),
 	}
-	answered := false
 	err = a.policy.Do(ctx, policy.Request{
 		ActorKind: policy.ActorWeb, ActorID: remoteHost(r), Action: policy.AIRunbookDraft, Target: dev.ID,
 		Detail: detail, RecordOutcome: true,
@@ -161,7 +160,6 @@ func (a *api) draftRunbook(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return err
 			}
-			answered = true
 			sentBytes += req.Size()
 			out.Sent, out.SentBytes = req, sentBytes
 			out.Model = resp.Model
@@ -185,14 +183,14 @@ func (a *api) draftRunbook(w http.ResponseWriter, r *http.Request) {
 		}
 		return nil
 	})
-	// The transcript has been sent: it is not kept for another draft. A
-	// provider that never answered leaves it for a retry.
-	if answered {
-		out.Discarded = a.recordings.drop(id)
-	}
 	if err != nil {
+		// No draft: the recording stays for another try.
 		a.writeExplainError(w, r, err)
 		return
+	}
+	// A draft was made: the recording is not kept for another.
+	if !body.Preview {
+		out.Discarded = a.recordings.drop(id)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
