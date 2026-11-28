@@ -131,7 +131,7 @@ func (s InstalledStore) Put(e IndexEntry, module []byte, source, by string, now 
 	}
 	// Tighten what MkdirAll made under a wider umask, or found.
 	for _, d := range []string{s.Dir, dir} {
-		if err := os.Chmod(d, 0o700); err != nil {
+		if err := os.Chmod(d, 0o700); err != nil { //nolint:gosec // a directory
 			return fmt.Errorf("install plugin %s: %w", e.Name, err)
 		}
 	}
@@ -149,7 +149,7 @@ func (s InstalledStore) Put(e IndexEntry, module []byte, source, by string, now 
 			return fmt.Errorf("install plugin %s: %w", e.Name, err)
 		}
 	}
-	if err := os.Chmod(tmp, 0o700); err != nil {
+	if err := os.Chmod(tmp, 0o700); err != nil { //nolint:gosec // a directory
 		return fmt.Errorf("install plugin %s: %w", e.Name, err)
 	}
 	rel := s.releaseDir(e)

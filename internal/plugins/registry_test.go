@@ -199,7 +199,7 @@ func TestNewRegistry(t *testing.T) {
 		{name: "no key", source: "https://plugins.example.com/index.json", want: "needs --plugin-index-key"},
 		{name: "no index", keys: []string{key}, want: "needs --plugin-index"},
 		{name: "bad key", source: "/srv/index.json", keys: []string{"nope"}, want: "32-byte"},
-		{name: "credentials", source: "https://u:p@example.com/index.json", keys: []string{key}, want: "credentials"},
+		{name: "credentials", source: "https://u:p@example.com/index.json", keys: []string{key}, want: "credentials"}, //nolint:gosec // a test URL
 		{name: "query", source: "https://example.com/index.json?t=1", keys: []string{key}, want: "query"},
 		{name: "scheme", source: "ftp://example.com/index.json", keys: []string{key}, want: "http(s)"},
 	}
