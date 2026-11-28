@@ -56,3 +56,9 @@ func TestInstallScriptIsEmbedded(t *testing.T) {
 		t.Fatal("InstallScript does not start with #!/bin/sh")
 	}
 }
+
+func TestInstallPowerShellIsEmbedded(t *testing.T) {
+	if !strings.HasPrefix(string(InstallPowerShell), "# SPDX-License-Identifier: AGPL-3.0-only\n") {
+		t.Fatal("InstallPowerShell is not deploy/install.ps1")
+	}
+}

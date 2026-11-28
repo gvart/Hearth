@@ -43,7 +43,10 @@ type TokenJSON struct {
 	Token          string    `json:"token"`
 	ExpiresAt      time.Time `json:"expires_at"`
 	InstallCommand string    `json:"install_command"`
-	JoinCommand    string    `json:"join_command"`
+	// InstallCommandWindows is InstallCommand for an elevated PowerShell
+	// on Windows (deploy/install.ps1).
+	InstallCommandWindows string `json:"install_command_windows"`
+	JoinCommand           string `json:"join_command"`
 }
 
 // DryRunJSON answers a dry run: the decision policy made and audited, allow
@@ -191,7 +194,10 @@ func (a *api) createToken(w http.ResponseWriter, r *http.Request) {
 		// after sudo would put it in sudo's argv. Run as root, join uses the
 		// installed service's data dir.
 		InstallCommand: a.installCommand(httpHost, enc),
-		JoinCommand:    "HEARTH_TOKEN=" + enc + " hearth agent join",
+		// The same in PowerShell: the token goes in $env:HEARTH_TOKEN,
+		// which install.ps1 clears at once and hands to join on stdin.
+		InstallCommandWindows: a.installCommandWindows(httpHost, enc),
+		JoinCommand:           "HEARTH_TOKEN=" + enc + " hearth agent join",
 	})
 }
 
@@ -305,6 +311,25 @@ func (a *api) installCommandWith(httpHost, env string, args ...string) string {
 	cmd += "sh"
 	if len(args) > 0 {
 		cmd += " -s -- " + strings.Join(args, " ")
+	}
+	return cmd
+}
+
+// installCommandWindows is installCommand for an elevated PowerShell on
+// Windows: install.ps1 of the hub's release from GitHub, pinned to it, or a
+// dev hub's own from its HTTP listener at httpHost. With token "" it only
+// re-runs the installer, which upgrades an enrolled agent. Every part is
+// checked (host, release tag) or base64url, so nothing in it ends the
+// single-quoted string or is interpreted by PowerShell.
+func (a *api) installCommandWindows(httpHost, token string) string {
+	script, args := "http://"+httpHost+"/install.ps1", ""
+	if a.installVersion != "" {
+		script = installScriptURL + a.installVersion + "/deploy/install.ps1"
+		args = " -Version " + a.installVersion
+	}
+	cmd := "& ([scriptblock]::Create((irm " + script + ")))" + args
+	if token != "" {
+		cmd = "$env:HEARTH_TOKEN='" + token + "'; " + cmd
 	}
 	return cmd
 }

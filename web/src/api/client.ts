@@ -140,6 +140,8 @@ export interface CreatedToken {
   token: string;
   expires_at: string;
   install_command: string;
+  /** The same for an elevated PowerShell on Windows (install.ps1). */
+  install_command_windows: string;
   join_command: string;
 }
 

@@ -35,7 +35,10 @@ export function AgentVersionLink({ children }: { children: string }) {
  */
 export function DeviceUpgrade({ device }: { device: Device }) {
   const v = device.agent_version;
-  const tooOld = v !== undefined && v.upgrade_available && !v.remote_upgrade && !v.no_remote_upgrade;
+  // An agent on Windows does not upgrade itself either: its page has the
+  // PowerShell installer's command (#399), so fetch it whenever the agent
+  // cannot upgrade itself.
+  const tooOld = v !== undefined && v.upgrade_available && !v.remote_upgrade;
   const detail = useDeviceDetail(device.id, tooOld);
   const [open, setOpen] = useState(false);
   if (!v || (!v.upgrade_available && !v.rolled_back_from && !open)) {
@@ -81,7 +84,15 @@ export function DeviceUpgrade({ device }: { device: Device }) {
           </div>
         </>
       ) : v.no_remote_upgrade ? (
-        <p className="muted small">{v.no_remote_upgrade}.</p>
+        <>
+          <p className="muted small">{v.no_remote_upgrade}.</p>
+          {command ? (
+            <>
+              <p className="muted small">Upgrade it by re-running the installer on the device, in PowerShell run as administrator:</p>
+              <Command label="On the device" value={command} />
+            </>
+          ) : null}
+        </>
       ) : (
         <>
           <p className="muted small">

@@ -25,7 +25,7 @@ own certificate authority (`ca.crt`, `ca.key`). It serves:
 | Port | Serves                                                                                  |
 | ---- | --------------------------------------------------------------------------------------- |
 | 7443 | agent connections (mutual TLS), and the web UI and JSON API over HTTPS                  |
-| 7080 | the web UI and API over plain HTTP, the agent installer `/install.sh` and `/ca.crt`     |
+| 7080 | the web UI and API over plain HTTP, the agent installers `/install.sh`, `/install.ps1` and `/ca.crt` |
 
 The web UI is built into the binary. It has one account, the admin, whose password you set with
 `HEARTH_ADMIN_PASSWORD` on the first start or with `hearth admin set-password`. CLI commands such as
