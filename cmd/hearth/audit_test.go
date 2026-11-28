@@ -26,17 +26,21 @@ func TestAuditVerifyCmd(t *testing.T) {
 	}{
 		{
 			name: "ok",
-			rep: hub.AuditVerifyJSON{OK: true, AuditReport: store.AuditReport{CanVerify: true, Entries: 12, Legacy: 2,
-				Chains: []store.AuditChainReport{{Origin: "hub-a", Last: 10, Verified: 10}}}},
+			rep: hub.AuditVerifyJSON{OK: true, AuditReport: store.AuditReport{
+				CanVerify: true, Entries: 12, Legacy: 2,
+				Chains: []store.AuditChainReport{{Origin: "hub-a", Last: 10, Verified: 10}},
+			}},
 			want: []string{"12 entries: 2 legacy", "hub-a: entries 1-10, 10 verified: OK", "The audit log verifies."},
 		},
 		{
 			name: "gaps",
-			rep: hub.AuditVerifyJSON{AuditReport: store.AuditReport{CanVerify: true, Entries: 140, Unsealed: 1,
+			rep: hub.AuditVerifyJSON{AuditReport: store.AuditReport{
+				CanVerify: true, Entries: 140, Unsealed: 1,
 				Chains: []store.AuditChainReport{{
 					Origin: "hub-a", Last: 140, Verified: 127, Missing: []store.AuditRange{{From: 120, To: 131}},
 					Unverified: []int64{135}, Broken: []int64{136},
-				}}}},
+				}},
+			}},
 			want: []string{
 				"hub-a: entries 1-140, 127 verified: NOT OK", "entries 120-131 from hub-a missing",
 				"entry 135: its seal does not check", "entry 136: does not follow", "1 entries written since sealing started have no seal",

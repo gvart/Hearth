@@ -327,7 +327,9 @@ const auditRawCols = `ts, actor_kind, actor_id, action, target, decision, result
 // scanRaw reads the auditRawCols of vals.
 func scanRaw(vals []any) (auditRaw, error) {
 	var r auditRaw
-	err := scanVals(vals, []any{&r.TS, &r.ActorKind, &r.ActorID, &r.Action, &r.Target, &r.Decision, &r.Result, &r.Detail,
-		&r.Key, &r.Origin, &r.Seq, &r.Prev, &r.KID, &r.MAC})
+	err := scanVals(vals, []any{
+		&r.TS, &r.ActorKind, &r.ActorID, &r.Action, &r.Target, &r.Decision, &r.Result, &r.Detail,
+		&r.Key, &r.Origin, &r.Seq, &r.Prev, &r.KID, &r.MAC,
+	})
 	return r, err
 }

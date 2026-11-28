@@ -378,8 +378,10 @@ func (r Audit) query(ctx context.Context, f AuditFilter, limit int, mode auditMo
 			raw auditRaw
 			op  string
 		)
-		dest := []any{&e.ID, &raw.TS, &raw.ActorKind, &raw.ActorID, &raw.Action, &raw.Target,
-			&raw.Decision, &raw.Result, &raw.Detail, &op}
+		dest := []any{
+			&e.ID, &raw.TS, &raw.ActorKind, &raw.ActorID, &raw.Action, &raw.Target,
+			&raw.Decision, &raw.Result, &raw.Detail, &op,
+		}
 		if mode == auditByChain {
 			dest = append(dest, &raw.Key, &raw.Origin, &raw.Seq, &raw.Prev, &raw.KID, &raw.MAC)
 		}

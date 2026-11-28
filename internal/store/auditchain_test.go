@@ -134,12 +134,16 @@ func TestAuditFoldedOutcomeVerification(t *testing.T) {
 	ctx := t.Context()
 	s := openTestWith(t, WithOrigin("hub-a"))
 	s.SetAuditSealer(newTestSealer("k1"))
-	if _, err := s.Audit().Append(ctx, AuditEntry{ActorKind: "admin", ActorID: "root", Action: "device.exec",
-		Decision: "allow", Detail: []byte(`{"audit_op":"op1"}`)}); err != nil {
+	if _, err := s.Audit().Append(ctx, AuditEntry{
+		ActorKind: "admin", ActorID: "root", Action: "device.exec",
+		Decision: "allow", Detail: []byte(`{"audit_op":"op1"}`),
+	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Audit().Append(ctx, AuditEntry{ActorKind: "admin", ActorID: "root", Action: "device.exec",
-		Decision: "allow", Result: "ok", Detail: []byte(`{"audit_outcome_of":"op1"}`)}); err != nil {
+	if _, err := s.Audit().Append(ctx, AuditEntry{
+		ActorKind: "admin", ActorID: "root", Action: "device.exec",
+		Decision: "allow", Result: "ok", Detail: []byte(`{"audit_outcome_of":"op1"}`),
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if v := verifications(ctx, t, s); v["device.exec"] != AuditVerified {
@@ -338,8 +342,10 @@ func TestAuditLegacyEntries(t *testing.T) {
 	ctx := t.Context()
 	s := openTestWith(t, WithOrigin("hub-a"))
 	// Written before the hub sealed.
-	if _, err := s.Audit().Append(ctx, AuditEntry{TS: time.UnixMilli(1_700_000_000_000), ActorKind: "admin",
-		ActorID: "root", Action: "old", Decision: "allow"}); err != nil {
+	if _, err := s.Audit().Append(ctx, AuditEntry{
+		TS: time.UnixMilli(1_700_000_000_000), ActorKind: "admin",
+		ActorID: "root", Action: "old", Decision: "allow",
+	}); err != nil {
 		t.Fatal(err)
 	}
 	s.SetAuditSealer(newTestSealer("k1"))
@@ -408,8 +414,10 @@ func TestAuditFailedAppendLeavesNoGap(t *testing.T) {
 			f := &failOnce{applied: applied}
 			s := openTestWith(t, WithOrigin("hub-a"), WithApplier(func(s *Store) Applier { f.s = s; return f }))
 			s.SetAuditSealer(newTestSealer("k1"))
-			e := AuditEntry{TS: time.UnixMilli(1_800_000_000_000), ActorKind: "hub", ActorID: "a", Action: "x",
-				Decision: "allow", Key: "once-1"}
+			e := AuditEntry{
+				TS: time.UnixMilli(1_800_000_000_000), ActorKind: "hub", ActorID: "a", Action: "x",
+				Decision: "allow", Key: "once-1",
+			}
 			if _, err := s.Audit().Append(ctx, e); err == nil {
 				t.Fatal("first append succeeded")
 			}
