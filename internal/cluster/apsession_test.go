@@ -26,6 +26,7 @@ func TestSessionsOnEveryMaster(t *testing.T) {
 		apSpec{"c", storageMaster, storageMaster},
 		apSpec{"d", storageOnly, storageOnly},
 	)
+	mastersCompared(t, c)
 	secrets := createSessions(t, c["a"], 50)
 	for _, id := range []string{"a", "b", "c"} {
 		if n := lacking(t, c[id], secrets); n != 0 {
@@ -89,6 +90,7 @@ func TestPasswordResetEndsSessionsAMasterMissed(t *testing.T) {
 		apSpec{"b", storageMaster, storageMaster},
 		apSpec{"c", storageMaster, storageMaster},
 	)
+	mastersCompared(t, c)
 	secrets := createSessions(t, c["a"], 20)
 	if _, err := c["c"].st.DropMasterRows(ctx, "sessions"); err != nil {
 		t.Fatal(err)
@@ -272,6 +274,19 @@ func TestTwoMastersOneDown(t *testing.T) {
 }
 
 // createSessions creates n sessions on tn and returns their secrets.
+// mastersCompared waits until every master of c compared the master
+// tables' rows with the others at its start (startCompared): until then it
+// reads no session (503), and the one started last may still be comparing
+// when newAPTestCluster returns.
+func mastersCompared(t *testing.T, c map[string]*apTestNode) {
+	t.Helper()
+	for _, tn := range c {
+		if tn.node.IsMaster() {
+			startCompared(t, tn.node.rep)
+		}
+	}
+}
+
 func createSessions(t *testing.T, tn *apTestNode, n int) []string {
 	t.Helper()
 	now := time.Now()
