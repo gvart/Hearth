@@ -154,3 +154,30 @@ func TestPanelsBeforeSchema(t *testing.T) {
 		}
 	}
 }
+
+// TestRevokeLinkOfNoPanel: a hub alone holds every panel, so revoking a
+// link of one it lacks, or of a deleted one, is of nothing, and writes no
+// stub (#389).
+func TestRevokeLinkOfNoPanel(t *testing.T) {
+	ctx := t.Context()
+	s := openTest(t)
+	now := time.UnixMilli(1_700_000_000_000).UTC()
+	if err := s.Panels().Create(ctx, Panel{ID: "gone", Name: "Gone", Widgets: `[]`, CreatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Panels().Delete(ctx, "gone"); err != nil {
+		t.Fatal(err)
+	}
+	for _, panel := range []string{"missing", "gone"} {
+		if err := s.Panels().RevokeLink(ctx, panel, "l", now); !errors.Is(err, ErrNotFound) {
+			t.Errorf("RevokeLink of panel %s = %v, want ErrNotFound", panel, err)
+		}
+	}
+	var n int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM panel_links`).Scan(&n); err != nil || n != 0 {
+		t.Errorf("%d links stored, %v; want none", n, err)
+	}
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM panels WHERE id = 'missing'`).Scan(&n); err != nil || n != 0 {
+		t.Errorf("%d stubs of the missing panel, %v; want none", n, err)
+	}
+}

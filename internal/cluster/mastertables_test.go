@@ -442,6 +442,20 @@ func TestOneMasterWithStorageMembersDown(t *testing.T) {
 // master that may prove the hub CA key is live; it reads them once it
 // compared them, or once none is (a down one, or members that only say
 // they are masters, are waited for by none).
+// startCompared waits until r's comparison at the start (Run) is done
+// and no longer holds pullMu: a read while it runs is refused at once, so
+// a test that closes the gate and reads must not race it.
+func startCompared(t *testing.T, r *Replicator) {
+	t.Helper()
+	apEventuallyTB(t, "the comparison at the start", func() bool {
+		if !r.masterRowsSynced.Load() || !r.pullMu.TryLock() {
+			return false
+		}
+		r.pullMu.Unlock()
+		return true
+	})
+}
+
 func TestMasterRowsGate(t *testing.T) {
 	ctx := t.Context()
 	t.Run("another master hung", func(t *testing.T) {
@@ -488,6 +502,7 @@ func TestMasterRowsGate(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
+		startCompared(t, a.rep)
 		a.rep.masterRowsSynced.Store(false)
 		an.setDown("b", true)
 		if _, err := a.st.Admin().CheckSession(ctx, "s", time.Now()); err != nil {
@@ -526,10 +541,22 @@ func TestMasterRowsGate(t *testing.T) {
 		if a.rep.Uncompared() {
 			t.Fatal("a says it reads uncompared rows while it reads none")
 		}
-		a.rep.gateSince.Store(time.Now().Add(-2 * time.Hour).UnixNano())
-		if _, err := a.st.Admin().CheckSession(ctx, "s", time.Now()); err != nil {
-			t.Fatalf("session after the wait, alone: %v", err)
+		// The refused read asked Run for a comparison, which retries
+		// (pullMasterRows); within the wait none opens the rows.
+		if a.rep.masterRowsSynced.Load() {
+			t.Fatal("a opened its rows within the wait, alone")
 		}
+		a.rep.gateSince.Store(time.Now().Add(-2 * time.Hour).UnixNano())
+		// A read while that comparison runs is refused at once (it does not
+		// queue), so the one after the wait may come too early: it reads
+		// once a round past the wait is done.
+		apEventuallyTB(t, "a reads the session after the wait, alone", func() bool {
+			_, err := a.st.Admin().CheckSession(ctx, "s", time.Now())
+			if err != nil && !errors.Is(err, store.ErrUnavailable) {
+				t.Fatalf("session after the wait, alone: %v", err)
+			}
+			return err == nil
+		})
 		if !a.rep.Uncompared() {
 			t.Fatal("a read with no master to compare with, and does not say so")
 		}
@@ -541,6 +568,7 @@ func TestMasterRowsGate(t *testing.T) {
 		if err := a.st.Admin().CreateSession(ctx, "s", time.Now(), time.Now().Add(time.Hour)); err != nil {
 			t.Fatal(err)
 		}
+		startCompared(t, a.rep)
 		a.rep.closeMasterRows()
 		if _, err := a.st.Admin().CheckSession(ctx, "s", time.Now()); err != nil {
 			t.Fatalf("session of a hub alone from the start: %v", err)
@@ -570,6 +598,7 @@ func TestMasterRowsGate(t *testing.T) {
 		if err := m.st.Admin().CreateSession(ctx, "s", time.Now(), time.Now().Add(time.Hour)); err != nil {
 			t.Fatal(err)
 		}
+		startCompared(t, m.rep)
 		m.rep.closeMasterRows()
 		if _, err := m.st.Admin().CheckSession(ctx, "s", time.Now()); err != nil {
 			t.Fatalf("session on the only master: %v", err)
@@ -737,6 +766,92 @@ func TestRevokeWhatThisMasterLacks(t *testing.T) {
 	}
 	if *reach != (store.Reach{Applied: 2, Of: 2}) {
 		t.Fatalf("reach with both masters up: %+v, want 2 of 2", *reach)
+	}
+}
+
+// TestRevokeLinkOfAPanelThisMasterLacks: a master revokes a share link
+// whose panel it lacks too (both made while it was down, and the master
+// that made them is down now) (#389). It writes a stub of the panel with
+// the link's: no list or check shows the stub, no command takes it for a
+// panel, collecting tombstones keeps it, and once the two masters meet, in
+// either order of delivery, the real panel is back on both and its link is
+// revoked on both.
+func TestRevokeLinkOfAPanelThisMasterLacks(t *testing.T) {
+	for _, order := range []string{"stubs first", "grants first"} {
+		t.Run(order, func(t *testing.T) {
+			ctx := t.Context()
+			an := newAPNet(t, 2, "a", "b")
+			a, b := an.m("a"), an.m("b")
+			now := time.Now()
+			an.setDown("b", true)
+			if err := a.st.Panels().Create(ctx, store.Panel{ID: "p", Name: "Hall", Widgets: "[]", CreatedAt: now}); err != nil {
+				t.Fatal(err)
+			}
+			if err := a.st.Panels().CreateLink(ctx, store.PanelLink{ID: "link", PanelID: "p", CreatedAt: now}, "link-secret"); err != nil {
+				t.Fatal(err)
+			}
+			an.setDown("b", false)
+			an.setDown("a", true)
+			b.rep.masterRowsSynced.Store(true)
+
+			rctx, reach := store.WithReach(ctx)
+			if err := b.st.Panels().RevokeLink(rctx, "p", "link", now); err != nil {
+				t.Fatalf("b revokes a link of a panel it lacks: %v", err)
+			}
+			if *reach != (store.Reach{Applied: 1, Of: 2}) {
+				t.Fatalf("reach with a down: %+v, want 1 of 2", *reach)
+			}
+			// The stub is no panel.
+			if ps, err := b.st.Panels().List(ctx); err != nil || len(ps) != 0 {
+				t.Fatalf("b lists %+v, %v; want no panel", ps, err)
+			}
+			if _, err := b.st.Panels().Get(ctx, "p"); !errors.Is(err, store.ErrNotFound) {
+				t.Fatalf("b gets the stub: %v, want not found", err)
+			}
+			if _, _, err := b.st.Panels().CheckLink(ctx, "link-secret", now); err == nil {
+				t.Fatal("b: the revoked link is valid")
+			}
+			if err := b.st.Panels().Update(ctx, store.Panel{ID: "p", Name: "x", Widgets: "[]"}, now); !errors.Is(err, store.ErrNotFound) {
+				t.Fatalf("b updates the stub: %v, want not found", err)
+			}
+			if err := b.st.Panels().CreateLink(ctx, store.PanelLink{ID: "l2", PanelID: "p", CreatedAt: now}, "l2-secret"); !errors.Is(err, store.ErrNotFound) {
+				t.Fatalf("b links the stub: %v, want not found", err)
+			}
+			if err := b.st.Panels().Delete(ctx, "p"); !errors.Is(err, store.ErrNotFound) {
+				t.Fatalf("b deletes the stub: %v, want not found", err)
+			}
+			// A second revocation is of nothing in use.
+			if err := b.st.Panels().RevokeLink(ctx, "p", "link", now); !errors.Is(err, store.ErrNotFound) {
+				t.Fatalf("revoke the stub again: %v, want not found", err)
+			}
+			// The stub is no tombstone: collecting them keeps it, and the
+			// link's stub with it.
+			if _, err := b.st.GCTombstones(ctx, now.Add(2*store.TombstoneTTL)); err != nil {
+				t.Fatal(err)
+			}
+
+			an.setDown("a", false)
+			if order == "stubs first" {
+				b.rep.deliverHints(ctx)
+				a.rep.deliverHints(ctx)
+			} else {
+				a.rep.deliverHints(ctx)
+				b.rep.deliverHints(ctx)
+			}
+			for name, st := range map[string]*store.Store{"a": a.st, "b": b.st} {
+				if _, _, err := st.Panels().CheckLink(ctx, "link-secret", now); err == nil {
+					t.Errorf("%s: the link revoked on b is still valid", name)
+				}
+				links, err := st.Panels().Links(ctx)
+				if err != nil || len(links) != 1 || links[0].PanelID != "p" || links[0].RevokedAt.IsZero() {
+					t.Errorf("%s: links %+v, %v; want link of p, revoked", name, links, err)
+				}
+				ps, err := st.Panels().List(ctx)
+				if err != nil || len(ps) != 1 || ps[0].Name != "Hall" || ps[0].Widgets != "[]" {
+					t.Errorf("%s: panels %+v, %v; want the real one", name, ps, err)
+				}
+			}
+		})
 	}
 }
 

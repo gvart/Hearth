@@ -110,7 +110,7 @@ func (r Panels) Get(ctx context.Context, id string) (Panel, error) {
 	if v < panelsSchema {
 		return Panel{}, fmt.Errorf("get panel %s: %w", id, ErrNotFound)
 	}
-	p, err := scanPanel(r.s.queryRowLive(ctx, "panels", id, panelColumns, ` FROM panels WHERE id = ?`, id))
+	p, err := scanPanel(r.s.queryRowLive(ctx, "panels", id, panelColumns, ` FROM panels WHERE id = ?`+notStub, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Panel{}, fmt.Errorf("get panel %s: %w", id, ErrNotFound)
 	}
@@ -137,7 +137,7 @@ func (r Panels) query(ctx context.Context, g gather, where, tail string, args ..
 	if err != nil || v < panelsSchema {
 		return nil, err
 	}
-	rest := ` FROM panels WHERE (` + where + `)` +
+	rest := ` FROM panels WHERE (` + where + `)` + notStub +
 		liveOnly(v >= VersionedSchema) + ` ` + tail
 	g.table = "panels"
 	rows, err := r.s.list(ctx, "", g, panelColumns, rest, args...)
@@ -157,6 +157,24 @@ func (r Panels) query(ctx context.Context, g gather, where, tail string, args ..
 }
 
 const panelColumns = `SELECT id, name, widgets, created_at, updated_at`
+
+// notStub is the condition, ANDed into a read of panels, that skips the
+// stubs RevokePanelLink writes: a real panel's widgets are never empty.
+const notStub = ` AND widgets <> ''`
+
+// stubHLC is the version of a panel stub: older than any version of a real
+// panel, so the real row, from a master that has it, always wins the merge.
+const stubHLC = 1
+
+// livePanel returns the live, real panel id a command reads, or nil if
+// there is none or only its stub.
+func livePanel(ctx context.Context, w *writer, id string) (row, error) {
+	p, err := w.get(ctx, "panels", id)
+	if err != nil || p == nil || p.str("widgets") == "" {
+		return nil, err
+	}
+	return p, nil
+}
 
 // scanPanel scans panelColumns.
 func scanPanel(row rowScanner) (Panel, error) {
@@ -314,7 +332,7 @@ func (UpdatePanel) Op() string { return "update_panel" }
 func (UpdatePanel) minSchema() int64 { return panelsSchema }
 
 func (c UpdatePanel) apply(ctx context.Context, w *writer) (Result, error) {
-	r, err := w.get(ctx, "panels", c.ID)
+	r, err := livePanel(ctx, w, c.ID)
 	if err != nil {
 		return Result{}, err
 	}
@@ -338,6 +356,12 @@ func (DeletePanel) Op() string { return "delete_panel" }
 func (DeletePanel) minSchema() int64 { return panelsSchema }
 
 func (c DeletePanel) apply(ctx context.Context, w *writer) (Result, error) {
+	if p, err := livePanel(ctx, w, c.ID); err != nil || p == nil {
+		if err == nil {
+			err = ErrNotFound
+		}
+		return Result{}, err
+	}
 	// The links go first, so the result does not depend on foreign keys
 	// being enforced.
 	if err := deleteWhere(ctx, w, "panel_links", `panel_id = ?`, c.ID); err != nil {
@@ -364,7 +388,7 @@ func (CreatePanelLink) Op() string { return "create_panel_link" }
 func (CreatePanelLink) minSchema() int64 { return panelsSchema }
 
 func (c CreatePanelLink) apply(ctx context.Context, w *writer) (Result, error) {
-	p, err := w.get(ctx, "panels", c.PanelID)
+	p, err := livePanel(ctx, w, c.PanelID)
 	if err != nil {
 		return Result{}, err
 	}
@@ -392,15 +416,45 @@ func (RevokePanelLink) Op() string { return "revoke_panel_link" }
 func (RevokePanelLink) minSchema() int64 { return panelsSchema }
 
 func (c RevokePanelLink) apply(ctx context.Context, w *writer) (Result, error) {
-	if p, err := w.get(ctx, "panels", c.PanelID); err != nil || p == nil {
-		// A link's stub needs its panel; a master without the panel
-		// refuses the link too (CheckLink).
-		if err == nil {
-			err = ErrNotFound
-		}
+	p, err := w.getAny(ctx, "panels", c.PanelID)
+	switch {
+	case err != nil:
 		return Result{}, err
+	case p == nil && w.versioned && w.s.Sharded():
+		// Both the panel and the link were made while this master was
+		// down (#389). A link's stub needs a panel row (the foreign key):
+		// write a stub of the panel too.
+		if err := stubPanel(ctx, w, c.PanelID, c.At); err != nil {
+			return Result{}, err
+		}
+	case p == nil || p.deleted():
+		// A hub alone holds every panel; a deleted one has no links.
+		return Result{}, ErrNotFound
 	}
 	return revokeOrStub(ctx, w, "panel_links", `id = ? AND panel_id = ?`, c.At, row{
 		"id": c.ID, "panel_id": c.PanelID, "created_at": c.At,
 	}, c.ID, c.PanelID)
+}
+
+// stubPanel writes a stub of panel id, which this master does not hold, so
+// a link's revoked stub has a panel row to point at. The stub has no name
+// and no widgets, so no read shows it (notStub) and no command takes it for
+// a panel (livePanel), and it is versioned stubHLC, so the real panel's row
+// replaces it. It is a live row, not a tombstone: a tombstone that old
+// would be collected at once, and the link's stub with it (ON DELETE
+// CASCADE). It goes to the other masters before the link's stub, so one
+// that lacks the panel too can take the link's.
+func stubPanel(ctx context.Context, w *writer, id string, at int64) error {
+	m := Mutation{
+		Table: "panels", Row: row{"id": id, "name": "", "widgets": "", "created_at": at, "updated_at": at},
+		HLC: stubHLC, Origin: w.stamp.Origin,
+	}
+	if err := w.dt.merge(ctx, w.tx, m, func() error {
+		_, err := mergeRow(ctx, w.s, w.tx, m, w.versioned)
+		return err
+	}); err != nil {
+		return err
+	}
+	w.muts = append(w.muts, m)
+	return nil
 }
