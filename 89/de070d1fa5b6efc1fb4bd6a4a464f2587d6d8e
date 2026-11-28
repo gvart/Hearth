@@ -1,0 +1,27 @@
+docs/tailscale.md
+  s_18b57982fdff93::t_d633471e47fd06 24-27,41-44
+docs/threat-model.md
+  s_18b57982fdff93::t_234e55420308a4 26,234-237
+cmd/hearth/tailnet_tsnet.go
+  s_18b57982fdff93::t_28eb140559f1f8 13,16-17,27-30,50,53-55,57-61,63-91
+Taskfile.yml
+  s_18b57982fdff93::t_50b9f3804ee7db 39
+cmd/hearth/tailnet_tsnet_test.go
+  s_18b57982fdff93::t_43269552637e41 37-41,52,183-206
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "89de070d1fa5b6efc1fb4bd6a4a464f2587d6d8e",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "unknown"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
