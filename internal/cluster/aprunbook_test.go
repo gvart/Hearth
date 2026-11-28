@@ -336,8 +336,10 @@ func TestRunbookMinorityRefusesAcrossASplit(t *testing.T) {
 		{name: "three members", ids: []string{"a", "b", "c"}, minority: []string{"a"}, others: []string{"b", "c"}},
 		// a reaches two storage members, d and e, which say they are
 		// masters: they count for nothing, and take no run.
-		{name: "five members", ids: []string{"a", "b", "c", "d", "e"}, storage: []string{"d", "e"},
-			minority: []string{"a", "d", "e"}, others: []string{"b", "c"}},
+		{
+			name: "five members", ids: []string{"a", "b", "c", "d", "e"}, storage: []string{"d", "e"},
+			minority: []string{"a", "d", "e"}, others: []string{"b", "c"},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// Members cut off a moment ago count as up again soon after the heal.

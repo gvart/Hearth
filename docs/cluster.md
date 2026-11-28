@@ -357,8 +357,9 @@ it holds, or answer reads of them as it likes, until they are signed by the mast
 - **Refuse a device certificate**: a certificate check asks every live replica and refuses the device
   if any one answers "revoked", so a storage member can make a master refuse a device whose
   certificate it holds (until it is removed from the cluster). It cannot un-revoke one: its "not
-  revoked" or "no such certificate" does not outweigh a revocation another replica holds, and a
-  revocation, once merged, is never cleared. It decides alone only while it is the one live replica of
+  revoked" or "no such certificate" does not outweigh a revocation another replica holds, a
+  revocation, once merged, is never cleared, and a newer version that moves the certificate to
+  another device, merged into the others to hide their copies, makes the check refuse it. It decides alone only while it is the one live replica of
   the certificate's row that answers. Hub certificates are global, so none of this reaches hubs.
 - **Spoil a certificate's pin**: a fingerprint read asks every live replica, and replicas that record
   different fingerprints decide nothing, so a storage member can answer with another and have a hub CA
@@ -396,8 +397,9 @@ Admin commands (`hearth admin set-password --data-dir` and the others) refuse to
 member's host, before anything is written: run them on a master's. Runbook runs were sharded before
 ([#387](https://github.com/gvart/hearth/issues/387)): a storage-only member deletes its copies when it
 starts, and the masters compare theirs before they read them, so a run that only storage-only members
-held is gone. Let the runs finish, or stop them, before you upgrade a cluster with storage-only
-members.
+held is gone, and a master's copy may lack the newest save of a run, which only storage-only members
+held: that run could then run a step again. Before you upgrade a cluster with storage-only members,
+let every runbook run finish, or stop it.
 
 ## Masters
 

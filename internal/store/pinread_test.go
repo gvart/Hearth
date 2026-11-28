@@ -84,6 +84,18 @@ func TestCertFingerprintForgedReplica(t *testing.T) {
 			wantErr: ErrPinDisagreement,
 		},
 		{
+			// The others' copies moved to another device by a newer version,
+			// so that only the forger's answers for pi: its word does not
+			// stand alone.
+			name: "the certificate moved to another device by a merge",
+			setup: func(t *testing.T, rs replicaSet) *Store {
+				moveCert(t, rs.x, rs.x, rs.y)
+				forge(t, rs.first, "evil")
+				return rs.first
+			},
+			wantErr: ErrPinDisagreement,
+		},
+		{
 			name: "a forged fingerprint merged into one replica",
 			setup: func(t *testing.T, rs replicaSet) *Store {
 				mergeForged(t, rs.x, rs.y)
@@ -133,13 +145,37 @@ func TestCertFingerprintForgedReplica(t *testing.T) {
 	}
 }
 
+// moveCert merges into each of into what a forger would send to hide
+// certificate 0a of pi from a check by device: a newer version of it naming
+// another device, evil, and that device's row for the foreign key.
+func moveCert(t *testing.T, from *Store, into ...*Store) {
+	t.Helper()
+	ms, err := from.ReadRows(t.Context(), []RowRef{{Table: "devices", Key: Values{"pi"}}, {Table: "certs", Key: Values{"0a"}}})
+	if err != nil || len(ms) != 2 {
+		t.Fatalf("read the device and its certificate: %v, %v", ms, err)
+	}
+	for i := range ms {
+		ms[i].HLC, ms[i].Origin = ms[i].HLC+1000000, "zz"
+		if ms[i].Table == "devices" {
+			ms[i].Row["id"] = "evil"
+		} else {
+			ms[i].Row["device_id"] = "evil"
+		}
+	}
+	for _, s := range into {
+		if err := s.Merge(t.Context(), ms); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 // Two different fingerprints of one certificate merge into a conflict,
 // whatever their versions' order, and a fingerprint merges into a copy
 // without one, never out of it (#387).
 func TestFingerprintMergesSetOnce(t *testing.T) {
 	base := hlc.New(time.UnixMilli(1_700_000_000_000))
-	cert := func(fp any, at int, origin string) Mutation {
-		return Mutation{Table: "certs", HLC: base + hlc.Timestamp(at), Origin: origin, Row: map[string]any{
+	cert := func(fp any, at hlc.Timestamp, origin string) Mutation {
+		return Mutation{Table: "certs", HLC: base + at, Origin: origin, Row: map[string]any{
 			"serial": "0a", "device_id": "pi", "fingerprint": fp, "ca_fp": nil, "revoked_at": nil, "pin_mismatch_at": nil,
 		}}
 	}

@@ -145,8 +145,10 @@ const auditTable = "audit_log"
 var tables = map[string]tableSpec{
 	"devices": {pk: []string{"id"}},
 	"tokens":  {pk: []string{"hash"}, setOnce: []string{"used_at"}},
-	"certs": {pk: []string{"serial"}, setOnce: []string{"revoked_at", "pin_mismatch_at"},
-		setOnceExact: []string{"fingerprint"}},
+	"certs": {
+		pk: []string{"serial"}, setOnce: []string{"revoked_at", "pin_mismatch_at"},
+		setOnceExact: []string{"fingerprint"},
+	},
 	"admin":           {pk: []string{"id"}, maxOf: []string{"session_epoch"}},
 	"sessions":        {pk: []string{"hash"}, deletable: true},
 	"join_tokens":     {pk: []string{"hash"}, setOnce: []string{"used_at"}},
