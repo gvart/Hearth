@@ -42,8 +42,10 @@ func fakeAIHub(t *testing.T, got map[string]string) *httptest.Server {
 		})
 	})
 	mux.HandleFunc("GET /api/v1/ai", func(w http.ResponseWriter, _ *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{"enabled": true, "provider": "anthropic", "base_url": "https://api.anthropic.com",
-			"model": "claude-sonnet-5-5", "api_key_set": true, "revision": "rev1"})
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"enabled": true, "provider": "anthropic", "base_url": "https://api.anthropic.com",
+			"model": "claude-sonnet-5-5", "api_key_set": true, "revision": "rev1",
+		})
 	})
 	mux.HandleFunc("PUT /api/v1/ai/config", func(w http.ResponseWriter, r *http.Request) {
 		record(r)

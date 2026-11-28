@@ -23,7 +23,7 @@ func TestRedact(t *testing.T) {
 			in:   "-----BEGIN CERTIFICATE-----\nMIIBszCCAVmgAwIBAgIUQ\n-----END CERTIFICATE-----",
 			gone: []string{"MIIBszCCAVmgAwIBAgIUQ"},
 		},
-		{
+		{ //nolint:gosec // test data, not credentials
 			name: "cut off PEM",
 			in:   "x -----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA",
 			gone: []string{"MIIEowIBAAKCAQEA"}, kept: []string{"x "},
@@ -53,7 +53,7 @@ func TestRedact(t *testing.T) {
 			in:   "join with hearth1.Zm9vYmFyYmF6cXV4.YWJjZGVm and hearthj1.c2VjcmV0.ZmluZ2Vy and hearth_mcp_0123456789abcdefXYZ",
 			gone: []string{"Zm9vYmFyYmF6cXV4", "c2VjcmV0", "hearth_mcp_0123456789abcdefXYZ"}, kept: []string{"join with"},
 		},
-		{
+		{ //nolint:gosec // test data, not credentials
 			name: "api keys",
 			in:   "sk-ant-api03-AbCdEfGhIjKlMnOpQrSt ghp_0123456789abcdefghijABCDEFGHIJ AKIAABCDEFGHIJKLMNOP xoxb-1234567890-abcdef",
 			gone: []string{"AbCdEfGhIjKlMnOpQrSt", "ghp_0123456789", "AKIAABCDEFGHIJKLMNOP", "xoxb-1234567890"},

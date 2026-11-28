@@ -175,7 +175,7 @@ func (c Config) Marshal() ([]byte, error) {
 	if !c.Enabled() {
 		return []byte{}, nil
 	}
-	return yaml.Marshal(c)
+	return yaml.Marshal(c) //nolint:gosec // ai.yaml holds the key by design; the hub seals it before storing
 }
 
 // ErrDisabled is AI off: no provider is configured.

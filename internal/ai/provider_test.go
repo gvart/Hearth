@@ -143,8 +143,14 @@ func TestErrorMapping(t *testing.T) {
 		status int
 		want   error
 	}{
-		{401, ErrAuth}, {403, ErrAuth}, {404, ErrNotFound}, {429, ErrRateLimited},
-		{400, ErrBadRequest}, {422, ErrBadRequest}, {500, ErrUnavailable}, {529, ErrUnavailable},
+		{401, ErrAuth},
+		{403, ErrAuth},
+		{404, ErrNotFound},
+		{429, ErrRateLimited},
+		{400, ErrBadRequest},
+		{422, ErrBadRequest},
+		{500, ErrUnavailable},
+		{529, ErrUnavailable},
 	}
 	for _, c := range cases {
 		for _, kind := range []string{ProviderOpenAI, ProviderAnthropic} {

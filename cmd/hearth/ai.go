@@ -158,7 +158,7 @@ func newAISetCmd(client aiClientFunc) *cobra.Command {
 			}
 			key := os.Getenv("HEARTH_AI_API_KEY")
 			if keyFile != "" {
-				b, err := os.ReadFile(keyFile) //nolint:gosec // the operator's own file
+				b, err := os.ReadFile(keyFile)
 				if err != nil {
 					return fmt.Errorf("read --api-key-file: %w", err)
 				}

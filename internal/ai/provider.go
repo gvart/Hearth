@@ -170,7 +170,7 @@ func post(ctx context.Context, c *http.Client, provider, url string, headers map
 		if errors.As(err, &ne) && ne.Timeout() {
 			return nil, fmt.Errorf("%s: %w", provider, ErrTimeout)
 		}
-		return nil, fmt.Errorf("%s: %w: %v", provider, ErrUnavailable, transportError(err)) //nolint:errorlint // the cause is text only
+		return nil, fmt.Errorf("%s: %w: %v", provider, ErrUnavailable, transportError(err))
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
