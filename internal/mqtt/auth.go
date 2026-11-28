@@ -109,6 +109,8 @@ func (h *authHook) OnConnectAuthenticate(cl *mochi.Client, pk packets.Packet) bo
 	case reason != "":
 	case pk.Connect.WillFlag && !permits(identity, rules, pk.Connect.WillTopic, true):
 		reason = "will topic not allowed"
+	case pk.Connect.WillFlag && !protocolWill(pk.Connect.WillTopic, pk.Connect.WillPayload):
+		reason = "a Device Protocol will must be an offline availability message"
 	case !h.claim(cl.ID, identity):
 		reason = "client ID belongs to another client's session"
 	}

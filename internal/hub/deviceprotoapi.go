@@ -27,7 +27,8 @@ func (a *api) deviceProtocolRoutes(mux *http.ServeMux) {
 
 // deviceProtocolCommand sends a Device Protocol device a command it
 // announced and answers its result: {"command": "relay.set", "params": {...}}.
-// It is the policy action device.command.
+// It is the policy action device.command, dangerous: the session must have
+// entered the admin password again within ReauthTTL.
 func (a *api) deviceProtocolCommand(w http.ResponseWriter, r *http.Request) {
 	if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" {
 		writeError(w, http.StatusUnsupportedMediaType, "bad_request", "content type must be application/json")
@@ -38,7 +39,7 @@ func (a *api) deviceProtocolCommand(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", `body must be a command: {"command": "relay.set", "params": {"on": true}}`)
 		return
 	}
-	res, err := a.protocol.Command(r.Context(), policy.ActorWeb, remoteHost(r), r.PathValue("id"), req)
+	res, err := a.protocol.Command(r.Context(), policy.ActorWeb, remoteHost(r), r.PathValue("id"), req, a.recentAuth(r))
 	switch {
 	case err == nil:
 		writeJSON(w, http.StatusOK, res)
@@ -46,6 +47,10 @@ func (a *api) deviceProtocolCommand(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "no such device protocol device")
 	case errors.Is(err, ErrProtocolUnknownCommand), errors.Is(err, ErrProtocolBadCommand):
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+	// errReauthRequired wraps policy.ErrDenied: it goes first, so the web UI
+	// asks for the password.
+	case errors.Is(err, errReauthRequired):
+		writeError(w, http.StatusForbidden, "reauth_required", "enter the admin password again to do this")
 	case errors.Is(err, policy.ErrDenied):
 		writeError(w, http.StatusForbidden, "forbidden", "denied by policy")
 	case errors.Is(err, ErrProtocolUnavailable):

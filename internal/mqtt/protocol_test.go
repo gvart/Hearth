@@ -166,8 +166,22 @@ func TestProtocolOnlyOwnTopics(t *testing.T) {
 
 func TestProtocolWill(t *testing.T) {
 	tb, _ := startProtocolBroker(t)
-	if _, rc, err := tb.dial(t, connectOpts{user: "kitchen", pass: testPassword, willTopic: "hearth/v1/kitchen/availability"}); err != nil || rc != accepted {
+	const offline = `{"v":1,"status":"offline"}`
+	if _, rc, err := tb.dial(t, connectOpts{user: "kitchen", pass: testPassword,
+		willTopic: "hearth/v1/kitchen/availability", willPayload: offline}); err != nil || rc != accepted {
 		t.Fatalf("own availability will: rc %d, %v", rc, err)
+	}
+	// The broker sends a will without checking it as a publish: it is
+	// checked at CONNECT.
+	for _, will := range []struct{ topic, payload string }{
+		{"hearth/v1/kitchen/availability", "gone"},
+		{"hearth/v1/kitchen/availability", `{"v":1,"status":"online"}`},
+		{"hearth/v1/kitchen/state", `{"v":1,"state":{"relay":true}}`},
+	} {
+		if _, rc, err := tb.dial(t, connectOpts{user: "kitchen", pass: testPassword,
+			willTopic: will.topic, willPayload: will.payload}); err != nil || rc != notAuthorized {
+			t.Fatalf("will %s %s: rc %d, %v, want refused", will.topic, will.payload, rc, err)
+		}
 	}
 	for _, will := range []string{"hearth/v1/kitchen/availability", "hearth/v1/garage/command"} {
 		if _, rc, err := tb.dial(t, connectOpts{user: "garage", pass: testPassword, willTopic: will}); err != nil || rc != notAuthorized {

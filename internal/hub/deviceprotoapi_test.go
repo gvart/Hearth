@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -92,6 +93,12 @@ func TestDeviceProtocolCommandAPI(t *testing.T) {
 	if r := f.send(t, http.MethodPost, path, "text/plain", `{"command":"restart"}`, cookie); r.StatusCode != http.StatusUnsupportedMediaType {
 		t.Fatalf("text body: %d", r.StatusCode)
 	}
+	// A dangerous action: the password again first.
+	if r := f.do(t, http.MethodPost, path, `{"command":"restart"}`, cookie); r.StatusCode != http.StatusForbidden ||
+		!strings.Contains(string(r.body), "reauth_required") {
+		t.Fatalf("without re-authentication: %d %s", r.StatusCode, r.body)
+	}
+	a.reauths.mark("proto-session", a.now())
 	r := f.do(t, http.MethodPost, path, `{"command":"restart"}`, cookie)
 	var res CommandResult
 	if err := json.Unmarshal(r.body, &res); err != nil || r.StatusCode != http.StatusOK || !res.OK || res.Class != "dangerous" {
@@ -140,5 +147,72 @@ func TestDeviceProtocolCommandAPI(t *testing.T) {
 	defer bus.mu.Unlock()
 	if bus.sent != 2 {
 		t.Fatalf("%d commands published, want 2: the refused ones must publish nothing", bus.sent)
+	}
+}
+
+// TestDeviceProtocolMissedDeparture: a device that leaves before its announce
+// is written, or whose departure is lost, ends offline and stays so.
+func TestDeviceProtocolMissedDeparture(t *testing.T) {
+	st := newTestStore(t)
+	reg := NewRegistry(RegistryConfig{Store: st})
+	p := NewDeviceProtocol(DeviceProtocolConfig{Store: st, Registry: reg, Policy: policy.New(st.Audit()), Seen: 10 * time.Millisecond})
+	bus := &fakeBus{p: p, up: false}
+	p.SetBus(bus)
+	m, err := deviceproto.Parse("kitchen", deviceproto.KindAnnounce, []byte(`{"v":1}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The announce is queued, and the device gone, before Run writes it.
+	p.DeviceMessage(m)
+	p.DeviceGone("kitchen")
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { defer close(done); _ = p.Run(ctx) }()
+	t.Cleanup(func() { cancel(); <-done })
+	id := store.ProtocolDeviceID("kitchen")
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		d, err := st.Devices().Get(t.Context(), id)
+		if err == nil && d.Status == store.StatusOffline {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("device = %+v, %v, want offline", d, err)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	time.Sleep(100 * time.Millisecond) // a few Seen ticks
+	if d, err := st.Devices().Get(t.Context(), id); err != nil || d.Status != store.StatusOffline {
+		t.Fatalf("device = %+v, %v, want still offline", d, err)
+	}
+
+	// Online, then its connection ends with no departure seen: the next
+	// Seen tick marks it offline.
+	bus.mu.Lock()
+	bus.up = true
+	bus.mu.Unlock()
+	p.DeviceMessage(m)
+	for {
+		d, err := st.Devices().Get(t.Context(), id)
+		if err == nil && d.Status == store.StatusOnline {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("device = %+v, %v, want online", d, err)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	bus.mu.Lock()
+	bus.up = false
+	bus.mu.Unlock()
+	for {
+		d, err := st.Devices().Get(t.Context(), id)
+		if err == nil && d.Status == store.StatusOffline {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("device = %+v, %v, want offline again", d, err)
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }

@@ -248,12 +248,7 @@ func (p *DeviceProtocol) applyOps(ctx context.Context) {
 	p.mu.Unlock()
 	for _, op := range ops {
 		if op.announce == nil {
-			p.mu.Lock()
-			delete(p.live, op.device)
-			p.mu.Unlock()
-			if err := p.reg.markDevicesOffline(ctx, []string{store.ProtocolDeviceID(op.device)}); err != nil {
-				p.log.ErrorContext(ctx, "device protocol: mark device offline", "device", op.device, "err", err)
-			}
+			p.goOffline(ctx, op.device)
 			continue
 		}
 		if err := p.register(ctx, op.device, op.announce); err != nil {
@@ -264,6 +259,29 @@ func (p *DeviceProtocol) applyOps(ctx context.Context) {
 		p.announced[op.device] = op.announce
 		p.live[op.device] = true
 		p.mu.Unlock()
+		// A device that left while its announce waited stays offline: its
+		// departure may have come before the announce was written.
+		if !p.connected(op.device) {
+			p.goOffline(ctx, op.device)
+		}
+	}
+}
+
+// connected reports whether device name has a connection to the broker.
+func (p *DeviceProtocol) connected(name string) bool {
+	p.mu.Lock()
+	bus := p.bus
+	p.mu.Unlock()
+	return bus != nil && bus.Connected(name)
+}
+
+// goOffline stops marking device name seen and marks it offline.
+func (p *DeviceProtocol) goOffline(ctx context.Context, name string) {
+	p.mu.Lock()
+	delete(p.live, name)
+	p.mu.Unlock()
+	if err := p.reg.markDevicesOffline(ctx, []string{store.ProtocolDeviceID(name)}); err != nil {
+		p.log.ErrorContext(ctx, "device protocol: mark device offline", "device", name, "err", err)
 	}
 }
 
@@ -354,12 +372,17 @@ func (p *DeviceProtocol) flushValues(ctx context.Context) {
 	}
 }
 
-// markSeen keeps the connected devices online.
+// markSeen keeps the connected devices online, and marks offline any whose
+// departure was missed (a full queue).
 func (p *DeviceProtocol) markSeen(ctx context.Context) {
 	p.mu.Lock()
 	live := slices.Sorted(maps.Keys(p.live))
 	p.mu.Unlock()
 	for _, name := range live {
+		if !p.connected(name) {
+			p.goOffline(ctx, name)
+			continue
+		}
 		if err := p.reg.Heartbeat(ctx, store.ProtocolDeviceID(name), 0); err != nil && !errors.Is(err, store.ErrNotFound) {
 			p.log.ErrorContext(ctx, "device protocol: mark device seen", "device", name, "err", err)
 		}
@@ -384,9 +407,12 @@ type CommandResult struct {
 // Command sends device id the command req on behalf of actorKind/actorID and
 // waits for its result. It is the policy action device.command: nothing is
 // sent unless policy allows it, and the decision and outcome are audited,
-// with the command's name but never its params. The device must have
-// announced the command and be connected to this hub's broker.
-func (p *DeviceProtocol) Command(ctx context.Context, actorKind, actorID, id string, req CommandRequest) (CommandResult, error) {
+// with the command's name but never its params. precheck, if not nil, is the
+// policy request's Precheck (the web UI's re-authentication). The device must
+// have announced the command and be connected to this hub's broker.
+func (p *DeviceProtocol) Command(ctx context.Context, actorKind, actorID, id string, req CommandRequest,
+	precheck func(context.Context) error,
+) (CommandResult, error) {
 	d, err := p.devices.Get(ctx, id)
 	if errors.Is(err, store.ErrNotFound) || (err == nil && d.Labels[store.LabelSource] != store.SourceDeviceProtocol) {
 		return CommandResult{}, ErrProtocolDeviceNotFound
@@ -405,7 +431,8 @@ func (p *DeviceProtocol) Command(ctx context.Context, actorKind, actorID, id str
 	res := CommandResult{Command: req.Command, Class: commandClass()}
 	err = p.pol.Do(ctx, policy.Request{
 		ActorKind: actorKind, ActorID: actorID, Action: policy.DeviceCommand, Target: d.Name + "/" + req.Command,
-		Detail: map[string]any{"device_id": id, "device": name, "command": req.Command},
+		Detail:   map[string]any{"device_id": id, "device": name, "command": req.Command},
+		Precheck: precheck,
 	}, func(ctx context.Context) error {
 		r, err := p.send(ctx, name, req)
 		res.ID, res.OK, res.Message = r.ID, r.OK, r.Message

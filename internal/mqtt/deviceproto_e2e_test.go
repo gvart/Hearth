@@ -103,7 +103,7 @@ func (h *protocolHub) command(id, name, params string) <-chan commandOutcome {
 	go func() {
 		res, err := h.p.Command(context.Background(), policy.ActorWeb, "127.0.0.1", id, hub.CommandRequest{
 			Command: name, Params: json.RawMessage(params),
-		})
+		}, nil)
 		out <- commandOutcome{res, err}
 	}()
 	return out
@@ -184,7 +184,7 @@ func TestDeviceProtocolEndToEnd(t *testing.T) {
 	// The device goes away.
 	_ = kitchen.conn.Close()
 	h.waitDevice(t, id, func(d store.Device) bool { return d.Status == store.StatusOffline })
-	if _, err := h.p.Command(t.Context(), policy.ActorWeb, "127.0.0.1", id, hub.CommandRequest{Command: "relay.set"}); !errors.Is(err, hub.ErrProtocolUnavailable) {
+	if _, err := h.p.Command(t.Context(), policy.ActorWeb, "127.0.0.1", id, hub.CommandRequest{Command: "relay.set"}, nil); !errors.Is(err, hub.ErrProtocolUnavailable) {
 		t.Fatalf("Command to a gone device = %v, want unavailable", err)
 	}
 }
@@ -201,29 +201,29 @@ func TestDeviceProtocolCommandRefusals(t *testing.T) {
 	h.waitDevice(t, id, func(d store.Device) bool { return d.Status == store.StatusOnline })
 	ctx := t.Context()
 
-	if _, err := h.p.Command(ctx, policy.ActorWeb, "x", id, hub.CommandRequest{Command: "reboot"}); !errors.Is(err, hub.ErrProtocolUnknownCommand) {
+	if _, err := h.p.Command(ctx, policy.ActorWeb, "x", id, hub.CommandRequest{Command: "reboot"}, nil); !errors.Is(err, hub.ErrProtocolUnknownCommand) {
 		t.Fatalf("undeclared command: %v", err)
 	}
-	if _, err := h.p.Command(ctx, policy.ActorWeb, "x", id, hub.CommandRequest{Command: "relay.set", Params: json.RawMessage(`[1]`)}); !errors.Is(err, hub.ErrProtocolBadCommand) {
+	if _, err := h.p.Command(ctx, policy.ActorWeb, "x", id, hub.CommandRequest{Command: "relay.set", Params: json.RawMessage(`[1]`)}, nil); !errors.Is(err, hub.ErrProtocolBadCommand) {
 		t.Fatalf("bad params: %v", err)
 	}
-	if _, err := h.p.Command(ctx, policy.ActorWeb, "x", "0000000000000000", hub.CommandRequest{Command: "relay.set"}); !errors.Is(err, hub.ErrProtocolDeviceNotFound) {
+	if _, err := h.p.Command(ctx, policy.ActorWeb, "x", "0000000000000000", hub.CommandRequest{Command: "relay.set"}, nil); !errors.Is(err, hub.ErrProtocolDeviceNotFound) {
 		t.Fatalf("unknown device: %v", err)
 	}
 	// An enrolled device is not a protocol device.
 	if err := h.st.Devices().Upsert(ctx, store.Device{ID: "cdb1a1c4399bb039bdc3", Name: "pi", Status: store.StatusOnline}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.p.Command(ctx, policy.ActorWeb, "x", "cdb1a1c4399bb039bdc3", hub.CommandRequest{Command: "relay.set"}); !errors.Is(err, hub.ErrProtocolDeviceNotFound) {
+	if _, err := h.p.Command(ctx, policy.ActorWeb, "x", "cdb1a1c4399bb039bdc3", hub.CommandRequest{Command: "relay.set"}, nil); !errors.Is(err, hub.ErrProtocolDeviceNotFound) {
 		t.Fatalf("an agent's device: %v", err)
 	}
 	// Automations and MCP clients may not send commands at all.
-	if _, err := h.p.Command(ctx, policy.ActorAutomation, "a1", id, hub.CommandRequest{Command: "relay.set"}); !errors.Is(err, policy.ErrDenied) {
+	if _, err := h.p.Command(ctx, policy.ActorAutomation, "a1", id, hub.CommandRequest{Command: "relay.set"}, nil); !errors.Is(err, policy.ErrDenied) {
 		t.Fatalf("automation: %v", err)
 	}
 	// A policy that denies dangerous actions denies every command.
 	h.pol.SetConfig(policy.Config{Classes: map[policy.Class]policy.Mode{policy.Dangerous: policy.ModeDeny}})
-	if _, err := h.p.Command(ctx, policy.ActorWeb, "x", id, hub.CommandRequest{Command: "relay.set"}); !errors.Is(err, policy.ErrDenied) {
+	if _, err := h.p.Command(ctx, policy.ActorWeb, "x", id, hub.CommandRequest{Command: "relay.set"}, nil); !errors.Is(err, policy.ErrDenied) {
 		t.Fatalf("denied by policy: %v", err)
 	}
 	kitchen.none()

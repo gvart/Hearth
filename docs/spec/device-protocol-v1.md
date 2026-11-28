@@ -104,7 +104,8 @@ Every message is one UTF-8 JSON object with a version field `"v": 1`. A message:
 - MAY carry fields this document does not define. Receivers ignore them, so that later v1 revisions
   can add optional fields.
 
-The broker checks each message before it delivers or retains it. A message that is malformed, too
+The broker checks each message before it delivers or retains it (and a will when the device
+connects, see [availability](#availability)). A message that is malformed, too
 large or breaks a rule below is acknowledged and **dropped**: nobody receives it, and the hub logs
 the reason (never the payload). Check the hub's log if a device does not appear.
 
@@ -174,7 +175,10 @@ every 2 seconds. History is not kept in v1.
 
 `status` is `online` or `offline`. A device SHOULD set its MQTT will to
 `{"v":1,"status":"offline"}` on its availability topic, retained, so that other subscribers learn
-when it drops off. The hub does not depend on it:
+when it drops off. A will under `hearth/v1/` MUST be exactly that: an `offline` availability message
+on the device's own availability topic. The broker sends a will without checking it as a message, so
+it checks it at CONNECT, and refuses a connection with any other will there. The hub does not
+depend on the will:
 
 - A device is online from its announce while it stays connected. The hub marks it seen every 10
   seconds while its connection lasts.
@@ -210,7 +214,8 @@ device cannot answer another's. A command with no result in 10 seconds fails as 
 ## Commands, policy and audit
 
 Sending a command is the policy action **`device.command`**, of class **dangerous**, for a signed-in
-admin of the web API (`POST /api/v1/devices/{id}/commands`). The hub cannot know what a command does:
+admin of the web API (`POST /api/v1/devices/{id}/commands`) who entered the admin password again in
+the last 5 minutes (`POST /api/v1/session/reauth`), as for the hub's other dangerous web actions. The hub cannot know what a command does:
 a relay may switch a lamp or a heater, and the announce is only the device's word. So every command
 is dangerous, whatever the device calls it, and a policy file can hold or deny it like any dangerous
 action (see [Guardrails](../guardrails.md)). Automations and MCP clients cannot send commands in v1.

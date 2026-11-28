@@ -171,6 +171,7 @@ type client struct {
 type connectOpts struct {
 	id, user, pass       string
 	willTopic            string
+	willPayload          string // default "gone"
 	cert                 *tls.Certificate
 	noUsername, noPasswd bool
 }
@@ -219,7 +220,11 @@ func (tb *testBroker) dial(t *testing.T, o connectOpts) (*client, byte, error) {
 	if o.willTopic != "" {
 		flags |= 0x04
 		payload = append(payload, mqttString(o.willTopic)...)
-		payload = append(payload, mqttString("gone")...)
+		will := o.willPayload
+		if will == "" {
+			will = "gone"
+		}
+		payload = append(payload, mqttString(will)...)
 	}
 	if o.user != "" && !o.noUsername {
 		flags |= 0x80

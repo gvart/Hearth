@@ -42,7 +42,8 @@ please tell us how it went in an issue.
    ```
 
 The device shows up with the other devices in the web UI, under the name it announced. Send it a
-command, as a signed-in admin (each one is the dangerous policy action `device.command`, audited):
+command, as a signed-in admin who entered the password again in the last 5 minutes (each one is the
+dangerous policy action `device.command`, audited):
 
 ```sh
 curl -b cookies.txt -H 'Content-Type: application/json' \

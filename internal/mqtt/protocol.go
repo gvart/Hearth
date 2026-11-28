@@ -46,6 +46,21 @@ func permits(identity string, rules []Rule, topic string, write bool) bool {
 	return allowed(rules, topic, write)
 }
 
+// protocolWill reports whether a will may go on topic: the broker sends a
+// will without OnPublish, so under hearth/v1/ it is checked at CONNECT, and
+// must be an offline availability message.
+func protocolWill(topic string, payload []byte) bool {
+	if !deviceproto.InNamespace(topic) {
+		return true
+	}
+	id, kind, ok := deviceproto.SplitTopic(topic)
+	if !ok || kind != deviceproto.KindAvailability {
+		return false
+	}
+	m, err := deviceproto.Parse(id, kind, payload)
+	return err == nil && !m.Online
+}
+
 // OnPublish checks every message a client publishes on a Device Protocol
 // topic before the broker delivers or retains it. A message that is too large
 // or malformed is acknowledged and dropped, never delivered; a valid one goes
