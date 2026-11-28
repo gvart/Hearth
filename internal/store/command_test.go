@@ -50,6 +50,7 @@ func allCommands() []Command {
 		AppendAudit{
 			TS: 9, ActorKind: "agent", ActorID: "pi", Action: "agent.enroll", Target: "pi",
 			Decision: "allow", Result: "ok", Detail: `{"a": 1}`,
+			Seal: &AuditSeal{Origin: "hub-a", Seq: 1, KID: "k0", MAC: "00"},
 		},
 		AppendAuditOnce{
 			AppendAudit: AppendAudit{
@@ -59,6 +60,7 @@ func allCommands() []Command {
 			},
 			Key: "k1",
 		},
+		PutAuditKey{ID: "k0", Sealed: []byte{1, 2}, CreatedAt: 23},
 		SetPasswordHash{Hash: "$argon2id$..."},
 		CreateSession{Hash: []byte{4, 5}, Now: 10, ExpiresAt: 11},
 		DeleteSession{Hash: []byte{4, 5}},
@@ -566,6 +568,9 @@ func runScenario(t *testing.T, s *Store) {
 	if _, err := s.DeviceCeilings().Get(ctx, "nope"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("ceiling of an unknown device: %v, want ErrNotFound", err)
 	}
+	// An audit key stored, and stored again: the first copy stays.
+	must(s.AuditKeys().Put(ctx, "k0", []byte{1, 2}, at(15*time.Hour)))
+	must(s.AuditKeys().Put(ctx, "k0", []byte{3, 4}, at(15*time.Hour)))
 }
 
 // dumpTables returns every row of every table (sqlite_sequence included,

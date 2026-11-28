@@ -60,6 +60,10 @@ type Store struct {
 	// readHook, set by tests only, is told the table of every row a
 	// command reads with the writer's get or query (see ReadsOf).
 	readHook func(table string)
+	// sealer seals and checks audit entries (SetAuditSealer), and chain is
+	// this member's own audit chain (#387).
+	sealer atomic.Pointer[sealerBox]
+	chain  auditChain
 }
 
 // Open opens (creating if needed) the SQLite database at path with WAL,
