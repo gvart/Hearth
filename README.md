@@ -119,6 +119,12 @@ Early days — issues and ideas welcome. Work is tracked as task specs in [`docs
 Commits follow Conventional Commits and need a DCO sign-off (`git commit -s`), checked on every pull
 request by the `DCO` workflow. See [CONTRIBUTING.md](CONTRIBUTING.md) for tooling and `task` commands.
 
+## Support
+
+Hearth is free and open source. If it is useful to you and you want to fund its
+development, use the **Sponsor** button at the top of the repository, which lists the ways to
+support the project. Issues, bug reports and pull requests help just as much.
+
 ## License
 
 AGPL-3.0, except `pkg/` (Apache-2.0) and `docs/spec/` (CC-BY-4.0).
