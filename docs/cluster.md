@@ -369,10 +369,31 @@ it holds, or answer reads of them as it likes, until they are signed by the mast
   newer version (a fingerprint is set once; two different ones merge into a conflict). It can set the
   fingerprint of a certificate that has none yet, one issued before fingerprints were recorded and not
   pinned since, and it decides alone while it is the one live replica that answers.
-- **Hide, change or invent audit entries**, and the devices list, device facts and presence, device
-  routes, and automation run history of its buckets: what the UI and the API show of them.
+- **Hide audit entries** of its buckets, but not unseen: each entry is sealed (below), so a forged or
+  changed one shows as unverified and a deleted one as a gap. It can still mislead the devices list,
+  device facts and presence, device routes, and automation run history of its buckets: what the UI
+  and the API show of them.
 - **List forged enrollment tokens, join tokens or approvals**. They grant nothing: their owner acts on
   its own record of them (below).
+
+**Sealed audit entries.** The master that writes an audit entry seals it before the entry goes to
+its replicas: it numbers the entry in a chain of its own (its node ID, a sequence number, the seal of
+its previous entry) and signs the whole entry with an HMAC-SHA256 key derived (HKDF) from the hub CA
+key. A storage-only member has no CA key, so it cannot seal an entry. When a master lists the log, or
+`hearth audit verify` and the web UI's Audit page check it, each entry is marked:
+
+- **verified**: its seal checks;
+- **unverified**: its seal does not check: forged, changed, or sealed with a key the master does not know;
+- **legacy**: written before sealing started (before the upgrade that added it), with nothing to check;
+- **unchecked**: on a hub without the CA key, which cannot check seals.
+
+`hearth audit verify` (and `GET /api/v1/audit/verify`) also reads each master's chain end to end and
+reports what is missing ("entries 120-131 from hub-a missing"), what does not follow the entry before
+it (moved or replaced), sequence numbers taken twice, and entries without a seal written since
+sealing started. A hub CA rotation keeps the old entries verifiable: each master stores the audit key
+of every CA key it holds in the masters-only `audit_keys` table, sealed with a key derived from the CA
+key like the integration secrets, and the rotation's finish re-seals it with the new CA's key. Neither
+the CA key nor a key derived from it is ever stored in the clear; a demoted master forgets them.
 
 Tokens and approvals are sharded too, but the master that creates one keeps a record of it in its own
 data dir: it refuses a token, join token, approval or approval link it has no record of, and what a use
