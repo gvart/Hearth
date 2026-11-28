@@ -1,0 +1,32 @@
+/* A Device Protocol device's commands: one row each, name, params, Send. */
+.protocol-command {
+  display: grid;
+  grid-template-columns: minmax(8rem, 16rem) minmax(0, 1fr) auto;
+  gap: 0.5rem 1rem;
+  align-items: center;
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.protocol-command-name {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.protocol-command-result {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+@media (max-width: 640px) {
+  .protocol-command {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .protocol-command-name {
+    grid-column: 1 / -1;
+  }
+}

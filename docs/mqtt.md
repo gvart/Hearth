@@ -57,7 +57,9 @@ separate Mosquitto. It is off by default. When it is on:
 | `--mqtt-listen` | `HEARTH_MQTT_LISTEN` | Address to serve MQTT over TLS on, e.g. `:8883`. Default: off |
 | `--mqtt-clients` | `HEARTH_MQTT_CLIENTS` | The clients file. Default `<data-dir>/mqtt.yaml` |
 
-The hub reads the clients file when it starts. Restart it after you change the file. A hub with
+The hub reads the clients file when it starts. Restart it after you change the file. The hub writes
+the file itself only to remove a [Device Protocol device](#devices-without-an-agent-the-device-protocol)'s
+user. A hub with
 `--mqtt-listen` and no clients file, or with an invalid one, refuses to start.
 
 ## Connect
@@ -202,6 +204,29 @@ Under `hearth/v1/` the broker lets a client publish only to its own device topic
 clients file grants, and no client publishes a command: only the hub does. Malformed or oversized
 protocol messages (over 16 KiB) are dropped before anyone receives them. A reference client for the
 ESP32 is in [examples/esp32](../examples/esp32/README.md).
+
+The device's page in the web UI shows the entities it announced with their latest values, which
+update as it reports them, and its telemetry. It has a form for each command the device announced,
+with optional params as a JSON object, and shows the device's result. The page has none of an
+agent's panels. From the CLI, through the same API and policy:
+
+```sh
+hearth device command kitchen-sensor relay.set --param on=true   # prints the device's result
+hearth device remove kitchen-sensor
+```
+
+`<device>` is the device's ID or its protocol id. A `--param` value that is JSON (`true`, `3`,
+`{...}`) is sent as such, anything else as a string. Both commands sign in with the admin password
+(`HEARTH_ADMIN_PASSWORD`, or asked for).
+
+**Removing a device** (the Remove device button, or `hearth device remove`) is the policy action
+`device.remove`, dangerous: it asks for the admin password again, and it is audited. The hub takes
+the device's user out of its clients file, keeping the rest of the file and its comments, and out of
+the running broker. That ends the device's connections and refuses its next login. Then the hub
+removes the device. To bring it back, give it a user again and restart the hub. In a cluster, each
+hub changes only its own clients file. If the device's user is in the file of another hub, remove
+it there too, or the device announces itself again. The hub says when its own file had no such user.
+An enrolled device is revoked (`hearth device revoke`), not removed.
 
 ## What the hub logs
 

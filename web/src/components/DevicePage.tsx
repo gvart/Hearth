@@ -28,6 +28,8 @@ import { DeviceUpgrade } from './DeviceUpgrade.tsx';
 import { DeviceExplain } from './DeviceExplain.tsx';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
 import { StatusDot } from './StatusDot.tsx';
+import { protocolFacts } from '../deviceprotocol.ts';
+import { ProtocolDevicePage } from './ProtocolDevicePage.tsx';
 
 /** The current time, re-read every interval so the uptime ticks. */
 function useNow(intervalMs: number) {
@@ -76,6 +78,12 @@ export function DevicePage({ id }: { id: string }) {
         )}
       </main>
     );
+  }
+
+  // A Device Protocol device has no agent, so none of an agent's panels.
+  const protocol = protocolFacts(device);
+  if (protocol) {
+    return <ProtocolDevicePage device={device} facts={protocol} now={now} />;
   }
 
   const f = device.facts;

@@ -226,6 +226,10 @@ curl -b cookies.txt -H 'Content-Type: application/json' \
   https://hub.lan:8443/api/v1/devices/<device id>/commands
 ```
 
+The device's page in the web UI and `hearth device command <device> <command> [--param k=v]` send
+commands through this endpoint. An operator removes a device, and its MQTT user, with
+`DELETE /api/v1/devices/{id}` (`device.remove`, dangerous; see [MQTT](../mqtt.md)).
+
 Each decision is in the audit log, with the device and the command's name, and its outcome (`ok`, or
 the error and the device's message). The params are not: they may hold anything the device takes.
 The hub refuses, before policy, a command the device did not announce or with params that are not
