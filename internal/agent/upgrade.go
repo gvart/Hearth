@@ -4,6 +4,7 @@ package agent
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"bufio"
 	"bytes"
 	"compress/gzip"
@@ -42,6 +43,9 @@ import (
 // hearth in place of its own executable by a rename in the same directory,
 // keeping the old one as <exe>.prev, answers, and exits with ExitUpgraded
 // for systemd (Restart=always) or launchd (KeepAlive) to start the new one.
+// On Windows (#398) the archive is a zip, the running exe is renamed rather
+// than linked (upgrade_swap.go), and the service exits as if it crashed,
+// for the service's recovery actions to start it again (service_windows.go).
 // A hub can so make an agent install an official release, and nothing else.
 //
 // Until the new binary is welcomed by a hub, a marker in the data directory
@@ -110,6 +114,11 @@ type upgrader struct {
 	refusal string
 	// target is the release archive's os_arch.
 	target string
+	// goos is the platform whose archive and swap the upgrade uses:
+	// runtime.GOOS ("" is Linux's and macOS's), another in tests.
+	goos string
+	// ops are the file calls of the swap; zero for the os package's.
+	ops fileOps
 	// base is the release base URL, without a trailing slash.
 	base string
 	// client downloads the release: a plain client, never the mTLS one,
@@ -150,6 +159,10 @@ func newUpgrader(exe, dataDir, current, mirror string, localCeiling bool, getenv
 		timeout: upgradeTimeout, noHub: noHubRollback,
 		refusal: selfUpgradeRefusal(runtime.GOOS, localCeiling, getenv),
 		target:  releaseTarget(runtime.GOOS, runtime.GOARCH, goarm()),
+		goos:    runtime.GOOS,
+	}
+	if u.refusal == "" {
+		u.refusal = selfRestartRefusal()
 	}
 	key, err := release.TrustedKey()
 	if err != nil && u.refusal == "" {
@@ -207,9 +220,7 @@ func selfUpgradeRefusal(goos string, localCeiling bool, getenv func(string) stri
 		return "self-upgrade is turned off on this device (HEARTH_NO_SELF_UPGRADE)"
 	case localCeiling:
 		return "this agent runs with --local-ceiling, so the hub cannot change it: upgrade it on the device with the installer"
-	case goos == "windows":
-		return "an agent on Windows does not upgrade itself yet: re-run the installer on the device"
-	case goos != "linux" && goos != "darwin":
+	case goos != "linux" && goos != "darwin" && goos != "windows":
 		return "an agent on " + goos + " does not upgrade itself"
 	}
 	return ""
@@ -276,7 +287,7 @@ func (u *upgrader) upgrade(ctx context.Context, req *agentv1.UpgradeRequest) *ag
 	}
 	ctx, cancel := context.WithTimeout(ctx, u.timeout)
 	defer cancel()
-	name := "hearth_" + strings.TrimPrefix(version, "v") + "_" + u.target + ".tar.gz"
+	name := releaseArchive(u.goos, version, u.target)
 	res.Url = u.base + "/" + version + "/" + name
 	sum, err := u.checksum(ctx, version, name)
 	if err != nil {
@@ -369,7 +380,7 @@ func (u *upgrader) checksum(ctx context.Context, version, name string) (string, 
 // install downloads the archive at url, checks it against sum and puts its
 // binary in place, and returns the version that binary reports.
 func (u *upgrader) install(ctx context.Context, version, url, sum string) (string, error) {
-	archive, err := os.CreateTemp("", "hearth-upgrade-*.tar.gz")
+	archive, err := os.CreateTemp("", "hearth-upgrade-*"+filepath.Ext(url))
 	if err != nil {
 		return "", fmt.Errorf("create a temporary file: %w", err)
 	}
@@ -382,7 +393,7 @@ func (u *upgrader) install(ctx context.Context, version, url, sum string) (strin
 	}
 
 	dir := filepath.Dir(u.exe)
-	next, err := os.CreateTemp(dir, ".hearth.new-*")
+	next, err := os.CreateTemp(dir, newBinaryPattern(u.goos))
 	if err != nil {
 		return "", fmt.Errorf("write next to %s: %w%s", u.exe, err, readOnlyHint(err))
 	}
@@ -393,7 +404,12 @@ func (u *upgrader) install(ctx context.Context, version, url, sum string) (strin
 			_ = os.Remove(next.Name())
 		}
 	}()
-	if err := u.extract(ctx, archive, next); err != nil {
+	if u.goos == "windows" {
+		err = u.extractZip(ctx, archive, next)
+	} else {
+		err = u.extract(ctx, archive, next)
+	}
+	if err != nil {
 		return "", err
 	}
 	if err := next.Chmod(0o755); err != nil {
@@ -413,12 +429,9 @@ func (u *upgrader) install(ctx context.Context, version, url, sum string) (strin
 		return "", fmt.Errorf("the archive's binary reports version %q, not %s", got, version)
 	}
 
-	prev := u.exe + ".prev"
-	if err := os.Remove(prev); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return "", fmt.Errorf("remove the old backup %s: %w", prev, err)
-	}
-	if err := os.Link(u.exe, prev); err != nil {
-		return "", fmt.Errorf("keep the current binary as %s: %w", prev, err)
+	files := u.files()
+	if err := files.backup(u.goos, u.exe); err != nil {
+		return "", err
 	}
 	// No rollback of this binary's own upgrade may run past this point: it
 	// would put an older binary over the one going in.
@@ -431,13 +444,21 @@ func (u *upgrader) install(ctx context.Context, version, url, sum string) (strin
 	if err := writePending(u.dataDir, pendingUpgrade{From: u.current, To: version}); err != nil {
 		return "", fmt.Errorf("write the upgrade marker: %w", err)
 	}
-	if err := os.Rename(next.Name(), u.exe); err != nil {
+	if err := files.replace(u.goos, u.exe, next.Name()); err != nil {
 		_ = os.Remove(filepath.Join(u.dataDir, upgradePendingFile))
-		return "", fmt.Errorf("put the new binary in place: %w", err)
+		return "", err
 	}
 	keep = true
 	syncDir(dir)
 	return got, nil
+}
+
+// files are the file calls of the swap: u.ops, or the os package's.
+func (u *upgrader) files() fileOps {
+	if u.ops.rename == nil {
+		return osFileOps(u.goos)
+	}
+	return u.ops
 }
 
 // syncDir flushes dir's entries, so a rename in it survives a power cut. It
@@ -539,6 +560,51 @@ func (u *upgrader) extract(ctx context.Context, archive io.Reader, out io.Writer
 	}
 }
 
+// maxZipEntries caps the entries of a release zip looked through.
+const maxZipEntries = 64
+
+// extractZip copies the hearth.exe of the zip archive f (a Windows
+// release) to out, reading no more than maxUnpacked bytes out of it, and
+// at most maxBinary, whatever the zip's headers say, until ctx is done.
+func (u *upgrader) extractZip(ctx context.Context, f *os.File, out io.Writer) error {
+	st, err := f.Stat()
+	if err != nil {
+		return fmt.Errorf("read the archive: %w", err)
+	}
+	zr, err := zip.NewReader(f, st.Size())
+	if err != nil {
+		return fmt.Errorf("read the archive: %w", err)
+	}
+	if len(zr.File) > maxZipEntries {
+		return fmt.Errorf("the archive holds %d files, over %d: refused", len(zr.File), maxZipEntries)
+	}
+	for _, zf := range zr.File {
+		if strings.TrimPrefix(zf.Name, "./") != releaseBinary("windows") || !zf.Mode().IsRegular() {
+			continue
+		}
+		if zf.UncompressedSize64 > uint64(u.maxBinary) { //nolint:gosec // maxBinary is positive
+			return fmt.Errorf("the archive's hearth.exe is larger than %d MiB: refused", u.maxBinary>>20)
+		}
+		rc, err := zf.Open()
+		if err != nil {
+			return fmt.Errorf("read the archive: %w", err)
+		}
+		defer func() { _ = rc.Close() }()
+		n, err := io.Copy(out, io.LimitReader(&unpackReader{ctx: ctx, r: rc, left: u.maxUnpacked}, u.maxBinary+1))
+		if errors.Is(err, errUnpackedTooLarge) {
+			return fmt.Errorf("the archive unpacks to more than %d MiB: refused", u.maxUnpacked>>20)
+		}
+		if err != nil {
+			return fmt.Errorf("extract hearth.exe: %w", err)
+		}
+		if n > u.maxBinary {
+			return fmt.Errorf("the archive's hearth.exe is larger than %d MiB: refused", u.maxBinary>>20)
+		}
+		return nil
+	}
+	return errors.New("the archive holds no hearth.exe")
+}
+
 // binaryVersion runs `path version` and returns the version it prints
 // first ("hearth v0.1.0").
 func binaryVersion(ctx context.Context, path string) (string, error) {
@@ -631,6 +697,12 @@ func (u *upgrader) started(ctx context.Context, log *slog.Logger) error {
 	if u == nil || u.dataDir == "" {
 		return nil
 	}
+	if u.exe != "" {
+		// What a rollback on Windows moved aside, not running any more.
+		if err := u.files().removeIfThere(u.exe + failedSuffix); err != nil {
+			log.WarnContext(ctx, "remove a rolled back binary", "err", err)
+		}
+	}
 	path := filepath.Join(u.dataDir, upgradePendingFile)
 	u.readRollback(ctx, log, path)
 	b, err := os.ReadFile(path)
@@ -692,7 +764,7 @@ func (u *upgrader) rollBack(ctx context.Context, log *slog.Logger, p pendingUpgr
 	if u.exe == "" {
 		return nil
 	}
-	if err := os.Rename(u.exe+".prev", u.exe); err != nil {
+	if err := u.files().restore(u.goos, u.exe); err != nil {
 		log.ErrorContext(ctx, "the upgraded agent reached no hub, and the previous binary cannot be put back", "err", err)
 		return nil
 	}

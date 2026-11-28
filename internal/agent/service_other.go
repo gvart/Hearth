@@ -14,3 +14,8 @@ import (
 func RunService(ctx context.Context, logOut io.Writer, run func(ctx context.Context, logOut io.Writer) error) error {
 	return run(ctx, logOut)
 }
+
+// selfRestartRefusal says why the agent cannot upgrade itself here: never,
+// off Windows. systemd (Restart=always) or launchd (KeepAlive) starts the
+// new binary, and an agent run another way is upgraded by whoever runs it.
+func selfRestartRefusal() string { return "" }

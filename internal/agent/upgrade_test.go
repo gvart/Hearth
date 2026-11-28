@@ -94,8 +94,9 @@ type fakeReleaseFiles struct {
 	// checksums, and noSig for a 404.
 	sig       string
 	noSig     bool
-	chunked   bool // no Content-Length on the archive
-	noArchive bool // a 404 for the archive
+	chunked   bool   // no Content-Length on the archive
+	noArchive bool   // a 404 for the archive
+	asset     string // the archive's name, if not assetName's
 }
 
 // releaseFor is the release of version for target holding archive, its
@@ -122,7 +123,7 @@ func releaseServer(t *testing.T, rel fakeReleaseFiles) string {
 				sig = release.Sign(testReleaseKey, []byte(rel.checksums))
 			}
 			_, _ = w.Write(sig)
-		case r.URL.Path == "/"+rel.version+"/"+assetName(rel.version, rel.target) && !rel.noArchive:
+		case r.URL.Path == "/"+rel.version+"/"+cmp.Or(rel.asset, assetName(rel.version, rel.target)) && !rel.noArchive:
 			if rel.chunked {
 				// No Content-Length: the cap must hold while reading.
 				w.(http.Flusher).Flush()
@@ -785,7 +786,7 @@ func TestSelfUpgradeRefusal(t *testing.T) {
 		{"linux", false, env("KUBERNETES_SERVICE_HOST", "10.96.0.1"), "Kubernetes"},
 		{"linux", false, env("HEARTH_NO_SELF_UPGRADE", "1"), "turned off"},
 		{"linux", true, env(), "--local-ceiling"},
-		{"windows", false, env(), "Windows"},
+		{"windows", false, env(), ""},
 		{"android", false, env(), "android"},
 	}
 	for _, tt := range tests {

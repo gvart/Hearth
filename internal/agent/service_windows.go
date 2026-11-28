@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -42,6 +43,17 @@ func RunService(ctx context.Context, logOut io.Writer, run func(ctx context.Cont
 	return h.err
 }
 
+// selfRestartRefusal says why the agent cannot upgrade itself here: only
+// the service manager starts the new binary once the agent exits, so an
+// agent not running as the service (one started from a shell) does not.
+func selfRestartRefusal() string {
+	if ok, err := svc.IsWindowsService(); err != nil || !ok {
+		return "this agent does not run as the " + ServiceName + " service, so nothing would start the new binary: " +
+			"upgrade it on the device with the installer"
+	}
+	return ""
+}
+
 // serviceHandler is the agent as a Windows service.
 type serviceHandler struct {
 	ctx    context.Context
@@ -61,6 +73,10 @@ func (h *serviceHandler) Execute(_ []string, reqs <-chan svc.ChangeRequest, stat
 	for {
 		select {
 		case err := <-done:
+			if errors.Is(err, ErrUpgraded) {
+				cancel()
+				exitForRestart()
+			}
 			return h.exit(err)
 		case r := <-reqs:
 			switch r.Cmd {
@@ -81,13 +97,24 @@ func (h *serviceHandler) Execute(_ []string, reqs <-chan svc.ChangeRequest, stat
 	}
 }
 
-// exit is the service's exit code for why run returned: none after a stop,
-// ExitRevoked for a revoked device, 1 for any other error. The service's
-// recovery actions restart it only after a crash, so neither code restarts
-// it: as on Linux, a revoked device stays stopped.
+// exitForRestart ends the process after an upgrade (or a rollback) put
+// another binary in place: it exits with ExitUpgraded without reporting
+// the service stopped, which the service manager takes for a crash, so its
+// recovery actions (`hearth agent service install` sets a restart after
+// 5 s) start the binary now in place. It works for a service installed
+// before, and leaves every other exit as it was.
+func exitForRestart() {
+	os.Exit(ExitUpgraded)
+}
+
+// exit is the service's exit code for why run returned: none after a stop
+// (an upgrade that ends with a stop too: the new binary runs at the next
+// start), ExitRevoked for a revoked device, 1 for any other error. The
+// service's recovery actions restart it only after a crash, so neither code
+// restarts it: as on Linux, a revoked device stays stopped.
 func (h *serviceHandler) exit(err error) (bool, uint32) {
 	switch {
-	case err == nil || errors.Is(err, context.Canceled):
+	case err == nil || errors.Is(err, context.Canceled) || errors.Is(err, ErrUpgraded):
 		return false, 0
 	case errors.Is(err, ErrRevoked):
 		h.err = err
