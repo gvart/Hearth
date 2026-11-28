@@ -289,31 +289,31 @@ func checkAnnounce(a *Announce) error {
 		return fmt.Errorf("more than %d commands", MaxCommands)
 	}
 	seen := map[string]bool{}
-	for _, e := range a.Entities {
+	for i, e := range a.Entities {
 		switch {
 		case !ValidID(e.ID):
-			return fmt.Errorf("entity id %q is not a valid id", e.ID)
+			return fmt.Errorf("entities[%d]: id is not a valid id", i)
 		case seen[e.ID]:
-			return fmt.Errorf("entity %q is listed twice", e.ID)
+			return fmt.Errorf("entities[%d]: id is listed twice", i)
 		case len(e.Name) > MaxText || len(e.Unit) > MaxText:
-			return fmt.Errorf("entity %q: name or unit longer than %d bytes", e.ID, MaxText)
+			return fmt.Errorf("entities[%d]: name or unit longer than %d bytes", i, MaxText)
 		}
 		switch e.Kind {
 		case EntitySensor, EntityBinarySensor, EntitySwitch, EntityButton:
 		default:
-			return fmt.Errorf("entity %q: kind %q is not sensor, binary_sensor, switch or button", e.ID, e.Kind)
+			return fmt.Errorf("entities[%d]: kind is not sensor, binary_sensor, switch or button", i)
 		}
 		seen[e.ID] = true
 	}
 	seen = map[string]bool{}
-	for _, c := range a.Commands {
+	for i, c := range a.Commands {
 		switch {
 		case !validCommandName(c.Name):
-			return fmt.Errorf("command name %q is not a valid name", c.Name)
+			return fmt.Errorf("commands[%d]: name is not a valid name", i)
 		case seen[c.Name]:
-			return fmt.Errorf("command %q is listed twice", c.Name)
+			return fmt.Errorf("commands[%d]: name is listed twice", i)
 		case len(c.Description) > MaxText:
-			return fmt.Errorf("command %q: description longer than %d bytes", c.Name, MaxText)
+			return fmt.Errorf("commands[%d]: description longer than %d bytes", i, MaxText)
 		}
 		seen[c.Name] = true
 	}
@@ -329,16 +329,16 @@ func checkState(s map[string]any) error {
 	}
 	for k, v := range s {
 		if !ValidID(k) {
-			return fmt.Errorf("entity id %q is not a valid id", k)
+			return errors.New("a key is not a valid entity id")
 		}
 		switch v := v.(type) {
 		case nil, bool, float64:
 		case string:
 			if len(v) > MaxText {
-				return fmt.Errorf("value of %q longer than %d bytes", k, MaxText)
+				return fmt.Errorf("a string value is longer than %d bytes", MaxText)
 			}
 		default:
-			return fmt.Errorf("value of %q must be a boolean, number, string or null", k)
+			return errors.New("a value is not a boolean, number, string or null")
 		}
 	}
 	return nil
@@ -353,10 +353,10 @@ func checkTelemetry(values map[string]float64) error {
 	}
 	for k, v := range values {
 		if !ValidID(k) {
-			return fmt.Errorf("reading id %q is not a valid id", k)
+			return errors.New("a key is not a valid id")
 		}
 		if math.IsNaN(v) || math.IsInf(v, 0) {
-			return fmt.Errorf("reading %q is not a finite number", k)
+			return errors.New("a reading is not a finite number")
 		}
 	}
 	return nil
@@ -380,7 +380,7 @@ func validCommandID(s string) bool {
 // announced is the caller's to check; here, its form and its params.
 func CheckCommand(name string, params json.RawMessage) error {
 	if !validCommandName(name) {
-		return fmt.Errorf("%w: command name %q is not a valid name", ErrInvalid, name)
+		return fmt.Errorf("%w: the command name is not a valid name", ErrInvalid)
 	}
 	if len(params) == 0 {
 		return nil
