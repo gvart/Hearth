@@ -1,0 +1,21 @@
+web/src/tips.ts
+  s_18b57982fdff93::t_f593868a85933e 152-154
+cmd/hearth/device.go
+  s_18b57982fdff93::t_88bb46b2a83c58 44-45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "b32eb359db6375437f9bbd17c7551ee52f205f05",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
