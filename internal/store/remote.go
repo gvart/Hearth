@@ -474,15 +474,6 @@ func mergeRows(g gather, parts []Rows) ([][]any, []RowRef) {
 	return out, repair
 }
 
-// shardedOnly returns v in a sharded cluster, "" elsewhere: for command
-// fields only a sharded cluster routes by.
-func (s *Store) shardedOnly(v string) string {
-	if s.shards == nil {
-		return ""
-	}
-	return v
-}
-
 // Ordering helpers for gather.order, over the merged rows' own columns.
 
 // byText orders by the text column i, ascending.

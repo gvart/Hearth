@@ -37,15 +37,15 @@ var ErrRunbookRunConflict = errors.New("runbook run changed since it was read")
 // already has RunbookRunsKept runs only an operator can resolve.
 var ErrRunbookRunsUnresolved = errors.New("too many runs of this runbook await an operator's decision")
 
-// ErrNoMajority refuses a runbook run's save on a cluster member that reaches
-// no strict majority of the run's replicas: on the minority side of a split
-// (#307). Nothing is written, so no step runs. It is also ErrUnavailable.
+// ErrNoMajority refuses a runbook run's start or save on a master that reaches
+// no strict majority of the masters: on the minority side of a split (#307,
+// #387). Nothing is written, so no step runs. It is also ErrUnavailable.
 var ErrNoMajority error = noMajority{}
 
 type noMajority struct{}
 
 func (noMajority) Error() string {
-	return "cluster split: runbook steps need a majority of replicas; retry when the cluster heals"
+	return "cluster split: runbook steps need a majority of masters; retry when the cluster heals"
 }
 
 func (noMajority) Is(target error) bool { return target == ErrUnavailable }
@@ -132,7 +132,6 @@ func (r RunbookRuns) Save(ctx context.Context, run RunbookRun) (int64, error) {
 	if _, err := r.s.apply(ctx, SaveRunbookRun{
 		ID: run.ID, Version: run.Version, Status: run.Status,
 		UpdatedAt: toMillis(run.UpdatedAt), FinishedAt: finished, State: string(run.State),
-		RunbookID: r.s.shardedOnly(run.RunbookID),
 	}); err != nil {
 		return 0, fmt.Errorf("save runbook run %s: %w", run.ID, err)
 	}
@@ -141,7 +140,7 @@ func (r RunbookRuns) Save(ctx context.Context, run RunbookRun) (int64, error) {
 
 // Get returns one run with its source, or ErrNotFound.
 func (r RunbookRuns) Get(ctx context.Context, id string) (RunbookRun, error) {
-	out, err := r.query(ctx, "", gather{}, `source`, `id = ?`, ``, id)
+	out, err := r.query(ctx, `source`, `id = ?`, ``, id)
 	if err != nil {
 		return RunbookRun{}, fmt.Errorf("get runbook run %s: %w", id, err)
 	}
@@ -157,8 +156,7 @@ func (r RunbookRuns) List(ctx context.Context, runbookID string, limit int) ([]R
 	if limit <= 0 {
 		return nil, errors.New("list runbook runs: limit must be positive")
 	}
-	out, err := r.query(ctx, runbookID, gather{order: then(desc(byInt(5)), desc(byText(0))), limit: limit},
-		`x''`, `? = '' OR runbook_id = ?`, `ORDER BY started_at DESC, rowid DESC LIMIT ?`,
+	out, err := r.query(ctx, `x''`, `? = '' OR runbook_id = ?`, `ORDER BY started_at DESC, rowid DESC LIMIT ?`,
 		runbookID, runbookID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list runbook runs: %w", err)
@@ -169,8 +167,7 @@ func (r RunbookRuns) List(ctx context.Context, runbookID string, limit int) ([]R
 // Open returns every run the engine has work on, oldest first: not finished,
 // and not stopped for an operator's decision. Before schema 16 there are none.
 func (r RunbookRuns) Open(ctx context.Context) ([]RunbookRun, error) {
-	out, err := r.query(ctx, "", gather{order: then(byInt(5), byText(0))},
-		`x''`, `finished_at = 0 AND status NOT IN (`+runbookRunsStopped+`)`, `ORDER BY started_at, rowid`)
+	out, err := r.query(ctx, `x''`, `finished_at = 0 AND status NOT IN (`+runbookRunsStopped+`)`, `ORDER BY started_at, rowid`)
 	if err != nil {
 		return nil, fmt.Errorf("list open runbook runs: %w", err)
 	}
@@ -182,8 +179,9 @@ const runbookRunColumns = `id, runbook_id, status, version, started_by, started_
 // query selects runbookRunColumns and source (the column, or an empty blob)
 // of the runs matching where, then tail (an ORDER BY or LIMIT clause). The
 // clauses are constants of this file's callers; values are bound. Before
-// schema 16 it finds none.
-func (r RunbookRuns) query(ctx context.Context, key string, g gather, source, where, tail string, args ...any) ([]RunbookRun, error) {
+// schema 16 it finds none. Runs are master rows (#387): a master reads its
+// own copy, and a member without the hub CA key holds none.
+func (r RunbookRuns) query(ctx context.Context, source, where, tail string, args ...any) ([]RunbookRun, error) {
 	v, err := schemaVersion(ctx, r.s.db)
 	if err != nil {
 		return nil, err
@@ -193,8 +191,7 @@ func (r RunbookRuns) query(ctx context.Context, key string, g gather, source, wh
 	}
 	rest := ` FROM runbook_runs WHERE (` + where + `)` +
 		liveOnly(v >= VersionedSchema) + ` ` + tail
-	g.table = "runbook_runs"
-	rows, err := r.s.list(ctx, key, g, `SELECT `+runbookRunColumns+`, `+source, rest, args...)
+	rows, err := r.s.list(ctx, "", gather{table: "runbook_runs"}, `SELECT `+runbookRunColumns+`, `+source, rest, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -265,9 +262,9 @@ func (c CreateRunbookRun) apply(ctx context.Context, w *writer) (Result, error) 
 
 // SaveRunbookRun replaces a run's status and state if it is still at Version.
 // The check is made inside apply, so of two hubs saving from one version
-// exactly one wins on the replica that runs both. In a sharded cluster that
-// is the run's first live replica, which first copies the newest version of
-// the run from the others (ReadsOf), and the save is critical. It fails with
+// exactly one wins on the master that runs both. In a sharded cluster that
+// is the first live master, which first copies the newest version of the
+// run from a majority of the masters (ReadsOf, #387). It fails with
 // ErrRunbookRunConflict or ErrNotFound.
 type SaveRunbookRun struct {
 	Stamp
@@ -277,9 +274,6 @@ type SaveRunbookRun struct {
 	UpdatedAt  int64  `json:"updated_at"`
 	FinishedAt int64  `json:"finished_at"`
 	State      string `json:"state"`
-	// RunbookID routes the command to the run's replicas in a sharded
-	// cluster, which shards runs by runbook; apply does not read it.
-	RunbookID string `json:"runbook_id,omitempty"`
 }
 
 // Op implements Command.

@@ -142,7 +142,9 @@ CA key.
 | E | A member claiming the master role on the gossip | Roles on the gossip decide nothing. A peer proves it is a master by signing the connection's TLS exporter with the CA key. Global rows, `apply` and master-to-master calls are taken only from a peer that proved it | [cluster.md](cluster.md#who-may-write-what), `internal/cluster/replauth.go` |
 | I | A storage member reading or forging sessions and tokens | Sessions, MCP and dashboard tokens, panels and share links live on masters only, sent only to a peer that proved the key. Reads from an unproven peer run under an SQLite authorizer that excludes them | [cluster.md](cluster.md#who-may-write-what), `internal/cluster/mastertables.go` |
 | E | A storage member minting a master join token | The owner master acts on its own record, not the row; what a token grants comes from the record | [cluster.md](cluster.md#who-may-write-what), `internal/cluster/owned.go` |
-| T | A storage member rewriting sharded rows | **Not mitigated yet**: see residual risks ([#387](https://github.com/gvart/hearth/issues/387)) | [cluster.md](cluster.md#who-may-write-what) |
+| T | A storage member rewriting runbook runs | Runbook runs live on masters only; a run starts and moves on only with a majority of the masters that prove the key, decided on one master | [cluster.md](cluster.md#who-may-write-what), `internal/cluster/replicate.go` |
+| T | A storage member forging a certificate's revocation state or pin | A certificate check and a fingerprint read ask every live replica: any revocation wins, and replicas that record different fingerprints decide nothing. A fingerprint is set once on merge | [cluster.md](cluster.md#who-may-write-what), `internal/store/certs.go`, `internal/store/pins.go` |
+| T | A storage member rewriting other sharded rows | **Not mitigated yet** for audit entries and the device, presence and run-history rows: see residual risks ([#387](https://github.com/gvart/hearth/issues/387)) | [cluster.md](cluster.md#who-may-write-what) |
 
 ### 6. Agents and devices
 
@@ -153,7 +155,7 @@ CA key.
 | E | A hub, even a compromised one, running anything on a device | The agent runs only what its ceiling allows, nothing by default; it checks every pushed ceiling and every request itself. `--local-ceiling` makes the hub unable to raise it | [guardrails.md](guardrails.md#device-capability-ceiling), `internal/agent/ceiling.go` |
 | E | A hub making an agent install arbitrary code | The hub names a release version only. The agent builds the URLs itself and checks an Ed25519 signature with a compiled-in key, then the SHA-256 and the version. No downgrades | [security.md](security.md#remote-agent-upgrades), `internal/agent/upgrade.go`, `internal/release/key.go` |
 | E | A compromised device reaching other devices | Agents dial out and open no ports. A device certificate is refused on the cluster port. Commands go to a device only through policy on a master | [security.md](security.md#rules) |
-| S | A revoked device reconnecting | Certificates are revoked, the agent is disconnected within 10 s. But see [#387](https://github.com/gvart/hearth/issues/387) for the read path | [security.md](security.md#revoking-an-enrollment-token) |
+| S | A revoked device reconnecting | Certificates are revoked, the agent is disconnected within 10 s. A check asks every live replica and any revocation wins ([#387](https://github.com/gvart/hearth/issues/387)) | [security.md](security.md#revoking-an-enrollment-token), `internal/store/certs.go` |
 | T | Shell injection through command arguments | Commands are a program plus arguments run with `exec`, never a shell | [automations.md](automations.md#actions-on-devices-and-webhooks) |
 
 ### 7. Plugins
@@ -216,11 +218,15 @@ what the hub may ask, not what the program does.
 
 Open issues and documented gaps, as of v0.0.1-rc.12:
 
-- **A compromised storage-only member can rewrite the sharded rows it holds**
-  ([#387](https://github.com/gvart/hearth/issues/387)): it can answer "not revoked" for a revoked
-  device certificate, change which step of a runbook run comes next, hide, change or invent audit
-  entries, and mislead the devices list and run history of its buckets. Until signed row versions land,
-  run storage-only members only on hosts you trust as much as masters.
+- **A compromised storage-only member can still rewrite some sharded rows it holds**
+  ([#387](https://github.com/gvart/hearth/issues/387)): it can hide, change or invent audit entries,
+  and mislead the devices list and run history of its buckets. It can make a master refuse a device
+  (answer "revoked") or have a hub CA rotation not renew one (answer another fingerprint), set the pin
+  of a certificate issued before fingerprints were recorded and not pinned since, and it decides a
+  certificate check or pin alone while it is the only live replica that answers. It can no longer
+  un-revoke a certificate, have a forged one taken as pinned, or touch runbook runs, which live on
+  masters only. Until signed row versions land, run storage-only members only on hosts you trust as
+  much as masters for the audit log.
 - **Leftovers of masters-only tables** ([#389](https://github.com/gvart/hearth/issues/389)): edge cases
   of share-link revocation on a master that missed the panel, and untested branches.
 - **No Byzantine tolerance between hubs.** The cluster tolerates crashes and splits, not lying members.

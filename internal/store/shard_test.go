@@ -58,14 +58,24 @@ func TestRouteOfEveryCommand(t *testing.T) {
 		}
 	}
 	// A sharded cluster re-seals one secret per command, a runbook run's on
-	// its runbook's replicas.
+	// the masters, by a majority of them (#387).
 	two := ResealSecrets{Secrets: []SealedSecret{{Table: SealedKubeClusters, ID: "a"}, {Table: SealedKubeClusters, ID: "b"}}}
 	if _, err := RouteOf(two); !errors.Is(err, ErrNoRoute) {
 		t.Errorf("reseal_secrets of two: err = %v, want ErrNoRoute", err)
 	}
-	run := ResealSecrets{Secrets: []SealedSecret{{Table: SealedRunbookRuns, ID: "r1", Key: "rb"}}}
-	if r, err := RouteOf(run); err != nil || r.Kind != RouteKey || r.Key != "rb" || !r.Critical {
-		t.Errorf("reseal_secrets of a run: %+v, %v; want critical on its runbook", r, err)
+	run := ResealSecrets{Secrets: []SealedSecret{{Table: SealedRunbookRuns, ID: "r1"}}}
+	if r, err := RouteOf(run); err != nil || r.Kind != RouteGlobal || !r.Master || !r.Majority {
+		t.Errorf("reseal_secrets of a run: %+v, %v; want on the masters, by a majority", r, err)
+	}
+	// A run's start and saves too; a save is decided on one master.
+	for _, cmd := range []Command{CreateRunbookRun{ID: "r1", RunbookID: "rb"}, SaveRunbookRun{ID: "r1"}} {
+		r, err := RouteOf(cmd)
+		if err != nil || r.Kind != RouteGlobal || !r.Master || !r.Majority || r.Critical {
+			t.Errorf("%s: %+v, %v; want on the masters, by a majority", cmd.Op(), r, err)
+		}
+		if _, save := cmd.(SaveRunbookRun); r.First != save {
+			t.Errorf("%s: First %v, want %v", cmd.Op(), r.First, save)
+		}
 	}
 }
 

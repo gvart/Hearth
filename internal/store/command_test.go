@@ -124,7 +124,7 @@ func allCommands() []Command {
 			ID: "rr1", RunbookID: "rb", Status: "running", StartedBy: "admin/root", StartedAt: 35,
 			Source: []byte("steps: []"), State: `{"step":0}`, Keep: 100,
 		},
-		SaveRunbookRun{ID: "rr1", Version: 1, Status: "succeeded", UpdatedAt: 36, FinishedAt: 36, State: `{"step":1}`, RunbookID: "rb"},
+		SaveRunbookRun{ID: "rr1", Version: 1, Status: "succeeded", UpdatedAt: 36, FinishedAt: 36, State: `{"step":1}`},
 	}
 }
 
