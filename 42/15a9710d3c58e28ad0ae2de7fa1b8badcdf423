@@ -1,0 +1,54 @@
+internal/agent/service_other.go
+  s_18b57982fdff93::t_931f2215586f7b 17-21
+internal/agent/upgrade.go
+  s_18b57982fdff93::t_11f87c8245f32a 396
+  s_18b57982fdff93::t_e68ffa5c8a41d0 46-48
+  s_18b57982fdff93::t_d05c8f27bcf918 117-121
+  s_18b57982fdff93::t_9289d44b3cba51 290
+  s_18b57982fdff93::t_2793fdded8244b 407-412
+  s_18b57982fdff93::t_6118ca3c087768 162-165
+  s_18b57982fdff93::t_20bd36bb9c3377 7,383
+  s_18b57982fdff93::t_ac9cb3220e14ed 432-434
+  s_18b57982fdff93::t_dc9061667336eb 462,563-607
+  s_18b57982fdff93::t_d8600159fb0deb 767
+  s_18b57982fdff93::t_9816f527d66490 447,449,456-461
+  s_18b57982fdff93::t_5b7664a28716b4 700-705
+  s_18b57982fdff93::t_d9a91f3ca126d6 223
+  s_18b57982fdff93::t_4ff990426a227f 463
+internal/agent/upgrade_swap_test.go
+  s_18b57982fdff93::t_5d4f9308c2df90 1-297
+internal/hub/upgrade.go
+  s_18b57982fdff93::t_c8a930a989d8e9 32-33
+internal/hub/upgrade_target_test.go
+  s_18b57982fdff93::t_e78e71c29b7a84 1-17
+internal/agent/upgrade_test.go
+  s_18b57982fdff93::t_b2fdbd7314bf3f 97-98
+  s_18b57982fdff93::t_9fec530998bf9c 126
+  s_18b57982fdff93::t_1fb6aecd55bf50 99,789
+internal/agent/upgrade_swap.go
+  s_18b57982fdff93::t_649fb929ae74db 1-149
+internal/agent/service_windows.go
+  s_18b57982fdff93::t_e407e179308ff0 46-56
+  s_18b57982fdff93::t_602c57c2471c04 10
+  s_18b57982fdff93::t_1ca409b71ea77d 76-79,100-114,117
+docs/getting-started.md
+  s_18b57982fdff93::t_d7465f8dcecd87 203
+  s_18b57982fdff93::t_58f80a3cdd15c7 279-280
+  s_18b57982fdff93::t_e059fc943c36d2 196-202,204-207
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "4215a9710d3c58e28ad0ae2de7fa1b8badcdf423",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
