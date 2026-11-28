@@ -9,7 +9,7 @@ export const sections = [
 	{ label: 'Start here', pages: ['getting-started', 'concepts', 'comparison'] },
 	{ label: 'Automations', pages: ['automations', 'runbooks', 'runbook-recipes', 'notifications'] },
 	{ label: 'Integrations', pages: ['logs', 'prometheus', 'kubernetes', 'proxmox', 'esphome', 'openwrt', 'opnsense', 'unifi', 'discovery', 'net-edges', 'docker', 'pihole', 'netalertx', 'beszel', 'talos', 'homepage', 'mcp', 'plugins', 'mqtt'] },
-	{ label: 'Operating', pages: ['terminal', 'guardrails', 'panels', 'https', 'cluster', 'backup', 'security', 'telemetry'] },
+	{ label: 'Operating', pages: ['terminal', 'guardrails', 'panels', 'https', 'cluster', 'backup', 'security', 'threat-model', 'telemetry'] },
 ];
 
 export const pages = sections.flatMap((s) => s.pages);
