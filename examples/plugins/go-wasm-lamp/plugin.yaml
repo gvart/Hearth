@@ -1,0 +1,22 @@
+# Example Hearth WASM plugin in Go, written with pkg/sdk. See docs/plugins.md.
+# Build the module next to this file first: GOOS=wasip1 GOARCH=wasm go build -o lamp.wasm .
+protocol: 1
+name: go-wasm-lamp
+version: 0.1.0
+runtime: wasm
+command: ./lamp.wasm
+# sha256: <the module's SHA-256>   # pins the module: the hub refuses any other
+memory: 32                          # MiB
+capabilities: [discover, state, command]
+commands:
+  - name: turn_on
+    class: safe
+    description: Turn the lamp on
+  - name: turn_off
+    class: safe
+    description: Turn the lamp off
+# To drive a real relay, pass its URL and allow its host:
+# args: ["http://192.168.1.40/relay/0"]
+# host:
+#   http:
+#     allow: ["192.168.1.40:80"]

@@ -110,6 +110,9 @@ func ParseManifest(b []byte) (Manifest, error) {
 	if m.Command == "" {
 		m.Command = m.Name // ignored on a device; Validate wants one
 	}
+	if m.Runtime != "" && m.Runtime != RuntimeExec {
+		return Manifest{}, fmt.Errorf("plugin manifest: runtime %q: a device plugin is an exec plugin (WASM plugins run on the hub only)", m.Runtime)
+	}
 	if err := m.Validate(); err != nil {
 		return Manifest{}, fmt.Errorf("plugin manifest: %w", err)
 	}
@@ -140,6 +143,9 @@ func (m Manifest) CommandClass(command string) (policy.Class, bool) {
 func RunOnce(ctx context.Context, m Manifest, pin string, req CommandRequest, o Options) (CommandResult, error) {
 	if err := m.Validate(); err != nil {
 		return CommandResult{}, fmt.Errorf("plugin %s: %w", m.Name, err)
+	}
+	if m.IsWasm() {
+		return CommandResult{}, fmt.Errorf("plugin %s: a device plugin is an exec plugin (WASM plugins run on the hub only)", m.Name)
 	}
 	if err := checkRequest(req); err != nil {
 		return CommandResult{}, err

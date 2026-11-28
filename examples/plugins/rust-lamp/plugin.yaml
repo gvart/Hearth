@@ -1,0 +1,16 @@
+# Example Hearth WASM plugin in Rust. See docs/plugins.md.
+# Build the module next to this file first (see Cargo.toml).
+protocol: 1
+name: rust-lamp
+version: 0.1.0
+runtime: wasm
+command: ./lamp.wasm
+memory: 16                          # MiB
+capabilities: [discover, state, command]
+commands:
+  - name: turn_on
+    class: safe
+    description: Turn the lamp on
+  - name: turn_off
+    class: safe
+    description: Turn the lamp off

@@ -58,6 +58,10 @@ type Options struct {
 	MaxLine int
 	// MaxRate is the most lines a plugin may print in a second. Default 200.
 	MaxRate int
+
+	// wasmCache shares compiled WASM modules between the plugins that share
+	// it; withDefaults makes one.
+	wasmCache *wasmCache
 }
 
 func (o Options) withDefaults() Options {
@@ -79,6 +83,9 @@ func (o Options) withDefaults() Options {
 	}
 	if o.MaxRate <= 0 {
 		o.MaxRate = 200
+	}
+	if o.wasmCache == nil {
+		o.wasmCache = &wasmCache{}
 	}
 	return o
 }
@@ -107,6 +114,10 @@ type plugin struct {
 	devices   []Device
 	stderr    []string
 	proc      *proc
+
+	// wasm is a WASM plugin's runtime, once it started; only run's
+	// goroutine and the module's host calls touch it.
+	wasm *wasmRuntime
 }
 
 // proc is one running process of a plugin, once it said hello.
@@ -134,6 +145,7 @@ type pendingReply struct {
 // run runs the plugin until ctx is done, restarting it with backoff
 // whenever it stops.
 func (p *plugin) run(ctx context.Context) {
+	defer p.closeWasm()
 	delay := p.o.BackoffMin
 	for {
 		started := p.now()
@@ -169,35 +181,124 @@ func (p *plugin) setState(state, lastErr string) {
 	p.state, p.lastErr = state, lastErr
 }
 
-// runOnce starts the plugin's process through policy and runs it until it
-// stops or ctx is done. It returns why it stopped.
-func (p *plugin) runOnce(ctx context.Context) error {
-	p.setState(StateStarting, "")
-	path, err := p.resolve()
-	if err != nil {
-		return err
-	}
-	// Checked before every start: a restart runs what is on disk now.
-	path, digest, err := p.trustedProgram(path)
-	if err != nil {
-		return err
-	}
-	pctx, cancel := context.WithCancelCause(ctx)
-	defer cancel(nil)
+// running is a started plugin: the hub's ends of its stdio pipes, and how
+// to wait for it and to stop it.
+type running struct {
+	stdin          *os.File
+	stdout, stderr *os.File
+	// wait returns once the plugin stopped, and why.
+	wait func() error
+	// stop kills it; wait still has to be called.
+	stop func()
+	// release, if set, is called once the plugin and the hub's loops ended.
+	release func()
+}
 
-	// The hub holds the pipes itself, so that closing its ends unblocks
-	// every read and write whatever the plugin (or a child it left behind)
-	// does with its own.
-	var pipes []*os.File
+// stdioPipes returns three pipes: the plugin's stdin, stdout and stderr, as
+// (stdin's read end, stdin's write end, stdout's read end, ...). The hub
+// holds them itself, so that closing its ends unblocks every read and write
+// whatever the plugin (or a child it left behind) does with its own.
+func stdioPipes(name string) ([6]*os.File, error) {
+	pipes := make([]*os.File, 0, 6)
 	for range 3 {
 		r, w, err := os.Pipe()
 		if err != nil {
 			for _, f := range pipes {
 				_ = f.Close()
 			}
-			return fmt.Errorf("plugin %s: pipe: %w", p.m.Name, err)
+			return [6]*os.File{}, fmt.Errorf("plugin %s: pipe: %w", name, err)
 		}
 		pipes = append(pipes, r, w)
+	}
+	return [6]*os.File(pipes), nil
+}
+
+// runOnce starts the plugin through policy and runs it until it stops or
+// ctx is done. It returns why it stopped.
+func (p *plugin) runOnce(ctx context.Context) error {
+	p.setState(StateStarting, "")
+	pctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	start := p.startExec
+	if p.m.IsWasm() {
+		start = p.startWasm
+	}
+	// Checked before every start: a restart runs what is on disk now.
+	r, err := start(ctx, pctx)
+	if err != nil {
+		return err
+	}
+	p.mu.Lock()
+	p.startedAt = p.now()
+	p.mu.Unlock()
+
+	pr := &proc{
+		send: make(chan []byte, maxInFlight+8), dead: pctx.Done(), cancel: cancel,
+		pending: map[string]pendingReply{}, slots: make(chan struct{}, maxInFlight),
+	}
+	hello := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		err := r.wait()
+		if err == nil {
+			err = errors.New("exited")
+		}
+		cancel(fmt.Errorf("plugin process: %w", err))
+	})
+	wg.Go(func() { cancel(p.readLoop(pctx, pr, r.stdout, hello)) })
+	wg.Go(func() { p.stderrLoop(r.stderr) })
+	wg.Go(func() { cancel(writeLoop(pctx, pr, r.stdin)) })
+
+	pr.send <- line(message{Type: typeHello, Protocol: ProtocolVersion})
+	t := time.NewTimer(p.o.StartTimeout)
+	select {
+	case <-hello:
+		t.Stop()
+		p.mu.Lock()
+		p.state, p.proc = StateRunning, pr
+		p.mu.Unlock()
+		p.log.InfoContext(ctx, "plugin running", "plugin", p.m.Name, "version", p.m.Version)
+		wg.Go(func() { cancel(p.keepalive(pctx, pr)) })
+	case <-pctx.Done():
+		t.Stop()
+	case <-t.C:
+		cancel(fmt.Errorf("no hello within %s", p.o.StartTimeout))
+	}
+	<-pctx.Done()
+
+	p.mu.Lock()
+	p.proc = nil
+	p.mu.Unlock()
+	// The hub stops a plugin by killing it; closing its ends of the pipes
+	// ends the loops.
+	r.stop()
+	_, _, _ = r.stdin.Close(), r.stdout.Close(), r.stderr.Close()
+	wg.Wait()
+	if r.release != nil {
+		r.release()
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return context.Cause(pctx)
+}
+
+// startExec starts an exec plugin's process through policy.
+func (p *plugin) startExec(ctx, _ context.Context) (*running, error) {
+	path, err := p.resolve()
+	if err != nil {
+		return nil, err
+	}
+	path, digest, err := p.trustedProgram(path)
+	if err != nil {
+		return nil, err
+	}
+	if p.m.SHA256 != "" && digest != p.m.SHA256 {
+		return nil, fmt.Errorf("plugin %s: %s is %s: %w", p.m.Name, path, digest, ErrPinMismatch)
+	}
+	pipes, err := stdioPipes(p.m.Name)
+	if err != nil {
+		return nil, err
 	}
 	inR, inW, outR, outW, errR, errW := pipes[0], pipes[1], pipes[2], pipes[3], pipes[4], pipes[5]
 	// The operator's manifest names the program and its args; no shell.
@@ -222,58 +323,11 @@ func (p *plugin) runOnce(ctx context.Context) error {
 			_ = cmd.Wait()
 		}
 		_, _, _ = inW.Close(), outR.Close(), errR.Close()
-		return fmt.Errorf("start plugin %s: %w", p.m.Name, err)
+		return nil, fmt.Errorf("start plugin %s: %w", p.m.Name, err)
 	}
-	p.mu.Lock()
-	p.startedAt = p.now()
-	p.mu.Unlock()
-
-	pr := &proc{
-		send: make(chan []byte, maxInFlight+8), dead: pctx.Done(), cancel: cancel,
-		pending: map[string]pendingReply{}, slots: make(chan struct{}, maxInFlight),
-	}
-	hello := make(chan struct{})
-	var wg sync.WaitGroup
-	wg.Go(func() {
-		err := cmd.Wait()
-		if err == nil {
-			err = errors.New("exited")
-		}
-		cancel(fmt.Errorf("plugin process: %w", err))
-	})
-	wg.Go(func() { cancel(p.readLoop(pctx, pr, outR, hello)) })
-	wg.Go(func() { p.stderrLoop(errR) })
-	wg.Go(func() { cancel(writeLoop(pctx, pr, inW)) })
-
-	pr.send <- line(message{Type: typeHello, Protocol: ProtocolVersion})
-	t := time.NewTimer(p.o.StartTimeout)
-	select {
-	case <-hello:
-		t.Stop()
-		p.mu.Lock()
-		p.state, p.proc = StateRunning, pr
-		p.mu.Unlock()
-		p.log.InfoContext(ctx, "plugin running", "plugin", p.m.Name, "version", p.m.Version)
-		wg.Go(func() { cancel(p.keepalive(pctx, pr)) })
-	case <-pctx.Done():
-		t.Stop()
-	case <-t.C:
-		cancel(fmt.Errorf("no hello within %s", p.o.StartTimeout))
-	}
-	<-pctx.Done()
-
-	p.mu.Lock()
-	p.proc = nil
-	p.mu.Unlock()
-	// The hub stops a plugin by killing it, with whatever it started in its
-	// process group; closing its ends of the pipes ends the loops.
-	killTree(cmd.Process)
-	_, _, _ = inW.Close(), outR.Close(), errR.Close()
-	wg.Wait()
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-	return context.Cause(pctx)
+	// The hub kills the plugin with whatever it started in its process
+	// group.
+	return &running{stdin: inW, stdout: outR, stderr: errR, wait: cmd.Wait, stop: func() { killTree(cmd.Process) }}, nil
 }
 
 // actorID is the audit actor of a plugin start.
