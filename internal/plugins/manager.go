@@ -288,6 +288,11 @@ func (p *plugin) command(ctx context.Context, req CommandRequest) (CommandResult
 	r, err := pr.request(ctx, message{Type: typeCommand, Command: req.Command, Device: req.Device, Args: req.Args},
 		typeResult, p.o.CommandTimeout)
 	if err != nil {
+		if errors.Is(err, errNoReply) && p.m.IsWasm() {
+			// A WASM plugin runs one thing at a time: one that does not
+			// answer in time is spinning or stuck, and is stopped.
+			pr.cancel(fmt.Errorf("command %s: no reply within %s", req.Command, p.o.CommandTimeout))
+		}
 		return CommandResult{}, fmt.Errorf("plugin %s command %s: %w", p.m.Name, req.Command, err)
 	}
 	if !r.OK {

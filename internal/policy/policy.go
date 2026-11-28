@@ -290,6 +290,9 @@ const (
 	PluginCommandRead      Action = "plugin.command.read"
 	PluginCommandSafe      Action = "plugin.command.safe"
 	PluginCommandDangerous Action = "plugin.command.dangerous"
+	// PluginHostCall is a WASM plugin's call of a host function (#74), such
+	// as an HTTP request to a host its manifest allows.
+	PluginHostCall Action = "plugin.host.call"
 	// PluginBinaryUpload adds or replaces an exec plugin for devices (#223):
 	// its program for one platform, pinned by SHA-256, and its manifest.
 	PluginBinaryUpload Action = "plugin.binary.upload"
@@ -661,6 +664,11 @@ var rules = map[Action]rule{
 	PluginCommandRead:      {class: Read, actors: []string{ActorWeb, ActorAutomation, ActorMCP}},
 	PluginCommandSafe:      {class: Safe, actors: []string{ActorWeb, ActorAutomation, ActorMCP}},
 	PluginCommandDangerous: {class: Dangerous, actors: []string{ActorWeb, ActorAutomation, ActorMCP}},
+	// A WASM plugin reaches nothing outside its sandbox but through host
+	// functions, and only those its manifest grants, to the hosts it names:
+	// the manifest is the grant, and no one is there to approve each call.
+	// One the manifest does not grant is denied and audited.
+	PluginHostCall: {class: Safe, actors: []string{ActorHub}, fixed: true},
 	// A plugin uploaded for devices runs as the agent's user on every device
 	// whose ceiling allows its name: replacing its program changes what
 	// runs there without any ceiling change, so an upload is dangerous, and

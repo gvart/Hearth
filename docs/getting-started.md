@@ -344,6 +344,8 @@ On the hub, the log says `device enrolled` and then `agent connected` for each d
   first. It never runs anything.
 - [Plugins on devices](plugins.md#plugins-on-devices): your own program for a GPIO relay or a USB
   sensor, uploaded once and run on the device within its **Capabilities**.
+- [WASM plugins](plugins.md#wasm-plugins): an integration in Go, Rust or any language that builds
+  for WebAssembly, run by the hub in a sandbox that reaches only the hosts its manifest allows.
 - [Cluster mode](cluster.md): several hubs, no leader, that keep working when one dies. Started on a
   laptop? Before you stop it, its Cluster page (or `hearth cluster status`) says whether it is
   [safe to stop](cluster.md#is-it-safe-to-stop-this-hub).

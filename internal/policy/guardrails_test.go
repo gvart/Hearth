@@ -215,6 +215,7 @@ var expected = map[Action]struct {
 	PluginCommandRead:            {Read, []string{ActorWeb, ActorAutomation, ActorMCP}, false},
 	PluginCommandSafe:            {Safe, []string{ActorWeb, ActorAutomation, ActorMCP}, false},
 	PluginCommandDangerous:       {Dangerous, []string{ActorWeb, ActorAutomation, ActorMCP}, false},
+	PluginHostCall:               {Safe, []string{ActorHub}, true},
 	PluginBinaryUpload:           {Dangerous, []string{ActorAdmin, ActorWeb}, false},
 	PluginBinaryDelete:           {Safe, []string{ActorAdmin, ActorWeb}, false},
 	DevicePluginCommandRead:      {Read, []string{ActorWeb, ActorMCP}, false},
