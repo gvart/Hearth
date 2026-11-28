@@ -21,8 +21,10 @@ The LAN listeners stay as they are. A hub on the tailnet still serves the LAN.
 ## Start the hub on the tailnet
 
 1. In the Tailscale admin console, create an **auth key** (Settings → Keys → Generate auth key).
-   It can be reusable or one-off. Tag it if your ACLs use tags. The hub's node is not ephemeral, so
-   don't tick "Ephemeral".
+   It can be reusable or one-off. The hub's node is not ephemeral, so don't tick "Ephemeral". A
+   **tagged** key (say `tag:hearth`) is best: a tagged node's key does not expire, and your ACLs can
+   say who reaches the hub. Every node the ACLs let through can reach the hub's UI and agent ports.
+   The login and mTLS still apply.
 2. For a URL every browser trusts, turn on **MagicDNS** and **HTTPS certificates** (DNS page of the
    admin console). Without them it still works, on the hub CA's port (see below).
 3. Start the hub with the key:
@@ -36,7 +38,10 @@ hearth hub --tailscale --tailscale-authkey-file /etc/hearth/ts.key
 The node logs in once. Its state (the node key) goes in `<data-dir>/tailscale` (mode 0700). Later
 starts need no auth key, so you can delete the key or let it expire. A new key is needed only if
 you remove that directory, restore the hub from a [backup](backup.md) (backups leave the node state
-out), or remove the node from the tailnet.
+out), remove the node from the tailnet, or its node key expires. Untagged nodes expire after 180
+days by default: use a tagged key, or disable key expiry for the node in the admin console. A node
+that needs a login again shows the error in the log and on the Tailscale card. The hub keeps running
+on the LAN. Remove `<data-dir>/tailscale` and restart it with a new key.
 
 The log line `tailscale: hub on the tailnet` gives the URL. So does **Settings → General →
 Tailscale** in the UI, which shows the node's state, its MagicDNS name, its tailnet addresses, the

@@ -34,6 +34,11 @@ import (
 // loopback that admit only nodes with testKey, and points the hub's node at
 // it: tsnet reads TS_CONTROL_URL.
 func startControl(t *testing.T) string {
+	return startControlWith(t, func(*testcontrol.Server) {})
+}
+
+// startControlWith is startControl, with set changing the server first.
+func startControlWith(t *testing.T, set func(*testcontrol.Server)) string {
 	t.Helper()
 	netns.SetEnabled(false)
 	t.Cleanup(func() { netns.SetEnabled(true) })
@@ -44,6 +49,7 @@ func startControl(t *testing.T) string {
 		RequireAuthKey: testKey,
 		Logf:           logger.Discard,
 	}
+	set(control)
 	control.HTTPTestServer = httptest.NewUnstartedServer(control)
 	control.HTTPTestServer.Start()
 	t.Cleanup(control.HTTPTestServer.Close)
@@ -173,4 +179,28 @@ func waitTailnetFor(t *testing.T, tn *tailnet, state string, d time.Duration) hu
 	}
 	t.Fatalf("tailnet state %q, want %q", tn.Status().State, state)
 	return hub.TailnetStatus{}
+}
+
+// TestTsnetNeedsLogin checks that a node the tailnet would only log in
+// interactively, as a browser would, fails with a clear error instead of
+// waiting for ever: no auth key on its first start, or its key expired.
+func TestTsnetNeedsLogin(t *testing.T) {
+	startControlWith(t, func(c *testcontrol.Server) { c.RequireAuthKey, c.RequireAuth = "", true })
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	log := slog.New(slog.DiscardHandler)
+	cfg := tailnetConfig{hostname: "hearth", dir: t.TempDir()}
+	node, err := newTailnetNode(cfg, log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = node.Close() }()
+	tn := newTailnet(cfg, log)
+	if err := tn.run(ctx, node, testServe(t)); err != nil {
+		t.Fatalf("run = %v, want nil", err)
+	}
+	st := tn.Status()
+	if st.State != hub.TailnetError || !strings.Contains(st.Error, "HEARTH_TS_AUTHKEY") {
+		t.Errorf("status %+v, want the not-logged-in error", st)
+	}
 }

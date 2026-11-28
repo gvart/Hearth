@@ -23,6 +23,7 @@ the doc that explains it and the code that does it. The rules themselves are in 
 | Configuration documents | policy, automations, runbooks, notifications in the replicated store | Decide what is allowed and what runs automatically |
 | Audit log | sharded rows in the store, spooled in `audit-spool` while replicas are down | The record of every decision |
 | Backups | `.hbk` files, local or in an S3 bucket | Hold every credential of the hub, and the CA key unless left out |
+| Tailscale node key | `<data-dir>/tailscale` (0700) on a master started with `--tailscale`; never in the store or a backup | Whoever holds it is the hub's node on the tailnet: the tailnet name and addresses the hub's tailnet certificate names ([tailscale.md](tailscale.md)) |
 
 ## Trust boundaries
 
@@ -230,6 +231,10 @@ Open issues and documented gaps, as of v0.0.1-rc.12:
 - **Plain HTTP on port 7080.** The password, the session cookie, MCP tokens and share links cross the LAN
   in the clear when used over it, and the installer is served over it. HTTPS needs the hub CA trusted
   on each device.
+- **The tailnet reaches the hub's UI and agent ports.** With `--tailscale`, every node your tailnet ACLs let
+  through can reach 443, 7443 and 7080 on the hub's node. Port 7080 is plain HTTP inside WireGuard. The
+  login and mTLS still apply, but restrict who reaches the hub's node with tailnet ACLs
+  ([tailscale.md](tailscale.md)).
 - **The hub-eligible token mint is not policy-controlled.** A hub-eligible token not yet used still
   mints a join token after the policy changes. Revoke it instead
   ([security.md](security.md#identities-and-certificates)).

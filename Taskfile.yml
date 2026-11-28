@@ -36,7 +36,7 @@ tasks:
       # the race detector needs cgo, release builds stay CGO_ENABLED=0.
       - CGO_ENABLED=1 go test -race ./...
       # The hub's Tailscale code is built only with the release tags.
-      - CGO_ENABLED=1 go test -race -tags '{{.TAILSCALE_TAGS}}' ./cmd/hearth/
+      - CGO_ENABLED=1 go test -race -tags '{{.TAILSCALE_TAGS}}' -run 'Tsnet|Tailnet|Tailscale' ./cmd/hearth/
 
   test:web:
     desc: Run the web UI's tests (the automation editor's YAML round trip)
