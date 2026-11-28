@@ -123,6 +123,7 @@ func newAPI(cfg Config) *api {
 		telemetryOff:   cfg.TelemetryOff,
 		shellIdle:      orDefault(cfg.ShellIdleTimeout, DefaultShellIdleTimeout),
 		shellMax:       orDefault(cfg.ShellMaxDuration, DefaultShellMaxDuration),
+		recordings:     newRecordings(),
 		runner:         runnerOf(cfg.Agents),
 		guestActions:   newLoginLimiter(time.Now, guestActionBurst, guestActionEvery),
 	}
@@ -352,6 +353,9 @@ type api struct {
 	telemetryOff bool
 	// shellIdle and shellMax limit terminal sessions.
 	shellIdle, shellMax time.Duration
+	// recordings are the terminal sessions recorded for runbook drafts, in
+	// this hub's memory only.
+	recordings *recordings
 	// runner is agents as an agentRunner, for guest actions; nil when the
 	// hub runs no agent actions.
 	runner agentRunner

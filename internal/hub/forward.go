@@ -401,7 +401,8 @@ func prefixStrings(ps []netip.Prefix) []string {
 const remoteHeader = "X-Hearth-Client-Addr"
 
 // ProxiedHandler serves on this master the device stream requests (logs,
-// terminal) other masters proxy to it: web, the hub's own UI and API. Their
+// terminal, the terminal's recordings) other masters proxy to it: web, the
+// hub's own UI and API. Their
 // client authenticates there, by its session, and policy decides there, as
 // for a request made here.
 func ProxiedHandler(web http.Handler) http.Handler {
@@ -415,6 +416,9 @@ func ProxiedHandler(web http.Handler) http.Handler {
 	}
 	mux.HandleFunc("GET /api/v1/devices/{id}/logs", serve)
 	mux.HandleFunc("GET /api/v1/devices/{id}/shell", serve)
+	mux.HandleFunc("GET /api/v1/devices/{id}/recordings", serve)
+	mux.HandleFunc("DELETE /api/v1/devices/{id}/recordings/{rec}", serve)
+	mux.HandleFunc("POST /api/v1/devices/{id}/recordings/{rec}/runbook", serve)
 	return mux
 }
 
