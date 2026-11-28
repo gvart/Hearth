@@ -52,6 +52,7 @@ internal/cluster/      AP cluster: memberlist gossip membership, sharded replica
 internal/s3/           minimal SigV4 S3 client (put, list, delete) for scheduled backups
 internal/plugins/      exec plugins: child processes speaking JSON lines over stdio (docs/plugins.md)
 internal/mqtt/         embedded MQTT broker (mochi-mqtt): TLS, device-cert or password auth, topic ACLs
+internal/deviceproto/  Device Protocol v1 (docs/spec/device-protocol-v1.md): topics, JSON messages, limits
 internal/hubconfig/    config documents (policy, notify, automations, runbooks) in the store: live apply, import/export
 pkg/sdk/               public agent/plugin SDK — Apache-2.0 licensed
 proto/                 .proto sources

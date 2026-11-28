@@ -14,6 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/gvart/hearth/internal/hub"
 	"github.com/gvart/hearth/internal/mqtt"
 	"github.com/gvart/hearth/internal/pki"
 	"github.com/gvart/hearth/internal/store"
@@ -42,8 +43,9 @@ func addMQTTFlags(cmd *cobra.Command, o *mqttOptions) {
 
 // newMQTTBroker returns the embedded MQTT broker, listening, or nil if
 // --mqtt-listen is not set. The caller must Run it, which closes the listener.
+// protocol, if not nil, takes the Device Protocol messages of its devices.
 func newMQTTBroker(ctx context.Context, opts hubOptions, ca *pki.CA, serverCert func() *tls.Certificate,
-	st *store.Store, log *slog.Logger,
+	st *store.Store, protocol *hub.DeviceProtocol, log *slog.Logger,
 ) (*mqtt.Broker, error) {
 	if opts.mqtt.listen == "" {
 		if opts.mqtt.bridge != "" {
@@ -72,9 +74,13 @@ func newMQTTBroker(ctx context.Context, opts hubOptions, ca *pki.CA, serverCert 
 	if err != nil {
 		return nil, fmt.Errorf("--mqtt-listen %s: %w", opts.mqtt.listen, err)
 	}
+	var sink mqtt.ProtocolSink
+	if protocol != nil {
+		sink = protocol
+	}
 	b, err := mqtt.New(mqtt.Config{
 		Listener: ln, CA: ca, ServerCert: serverCert, Clients: clients, Certs: st.Certs(), Bridge: bridge,
-		Log: log.With("component", "mqtt"),
+		Protocol: sink, Log: log.With("component", "mqtt"),
 	})
 	if err != nil {
 		_ = ln.Close()

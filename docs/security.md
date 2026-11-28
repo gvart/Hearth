@@ -348,6 +348,11 @@ does.
   their own, and never logged, served or audited. A device is read-only unless it was adopted with
   calls allowed; each switch or button call is a policy decision (`esphome.call`, safe) and audited.
   See [ESPHome](esphome.md).
+- **Device Protocol devices**: a device that joins over MQTT ([Device Protocol](spec/device-protocol-v1.md))
+  logs in with a user of its own and may publish only to its own topics under `hearth/v1/`; no MQTT
+  client may publish a command. Each command the hub sends is a policy decision (`device.command`,
+  dangerous, web session only, which asks for the admin password again) and audited, with the
+  command's name but not its params.
 - **OpenWrt**: the rpcd login is sealed with AES-256-GCM under a key of its own, and never logged,
   served or audited; so is the session ID. https is verified against the system roots or a pinned
   fingerprint; plain http sends the password in the clear. Hearth only reads, but for restarting

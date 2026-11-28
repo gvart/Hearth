@@ -65,6 +65,7 @@ func (s *syncBuffer) String() string {
 }
 
 type testBroker struct {
+	b      *Broker
 	addr   string
 	ca     *pki.CA
 	pool   *x509.CertPool
@@ -84,6 +85,12 @@ func startBroker(t *testing.T, clients string, tweak ...func(*Broker)) *testBrok
 
 // startBrokerWith starts a broker bridged to a remote by bridge, if not nil.
 func startBrokerWith(t *testing.T, clients string, bridge *BridgeConfig, tweak ...func(*Broker)) *testBroker {
+	t.Helper()
+	return startBrokerConfig(t, clients, func(c *Config) { c.Bridge = bridge }, tweak...)
+}
+
+// startBrokerConfig starts a broker whose Config configure changes first.
+func startBrokerConfig(t *testing.T, clients string, configure func(*Config), tweak ...func(*Broker)) *testBroker {
 	t.Helper()
 	now := time.Now()
 	ca, err := pki.LoadOrCreateCA(t.TempDir(), now)
@@ -108,15 +115,17 @@ func startBrokerWith(t *testing.T, clients string, bridge *BridgeConfig, tweak .
 	}
 	logs := &syncBuffer{}
 	certs := &fakeCerts{m: map[string]error{}}
-	b, err := New(Config{
+	cfg := Config{
 		Listener: ln, CA: ca, ServerCert: func() *tls.Certificate { return &serverCert },
-		Clients: c, Certs: certs, Bridge: bridge, Recheck: 50 * time.Millisecond, Log: slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
-	})
+		Clients: c, Certs: certs, Recheck: 50 * time.Millisecond, Log: slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
+	}
+	configure(&cfg)
+	b, err := New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	tb := &testBroker{addr: b.Addr().String(), ca: ca, pool: ca.Pool(), certs: certs, logs: logs, cancel: cancel, done: make(chan error, 1)}
+	tb := &testBroker{b: b, addr: b.Addr().String(), ca: ca, pool: ca.Pool(), certs: certs, logs: logs, cancel: cancel, done: make(chan error, 1)}
 	for _, f := range tweak {
 		f(b)
 	}
@@ -162,6 +171,7 @@ type client struct {
 type connectOpts struct {
 	id, user, pass       string
 	willTopic            string
+	willPayload          string // default "gone"
 	cert                 *tls.Certificate
 	noUsername, noPasswd bool
 }
@@ -210,7 +220,11 @@ func (tb *testBroker) dial(t *testing.T, o connectOpts) (*client, byte, error) {
 	if o.willTopic != "" {
 		flags |= 0x04
 		payload = append(payload, mqttString(o.willTopic)...)
-		payload = append(payload, mqttString("gone")...)
+		will := o.willPayload
+		if will == "" {
+			will = "gone"
+		}
+		payload = append(payload, mqttString(will)...)
 	}
 	if o.user != "" && !o.noUsername {
 		flags |= 0x80

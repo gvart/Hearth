@@ -34,7 +34,7 @@ function docsLinks() {
 			if (!inDocs || /^([a-z]+:|\/|#)/i.test(node.url)) return;
 			const [target, hash = ''] = node.url.split('#');
 			const repoPath = path.relative(path.resolve('..'), path.resolve(dir, target));
-			const page = repoPath.match(/^docs\/([a-z0-9-]+)\.md$/)?.[1];
+			const page = repoPath.match(/^docs\/((?:spec\/)?[a-z0-9-]+)\.md$/)?.[1];
 			const anchor = hash ? `#${hash}` : '';
 			node.url = page && pages.includes(page) ? `${base}/${page}/${anchor}` : `${repoURL}/blob/main/${repoPath}${anchor}`;
 		});

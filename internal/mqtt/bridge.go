@@ -21,6 +21,8 @@ import (
 
 	mochi "github.com/mochi-mqtt/server/v2"
 	"github.com/mochi-mqtt/server/v2/packets"
+
+	"github.com/gvart/hearth/internal/deviceproto"
 )
 
 // The bridge is a small MQTT client written on mochi's packets package, so
@@ -278,7 +280,10 @@ func (br *bridge) receive(pk packets.Packet) {
 		br.log.Debug("mqtt bridge: invalid topic from the remote dropped", "topic", topic)
 		return
 	}
-	if !allowed(br.rules, topic, true) {
+	// Only a device writes its Device Protocol topics, and only the hub its
+	// commands: a remote broker could otherwise pose as a device or send one
+	// a command no policy decided.
+	if deviceproto.InNamespace(topic) || !allowed(br.rules, topic, true) {
 		br.log.Debug("mqtt bridge topic denied", "topic", topic, "direction", In)
 		return
 	}

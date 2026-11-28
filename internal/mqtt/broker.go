@@ -65,7 +65,11 @@ type Config struct {
 	// Bridge, if set, connects the broker to a remote broker, with the
 	// rules of the clients file's bridge section.
 	Bridge *BridgeConfig
-	Log    *slog.Logger
+	// Protocol, if set, receives the Device Protocol messages of the
+	// devices connected to the broker, and lets the hub publish their
+	// commands (PublishCommand).
+	Protocol ProtocolSink
+	Log      *slog.Logger
 }
 
 // Broker is the embedded MQTT broker.
@@ -88,8 +92,10 @@ func New(cfg Config) (*Broker, error) {
 	// topic alias, so aliases are off: a publish carrying one is refused.
 	caps.TopicAliasMaximum = 0
 	cfg.Log = slog.New(redactPackets{cfg.Log.Handler()})
-	// The bridge publishes and subscribes through the inline client.
-	srv := mochi.New(&mochi.Options{Logger: cfg.Log, Capabilities: caps, InlineClient: cfg.Bridge != nil})
+	// The bridge publishes and subscribes through the inline client, and the
+	// hub publishes Device Protocol commands through it.
+	inline := cfg.Bridge != nil || cfg.Protocol != nil
+	srv := mochi.New(&mochi.Options{Logger: cfg.Log, Capabilities: caps, InlineClient: inline})
 	auth := newAuthHook(srv, cfg)
 	if err := srv.AddHook(auth, nil); err != nil {
 		return nil, fmt.Errorf("mqtt: add auth hook: %w", err)
