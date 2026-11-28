@@ -1,6 +1,6 @@
 ---
-title: Exec plugins
-description: Write a Hearth integration in any language, as a program that speaks JSON lines over stdin and stdout.
+title: Exec and WASM plugins
+description: Write a Hearth integration in any language, as a program, or a sandboxed WebAssembly module, that speaks JSON lines over stdin and stdout.
 ---
 
 An exec plugin is a program, in any language, that the hub runs as a child process and talks to in
@@ -8,16 +8,25 @@ JSON lines over its stdin and stdout. It reports devices and their entities (sen
 pushes their state, and offers commands. Every command goes through Hearth's policy, with the class
 its manifest declares, and lands in the audit log.
 
+A [WASM plugin](#wasm-plugins) speaks the same protocol, but the hub runs it as a WebAssembly
+module in a sandbox: no files, no network, no environment, capped memory, and only the host
+functions its manifest grants, each one decided and audited by policy.
+
 Plugins are off unless you turn them on: the hub runs a plugin only when you name its manifest with
 `--plugin`. A plugin can also run on a device, through its agent, within the device's capability
 ceiling: see [Plugins on devices](#plugins-on-devices).
 
-Two examples live in the repository:
+Four examples live in the repository:
 
 - [`examples/plugins/go-lamp`](https://github.com/gvart/hearth/tree/main/examples/plugins/go-lamp):
   a virtual lamp in Go, with `turn_on` and `turn_off` commands.
 - [`examples/plugins/python-load`](https://github.com/gvart/hearth/tree/main/examples/plugins/python-load):
   the hub host's load average in Python, pushed every few seconds, with a `refresh` command.
+- [`examples/plugins/go-wasm-lamp`](https://github.com/gvart/hearth/tree/main/examples/plugins/go-wasm-lamp):
+  a lamp written with the [Go SDK](#the-go-sdk), built as a WASM plugin (or as an exec plugin),
+  that can drive a real relay over HTTP.
+- [`examples/plugins/rust-lamp`](https://github.com/gvart/hearth/tree/main/examples/plugins/rust-lamp):
+  a virtual lamp in Rust, built for `wasm32-wasip1`.
 
 ## Run a plugin
 
@@ -60,6 +69,8 @@ commands:
 | --- | --- |
 | `capabilities` | What the plugin may do. `discover`: report devices. `state`: push entity states. `command`: run the commands below. A message the manifest's capabilities do not allow is a protocol violation. |
 | `commands` | The only commands the hub sends the plugin, each with its [policy class](guardrails.md). Commands need the `command` capability. |
+| `sha256` | Optional: the program's SHA-256, in lower-case hex. The hub refuses to start any other, checked before every start and restart. `sha256sum lamp` prints it. |
+| `runtime` | `exec` (the default) or `wasm`: see [WASM plugins](#wasm-plugins). |
 
 ### Who may change a plugin
 
@@ -219,6 +230,118 @@ the same `id` within 30 seconds: `ok` and an `output` of up to 64 KiB, or an `er
 
 A plugin may handle commands one at a time or several at once: replies are matched by `id`.
 
+## WASM plugins
+
+A WASM plugin is a WebAssembly module for WASI preview 1 (`wasm32-wasip1`) that speaks the
+protocol above on its stdin and stdout. The hub runs it in-process with
+[wazero](https://wazero.io), a pure Go runtime: nothing to install, and nothing of it is set up
+until a WASM plugin first starts. Everything said above of exec plugins holds (the manifest,
+`--plugin`, policy, restarts with backoff, the stderr tail, the API), except as below.
+
+```sh
+cd examples/plugins/go-wasm-lamp && GOOS=wasip1 GOARCH=wasm go build -o lamp.wasm .
+hearth hub --plugin ./plugin.yaml
+```
+
+```yaml
+protocol: 1
+name: go-wasm-lamp
+version: 0.1.0
+runtime: wasm
+command: ./lamp.wasm     # the module: a path relative to this file, or absolute
+sha256: 5f2c…            # optional: pins the module
+memory: 32               # MiB, default 64, at most 1024
+args: ["http://192.168.1.40/relay/0"]
+host:                    # the host functions it may call; none if left out
+  http:
+    allow: ["192.168.1.40:80"]
+capabilities: [discover, state, command]
+commands:
+  - name: turn_on
+    class: safe
+```
+
+### The sandbox
+
+- **No files, no network, no environment.** The module sees no directory at all, opens no socket,
+  and its environment is `HEARTH_PLUGIN` alone; a manifest that sets `env` is refused. It gets its
+  `args`, the clock (timers need it) and random numbers.
+- **Memory** is capped by `memory`. A module that needs more dies, and is started again.
+- **Time.** A module runs one thing at a time. One that does not answer a command, a discover or a
+  ping in time, even in a tight loop, is stopped at once and started again. wazero has no
+  instruction budget: a module that answers in time may use a whole core meanwhile.
+- **Host functions** are its only way out: see below. A module that calls them more than 10 times
+  a second is stopped.
+- The module's file is checked as an exec plugin's program is: owned by the hub's user or root, no
+  one else may write it or a directory above it, at most 64 MB. The hub reads it once, hashes those
+  bytes, checks `sha256` if set, and compiles the same bytes, before every start and restart;
+  compiled code is kept while the module stays the same.
+- Each start is `plugin.start`, as for an exec plugin; its audit detail holds the module's path,
+  its SHA-256, the `digest` of the module and manifest together (as for
+  [device plugins](#plugins-on-devices)), the memory cap and the granted host functions.
+
+### Host functions
+
+The hub offers a module the import module `hearth`, with two functions:
+
+| Function | |
+| --- | --- |
+| `call(name_ptr, name_len, req_ptr, req_len: i32) -> i32` | Runs host function `name` with the JSON request at `req` (at most 128 KiB). Returns the length of its JSON reply, or -1 if the call is malformed. |
+| `reply(buf_ptr, buf_len: i32) -> i32` | Copies that reply into `buf`, if it fits, and returns its length, or -1. |
+
+A reply is `{"ok":true,"result":…}` or `{"ok":false,"error":"…"}`. Every call is the hub action
+`plugin.host.call` (class `safe`, actor `hub/plugins`, target `<plugin>/<function>`), decided by
+policy and audited: two entries per call, so a module that polls a device every 30 seconds writes
+about 5,800 a day. One the manifest does not grant, or of a function that does not exist, is denied,
+and audited as denied. The manifest is the grant: no one is there to approve a call.
+
+| Function | Grant | Request | Result |
+| --- | --- | --- | --- |
+| `http` | `host.http.allow`: up to 32 `host:port`, matched exactly (the host case-insensitively; a URL without a port means 80 or 443) | `{"method":"GET","url":"http://…","header":{},"body":"<base64>"}`: GET, HEAD, POST, PUT, PATCH or DELETE; body up to 64 KiB | `{"status":200,"header":{},"body":"<base64>"}`, body up to 1 MiB |
+
+An `http` call takes no proxy and follows no redirect (a redirect is returned as it is), dials
+only an allowed host, and times out after 10 seconds. Its audit entry holds the method and the
+`host:port`, never the path, the query or the body, which may hold secrets.
+
+| Action | Class | Actors |
+| --- | --- | --- |
+| `plugin.host.call` | safe | `hub` (fixed: the manifest is the grant) |
+
+### The Go SDK
+
+[`pkg/sdk`](https://github.com/gvart/hearth/tree/main/pkg/sdk) (Apache-2.0, so it can go into a
+plugin of any license) has the protocol's types and its loop. The same source builds as an exec
+plugin and as a WASM plugin:
+
+```go
+p := &sdk.Plugin{
+	Name: "go-wasm-lamp", Version: "0.1.0",
+	Discover: func() ([]sdk.Device, error) { return devices, nil },
+	Command:  func(c sdk.Command) (string, error) { return "lamp is on", nil },
+}
+// Elsewhere, from any goroutine: p.SetState("lamp", "on", true)
+// And: sdk.HTTP(sdk.HTTPRequest{URL: url}): the http host function in WASM, net/http otherwise.
+if err := p.Run(); err != nil { ... }
+```
+
+In WASM, Go's runtime runs one goroutine at a time; the SDK reads stdin without blocking, so that
+timers and other goroutines run while the plugin waits for the hub.
+
+### Other languages
+
+Any language that targets `wasm32-wasip1` works: read lines from stdin, write lines to stdout and
+flush. [`examples/plugins/rust-lamp`](https://github.com/gvart/hearth/tree/main/examples/plugins/rust-lamp)
+is one in Rust:
+
+```sh
+rustup target add wasm32-wasip1
+cd examples/plugins/rust-lamp && cargo build --release --target wasm32-wasip1
+cp target/wasm32-wasip1/release/rust-lamp.wasm lamp.wasm && hearth hub --plugin ./plugin.yaml
+```
+
+The repository's tests build and run it only where a Rust toolchain with that target is installed;
+CI does not have one.
+
 ## Plugins on devices
 
 A plugin can run on a device instead of the hub: a GPIO relay on a Raspberry Pi, a USB sensor, a
@@ -312,3 +435,6 @@ commands only.
 
 - A device plugin's devices and entities on the hub, and `plugin_command` steps for device plugins
   in automations.
+- WASM plugins on devices (one module for every platform): a device plugin is an exec plugin, and
+  an upload whose manifest says `runtime: wasm` is refused.
+- Host functions beyond `http`, and WASM plugins on a Windows hub, which are not tested yet.
