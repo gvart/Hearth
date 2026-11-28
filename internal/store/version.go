@@ -115,6 +115,14 @@ type tableSpec struct {
 	// maxOf are the columns that only rise: the merged row keeps the
 	// highest value any version had (a session epoch, #384).
 	maxOf []string
+	// setOnceExact are the columns set once and never changed: a copy
+	// without a value takes the one merged in, and two different values merge
+	// into pinConflict, which stays, whatever the versions' order. A
+	// certificate's fingerprint (#387): set at enrollment or by its pin and
+	// never changed, so a later version naming another, as a compromised
+	// storage member may send, does not replace it, and Certs.Fingerprint
+	// refuses to decide on the conflict.
+	setOnceExact []string
 	// deletable tables have tombstones; their reads skip rows with
 	// _deleted. A tombstone for any other table is refused.
 	deletable bool
@@ -135,9 +143,10 @@ const auditTable = "audit_log"
 
 // tables are the replicated tables, but the audit log.
 var tables = map[string]tableSpec{
-	"devices":         {pk: []string{"id"}},
-	"tokens":          {pk: []string{"hash"}, setOnce: []string{"used_at"}},
-	"certs":           {pk: []string{"serial"}, setOnce: []string{"revoked_at", "pin_mismatch_at"}},
+	"devices": {pk: []string{"id"}},
+	"tokens":  {pk: []string{"hash"}, setOnce: []string{"used_at"}},
+	"certs": {pk: []string{"serial"}, setOnce: []string{"revoked_at", "pin_mismatch_at"},
+		setOnceExact: []string{"fingerprint"}},
 	"admin":           {pk: []string{"id"}, maxOf: []string{"session_epoch"}},
 	"sessions":        {pk: []string{"hash"}, deletable: true},
 	"join_tokens":     {pk: []string{"hash"}, setOnce: []string{"used_at"}},
@@ -601,6 +610,12 @@ func upsertSQL(table string, spec tableSpec, cols []string, versioned bool) stri
 			old, in := table+`.`+c, `excluded.`+c
 			sets = append(sets, c+` = MAX(`+old+`, `+in+`)`)
 			improves = append(improves, `(`+in+` > `+old+`)`)
+		case slices.Contains(spec.setOnceExact, c):
+			old, in := table+`.`+c, `excluded.`+c
+			sets = append(sets, c+` = CASE WHEN `+old+` IS NULL THEN `+in+` WHEN `+in+` IS NULL OR `+in+` = `+old+
+				` THEN `+old+` ELSE '`+pinConflict+`' END`)
+			improves = append(improves, `(`+in+` IS NOT NULL AND (`+old+` IS NULL OR (`+in+` != `+old+
+				` AND `+old+` != '`+pinConflict+`')))`)
 		case versioned:
 			sets = append(sets, c+` = CASE WHEN `+newer+` THEN excluded.`+c+` ELSE `+table+`.`+c+` END`)
 		default:
