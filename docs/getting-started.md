@@ -193,9 +193,18 @@ Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='hearth-agen
 ```
 
 `-Hub https://<hub>:7443` gives another hub address and `-LocalCeiling` keeps the hub from changing
-what the agent may do. Re-running the installer upgrades the binary and keeps the identity; an
-agent on Windows does not upgrade itself yet, so **Upgrade agent** on its page refuses: re-run the
-installer instead. `-Uninstall` removes the service and the binary, `-Uninstall -Purge` the
+what the agent may do. Re-running the installer upgrades the binary and keeps the identity.
+
+**Upgrade agent** on the device's page works on Windows too, as on Linux: the agent downloads
+`hearth_<version>_windows_amd64.zip` (from GitHub, or its `--release-mirror`), checks
+`checksums.txt` against its Ed25519 signature and the zip against its SHA-256, renames the running
+`hearth.exe` to `hearth.exe.prev` (Windows cannot overwrite a running program, but can rename it),
+moves the new one in, and exits. The service manager takes that exit for a crash, and its recovery
+action starts the new binary 5 s later (1 minute after the third restart in a day). If the new binary reaches no hub within 5 minutes, or in 3
+starts, it puts `hearth.exe.prev` back (moving itself aside to `hearth.exe.failed`, which the next
+start removes) and the page says the upgrade was rolled back. An agent started from a shell rather
+than as the service, or installed with `-LocalCeiling`, refuses: re-run the installer instead.
+`-Uninstall` removes the service and the binary, `-Uninstall -Purge` the
 identity too. Without the installer, `hearth agent service install` (from an elevated shell) does
 the service part: run it before `hearth agent join`, then `Start-Service hearth-agent`. Interactive
 terminals and network edges are not available on Windows, and the web UI cannot stream the event
@@ -267,7 +276,8 @@ After you upgrade the hub, the **Devices** page marks each device whose agent is
 date**. On the device's page, the **Agent version** card has **Upgrade agent**: after your admin
 password, the agent downloads the hub's release from GitHub, checks the release's `checksums.txt`
 against its signature with the Hearth release key built into the agent, checks the archive's SHA-256
-against it, replaces `/usr/local/bin/hearth` (keeping the old one as `hearth.prev`) and restarts.
+against it, replaces `/usr/local/bin/hearth` (keeping the old one as `hearth.prev`) and restarts
+(on Windows, `C:\Program Files\Hearth\hearth.exe`: see [Windows](#windows)).
 The device is back on the new version within seconds; the dialog's **Release** field takes another
 release instead of the hub's. From a terminal, on any machine that reaches
 the hub's web address:

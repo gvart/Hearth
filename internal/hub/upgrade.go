@@ -29,8 +29,8 @@ import (
 const upgradeWait = 5*time.Minute + 30*time.Second
 
 // releaseTarget matches the os_arch of the release archives an agent may
-// upgrade from (.goreleaser.yaml): no Windows zip.
-var releaseTargetRE = regexp.MustCompile(`^(linux|darwin)_(amd64|arm64|armv[5-7])$`)
+// upgrade from (.goreleaser.yaml): Windows on amd64 only.
+var releaseTargetRE = regexp.MustCompile(`^((linux|darwin)_(amd64|arm64|armv[5-7])|windows_amd64)$`)
 
 // AgentVersionJSON is a device's agent version next to the hub's.
 type AgentVersionJSON struct {
