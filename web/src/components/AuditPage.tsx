@@ -360,6 +360,10 @@ function Result({ result }: { result: string }) {
   return result || <span className="muted">—</span>;
 }
 
+function entries(n: number): string {
+  return n === 1 ? '1 entry' : `${String(n)} entries`;
+}
+
 /** What `hearth audit verify` reports, when the log does not verify. */
 function VerifyBanner({ report }: { report: AuditReport }) {
   const lines: string[] = [];
@@ -368,20 +372,20 @@ function VerifyBanner({ report }: { report: AuditReport }) {
       lines.push(m.from === m.to ? `Entry ${String(m.from)} from ${c.origin} is missing.` : `Entries ${String(m.from)}–${String(m.to)} from ${c.origin} are missing.`);
     }
     if (c.unverified?.length) {
-      lines.push(`${String(c.unverified.length)} entries from ${c.origin} fail their seal (forged or changed).`);
+      lines.push(`Seal does not check: ${entries(c.unverified.length)} from ${c.origin} (forged or changed).`);
     }
     if (c.broken?.length) {
-      lines.push(`${String(c.broken.length)} entries from ${c.origin} do not follow the entry before them (moved or replaced).`);
+      lines.push(`Out of chain: ${entries(c.broken.length)} from ${c.origin} (moved or replaced).`);
     }
     if (c.duplicates?.length) {
       lines.push(`${String(c.duplicates.length)} sequence numbers from ${c.origin} have two different entries.`);
     }
   }
   if (report.unsealed > 0) {
-    lines.push(`${String(report.unsealed)} entries written since sealing started have no seal.`);
+    lines.push(`No seal: ${entries(report.unsealed)} written since sealing started.`);
   }
   return (
-    <div className="error-box" role="alert">
+    <div className="error-box audit-verify" role="alert">
       <strong>The audit log does not verify.</strong>
       <ul>
         {lines.slice(0, 10).map((l) => (
