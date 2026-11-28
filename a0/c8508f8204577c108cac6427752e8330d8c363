@@ -1,0 +1,40 @@
+internal/plugins/wasm.go
+  s_18b57982fdff93::t_67e2da29cab6f0 390-392,394-397,401,403-404
+internal/plugins/testdata/wasmguest/main.go
+  s_18b57982fdff93::t_33eeb813879250 10,44,47,51,62,78-79,82-83,99
+pkg/sdk/host_other.go
+  s_18b57982fdff93::t_33eeb813879250 20,28
+pkg/sdk/plugin.go
+  s_18b57982fdff93::t_33eeb813879250 7,68-69,72,97-99,102-106,112-114,129,155,171,182
+internal/plugins/wasm_test.go
+  s_18b57982fdff93::t_407d378e09f21c 167-187
+  s_18b57982fdff93::t_8d99dc55824147 228-229
+pkg/sdk/plugin_test.go
+  s_18b57982fdff93::t_52fc6d3b775ec4 1-109
+pkg/sdk/host_wasip1.go
+  s_18b57982fdff93::t_33eeb813879250 8,72-75
+pkg/sdk/http.go
+  s_18b57982fdff93::t_40937ff79ea977 5-9,31-34,37-40
+docs/plugins.md
+  s_18b57982fdff93::t_33eeb813879250 319-320,323-324
+examples/plugins/go-wasm-lamp/main.go
+  s_18b57982fdff93::t_33eeb813879250 18,33,47,56,67
+pkg/sdk/doc.go
+  s_18b57982fdff93::t_33eeb813879250 14-15,17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "a0c8508f8204577c108cac6427752e8330d8c363",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
