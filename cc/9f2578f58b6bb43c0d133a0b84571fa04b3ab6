@@ -1,0 +1,37 @@
+web/src/pluginregistry.ts
+  s_18b57982fdff93::t_d36a6a4e105563 1-80
+web/test/nav.test.mjs
+  s_18b57982fdff93::t_26ad0309994e03 54
+web/src/components/DevicePluginsPage.css
+  s_18b57982fdff93::t_7756d28379b9cc 36
+  s_18b57982fdff93::t_3d04ddf14b9e0e 16-35,37-49
+web/test/pluginregistry.test.mjs
+  s_18b57982fdff93::t_a26aa52e22a24f 1-64
+web/src/components/Shell.tsx
+  s_18b57982fdff93::t_9b3fd718e51bd9 14,205-206
+web/src/components/PluginRegistryPage.tsx
+  s_18b57982fdff93::t_daa2b528f023bb 1-378
+web/src/api/pluginregistry.ts
+  s_18b57982fdff93::t_8c0bbce5dedade 1-90
+web/src/tips.ts
+  s_18b57982fdff93::t_9b3fd718e51bd9 21,151-155
+  s_18b57982fdff93::t_3e96d975667f70 156-158
+web/src/nav.ts
+  s_18b57982fdff93::t_9b3fd718e51bd9 21-22,84
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "cc9f2578f58b6bb43c0d133a0b84571fa04b3ab6",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
