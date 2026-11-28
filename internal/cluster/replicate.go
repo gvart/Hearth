@@ -266,8 +266,8 @@ func (r *Replicator) SetSeeking(seeking bool) { r.seeking.Store(seeking) }
 
 // StartAlone lets this member, which did not find the cluster it was told
 // to join, take critical writes alone. It still refuses the writes that need
-// a majority of their replicas (runbook runs) until it finds another member:
-// on a ring of itself it cannot know it is not the minority of a split.
+// a majority of the masters (runbook runs) until it finds another member:
+// alone it cannot know it is not the minority of a split.
 func (r *Replicator) StartAlone() {
 	r.alone.Store(true)
 	r.seeking.Store(false)
@@ -419,12 +419,6 @@ func (v view) targets(bucket int) (live, down []string) {
 	return live, down
 }
 
-// owners returns the replicas of bucket, live and down: the first N of its
-// preference list, never a stand-in.
-func (v view) owners(bucket int) (live, down []string) {
-	return v.split(v.ring.Owners(bucket, v.n))
-}
-
 // all returns every storage member, live and down: where a command that
 // runs on every shard runs.
 func (v view) all() (live, down []string) {
@@ -524,17 +518,33 @@ func writeQuorum(critical bool, n int) int {
 // (store.Route.Majority): two such writes always share a replica.
 func majority(n int) int { return n/2 + 1 }
 
-// checkMajority refuses a Majority command of key unless a strict majority
-// of key's replicas, stand-ins not counted, is reachable. A member that has
-// not found its cluster (seeking, or started alone) reaches no majority.
-func (r *Replicator) checkMajority(cmd store.Command, key string, v view) error {
+// masterQuorum returns the masters a Majority command counts (#387), sorted:
+// this member, which holds the hub CA key, and the other members that say
+// they are masters, live or down, but those that answered without proving
+// the key, as they are none; and W, a strict majority of them. A master that
+// left the gossip is off it, as a storage member that left is off the ring.
+func (r *Replicator) masterQuorum(v view) (masters []string, w int) {
+	masters = slices.DeleteFunc(slices.Clone(v.masterSet), func(m string) bool { return m != v.self && r.unproved(m) })
+	return masters, majority(len(masters))
+}
+
+// checkMajority refuses a Majority command unless a strict majority of the
+// masters (masterQuorum) is live. A member that has not found its cluster
+// (seeking, or started alone) reaches no majority.
+func (r *Replicator) checkMajority(cmd store.Command, v view) error {
 	if r.seeking.Load() || r.alone.Load() {
 		return fmt.Errorf("apply %s: this member has not found the rest of its cluster: %w", cmd.Op(), store.ErrNoMajority)
 	}
-	live, _ := v.owners(store.BucketOf(store.Token(key)))
-	if w := majority(v.n); len(live) < w {
-		return fmt.Errorf("apply %s: %d of %d replicas of its key reachable, %d needed: %w",
-			cmd.Op(), len(live), v.n, w, store.ErrNoMajority)
+	masters, w := r.masterQuorum(v)
+	live := 0
+	for _, m := range masters {
+		if v.live[m] {
+			live++
+		}
+	}
+	if live < w {
+		return fmt.Errorf("apply %s: %d of %d masters reachable, %d needed: %w",
+			cmd.Op(), live, len(masters), w, store.ErrNoMajority)
 	}
 	return nil
 }
@@ -605,18 +615,15 @@ func (r *Replicator) applyRouted(ctx context.Context, cmd store.Command) (store.
 		}
 		return store.MergeResults(cmd, results), nil
 	case store.RouteGlobal:
+		if route.First && r.holdsKey() {
+			return r.applyOnFirstMaster(ctx, cmd, route, v)
+		}
 		return r.applyHere(ctx, cmd, route, v)
 	}
 	// RouteKey: on this member if it takes the write, else forwarded to
-	// the first live one that does. A First command runs on the first live
-	// replica, and on the next ones only if that one cannot be reached.
-	if route.Majority {
-		if err := r.checkMajority(cmd, route.Key, v); err != nil {
-			return store.Result{}, err
-		}
-	}
+	// the first live one that does.
 	live, _ := v.targets(store.BucketOf(store.Token(route.Key)))
-	if (route.First && len(live) > 0 && live[0] == v.self) || (!route.First && slices.Contains(live, v.self)) {
+	if slices.Contains(live, v.self) {
 		return r.applyHere(ctx, cmd, route, v)
 	}
 	if len(live) < writeQuorum(route.Critical, v.n) {
@@ -631,6 +638,63 @@ func (r *Replicator) applyRouted(ctx context.Context, cmd store.Command) (store.
 		lastErr = err
 	}
 	return store.Result{}, fmt.Errorf("apply %s: %w: %w", cmd.Op(), lastErr, store.ErrUnavailable)
+}
+
+// applyOnFirstMaster applies a First command of the master tables (a runbook
+// run's save, #387) on the first live master, in name order, that proves the
+// hub CA key: of two such commands from two masters, one master runs both,
+// in turn. A member is sent the command only once it proved the key on a
+// connection (a hello goes first to one not asked yet), so a storage member
+// that says it is a master is never the one that decides, nor learns the
+// command. One that cannot be reached, or proves nothing, is passed over;
+// this master, last of all, applies it itself.
+func (r *Replicator) applyOnFirstMaster(ctx context.Context, cmd store.Command, route store.Route, v view) (store.Result, error) {
+	masters, _ := r.masterQuorum(v)
+	var b []byte
+	for _, m := range masters {
+		if m == v.self {
+			return r.applyHere(ctx, cmd, route, v)
+		}
+		if !v.live[m] {
+			continue
+		}
+		if !r.provedLast(m) {
+			hctx, cancel := context.WithTimeout(ctx, r.cfg.QuickTimeout)
+			_, err := r.call(hctx, m, apRequest{Op: opHello})
+			cancel()
+			if err != nil || !r.provedLast(m) {
+				continue
+			}
+		}
+		if b == nil {
+			var err error
+			if b, err = store.EncodeCommand(cmd); err != nil {
+				return store.Result{}, err
+			}
+		}
+		// It applies it and waits for a majority of the masters.
+		actx, cancel := context.WithTimeout(ctx, 3*r.cfg.QuickTimeout)
+		resp, err := r.call(actx, m, apRequest{Op: opApply, Cmd: b})
+		cancel()
+		switch {
+		case errors.Is(err, errUnreachable) || errors.Is(err, errNotMaster):
+			continue
+		case err != nil:
+			if st := r.store(); st != nil && store.IsDomainError(err) {
+				// Refused (a save from a version the run moved past): this
+				// master's copy may be what is behind, so it reads it again
+				// on the next try.
+				r.refresh(ctx, st, cmd, route, v)
+			}
+			return store.Result{}, err
+		case !resp.fromMaster:
+			continue // its answer is no master's
+		case resp.Result == nil:
+			return store.Result{}, nil
+		}
+		return *resp.Result, nil
+	}
+	return r.applyHere(ctx, cmd, route, v)
 }
 
 // coordinator is the member a write of bucket runs on: this one if it is a
@@ -686,8 +750,9 @@ func (r *Replicator) applyOn(ctx context.Context, m string, cmd store.Command) (
 
 // applyHere applies cmd to this member's database and replicates the rows
 // it wrote. A critical write first checks that W replicas are live, so it
-// fails before writing anything when they are not. A Majority one also needs
-// a majority of its replicas to answer the refresh of the rows it reads.
+// fails before writing anything when they are not. A Majority one needs a
+// majority of the masters live, and to answer the refresh of the rows it
+// reads (#387).
 func (r *Replicator) applyHere(ctx context.Context, cmd store.Command, route store.Route, v view) (store.Result, error) {
 	st := r.store()
 	if st == nil {
@@ -717,13 +782,13 @@ func (r *Replicator) applyHere(ctx context.Context, cmd store.Command, route sto
 		// whether it proves the key only its answer tells (shortOf).
 	}
 	if route.Majority {
-		if err := r.checkMajority(cmd, route.Key, v); err != nil {
+		if err := r.checkMajority(cmd, v); err != nil {
 			return store.Result{}, err
 		}
 	}
 	answered := r.refresh(ctx, st, cmd, route, v)
 	if route.Majority && len(store.ReadsOf(cmd)) > 0 {
-		if err := readMajority(cmd, route.Key, v, answered); err != nil {
+		if err := r.readMajority(cmd, v, answered); err != nil {
 			return store.Result{}, err
 		}
 	}
@@ -805,21 +870,22 @@ func (r *Replicator) refresh(ctx context.Context, st *store.Store, cmd store.Com
 	return answered
 }
 
-// readMajority refuses a Majority command of key unless a majority of key's
-// replicas, this member included if it is one, gave it the rows it reads:
-// then it decides on the newest copy any earlier Majority write left, as
-// that write's majority and this one share a replica. A replica still
-// catching up after its promotion does not count.
-func readMajority(cmd store.Command, key string, v view, answered map[string]bool) error {
-	live, _ := v.owners(store.BucketOf(store.Token(key)))
+// readMajority refuses a Majority command unless a majority of the masters
+// (masterQuorum), this one included, gave it the rows it reads: then it
+// decides on the newest copy any earlier Majority write left, as that
+// write's majority and this one share a master. A member counts only if it
+// proved the hub CA key on the connection it answered on: a storage member
+// that says it is a master has its rows dropped (fetch), and no say.
+func (r *Replicator) readMajority(cmd store.Command, v view, answered map[string]bool) error {
+	masters, w := r.masterQuorum(v)
 	n := 0
-	for _, m := range live {
-		if !v.syncing[m] && (m == v.self || answered[m]) {
+	for _, m := range masters {
+		if m == v.self || (answered[m] && r.provedLast(m)) {
 			n++
 		}
 	}
-	if w := majority(v.n); n < w {
-		return fmt.Errorf("apply %s: %d of %d replicas of its key answered, %d needed: %w", cmd.Op(), n, v.n, w, store.ErrNoMajority)
+	if n < w {
+		return fmt.Errorf("apply %s: %d of %d masters answered, %d needed: %w", cmd.Op(), n, len(masters), w, store.ErrNoMajority)
 	}
 	return nil
 }
@@ -851,15 +917,17 @@ func (r *Replicator) fetchReads(ctx context.Context, m string, reads []store.Rea
 // replicas of every row; any other is sent in the background. A replica
 // that fails to take a critical write though the gossip still has it live
 // (it died a moment ago) is treated as down: it gets a hint, and the rows
-// go to the next live stand-in instead. A Majority write waits for a strict
-// majority of each row's replicas; a stand-in gets it but does not count.
+// go to the next live stand-in instead. A Majority write of the master
+// tables waits a quick timeout for the other masters and needs a strict
+// majority of them (masterQuorum), this one included, to take it and prove
+// the hub CA key (#387).
 func (r *Replicator) replicate(ctx context.Context, muts []store.Mutation, route store.Route, v view) error {
 	if len(muts) == 0 {
 		return nil
 	}
-	critical := route.Critical || route.Majority
+	critical := route.Critical
 	v.liveMasters = r.provenMasters(v)
-	batches, hinted, groups, err := r.plan(ctx, muts, critical, route.Majority, v)
+	batches, hinted, groups, err := r.plan(ctx, muts, critical, v)
 	if err != nil {
 		return err
 	}
@@ -867,7 +935,20 @@ func (r *Replicator) replicate(ctx context.Context, muts []store.Mutation, route
 		r.hint(t, ms)
 	}
 	if route.Master {
-		r.sendMaster(ctx, batches, 0)
+		took := r.sendMaster(ctx, batches, 0)
+		if !route.Majority {
+			return nil
+		}
+		masters, w := r.masterQuorum(v)
+		n := 0
+		for _, m := range masters {
+			if m == v.self || took[m] {
+				n++
+			}
+		}
+		if n < w {
+			return fmt.Errorf("%d of %d masters took a majority write, %d needed: %w", n, len(masters), w, store.ErrNoMajority)
+		}
 		return nil
 	}
 	if !critical {
@@ -901,7 +982,7 @@ func (r *Replicator) replicate(ctx context.Context, muts []store.Mutation, route
 			delete(live, m)
 		}
 		v.live = live
-		if batches, _, groups, err = r.plan(ctx, muts, critical, route.Majority, v); err != nil {
+		if batches, _, groups, err = r.plan(ctx, muts, critical, v); err != nil {
 			return err
 		}
 		for t := range batches {
@@ -927,10 +1008,7 @@ func shortOf(groups []writeGroup, acked, masterAcked map[string]bool) error {
 				n++
 			}
 		}
-		switch {
-		case n < g.w && g.majority:
-			return fmt.Errorf("%d of %d replicas took a majority write: %w", n, g.w, store.ErrNoMajority)
-		case n < g.w:
+		if n < g.w {
 			return fmt.Errorf("%d of %d replicas took a critical write: %w", n, g.w, store.ErrUnavailable)
 		}
 	}
@@ -941,8 +1019,6 @@ func shortOf(groups []writeGroup, acked, masterAcked map[string]bool) error {
 type writeGroup struct {
 	live []string
 	w    int
-	// majority is set for a write that needs a majority of the replicas.
-	majority bool
 	// masters, for a critical global row, are the other members that said
 	// they were masters, live as the write began (view.liveMasters): one of them
 	// must take it and prove it holds the hub CA key, as the storage members
@@ -953,12 +1029,11 @@ type writeGroup struct {
 
 // plan returns, for muts written here, the rows to send to each other live
 // target, the rows to hint to each replica that is down, and each row's
-// targets and W; for a majority write, each row's live replicas, stand-ins
-// left out, and a strict majority of N. Every target of a child row (a certificate) gets its
+// targets and W. Every target of a child row (a certificate) gets its
 // parent (the device) first: a stand-in may never have held it, and an
 // owner may not hold it yet, its copy still in a hint or in the
 // background replication of the parent's write (#370).
-func (r *Replicator) plan(ctx context.Context, muts []store.Mutation, critical, maj bool, v view) (batches, hinted map[string][]store.Mutation, groups []writeGroup, err error) {
+func (r *Replicator) plan(ctx context.Context, muts []store.Mutation, critical bool, v view) (batches, hinted map[string][]store.Mutation, groups []writeGroup, err error) {
 	batches, hinted = map[string][]store.Mutation{}, map[string][]store.Mutation{}
 	parents := map[string][]store.RowRef{}
 	master := r.holdsKey()
@@ -980,16 +1055,11 @@ func (r *Replicator) plan(ctx context.Context, muts []store.Mutation, critical, 
 		case p.Global:
 			n = len(v.everyone)
 		}
-		if maj && !p.Global {
-			owners, _ := v.owners(store.BucketOf(store.Token(p.Key)))
-			groups = append(groups, writeGroup{live: owners, w: majority(n), majority: true})
-		} else {
-			g := writeGroup{live: live, w: writeQuorum(critical, n)}
-			if critical && p.Global {
-				g.masters = v.liveMasters
-			}
-			groups = append(groups, g)
+		g := writeGroup{live: live, w: writeQuorum(critical, n)}
+		if critical && p.Global {
+			g.masters = v.liveMasters
 		}
+		groups = append(groups, g)
 		ref, hasParent := m.ParentRef()
 		for _, t := range live {
 			if t == v.self {
@@ -1103,7 +1173,7 @@ const (
 // hold it now, of how many masters there are (those down or that left the
 // gossip included, not those that answered without a proof).
 func (r *Replicator) replicateRevocation(ctx context.Context, muts []store.Mutation, v view) *store.Reach {
-	batches, hinted, _, err := r.plan(ctx, muts, false, false, v)
+	batches, hinted, _, err := r.plan(ctx, muts, false, v)
 	if err != nil {
 		r.log.WarnContext(ctx, "replicate a revocation: kept here, the others get it by anti-entropy", "err", err)
 		masters := slices.Compact(slices.Sorted(slices.Values(slices.Concat(v.masterSet, v.leftMasters))))

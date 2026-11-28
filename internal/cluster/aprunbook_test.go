@@ -12,15 +12,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gvart/hearth/internal/hlc"
 	"github.com/gvart/hearth/internal/store"
 )
 
 // Runbook run saves in a sharded cluster (#292). A run's saves are decided
 // by its version: a save from a version the run has moved past is refused,
 // so a step is recorded as running once and never run twice. These tests
-// hold that check to the newest copy of the run, whichever replica applies
-// the save. Hints and anti-entropy run hourly here, so a stale copy stays
-// stale until the test delivers the hints.
+// hold that check to the newest copy of the run, whichever master saves it:
+// runs live on the masters (#387), every member here. Hints and
+// anti-entropy run hourly here, so a stale copy stays stale until the test
+// delivers the hints.
 
 // runbookPreferring returns a runbook id whose preference list starts with
 // first.
@@ -86,44 +88,43 @@ func wantRunEverywhere(t *testing.T, an *apNet, ms []string, id string, version 
 	}
 }
 
-// A save applied on a replica that missed the run's last saves decides on
+// A save decided on a master that missed the run's last saves decides on
 // the newest copy: a save from the version it holds is refused, and one
 // from the newest version is taken. No save is lost, and every master reads
-// the run at its newest version. Three replicas, so the saves b misses still
+// the run at its newest version. Three masters, so the saves a misses still
 // reach a majority of them.
 func TestRunbookSaveOnAStaleReplica(t *testing.T) {
 	ids := []string{"a", "b", "c"}
 	an := newAPNet(t, 3, ids...)
-	rb := runbookPreferring(t, ids, "b", "c", "a")
-	run := createRun(t, an.m("a"), "run1", rb)
-	apEventually(t, "b and c to hold the run", func() bool {
-		_, _, onB := localRun(t, an.m("b"), "run1")
+	run := createRun(t, an.m("b"), "run1", "rb1")
+	apEventually(t, "a and c to hold the run", func() bool {
+		_, _, onA := localRun(t, an.m("a"), "run1")
 		_, _, onC := localRun(t, an.m("c"), "run1")
-		return onB && onC
+		return onA && onC
 	})
 
-	// b, the run's first replica, misses two saves.
-	an.setDown("b", true)
+	// a, the first master, on which saves are decided, misses two saves.
+	an.setDown("a", true)
 	v := int64(1)
 	for step := 1; step <= 2; step++ {
 		next, err := saveRun(t, an.m("c"), run, v, step)
 		if err != nil {
-			t.Fatalf("save of step %d with b down = %v", step, err)
+			t.Fatalf("save of step %d with a down = %v", step, err)
 		}
 		v = next
 	}
-	an.setDown("b", false)
-	if got, _, _ := localRun(t, an.m("b"), "run1"); got != 1 {
-		t.Fatalf("b holds version %d; the test needs it stale at 1", got)
+	an.setDown("a", false)
+	if got, _, _ := localRun(t, an.m("a"), "run1"); got != 1 {
+		t.Fatalf("a holds version %d; the test needs it stale at 1", got)
 	}
 
-	// A hub that read the run before those saves: refused, though b's copy
+	// A hub that read the run before those saves: refused, though a's copy
 	// is at the version it read.
-	if _, err := saveRun(t, an.m("b"), run, 1, 9); !errors.Is(err, store.ErrRunbookRunConflict) {
-		t.Fatalf("save from version 1 on the stale b = %v, want ErrRunbookRunConflict", err)
+	if _, err := saveRun(t, an.m("a"), run, 1, 9); !errors.Is(err, store.ErrRunbookRunConflict) {
+		t.Fatalf("save from version 1 on the stale a = %v, want ErrRunbookRunConflict", err)
 	}
-	// A hub that read the newest version: taken, though it goes to b first.
-	if got, err := saveRun(t, an.m("a"), run, v, 3); err != nil || got != v+1 {
+	// A hub that read the newest version: taken, though it is decided on a.
+	if got, err := saveRun(t, an.m("b"), run, v, 3); err != nil || got != v+1 {
 		t.Fatalf("save from version %d = %d, %v", v, got, err)
 	}
 
@@ -189,10 +190,12 @@ func TestRunbookConcurrentSavesFromOneVersion(t *testing.T) {
 }
 
 // A step is recorded as running before it runs. That record needs a
-// majority of the run's three replicas: with only the owner's own replica
-// reachable it is refused, so the step does not run. Once recorded, it
-// survives the owner dying, and every other master reads the step as
-// running, so the next owner stops the run as unknown instead of running the
+// majority of the three masters: with only the owner reachable it is
+// refused, so the step does not run. Once recorded, it survives the owner
+// dying: a master that missed it (c, down at the time, its hint held by the
+// dead owner) has its save from the version before refused, as the save
+// reads the run from a majority first, and reads the step as running from
+// then on, so the next owner stops the run as unknown instead of running the
 // step again.
 func TestRunbookRunningStepSurvivesItsOwner(t *testing.T) {
 	ids := []string{"a", "b", "c"}
@@ -219,63 +222,85 @@ func TestRunbookRunningStepSurvivesItsOwner(t *testing.T) {
 	}
 	an.setDown("b", true)
 	an.setDown("c", false)
-	wantRunEverywhere(t, an, []string{"a", "c"}, "run1", 2, `{"step":1}`)
+	wantRunEverywhere(t, an, []string{"a"}, "run1", 2, `{"step":1}`)
 	// The next owner's save is from that version.
 	if _, err := saveRun(t, an.m("c"), run, 1, 1); !errors.Is(err, store.ErrRunbookRunConflict) {
 		t.Fatalf("save from version 1 after b died = %v, want ErrRunbookRunConflict", err)
 	}
+	wantRunEverywhere(t, an, []string{"a", "c"}, "run1", 2, `{"step":1}`)
 	if _, err := saveRun(t, an.m("c"), run, 2, 2); err != nil {
 		t.Fatalf("save from version 2 after b died = %v", err)
 	}
 }
 
-// The quorum of a runbook run's saves is a strict majority of its N replicas,
-// stand-ins never counted (#307): of two sides of a split, at most one has it.
+// The quorum of a runbook run's start and saves is a strict majority of the
+// masters (#307, #387): of two sides of a split, at most one has it. Storage
+// members never count, however many are live; a member that answered without
+// proving the hub CA key is no master, and one that answered a read without a
+// proof on that connection gives the read nothing.
 func TestRunbookMajority(t *testing.T) {
 	for _, tc := range []struct {
-		members []string
-		n       int
-		down    []string // members down; the key's replicas are the first n members
-		want    int      // W
-		ok      bool
+		masters []string // a is this member
+		storage []string // live storage-only members
+		down    []string
+		// unproved answered without proving the key.
+		unproved []string
+		want     int // W
+		ok       bool
 	}{
-		{members: []string{"a"}, n: 1, want: 1, ok: true},
-		{members: []string{"a", "b"}, n: 2, want: 2, ok: true},
-		{members: []string{"a", "b"}, n: 2, down: []string{"b"}, want: 2},
-		{members: []string{"a", "b", "c"}, n: 2, down: []string{"b"}, want: 2}, // c stands in, uncounted
-		{members: []string{"a", "b", "c"}, n: 3, want: 2, ok: true},
-		{members: []string{"a", "b", "c"}, n: 3, down: []string{"c"}, want: 2, ok: true},
-		{members: []string{"a", "b", "c"}, n: 3, down: []string{"b", "c"}, want: 2},
-		{members: []string{"a", "b", "c", "d", "e"}, n: 3, down: []string{"b", "c"}, want: 2}, // d and e stand in
-		{members: []string{"a", "b", "c", "d", "e"}, n: 5, down: []string{"d", "e"}, want: 3, ok: true},
-		{members: []string{"a", "b", "c", "d", "e"}, n: 5, down: []string{"c", "d", "e"}, want: 3},
+		{masters: []string{"a"}, want: 1, ok: true},
+		{masters: []string{"a", "b"}, want: 2, ok: true},
+		{masters: []string{"a", "b"}, down: []string{"b"}, want: 2},
+		{masters: []string{"a", "b"}, storage: []string{"s1", "s2", "s3"}, down: []string{"b"}, want: 2},
+		{masters: []string{"a", "b", "c"}, want: 2, ok: true},
+		{masters: []string{"a", "b", "c"}, down: []string{"c"}, want: 2, ok: true},
+		{masters: []string{"a", "b", "c"}, down: []string{"b", "c"}, want: 2},
+		{masters: []string{"a", "b", "c"}, storage: []string{"s1", "s2"}, down: []string{"b", "c"}, want: 2},
+		{masters: []string{"a", "b", "c", "d", "e"}, down: []string{"d", "e"}, want: 3, ok: true},
+		{masters: []string{"a", "b", "c", "d", "e"}, down: []string{"c", "d", "e"}, want: 3},
+		// b proved nothing: two masters, a and c.
+		{masters: []string{"a", "b", "c"}, unproved: []string{"b"}, want: 2, ok: true},
+		{masters: []string{"a", "b", "c"}, unproved: []string{"b"}, down: []string{"c"}, want: 2},
 	} {
-		t.Run(fmt.Sprintf("n%d/%d-members/down%v", tc.n, len(tc.members), tc.down), func(t *testing.T) {
-			if got := majority(tc.n); got != tc.want {
-				t.Fatalf("majority(%d) = %d, want %d", tc.n, got, tc.want)
-			}
-			key := runbookPreferring(t, tc.members, tc.members[:tc.n]...)
+		name := fmt.Sprintf("%d-masters/down%v/unproved%v/storage%d", len(tc.masters), tc.down, tc.unproved, len(tc.storage))
+		t.Run(name, func(t *testing.T) {
 			live := map[string]bool{}
-			for _, m := range tc.members {
+			proved := map[string]bool{}
+			for _, m := range slices.Concat(tc.masters, tc.storage) {
 				live[m] = !slices.Contains(tc.down, m)
+				proved[m] = slices.Contains(tc.masters, m) && !slices.Contains(tc.unproved, m)
 			}
-			v := view{self: "a", ring: NewRing(tc.members), live: live, n: tc.n, syncing: map[string]bool{}}
-			cmd := store.SaveRunbookRun{ID: "run1", RunbookID: key}
-			err := (&Replicator{}).checkMajority(cmd, key, v)
+			r := &Replicator{proved: proved}
+			v := view{self: "a", live: live, masterSet: tc.masters}
+			masters, w := r.masterQuorum(v)
+			if w != tc.want || w != majority(len(masters)) {
+				t.Fatalf("masterQuorum = %v, %d, want W %d", masters, w, tc.want)
+			}
+			cmd := store.SaveRunbookRun{ID: "run1"}
+			err := r.checkMajority(cmd, v)
 			if tc.ok != (err == nil) {
 				t.Fatalf("checkMajority = %v, want ok %v", err, tc.ok)
 			}
 			if err != nil && (!errors.Is(err, store.ErrNoMajority) || !errors.Is(err, store.ErrUnavailable)) {
 				t.Fatalf("checkMajority = %v, want ErrNoMajority, also ErrUnavailable", err)
 			}
-			// The read is held to the same majority: this member and the
-			// live replicas that answered.
+			// The read is held to the same majority: this master and the
+			// live masters that answered, proving the key.
 			answered := map[string]bool{}
-			for _, m := range tc.members {
+			for m := range live {
 				answered[m] = live[m]
 			}
-			if err := readMajority(cmd, key, v, answered); tc.ok != (err == nil) {
+			if err := r.readMajority(cmd, v, answered); tc.ok != (err == nil) {
 				t.Fatalf("readMajority = %v, want ok %v", err, tc.ok)
+			}
+			// Answers on connections that proved nothing are no majority.
+			for _, m := range tc.masters {
+				if m != "a" {
+					delete(proved, m)
+				}
+			}
+			if err := r.readMajority(cmd, v, answered); len(tc.masters) > 1 && !errors.Is(err, store.ErrNoMajority) {
+				t.Fatalf("readMajority with no proof = %v, want ErrNoMajority", err)
 			}
 		})
 	}
@@ -296,8 +321,8 @@ func TestRunbookRefusedWhileStartedAlone(t *testing.T) {
 	}
 }
 
-// A split of a run's three replicas (#307): the minority side refuses to
-// start a run or record a step, whatever stand-ins it reaches, and writes
+// A split of three masters (#307, #387): the minority side refuses to start
+// a run or record a step, whatever storage members it reaches, and writes
 // nothing; the majority side records steps. Once the split heals, the
 // minority's save from the version it read is a conflict and a retry from
 // the newest version is taken.
@@ -305,16 +330,25 @@ func TestRunbookMinorityRefusesAcrossASplit(t *testing.T) {
 	for _, tc := range []struct {
 		name             string
 		ids              []string
+		storage          []string // storage-only members, without the hub CA key
 		minority, others []string
 	}{
 		{name: "three members", ids: []string{"a", "b", "c"}, minority: []string{"a"}, others: []string{"b", "c"}},
-		// a reaches two stand-ins, d and e: on main it took the save.
-		{name: "five members", ids: []string{"a", "b", "c", "d", "e"}, minority: []string{"a", "d", "e"}, others: []string{"b", "c"}},
+		// a reaches two storage members, d and e, which say they are
+		// masters: they count for nothing, and take no run.
+		{name: "five members", ids: []string{"a", "b", "c", "d", "e"}, storage: []string{"d", "e"},
+			minority: []string{"a", "d", "e"}, others: []string{"b", "c"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// Members cut off a moment ago count as up again soon after the heal.
-			an := newAPNetWith(t, 3, func(c *ReplicatorConfig) { c.SuspectFor = 200 * time.Millisecond }, tc.ids...)
-			rb := runbookPreferring(t, tc.ids, "a", "b", "c")
+			an := newAPNetWith(t, 3, func(c *ReplicatorConfig) {
+				c.SuspectFor = 200 * time.Millisecond
+				if slices.Contains(tc.storage, c.NodeID) {
+					c.Master = testMasterKey{}
+				}
+			}, tc.ids...)
+			masters := slices.DeleteFunc(slices.Clone(tc.ids), func(m string) bool { return slices.Contains(tc.storage, m) })
+			rb := "rb1"
 			run := createRun(t, an.m("b"), "run1", rb)
 			apEventually(t, "a, b and c to hold the run", func() bool {
 				for _, m := range []string{"a", "b", "c"} {
@@ -327,13 +361,17 @@ func TestRunbookMinorityRefusesAcrossASplit(t *testing.T) {
 
 			an.split(tc.minority, tc.others, true)
 			for _, m := range tc.minority {
-				if _, err := saveRun(t, an.m(m), run, 1, 1); !errors.Is(err, store.ErrNoMajority) {
-					t.Fatalf("save on the minority's %s = %v, want ErrNoMajority", m, err)
+				want := store.ErrNoMajority
+				if slices.Contains(tc.storage, m) {
+					want = errNotMaster
+				}
+				if _, err := saveRun(t, an.m(m), run, 1, 1); !errors.Is(err, want) {
+					t.Fatalf("save on the minority's %s = %v, want %v", m, err, want)
 				}
 				other := run
 				other.ID = "run2-" + m
-				if err := an.m(m).st.RunbookRuns().Create(t.Context(), other); !errors.Is(err, store.ErrNoMajority) {
-					t.Fatalf("start a run on the minority's %s = %v, want ErrNoMajority", m, err)
+				if err := an.m(m).st.RunbookRuns().Create(t.Context(), other); !errors.Is(err, want) {
+					t.Fatalf("start a run on the minority's %s = %v, want %v", m, err, want)
 				}
 			}
 			if v, state, _ := localRun(t, an.m("a"), "run1"); v != 1 || state != `{"step":0}` {
@@ -358,14 +396,19 @@ func TestRunbookMinorityRefusesAcrossASplit(t *testing.T) {
 			for _, id := range tc.ids {
 				an.m(id).rep.deliverHints(t.Context())
 			}
-			wantRunEverywhere(t, an, tc.ids, "run1", 3, `{"step":2}`)
+			wantRunEverywhere(t, an, masters, "run1", 3, `{"step":2}`)
+			for _, m := range tc.storage {
+				if _, _, ok := localRun(t, an.m(m), "run1"); ok {
+					t.Errorf("storage-only %s holds the run", m)
+				}
+			}
 		})
 	}
 }
 
 // A split the gossip has not noticed yet: b and c still look alive to a but
 // cannot be reached. a refuses to start a run or record a step, and writes
-// neither, as its read from a majority of the replicas fails first.
+// neither, as its read from a majority of the masters fails first.
 func TestRunbookMinorityRefusesBeforeTheGossipNotices(t *testing.T) {
 	ids := []string{"a", "b", "c"}
 	an := newAPNet(t, 3, ids...)
@@ -393,5 +436,94 @@ func TestRunbookMinorityRefusesBeforeTheGossipNotices(t *testing.T) {
 	}
 	if v, _, _ := localRun(t, an.m("a"), "run1"); v != 1 {
 		t.Fatalf("a holds version %d after the refusal, want 1", v)
+	}
+}
+
+// Runbook runs live on masters only (#387). A storage-only member that says
+// on the gossip it is a master, and sorts first, cannot start or save a run,
+// nor alter one by any path a forged row could take (a merge, a command to
+// coordinate, a hint, anti-entropy, a read); it is not the master a save is
+// decided on, is never sent the save, does not count towards the majority,
+// and holds no run.
+func TestStorageMemberCannotAlterARun(t *testing.T) {
+	ctx := t.Context()
+	an := newAPNetWith(t, 0, func(c *ReplicatorConfig) {
+		if c.NodeID == "a0" {
+			c.Master = testMasterKey{}
+		}
+	}, "a0", "m", "m2")
+	forger := an.m("a0")
+	run := createRun(t, an.m("m"), "run1", "rb1")
+	apEventually(t, "m2 to hold the run", func() bool {
+		_, _, ok := localRun(t, an.m("m2"), "run1")
+		return ok
+	})
+
+	// Its own store starts and saves none.
+	other := run
+	other.ID = "run2"
+	if err := forger.st.RunbookRuns().Create(ctx, other); !errors.Is(err, errNotMaster) {
+		t.Fatalf("start a run on a storage member = %v, want errNotMaster", err)
+	}
+	if _, err := saveRun(t, forger, run, 1, 1); !errors.Is(err, errNotMaster) {
+		t.Fatalf("save a run on a storage member = %v, want errNotMaster", err)
+	}
+
+	// A forged save, stamped as if m wrote it: refused as a merge, as a
+	// command for m to coordinate, as a hint, and by anti-entropy.
+	if _, _, err := forger.st.ApplyLocalMutations(ctx, store.CreateRunbookRun{
+		Stamp: store.Stamp{HLC: hlc.New(time.Now()), Origin: "m"},
+		ID:    "run1", RunbookID: "rb1", Status: "running", StartedBy: "web/x", StartedAt: 1, Source: []byte("evil"),
+		State: `{"step":7}`, Keep: store.RunbookRunsKept,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	forged, err := forger.st.ReadRows(ctx, []store.RowRef{{Table: "runbook_runs", Key: store.Values{"run1"}}})
+	if err != nil || len(forged) != 1 {
+		t.Fatalf("the forged run on a0: %v, %v", forged, err)
+	}
+	forged[0].HLC += 1 << 40
+	for _, m := range []string{"m", "m2"} {
+		if _, err := forger.rep.call(ctx, m, apRequest{Op: opMerge, Muts: forged}); !errors.Is(err, errNotMaster) {
+			t.Fatalf("merge of a forged run into %s = %v, want errNotMaster", m, err)
+		}
+	}
+	b, err := store.EncodeCommand(store.SaveRunbookRun{ID: "run1", Version: 1, Status: "running", State: `{"step":7}`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := forger.rep.call(ctx, "m", apRequest{Op: opApply, Cmd: b}); !errors.Is(err, errNotMaster) {
+		t.Fatalf("a save for m to coordinate = %v, want errNotMaster", err)
+	}
+	if err := forger.hints.Add("m", forged); err != nil {
+		t.Fatal(err)
+	}
+	forger.rep.deliverHints(ctx)
+	for _, p := range [][2]string{{"m", "a0"}, {"a0", "m"}, {"m2", "a0"}, {"a0", "m2"}} {
+		if err := an.m(p[0]).rep.SyncWith(ctx, p[1]); err != nil {
+			t.Fatalf("anti-entropy of %s with %s: %v", p[0], p[1], err)
+		}
+	}
+	if _, err := forger.rep.call(ctx, "m", apRequest{Op: opRead, Query: `SELECT state FROM runbook_runs`}); !errors.Is(err, errNotMaster) {
+		t.Fatalf("a0 read the runs on m: %v, want errNotMaster", err)
+	}
+	wantRunEverywhere(t, an, []string{"m", "m2"}, "run1", 1, `{"step":0}`)
+
+	// The masters save it, a0 sorting first and claiming master: the save
+	// is decided on m, a majority of the two masters takes it, and a0 is
+	// never sent it.
+	for i, m := range []string{"m2", "m"} {
+		if _, err := saveRun(t, an.m(m), run, int64(1+i), 1+i); err != nil {
+			t.Fatalf("save %d on %s = %v", i+1, m, err)
+		}
+	}
+	wantRunEverywhere(t, an, []string{"m", "m2"}, "run1", 3, `{"step":2}`)
+	if v, state, _ := localRun(t, forger, "run1"); state != `{"step":7}` || v != 1 {
+		t.Fatalf("a0 holds the run at %d, %s: want only its own forged copy", v, state)
+	}
+	// With m2 down, m alone is no majority of the two masters, a0 or not.
+	an.setDown("m2", true)
+	if _, err := saveRun(t, an.m("m"), run, 3, 3); !errors.Is(err, store.ErrNoMajority) {
+		t.Fatalf("save with m2 down = %v, want ErrNoMajority", err)
 	}
 }

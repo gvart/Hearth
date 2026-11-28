@@ -115,8 +115,8 @@ func ReadsOf(cmd Command) []Read {
 		}
 	case CreateRunbookRun:
 		// It counts the runbook's unresolved runs; and reading them from a
-		// majority of the replicas proves one is reachable before the run is
-		// written here (#307).
+		// majority of the masters proves one is reachable before the run is
+		// written here (#307, #387).
 		return []Read{{Table: "runbook_runs", Where: `runbook_id = ? AND finished_at = 0`, Args: Values{c.RunbookID}}}
 	case SaveRunbookRun:
 		// A copy behind the newest refuses the newest version as a conflict,

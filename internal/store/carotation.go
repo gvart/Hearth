@@ -13,7 +13,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"slices"
 	"time"
 )
@@ -371,65 +370,20 @@ var (
 // SealedSecret is one sealed secret: the row id of table, and its sealed
 // value. In ResealSecrets, Sealed is the value read and Resealed the new one.
 type SealedSecret struct {
-	Table string `json:"table"`
-	ID    string `json:"id"`
-	// Key, in a sharded cluster, is the partition key of a sharded table's
-	// row: where its re-seal is written.
-	Key      string `json:"key,omitempty"`
+	Table    string `json:"table"`
+	ID       string `json:"id"`
 	Sealed   []byte `json:"sealed"`
 	Resealed []byte `json:"resealed,omitempty"`
 }
 
-// Sealed returns every sealed secret, ordered by table and ID. In a sharded
-// cluster the global tables are read here and the runbook runs on members
-// that together hold every partition, each run at its newest version.
+// Sealed returns every sealed secret, ordered by table and ID, read here: a
+// master holds every global row, the runbook runs included (#387), and reads
+// them once it compared them with the other masters (MasterRowsGate).
 func (r CARotations) Sealed(ctx context.Context) ([]SealedSecret, error) {
-	if r.s.shards == nil {
-		return readSealed(ctx, r.s.db)
-	}
-	out, err := readSealedTables(ctx, r.s.db, SealedKubeClusters, SealedProxmoxServers, SealedConfigDocs, SealedESPHomeDevices,
-		SealedOpenWrtRouters, SealedOPNsenseFirewalls, SealedUniFiControllers)
-	if err != nil {
-		return nil, err
-	}
-	rows, err := r.s.readEvery(ctx, `SELECT id, source, runbook_id, _hlc, _origin FROM runbook_runs
-		WHERE _deleted = 0`)
-	if err != nil {
+	if err := r.s.masterRowsReady(); err != nil {
 		return nil, fmt.Errorf("read sealed %s: %w", SealedRunbookRuns, err)
 	}
-	type version struct {
-		hlc    int64
-		origin string
-	}
-	newest := map[string]version{}
-	runs := map[string]SealedSecret{}
-	for _, vals := range rows {
-		var (
-			s SealedSecret
-			v version
-		)
-		if err := scanVals(vals, []any{&s.ID, &s.Sealed, &s.Key, &v.hlc, &v.origin}); err != nil {
-			return nil, fmt.Errorf("read sealed %s: %w", SealedRunbookRuns, err)
-		}
-		if old, ok := newest[s.ID]; ok && (v.hlc < old.hlc || (v.hlc == old.hlc && v.origin <= old.origin)) {
-			continue
-		}
-		s.Table = SealedRunbookRuns
-		newest[s.ID], runs[s.ID] = v, s
-	}
-	for _, id := range slices.Sorted(maps.Keys(runs)) {
-		out = append(out, runs[id])
-	}
-	slices.SortStableFunc(out, func(a, b SealedSecret) int {
-		return cmp.Or(cmp.Compare(sealedOrder[a.Table], sealedOrder[b.Table]), cmp.Compare(a.ID, b.ID))
-	})
-	return out, nil
-}
-
-// sealedOrder is the order Sealed lists the tables of sealed secrets in.
-var sealedOrder = map[string]int{
-	SealedKubeClusters: 0, SealedProxmoxServers: 1, SealedRunbookRuns: 2, SealedConfigDocs: 3, SealedESPHomeDevices: 4,
-	SealedOpenWrtRouters: 5, SealedOPNsenseFirewalls: 6, SealedUniFiControllers: 7,
+	return readSealed(ctx, r.s.db)
 }
 
 // SealedDigest is a digest of secrets, as Sealed returns them: finishing a

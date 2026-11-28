@@ -21,14 +21,15 @@ import (
 // Every row of a sharded table has a partition key: the rows of one key live
 // on the same replicas, so a command that reads and writes them runs on one
 // of those replicas. The key is the device id for devices and certs, the
-// panel id for panels and panel_links, the automation or runbook for their
-// runs (so pruning the oldest runs of one stays on one replica), an audit
+// panel id for panels and panel_links, the automation for its runs (so
+// pruning the oldest runs of one stays on one replica), an audit
 // entry's operation (so an action's entry and its outcome stay together),
 // and otherwise the primary key. Small tables that every member needs, and
 // tables whose commands read all their rows, are global: every storage
 // member holds all of them. The global tables whose rows grant access (sign-in
 // sessions, MCP and dashboard tokens, shared panels and their links) are
-// master tables: only masters hold them (#384).
+// master tables: only masters hold them (#384). So are runbook runs, which
+// only masters run (#387).
 
 // ShardBuckets is the number of digest buckets of the sharded rows, and of
 // the positions on the hash ring: a row's bucket is the top 16 bits of the
@@ -48,7 +49,6 @@ var partitionCols = map[string]string{
 	"automation_runs": "automation_id",
 	"approvals":       "id",
 	"approval_links":  "hash",
-	"runbook_runs":    "runbook_id",
 	"device_routes":   "device_id",
 }
 
@@ -79,6 +79,7 @@ var globalTables = map[string]bool{
 	"dashboard_tokens": true,
 	"panels":           true,
 	"panel_links":      true,
+	"runbook_runs":     true,
 }
 
 // masterTables are the global tables only masters hold (#384): their rows
@@ -86,13 +87,15 @@ var globalTables = map[string]bool{
 // and the panel it shows), so a storage-only member, which could forge a row
 // it holds or answer a read of one as it likes, neither holds nor serves
 // them. Masters write them, replicate them to each other only, and read them
-// on their own copy.
+// on their own copy. Runbook runs are master rows too (#387): a run's state
+// says which step a master runs next, and only masters run runbooks.
 var masterTables = map[string]bool{
 	"sessions":         true,
 	"mcp_tokens":       true,
 	"dashboard_tokens": true,
 	"panels":           true,
 	"panel_links":      true,
+	"runbook_runs":     true,
 }
 
 // criticalTables are written with W = min(2, N) acknowledgements.
@@ -303,14 +306,16 @@ type Route struct {
 	Key string
 	// Critical commands wait for W = min(2, N) replicas.
 	Critical bool
-	// Majority commands of a RouteKey (a runbook run's start and saves)
-	// need a strict majority of their key's N replicas, stand-ins not
-	// counted, to read the rows they decide on and to take the write: the
-	// minority side of a split refuses them with ErrNoMajority (#307).
+	// Majority commands of a Master route (a runbook run's start, saves and
+	// re-seal) need a strict majority of the masters, each counted only once
+	// it proved the hub CA key, to read the rows they decide on and to take
+	// the write: the minority side of a split refuses them with
+	// ErrNoMajority (#307, #387).
 	Majority bool
-	// First commands of a RouteKey run on the first live replica of their
-	// key, even on a member that is another replica: of two such commands
-	// that read and write one row, one replica runs both, in turn.
+	// First commands of a Master route run on the first live master that
+	// proves the hub CA key, even when this member is another master: of two
+	// such commands that read and write one row, one master runs both, in
+	// turn.
 	First bool
 	// Master commands of a RouteGlobal write master tables: the masters
 	// are their replicas, and the rows they read are read on masters only.
@@ -366,12 +371,13 @@ func RouteOf(cmd Command) (Route, error) {
 		return Route{Kind: RouteEvery}, nil
 	case ResealSecrets:
 		// One secret per command in a sharded cluster: a runbook run's is
-		// written on its runbook's replicas, the others are global.
+		// written on the masters, taken by a majority of them (#387), the
+		// others are global.
 		if len(c.Secrets) != 1 {
 			return Route{}, fmt.Errorf("%w: re-seal one secret per command in a sharded cluster", ErrNoRoute)
 		}
-		if sec := c.Secrets[0]; sec.Table == SealedRunbookRuns {
-			r, err := key(sec.Key, true)
+		if c.Secrets[0].Table == SealedRunbookRuns {
+			r, err := master()
 			r.Majority = true
 			return r, err
 		}
@@ -409,15 +415,16 @@ func RouteOf(cmd Command) (Route, error) {
 	case RecordAutomationRun:
 		return key(c.AutomationID, false)
 	case CreateRunbookRun:
-		r, err := key(c.RunbookID, true)
+		// On the masters (#387): read and taken by a majority of them.
+		r, err := master()
 		r.Majority = true
 		return r, err
 	case SaveRunbookRun:
-		// Its version check runs on one replica: two saves from one
-		// version, from two masters, are decided there and one is refused.
-		// A majority of the replicas reads and takes it, so of two sides of
-		// a split at most one records a step (#307).
-		r, err := key(c.RunbookID, true)
+		// Its version check runs on one master, the first live one: two
+		// saves from one version, from two masters, are decided there and
+		// one is refused. A majority of the masters reads and takes it, so
+		// of two sides of a split at most one records a step (#307, #387).
+		r, err := master()
 		r.First, r.Majority = true, true
 		return r, err
 	case AddKubeCluster, RemoveKubeCluster, AddProxmoxServer, RemoveProxmoxServer,
