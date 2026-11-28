@@ -258,7 +258,8 @@ func TestDeviceAgentVersionWindows(t *testing.T) {
 	t.Parallel()
 	f := newUpgradeFixture(t, "v1.2.0", policy.Config{})
 	f.connectUpgrader(t, minUpgradeMinor, func(h *agentv1.Hello) {
-		h.Os, h.Arch, h.ReleaseTarget = "windows", "amd64", "windows_amd64"
+		// What gopsutil reports on Windows.
+		h.Os, h.Arch, h.ReleaseTarget = "Microsoft Windows 11 Pro 10.0.22631 Build 22631", "amd64", "windows_amd64"
 	}, upgraded)
 	c := sessionCookie(t, f.login(t, testPassword))
 	dev := decode[DeviceJSON](t, f.do(t, http.MethodGet, "/api/v1/devices/dev-1", "", c))

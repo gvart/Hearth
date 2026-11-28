@@ -36,9 +36,9 @@ export function AgentVersionLink({ children }: { children: string }) {
 export function DeviceUpgrade({ device }: { device: Device }) {
   const v = device.agent_version;
   // An agent on Windows does not upgrade itself either: its page has the
-  // PowerShell installer's command (#399).
-  const tooOld =
-    v !== undefined && v.upgrade_available && !v.remote_upgrade && (!v.no_remote_upgrade || device.os === 'windows');
+  // PowerShell installer's command (#399), so fetch it whenever the agent
+  // cannot upgrade itself.
+  const tooOld = v !== undefined && v.upgrade_available && !v.remote_upgrade;
   const detail = useDeviceDetail(device.id, tooOld);
   const [open, setOpen] = useState(false);
   if (!v || (!v.upgrade_available && !v.rolled_back_from && !open)) {
