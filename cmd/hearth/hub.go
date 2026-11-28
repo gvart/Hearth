@@ -754,7 +754,9 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	g.Go(func() error { return telemetrySender.Run(gctx) })
 	// Every hub writes the audit entries it spooled.
 	g.Go(func() error { return spool.Run(gctx) })
-	g.Go(func() error { return runAuditKeys(gctx, st, ca, opts.apm.ring, sealers.audit, log.With("component", "audit-keys")) })
+	g.Go(func() error {
+		return runAuditKeys(gctx, st, ca, opts.apm.ring, sealers.audit, log.With("component", "audit-keys"))
+	})
 	g.Go(func() error { return serve(gctx, agentSrv, func() error { return agentSrv.ServeTLS(agentLn, "", "") }) })
 	g.Go(func() error { return serve(gctx, webSrv, func() error { return webSrv.Serve(webLn) }) })
 	// Every hub with --mqtt-listen runs a broker of its own.

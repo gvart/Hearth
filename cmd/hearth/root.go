@@ -15,6 +15,6 @@ func newRootCmd(info buildInfo) *cobra.Command {
 		SilenceErrors: true,
 	}
 	root.SetVersionTemplate("{{.Name}} {{.Version}}\n")
-	root.AddCommand(newVersionCmd(info), newHubCmd(), newTokenCmd(), newDeviceCmd(), newAgentCmd(), newAdminCmd(), newClusterCmd(), newAutomationCmd(), newRunbookCmd(), newNetworkCmd(), newApprovalCmd(), newMCPCmd(), newBackupCmd(), newRestoreCmd(), newMQTTCmd(), newConfigCmd(), newPluginCmd(), newReleaseCmd(), newAICmd())
+	root.AddCommand(newVersionCmd(info), newHubCmd(), newTokenCmd(), newDeviceCmd(), newAgentCmd(), newAdminCmd(), newClusterCmd(), newAutomationCmd(), newRunbookCmd(), newNetworkCmd(), newApprovalCmd(), newMCPCmd(), newBackupCmd(), newRestoreCmd(), newMQTTCmd(), newConfigCmd(), newPluginCmd(), newReleaseCmd(), newAICmd(), newAuditCmd())
 	return root
 }
