@@ -42,6 +42,11 @@ type apNet struct {
 	// until it gives up, as one to a host whose network went away does.
 	unroutable map[[2]string]bool
 	cut        map[[2]string]bool
+	// silent links, {from, to}, lose what is sent over them, on the
+	// connections already open too, and nothing closes those: as on a
+	// host whose network was unplugged, a request on one waits until its
+	// deadline.
+	silent map[[2]string]bool
 	// unknown hides a member from another's membership, {viewer, member}:
 	// the gossip has not told the viewer about it yet.
 	unknown map[[2]string]bool
@@ -106,7 +111,25 @@ func (p apPeers) DialReplica(ctx context.Context, id string) (net.Conn, error) {
 	// Both ends share a binding, as a TLS connection's exporter.
 	binding := []byte(rand.Text())
 	go m.rep.ServeConn(boundConn{b, binding}, p.self)
-	return boundConn{a, binding}, nil
+	return boundConn{silenceable{a, p.net, [2]string{p.self, id}}, binding}, nil
+}
+
+// silenceable is the dialing end of a connection: what it sends is lost
+// once its link is silent.
+type silenceable struct {
+	net.Conn
+	net  *apNet
+	link [2]string
+}
+
+func (c silenceable) Write(b []byte) (int, error) {
+	c.net.mu.Lock()
+	silent := c.net.silent[c.link]
+	c.net.mu.Unlock()
+	if silent {
+		return len(b), nil
+	}
+	return c.Conn.Write(b)
 }
 
 // boundConn is a pipe end with the binding both ends share.
@@ -147,7 +170,7 @@ func newAPNet(t testing.TB, n int, ids ...string) *apNet {
 // replicators' configuration changed by tune.
 func newAPNetWith(t testing.TB, n int, tune func(*ReplicatorConfig), ids ...string) *apNet {
 	t.Helper()
-	an := &apNet{tune: tune, members: map[string]*apMember{}, down: map[string]bool{}, crashed: map[string]bool{}, hung: map[string]bool{}, unroutable: map[[2]string]bool{}, cut: map[[2]string]bool{}, unknown: map[[2]string]bool{}, roles: map[string]RoleSet{}}
+	an := &apNet{tune: tune, members: map[string]*apMember{}, down: map[string]bool{}, crashed: map[string]bool{}, hung: map[string]bool{}, unroutable: map[[2]string]bool{}, cut: map[[2]string]bool{}, silent: map[[2]string]bool{}, unknown: map[[2]string]bool{}, roles: map[string]RoleSet{}}
 	for _, id := range ids {
 		an.add(t, n, id)
 	}
@@ -922,6 +945,68 @@ func TestCriticalWriteToAnUnroutableMemberFailsOverFast(t *testing.T) {
 	if took := time.Since(start); took < defaultQuickTimeout {
 		t.Errorf("critical write on the cut-off member failed after %v: b and c were never tried", took)
 	} else if took > bound {
+		t.Errorf("critical write on the cut-off member failed after %v, want under %v", took, bound)
+	}
+}
+
+// A member whose network went away a moment ago, still alive in the gossip,
+// with connections to it still pooled that nothing closed: a critical write
+// forwarded to it on one costs one quick timeout, not the forward's request
+// timeout, before the next target takes it (#418); the writes after it skip
+// the member; and on the cut-off side writes fail fast.
+func TestCriticalWriteOnASilentPooledConnFailsOverFast(t *testing.T) {
+	ctx := t.Context()
+	ids := []string{"a", "b", "c"}
+	an := newAPNetWith(t, 2, func(c *ReplicatorConfig) { c.RequestTimeout = defaultRequestTimeout }, ids...)
+	silence := func(from string, to ...string) {
+		an.mu.Lock()
+		for _, t := range to {
+			an.unroutable[[2]string{from, t}] = true
+			an.silent[[2]string{from, t}] = true
+		}
+		an.mu.Unlock()
+	}
+	// Every member has pooled connections to the others.
+	for _, id := range ids {
+		for i := range 3 {
+			if err := an.m(id).st.Tokens().Create(ctx, fmt.Sprint(id, "-before-", i), nil, time.Now().Add(time.Hour)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	bound := 3 * defaultQuickTimeout
+
+	// Majority side: b forwards the write to a, the first of its replicas.
+	silence("b", "a")
+	silence("c", "a")
+	start := time.Now()
+	if err := appendKeyed(ctx, an.m("b"), auditKeyPreferring(t, ids, "k", "a", "c")); err != nil {
+		t.Fatalf("forwarded critical write with a silent: %v", err)
+	}
+	if took := time.Since(start); took > bound {
+		t.Errorf("forwarded critical write with a silent took %v, want under %v", took, bound)
+	}
+	// What a token's creation writes: its audit entries and the token.
+	start = time.Now()
+	for i := range 3 {
+		if err := appendKeyed(ctx, an.m("b"), fmt.Sprint("after-", i)); err != nil {
+			t.Fatalf("audit with a silent: %v", err)
+		}
+		if err := an.m("b").st.Tokens().Create(ctx, fmt.Sprint("after-", i), nil, time.Now().Add(time.Hour)); err != nil {
+			t.Fatalf("token with a silent: %v", err)
+		}
+	}
+	if took := time.Since(start); took > defaultQuickTimeout {
+		t.Errorf("writes after the first timeout took %v, want under %v", took, defaultQuickTimeout)
+	}
+
+	// Cut-off side: a reaches nobody, though the gossip still has them.
+	silence("a", "b", "c")
+	start = time.Now()
+	if err := appendKeyed(ctx, an.m("a"), auditKeyPreferring(t, ids, "k", "b", "c")); !errors.Is(err, store.ErrUnavailable) {
+		t.Fatalf("critical write on the cut-off member: %v, want ErrUnavailable", err)
+	}
+	if took := time.Since(start); took > bound {
 		t.Errorf("critical write on the cut-off member failed after %v, want under %v", took, bound)
 	}
 }

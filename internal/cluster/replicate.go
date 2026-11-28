@@ -1751,6 +1751,23 @@ func (r *Replicator) call(ctx context.Context, m string, req apRequest) (apRespo
 		if err != nil {
 			return unreachable(err)
 		}
+		if pooled && req.Op == opApply {
+			// A pooled connection skips the dial, the bound above: one to a
+			// member whose network went away a moment ago takes the command
+			// and never answers, and the forward would wait its whole
+			// timeout before the next target is tried (#418). A hello in a
+			// quick timeout proves the member is there first.
+			_ = c.SetDeadline(time.Now().Add(r.cfg.QuickTimeout))
+			var hello apResponse
+			if _, err := r.roundTrip(c, m, apRequest{Op: opHello}, &hello); err != nil {
+				_ = c.Close()
+				if errors.Is(err, os.ErrDeadlineExceeded) {
+					return unreachable(err)
+				}
+				// Closed since it was pooled: a new connection is dialed.
+				continue
+			}
+		}
 		d, _ := ctx.Deadline()
 		_ = c.SetDeadline(d)
 		sent := false
