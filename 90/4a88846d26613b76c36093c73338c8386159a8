@@ -1,0 +1,55 @@
+cmd/hearth/ai.go
+  s_18b57982fdff93::t_b9c063b8b708a0 47
+cmd/hearth/aiautomation.go
+  s_18b57982fdff93::t_71f650dd361613 1-75
+cmd/hearth/aiautomation_test.go
+  s_18b57982fdff93::t_ccdf10e6c351b2 1-74
+docs/ai.md
+  s_18b57982fdff93::t_c663670c2d9bc7 3,8-9,143-211,222
+docs/automations.md
+  s_18b57982fdff93::t_971eec64629877 256-258
+docs/security.md
+  s_18b57982fdff93::t_c88d3f1a1f62a9 380-382
+internal/ai/automation.go
+  s_18b57982fdff93::t_2385c8a2cd3f12 1-315
+internal/ai/automation_test.go
+  s_18b57982fdff93::t_22a8644c728b1f 1-135
+internal/hub/ai.go
+  s_18b57982fdff93::t_287794fd7140fd 48
+internal/hub/aiautomation.go
+  s_18b57982fdff93::t_494a9a8d783c89 1-284
+internal/hub/aiautomation_test.go
+  s_18b57982fdff93::t_3727e50aa286cf 1-257
+internal/policy/guardrails_test.go
+  s_18b57982fdff93::t_69df11d375e993 241
+internal/policy/policy.go
+  s_18b57982fdff93::t_3ddf1a42a8e53f 356-361,746-750
+web/src/ai.ts
+  s_18b57982fdff93::t_9359e5ecce79cd 79-88
+web/src/api/ai.ts
+  s_18b57982fdff93::t_ea8ae95d58cbd2 2-3,6,51-72,90-91,115-119
+web/src/components/AutomationDraft.tsx
+  s_18b57982fdff93::t_99168198b8eada 1-119
+web/src/components/AutomationEditor.tsx
+  s_18b57982fdff93::t_20a579f6a895cc 2,29,90,126,141-150,237-240
+web/src/tips.ts
+  s_18b57982fdff93::t_eca7893f14dd32 23-24,177-184
+web/test/ai.test.mjs
+  s_18b57982fdff93::t_753d061a321595 1,4,6-7,38-54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "904a88846d26613b76c36093c73338c8386159a8",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
