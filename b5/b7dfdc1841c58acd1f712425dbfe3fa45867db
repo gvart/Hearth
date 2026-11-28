@@ -1,0 +1,38 @@
+internal/plugins/registry_unix.go
+  s_18b57982fdff93::t_5b4bd33cb3fb47 1-29
+cmd/hearth/plugin_registry.go
+  s_18b57982fdff93::t_c9dbcaff088259 1-139,141-466
+  s_18b57982fdff93::t_1d3bb1182eb870 140
+internal/plugins/registry_change.go
+  s_18b57982fdff93::t_1d3bb1182eb870 84
+internal/plugins/registry_other.go
+  s_18b57982fdff93::t_8db3e4edcf3a3e 1-9
+cmd/hearth/plugin.go
+  s_18b57982fdff93::t_1d3bb1182eb870 31,35-37,39-40,152-155,158,172-175,186-189,193
+internal/plugins/registry.go
+  s_18b57982fdff93::t_1d3bb1182eb870 128-130
+internal/hub/pluginregistry_test.go
+  s_18b57982fdff93::t_1d3bb1182eb870 149
+cmd/hearth/plugin_registry_test.go
+  s_18b57982fdff93::t_af005f3ce72b9b 1-183
+cmd/hearth/hub.go
+  s_18b57982fdff93::t_1d3bb1182eb870 119-121,250,338-341,415-421,423,516-517,732-734
+internal/hub/pluginregistry.go
+  s_18b57982fdff93::t_1d3bb1182eb870 55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "b5b7dfdc1841c58acd1f712425dbfe3fa45867db",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
