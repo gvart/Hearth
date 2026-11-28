@@ -473,9 +473,15 @@ func TestBackupLeavesTheSchemaAlone(t *testing.T) {
 
 	t.Run("older database stays older", func(t *testing.T) {
 		dir, _ := initHub(t)
-		older := store.SchemaVersion() - 1
 		db, err := sql.Open("sqlite", "file:"+filepath.Join(dir, dbFile))
 		if err != nil {
+			t.Fatal(err)
+		}
+		// The migration before the latest (numbers may skip one reserved
+		// by another change).
+		var older int64
+		if err := db.QueryRowContext(t.Context(), `SELECT MAX(version_id) FROM goose_db_version WHERE version_id < ?`,
+			store.SchemaVersion()).Scan(&older); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := db.ExecContext(t.Context(), `DELETE FROM goose_db_version WHERE version_id > ?`, older); err != nil {
