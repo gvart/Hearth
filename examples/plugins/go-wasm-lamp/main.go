@@ -15,6 +15,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -29,7 +30,7 @@ func main() {
 		l.url = os.Args[1]
 	}
 	l.p = &sdk.Plugin{Name: "go-wasm-lamp", Version: "0.1.0", Discover: l.discover, Command: l.command}
-	if err := l.p.Run(); err != nil {
+	if err := l.p.Run(context.Background()); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -43,7 +44,7 @@ type lamp struct {
 	on bool
 }
 
-func (l *lamp) discover() ([]sdk.Device, error) {
+func (l *lamp) discover(context.Context) ([]sdk.Device, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return []sdk.Device{{
@@ -52,7 +53,7 @@ func (l *lamp) discover() ([]sdk.Device, error) {
 	}}, nil
 }
 
-func (l *lamp) command(c sdk.Command) (string, error) {
+func (l *lamp) command(ctx context.Context, c sdk.Command) (string, error) {
 	var on bool
 	switch c.Name {
 	case "turn_on":
@@ -63,7 +64,7 @@ func (l *lamp) command(c sdk.Command) (string, error) {
 	}
 	if l.url != "" {
 		turn := map[bool]string{true: "on", false: "off"}[on]
-		resp, err := sdk.HTTP(sdk.HTTPRequest{URL: l.url + "?turn=" + turn})
+		resp, err := sdk.HTTP(ctx, sdk.HTTPRequest{URL: l.url + "?turn=" + turn})
 		if err != nil {
 			return "", err
 		}

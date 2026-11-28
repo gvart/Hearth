@@ -2,6 +2,11 @@
 
 package sdk
 
+import (
+	"context"
+	"errors"
+)
+
 // HTTPRequest is an HTTP request a plugin makes with HTTP.
 type HTTPRequest struct {
 	// Method is GET (the default when empty), HEAD, POST, PUT, PATCH or
@@ -23,8 +28,13 @@ type HTTPResponse struct {
 	Body []byte `json:"body"`
 }
 
+// ErrHostCall is a host call the hub refused outright: malformed, or one
+// too many in a second (the hub stops such a plugin).
+var ErrHostCall = errors.New("sdk: host call refused")
+
 // HTTP makes an HTTP request. In a WASM plugin it is the hub's http host
 // function: the manifest must grant it for the request's host and port
-// (host.http.allow), and the hub decides and audits every call. In an exec
-// plugin it is a plain request, with the same limits.
-func HTTP(req HTTPRequest) (HTTPResponse, error) { return doHTTP(req) }
+// (host.http.allow), the hub decides and audits every call, and ctx is
+// checked before the call only. In an exec plugin it is a plain request,
+// with the same limits.
+func HTTP(ctx context.Context, req HTTPRequest) (HTTPResponse, error) { return doHTTP(ctx, req) }

@@ -11,10 +11,10 @@
 //	p := &sdk.Plugin{
 //		Name:    "lamp",
 //		Version: "0.1.0",
-//		Discover: func() ([]sdk.Device, error) { ... },
-//		Command:  func(c sdk.Command) (string, error) { ... },
+//		Discover: func(ctx context.Context) ([]sdk.Device, error) { ... },
+//		Command:  func(ctx context.Context, c sdk.Command) (string, error) { ... },
 //	}
-//	if err := p.Run(); err != nil { ... }
+//	if err := p.Run(ctx); err != nil { ... }
 //
 // The same source builds as an exec plugin (go build) and as a WASM plugin
 // (GOOS=wasip1 GOARCH=wasm go build -o plugin.wasm), which the hub runs in a

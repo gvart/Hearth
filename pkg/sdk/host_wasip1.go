@@ -5,8 +5,8 @@
 package sdk
 
 import (
+	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -34,10 +34,6 @@ func hostCall(name unsafe.Pointer, nameLen uint32, req unsafe.Pointer, reqLen ui
 
 //go:wasmimport hearth reply
 func hostReply(buf unsafe.Pointer, capacity uint32) int32
-
-// ErrHostCall is a host call the hub refused outright: malformed, or one
-// too many in a second.
-var ErrHostCall = errors.New("sdk: host call refused")
 
 // call calls host function name with req as JSON and decodes its result
 // into result.
@@ -73,7 +69,10 @@ func call(name string, req, result any) error {
 	return json.Unmarshal(r.Result, result)
 }
 
-func doHTTP(req HTTPRequest) (HTTPResponse, error) {
+func doHTTP(ctx context.Context, req HTTPRequest) (HTTPResponse, error) {
+	if err := ctx.Err(); err != nil {
+		return HTTPResponse{}, fmt.Errorf("sdk: http: %w", err)
+	}
 	var r HTTPResponse
 	err := call("http", req, &r)
 	return r, err

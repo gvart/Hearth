@@ -17,7 +17,7 @@ import (
 // stdin is the plugin's stdin.
 func stdin() io.Reader { return os.Stdin }
 
-func doHTTP(req HTTPRequest) (HTTPResponse, error) {
+func doHTTP(ctx context.Context, req HTTPRequest) (HTTPResponse, error) {
 	if len(req.Body) > 64<<10 {
 		return HTTPResponse{}, fmt.Errorf("sdk: http: body larger than %d bytes", 64<<10)
 	}
@@ -25,7 +25,7 @@ func doHTTP(req HTTPRequest) (HTTPResponse, error) {
 	if method == "" {
 		method = http.MethodGet
 	}
-	hr, err := http.NewRequestWithContext(context.Background(), method, req.URL, bytes.NewReader(req.Body))
+	hr, err := http.NewRequestWithContext(ctx, method, req.URL, bytes.NewReader(req.Body))
 	if err != nil {
 		return HTTPResponse{}, fmt.Errorf("sdk: http: %w", err)
 	}

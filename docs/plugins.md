@@ -316,12 +316,12 @@ plugin and as a WASM plugin:
 ```go
 p := &sdk.Plugin{
 	Name: "go-wasm-lamp", Version: "0.1.0",
-	Discover: func() ([]sdk.Device, error) { return devices, nil },
-	Command:  func(c sdk.Command) (string, error) { return "lamp is on", nil },
+	Discover: func(ctx context.Context) ([]sdk.Device, error) { return devices, nil },
+	Command:  func(ctx context.Context, c sdk.Command) (string, error) { return "lamp is on", nil },
 }
 // Elsewhere, from any goroutine: p.SetState("lamp", "on", true)
-// And: sdk.HTTP(sdk.HTTPRequest{URL: url}): the http host function in WASM, net/http otherwise.
-if err := p.Run(); err != nil { ... }
+// And: sdk.HTTP(ctx, sdk.HTTPRequest{URL: url}): the http host function in WASM, net/http otherwise.
+if err := p.Run(ctx); err != nil { ... }
 ```
 
 In WASM, Go's runtime runs one goroutine at a time; the SDK reads stdin without blocking, so that

@@ -4,6 +4,7 @@ package sdk
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -64,11 +65,11 @@ type Plugin struct {
 	// Version is the plugin's own version.
 	Version string
 	// Discover returns every device of the plugin; nil reports none. It
-	// needs the discover capability in the manifest.
-	Discover func() ([]Device, error)
+	// needs the discover capability in the manifest. An error ends Serve.
+	Discover func(ctx context.Context) ([]Device, error)
 	// Command runs a command and returns its output, up to 64 KiB, or why
 	// it failed. It needs the command capability in the manifest.
-	Command func(Command) (string, error)
+	Command func(ctx context.Context, c Command) (string, error)
 
 	mu      sync.Mutex
 	w       io.Writer
@@ -93,18 +94,24 @@ type message struct {
 	Error    string          `json:"error,omitempty"`
 }
 
-// Run serves the hub on stdin and stdout until the hub closes stdin.
-func (p *Plugin) Run() error { return p.Serve(stdin(), os.Stdout) }
+// Run serves the hub on stdin and stdout until the hub closes stdin, or ctx
+// is done.
+func (p *Plugin) Run(ctx context.Context) error { return p.Serve(ctx, stdin(), os.Stdout) }
 
 // Serve serves the hub's messages read from r, writing the plugin's to w,
-// until r ends. Messages are handled one at a time; SetState and SetDevices
-// may be called from other goroutines meanwhile.
-func (p *Plugin) Serve(r io.Reader, w io.Writer) error {
+// until r ends, or ctx is done (checked between messages: a read waiting
+// for the hub is not interrupted). Messages are handled one at a time, with
+// ctx; SetState and SetDevices may be called from other goroutines
+// meanwhile.
+func (p *Plugin) Serve(ctx context.Context, r io.Reader, w io.Writer) error {
 	p.mu.Lock()
 	p.w, p.greeted = w, false
 	p.mu.Unlock()
 	br := bufio.NewReaderSize(r, 64<<10)
 	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		b, err := readLine(br)
 		if errors.Is(err, io.EOF) {
 			return nil
@@ -119,7 +126,7 @@ func (p *Plugin) Serve(r io.Reader, w io.Writer) error {
 		if err := json.Unmarshal(b, &m); err != nil {
 			return fmt.Errorf("sdk: a line from the hub is not JSON: %w", err)
 		}
-		if err := p.handle(m); err != nil {
+		if err := p.handle(ctx, m); err != nil {
 			return err
 		}
 	}
@@ -145,7 +152,7 @@ func readLine(br *bufio.Reader) ([]byte, error) {
 
 // handle answers one message of the hub. Types it does not know are
 // ignored: newer hubs may send more.
-func (p *Plugin) handle(m message) error {
+func (p *Plugin) handle(ctx context.Context, m message) error {
 	switch m.Type {
 	case "hello":
 		name := p.Name
@@ -161,7 +168,7 @@ func (p *Plugin) handle(m message) error {
 	case "discover":
 		devs := []Device{}
 		if p.Discover != nil {
-			d, err := p.Discover()
+			d, err := p.Discover(ctx)
 			if err != nil {
 				return fmt.Errorf("sdk: discover: %w", err)
 			}
@@ -172,7 +179,7 @@ func (p *Plugin) handle(m message) error {
 		res := message{Type: "result", ID: m.ID}
 		if p.Command == nil {
 			res.Error = "the plugin has no commands"
-		} else if out, err := p.Command(Command{Name: m.Command, Device: m.Device, Args: m.Args}); err != nil {
+		} else if out, err := p.Command(ctx, Command{Name: m.Command, Device: m.Device, Args: m.Args}); err != nil {
 			res.Error = err.Error()
 		} else {
 			res.OK, res.Output = true, out

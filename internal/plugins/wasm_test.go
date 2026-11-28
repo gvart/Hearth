@@ -164,6 +164,27 @@ func TestWasmLimitsStopThePlugin(t *testing.T) {
 	}
 }
 
+func TestWasmMemoryIsCappedPerPlugin(t *testing.T) {
+	// The same module, under two caps: compiled once, capped each by its
+	// own manifest.
+	small, large := guestManifest(t, "small"), guestManifest(t, "large")
+	small.Memory, large.Memory = 32, 256
+	m, _ := startManager(t, policy.Config{}, small, large)
+	waitFor(t, "the guests", func() bool {
+		return status(m, "small").State == StateRunning && status(m, "large").State == StateRunning
+	})
+	if res, err := run(t, m, "large", "alloc", map[string]int{"mib": 48}); err != nil || res.Output != "allocated" {
+		t.Fatalf("48 MiB under 256 = %q, %v", res.Output, err)
+	}
+	if _, err := run(t, m, "small", "alloc", map[string]int{"mib": 48}); err == nil {
+		t.Fatal("48 MiB under 32 succeeded")
+	}
+	waitFor(t, "the small one's restart", func() bool { return status(m, "small").Restarts >= 1 })
+	if s := status(m, "large"); s.Restarts != 0 {
+		t.Errorf("the large one restarted: %+v", s)
+	}
+}
+
 func TestWasmHostCalls(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/redirect" {
@@ -204,6 +225,8 @@ func TestWasmHostCalls(t *testing.T) {
 		{"granted", "http", map[string]string{"url": "http://127.0.0.1:1/"}, "granted/http", "does not allow http to 127.0.0.1:1"},
 		{"ungranted", "http", map[string]string{"url": srv.URL}, "ungranted/http", "grants no http host function"},
 		{"granted", "raw", map[string]string{"name": "exec"}, "granted/exec", `no host function "exec"`},
+		// A malformed request ({}) of a function not granted is denied all the same.
+		{"ungranted", "raw", map[string]string{"name": "http"}, "ungranted/http", "grants no http host function"},
 	}
 	for _, d := range denied {
 		res, err := run(t, m, d.plugin, d.command, d.args)

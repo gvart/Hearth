@@ -7,6 +7,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -40,13 +41,14 @@ func main() {
 	var p *sdk.Plugin
 	p = &sdk.Plugin{
 		Version: "1",
-		Discover: func() ([]sdk.Device, error) {
+		Discover: func(context.Context) ([]sdk.Device, error) {
 			return []sdk.Device{{ID: "d", Name: "D", Entities: []sdk.Entity{{ID: "e", Name: "E", State: 0}}}}, nil
 		},
-		Command: func(c sdk.Command) (string, error) {
+		Command: func(ctx context.Context, c sdk.Command) (string, error) {
 			var args struct {
 				URL  string `json:"url"`
 				Name string `json:"name"`
+				MiB  int    `json:"mib"`
 			}
 			_ = json.Unmarshal(c.Args, &args)
 			switch c.Name {
@@ -57,7 +59,7 @@ func main() {
 				_, err := os.ReadDir("/")
 				return fmt.Sprint(err), nil
 			case "http":
-				r, err := sdk.HTTP(sdk.HTTPRequest{URL: args.URL})
+				r, err := sdk.HTTP(ctx, sdk.HTTPRequest{URL: args.URL})
 				if err != nil {
 					return "", err
 				}
@@ -73,9 +75,12 @@ func main() {
 				for {
 				}
 			case "alloc":
-				for {
+				// args.mib MiB, or until it dies.
+				for i := 0; args.MiB == 0 || i < args.MiB; i++ {
 					keep = append(keep, make([]byte, 1<<20))
 				}
+				keep = nil
+				return "allocated", nil
 			case "sleep":
 				time.Sleep(time.Hour)
 				return "slept", nil
@@ -91,7 +96,7 @@ func main() {
 			return "", fmt.Errorf("no command %s", c.Name)
 		},
 	}
-	if err := p.Run(); err != nil {
+	if err := p.Run(context.Background()); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

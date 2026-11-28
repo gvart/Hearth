@@ -387,18 +387,21 @@ func (p *plugin) host(ctx context.Context, name string, req []byte) (any, error)
 	switch name {
 	case hostHTTP:
 		var hr httpRequest
-		if err := json.Unmarshal(req, &hr); err != nil {
-			return nil, fmt.Errorf("%w: http: %w", errHostRequest, err)
-		}
-		hreq, hostport, err := hr.build()
+		var hreq *http.Request
+		var hostport string
+		err := json.Unmarshal(req, &hr)
 		if err != nil {
-			return nil, err
+			err = fmt.Errorf("%w: http: %w", errHostRequest, err)
+		} else if hreq, hostport, err = hr.build(); err == nil {
+			// The host and method only: a path or a query may hold a secret.
+			preq.Detail["method"], preq.Detail["host"] = hreq.Method, hostport
 		}
-		// The host and method only: a path or a query may hold a secret.
-		preq.Detail["method"], preq.Detail["host"] = hreq.Method, hostport
 		switch {
 		case p.m.Host.HTTP == nil:
+			// Denied and audited, however malformed the request.
 			deny("its manifest grants no http host function")
+		case err != nil:
+			return nil, err
 		case !p.httpAllowed(hostport):
 			deny("its manifest does not allow http to %s", hostport)
 		default:
