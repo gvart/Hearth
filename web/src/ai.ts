@@ -76,3 +76,13 @@ export function parseLogSources(text: string): { sources: string[]; error: strin
 
 /** The browser remembers that its user saw a preview once: the first explanation shows one before sending. */
 export const previewSeenKey = 'hearth.ai.previewSeen';
+
+/** What the editor says about a draft it just opened: who wrote it, and what is left to do. */
+export function draftNotice(d: { model: string; attempts: number; valid: boolean; problems: unknown[] }): string {
+  const by = `Drafted by ${d.model}${d.attempts > 1 ? ` (${String(d.attempts)} tries)` : ''}. Nothing is saved yet.`;
+  if (d.valid) {
+    return `${by} Review every step, check the dry run below, then Save.`;
+  }
+  const n = d.problems.length;
+  return `${by} The hub does not accept it yet (${String(n)} problem${n === 1 ? '' : 's'}): fix ${n === 1 ? 'it' : 'them'} in the YAML view, or describe it again.`;
+}
