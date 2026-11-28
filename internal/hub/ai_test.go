@@ -128,7 +128,7 @@ func TestAIConfigEditor(t *testing.T) {
 		t.Fatalf("stale revision = %d", resp.StatusCode)
 	}
 	// An edit without a key keeps it for the same provider and address...
-	if got = setAI(t, f, c, map[string]any{"provider": "anthropic", "model": "claude-opus-5-5"}); !got.APIKeySet || got.Model != "claude-opus-5-5" {
+	if got = setAI(t, f, c, map[string]any{"provider": "anthropic", "model": "claude-sonnet-5-5"}); !got.APIKeySet || got.Model != "claude-sonnet-5-5" {
 		t.Fatalf("kept key = %+v", got)
 	}
 	// ...but never carries it to another address.

@@ -112,6 +112,10 @@ func TestAnthropicRequestShape(t *testing.T) {
 	if rec.header.Get("Authorization") != "" {
 		t.Error("the key went out as Authorization too")
 	}
+	// Server-side refusal fallbacks, routed by the API.
+	if rec.header.Get("anthropic-beta") != "server-side-fallback-2026-07-01" || rec.got["fallbacks"] != "default" {
+		t.Errorf("fallbacks: beta %q, field %v", rec.header.Get("anthropic-beta"), rec.got["fallbacks"])
+	}
 	if rec.got["model"] != "claude-sonnet-5-5" || rec.got["system"] != "be brief" || rec.got["max_tokens"] != float64(100) {
 		t.Errorf("body = %v", rec.got)
 	}

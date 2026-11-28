@@ -13,6 +13,11 @@ import (
 // AnthropicVersion is the version of the Messages API the client speaks.
 const AnthropicVersion = "2026-10-21"
 
+// AnthropicFallbackBeta opts into server-side refusal fallbacks: a request
+// the model declines is answered by the model the API picks for the refusal's
+// category, within the same call. A refusal can still come back.
+const AnthropicFallbackBeta = "server-side-fallback-2026-07-01"
+
 // Anthropic is Anthropic's Messages API: POST {BaseURL}/v1/messages.
 type Anthropic struct {
 	// BaseURL is DefaultAnthropicURL, or a proxy that speaks the same API.
@@ -29,12 +34,15 @@ func (*Anthropic) Name() string { return ProviderAnthropic }
 func (p *Anthropic) Model() string { return p.ModelID }
 
 // anthropicRequest is the least the API takes: no sampling, thinking or
-// effort settings, so any model the operator names accepts it.
+// effort settings, so any model the operator names accepts it
+// (temperature, top_p and top_k are a 400 on 2026-10-21).
 type anthropicRequest struct {
 	Model     string    `json:"model"`
 	MaxTokens int       `json:"max_tokens"`
 	System    string    `json:"system,omitempty"`
 	Messages  []Message `json:"messages"`
+	// Fallbacks is "default": the API routes a refusal by its category.
+	Fallbacks string `json:"fallbacks"`
 }
 
 type anthropicResponse struct {
@@ -56,11 +64,11 @@ func (p *Anthropic) Complete(ctx context.Context, req Request) (Response, error)
 	if maxTokens == 0 {
 		maxTokens = DefaultMaxTokens
 	}
-	body, err := json.Marshal(anthropicRequest{Model: p.ModelID, MaxTokens: maxTokens, System: req.System, Messages: req.Messages})
+	body, err := json.Marshal(anthropicRequest{Model: p.ModelID, MaxTokens: maxTokens, System: req.System, Messages: req.Messages, Fallbacks: "default"})
 	if err != nil {
 		return Response{}, fmt.Errorf("%s: encode request: %w", ProviderAnthropic, err)
 	}
-	headers := map[string]string{"x-api-key": p.APIKey, "anthropic-version": AnthropicVersion}
+	headers := map[string]string{"x-api-key": p.APIKey, "anthropic-version": AnthropicVersion, "anthropic-beta": AnthropicFallbackBeta}
 	hc := p.HTTP
 	if hc == nil {
 		hc = newHTTPClient(0)

@@ -26,7 +26,7 @@ const (
 // address and model are the operator's.
 const (
 	DefaultAnthropicURL   = "https://api.anthropic.com"
-	DefaultAnthropicModel = "claude-sonnet-5-5"
+	DefaultAnthropicModel = "claude-opus-5-5"
 )
 
 // Config is the hub's ai.yaml: which model to ask. No provider is AI off,

@@ -52,11 +52,13 @@ question sends at most about 24 KiB of evidence by default, roughly 6000 tokens.
 
 Create an API key in the Anthropic Console, then in **Settings, AI** choose **Anthropic** and paste the
 key. Leave the address and the model empty for `https://api.anthropic.com` and the default model,
-`claude-sonnet-5-5`; name another model to use it. From a terminal:
+`claude-opus-5-5`; name another model to use it. Requests opt into Anthropic's server-side refusal
+fallbacks, so a question the model declines is answered by the fallback model the API picks; if it is
+still refused, Hearth says the model gave no answer. From a terminal:
 
 ```sh
 HEARTH_AI_API_KEY=sk-ant-... hearth ai set --provider anthropic
-# or: hearth ai set --provider anthropic --api-key-file ~/anthropic.key --model claude-opus-5-5
+# or: hearth ai set --provider anthropic --api-key-file ~/anthropic.key --model claude-sonnet-5-5
 ```
 
 The key is write-only: the hub stores it sealed (encrypted with a key derived from the hub CA key, as

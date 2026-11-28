@@ -25,7 +25,7 @@ export const providers: Record<AIProvider, { label: string; baseURL: string; mod
   anthropic: {
     label: 'Anthropic',
     baseURL: 'https://api.anthropic.com',
-    model: 'claude-sonnet-5-5',
+    model: 'claude-opus-5-5',
     keyNeeded: true,
     hint: 'Leave the address and model empty for Anthropic’s API and its default model. The evidence leaves your lab, redacted.',
   },
