@@ -11,6 +11,10 @@ vars:
     sh: date -u +%Y-%m-%dT%H:%M:%SZ
   LDFLAGS: -s -w -X main.version={{.VERSION}} -X main.commit={{.COMMIT}} -X main.date={{.DATE}}
   WEBUI_DIST: internal/hub/webui/dist
+  # Build tags of the release: Tailscale (tsnet, docs/tailscale.md) without the
+  # Tailscale features the hub does not use. Keep in step with .goreleaser.yaml.
+  # cmd/hearth/tailnet_tsnet_test.go runs a tailnet with exactly these.
+  TAILSCALE_TAGS: tailscale,ts_omit_ace,ts_omit_advertiseexitnode,ts_omit_advertiseroutes,ts_omit_appconnectors,ts_omit_aws,ts_omit_bird,ts_omit_c2n,ts_omit_captiveportal,ts_omit_capture,ts_omit_cliconndiag,ts_omit_clientupdate,ts_omit_cloud,ts_omit_colorable,ts_omit_completion,ts_omit_completion_scripts,ts_omit_conn25,ts_omit_dbus,ts_omit_debug,ts_omit_debugeventbus,ts_omit_debugportmapper,ts_omit_desktop_sessions,ts_omit_doctor,ts_omit_drive,ts_omit_flashappliance,ts_omit_gro,ts_omit_hujsonconf,ts_omit_identityfederation,ts_omit_iptables,ts_omit_kube,ts_omit_linkspeed,ts_omit_linuxdnsfight,ts_omit_listenrawdisco,ts_omit_logtail,ts_omit_netlog,ts_omit_networkmanager,ts_omit_oauthkey,ts_omit_osrouter,ts_omit_outboundproxy,ts_omit_peerapiserver,ts_omit_portlist,ts_omit_posture,ts_omit_qrcodes,ts_omit_relayserver,ts_omit_remoteconfig,ts_omit_resolved,ts_omit_routecheck,ts_omit_runtimemetrics,ts_omit_sdnotify,ts_omit_serviceclientprefs,ts_omit_synology,ts_omit_syslog,ts_omit_systray,ts_omit_taildrop,ts_omit_tap,ts_omit_tpm,ts_omit_tundevstats,ts_omit_unixsocketidentity,ts_omit_useexitnode,ts_omit_usermetrics,ts_omit_useroutes,ts_omit_wakeonlan,ts_omit_webbrowser,ts_omit_webclient
   GORELEASER_VERSION: v2.20.2
 
 tasks:
@@ -31,6 +35,8 @@ tasks:
       # Inline (not `env:`) so it overrides any CGO_ENABLED in the caller's shell;
       # the race detector needs cgo, release builds stay CGO_ENABLED=0.
       - CGO_ENABLED=1 go test -race ./...
+      # The hub's Tailscale code is built only with the release tags.
+      - CGO_ENABLED=1 go test -race -tags '{{.TAILSCALE_TAGS}}' ./cmd/hearth/
 
   test:web:
     desc: Run the web UI's tests (the automation editor's YAML round trip)
@@ -45,6 +51,7 @@ tasks:
     cmds:
       - scripts/check-spdx.sh
       - golangci-lint run ./...
+      - golangci-lint run --build-tags '{{.TAILSCALE_TAGS}}' ./cmd/hearth/...
       - npm --prefix web run lint
       - npm --prefix web run typecheck
 
@@ -105,7 +112,7 @@ tasks:
     cmds:
       # Inline so a CGO_ENABLED from the caller's shell can never produce a cgo binary.
       # The -gcflags match .goreleaser.yaml, which explains them.
-      - CGO_ENABLED=0 go build -trimpath -gcflags=all=-l -gcflags=modernc.org/...= -gcflags=runtime= -gcflags=runtime/...= -gcflags=sync= -gcflags=sync/...= -gcflags=internal/...= -gcflags=crypto/...= -gcflags=encoding/...= -gcflags=google.golang.org/protobuf/...= -gcflags=connectrpc.com/...= -ldflags "{{.LDFLAGS}}" -o {{.BIN}} ./cmd/hearth
+      - CGO_ENABLED=0 go build -tags '{{.TAILSCALE_TAGS}}' -trimpath -gcflags=all=-l -gcflags=modernc.org/...= -gcflags=runtime= -gcflags=runtime/...= -gcflags=sync= -gcflags=sync/...= -gcflags=internal/...= -gcflags=crypto/...= -gcflags=encoding/...= -gcflags=google.golang.org/protobuf/...= -gcflags=connectrpc.com/...= -ldflags "{{.LDFLAGS}}" -o {{.BIN}} ./cmd/hearth
 
   web:deps:
     internal: true

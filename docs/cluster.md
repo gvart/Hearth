@@ -914,6 +914,10 @@ the time it was made and lands only once. If a spooled entry cannot be read back
 
 ## Limits
 
+- **Tailscale is per master and not for the cluster port.** Each master with `--tailscale` runs a
+  tailnet node of its own (give each its own `--tailscale-hostname`), and members still replicate
+  on port 7444 over the LAN ([Tailscale](tailscale.md#clusters), [#407](https://github.com/gvart/hearth/issues/407)).
+
 - **Auto hubs are Linux only.** A Mac never offers itself as a hub at enrollment: make it one from its
   page ([Make this device a hub](#a-devices-page-make-it-a-hub-or-agent-only)).
 - **A removed master's data dir still holds the CA key.** Removal cannot take it back: whoever has that

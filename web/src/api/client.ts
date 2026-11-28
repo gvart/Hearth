@@ -172,6 +172,28 @@ export interface ConfigDrift {
 }
 
 /** How to reach the hub over HTTPS; see GET /api/v1/tls. */
+/** The hub's node on a tailnet (`hearth hub --tailscale`): set by flags, read-only here. */
+export interface TailscaleInfo {
+  /** Whether the hub runs with --tailscale. */
+  enabled: boolean;
+  /** starting, running or error; absent when off. */
+  state?: 'starting' | 'running' | 'error';
+  /** The name the hub asks the tailnet for (--tailscale-hostname). */
+  hostname?: string;
+  /** Its MagicDNS name, once it runs. */
+  dns_name?: string;
+  /** Its tailnet addresses, once it runs. */
+  ips?: string[];
+  /** Where to open the UI from the tailnet. */
+  url?: string;
+  /** Where agents on the tailnet enroll and connect. */
+  agent_url?: string;
+  /** Why it is not running. */
+  error?: string;
+  /** Why the UI is not on 443 with a tailnet certificate. */
+  https_note?: string;
+}
+
 export interface TlsInfo {
   /** The HTTPS port. */
   port: string;
@@ -793,6 +815,7 @@ export const api = {
     request<DeviceMetrics>('GET', `/devices/${encodeURIComponent(id)}/metrics?range=${encodeURIComponent(range)}`),
   metricsSparklines: () => request<MetricsSparklines>('GET', '/metrics/sparklines'),
   tlsInfo: () => request<TlsInfo>('GET', '/tls'),
+  tailscaleInfo: () => request<TailscaleInfo>('GET', '/tailscale'),
   configDrift: () => request<ConfigDrift>('GET', '/cluster/config-drift'),
   /**
    * `name` names the device that enrolls with the token; without it, the device takes its hostname.

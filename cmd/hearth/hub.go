@@ -121,6 +121,7 @@ type hubOptions struct {
 	cluster   clusterOptions
 	telemetry telemetryOptions
 	mqtt      mqttOptions
+	tailscale tailscaleOptions
 	// version is the binary's version, which install commands pin agents to.
 	version string
 	// shellIdle and shellMax limit web terminal sessions.
@@ -159,7 +160,9 @@ func newHubCmd() *cobra.Command {
 			"--plugin runs the exec plugin a manifest describes, as a child process of the hub (see docs/plugins.md).\n\n" +
 			"--backup-interval uploads an encrypted backup to an S3-compatible bucket at that interval and keeps\n" +
 			"the newest --backup-keep, without the CA key unless --backup-include-ca; in a cluster one master does (see docs/backup.md).\n\n" +
-			"--mqtt-listen serves an embedded MQTT broker over TLS for the users and devices of --mqtt-clients (see docs/mqtt.md).",
+			"--mqtt-listen serves an embedded MQTT broker over TLS for the users and devices of --mqtt-clients (see docs/mqtt.md).\n\n" +
+			"--tailscale puts the hub on your tailnet as its own node: the UI over HTTPS at its MagicDNS name, from\n" +
+			"anywhere on the tailnet, and agents there enroll and connect over it (see docs/tailscale.md).",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			opts.adminPassword = os.Getenv("HEARTH_ADMIN_PASSWORD")
@@ -177,6 +180,9 @@ func newHubCmd() *cobra.Command {
 				opts.discoverInterval = d
 			}
 			if err := opts.backup.fromEnv(cmd); err != nil {
+				return err
+			}
+			if err := opts.tailscale.fromEnv(cmd); err != nil {
 				return err
 			}
 			return runHub(cmd.Context(), opts, newLogger(cmd.ErrOrStderr()))
@@ -247,6 +253,7 @@ func newHubCmd() *cobra.Command {
 	addBackupFlags(cmd, &opts.backup)
 	addTelemetryFlags(cmd, &opts.telemetry)
 	addMQTTFlags(cmd, &opts.mqtt)
+	addTailscaleFlags(cmd, &opts.tailscale)
 	cmd.Flags().DurationVar(&opts.shellIdle, "terminal-idle-timeout", hub.DefaultShellIdleTimeout,
 		"end a web terminal session after this long without input")
 	cmd.Flags().DurationVar(&opts.shellMax, "terminal-max-duration", hub.DefaultShellMaxDuration,
@@ -291,6 +298,10 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 		return err
 	}
 	if err := opts.cluster.check(); err != nil {
+		return err
+	}
+	tsCfg, err := opts.tailscale.resolve(opts.dataDir, tailscaleBuilt)
+	if err != nil {
 		return err
 	}
 	if opts.apm == nil {
@@ -524,6 +535,11 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	if _, port, err := net.SplitHostPort(opts.httpListen); err == nil && port != "0" {
 		cfg.HTTPPort = port
 	}
+	var tn *tailnet
+	if tsCfg != nil {
+		tn = newTailnet(*tsCfg, log.With("component", "tailscale"))
+		cfg.Tailnet = tn
+	}
 	kinds := automation.Builtin(log)
 	maps.Copy(kinds.Triggers, automation.Triggers(automation.TriggerDeps{
 		Devices: hub.AutomationDevices(reg),
@@ -591,8 +607,9 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	tlsWeb := http.NewServeMux()
 	tlsWeb.Handle("/", uiMux)
 	tlsWeb.Handle(cluster.NewAPJoinServer(node, st, ca, pol, log).Handler())
+	agentH := hub.NewTLSHandler(cfg, tlsWeb)
 	agentSrv := &http.Server{
-		Handler:           hub.NewTLSHandler(cfg, tlsWeb),
+		Handler:           agentH,
 		TLSConfig:         tlsCfg,
 		ReadHeaderTimeout: 10 * time.Second,
 		ErrorLog:          errLog,
@@ -751,6 +768,21 @@ func runHub(ctx context.Context, opts hubOptions, log *slog.Logger) error {
 	// Every hub with --mqtt-listen runs a broker of its own.
 	if broker != nil {
 		g.Go(func() error { return broker.Run(gctx) })
+	}
+	// And every master with --tailscale a tailnet node of its own.
+	if tn != nil {
+		g.Go(func() error {
+			tsNode, err := newTailnetNode(tn.cfg, tn.log)
+			if err != nil {
+				return tn.fail(gctx, err)
+			}
+			defer func() { _ = tsNode.Close() }()
+			return tn.run(gctx, tsNode, tailnetServe{
+				agentPort: portOr(agentPort, defaultPort), httpPort: portOr(cfg.HTTPPort, defaultHTTPPort),
+				agent: agentH, ca: ca, hosts: hosts, epoch: node.Epoch(),
+				web: webMux, ui: uiMux, baseCtx: baseCtx, onStop: stop, errorLog: errLog,
+			})
+		})
 	}
 	// The CLI's promote, demote and remove, decided here.
 	node.SetRoleChanges(apRoleChanges(pol, apClusterAdmin{node}))

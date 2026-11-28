@@ -10,7 +10,7 @@ import {
   type Validation,
 } from '../api/admin.ts';
 import { ApiError } from '../api/client.ts';
-import { useSession, useTlsInfo } from '../api/hooks.ts';
+import { useSession, useTailscaleInfo, useTlsInfo } from '../api/hooks.ts';
 import { formatDateTime } from '../format.ts';
 import { chooseTheme, themes, useTheme } from '../theme.ts';
 import { McpTokens } from './McpTokens.tsx';
@@ -46,6 +46,7 @@ export function SettingsPage({ section }: { section: SettingsSection }) {
           <>
             <AppearanceCard />
             <HubCard />
+            <TailscaleCard />
           </>
         ) : section === 'access' ? (
           <>
@@ -81,6 +82,61 @@ function HubCard() {
         An enrollment token carries this fingerprint, and <code>hearth agent join</code> pins the hub CA by it. Compare
         it before you trust the hub’s CA certificate on a new machine.
       </p>
+    </section>
+  );
+}
+
+/** The hub's node on a tailnet: read-only, as flags on the hub set it. */
+function TailscaleCard() {
+  const ts = useTailscaleInfo();
+  const d = ts.data;
+  return (
+    <section className="panel-card" aria-labelledby="tailscale-title">
+      <h2 id="tailscale-title">
+        Tailscale <Tip id="tailscale" />
+      </h2>
+      {ts.isError ? (
+        <p className="error" role="alert">
+          Could not load the Tailscale status: {ts.error.message}
+        </p>
+      ) : !d ? (
+        <p className="muted small">Loading…</p>
+      ) : !d.enabled ? (
+        <p className="muted small">
+          Off. Start the hub with <code>--tailscale</code> and an auth key in <code>HEARTH_TS_AUTHKEY</code> to reach it
+          from anywhere on your tailnet.
+        </p>
+      ) : (
+        <>
+          <div>
+            <Fact k="Status" v={d.state === 'running' ? 'On the tailnet' : d.state === 'starting' ? 'Connecting…' : 'Not connected'} />
+            <Fact k="Node name" v={d.hostname} />
+            <Fact
+              k="Tailnet URL"
+              v={
+                d.url ? (
+                  <a className="mono" href={d.url}>
+                    {d.url}
+                  </a>
+                ) : undefined
+              }
+            />
+            <Fact k="Agent address" v={d.agent_url ? <span className="mono">{d.agent_url}</span> : undefined} />
+            <Fact k="Tailnet IPs" v={d.ips?.length ? <span className="mono">{d.ips.join(', ')}</span> : undefined} />
+          </div>
+          {d.error ? (
+            <p className="error" role="alert">
+              {d.error}
+            </p>
+          ) : null}
+          {d.https_note ? (
+            <p className="muted small">
+              No tailnet HTTPS certificate ({d.https_note}), so the UI is at the hub CA’s port: turn on MagicDNS and
+              HTTPS certificates in the Tailscale admin console and restart the hub for a URL every browser trusts.
+            </p>
+          ) : null}
+        </>
+      )}
     </section>
   );
 }

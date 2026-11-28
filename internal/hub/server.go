@@ -48,6 +48,9 @@ type Config struct {
 	// port agents connect to. The web API builds join commands from them.
 	AgentHosts []string
 	AgentPort  string
+	// Tailnet, if set, is the hub's node on a tailnet (--tailscale): its
+	// names join AgentHosts while it runs. Nil when the hub is on none.
+	Tailnet Tailnet
 	// HTTPPort is the plain-HTTP listener's port, which serves install.sh.
 	// Install commands made over HTTPS point there. Default DefaultHTTPPort.
 	HTTPPort string
