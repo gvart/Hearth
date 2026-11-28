@@ -43,9 +43,9 @@ var dummyHash = sync.OnceValue(func() []byte {
 // publish and delivery against their rules.
 type authHook struct {
 	mochi.HookBase
-	srv     *mochi.Server
-	ca      *pki.CA
-	certs   CertChecker
+	srv   *mochi.Server
+	ca    *pki.CA
+	certs CertChecker
 	// users are the password users; RemoveUser takes one out while the
 	// broker runs, under usersMu.
 	usersMu sync.RWMutex

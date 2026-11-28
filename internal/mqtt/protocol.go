@@ -145,8 +145,10 @@ func (b *Broker) RemoveUser(name string) (bool, error) {
 		}
 	}
 	if b.auth.protocol != nil && deviceproto.ValidID(name) {
-		for _, kind := range []string{deviceproto.KindAnnounce, deviceproto.KindState, deviceproto.KindTelemetry,
-			deviceproto.KindAvailability, deviceproto.KindResult} {
+		for _, kind := range []string{
+			deviceproto.KindAnnounce, deviceproto.KindState, deviceproto.KindTelemetry,
+			deviceproto.KindAvailability, deviceproto.KindResult,
+		} {
 			// An empty retained message clears the one retained.
 			_ = b.srv.Publish(deviceproto.Topic(name, kind), nil, true, 0)
 		}
