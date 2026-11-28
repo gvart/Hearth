@@ -57,7 +57,7 @@ func newAIExplainCmd(client aiClientFunc) *cobra.Command {
 		preview, shown bool
 	)
 	cmd := &cobra.Command{
-		Use:   "explain <device-id>",
+		Use:   "explain <device>",
 		Short: "Explain what is wrong with a device, from its facts, metrics, audit entries and log tails",
 		Long: "Gathers what the hub knows about the device, redacts credentials from it, and asks the model.\n" +
 			"--preview prints what would be sent and sends nothing; --show-sent prints it with the answer.\n" +

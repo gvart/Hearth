@@ -113,7 +113,6 @@ export function DevicePage({ id }: { id: string }) {
 
       <div className="device-grid">
         <DeviceUpgrade device={device} />
-        <DeviceExplain device={device} />
         <Section title="Right now">
           <Meter label="CPU" percent={on ? latest(charts, 'cpu') : undefined} plain />
           <Meter label="Mem" percent={on ? latest(charts, 'memory') : undefined} />
@@ -248,6 +247,8 @@ export function DevicePage({ id }: { id: string }) {
             <DeviceNetEdges device={device} />
           </Section>
         )}
+
+        <DeviceExplain device={device} />
 
         <DevicePlugins device={device} />
 

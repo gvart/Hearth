@@ -258,6 +258,10 @@ func TestExplainDevice(t *testing.T) {
 	if resp := f.do(t, http.MethodPost, "/api/v1/devices/pi/explain", aiBody(map[string]any{"logs": []string{"nginx"}}), c); resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("bad log source = %d", resp.StatusCode)
 	}
+	// The CLI names a device as the user knows it: by its name too.
+	if resp := f.do(t, http.MethodPost, "/api/v1/devices/pi-name/explain", aiBody(map[string]any{"preview": true}), c); resp.StatusCode != http.StatusOK {
+		t.Fatalf("by name = %d %s", resp.StatusCode, resp.body)
+	}
 	if resp := f.do(t, http.MethodPost, "/api/v1/devices/nope/explain", `{}`, c); resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("unknown device = %d", resp.StatusCode)
 	}

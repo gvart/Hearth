@@ -244,7 +244,7 @@ func (a *api) explainDevice(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "ai_off", errAIOff.Error())
 		return
 	}
-	d, err := a.store.Devices().Get(ctx, r.PathValue("id"))
+	d, err := findDevice(ctx, a.store.Devices(), r.PathValue("id")) // its id, name or hostname
 	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "not_found", "no such device")
 		return
