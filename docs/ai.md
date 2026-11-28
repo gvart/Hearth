@@ -139,7 +139,7 @@ answer suggests is shown as plain text, never as a button; you run it yourself, 
 
 ## Errors
 
-| The UI says                    | Meaning                                                                 |
+| Error code                     | Meaning                                                                 |
 |--------------------------------|-------------------------------------------------------------------------|
 | `ai_off`                       | no provider is set up                                                   |
 | `ai_auth`                      | the provider refused the API key (401 or 403)                           |
