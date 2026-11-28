@@ -1,0 +1,43 @@
+internal/hub/deviceprotoapi.go
+  s_18b57982fdff93::t_a3ca33355a4e8b 30-31,42,50-53
+internal/mqtt/protocol.go
+  s_18b57982fdff93::t_c9e69ed5b6e97f 49-63
+internal/mqtt/auth.go
+  s_18b57982fdff93::t_c9e69ed5b6e97f 112-113
+internal/hub/deviceproto.go
+  s_18b57982fdff93::t_a3ca33355a4e8b 251,262-284,375-376,382-385,410-415,434-435
+internal/hub/deviceprotoapi_test.go
+  s_18b57982fdff93::t_586ea5b8cd210b 11,96-101,152-217
+  s_18b57982fdff93::t_5c8aa0ba924a05 218
+CLAUDE.md
+  s_18b57982fdff93::t_e003c8ff48f1a7 55
+internal/mqtt/deviceproto_e2e_test.go
+  s_18b57982fdff93::t_a3ca33355a4e8b 106,187,204,207,210,217,221,226
+internal/mqtt/broker_test.go
+  s_18b57982fdff93::t_c9e69ed5b6e97f 174,223-227
+internal/mqtt/protocol_test.go
+  s_18b57982fdff93::t_c9e69ed5b6e97f 169-171,174-184
+  s_18b57982fdff93::t_a258ffeb2a81f9 185
+docs/security.md
+  s_18b57982fdff93::t_6cbae2dc1a2a7f 348-349
+docs/spec/device-protocol-v1.md
+  s_18b57982fdff93::t_db5b1138f555ba 107-108,178-181,217-218
+examples/esp32/README.md
+  s_18b57982fdff93::t_37f9d8d7e237b7 45-46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "2e8b4c977e0e25de5f3f2e1e14bcd8baafc50399",
+  "prompts": {},
+  "sessions": {
+    "s_18b57982fdff93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e1ab462-0691-4e8e-96cc-a5aaadd71285",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Vladlen Gladis <vladlen.gladis@deliveryhero.com>"
+    }
+  }
+}
