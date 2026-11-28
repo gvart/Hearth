@@ -70,6 +70,9 @@ var (
 	// ErrIndexChanged is an install or update whose entry is not the one
 	// the caller confirmed: the index changed meanwhile.
 	ErrIndexChanged = errors.New("the plugin index changed: review the plugin again")
+	// ErrModuleChanged is an update to the version installed with another
+	// module: only a changed index offers one.
+	ErrModuleChanged = errors.New("the index offers another module for the version installed")
 	// ErrInstalled is an install of a plugin installed already.
 	ErrInstalled = errors.New("the plugin is installed already")
 	// ErrNotInstalled is an update or a removal of a plugin not installed.

@@ -118,6 +118,12 @@ type Config struct {
 	// Plugins serves the hub's exec plugins under /api/v1/plugins. Nil
 	// disables it.
 	Plugins *plugins.Manager
+	// PluginRegistry is the signed plugin index the hub installs plugins
+	// from (#75). Nil: no index is configured.
+	PluginRegistry *plugins.Registry
+	// RegistryPlugins are the plugins installed from a registry, run by
+	// Plugins. Nil disables /api/v1/plugin-registry.
+	RegistryPlugins *plugins.RegistrySync
 	// NetworkScans runs the network scans asked for with
 	// POST /api/v1/network/scan; run it (NetworkScans.Run). Nil disables it.
 	NetworkScans *NetworkScans

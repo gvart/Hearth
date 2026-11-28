@@ -330,6 +330,18 @@ func (m *Manager) RunGranted(ctx context.Context, name string, req CommandReques
 	return p.command(ctx, req)
 }
 
+// Configured reports whether plugin name is one m was configured with, not
+// one Reconcile added.
+func (m *Manager) Configured(name string) bool {
+	p := m.find(name)
+	if p == nil {
+		return false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return !m.dynamic[p]
+}
+
 // find returns the configured plugin named name, or nil.
 func (m *Manager) find(name string) *plugin {
 	if m == nil {

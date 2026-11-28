@@ -83,20 +83,22 @@ func newAPI(cfg Config) *api {
 	a := &api{
 		store: cfg.Store, policy: cfg.Policy, registry: reg, log: cfg.Log, now: time.Now, keepalive: sseKeepalive,
 		ca: cfg.CA, agentHosts: cfg.AgentHosts, agentPort: agentPort, httpPort: httpPort, ready: cfg.Ready, readyWait: readyWait,
-		prom:     cfg.Prometheus,
-		netEdges: cfg.NetEdges,
-		beszel:   cfg.Beszel,
-		talos:    cfg.Talos,
-		kube:     cfg.Kube,
-		proxmox:  cfg.Proxmox,
-		esphome:  cfg.ESPHome,
-		protocol: cfg.DeviceProtocol,
-		openwrt:  cfg.OpenWrt,
-		opnsense: cfg.OPNsense,
-		unifi:    cfg.UniFi,
-		plugins:  cfg.Plugins,
-		notify:   cfg.Notify,
-		verify:   newVerifyGate(), verifyWait: verifyWait, verifyPassword: verifier,
+		prom:            cfg.Prometheus,
+		netEdges:        cfg.NetEdges,
+		beszel:          cfg.Beszel,
+		talos:           cfg.Talos,
+		kube:            cfg.Kube,
+		proxmox:         cfg.Proxmox,
+		esphome:         cfg.ESPHome,
+		protocol:        cfg.DeviceProtocol,
+		openwrt:         cfg.OpenWrt,
+		opnsense:        cfg.OPNsense,
+		unifi:           cfg.UniFi,
+		plugins:         cfg.Plugins,
+		pluginRegistry:  cfg.PluginRegistry,
+		registryPlugins: cfg.RegistryPlugins,
+		notify:          cfg.Notify,
+		verify:          newVerifyGate(), verifyWait: verifyWait, verifyPassword: verifier,
 		logins:           newLoginLimiter(time.Now, loginBurst, loginEvery),
 		metrics:          cfg.Metrics,
 		drift:            cfg.ConfigDrift,
@@ -184,6 +186,7 @@ func (a *api) routes() http.Handler {
 	a.opnsenseRoutes(mux)
 	a.unifiRoutes(mux)
 	a.pluginRoutes(mux)
+	a.pluginRegistryRoutes(mux)
 	a.notifyRoutes(mux)
 	a.automationRoutes(mux)
 	mux.Handle("GET /api/v1/cluster/config-drift", a.auth(a.configDrift))
@@ -292,6 +295,10 @@ type api struct {
 	unifi *unifi.Manager
 	// plugins is Config.Plugins; nil when no exec plugin is configured.
 	plugins *plugins.Manager
+	// pluginRegistry and registryPlugins are Config.PluginRegistry and
+	// Config.RegistryPlugins.
+	pluginRegistry  *plugins.Registry
+	registryPlugins *plugins.RegistrySync
 	// notify is Config.Notify; nil when notification channels are not served.
 	notify *notify.Notifier
 	// uncompared is Config.Uncompared.

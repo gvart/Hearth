@@ -59,7 +59,7 @@ func PlanUpdate(idx *Index, source string, st InstalledStore, name, version stri
 	case c == 0 && e.SHA256 == in.Entry.SHA256:
 		return Change{}, fmt.Errorf("plugin %s %s: %w", name, e.Version, ErrUpToDate)
 	case c == 0:
-		return Change{}, fmt.Errorf("plugin %s %s: the index offers another module for the version installed; refused", name, e.Version)
+		return Change{}, fmt.Errorf("plugin %s %s: %w; refused", name, e.Version, ErrModuleChanged)
 	case c < 0 && !allowDowngrade:
 		return Change{}, fmt.Errorf("plugin %s: %s is older than %s, installed: %w (ask for the downgrade explicitly)",
 			name, e.Version, in.Entry.Version, ErrDowngrade)
