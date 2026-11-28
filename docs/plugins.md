@@ -13,8 +13,9 @@ module in a sandbox: no files, no network, no environment, capped memory, and on
 functions its manifest grants, each one decided and audited by policy.
 
 Plugins are off unless you turn them on: the hub runs a plugin only when you name its manifest with
-`--plugin`. A plugin can also run on a device, through its agent, within the device's capability
-ceiling: see [Plugins on devices](#plugins-on-devices).
+`--plugin`, or install it from a [plugin index](#plugin-registry) you trust. A plugin can also run on
+a device, through its agent, within the device's capability ceiling: see
+[Plugins on devices](#plugins-on-devices).
 
 Four examples live in the repository:
 
@@ -157,7 +158,8 @@ Every caller gets the class from the manifest; none can choose it:
 | `GET /api/v1/plugins` | Every plugin's status: state (`starting`, `running`, `restarting`, `stopped`), the last error, restarts, its commands, devices and entities with their last state, and the tail of its stderr. `decisions` says, by class, what policy decides now for the caller's commands: `allow`, `confirm` or `deny`. Each command is decided again when it runs. |
 | `POST /api/v1/plugins/{name}/commands` | Runs a command: `{"command": "turn_on", "device": "lamp", "args": {}}`. Answers `{"output": "..."}`, 403 when policy denies it, 503 when the plugin is not running or already runs 32 commands, 502 when the plugin reports it failed. |
 
-Both need the admin session. Without `--plugin` neither exists.
+Both need the admin session. Plugins installed from a [plugin index](#plugin-registry) are listed
+and run commands here too.
 
 ## Protocol, version 1
 
@@ -342,6 +344,126 @@ cp target/wasm32-wasip1/release/rust-lamp.wasm lamp.wasm && hearth hub --plugin 
 The repository's tests build and run it only where a Rust toolchain with that target is installed;
 CI does not have one.
 
+## Plugin registry
+
+A plugin index is a JSON file that lists [WASM plugins](#wasm-plugins): what each is, where its
+module is, the module's SHA-256, and the manifest it runs with, its host grants included. Anyone may
+publish one, on any web server or as a file for an air-gapped lab, and sign it with an Ed25519 key.
+The hub installs plugins only from an index signed with a key you gave it; with none, the registry
+is off. There is no official index yet: once there is, its public key will be in this section, to
+pass with `--plugin-index-key`.
+
+```sh
+hearth hub --plugin-index https://plugins.example.com/index.json \
+  --plugin-index-key <base64 public key>
+```
+
+| Flag | Env | |
+| --- | --- | --- |
+| `--plugin-index` | `HEARTH_PLUGIN_INDEX` | The index: an `http(s)://` URL (no credentials, query or fragment: it is shown and audited) or a file path. Default: none. |
+| `--plugin-index-key` | `HEARTH_PLUGIN_INDEX_KEYS` (comma-separated) | A base64 Ed25519 public key the index must be signed with. Repeatable: any one of them will do. Required with `--plugin-index`. |
+
+`hearth plugin search|install|update|list` on a hub host take the same flags, or read the same
+environment variables, so set them where both the hub and your shell see them.
+
+### Browse and install
+
+In the web UI, **Settings → Plugins** lists what the index offers (**Browse**, with a search) and what
+this hub installed. On a hub host, as the hub's user (`sudo -u hearth`):
+
+```sh
+hearth plugin search lamp
+hearth plugin install go-wasm-lamp        # shows what it may do and asks first; --yes to skip
+hearth plugin list                        # installed plugins, and the updates the index offers
+hearth plugin update go-wasm-lamp         # to the newest version; --version to pick one
+hearth plugin remove go-wasm-lamp
+```
+
+Before an install the hub reads the index and its signature again, checks the signature, downloads
+the module and checks its SHA-256 against the one the index pins. An index whose signature is
+missing or does not verify with a trusted key, and a module that is not the one pinned, are refused,
+and nothing is installed. Then it shows what the plugin asks for: the hosts it may reach over HTTP
+(`host.http.allow`), its memory cap, its commands and their classes, and the module's SHA-256. The web
+UI sends back the version and SHA-256 you saw, and the hub refuses if the signed index changed
+meanwhile.
+
+The plugin runs with the manifest its index entry gives it, and nothing else: it gets no more host
+access than the entry grants. A registry installs WASM plugins only; an entry of another runtime makes
+the whole index invalid. The hub starts a plugin as soon as it is installed and stops it once removed,
+within two seconds when the CLI did it.
+
+Updates are never automatic. When the index offers a newer version, **Settings → Plugins** and
+`hearth plugin list` say so, and you apply it. An index that offers only an older version than the one
+installed offers no update, and `hearth plugin update --version X` refuses a downgrade unless
+`--allow-downgrade`. The same version with another module is refused: only a changed index can offer
+one.
+
+Each hub of a cluster runs the plugins installed on it, as it runs those of its own `--plugin` flags:
+install a plugin on each hub that should run it. The files live in the hub's data dir,
+`registry-plugins/<name>/`, owned by the hub's user, 0600, one directory per release.
+
+| Action | Class | Actors |
+| --- | --- | --- |
+| `plugin.registry.install` | dangerous | `admin`, `web` |
+| `plugin.registry.update` | dangerous | `admin`, `web` |
+| `plugin.registry.remove` | safe | `admin`, `web` |
+
+Installing or updating runs third-party code with the host access its entry grants, so both are
+dangerous and the web UI asks for the admin password again. Their audit entries hold the plugin, its
+version (and the one it replaces), the module's SHA-256, the index, the memory cap, the hosts it may
+reach and its commands. Every start is then `plugin.start`, as for any plugin.
+
+| | |
+| --- | --- |
+| `GET /api/v1/plugin-registry` | Whether an index is configured, its location and key ids, the plugins installed (with an available update and why one does not run), the newest version of each plugin the index offers, why the index cannot be used if so, and what policy decides now for `install`, `update` and `remove`. |
+| `POST /api/v1/plugin-registry/install` | `{"name": "go-wasm-lamp", "version": "0.1.0", "sha256": "…"}`: the version and SHA-256 reviewed. Needs the password again. 409 `index_changed` when the index now says otherwise, 502 `index_untrusted` or `pin_mismatch` when the index or the module cannot be trusted. |
+| `POST /api/v1/plugin-registry/update` | The same, and `"allow_downgrade": true` for an older version. |
+| `DELETE /api/v1/plugin-registry/{name}` | Uninstalls it. |
+
+### Publish an index
+
+```json
+{
+  "format": 1,
+  "plugins": [
+    {
+      "name": "go-wasm-lamp",
+      "version": "0.1.0",
+      "description": "A lamp written with the Go SDK; drives a relay over HTTP.",
+      "author": "Hearth examples",
+      "homepage": "https://github.com/gvart/hearth/tree/main/examples/plugins/go-wasm-lamp",
+      "license": "Apache-2.0",
+      "runtime": "wasm",
+      "url": "go-wasm-lamp-0.1.0.wasm",
+      "sha256": "c2a4cf4f…",
+      "memory": 32,
+      "args": ["http://192.168.1.40/relay/0"],
+      "capabilities": ["discover", "state", "command"],
+      "commands": [{"name": "turn_on", "class": "safe", "description": "Turn the lamp on"}],
+      "host": {"http": {"allow": ["192.168.1.40:80"]}}
+    }
+  ]
+}
+```
+
+Each entry is one version of one plugin: list several versions of a plugin as several entries. `name`,
+`version` (a semantic version), `runtime` (`wasm`), `url`, `sha256` and `capabilities` are required;
+the rest are the [manifest](#the-manifest)'s fields of the same names. `url` is the module's
+`http(s)://` URL, or a path relative to the index's own location. Unknown fields are refused.
+
+Sign it with a key of your own, kept offline; the key is never printed:
+
+```sh
+hearth plugin index keygen --key-file signing.key   # prints the public key, for --plugin-index-key
+hearth plugin index sign index.json --key-file signing.key   # or HEARTH_PLUGIN_INDEX_SIGNING_KEY
+hearth plugin index verify index.json --key <public key>
+```
+
+`sign` checks the index first and writes `index.json.sig`, the base64 of the signature over the
+file's exact bytes. Publish both side by side; sign again after every change.
+
+Paid plugins and license keys are not part of the registry: a business decision still open.
+
 ## Plugins on devices
 
 A plugin can run on a device instead of the hub: a GPIO relay on a Raspberry Pi, a USB sensor, a
@@ -438,3 +560,5 @@ commands only.
 - WASM plugins on devices (one module for every platform): a device plugin is an exec plugin, and
   an upload whose manifest says `runtime: wasm` is refused.
 - Host functions beyond `http`, and WASM plugins on a Windows hub, which are not tested yet.
+- An official plugin index and its key; settings a user gives a registry plugin at install time
+  (such as the relay's address), which today only the index entry sets; paid plugins.
